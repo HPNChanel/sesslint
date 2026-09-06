@@ -1,5 +1,11 @@
 """SessLint - Offline, vendor-neutral integrity checker and conservative repair tool."""
 
+from sesslint._version import (
+    CLI_VERSION,
+    MANIFEST_SCHEMA_VERSION,
+    REPORT_SCHEMA_VERSION,
+    SESSION_SCHEMA_VERSION,
+)
 from sesslint.atomic import (
     atomic_write_bytes,
     atomic_write_text,
@@ -94,8 +100,12 @@ from sesslint.source import (
     verify,
 )
 
-__version__ = "0.1.0"
+__version__ = CLI_VERSION
 __all__ = [
+    "CLI_VERSION",
+    "MANIFEST_SCHEMA_VERSION",
+    "REPORT_SCHEMA_VERSION",
+    "SESSION_SCHEMA_VERSION",
     "__version__",
     "ALL_CODES",
     "Assurance",

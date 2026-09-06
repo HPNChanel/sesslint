@@ -130,8 +130,9 @@ def test_version_999_SL301() -> None:
     assert sl301.code == SL301
     assert sl301.severity == Severity.ERROR
     assert sl301.repairability == Repairability.UNSUPPORTED
-    assert sl301.evidence.get("version_raw") == "999"
-    assert "1" in sl301.evidence.get("supported_set", ())
+    ev = sl301.evidence or {}
+    assert ev.get("version_raw") == "999"
+    assert "1" in (ev.get("supported_set") or ())
 
 
 def test_unknown_critical_SL302() -> None:
@@ -147,7 +148,7 @@ def test_unknown_critical_SL302() -> None:
     for f in sl302_codes:
         assert f.severity == Severity.ERROR
         assert f.repairability == Repairability.MANUAL
-        assert f.evidence.get("field_path") in (
+        assert (f.evidence or {}).get("field_path") in (
             "unknown_critical",
             "unknown_critical_field",
         )
@@ -196,8 +197,9 @@ def test_bad_schema_SL001() -> None:
     assert len(findings) == 1
     assert findings[0].code == SL001
     assert findings[0].severity == Severity.ERROR
-    assert findings[0].evidence.get("reason") == "invalid_schema"
-    assert findings[0].evidence.get("schema") == "wrong.schema/v1"
+    ev0 = findings[0].evidence or {}
+    assert ev0.get("reason") == "invalid_schema"
+    assert ev0.get("schema") == "wrong.schema/v1"
 
 
 def test_missing_required_top_level_keys_SL001() -> None:
@@ -206,19 +208,19 @@ def test_missing_required_top_level_keys_SL001() -> None:
     doc_no_schema = {"version": 1, "events": []}
     events, findings = load_canonical(json.dumps(doc_no_schema).encode("utf-8"))
     assert len(events) == 0
-    assert any(f.code == SL001 and f.evidence.get("field") == "schema" for f in findings)
+    assert any(f.code == SL001 and (f.evidence or {}).get("field") == "schema" for f in findings)
 
     # Missing version
     doc_no_ver = {"schema": "sesslint.session/v1", "events": []}
     events, findings = load_canonical(json.dumps(doc_no_ver).encode("utf-8"))
     assert len(events) == 0
-    assert any(f.code == SL001 and f.evidence.get("field") == "version" for f in findings)
+    assert any(f.code == SL001 and (f.evidence or {}).get("field") == "version" for f in findings)
 
     # Missing events
     doc_no_events = {"schema": "sesslint.session/v1", "version": 1}
     events, findings = load_canonical(json.dumps(doc_no_events).encode("utf-8"))
     assert len(events) == 0
-    assert any(f.code == SL001 and f.evidence.get("field") == "events" for f in findings)
+    assert any(f.code == SL001 and (f.evidence or {}).get("field") == "events" for f in findings)
 
 
 def test_detect_confidences() -> None:
@@ -260,7 +262,7 @@ def test_trailing_garbage_SL001() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "malformed_json"
+    assert (findings[0].evidence or {}).get("reason") == "malformed_json"
 
 
 def test_events_type_confusion_SL001() -> None:
@@ -270,14 +272,14 @@ def test_events_type_confusion_SL001() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "invalid_events_type"
+    assert (findings[0].evidence or {}).get("reason") == "invalid_events_type"
 
     doc_dict = {"schema": "sesslint.session/v1", "version": 1, "events": {"not": "a list"}}
     events, findings = load_canonical(json.dumps(doc_dict).encode("utf-8"))
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "invalid_events_type"
+    assert (findings[0].evidence or {}).get("reason") == "invalid_events_type"
 
 
 def test_duplicate_ids_preserved() -> None:
@@ -321,7 +323,7 @@ def test_non_utf8_bytes_SL001() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") in ("invalid_utf8", "forbidden_nul_byte")
+    assert (findings[0].evidence or {}).get("reason") in ("invalid_utf8", "forbidden_nul_byte")
 
 
 def test_nul_bytes_SL001() -> None:
@@ -331,7 +333,7 @@ def test_nul_bytes_SL001() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "forbidden_nul_byte"
+    assert (findings[0].evidence or {}).get("reason") == "forbidden_nul_byte"
 
 
 def test_empty_file_refused() -> None:
@@ -340,7 +342,7 @@ def test_empty_file_refused() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "empty_input"
+    assert (findings[0].evidence or {}).get("reason") == "empty_input"
 
 
 def test_max_file_bytes_limit(tmp_path: Path) -> None:
@@ -354,7 +356,7 @@ def test_max_file_bytes_limit(tmp_path: Path) -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "size_limit_exceeded"
+    assert (findings[0].evidence or {}).get("reason") == "size_limit_exceeded"
 
 
 def test_max_records_limit() -> None:
@@ -397,7 +399,7 @@ def test_per_event_missing_required_keys_SL001() -> None:
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
     assert len(events) == 1  # event parsed best-effort
     assert len(findings) == 4  # 4 missing required keys
-    fields_flagged = {f.evidence.get("field") for f in findings}
+    fields_flagged = {(f.evidence or {}).get("field") for f in findings}
     assert fields_flagged == {"id", "parent_id", "kind", "ts"}
 
 
@@ -458,7 +460,7 @@ def test_null_or_empty_id_rejected_SL001() -> None:
     events, findings = load_canonical(json.dumps(doc_null).encode("utf-8"))
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "invalid_id"
+    assert (findings[0].evidence or {}).get("reason") == "invalid_id"
 
     # id: "" (empty string)
     doc_empty = {
@@ -476,7 +478,7 @@ def test_null_or_empty_id_rejected_SL001() -> None:
     events, findings = load_canonical(json.dumps(doc_empty).encode("utf-8"))
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "invalid_id"
+    assert (findings[0].evidence or {}).get("reason") == "invalid_id"
 
 
 def test_non_string_id_rejected_SL001() -> None:
@@ -496,7 +498,7 @@ def test_non_string_id_rejected_SL001() -> None:
     events, findings = load_canonical(json.dumps(doc_int).encode("utf-8"))
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "invalid_id"
+    assert (findings[0].evidence or {}).get("reason") == "invalid_id"
 
 
 def test_invalid_parent_id_SL001() -> None:
@@ -520,7 +522,7 @@ def test_invalid_parent_id_SL001() -> None:
         ],
     }
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
-    parent_id_findings = [f for f in findings if f.evidence.get("reason") == "invalid_parent_id"]
+    parent_id_findings = [f for f in findings if (f.evidence or {}).get("reason") == "invalid_parent_id"]
     assert len(parent_id_findings) == 2
 
 
@@ -541,7 +543,7 @@ def test_invalid_payload_type_SL001() -> None:
     }
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
     assert any(
-        f.code == SL001 and f.evidence.get("reason") == "invalid_payload_type" for f in findings
+        f.code == SL001 and (f.evidence or {}).get("reason") == "invalid_payload_type" for f in findings
     )
 
 
@@ -555,7 +557,7 @@ def test_invalid_source_type_SL001() -> None:
     }
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
     assert any(
-        f.code == SL001 and f.evidence.get("reason") == "invalid_source_type" for f in findings
+        f.code == SL001 and (f.evidence or {}).get("reason") == "invalid_source_type" for f in findings
     )
 
 
@@ -569,7 +571,7 @@ def test_stream_read_size_limit_bounded() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "size_limit_exceeded"
+    assert (findings[0].evidence or {}).get("reason") == "size_limit_exceeded"
 
 
 def test_load_canonical_session_preserves_document_metadata() -> None:
@@ -630,7 +632,7 @@ def test_10k_events_size_limit() -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert findings[0].code == SL001
-    assert findings[0].evidence.get("reason") == "size_limit_exceeded"
+    assert (findings[0].evidence or {}).get("reason") == "size_limit_exceeded"
 
 
 def test_unicode_utf8_roundtrip() -> None:
