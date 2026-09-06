@@ -27,6 +27,7 @@ from sesslint.repair.executor import (
     is_live_store_path,
     load_plan,
     load_session_source,
+    load_session_source_with_findings,
     run_all_checks,
 )
 from sesslint.repair.fingerprint import (
@@ -180,6 +181,7 @@ __all__ = [
     "list_recipes",
     "load_plan",
     "load_session_source",
+    "load_session_source_with_findings",
     "no_prior_safe_tool_after_cut",
     "no_sl203",
     "plan",

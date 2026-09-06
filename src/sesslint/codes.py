@@ -8,13 +8,13 @@ categories, and default (severity, repairability) assignments.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Final
 
 from sesslint.errors import FindingError
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     """Classification of finding impact on session viability."""
 
     FATAL = "fatal"
@@ -34,7 +34,7 @@ class Severity(str, Enum):
             raise ValueError(f"Unknown severity {s!r}, expected one of {valid}") from None
 
 
-class Repairability(str, Enum):
+class Repairability(StrEnum):
     """Classification of how safely a finding can be transformed."""
 
     DETERMINISTIC = "deterministic"
@@ -54,7 +54,7 @@ class Repairability(str, Enum):
             raise ValueError(f"Unknown repairability {s!r}, expected one of {valid}") from None
 
 
-class Code(str, Enum):
+class Code(StrEnum):
     """The 20 stable detector reason codes defined in DEMAND.md."""
 
     SL001 = "SL001"

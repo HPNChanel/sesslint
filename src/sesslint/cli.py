@@ -19,6 +19,35 @@ from sesslint.errors import SesslintError
 from sesslint.report import Report
 
 
+def _handle_internal_error(err: Exception, args: argparse.Namespace | None = None) -> int:
+    """Handle unexpected internal operational errors per FR-097.
+
+    Guarantees:
+    - Generates a unique, content-free diagnostic ID matching ^ERR-[0-9a-f]{8}$.
+    - In JSON mode: outputs a JSON envelope to stdout with verdict='error', code='INTERNAL_ERROR',
+      error_id, and message.
+    - In human mode: outputs actionable error information to stderr.
+    - Never prints raw Python tracebacks to stdout.
+    - Never verdicts healthy.
+    - Exits with return code 1.
+    """
+    import secrets
+
+    error_id = f"ERR-{secrets.token_hex(4)}"
+    is_json = getattr(args, "json", False) if args is not None else False
+    if is_json:
+        envelope = {
+            "code": "INTERNAL_ERROR",
+            "error_id": error_id,
+            "message": str(err),
+            "verdict": "error",
+        }
+        print(json.dumps(envelope, sort_keys=True))
+    else:
+        print(f"Operational error [{error_id}]: {err}", file=sys.stderr)
+    return 1
+
+
 def should_color(args: argparse.Namespace, stream: Any = sys.stdout) -> bool:
     """Determine whether color output should be enabled."""
     if getattr(args, "no_color", False):
@@ -468,11 +497,8 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entry point returning exit code."""
-    parser = create_parser()
-    args = parser.parse_args(argv)
-
+def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Dispatch parsed CLI command and return exit code."""
     if getattr(args, "include_content", False):
         sys.stderr.write(
             "WARNING: --include-content embeds raw transcript content; do not share output\n"
@@ -837,8 +863,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Error: {err}", file=sys.stderr)
             return 2
         except Exception as err:
-            print(f"Unexpected error: {err}", file=sys.stderr)
-            return 2
+            return _handle_internal_error(err, args)
 
     if args.command == "repair":
         if not args.dry_run and args.output is None:
@@ -870,7 +895,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             RepairRefused,
             execute,
             load_plan,
-            load_session_source,
             run_all_checks,
         )
         from sesslint.repair.planner import plan as planner_plan
@@ -885,12 +909,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
         else:
             try:
-                _source_header, source_events = load_session_source(args.path)
-                source_findings = run_all_checks(
+                from sesslint.repair.executor import (
+                    load_session_source_with_findings,
+                    run_all_checks,
+                )
+
+                _source_header, source_events, stream_findings = load_session_source_with_findings(
+                    args.path
+                )
+                check_findings = run_all_checks(
                     source_events,
                     profile=profile_opt,
                     source_path=str(args.path),
                 )
+                source_findings = list(stream_findings) + list(check_findings)
                 plan_obj = planner_plan(
                     findings=source_findings,
                     events=source_events,
@@ -902,8 +934,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"Error preparing repair plan [{err.code}]: {err}", file=sys.stderr)
                 return 1
             except Exception as err:
-                print(f"Error preparing repair plan: {err}", file=sys.stderr)
-                return 2
+                return _handle_internal_error(err, args)
 
             has_error_findings = any(
                 f.severity in (Severity.ERROR, Severity.FATAL) for f in source_findings
@@ -952,8 +983,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"File error: {err}", file=sys.stderr)
             return 2
         except Exception as err:
-            print(f"Unexpected error: {err}", file=sys.stderr)
-            return 2
+            return _handle_internal_error(err, args)
 
     if args.command == "verify":
         try:
@@ -971,10 +1001,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Verify I/O error: {err}", file=sys.stderr)
             return 2
         except Exception as err:
-            print(f"Verify error: {err}", file=sys.stderr)
-            return 2
+            return _handle_internal_error(err, args)
 
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point returning exit code with top-level safety guarantees."""
+    parser = create_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        return _dispatch_command(args, parser)
+    except KeyboardInterrupt:
+        print("Operation cancelled by user", file=sys.stderr)
+        return 130
+    except FileNotFoundError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 2
+    except Exception as err:
+        return _handle_internal_error(err, args)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,92 @@
+{
+  "bom_mismatch.jsonl": {
+    "code": "SL302",
+    "description": "UTF-16 BOM on UTF-8 expectation fails closed with encoding/header error",
+    "exit": 1,
+    "repairable": false
+  },
+  "crlf_mixed.jsonl": {
+    "code": null,
+    "description": "Mixed CRLF and LF lines normalized cleanly without error",
+    "exit": 0,
+    "repairable": false
+  },
+  "cycle_3.jsonl": {
+    "code": "SL005",
+    "description": "3-node directed cycle in parent graph fails closed as fatal SL005",
+    "exit": 1,
+    "repairable": false
+  },
+  "deep_nesting.json": {
+    "code": "SL001",
+    "description": "Nesting depth >100 bounded-limit failure fails closed without RecursionError",
+    "exit": 1,
+    "repairable": false
+  },
+  "duplicate_ids/duplicate_conflicting.jsonl": {
+    "code": "SL003",
+    "description": "Conflicting event IDs detect as SL003 error",
+    "exit": 1,
+    "repairable": false
+  },
+  "duplicate_ids/duplicate_identical.jsonl": {
+    "code": "SL003",
+    "description": "Identical event IDs detect as SL003 warning in neutral profile",
+    "exit": 0,
+    "repairable": false
+  },
+  "empty.jsonl": {
+    "code": "SL001",
+    "description": "0-byte empty file fails closed as SL001 error and never healthy",
+    "exit": 1,
+    "repairable": false
+  },
+  "huge_line.jsonl": {
+    "code": "SL002",
+    "description": "Line exceeding 1MB max_line_bytes triggers bounded limit error",
+    "exit": 1,
+    "repairable": false
+  },
+  "interleaved_branches.jsonl": {
+    "code": "SL106",
+    "description": "Cross-branch tool pairing attempt detected without false merge",
+    "exit": 1,
+    "repairable": false
+  },
+  "malformed_nonterminal.jsonl": {
+    "code": "SL001",
+    "description": "Malformed JSON record in nonterminal line blocks repair with SL001",
+    "exit": 1,
+    "repairable": false
+  },
+  "null_bytes.jsonl": {
+    "code": "SL002",
+    "description": "Forbidden NUL byte in JSONL stream triggers fail-closed error",
+    "exit": 1,
+    "repairable": false
+  },
+  "self_parent.jsonl": {
+    "code": "SL005",
+    "description": "Self-referencing parent edge fails closed as fatal SL005",
+    "exit": 1,
+    "repairable": false
+  },
+  "torn_final.jsonl": {
+    "code": "SL002",
+    "description": "Torn record on final line detected as SL002 with torn-suffix repair plan",
+    "exit": 1,
+    "repairable": true
+  },
+  "truncated_utf8.bin": {
+    "code": "SL302",
+    "description": "Split multibyte UTF-8 at EOF fails closed as encoding/detection defect",
+    "exit": 1,
+    "repairable": false
+  },
+  "whitespace_only.jsonl": {
+    "code": "SL001",
+    "description": "Whitespace-only file fails closed as SL001 error and never healthy",
+    "exit": 1,
+    "repairable": false
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "sesslint.session/v1",
+  "version": 1,
+  "events": [
+    {
+      "id": "evt_1",
+      "actor": "user",
+      "kind": "message",
+      "parent_id": null,
+      "seq": 0,
+      "ts": "2026-09-06T12:00:01Z",
+      "payload": {}
+    },
+    {
+      "id": "evt_2",
+      "actor": "assistant",
+      "kind": "message",
+      "parent_id": "evt_1",
+      "seq": 1,
+      "ts": "2026-09-06T12:00:02Z",
+      "payload": {}
+    }
+  ]
+}

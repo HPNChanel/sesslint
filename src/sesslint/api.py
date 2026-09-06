@@ -23,7 +23,6 @@ from sesslint.repair import (
     RepairPlan,
     execute,
     load_plan,
-    load_session_source,
     run_all_checks,
 )
 from sesslint.repair.planner import plan as planner_plan
@@ -257,12 +256,18 @@ def repair(
     if plan_path is not None:
         plan_obj = load_plan(plan_path)
     else:
-        _source_header, source_events = load_session_source(src)
-        source_findings = run_all_checks(
+        from sesslint.repair.executor import (
+            load_session_source_with_findings,
+            run_all_checks,
+        )
+
+        _source_header, source_events, stream_findings = load_session_source_with_findings(src)
+        check_findings = run_all_checks(
             source_events,
             profile=profile,
             source_path=str(src),
         )
+        source_findings = list(stream_findings) + list(check_findings)
         plan_obj = planner_plan(
             findings=source_findings,
             events=source_events,
@@ -270,6 +275,15 @@ def repair(
             policy=policy,
             acknowledge_side_effects=acknowledge_side_effects,
         )
+        has_error_findings = any(
+            f.severity in (Severity.ERROR, Severity.FATAL) for f in source_findings
+        )
+        if has_error_findings and len(plan_obj.steps) == 0:
+            from sesslint.repair.errors import RepairRefused
+
+            raise RepairRefused(
+                "Findings exist on source session, but no authorized safe repair plan completes."
+            )
 
     if dry_run:
         return plan_obj, None

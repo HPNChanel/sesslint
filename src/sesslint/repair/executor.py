@@ -176,8 +176,10 @@ def load_plan(source: StrPath | Mapping[str, Any]) -> RepairPlan:
     )
 
 
-def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent]]:
-    """Load session header and events using the TASK-005 canonical streaming loader.
+def load_session_source_with_findings(
+    path: StrPath,
+) -> tuple[SessionHeader, list[SessionEvent], list[Finding]]:
+    """Load session header, events, and stream-level findings (SL001/SL002).
 
     Preserves duplicate IDs and nonterminal findings without prematurely failing.
     Falls back to single-document JSON parsing if the file is formatted as single-document JSON.
@@ -191,8 +193,10 @@ def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent
 
     try:
         hdr = read_header(p)
-        events = [e for e in iter_events(p) if isinstance(e, SessionEvent)]
-        return hdr, events
+        items = list(iter_events(p))
+        events = [e for e in items if isinstance(e, SessionEvent)]
+        findings = [f for f in items if isinstance(f, Finding)]
+        return hdr, events, findings
     except SchemaError:
         # Fall back to single-document canonical JSON if formatted as a single JSON object
         text = p.read_text(encoding="utf-8-sig").strip()
@@ -202,16 +206,22 @@ def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent
                 if isinstance(data, Mapping) and "events" in data:
                     from sesslint.adapters.canonical import load_canonical
 
-                    ev_list, _ = load_canonical(p)
+                    ev_list, can_findings = load_canonical(p)
                     hdr = SessionHeader(
                         schema_version="sesslint.session/v1",
                         session_id=str(ev_list.source.get("session_id", p.stem)),
                         created_at=str(ev_list.source.get("created_at", "2026-09-05T12:00:00Z")),
                     )
-                    return hdr, list(ev_list)
+                    return hdr, list(ev_list), list(can_findings)
             except Exception:
                 pass
         raise
+
+
+def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent]]:
+    """Load session header and events using the TASK-005 canonical streaming loader."""
+    hdr, events, _ = load_session_source_with_findings(path)
+    return hdr, events
 
 
 def _copy_events_as_dicts(events: Sequence[Any]) -> list[dict[str, Any]]:

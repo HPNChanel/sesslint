@@ -1,0 +1,3 @@
+{"id":"a","parentId":"c","type":"user_message","message":"node a","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"b","parentId":"a","type":"assistant_message","message":"node b","timestamp":"2025-01-01T12:00:01Z"}
+{"id":"c","parentId":"b","type":"assistant_message","message":"node c","timestamp":"2025-01-01T12:00:02Z"}

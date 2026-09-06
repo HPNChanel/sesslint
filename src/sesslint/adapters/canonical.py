@@ -39,7 +39,13 @@ from sesslint.canonical import (
 )
 from sesslint.codes import SL001, SL301, SL302, Repairability, Severity
 from sesslint.errors import MaxRecordsExceededError, SchemaError
-from sesslint.finding import Finding, SourceRef, make_finding, sort_findings
+from sesslint.finding import (
+    Finding,
+    SourceRef,
+    enforce_content_free_text,
+    make_finding,
+    sort_findings,
+)
 from sesslint.io import (
     _STRICT_JSON_DECODER,
     DEFAULT_READER_LIMITS,
@@ -286,6 +292,32 @@ def dump_canonical(
         allow_nan=False,
     )
     return serialized.encode("utf-8") + b"\n"
+
+
+def _safe_rec_id(val: Any) -> str | None:
+    """Return sanitized record_id string for SourceRef, or None if invalid/control-chars."""
+    if not isinstance(val, str):
+        return None
+    stripped = val.strip()
+    if not stripped or stripped != val:
+        return None
+    try:
+        enforce_content_free_text(stripped, context="record_id")
+        return stripped
+    except Exception:
+        return None
+
+
+def _safe_evidence_val(val: Any) -> str | None:
+    """Return sanitized evidence string free of control characters."""
+    if val is None:
+        return None
+    s = str(val)
+    try:
+        enforce_content_free_text(s, context="evidence")
+        return s
+    except Exception:
+        return "<sanitized_control_chars>"
 
 
 def load_canonical(
@@ -614,10 +646,10 @@ def load_canonical(
 
             raw_id = ev_raw.get("id")
             has_id_key = "id" in ev_raw
-            rec_id_str: str | None = (
-                raw_id.strip() if isinstance(raw_id, str) and bool(raw_id.strip()) else None
+            rec_id_str: str | None = _safe_rec_id(raw_id)
+            is_valid_id = (
+                isinstance(raw_id, str) and rec_id_str is not None and raw_id == rec_id_str
             )
-            is_valid_id = rec_id_str is not None
             rec_id: str = rec_id_str if rec_id_str is not None else f"<missing:{idx}>"
 
             if not has_id_key:
@@ -648,7 +680,7 @@ def load_canonical(
                         evidence={
                             "reason": "invalid_id",
                             "field": "id",
-                            "record_id": str(raw_id) if raw_id is not None else None,
+                            "record_id": _safe_evidence_val(raw_id),
                         },
                     )
                 )

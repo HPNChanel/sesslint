@@ -1,0 +1,39 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "retry prompt"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "retry prompt"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt-2",
+      "kind": "message",
+      "parent_id": "evt-1",
+      "payload": {
+        "text": "response"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "version": 1
+}

@@ -1,0 +1,2 @@
+{"id":"msg_01","type":"user_message","message":"hello","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","type":"assistant_message","message":"â‚
