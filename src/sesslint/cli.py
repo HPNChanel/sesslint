@@ -160,6 +160,35 @@ def create_parser() -> argparse.ArgumentParser:
         help="Acknowledge tool side-effects for salvage policy",
     )
 
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Independently verify a repair manifest and audit replay (read-only).",
+    )
+    verify_parser.add_argument(
+        "--source",
+        type=Path,
+        required=True,
+        help="Path to source session file",
+    )
+    verify_parser.add_argument(
+        "--plan",
+        type=Path,
+        required=True,
+        help="Path to repair plan JSON file",
+    )
+    verify_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Path to repaired session file",
+    )
+    verify_parser.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Path to repair manifest JSON file",
+    )
+
     return parser
 
 
@@ -420,6 +449,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         except Exception as err:
             print(f"Unexpected error: {err}", file=sys.stderr)
+            return 2
+
+    if args.command == "verify":
+        try:
+            from sesslint.verify import verify
+
+            verdict = verify(
+                source_path=args.source,
+                plan_path=args.plan,
+                output_path=args.output,
+                manifest_path=args.manifest,
+            )
+            print(verdict.to_json())
+            return 0 if verdict.ok else 1
+        except (FileNotFoundError, OSError) as err:
+            print(f"Verify I/O error: {err}", file=sys.stderr)
+            return 2
+        except Exception as err:
+            print(f"Verify error: {err}", file=sys.stderr)
             return 2
 
     return 0

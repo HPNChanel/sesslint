@@ -1,0 +1,12 @@
+{
+  "actions": [],
+  "assurance": "clean",
+  "declared_loss": [],
+  "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+  "input_fingerprint": "1f29d80685dd355b2bbf0f74febc5031bd1b774bbdd29d8bc576a99353cc6c7a",
+  "output_fingerprint": "1f29d80685dd355b2bbf0f74febc5031bd1b774bbdd29d8bc576a99353cc6c7a",
+  "plan_fingerprint": "80b28e86cd475c98a97045b9f712a58320444905b653a2b6937b6d95d81f0246",
+  "policy": "conservative",
+  "revalidate_report": null,
+  "schema_version": "sesslint.repair-manifest/v1"
+}
