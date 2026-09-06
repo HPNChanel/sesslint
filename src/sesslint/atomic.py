@@ -81,13 +81,15 @@ def atomic_write_bytes(
 
         os.replace(temp_path, dest_path)
         temp_path = None  # Successfully replaced, no cleanup needed
-    except Exception as err:
+    except BaseException as err:
         if temp_path is not None and temp_path.exists():
             try:
                 temp_path.unlink()
             except OSError:
                 pass
-        raise AtomicWriteError(f"Atomic write to '{dest}' failed: {err}") from err
+        if isinstance(err, Exception):
+            raise AtomicWriteError(f"Atomic write to '{dest}' failed: {err}") from err
+        raise
 
     return hashlib.sha256(data).hexdigest()
 

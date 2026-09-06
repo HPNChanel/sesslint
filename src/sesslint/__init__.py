@@ -40,6 +40,11 @@ from sesslint.codes import (
     get_code_info,
     is_valid_code,
 )
+from sesslint.determinism import (
+    canonical_json_bytes,
+    repeat_hash,
+    stable_sort_findings,
+)
 from sesslint.errors import (
     AssuranceError,
     AtomicWriteError,
@@ -167,6 +172,7 @@ __all__ = [
     "build_report",
     "build_repro_metadata",
     "canonical_bytes",
+    "canonical_json_bytes",
     "check_dir",
     "check_file",
     "check_identities",
@@ -208,7 +214,9 @@ __all__ = [
     "read_header",
     "render_human",
     "render_json",
+    "repeat_hash",
     "sort_findings",
+    "stable_sort_findings",
     "to_canonical_dict",
     "to_canonical_json",
     "verify",

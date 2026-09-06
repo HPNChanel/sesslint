@@ -314,3 +314,42 @@ def verify(
         output_path=output_path,
         manifest_path=manifest_path,
     )
+
+
+def plan(
+    source_path: Path | str,
+    *,
+    policy: Literal["conservative", "salvage"] = "conservative",
+    format: str | None = None,
+    profile: str = "neutral",
+) -> RepairPlan:
+    """Compute a dry-run repair plan for a source session file without writing files.
+
+    Args:
+        source_path: Path to source session file.
+        policy: 'conservative' or 'salvage' (default 'conservative').
+        format: Optional format adapter override.
+        profile: Profile name (default 'neutral').
+
+    Returns:
+        A frozen RepairPlan instance.
+    """
+    res, _ = repair(
+        source_path,
+        output_path=None,
+        policy=policy,
+        format=format,
+        profile=profile,
+        dry_run=True,
+    )
+    return res
+
+
+__all__ = [
+    "VerifyVerdict",
+    "check_dir",
+    "check_file",
+    "plan",
+    "repair",
+    "verify",
+]
