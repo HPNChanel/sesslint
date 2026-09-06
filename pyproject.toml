@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sesslint"
+dynamic = ["version"]
+description = "Offline, vendor-neutral session-integrity checker and conservative repair tool."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "SessLint Maintainers" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+sesslint = "sesslint.cli:main"
+
+[tool.hatch.version]
+path = "src/sesslint/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sesslint"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"schemas" = "share/sesslint/schemas"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/schemas",
+    "/src",
+    "/tests",
+    "/fixtures",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/sesslint", "tests"]
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --basetemp=.pytest_temp"
