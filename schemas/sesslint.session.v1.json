@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.session/v1",
+  "title": "SessLint Canonical Session Format v1",
+  "description": "Vendor-neutral canonical session graph schema for SessLint integrity verification.",
+  "oneOf": [
+    {
+      "type": "object",
+      "description": "Flat session document representation",
+      "required": ["created_at", "events", "schema_version", "session_id"],
+      "properties": {
+        "schema_version": {
+          "const": "sesslint.session/v1"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "source": {
+          "type": ["object", "string", "null"]
+        },
+        "version": {
+          "type": ["integer", "null"]
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      },
+      "patternProperties": {
+        "^experimental_": {}
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "description": "Framed session document representation with explicit header",
+      "required": ["events", "header"],
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/header"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      },
+      "patternProperties": {
+        "^experimental_": {}
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "header": {
+      "type": "object",
+      "description": "Session header metadata record",
+      "required": ["created_at", "schema_version", "session_id"],
+      "properties": {
+        "schema_version": {
+          "const": "sesslint.session/v1"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "source": {
+          "type": ["object", "string", "null"]
+        },
+        "version": {
+          "type": ["integer", "null"]
+        }
+      },
+      "patternProperties": {
+        "^experimental_": {}
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "description": "Canonical session event record",
+      "required": ["actor", "id", "kind", "parent_id", "payload", "seq", "ts"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_id": {
+          "type": ["string", "null"]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor": {
+          "enum": ["assistant", "system", "tool", "user"]
+        },
+        "kind": {
+          "enum": [
+            "approval",
+            "checkpoint",
+            "compaction_boundary",
+            "error",
+            "handoff",
+            "message",
+            "opaque",
+            "subagent_boundary",
+            "tool_call",
+            "tool_result",
+            "unknown"
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "content_hash": {
+          "type": ["string", "null"]
+        },
+        "correlation_id": {
+          "type": ["string", "null"]
+        },
+        "branch_id": {
+          "type": ["string", "null"]
+        },
+        "interaction_id": {
+          "type": ["string", "null"]
+        },
+        "agent_id": {
+          "type": ["string", "null"]
+        },
+        "execution_state": {
+          "enum": ["aborted", "failure", "pending", "success", "unknown", null]
+        },
+        "source_line": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "source_record_hash": {
+          "type": ["string", "null"]
+        },
+        "original_id": {
+          "type": ["string", "null"]
+        },
+        "source_adapter": {
+          "type": ["string", "null"]
+        },
+        "source_location": {
+          "type": ["string", "null"]
+        }
+      },
+      "patternProperties": {
+        "^experimental_": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

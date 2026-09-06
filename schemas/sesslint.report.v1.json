@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.report/v1",
+  "title": "SessLint Report Format v1",
+  "description": "Vendor-neutral integrity check report schema for SessLint.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "session_id",
+    "source_fingerprint",
+    "tool_version",
+    "findings",
+    "counts",
+    "assurance",
+    "limitation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.report/v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "fingerprint",
+          "message",
+          "related_ids",
+          "repairability",
+          "schema_version",
+          "severity",
+          "source"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "sesslint.finding/v1"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "SL001",
+              "SL002",
+              "SL003",
+              "SL004",
+              "SL005",
+              "SL006",
+              "SL007",
+              "SL101",
+              "SL102",
+              "SL103",
+              "SL104",
+              "SL105",
+              "SL106",
+              "SL107",
+              "SL108",
+              "SL201",
+              "SL202",
+              "SL203",
+              "SL301",
+              "SL302"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "fatal",
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "repairability": {
+            "enum": [
+              "deterministic",
+              "lossy-explicit",
+              "manual",
+              "unsupported"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "source": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "record_id": {
+                "type": ["string", "null"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "related_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{16}$"
+          },
+          "message_template": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "type": ["object", "null"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "by_code",
+        "by_severity",
+        "total"
+      ],
+      "properties": {
+        "by_severity": {
+          "type": "object",
+          "required": [
+            "fatal",
+            "error",
+            "warning",
+            "info"
+          ],
+          "properties": {
+            "fatal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "warning": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "info": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "by_code": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "assurance": {
+      "type": "string",
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ]
+    },
+    "limitation": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

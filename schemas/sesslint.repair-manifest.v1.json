@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.repair-manifest/v1",
+  "title": "SessLint Repair Manifest Format v1",
+  "description": "Deterministic repair manifest schema capturing state transformations, loss declarations, and idempotency binding.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "input_fingerprint",
+    "output_fingerprint",
+    "policy",
+    "actions",
+    "declared_loss",
+    "revalidate_report",
+    "idempotency_key"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.repair-manifest/v1"
+    },
+    "input_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy": {
+      "type": "string",
+      "enum": [
+        "conservative",
+        "salvage"
+      ]
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "declared_loss": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "revalidate_report": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

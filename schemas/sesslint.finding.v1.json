@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.finding/v1",
+  "title": "SessLint Finding Format v1",
+  "description": "Vendor-neutral finding envelope schema for SessLint integrity verification.",
+  "type": "object",
+  "required": [
+    "code",
+    "fingerprint",
+    "message",
+    "related_ids",
+    "repairability",
+    "schema_version",
+    "severity",
+    "source"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.finding/v1"
+    },
+    "code": {
+      "type": "string",
+      "enum": [
+        "SL001",
+        "SL002",
+        "SL003",
+        "SL004",
+        "SL005",
+        "SL006",
+        "SL007",
+        "SL101",
+        "SL102",
+        "SL103",
+        "SL104",
+        "SL105",
+        "SL106",
+        "SL107",
+        "SL108",
+        "SL201",
+        "SL202",
+        "SL203",
+        "SL301",
+        "SL302"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "fatal",
+        "error",
+        "warning",
+        "info"
+      ]
+    },
+    "repairability": {
+      "enum": [
+        "deterministic",
+        "lossy-explicit",
+        "manual",
+        "unsupported"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "source": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "record_id": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "related_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "message_template": {
+      "type": ["string", "null"]
+    },
+    "evidence": {
+      "type": ["object", "null"]
+    }
+  },
+  "additionalProperties": false
+}
