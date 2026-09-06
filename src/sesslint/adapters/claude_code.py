@@ -634,6 +634,19 @@ def _process_claude_line(
     if kind == "tool_result":
         execution_state = "failure" if obj.get("is_error") or obj.get("error") else "success"
 
+    correlation_id: str | None = None
+    if kind in ("tool_call", "tool_result"):
+        raw_call_id = (
+            obj.get("toolUseId")
+            or obj.get("tool_use_id")
+            or obj.get("call_id")
+            or obj.get("correlation_id")
+        )
+        if raw_call_id is not None and str(raw_call_id).strip():
+            correlation_id = str(raw_call_id).strip()
+        elif kind == "tool_call":
+            correlation_id = rec_id_str
+
     event = SessionEvent(
         id=rec_id_str,
         parent_id=parent_id,
@@ -643,6 +656,7 @@ def _process_claude_line(
         kind=kind,
         payload=payload,
         content_hash=content_hash,
+        correlation_id=correlation_id,
         source_line=raw.line_number,
         source_record_hash=f"sha256:{hashlib.sha256(canonical_bytes(obj)).hexdigest()}",
         original_id=original_id,

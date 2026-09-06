@@ -28,7 +28,7 @@
 - [CLI Reference](#cli-reference)
   - [Command Matrix](#command-matrix)
   - [Exit Codes](#exit-codes)
-- [Supported Formats](#supported-formats)
+- [Supported Formats & Conformance Matrix](#supported-formats)
 - [Diagnostic Reason Codes (SL001–SL302)](#diagnostic-reason-codes-sl001sl302)
 - [Repair Engine](#repair-engine)
   - [Policies: Conservative vs. Salvage](#policies-conservative-vs-salvage)
@@ -40,6 +40,9 @@
 - [Python Library API](#python-library-api)
 - [JSON Schemas](#json-schemas)
 - [Test Suite & Verification](#test-suite--verification)
+- [Safe Issue Reporting](#safe-issue-reporting)
+- [Contributing & Fixture Provenance](#contributing--fixture-provenance)
+- [Release & Build Protocol](#release--build-protocol)
 - [License](#license)
 
 ---
@@ -205,11 +208,13 @@ SessLint includes three production adapters with fail-closed auto-detection:
 > [!NOTE]
 > **Live Store Protection**: If `--output` points to an active SQLite database (detected via SQLite format 3 header magic or `.sqlite`/`.db` extensions), SessLint **immediately aborts** with exit code `2` to protect live stores from corruption.
 
+For comprehensive compatibility matrix across formats and validation profiles, consult the [Adapter & Profile Conformance Matrix](docs/MATRIX.md).
+
 ---
 
 ## Diagnostic Reason Codes (SL001–SL302)
 
-SessLint implements **20 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions.
+SessLint implements **20 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed documentation for each code is available in [`docs/codes/`](docs/codes/).
 
 ### 1. Syntax & Framing
 | Code | Name | Default Severity | Repairability | Action & Rationale |
@@ -459,6 +464,36 @@ uv run ruff format --check src tests
 - **TOCTOU Race Detection**: Modifying source files mid-flight triggers clean aborts.
 - **Single-Mutator AST Grep**: Automated static analysis verifies `os.replace` is never called outside `executor.py` and `atomic.py`.
 - **Property-Based Fuzzing**: Hypothesis tests validate random DAG permutations, cycles, and deep nesting.
+
+---
+
+## Safe Issue Reporting
+
+> [!CAUTION]
+> **Zero-Leak Issue Reporting Policy**:
+> **Never paste or upload raw session transcripts.** Raw transcripts frequently contain unredacted API keys, private system prompts, confidential workspace paths, and proprietary code. Maintainers will delete raw transcript uploads immediately upon discovery.
+>
+> When reporting a bug or defect:
+> 1. Attach only minimized, synthetic, or redacted excerpts reproducing the defect.
+> 2. Run `sesslint version --json` and attach the diagnostic environment block.
+> 3. Refer to our [Safe Bug Report Template](.github/ISSUE_TEMPLATE/bug_report.md).
+
+---
+
+## Contributing & Fixture Provenance
+
+We welcome contributions adhering to our engineering and safety standards:
+- Review the [Contributor Guide](CONTRIBUTING.md) for architectural boundaries and gate requirements.
+- Review the [Fixture Provenance Policy](FIXTURES.md) for synthetic-only test data rules and schema.
+- Explore the [Repair Recipe Catalog](docs/recipes/) for deterministic and salvage transformations.
+
+---
+
+## Release & Build Protocol
+
+For verifiable distribution builds and checksum validation:
+- Consult [RELEASING.md](RELEASING.md) for reproducible wheel and sdist procedures.
+- Check [NOTICE](NOTICE) for third-party developer dependencies and licensing declarations.
 
 ---
 

@@ -34,7 +34,7 @@ dev = [
 sesslint = "sesslint.cli:main"
 
 [tool.hatch.version]
-path = "src/sesslint/__init__.py"
+path = "src/sesslint/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sesslint"]

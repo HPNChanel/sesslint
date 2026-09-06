@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "sesslint.test_harness",
+  "seed": 42,
+  "created": "2026-09-06",
+  "contains_real_data": false,
+  "description": "Synthetic test fixtures for fuzz"
+}

@@ -1,0 +1,13 @@
+SessLint
+Copyright 2026 SessLint Maintainers
+
+This product is licensed under the Apache License, Version 2.0.
+
+SessLint core runtime has zero third-party dependencies and relies exclusively on
+the Python standard library.
+
+Development and testing utilize the following third-party components (dev-only, not vendored or shipped in runtime):
+- pytest (MIT License) - https://pytest.org
+- hypothesis (Mozilla Public License 2.0) - https://hypothesis.works
+- ruff (MIT/Apache-2.0) - https://astral.sh/ruff
+- mypy (MIT License) - https://mypy-lang.org
