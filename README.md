@@ -71,6 +71,7 @@ A blind retry fails or causes duplicate external side-effects (e.g., re-running 
 > 5. **TOCTOU Protection**: Dual-hash SHA-256 verification ensures that changes to source files during execution immediately abort the pipeline.
 > 6. **Zero Dependencies**: Pure Python 3.11+ standard library. 100% offline, zero telemetry, zero network calls.
 > 7. **Privacy by Default**: Diagnostic reports and repair manifests are strictly content-free (prompts, code, keys, and tokens are scrubbed).
+> 8. **Safety & Minimization Boundaries**: redaction is best-effort minimization, not a completeness guarantee. Furthermore, sesslint makes no semantic or side-effect safety claims.
 
 ---
 

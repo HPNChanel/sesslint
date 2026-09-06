@@ -118,3 +118,12 @@ class AtomicWriteError(SesslintError, OSError):
     def __init__(self, message: str, *, code: str = "ATOMIC_WRITE_ERROR") -> None:
         super().__init__(message)
         self.code = code
+
+
+class OperationalError(SesslintError):
+    """Raised when an internal operational invariant or renderer validation fails."""
+
+    code: str = "OPERATIONAL_ERROR"
+
+    def __init__(self, message: str, *, code: str = "OPERATIONAL_ERROR") -> None:
+        super().__init__(message, code=code)

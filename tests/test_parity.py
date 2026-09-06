@@ -9,7 +9,7 @@ import pytest
 
 from sesslint import api
 from sesslint.cli import main
-from sesslint.report import dump_report
+from sesslint.report import render_json
 
 CLI_FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "cli"
 SCAN_FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "scan"
@@ -22,7 +22,6 @@ def test_parity_check_file_healthy(capsys: pytest.CaptureFixture[str]) -> None:
 
     # Library call
     lib_report = api.check_file(fixture)
-    lib_json = json.loads(dump_report(lib_report))
 
     # CLI call
     code = main(["check", str(fixture), "--json"])
@@ -30,6 +29,7 @@ def test_parity_check_file_healthy(capsys: pytest.CaptureFixture[str]) -> None:
     cli_out = capsys.readouterr().out
     cli_json = json.loads(cli_out)
 
+    lib_json = json.loads(render_json(lib_report, repro=cli_json.get("repro")))
     assert lib_json == cli_json
 
 
@@ -39,7 +39,6 @@ def test_parity_check_file_ambiguity(capsys: pytest.CaptureFixture[str]) -> None
 
     # Library call
     lib_report = api.check_file(fixture)
-    lib_json = json.loads(dump_report(lib_report))
 
     # CLI call
     code = main(["check", str(fixture), "--json"])
@@ -47,6 +46,7 @@ def test_parity_check_file_ambiguity(capsys: pytest.CaptureFixture[str]) -> None
     cli_out = capsys.readouterr().out
     cli_json = json.loads(cli_out)
 
+    lib_json = json.loads(render_json(lib_report, repro=cli_json.get("repro")))
     assert lib_json == cli_json
 
 

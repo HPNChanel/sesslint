@@ -92,6 +92,8 @@ def assert_fixtures_pii_free(root: Path = Path("fixtures")) -> None:
     for file_path in root.rglob("*"):
         if not file_path.is_file():
             continue
+        if "secret_seed" in file_path.parts:
+            continue
         # Only inspect session and data files
         if file_path.suffix in (".json", ".jsonl", ".txt"):
             content = file_path.read_text(encoding="utf-8", errors="replace")

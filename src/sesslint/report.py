@@ -22,6 +22,7 @@ from sesslint.errors import (
     AssuranceError,
     ContentLeakError,
     FindingError,
+    OperationalError,
     SchemaError,
     UnknownFieldError,
     VersionError,
@@ -64,7 +65,26 @@ KNOWN_REPORT_FIELDS: Final[frozenset[str]] = frozenset(
         "counts",
         "assurance",
         "limitation",
+        "repro",
+        "content_warning",
+        "included_content",
     }
+)
+REPORT_ROOT_KEYS: Final[frozenset[str]] = KNOWN_REPORT_FIELDS
+REPORT_FINDING_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "code",
+        "severity",
+        "repairability",
+        "fingerprint",
+        "span",
+        "evidence",
+        "remediation",
+    }
+)
+REPORT_DEFAULT_FINDING_KEYS: Final[frozenset[str]] = REPORT_FINDING_KEYS
+REPORT_FORBIDDEN_FINDING_KEYS: Final[frozenset[str]] = frozenset(
+    {"text", "content", "message", "payload"}
 )
 
 REQUIRED_REPORT_FIELDS: Final[frozenset[str]] = frozenset(
@@ -1007,11 +1027,413 @@ def apply_plan_assurance(base: str, plan: Any) -> str:
     return cap_assurance(base, plan)
 
 
+def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
+    """Render a path in minimized home-relative form (e.g. ~/dir/file.jsonl).
+
+    If path is under home directory, renders as '~/relative/path' (or '~' for home itself).
+    If path is outside home directory, renders as '.._<8hex>/filename'
+    where 8hex is sha1(parent)[:8].
+    Non-home absolute paths are never emitted in default mode.
+    """
+    if isinstance(path, str):
+        if path.startswith("~/") or path == "~" or path.startswith(".._"):
+            return path
+
+    p = Path(path)
+    h = (home if home is not None else Path.home()).resolve()
+
+    try:
+        resolved = p.resolve()
+        rel = resolved.relative_to(h)
+        if rel.parts == ():
+            return "~"
+        return f"~/{rel.as_posix()}"
+    except (ValueError, RuntimeError):
+        pass
+
+    resolved_target = p.resolve() if p.is_absolute() else p
+    parent_str = str(resolved_target.parent).replace("\\", "/")
+    p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+    return f".._{p_hash}/{resolved_target.name}"
+
+
+def short_hash(identifier: str, length: int = 8) -> str:
+    """Compute truncated sha256 hex digest of an identifier string."""
+    return hashlib.sha256(identifier.encode("utf-8")).hexdigest()[:length]
+
+
+def minimize_id(
+    identifier: str,
+    *,
+    ordinal: int | None = None,
+    include_content: bool = False,
+    as_dict: bool = False,
+) -> Any:
+    """Minimize an event or record identifier to ordinal + short hash.
+
+    When include_content is False:
+        - string mode: f"#{ordinal}" if ordinal is not None, else short_hash(identifier, 8)
+        - dict mode: {"short": short_hash(identifier, 8)} (+ "ordinal": ordinal if present)
+    When include_content is True:
+        - string mode: identifier
+        - dict mode: {"short": short_hash(identifier, 8), "full": identifier}
+          (+ "ordinal": ordinal if present)
+    """
+    s_hash = short_hash(identifier, 8)
+    if as_dict:
+        res: dict[str, Any] = {"short": s_hash}
+        if ordinal is not None:
+            res["ordinal"] = ordinal
+        if include_content:
+            res["full"] = identifier
+        return res
+
+    if include_content:
+        return identifier
+    if ordinal is not None:
+        return f"#{ordinal}"
+    return s_hash
+
+
+@dataclass(frozen=True, slots=True)
+class ReproMetadata:
+    """Environment reproduction metadata devoid of machine or user identities."""
+
+    cli_version: str
+    schema_versions: dict[str, str]
+    adapter: dict[str, str]
+    profile: dict[str, str]
+    detection: dict[str, Any]
+    platform: dict[str, str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "adapter": dict(self.adapter),
+            "cli_version": self.cli_version,
+            "detection": dict(self.detection),
+            "platform": dict(self.platform),
+            "profile": dict(self.profile),
+            "schema_versions": dict(self.schema_versions),
+        }
+
+
+def build_repro_metadata(
+    *,
+    adapter_name: str = "canonical",
+    adapter_version: str = "1.0",
+    profile_name: str = "neutral",
+    profile_version: str = "1.0",
+    detection_method: str = "auto",
+    detection_confidence: float | None = 1.0,
+) -> ReproMetadata:
+    """Build reproduction metadata without host, user, or machine identifiers."""
+    from sesslint import __version__
+
+    return ReproMetadata(
+        cli_version=__version__,
+        schema_versions={
+            "manifest": MANIFEST_SCHEMA_VERSION,
+            "report": REPORT_SCHEMA_VERSION,
+            "session": "sesslint.session/v1",
+        },
+        adapter={"name": adapter_name, "version": adapter_version},
+        profile={"name": profile_name, "version": profile_version},
+        detection={"confidence": detection_confidence, "method": detection_method},
+        platform={
+            "os": sys.platform,
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        },
+    )
+
+
+def get_finding_remediation(f: Finding) -> str:
+    """Return concise content-free remediation instructions for a finding."""
+    from sesslint.codes import Repairability
+
+    if f.repairability == Repairability.DETERMINISTIC:
+        return f"deterministic recipe available: run 'sesslint repair {f.source.path}'"
+    if f.repairability == Repairability.LOSSY_EXPLICIT:
+        return (
+            f"lossy-explicit recipe available: "
+            f"run 'sesslint repair {f.source.path} --policy salvage'"
+        )
+    if f.repairability == Repairability.MANUAL:
+        return "manual inspection required; automated repair refused"
+    return "unsupported defect or structure; automated repair refused"
+
+
+def finding_report_sort_key(f: Finding) -> tuple[str, str, int, int, str]:
+    """Sort key for findings: (code, path, line, byte, fingerprint)."""
+    norm_path = f.source.path.replace("\\", "/")
+    line_num = f.source.line if f.source.line is not None else -1
+    byte_num = -1
+    if f.evidence and isinstance(f.evidence, Mapping):
+        b = f.evidence.get("byte_offset", f.evidence.get("byte"))
+        if isinstance(b, int):
+            byte_num = b
+    return (f.code, norm_path, line_num, byte_num, f.fingerprint)
+
+
+def format_finding_content_free(
+    f: Finding,
+    *,
+    include_content: bool = False,
+    home: Path | None = None,
+    ordinal: int | None = None,
+) -> dict[str, Any]:
+    """Format a finding into schema-compliant dictionary without raw payload text."""
+    min_path = minimize_path(f.source.path, home=home)
+    byte_val = None
+    if f.evidence and isinstance(f.evidence, Mapping):
+        b = f.evidence.get("byte_offset", f.evidence.get("byte"))
+        if isinstance(b, int):
+            byte_val = b
+
+    span_dict: dict[str, Any] = {
+        "path": min_path,
+        "line": f.source.line,
+        "byte": byte_val,
+    }
+
+    ev_dict: dict[str, Any] = {}
+    if f.evidence and isinstance(f.evidence, Mapping):
+        for k, v in f.evidence.items():
+            if not include_content and k in ("content", "text", "payload", "message", "prompt"):
+                continue
+            if isinstance(v, str) and not include_content:
+                if len(v) > 16 and ("id" in k.lower() or "uuid" in k.lower()):
+                    ev_dict[k] = short_hash(v, 8)
+                else:
+                    ev_dict[k] = v
+            else:
+                ev_dict[k] = v
+
+    if ordinal is not None and "ordinal" not in ev_dict:
+        ev_dict["ordinal"] = ordinal
+
+    remediation = get_finding_remediation(f)
+
+    res: dict[str, Any] = {
+        "code": f.code,
+        "evidence": ev_dict if ev_dict else None,
+        "fingerprint": f.fingerprint,
+        "remediation": remediation,
+        "repairability": f.repairability.value,
+        "severity": f.severity.value,
+        "span": span_dict,
+    }
+    if include_content:
+        res["message"] = f.message
+        if f.source.record_id:
+            res["record_id"] = f.source.record_id
+
+    return res
+
+
+def render_json(
+    report: Report | Mapping[str, Any],
+    *,
+    include_content: bool = False,
+    repro: ReproMetadata | dict[str, Any] | None = None,
+    home: Path | None = None,
+) -> str:
+    """Render Report or report mapping to strictly validated, content-free JSON string.
+
+    Enforces:
+    - Root keys strictly subset of REPORT_ROOT_KEYS.
+    - Default mode findings keys strictly subset of REPORT_FINDING_KEYS.
+    - Default mode findings strictly forbid 'text', 'content', 'message', 'payload'.
+    - Unauthorized or extra keys trigger OperationalError (fail-closed).
+    - When include_content=True, sets content_warning=True and included_content=True.
+    - When include_content=False, neither content_warning nor included_content is present.
+    """
+    if isinstance(report, Report):
+        sorted_findings = sorted(report.findings, key=finding_report_sort_key)
+        findings_json = [
+            format_finding_content_free(
+                f,
+                include_content=include_content,
+                home=home,
+                ordinal=idx + 1,
+            )
+            for idx, f in enumerate(sorted_findings)
+        ]
+        data: dict[str, Any] = {
+            "assurance": report.assurance,
+            "counts": report.counts.to_dict(),
+            "findings": findings_json,
+            "limitation": report.limitation,
+            "schema_version": report.schema_version,
+            "session_id": report.session_id,
+            "source_fingerprint": report.source_fingerprint,
+            "tool_version": report.tool_version,
+        }
+        if repro is not None:
+            if isinstance(repro, ReproMetadata):
+                data["repro"] = repro.to_dict()
+            else:
+                data["repro"] = dict(repro)
+        if include_content:
+            data["content_warning"] = True
+            data["included_content"] = True
+    elif isinstance(report, Mapping):
+        data = dict(report)
+        if include_content:
+            data["content_warning"] = True
+            data["included_content"] = True
+    else:
+        raise TypeError(f"Expected Report or Mapping, got {type(report).__name__}")
+
+    # Fail-closed allowlist validation: Root keys
+    root_keys = set(data.keys())
+    if not root_keys.issubset(REPORT_ROOT_KEYS):
+        extra = sorted(root_keys - REPORT_ROOT_KEYS)
+        raise OperationalError(
+            f"Renderer root key allowlist violation: unauthorized fields {extra}"
+        )
+
+    # Fail-closed allowlist validation: Findings keys
+    findings_list = data.get("findings")
+    if isinstance(findings_list, list):
+        for idx, f_item in enumerate(findings_list):
+            if isinstance(f_item, Mapping):
+                f_keys = set(f_item.keys())
+                if not include_content:
+                    forbidden = f_keys.intersection(REPORT_FORBIDDEN_FINDING_KEYS)
+                    if forbidden:
+                        msg = (
+                            f"Renderer finding[{idx}] forbidden content key violation: "
+                            f"{sorted(forbidden)}"
+                        )
+                        raise OperationalError(msg)
+                    if not f_keys.issubset(REPORT_FINDING_KEYS):
+                        extra_f = sorted(f_keys - REPORT_FINDING_KEYS)
+                        msg = (
+                            f"Renderer finding[{idx}] key allowlist violation: "
+                            f"unauthorized fields {extra_f}"
+                        )
+                        raise OperationalError(msg)
+                else:
+                    allowed_leak = (
+                        REPORT_FINDING_KEYS
+                        | REPORT_FORBIDDEN_FINDING_KEYS
+                        | frozenset(
+                            {
+                                "record_id",
+                                "raw_content",
+                                "related_ids",
+                                "schema_version",
+                                "source",
+                            }
+                        )
+                    )
+                    if not f_keys.issubset(allowed_leak):
+                        extra_f = sorted(f_keys - allowed_leak)
+                        msg = (
+                            f"Renderer finding[{idx}] key allowlist violation: "
+                            f"unauthorized fields {extra_f}"
+                        )
+                        raise OperationalError(msg)
+
+    return json.dumps(data, indent=2, sort_keys=True)
+
+
+def render_human(
+    report: Report,
+    *,
+    color: bool = False,
+    adapter: str = "canonical",
+    profile: str = "neutral",
+    next_action: str | None = None,
+    home: Path | None = None,
+) -> str:
+    """Render Report to human-readable format with summary header and ordered finding blocks."""
+    from sesslint.codes import CODE_REGISTRY
+
+    green = "\033[32m" if color else ""
+    red = "\033[31m" if color else ""
+    yellow = "\033[33m" if color else ""
+    bold = "\033[1m" if color else ""
+    reset = "\033[0m" if color else ""
+
+    has_error = (
+        report.counts.by_severity.get("error", 0) > 0
+        or report.counts.by_severity.get("fatal", 0) > 0
+    )
+    has_warning = report.counts.by_severity.get("warning", 0) > 0
+    err_cnt = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get("fatal", 0)
+    warn_cnt = report.counts.by_severity.get("warning", 0)
+
+    if has_error:
+        verdict = "invalid"
+        verdict_colored = f"{bold}{red}Integrity check failed{reset}"
+        files_summary = "H=0 I=1 U=0 R=0 S=0"
+    elif has_warning:
+        verdict = "healthy with warnings"
+        verdict_colored = f"{bold}{yellow}Session is healthy with warnings{reset}"
+        files_summary = "H=1 I=0 U=0 R=0 S=0"
+    else:
+        verdict = "healthy"
+        verdict_colored = f"{bold}{green}Session is healthy{reset}"
+        files_summary = "H=1 I=0 U=0 R=0 S=0"
+
+    if next_action is None:
+        if has_error:
+            if any(f.repairability.value == "deterministic" for f in report.findings):
+                p = minimize_path(report.findings[0].source.path, home=home)
+                next_action = f"Run 'sesslint repair {p} --output <out>'"
+            elif any(f.repairability.value == "lossy-explicit" for f in report.findings):
+                p = minimize_path(report.findings[0].source.path, home=home)
+                next_action = f"Run 'sesslint repair {p} --output <out> --policy salvage'"
+            else:
+                next_action = "Manual inspection required; automated repair refused."
+        elif has_warning:
+            next_action = "Review warnings; session is structurally replayable."
+        else:
+            next_action = "No repair needed."
+
+    summary_meta = (
+        f"verdict: {verdict} / errors: {err_cnt} / warnings: {warn_cnt} / "
+        f"files: {files_summary} / profile: {profile} / adapter: {adapter}"
+    )
+    lines: list[str] = [
+        f"[read-only] {verdict_colored} ({summary_meta})",
+        f"Next Action: {next_action}",
+        f"Limitation: {report.limitation}",
+        f"Source fingerprint: {report.source_fingerprint}",
+    ]
+
+    if report.findings:
+        sorted_findings = sorted(report.findings, key=finding_report_sort_key)
+        lines.append("")
+        lines.append("Findings:")
+        for _idx, f in enumerate(sorted_findings):
+            title = CODE_REGISTRY[f.code].name if f.code in CODE_REGISTRY else "Integrity finding"
+            min_path = minimize_path(f.source.path, home=home)
+            loc_str = f"{min_path}:{f.source.line}" if f.source.line is not None else min_path
+            sev_color = red if f.severity.value in ("error", "fatal") else yellow
+            why_str = f.message
+            fix_str = get_finding_remediation(f)
+
+            sev_rep = f"({f.severity.value.upper()}, {f.repairability.value})"
+            lines.append(f"  [{f.code}] {sev_color}{title}{reset} {sev_rep}")
+            lines.append(f"    Span:        {loc_str}")
+            lines.append(f"    Why:         {why_str}")
+            lines.append(f"    Fix:         {fix_str}")
+            lines.append(f"    Fingerprint: {f.fingerprint}")
+
+    return "\n".join(lines)
+
+
 __all__ = [
     "ASSURANCE_LIMITATIONS",
     "KNOWN_MANIFEST_FIELDS",
     "KNOWN_REPORT_FIELDS",
     "MANIFEST_SCHEMA_VERSION",
+    "REPORT_DEFAULT_FINDING_KEYS",
+    "REPORT_FINDING_KEYS",
+    "REPORT_FORBIDDEN_FINDING_KEYS",
+    "REPORT_ROOT_KEYS",
     "REPORT_SCHEMA_VERSION",
     "REQUIRED_MANIFEST_FIELDS",
     "REQUIRED_REPORT_FIELDS",
@@ -1024,18 +1446,28 @@ __all__ = [
     "RepairAction",
     "RepairManifest",
     "Report",
+    "ReproMetadata",
     "apply_plan_assurance",
     "build_manifest",
     "build_report",
+    "build_repro_metadata",
     "cap_assurance",
     "compute_manifest_idempotency_key",
     "dump_manifest",
     "dump_report",
     "enforce_content_free",
+    "finding_report_sort_key",
+    "format_finding_content_free",
+    "get_finding_remediation",
     "get_manifest_schema_path",
     "get_report_schema_path",
     "load_manifest_schema",
     "load_report_schema",
+    "minimize_id",
+    "minimize_path",
     "parse_manifest",
     "parse_report",
+    "render_human",
+    "render_json",
+    "short_hash",
 ]

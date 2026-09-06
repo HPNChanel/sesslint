@@ -160,7 +160,10 @@ def create_parser() -> argparse.ArgumentParser:
             "Exit codes:\n"
             "  0  Healthy session / verification passed / dry-run plan generated\n"
             "  1  Integrity findings detected / verification failed / repair refused\n"
-            "  2  Usage error / invalid flag combination / I/O failure"
+            "  2  Usage error / invalid flag combination / I/O failure\n\n"
+            "Important Notes:\n"
+            "  - redaction is best-effort minimization, not a completeness guarantee\n"
+            "  - sesslint makes no semantic or side-effect safety claims"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -168,6 +171,12 @@ def create_parser() -> argparse.ArgumentParser:
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "--include-content",
+        action="store_true",
+        default=False,
+        help="Embed raw transcript content in reports (warning: emits raw sensitive data)",
     )
 
     parser.add_argument(
@@ -297,6 +306,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Format auto-detection minimum margin threshold",
     )
+    check_parser.add_argument(
+        "--include-content",
+        action="store_true",
+        default=False,
+        help="Embed raw transcript content in reports (warning: emits raw sensitive data)",
+    )
 
     # formats
     formats_parser = subparsers.add_parser(
@@ -403,6 +418,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=False,
         help="Acknowledge tool side-effects for salvage policy",
     )
+    repair_parser.add_argument(
+        "--include-content",
+        action="store_true",
+        default=False,
+        help="Embed raw transcript content in manifests (warning: emits raw sensitive data)",
+    )
 
     # verify
     verify_parser = subparsers.add_parser(
@@ -437,6 +458,12 @@ def create_parser() -> argparse.ArgumentParser:
         required=True,
         help="Path to repair manifest JSON file",
     )
+    verify_parser.add_argument(
+        "--include-content",
+        action="store_true",
+        default=False,
+        help="Embed raw transcript content (warning: emits raw sensitive data)",
+    )
 
     return parser
 
@@ -445,6 +472,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point returning exit code."""
     parser = create_parser()
     args = parser.parse_args(argv)
+
+    if getattr(args, "include_content", False):
+        sys.stderr.write(
+            "WARNING: --include-content embeds raw transcript content; do not share output\n"
+        )
+        sys.stderr.flush()
 
     if args.command is None:
         parser.print_help(sys.stdout)
@@ -622,7 +655,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if getattr(args, "json", False):
                     from sesslint.codes import SL302, Repairability, Severity
                     from sesslint.finding import SourceRef, make_finding
-                    from sesslint.report import build_report, dump_report
+                    from sesslint.report import build_report
                     from sesslint.source import fingerprint_file
 
                     rep_findings = (
@@ -650,7 +683,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                         assurance="A0",
                         limitation="No structural conclusion.",
                     )
-                    print(dump_report(rep))
+                    from sesslint.report import build_repro_metadata, render_json
+
+                    repro_meta = build_repro_metadata(
+                        adapter_name="unknown",
+                        profile_name=effective_cfg.profile,
+                        detection_method="auto",
+                        detection_confidence=0.0,
+                    )
+                    print(
+                        render_json(
+                            rep,
+                            include_content=getattr(args, "include_content", False),
+                            repro=repro_meta,
+                        )
+                    )
                 return 1
 
             fmt_key = (
@@ -702,7 +749,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             from sesslint.codes import Severity
             from sesslint.repair.executor import run_all_checks
-            from sesslint.report import Assurance, build_report, dump_report
+            from sesslint.report import Assurance, build_report
             from sesslint.source import fingerprint_file
 
             check_findings = run_all_checks(
@@ -749,12 +796,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             exit_code = 1 if has_error else 0
 
             if getattr(args, "json", False):
-                print(dump_report(report))
+                from sesslint.report import build_repro_metadata, render_json
+
+                conf_val = 1.0
+                if detection_res and detection_res.confidences:
+                    conf_val = detection_res.confidences.get(resolved_fmt, 1.0)
+                repro_meta = build_repro_metadata(
+                    adapter_name=format_display,
+                    profile_name=effective_cfg.profile,
+                    detection_method="manual" if format_opt != "auto" else "auto",
+                    detection_confidence=conf_val,
+                )
+                print(
+                    render_json(
+                        report,
+                        include_content=getattr(args, "include_content", False),
+                        repro=repro_meta,
+                    )
+                )
                 return exit_code
             else:
+                from sesslint.report import render_human
+
                 use_color = should_color(args, sys.stdout)
-                human_text = format_report_human(report, color=use_color)
-                # Ensure existing test compatibility by printing Valid format summary line
+                human_text = render_human(
+                    report,
+                    color=use_color,
+                    adapter=format_display,
+                    profile=effective_cfg.profile,
+                )
                 if not has_error:
                     print(f"Valid {format_display} session ({len(events)} events)")
                 print(human_text)

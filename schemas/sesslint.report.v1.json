@@ -37,12 +37,8 @@
         "required": [
           "code",
           "fingerprint",
-          "message",
-          "related_ids",
           "repairability",
-          "schema_version",
-          "severity",
-          "source"
+          "severity"
         ],
         "properties": {
           "schema_version": {
@@ -127,6 +123,31 @@
           },
           "evidence": {
             "type": ["object", "null"]
+          },
+          "span": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "byte": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "raw_content": {
+            "type": ["string", "object", "array", "null"]
           }
         },
         "additionalProperties": false
@@ -195,6 +216,67 @@
     "limitation": {
       "type": "string",
       "minLength": 1
+    },
+    "repro": {
+      "type": "object",
+      "required": [
+        "adapter",
+        "cli_version",
+        "detection",
+        "platform",
+        "profile",
+        "schema_versions"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "cli_version": { "type": "string" },
+        "detection": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "confidence": { "type": ["number", "null"] },
+            "method": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "platform": {
+          "type": "object",
+          "required": ["os", "python"],
+          "properties": {
+            "os": { "type": "string" },
+            "python": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "profile": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "schema_versions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "content_warning": {
+      "type": "boolean"
+    },
+    "included_content": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false

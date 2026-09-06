@@ -555,7 +555,14 @@ def parse_finding_dict(obj: Mapping[str, Any]) -> Finding:
         )
     repairability = Repairability.from_str(rep_raw)
 
-    message = obj.get("message")
+    message: Any
+    if "message" in obj:
+        message = obj["message"]
+    elif "remediation" in obj and isinstance(obj["remediation"], str):
+        message = obj["remediation"]
+    else:
+        raise FindingError("Missing required field 'message' in finding dictionary")
+
     if not isinstance(message, str) or not message.strip():
         raise FindingError(f"Missing or non-string message in finding dictionary: {message!r}")
     if len(message) > MAX_MESSAGE_LENGTH:
@@ -564,6 +571,8 @@ def parse_finding_dict(obj: Mapping[str, Any]) -> Finding:
         )
 
     raw_source = obj.get("source")
+    if raw_source is None and "span" in obj:
+        raw_source = obj["span"]
     if not isinstance(raw_source, Mapping):
         raise FindingError(f"Missing or invalid source in finding dictionary: {raw_source!r}")
     path = raw_source.get("path")

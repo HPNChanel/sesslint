@@ -21,26 +21,12 @@ from typing import Any, Literal
 from sesslint.codes import SL001, SL301, SL302, Repairability, Severity
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.profiles import resolve_effective_config
+from sesslint.report import minimize_path
 
 Verdict = Literal["healthy", "invalid", "unsupported", "unreadable", "skipped"]
 
 DEFAULT_MAX_FILES: int = 10000
 DEFAULT_MAX_BYTES: int = 1024 * 1024 * 1024  # 1GB
-
-
-def minimize_path(path: Path | str) -> str:
-    """Render a path in minimized home-relative form (e.g. ~/dir/file.jsonl)."""
-    p = Path(path).resolve()
-    try:
-        home = Path.home().resolve()
-        if p == home:
-            return "~"
-        if home in p.parents:
-            rel = p.relative_to(home)
-            return f"~/{rel.as_posix()}"
-    except (ValueError, RuntimeError):
-        pass
-    return p.as_posix()
 
 
 @dataclass(frozen=True, slots=True)
