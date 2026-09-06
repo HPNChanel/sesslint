@@ -1,0 +1,46 @@
+{
+  "expected": {
+    "allowed_adapters": [
+      "canonical",
+      "claude",
+      "openai",
+      "auto"
+    ],
+    "checkpoint_sensitivity": "default",
+    "confidence_min": 0.9,
+    "description": "Vendor-neutral baseline profile using standard generic rules and default thresholds.",
+    "enabled_rules": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL201",
+      "SL202",
+      "SL203",
+      "SL301",
+      "SL302"
+    ],
+    "format_override": "openai",
+    "margin_min": 0.25,
+    "profile": "neutral",
+    "strict_unknown_critical": false,
+    "thresholds_source": "cli"
+  },
+  "input": {
+    "confidence_min": 0.9,
+    "format": "openai",
+    "margin_min": 0.25,
+    "profile": "neutral"
+  }
+}

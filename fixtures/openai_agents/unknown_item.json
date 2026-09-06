@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "item_01",
+      "type": "message",
+      "role": "user",
+      "content": "Execute future action",
+      "timestamp": "2025-01-01T12:00:00Z"
+    },
+    {
+      "id": "item_02",
+      "parent_id": "item_01",
+      "type": "futureTool",
+      "call_id": "call_future_01",
+      "data": "custom",
+      "timestamp": "2025-01-01T12:00:01Z"
+    }
+  ]
+}

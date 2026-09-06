@@ -1,0 +1,47 @@
+{
+  "items": [
+    {
+      "id": "msg_01",
+      "type": "message",
+      "role": "user",
+      "content": "Please read data file",
+      "timestamp": "2025-01-01T12:00:00Z"
+    },
+    {
+      "id": "msg_02",
+      "prev_id": "msg_01",
+      "type": "message",
+      "role": "assistant",
+      "content": "Reading data file now",
+      "timestamp": "2025-01-01T12:00:01Z"
+    },
+    {
+      "id": "msg_03",
+      "prev_id": "msg_02",
+      "type": "tool_call",
+      "name": "read_file",
+      "call_id": "call_01",
+      "args": {
+        "path": "data.txt"
+      },
+      "timestamp": "2025-01-01T12:00:02Z"
+    },
+    {
+      "id": "msg_04",
+      "prev_id": "msg_03",
+      "type": "tool_result",
+      "call_id": "call_01",
+      "content": "file contents summary",
+      "is_error": false,
+      "timestamp": "2025-01-01T12:00:03Z"
+    },
+    {
+      "id": "msg_05",
+      "prev_id": "msg_04",
+      "type": "message",
+      "role": "assistant",
+      "content": "File contains summary data",
+      "timestamp": "2025-01-01T12:00:04Z"
+    }
+  ]
+}

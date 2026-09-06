@@ -1,0 +1,21 @@
+{
+  "blocked": [
+    {
+      "code": "SL203",
+      "finding_fp": "1d8712d08e70ace2",
+      "reason": "SL203-refusal"
+    }
+  ],
+  "fingerprint": "c78b70fa742455125683b0ce894c5ffb5d7af7a2d6f594f2059345c8f7383ecb",
+  "loss_accounting": {
+    "preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    }
+  },
+  "profile": "neutral",
+  "source_hash": "c959fd72b7a7ee5f2fd5ea300a1d36c354f433624bc14097110fdd1b875c8d23",
+  "steps": [],
+  "version": "sesslint.plan/v1"
+}

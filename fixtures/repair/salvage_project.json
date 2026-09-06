@@ -1,0 +1,135 @@
+{
+  "events": [
+    {
+      "id": "m0",
+      "parent_id": null,
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z",
+      "actor": "user",
+      "kind": "message",
+      "payload": {
+        "text": "start"
+      }
+    },
+    {
+      "id": "tc1",
+      "correlation_id": "c1",
+      "parent_id": "m0",
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z",
+      "actor": "assistant",
+      "kind": "tool_call",
+      "payload": {
+        "name": "query",
+        "side_effects": "none"
+      }
+    },
+    {
+      "id": "cb1",
+      "parent_id": "tc1",
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z",
+      "actor": "system",
+      "kind": "compaction_boundary"
+    },
+    {
+      "id": "tr2",
+      "correlation_id": "c2",
+      "parent_id": "cb1",
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z",
+      "actor": "tool",
+      "kind": "tool_result",
+      "payload": {
+        "output": "data",
+        "side_effects": "none"
+      }
+    },
+    {
+      "id": "m1",
+      "parent_id": "tr2",
+      "seq": 4,
+      "ts": "2026-09-05T12:00:04Z",
+      "actor": "assistant",
+      "kind": "message",
+      "payload": {
+        "text": "done"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL108",
+      "severity": "warning",
+      "repairability": "lossy-explicit",
+      "message": "Compaction boundary splits tool pair",
+      "source": {
+        "path": "session.json",
+        "line": 3,
+        "record_id": "cb1"
+      },
+      "related_ids": [],
+      "fingerprint": "39833980b954418f",
+      "message_template": "Compaction boundary splits tool pair",
+      "evidence": {
+        "at_index": 2,
+        "boundary_index": 2
+      }
+    }
+  ],
+  "expected_plan": {
+    "blocked": [],
+    "fingerprint": "1f09f9550689c1bce09c0401c286035980e5ba6cb14937cc938c7f25d6e9f7c1",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0,
+        "projected-orphans": 2
+      },
+      "total_lost": 2,
+      "total_kept": 3
+    },
+    "profile": "neutral",
+    "source_hash": "f1a28978af2e963992af890b213b57dc3656c3aa90542a93406f5d64bf8ab115",
+    "steps": [
+      {
+        "params": {
+          "boundary_index": 2
+        },
+        "recipe": "torn-compaction-project",
+        "seq": 0,
+        "target_finding_fp": "39833980b954418f",
+        "target_index": 2,
+        "lossy": true,
+        "loss": {
+          "projected-orphans": 2
+        }
+      }
+    ],
+    "version": "sesslint.plan/v1",
+    "policy": "salvage"
+  },
+  "expected_conservative_plan": {
+    "blocked": [
+      {
+        "code": "SL108",
+        "finding_fp": "39833980b954418f",
+        "reason": "needs-salvage-policy"
+      }
+    ],
+    "fingerprint": "8a93315dd85ef5e7186dd1ba611ccaec2d092f09be3bc96d1e174858f8017514",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      }
+    },
+    "profile": "neutral",
+    "source_hash": "f1a28978af2e963992af890b213b57dc3656c3aa90542a93406f5d64bf8ab115",
+    "steps": [],
+    "version": "sesslint.plan/v1"
+  }
+}

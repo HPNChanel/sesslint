@@ -1,0 +1,45 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Run operation with reversed result"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-rev",
+      "execution_state": "success",
+      "id": "evt-res",
+      "kind": "tool_result",
+      "parent_id": "evt-1",
+      "payload": {
+        "output": "reversed_result_before_call"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-rev",
+      "id": "evt-call",
+      "kind": "tool_call",
+      "parent_id": "evt-res",
+      "payload": {
+        "name": "belated_call"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

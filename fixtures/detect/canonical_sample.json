@@ -1,0 +1,22 @@
+{
+  "schema_version": "sesslint.session/v1",
+  "version": 1,
+  "session_id": "sess-canonical-sample-001",
+  "created_at": "2026-09-05T12:00:00Z",
+  "source": {
+    "format": "canonical"
+  },
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt_001",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Please analyze the logs"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    }
+  ]
+}

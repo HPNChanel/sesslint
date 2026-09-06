@@ -1,0 +1,56 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Start long session"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-compact",
+      "id": "evt-call",
+      "kind": "tool_call",
+      "parent_id": "evt-1",
+      "payload": {
+        "name": "long_running_task"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "system",
+      "id": "evt-boundary",
+      "kind": "compaction_boundary",
+      "parent_id": "evt-call",
+      "payload": {
+        "compacted_count": 2
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-compact",
+      "execution_state": "success",
+      "id": "evt-res",
+      "kind": "tool_result",
+      "parent_id": "evt-boundary",
+      "payload": {
+        "output": "task_completed"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

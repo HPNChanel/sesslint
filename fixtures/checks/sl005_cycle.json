@@ -1,0 +1,64 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "a",
+      "kind": "message",
+      "parent_id": "b",
+      "payload": {
+        "text": "Cycle node a pointing to b"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "b",
+      "kind": "message",
+      "parent_id": "c",
+      "payload": {
+        "text": "Cycle node b pointing to c"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "user",
+      "id": "c",
+      "kind": "message",
+      "parent_id": "a",
+      "payload": {
+        "text": "Cycle node c pointing to a"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "user",
+      "id": "h1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Healthy chain root"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "h2",
+      "kind": "message",
+      "parent_id": "h1",
+      "payload": {
+        "text": "Healthy chain child"
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:04Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

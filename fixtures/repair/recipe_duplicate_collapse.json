@@ -1,0 +1,93 @@
+{
+  "recipe": "identical-duplicate-collapse",
+  "step": {
+    "params": {},
+    "recipe": "identical-duplicate-collapse",
+    "seq": 0,
+    "target_finding_fp": "fp-sl003-dup1",
+    "target_index": 1
+  },
+  "input_events": [
+    {
+      "actor": "user",
+      "id": "msg-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Start conversation"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-1a",
+      "kind": "message",
+      "parent_id": "msg-0",
+      "payload": {
+        "text": "System initialized"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-1b",
+      "kind": "message",
+      "parent_id": "msg-0",
+      "payload": {
+        "text": "System initialized"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "user",
+      "id": "msg-2",
+      "kind": "message",
+      "parent_id": "msg-1a",
+      "payload": {
+        "text": "Proceed"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:02Z"
+    }
+  ],
+  "expected_events": [
+    {
+      "actor": "user",
+      "id": "msg-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Start conversation"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-1a",
+      "kind": "message",
+      "parent_id": "msg-0",
+      "payload": {
+        "text": "System initialized"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "user",
+      "id": "msg-2",
+      "kind": "message",
+      "parent_id": "msg-1a",
+      "payload": {
+        "text": "Proceed"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:02Z"
+    }
+  ],
+  "expected_loss_class": "none",
+  "expected_loss_count": 0
+}

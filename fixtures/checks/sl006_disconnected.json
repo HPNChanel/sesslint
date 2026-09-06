@@ -1,0 +1,64 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "c1-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Component 1 root"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "c1-2",
+      "kind": "message",
+      "parent_id": "c1-1",
+      "payload": {
+        "text": "Component 1 child"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "user",
+      "id": "c1-3",
+      "kind": "message",
+      "parent_id": "c1-2",
+      "payload": {
+        "text": "Component 1 leaf"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "user",
+      "id": "c2-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Component 2 root"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "c2-2",
+      "kind": "message",
+      "parent_id": "c2-1",
+      "payload": {
+        "text": "Component 2 child"
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:04Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

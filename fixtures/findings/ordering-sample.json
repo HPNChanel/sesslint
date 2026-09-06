@@ -1,0 +1,183 @@
+{
+  "description": "Golden ordering sample fixture for sort_findings deterministic total order verification",
+  "expected_fingerprints": [
+    "48af72ba8ea58753",
+    "02254779f97db750",
+    "856fe6ff7fd85a3c",
+    "3f4419f2aedb3b84",
+    "ce5fc6972894bff7",
+    "c138a1d135207110",
+    "c4d5d275b1d08d62",
+    "478475256f195246",
+    "453b841578d035d5",
+    "f821f364eb2d9e4f",
+    "69fc52f70206bc29"
+  ],
+  "findings": [
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL005",
+      "severity": "fatal",
+      "repairability": "unsupported",
+      "message": "Parent cycle detected at line 10",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 10,
+        "record_id": "evt-cycle"
+      },
+      "related_ids": [],
+      "fingerprint": "48af72ba8ea58753",
+      "message_template": "Parent cycle detected at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL001",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Malformed record in header",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": null,
+        "record_id": null
+      },
+      "related_ids": [],
+      "fingerprint": "02254779f97db750",
+      "message_template": "Malformed record in header"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL001",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Malformed record at line 1",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 1,
+        "record_id": null
+      },
+      "related_ids": [],
+      "fingerprint": "856fe6ff7fd85a3c",
+      "message_template": "Malformed record at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL001",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Malformed record at line 1 for rec-1",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 1,
+        "record_id": "rec-1"
+      },
+      "related_ids": [],
+      "fingerprint": "3f4419f2aedb3b84",
+      "message_template": "Malformed record at line {line} for {record_id}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL001",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Malformed record at line 5",
+      "source": {
+        "path": "session_b.jsonl",
+        "line": 5,
+        "record_id": "rec-2"
+      },
+      "related_ids": [],
+      "fingerprint": "ce5fc6972894bff7",
+      "message_template": "Malformed record at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL002",
+      "severity": "error",
+      "repairability": "deterministic",
+      "message": "Torn record at line 100",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 100,
+        "record_id": null
+      },
+      "related_ids": [],
+      "fingerprint": "c138a1d135207110",
+      "message_template": "Torn record at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL101",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Orphan tool result at line 20",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 20,
+        "record_id": "tool-res-1"
+      },
+      "related_ids": [],
+      "fingerprint": "c4d5d275b1d08d62",
+      "message_template": "Orphan tool result at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL201",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Checkpoint divergence at line 50",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 50,
+        "record_id": "chk-1"
+      },
+      "related_ids": [],
+      "fingerprint": "478475256f195246",
+      "message_template": "Checkpoint divergence at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL003",
+      "severity": "warning",
+      "repairability": "deterministic",
+      "message": "Duplicate event ID evt-dup",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 15,
+        "record_id": "evt-dup"
+      },
+      "related_ids": [],
+      "fingerprint": "453b841578d035d5",
+      "message_template": "Duplicate event ID {record_id}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL107",
+      "severity": "warning",
+      "repairability": "manual",
+      "message": "Provider adjacency violation at line 25",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 25,
+        "record_id": "tool-call-1"
+      },
+      "related_ids": [],
+      "fingerprint": "f821f364eb2d9e4f",
+      "message_template": "Provider adjacency violation at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL003",
+      "severity": "info",
+      "repairability": "manual",
+      "message": "Observed duplicate note at line 5",
+      "source": {
+        "path": "session_a.jsonl",
+        "line": 5,
+        "record_id": "evt-info"
+      },
+      "related_ids": [],
+      "fingerprint": "69fc52f70206bc29",
+      "message_template": "Observed duplicate note at line {line}"
+    }
+  ]
+}

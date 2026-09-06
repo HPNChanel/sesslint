@@ -1,0 +1,58 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Check orphan result"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-healthy",
+      "id": "evt-2",
+      "kind": "tool_call",
+      "parent_id": "evt-1",
+      "payload": {
+        "name": "lookup"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-healthy",
+      "execution_state": "success",
+      "id": "evt-3",
+      "kind": "tool_result",
+      "parent_id": "evt-2",
+      "payload": {
+        "output": "healthy_result"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-orphan",
+      "execution_state": "success",
+      "id": "evt-orphan",
+      "kind": "tool_result",
+      "parent_id": "evt-3",
+      "payload": {
+        "output": "unsolicited_result"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

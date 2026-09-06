@@ -1,0 +1,37 @@
+{
+  "allowed_adapters": [
+    "claude",
+    "canonical",
+    "auto"
+  ],
+  "checkpoint_sensitivity": "default",
+  "confidence_min": 0.55,
+  "description": "Strict profile for Claude Code sessions with tight format margins and strict version checks.",
+  "enabled_rules": [
+    "SL001",
+    "SL002",
+    "SL003",
+    "SL004",
+    "SL005",
+    "SL006",
+    "SL007",
+    "SL101",
+    "SL102",
+    "SL103",
+    "SL104",
+    "SL105",
+    "SL106",
+    "SL107",
+    "SL108",
+    "SL201",
+    "SL202",
+    "SL203",
+    "SL301",
+    "SL302"
+  ],
+  "format_override": null,
+  "margin_min": 0.2,
+  "profile": "claude-strict",
+  "strict_unknown_critical": true,
+  "thresholds_source": "profile"
+}

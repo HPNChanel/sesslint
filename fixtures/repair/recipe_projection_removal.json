@@ -1,0 +1,122 @@
+{
+  "recipe": "duplicate-projection-removal",
+  "step": {
+    "params": {
+      "correlation_id": "c-proj-1"
+    },
+    "recipe": "duplicate-projection-removal",
+    "seq": 0,
+    "target_finding_fp": "fp-sl104-dup-proj",
+    "target_index": 2
+  },
+  "input_events": [
+    {
+      "actor": "user",
+      "id": "msg-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Check status"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c-proj-1",
+      "id": "call-1",
+      "kind": "tool_call",
+      "parent_id": "msg-0",
+      "payload": {
+        "check": "db_ping"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "c-proj-1",
+      "id": "res-1",
+      "kind": "tool_result",
+      "parent_id": "call-1",
+      "payload": {
+        "status": "ok"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "c-proj-1",
+      "id": "res-2",
+      "kind": "tool_result",
+      "parent_id": "call-1",
+      "payload": {
+        "status": "ok"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-2",
+      "kind": "message",
+      "parent_id": "res-1",
+      "payload": {
+        "text": "DB is reachable."
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "expected_events": [
+    {
+      "actor": "user",
+      "id": "msg-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Check status"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c-proj-1",
+      "id": "call-1",
+      "kind": "tool_call",
+      "parent_id": "msg-0",
+      "payload": {
+        "check": "db_ping"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "c-proj-1",
+      "id": "res-1",
+      "kind": "tool_result",
+      "parent_id": "call-1",
+      "payload": {
+        "status": "ok"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-2",
+      "kind": "message",
+      "parent_id": "res-1",
+      "payload": {
+        "text": "DB is reachable."
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "expected_loss_class": "none",
+  "expected_loss_count": 0
+}

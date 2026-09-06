@@ -1,0 +1,81 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-root",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Run concurrent tools"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-A",
+      "id": "evt-call-a",
+      "kind": "tool_call",
+      "parent_id": "evt-root",
+      "payload": {
+        "name": "fetch_left"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-B",
+      "id": "evt-call-b",
+      "kind": "tool_call",
+      "parent_id": "evt-call-a",
+      "payload": {
+        "name": "fetch_right"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-A",
+      "execution_state": "success",
+      "id": "evt-res-a",
+      "kind": "tool_result",
+      "parent_id": "evt-call-b",
+      "payload": {
+        "output": "left_data"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-B",
+      "execution_state": "success",
+      "id": "evt-res-b",
+      "kind": "tool_result",
+      "parent_id": "evt-res-a",
+      "payload": {
+        "output": "right_data"
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:04Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt-final",
+      "kind": "message",
+      "parent_id": "evt-res-b",
+      "payload": {
+        "text": "Both tools completed in parallel"
+      },
+      "seq": 5,
+      "ts": "2026-09-05T12:00:05Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

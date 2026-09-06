@@ -1,0 +1,134 @@
+{
+  "events": [
+    {
+      "id": "c1-1",
+      "parent_id": null,
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z",
+      "actor": "user",
+      "kind": "message",
+      "payload": {
+        "text": "Component 1 root"
+      }
+    },
+    {
+      "id": "c1-2",
+      "parent_id": "c1-1",
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z",
+      "actor": "assistant",
+      "kind": "message",
+      "payload": {
+        "text": "Component 1 child"
+      }
+    },
+    {
+      "id": "c1-3",
+      "parent_id": "c1-2",
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z",
+      "actor": "user",
+      "kind": "message",
+      "payload": {
+        "text": "Component 1 leaf"
+      }
+    },
+    {
+      "id": "c2-1",
+      "parent_id": null,
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z",
+      "actor": "user",
+      "kind": "message",
+      "payload": {
+        "text": "Component 2 root"
+      }
+    },
+    {
+      "id": "c2-2",
+      "parent_id": "c2-1",
+      "seq": 4,
+      "ts": "2026-09-05T12:00:04Z",
+      "actor": "assistant",
+      "kind": "message",
+      "payload": {
+        "text": "Component 2 child"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL006",
+      "severity": "warning",
+      "repairability": "lossy-explicit",
+      "message": "Disconnected branch starting at index 3",
+      "source": {
+        "path": "session.json",
+        "line": 4,
+        "record_id": "c2-1"
+      },
+      "related_ids": [],
+      "fingerprint": "82534f995764aea4",
+      "message_template": "Disconnected branch starting at index 3",
+      "evidence": {
+        "at_index": 3,
+        "index": 3,
+        "root_id": "c2-1",
+        "size": 2
+      }
+    }
+  ],
+  "expected_plan": {
+    "blocked": [],
+    "fingerprint": "344fe77a26be40fc5229ffd725d1a274b8ece57f19a11ff2dda3b24e9e6f12ba",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0,
+        "amputated-branch": 2
+      },
+      "total_lost": 2,
+      "total_kept": 3
+    },
+    "profile": "neutral",
+    "source_hash": "16e212e748a2c00facac0290647d31d3031f3afc940eed4a32ac26c404e5073f",
+    "steps": [
+      {
+        "params": {},
+        "recipe": "unresolvable-branch-amputate",
+        "seq": 0,
+        "target_finding_fp": "82534f995764aea4",
+        "target_index": 3,
+        "lossy": true,
+        "loss": {
+          "amputated-branch": 2
+        }
+      }
+    ],
+    "version": "sesslint.plan/v1",
+    "policy": "salvage"
+  },
+  "expected_conservative_plan": {
+    "blocked": [
+      {
+        "code": "SL006",
+        "finding_fp": "82534f995764aea4",
+        "reason": "needs-salvage-policy"
+      }
+    ],
+    "fingerprint": "4e4b08405acf780487fd360b6dbd57508a1a944306c169d6dee2fa7ddee554eb",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      }
+    },
+    "profile": "neutral",
+    "source_hash": "16e212e748a2c00facac0290647d31d3031f3afc940eed4a32ac26c404e5073f",
+    "steps": [],
+    "version": "sesslint.plan/v1"
+  }
+}

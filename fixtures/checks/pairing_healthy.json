@@ -1,0 +1,81 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Run two operations"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-A",
+      "id": "evt-2",
+      "kind": "tool_call",
+      "parent_id": "evt-1",
+      "payload": {
+        "name": "fetch_info"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-A",
+      "execution_state": "success",
+      "id": "evt-3",
+      "kind": "tool_result",
+      "parent_id": "evt-2",
+      "payload": {
+        "output": "first_result"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-B",
+      "id": "evt-4",
+      "kind": "tool_call",
+      "parent_id": "evt-3",
+      "payload": {
+        "name": "compute_summary"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-B",
+      "execution_state": "success",
+      "id": "evt-5",
+      "kind": "tool_result",
+      "parent_id": "evt-4",
+      "payload": {
+        "output": "second_result"
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:04Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt-6",
+      "kind": "message",
+      "parent_id": "evt-5",
+      "payload": {
+        "text": "Operations complete"
+      },
+      "seq": 5,
+      "ts": "2026-09-05T12:00:05Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

@@ -1,0 +1,5 @@
+{"id":"msg_01","type":"user_message","message":"Please read data file","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","type":"assistant_message","message":"Reading data file now","timestamp":"2025-01-01T12:00:01Z"}
+{"id":"msg_03","parentId":"msg_02","type":"tool_use","name":"read_file","toolUseId":"call_01","input":{"path":"data.txt"},"timestamp":"2025-01-01T12:00:02Z"}
+{"id":"msg_04","parentId":"msg_03","type":"tool_result","toolUseId":"call_01","content":"file contents summary","is_error":false,"timestamp":"2025-01-01T12:00:03Z"}
+{"id":"msg_05","parentId":"msg_04","type":"assistant_message","message":"File contains summary data","timestamp":"2025-01-01T12:00:04Z"}

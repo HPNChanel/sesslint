@@ -1,0 +1,45 @@
+{
+  "sdk_version": "1.0.0",
+  "run_state": {
+    "current_agent": "triage_agent",
+    "thread_id": "thread_abc123"
+  },
+  "checkpoints": [
+    {
+      "id": "chk_01",
+      "seq": 1,
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "ts": "2025-01-01T12:00:00Z"
+    },
+    {
+      "id": "chk_02",
+      "seq": 2,
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ts": "2025-01-01T12:01:00Z"
+    }
+  ],
+  "items": [
+    {
+      "id": "item_01",
+      "type": "message",
+      "role": "user",
+      "content": "Please route this request",
+      "timestamp": "2025-01-01T12:00:00Z"
+    },
+    {
+      "id": "item_02",
+      "parent_id": "item_01",
+      "type": "handoff",
+      "target": "specialist_agent",
+      "timestamp": "2025-01-01T12:00:30Z"
+    },
+    {
+      "id": "item_03",
+      "parent_id": "item_02",
+      "type": "message",
+      "role": "assistant",
+      "content": "Specialist agent handling request",
+      "timestamp": "2025-01-01T12:01:00Z"
+    }
+  ]
+}

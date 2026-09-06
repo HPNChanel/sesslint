@@ -1,0 +1,8 @@
+{
+  "events": [],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

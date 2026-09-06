@@ -1,0 +1,57 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Check reused tool call identifier"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-A",
+      "id": "evt-call-1",
+      "kind": "tool_call",
+      "parent_id": "evt-1",
+      "payload": {
+        "name": "first_invocation"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "call-A",
+      "id": "evt-call-2",
+      "kind": "tool_call",
+      "parent_id": "evt-call-1",
+      "payload": {
+        "name": "reused_invocation"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "call-A",
+      "execution_state": "success",
+      "id": "evt-res-1",
+      "kind": "tool_result",
+      "parent_id": "evt-call-2",
+      "payload": {
+        "output": "shared_result"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

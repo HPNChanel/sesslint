@@ -1,0 +1,3 @@
+{"id":"msg_01","type":"user_message","message":"Please analyze the logs","timestamp":"2026-09-05T12:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","type":"assistant_message","message":"Analyzing now","timestamp":"2026-09-05T12:00:01Z"}
+{"id":"msg_03","parentId":"msg_02","type":"tool_use","name":"view_file","toolUseId":"call_01","input":{"path":"log.txt"},"timestamp":"2026-09-05T12:00:02Z"}

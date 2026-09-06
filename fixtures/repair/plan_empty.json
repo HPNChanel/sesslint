@@ -1,0 +1,19 @@
+{
+  "events": [],
+  "expected_plan": {
+    "blocked": [],
+    "fingerprint": "d7b6517f7ffba83bd2b17e8b8a272335c98845ed9efe71175bcae522dcdb7e8f",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      }
+    },
+    "profile": "neutral",
+    "source_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "steps": [],
+    "version": "sesslint.plan/v1"
+  },
+  "findings": []
+}

@@ -1,0 +1,23 @@
+{
+  "blocked": [],
+  "fingerprint": "53bce2a8b298380c8750343b3c182375f293ecf1939b29bc3ae2be3f3953350a",
+  "loss_accounting": {
+    "preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    }
+  },
+  "profile": "neutral",
+  "source_hash": "37dd688ea237150ff3c0e7adf775b9c52bf9b1a93370d0842f86626ec6ae1b3b",
+  "steps": [
+    {
+      "params": {},
+      "recipe": "identical-duplicate-collapse",
+      "seq": 0,
+      "target_finding_fp": "070ceee4b3954eb0",
+      "target_index": 1
+    }
+  ],
+  "version": "sesslint.plan/v1"
+}

@@ -1,0 +1,2 @@
+{"id":"msg_01","type":"user_message","version":"0.0.1","message":"Hello from obsolete version","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","type":"assistant_message","message":"Response","timestamp":"2025-01-01T12:00:01Z"}

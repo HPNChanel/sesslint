@@ -1,0 +1,24 @@
+{
+  "schema_version": "sesslint.expected/v1",
+  "case_name": "sessions/torn-tail",
+  "counts": {
+    "total": 1,
+    "by_severity": {
+      "fatal": 0,
+      "error": 1,
+      "warning": 0,
+      "info": 0
+    },
+    "by_code": {
+      "SL002": 1
+    }
+  },
+  "findings": [
+    {
+      "code": "SL002",
+      "severity": "error",
+      "line": 4,
+      "record_id": "evt_003"
+    }
+  ]
+}

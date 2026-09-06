@@ -1,0 +1,53 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Initial user prompt"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt-2",
+      "kind": "message",
+      "parent_id": "evt-1",
+      "payload": {
+        "text": "Assistant response"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "user",
+      "id": "evt-3",
+      "kind": "message",
+      "parent_id": "evt-2",
+      "payload": {
+        "text": "Follow-up question"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt-4",
+      "kind": "message",
+      "parent_id": "evt-3",
+      "payload": {
+        "text": "Final answer"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

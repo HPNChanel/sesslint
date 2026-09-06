@@ -1,0 +1,53 @@
+{
+  "schema_version": "sesslint.report/v1",
+  "session_id": "session-minimal-001",
+  "source_fingerprint": "a1b2c3d4e5f60718",
+  "tool_version": "0.1.0",
+  "findings": [
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL001",
+      "severity": "error",
+      "repairability": "manual",
+      "message": "Malformed record at line 1",
+      "source": {
+        "path": "session.jsonl",
+        "line": 1,
+        "record_id": null
+      },
+      "related_ids": [],
+      "fingerprint": "a0070e7dc2beecc6",
+      "message_template": "Malformed record at line {line}"
+    },
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL002",
+      "severity": "error",
+      "repairability": "deterministic",
+      "message": "Torn record at line 10",
+      "source": {
+        "path": "session.jsonl",
+        "line": 10,
+        "record_id": null
+      },
+      "related_ids": [],
+      "fingerprint": "b9a5d4ed69242916",
+      "message_template": "Torn record at line {line}"
+    }
+  ],
+  "counts": {
+    "by_severity": {
+      "fatal": 0,
+      "error": 2,
+      "warning": 0,
+      "info": 0
+    },
+    "by_code": {
+      "SL001": 1,
+      "SL002": 1
+    },
+    "total": 2
+  },
+  "assurance": "A1",
+  "limitation": "Relationships may still be invalid."
+}

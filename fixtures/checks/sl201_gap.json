@@ -1,0 +1,46 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Start session"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "system",
+      "id": "chk-1",
+      "kind": "checkpoint",
+      "parent_id": "evt-1",
+      "payload": {
+        "checkpoint_id": "chk-001",
+        "seq": 1,
+        "state_hash": "hash_abc_001"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "system",
+      "id": "chk-2",
+      "kind": "checkpoint",
+      "parent_id": "chk-1",
+      "payload": {
+        "checkpoint_id": "chk-002",
+        "seq": 5,
+        "state_hash": "hash_abc_002"
+      },
+      "seq": 5,
+      "ts": "2026-09-05T12:00:02Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

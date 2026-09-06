@@ -1,0 +1,2 @@
+{"id":"msg_01","type":"user_message","theme":"dark","extra_debug":123,"message":"Start session","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","type":"assistant_message","cost":0.002,"tokens":45,"message":"Continuing","timestamp":"2025-01-01T12:00:01Z"}

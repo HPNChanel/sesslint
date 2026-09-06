@@ -1,0 +1,4 @@
+{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess-exec-sl203"}
+{"actor":"user","id":"msg-0","kind":"message","parent_id":null,"payload":{"text":"start"},"seq":0,"ts":"2026-09-05T12:00:00Z"}
+{"actor":"system","id":"comp-1","kind":"compaction_boundary","parent_id":"msg-0","payload":{},"seq":1,"ts":"2026-09-05T12:00:01Z"}
+{"actor":"assistant","id":"call-2","kind":"tool_call","parent_id":"comp-1","payload":{"name":"write_file","side_effects":"none"},"seq":2,"ts":"2026-09-05T12:00:02Z"}

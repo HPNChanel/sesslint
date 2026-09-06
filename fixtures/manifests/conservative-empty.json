@@ -1,0 +1,10 @@
+{
+  "schema_version": "sesslint.repair-manifest/v1",
+  "input_fingerprint": "input-hash-abc123",
+  "output_fingerprint": "output-hash-def456",
+  "policy": "conservative",
+  "actions": [],
+  "declared_loss": [],
+  "revalidate_report": null,
+  "idempotency_key": "8d92273d321c477430a9a41d0b2224dd26912b4daf1b11ec3ba5c7b954e81c3e"
+}

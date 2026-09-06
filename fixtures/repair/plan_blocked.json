@@ -1,0 +1,65 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "hi"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c1",
+      "id": "call-1",
+      "kind": "tool_call",
+      "parent_id": "evt-1",
+      "payload": {
+        "side_effects": "none"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    }
+  ],
+  "expected_plan": {
+    "blocked": [
+      {
+        "code": "SL203",
+        "finding_fp": "792b144d79249521",
+        "reason": "SL203-refusal"
+      }
+    ],
+    "fingerprint": "d464e4b33873377f46d243333811ce96228ba2f00fa52cbdf418c457e7731296",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      }
+    },
+    "profile": "neutral",
+    "source_hash": "32acbe9b7f31d4300466f6d56ac39f6cf10bfa826f30f58e6be701757f100088",
+    "steps": [],
+    "version": "sesslint.plan/v1"
+  },
+  "findings": [
+    {
+      "code": "SL203",
+      "evidence": {
+        "first_unsafe_index": 1
+      },
+      "fingerprint": "792b144d79249521",
+      "message": "Unsafe continuation",
+      "repairability": "manual",
+      "severity": "error",
+      "source": {
+        "line": 1,
+        "path": "session.json",
+        "record_id": "call-1"
+      }
+    }
+  ]
+}

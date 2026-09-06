@@ -1,0 +1,1 @@
+{"events":[{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-05T12:00:00Z"},{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"world"},"seq":1,"ts":"2026-09-05T12:00:01Z"}],"schema":"sesslint.session/v1","source":{"format":"canonical"},"version":1}

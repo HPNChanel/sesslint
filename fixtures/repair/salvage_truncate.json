@@ -1,0 +1,147 @@
+{
+  "events": [
+    {
+      "id": "m0",
+      "parent_id": null,
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z",
+      "actor": "user",
+      "kind": "message",
+      "payload": {
+        "text": "start"
+      }
+    },
+    {
+      "id": "m1",
+      "parent_id": "m0",
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z",
+      "actor": "assistant",
+      "kind": "message",
+      "payload": {
+        "text": "step 1"
+      }
+    },
+    {
+      "id": "tc_unsafe",
+      "correlation_id": "c_unsafe",
+      "parent_id": "m1",
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z",
+      "actor": "assistant",
+      "kind": "tool_call",
+      "payload": {
+        "name": "external_api",
+        "side_effects": "unknown"
+      }
+    },
+    {
+      "id": "m2",
+      "parent_id": "tc_unsafe",
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z",
+      "actor": "assistant",
+      "kind": "message",
+      "payload": {
+        "text": "post"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "schema_version": "sesslint.finding/v1",
+      "code": "SL102",
+      "severity": "error",
+      "repairability": "lossy-explicit",
+      "message": "Dangling tool call with unknown side effects",
+      "source": {
+        "path": "session.json",
+        "line": 3,
+        "record_id": "tc_unsafe"
+      },
+      "related_ids": [],
+      "fingerprint": "e687fe46f25af4a9",
+      "message_template": "Dangling tool call with unknown side effects",
+      "evidence": {
+        "at_index": 2,
+        "first_unsafe_index": 2
+      }
+    }
+  ],
+  "expected_plan": {
+    "blocked": [],
+    "fingerprint": "10a480f12f23d5ead224018d718d6cda44e34f2b532b5bc3330dea26fee3d4d0",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0,
+        "truncated-side-effects": 2
+      },
+      "total_lost": 2,
+      "total_kept": 2
+    },
+    "profile": "neutral",
+    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
+    "steps": [
+      {
+        "params": {},
+        "recipe": "side-effect-unknown-truncate",
+        "seq": 0,
+        "target_finding_fp": "e687fe46f25af4a9",
+        "target_index": 2,
+        "lossy": true,
+        "loss": {
+          "truncated-side-effects": 2
+        }
+      }
+    ],
+    "version": "sesslint.plan/v1",
+    "policy": "salvage"
+  },
+  "expected_plan_without_acknowledgement": {
+    "blocked": [
+      {
+        "code": "SL102",
+        "finding_fp": "e687fe46f25af4a9",
+        "reason": "needs-acknowledgement"
+      }
+    ],
+    "fingerprint": "fa5c313258da90c548a254ff564c89ff60221b9eb3afa1a99f69d851510869c5",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      },
+      "total_lost": 0,
+      "total_kept": 4
+    },
+    "profile": "neutral",
+    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
+    "steps": [],
+    "version": "sesslint.plan/v1",
+    "policy": "salvage"
+  },
+  "expected_conservative_plan": {
+    "blocked": [
+      {
+        "code": "SL102",
+        "finding_fp": "e687fe46f25af4a9",
+        "reason": "needs-salvage-policy"
+      }
+    ],
+    "fingerprint": "ec119cb7f13578c9a1d9380060c3d81e4393fbc46689f3f83080c1f0aeecafa1",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      }
+    },
+    "profile": "neutral",
+    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
+    "steps": [],
+    "version": "sesslint.plan/v1"
+  }
+}

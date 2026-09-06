@@ -1,0 +1,42 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "id": "root",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Root event with two branching children"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "tip-a",
+      "kind": "message",
+      "parent_id": "root",
+      "payload": {
+        "text": "First tip child"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "tip-b",
+      "kind": "message",
+      "parent_id": "root",
+      "payload": {
+        "text": "Second tip child"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}
