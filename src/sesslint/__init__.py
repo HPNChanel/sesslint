@@ -6,6 +6,10 @@ from sesslint._version import (
     REPORT_SCHEMA_VERSION,
     SESSION_SCHEMA_VERSION,
 )
+from sesslint.api import (
+    check_dir,
+    check_file,
+)
 from sesslint.atomic import (
     atomic_write_bytes,
     atomic_write_text,
@@ -91,6 +95,12 @@ from sesslint.report import (
     parse_manifest,
     parse_report,
 )
+from sesslint.scan import (
+    FileResult,
+    ScanReport,
+    ScanTotals,
+    scan_path,
+)
 from sesslint.source import (
     SourceGuard,
     fingerprint_file,
@@ -116,6 +126,7 @@ __all__ = [
     "CodeInfo",
     "ContentLeakError",
     "Counts",
+    "FileResult",
     "FileTooLargeError",
     "Finding",
     "FindingError",
@@ -128,6 +139,8 @@ __all__ = [
     "RepairManifest",
     "Repairability",
     "Report",
+    "ScanReport",
+    "ScanTotals",
     "SchemaError",
     "SesslintError",
     "Session",
@@ -144,7 +157,10 @@ __all__ = [
     "build_manifest",
     "build_report",
     "canonical_bytes",
+    "check_dir",
+    "check_file",
     "check_identities",
+    "scan_path",
     "check_nesting_depth",
     "compute_content_hash",
     "compute_fingerprint",

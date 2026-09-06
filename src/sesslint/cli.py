@@ -108,6 +108,47 @@ def format_report_human(report: Report, *, color: bool = False) -> str:
     return "\n".join(lines)
 
 
+def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
+    """Format human-readable summary of ScanReport with 5-bucket totals."""
+    bold = "\033[1m" if color else ""
+    reset = "\033[0m" if color else ""
+    red = "\033[31m" if color else ""
+    green = "\033[32m" if color else ""
+    yellow = "\033[33m" if color else ""
+
+    lines: list[str] = [
+        f"[read-only] Scan report for: {scan_report.root_path}",
+        (
+            f"Totals: healthy={scan_report.totals.healthy} "
+            f"invalid={scan_report.totals.invalid} "
+            f"unsupported={scan_report.totals.unsupported} "
+            f"unreadable={scan_report.totals.unreadable} "
+            f"skipped={scan_report.totals.skipped} "
+            f"(total={scan_report.totals.total})"
+        ),
+        "-" * 80,
+    ]
+    for r in scan_report.files:
+        if r.verdict == "healthy":
+            tag = f"{green}[HEALTHY]{reset}"
+            detail = ""
+        elif r.verdict == "invalid":
+            tag = f"{red}[INVALID]{reset}"
+            detail = f" ({r.error_count} error(s), {r.warning_count} warning(s))"
+        elif r.verdict == "unsupported":
+            tag = f"{yellow}[UNSUPPORTED]{reset}"
+            detail = " (unsupported version)"
+        elif r.verdict == "unreadable":
+            tag = f"{red}[UNREADABLE]{reset}"
+            detail = " (read error or non-UTF8)"
+        else:  # skipped
+            tag = f"{bold}[SKIPPED]{reset}"
+            detail = f" (reason: {r.skipped_reason})"
+        lines.append(f"  {tag:<20} {r.path}{detail}")
+
+    return "\n".join(lines)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for sesslint CLI."""
     parser = argparse.ArgumentParser(
@@ -204,6 +245,31 @@ def create_parser() -> argparse.ArgumentParser:
         help="Repair policy (choices: conservative, salvage; default: conservative)",
     )
     check_parser.add_argument(
+        "--recursive",
+        "-r",
+        action="store_true",
+        default=False,
+        help="Recursively scan directory trees for session artifacts",
+    )
+    check_parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        default=False,
+        help="[lossy: follows links] Follow directory symlinks during recursive scanning",
+    )
+    check_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=10000,
+        help="Maximum number of files to inspect during recursive scan (default: 10000)",
+    )
+    check_parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=1024 * 1024 * 1024,
+        help="Maximum cumulative bytes to read during recursive scan (default: 1GB)",
+    )
+    check_parser.add_argument(
         "--json",
         action="store_true",
         help="Output check report as a single canonical JSON document to stdout",
@@ -289,8 +355,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     repair_parser.add_argument(
         "--output",
+        "--out",
+        "-o",
         type=Path,
         default=None,
+        dest="output",
         help="Path to output repaired session file",
     )
     repair_parser.add_argument(
@@ -466,12 +535,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "check":
         target_path: Path = args.path
         if target_path.is_dir():
-            print(
-                f"Error: Path {target_path} is a directory. "
-                "Directories are not supported without --recursive (see task 024).",
-                file=sys.stderr,
+            if not getattr(args, "recursive", False):
+                print(
+                    f"Error: Path {target_path} is a directory. "
+                    "Directories are not supported without --recursive (see task 024).",
+                    file=sys.stderr,
+                )
+                return 2
+
+            from sesslint.api import check_dir
+
+            scan_rep = check_dir(
+                target_path,
+                recursive=True,
+                follow_symlinks=getattr(args, "follow_symlinks", False),
+                max_files=getattr(args, "max_files", 10000),
+                max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
+                format=getattr(args, "format", "auto"),
+                profile=getattr(args, "profile", "neutral"),
             )
-            return 2
+
+            if getattr(args, "json", False):
+                print(scan_rep.to_json())
+            else:
+                use_color = should_color(args, sys.stdout)
+                print(format_scan_report_human(scan_rep, color=use_color))
+
+            if (
+                scan_rep.totals.invalid > 0
+                or scan_rep.totals.unsupported > 0
+                or scan_rep.totals.unreadable > 0
+            ):
+                return 1
+            return 0
+
         if not target_path.exists():
             print(f"Error: Path not found: {target_path}", file=sys.stderr)
             return 2

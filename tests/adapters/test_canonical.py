@@ -522,7 +522,9 @@ def test_invalid_parent_id_SL001() -> None:
         ],
     }
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
-    parent_id_findings = [f for f in findings if (f.evidence or {}).get("reason") == "invalid_parent_id"]
+    parent_id_findings = [
+        f for f in findings if (f.evidence or {}).get("reason") == "invalid_parent_id"
+    ]
     assert len(parent_id_findings) == 2
 
 
@@ -543,7 +545,8 @@ def test_invalid_payload_type_SL001() -> None:
     }
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
     assert any(
-        f.code == SL001 and (f.evidence or {}).get("reason") == "invalid_payload_type" for f in findings
+        f.code == SL001 and (f.evidence or {}).get("reason") == "invalid_payload_type"
+        for f in findings
     )
 
 
@@ -557,7 +560,8 @@ def test_invalid_source_type_SL001() -> None:
     }
     events, findings = load_canonical(json.dumps(doc).encode("utf-8"))
     assert any(
-        f.code == SL001 and (f.evidence or {}).get("reason") == "invalid_source_type" for f in findings
+        f.code == SL001 and (f.evidence or {}).get("reason") == "invalid_source_type"
+        for f in findings
     )
 
 

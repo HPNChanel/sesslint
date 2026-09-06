@@ -1,0 +1,2 @@
+{"id":"msg_01","type":"user_message","message":"Hello world","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"msg_02","type":"tool_result","toolUseId":"call_01","content":"orphan content","timestamp":"2025-01-01T12:00:01Z"}
