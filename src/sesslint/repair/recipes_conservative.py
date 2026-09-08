@@ -29,7 +29,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from sesslint.canonical import to_canonical_dict
-from sesslint.codes import SL003, SL004, SL005, SL104, SL108, SL203
+from sesslint.codes import SL003, SL004, SL005, SL104, SL108
 from sesslint.repair.fingerprint import canonical_json_bytes
 from sesslint.repair.planner import PlanStep
 from sesslint.repair.registry import Recipe, get_recipe, register_recipe
@@ -516,10 +516,11 @@ duplicate_projection_removal = apply_duplicate_projection_removal
 
 RECIPE_TERMINAL_SUFFIX_DISCARD: Final[Recipe] = Recipe(
     name="terminal-suffix-discard",
-    handles=(SL005, SL203),
+    handles=(SL005,),
     preconditions=("no_prior_safe_tool_after_cut",),
     lossy=True,
-    salvage_only=False,
+    salvage_only=True,
+    min_policy="salvage",
     apply=apply_terminal_suffix_discard,
 )
 

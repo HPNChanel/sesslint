@@ -6,6 +6,7 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,7 +27,7 @@ from sesslint.repair import (
     run_all_checks,
 )
 from sesslint.repair.planner import plan as planner_plan
-from sesslint.report import Assurance, RepairManifest, Report, build_report
+from sesslint.report import RepairManifest, Report, build_report, compute_assurance
 from sesslint.scan import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_FILES,
@@ -45,6 +46,8 @@ def check_file(
     *,
     format: str | None = None,
     profile: str = "neutral",
+    confidence_min: float | None = None,
+    margin_min: float | None = None,
 ) -> Report:
     """Evaluate a single session file artifact and return a frozen Report.
 
@@ -52,6 +55,8 @@ def check_file(
         path: Path to session file.
         format: Format override ('auto', None, or known format name).
         profile: Validation profile name (default 'neutral').
+        confidence_min: Format auto-detection minimum confidence threshold.
+        margin_min: Format auto-detection minimum margin threshold.
 
     Returns:
         A frozen Report dataclass with findings, counts, assurance, and limitation.
@@ -63,6 +68,8 @@ def check_file(
     effective_cfg = resolve_effective_config(
         profile,
         format=format if format != "auto" else None,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
     )
 
     resolved_fmt, detection_res, det_findings = resolve_format(format, target_path)
@@ -162,19 +169,7 @@ def check_file(
     elif events and hasattr(events[0], "session_id") and events[0].session_id:
         session_id = str(events[0].session_id)
 
-    has_error = any(f.severity in (Severity.ERROR, Severity.FATAL) for f in all_findings)
-    has_warning = any(f.severity == Severity.WARNING for f in all_findings)
-
-    assurance: Assurance
-    if has_error:
-        assurance = "A0"
-        limitation = "No structural conclusion."
-    elif has_warning:
-        assurance = "A1"
-        limitation = "Relationships may still be invalid."
-    else:
-        assurance = "A2"
-        limitation = "Provider/runtime replay has not been independently exercised."
+    assurance, limitation = compute_assurance(events, all_findings)
 
     fp = fingerprint_file(target_path)
     return build_report(
@@ -252,6 +247,26 @@ def repair(
     if not src.is_file():
         raise FileNotFoundError(f"Source file not found: {src}")
 
+    # RVW-019: Vendor formats are rejected in repair (canonical only)
+    from sesslint.adapters.detect import detect_format
+
+    if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+        from sesslint.repair.errors import RepairRefused
+
+        raise RepairRefused(
+            f"Direct repair of vendor format '{format}' is not supported. "
+            "Repair operates exclusively on canonical session streams (JSONL)."
+        )
+    if format in (None, "auto"):
+        det = detect_format(src)
+        if det.format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+            from sesslint.repair.errors import RepairRefused
+
+            raise RepairRefused(
+                f"Direct repair of vendor format '{det.format}' is not supported. "
+                "Repair operates exclusively on canonical session streams (JSONL)."
+            )
+
     plan_obj: RepairPlan
     if plan_path is not None:
         plan_obj = load_plan(plan_path)
@@ -268,11 +283,17 @@ def repair(
             source_path=str(src),
         )
         source_findings = list(stream_findings) + list(check_findings)
-        plan_obj = planner_plan(
+        source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
+        import sys
+
+        p_mod = sys.modules.get("sesslint.repair.planner")
+        planner_fn = getattr(p_mod, "plan", planner_plan) if p_mod else planner_plan
+        plan_obj = planner_fn(
             findings=source_findings,
             events=source_events,
             profile=profile,
             policy=policy,
+            source_hash=source_hash,
             acknowledge_side_effects=acknowledge_side_effects,
         )
         has_error_findings = any(
@@ -286,6 +307,16 @@ def repair(
             )
 
     if dry_run:
+        execute(
+            source_path=src,
+            plan=plan_obj,
+            output_path=Path(output_path) if output_path is not None else None,
+            policy=policy,
+            dry_run=True,
+            profile=profile,
+            format=format if format != "auto" else None,
+            acknowledge_side_effects=acknowledge_side_effects,
+        )
         return plan_obj, None
 
     if output_path is None:
@@ -307,26 +338,33 @@ def repair(
 
 def verify(
     source_path: Path | str,
-    plan_path: Path | str,
     output_path: Path | str,
     manifest_path: Path | str,
+    plan_path: Path | str | None = None,
+    acknowledge_side_effects: bool = False,
 ) -> VerifyVerdict:
     """Verify integrity, hash bindings, and idempotence of a repaired session.
 
     Args:
         source_path: Path to original source session file.
-        plan_path: Path to repair plan JSON file.
         output_path: Path to repaired session file.
         manifest_path: Path to repair manifest JSON file.
+        plan_path: Path to repair plan JSON file (optional).
+        acknowledge_side_effects: Whether to acknowledge tool side-effects.
 
     Returns:
         VerifyVerdict with audit steps, pass/fail status, and diagnostic messages.
     """
-    return verify_artifacts(
+    import sys
+
+    v_mod = sys.modules.get("sesslint.verify")
+    verify_fn = getattr(v_mod, "verify", verify_artifacts) if v_mod else verify_artifacts
+    return verify_fn(
         source_path=source_path,
-        plan_path=plan_path,
         output_path=output_path,
         manifest_path=manifest_path,
+        plan_path=plan_path,
+        acknowledge_side_effects=acknowledge_side_effects,
     )
 
 

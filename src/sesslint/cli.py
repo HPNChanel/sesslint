@@ -8,7 +8,7 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from sesslint import __version__, load_session_file
 from sesslint._version import CLI_VERSION, get_version_info
@@ -16,11 +16,10 @@ from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
 from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
 from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
 from sesslint.errors import SesslintError
-from sesslint.report import Report
 
 
 def _handle_internal_error(err: Exception, args: argparse.Namespace | None = None) -> int:
-    """Handle unexpected internal operational errors per FR-097.
+    """Handle unexpected internal operational errors per FR-097, FR-098, FR-099.
 
     Guarantees:
     - Generates a unique, content-free diagnostic ID matching ^ERR-[0-9a-f]{8}$.
@@ -29,7 +28,7 @@ def _handle_internal_error(err: Exception, args: argparse.Namespace | None = Non
     - In human mode: outputs actionable error information to stderr.
     - Never prints raw Python tracebacks to stdout.
     - Never verdicts healthy.
-    - Exits with return code 1.
+    - Exits with return code 2.
     """
     import secrets
 
@@ -45,7 +44,7 @@ def _handle_internal_error(err: Exception, args: argparse.Namespace | None = Non
         print(json.dumps(envelope, sort_keys=True))
     else:
         print(f"Operational error [{error_id}]: {err}", file=sys.stderr)
-    return 1
+    return 2
 
 
 def should_color(args: argparse.Namespace, stream: Any = sys.stdout) -> bool:
@@ -62,79 +61,6 @@ def should_color(args: argparse.Namespace, stream: Any = sys.stdout) -> bool:
     if color_opt == "always":
         return True
     return hasattr(stream, "isatty") and bool(stream.isatty())
-
-
-def format_report_human(report: Report, *, color: bool = False) -> str:
-    """Format Report as human-readable actionable text with optional ANSI colors."""
-    green = "\033[32m" if color else ""
-    red = "\033[31m" if color else ""
-    yellow = "\033[33m" if color else ""
-    bold = "\033[1m" if color else ""
-    reset = "\033[0m" if color else ""
-
-    lines: list[str] = []
-    has_errors = (
-        report.counts.by_severity.get("error", 0) > 0
-        or report.counts.by_severity.get("fatal", 0) > 0
-    )
-    if not has_errors and report.counts.total == 0:
-        lines.append(
-            f"[read-only] {bold}{green}Session is healthy{reset} "
-            f"(0 findings, assurance: {report.assurance})"
-        )
-        lines.append(f"Limitation: {report.limitation}")
-        lines.append(f"Source fingerprint: {report.source_fingerprint}")
-    elif not has_errors and report.counts.total > 0:
-        warn_cnt = report.counts.by_severity.get("warning", 0)
-        lines.append(
-            f"[read-only] {bold}{yellow}Session is healthy with warnings{reset} "
-            f"({warn_cnt} warning(s), assurance: {report.assurance})"
-        )
-        lines.append(f"Limitation: {report.limitation}")
-        for f in report.findings:
-            loc = f"{f.source.path}:{f.source.line}" if f.source.line else f.source.path
-            lines.append(
-                f"  [{f.code}] {yellow}{f.severity.value.upper()}{reset}: {f.message} ({loc})"
-            )
-    else:
-        err_cnt = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get(
-            "fatal", 0
-        )
-        warn_cnt = report.counts.by_severity.get("warning", 0)
-        lines.append(
-            f"[read-only] {bold}{red}Integrity check failed{reset} "
-            f"({err_cnt} error(s), {warn_cnt} warning(s), assurance: {report.assurance})"
-        )
-        lines.append(f"Limitation: {report.limitation}")
-        root = report.findings[0]
-        root_loc = (
-            f"{root.source.path}:{root.source.line}" if root.source.line else root.source.path
-        )
-        lines.append(f"First root finding: [{root.code}] {root.message} ({root_loc})")
-        lines.append("Findings:")
-        for f in report.findings:
-            loc = f"{f.source.path}:{f.source.line}" if f.source.line else f.source.path
-            sev_color = red if f.severity.value in ("error", "fatal") else yellow
-            lines.append(
-                f"  [{f.code}] {sev_color}{f.severity.value.upper()}{reset} "
-                f"({f.repairability.value}): {f.message} ({loc})"
-            )
-        if any(f.repairability.value == "lossy-explicit" for f in report.findings):
-            lines.append(
-                f"Recommended next command: sesslint repair {report.findings[0].source.path} "
-                f"--output <output_path> --policy salvage"
-            )
-        elif any(f.repairability.value == "deterministic" for f in report.findings):
-            lines.append(
-                f"Recommended next command: sesslint repair {report.findings[0].source.path} "
-                f"--output <output_path>"
-            )
-        else:
-            lines.append(
-                "Recommended next command: Review findings and inspect source artifact manually."
-            )
-
-    return "\n".join(lines)
 
 
 def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
@@ -448,6 +374,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Acknowledge tool side-effects for salvage policy",
     )
     repair_parser.add_argument(
+        "--salvage-unsupported",
+        action="store_true",
+        default=False,
+        help="Allow salvage (lossy) repair transformations for unsupported/broken structures",
+    )
+    repair_parser.add_argument(
         "--include-content",
         action="store_true",
         default=False,
@@ -464,28 +396,67 @@ def create_parser() -> argparse.ArgumentParser:
         ),
     )
     verify_parser.add_argument(
-        "--source",
+        "source",
         type=Path,
-        required=True,
+        nargs="?",
+        default=None,
         help="Path to source session file",
     )
     verify_parser.add_argument(
-        "--plan",
+        "repaired",
         type=Path,
-        required=True,
-        help="Path to repair plan JSON file",
+        nargs="?",
+        default=None,
+        help="Path to repaired session file",
+    )
+    verify_parser.add_argument(
+        "--source",
+        type=Path,
+        default=None,
+        dest="source_flag",
+        help=argparse.SUPPRESS,
     )
     verify_parser.add_argument(
         "--output",
         type=Path,
-        required=True,
-        help="Path to repaired session file",
+        default=None,
+        dest="output_flag",
+        help=argparse.SUPPRESS,
     )
     verify_parser.add_argument(
         "--manifest",
         type=Path,
         required=True,
         help="Path to repair manifest JSON file",
+    )
+    verify_parser.add_argument(
+        "--plan",
+        type=Path,
+        default=None,
+        help="Path to repair plan JSON file (optional)",
+    )
+    verify_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output verify verdict as JSON to stdout",
+    )
+    verify_parser.add_argument(
+        "--color",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Control colored output in human report mode",
+    )
+    verify_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color styling",
+    )
+    verify_parser.add_argument(
+        "--acknowledge-side-effects",
+        action="store_true",
+        default=False,
+        help="Acknowledge tool side-effects for salvage policy during verify idempotence check",
     )
     verify_parser.add_argument(
         "--include-content",
@@ -597,7 +568,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             if not getattr(args, "recursive", False):
                 print(
                     f"Error: Path {target_path} is a directory. "
-                    "Directories are not supported without --recursive (see task 024).",
+                    "Use --recursive to scan directories.",
                     file=sys.stderr,
                 )
                 return 2
@@ -775,7 +746,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
             from sesslint.codes import Severity
             from sesslint.repair.executor import run_all_checks
-            from sesslint.report import Assurance, build_report
+            from sesslint.report import build_report, compute_assurance
             from sesslint.source import fingerprint_file
 
             check_findings = run_all_checks(
@@ -796,18 +767,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 session_id = str(events[0].session_id)
 
             has_error = any(f.severity in (Severity.ERROR, Severity.FATAL) for f in all_findings)
-            has_warning = any(f.severity == Severity.WARNING for f in all_findings)
 
-            assurance: Assurance
-            if has_error:
-                assurance = "A0"
-                limitation = "No structural conclusion."
-            elif has_warning:
-                assurance = "A1"
-                limitation = "Relationships may still be invalid."
-            else:
-                assurance = "A2"
-                limitation = "Provider/runtime replay has not been independently exercised."
+            assurance, limitation = compute_assurance(events, all_findings)
 
             fp = fingerprint_file(target_path)
             report = build_report(
@@ -874,90 +835,81 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             print(f"Error: Source file not found: {args.path}", file=sys.stderr)
             return 2
 
-        policy_opt = getattr(args, "policy", "conservative")
+        policy_opt: Literal["conservative", "salvage"] = (
+            "salvage"
+            if getattr(args, "salvage_unsupported", False)
+            or getattr(args, "policy", "conservative") == "salvage"
+            else "conservative"
+        )
         profile_opt = getattr(args, "profile", "neutral")
         ack_side_effects = getattr(args, "acknowledge_side_effects", False)
         format_opt = getattr(args, "format", "auto")
 
-        from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
+        from sesslint.adapters.detect import (
+            FORMAT_CLAUDE_CODE,
+            FORMAT_OPENAI_AGENTS,
+            VALID_FORMAT_OPTIONS,
+            detect_format,
+        )
+        from sesslint.profiles.profile import get_profile
 
         if format_opt not in VALID_FORMAT_OPTIONS:
             print(f"Error: Unsupported format option: {format_opt}", file=sys.stderr)
             return 2
 
-        from sesslint.codes import Severity
+        # RVW-019: Direct repair of vendor formats is rejected (canonical only)
+        vendor_err_msg = (
+            "Repair operates exclusively on canonical session streams (JSONL). "
+            "Convert the session to canonical format first, or run 'check' to view findings."
+        )
+        if format_opt in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+            print(
+                f"Error: Direct repair of vendor format '{format_opt}' is not supported. "
+                f"{vendor_err_msg}",
+                file=sys.stderr,
+            )
+            return 2
+
+        if format_opt == "auto":
+            det = detect_format(args.path)
+            if det.format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+                print(
+                    f"Error: Direct repair of vendor format '{det.format}' is not supported. "
+                    f"{vendor_err_msg}",
+                    file=sys.stderr,
+                )
+                return 2
+
+        try:
+            get_profile(profile_opt)
+        except (KeyError, ValueError) as err:
+            err_msg = err.args[0] if err.args else str(err)
+            print(f"Error: {err_msg}", file=sys.stderr)
+            return 2
+
+        from sesslint import api
         from sesslint.repair import (
             Abstained,
             OutputInvalid,
+            PlanSourceMismatch,
             PlanTampered,
             PolicyMismatch,
-            RepairPlan,
             RepairRefused,
-            execute,
-            load_plan,
-            run_all_checks,
         )
-        from sesslint.repair.planner import plan as planner_plan
         from sesslint.report import dump_manifest
 
-        plan_obj: RepairPlan
-        if getattr(args, "plan", None) is not None:
-            try:
-                plan_obj = load_plan(args.plan)
-            except Exception as err:
-                print(f"Error loading plan: {err}", file=sys.stderr)
-                return 2
-        else:
-            try:
-                from sesslint.repair.executor import (
-                    load_session_source_with_findings,
-                    run_all_checks,
-                )
-
-                _source_header, source_events, stream_findings = load_session_source_with_findings(
-                    args.path
-                )
-                check_findings = run_all_checks(
-                    source_events,
-                    profile=profile_opt,
-                    source_path=str(args.path),
-                )
-                source_findings = list(stream_findings) + list(check_findings)
-                plan_obj = planner_plan(
-                    findings=source_findings,
-                    events=source_events,
-                    profile=profile_opt,
-                    policy=policy_opt,
-                    acknowledge_side_effects=ack_side_effects,
-                )
-            except SesslintError as err:
-                print(f"Error preparing repair plan [{err.code}]: {err}", file=sys.stderr)
-                return 1
-            except Exception as err:
-                return _handle_internal_error(err, args)
-
-            has_error_findings = any(
-                f.severity in (Severity.ERROR, Severity.FATAL) for f in source_findings
-            )
-            if has_error_findings and len(plan_obj.steps) == 0:
-                print(
-                    "Findings exist on source session, but no authorized safe "
-                    "repair plan completes.",
-                    file=sys.stderr,
-                )
-                return 1
-
         try:
-            manifest = execute(
+            plan_obj, manifest = api.repair(
                 source_path=args.path,
-                plan=plan_obj,
                 output_path=args.output,
                 policy=policy_opt,
-                dry_run=args.dry_run,
-                profile=profile_opt,
                 format=format_opt if format_opt != "auto" else None,
+                profile=profile_opt,
+                plan_path=getattr(args, "plan", None),
+                dry_run=args.dry_run,
                 acknowledge_side_effects=ack_side_effects,
             )
+
             if args.dry_run:
                 if getattr(args, "json", False):
                     print(json.dumps(plan_obj.to_dict(), indent=2, sort_keys=True))
@@ -968,15 +920,23 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     print(f"Blocked findings: {len(plan_obj.blocked)}")
                 return 0
 
-            if getattr(args, "json", False):
-                print(dump_manifest(manifest))
-            else:
-                print(f"Repair successful. Output: {args.output}")
-                print(f"Manifest written to: {args.output}.manifest.json")
-                print(f"Output fingerprint: {manifest.output_fingerprint}")
-                print(f"Idempotency key: {manifest.idempotency_key}")
+            if manifest is not None:
+                if getattr(args, "json", False):
+                    print(dump_manifest(manifest))
+                else:
+                    print(f"Repair successful. Output: {args.output}")
+                    print(f"Manifest written to: {args.output}.manifest.json")
+                    print(f"Output fingerprint: {manifest.output_fingerprint}")
+                    print(f"Idempotency key: {manifest.idempotency_key}")
             return 0
-        except (PlanTampered, Abstained, PolicyMismatch, OutputInvalid, RepairRefused) as err:
+        except (
+            PlanTampered,
+            Abstained,
+            PolicyMismatch,
+            OutputInvalid,
+            RepairRefused,
+            PlanSourceMismatch,
+        ) as err:
             print(f"Repair refused [{err.code}]: {err}", file=sys.stderr)
             return 1
         except FileNotFoundError as err:
@@ -986,16 +946,30 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return _handle_internal_error(err, args)
 
     if args.command == "verify":
-        try:
-            from sesslint.verify import verify
+        source_target = args.source or getattr(args, "source_flag", None)
+        repaired_target = args.repaired or getattr(args, "output_flag", None)
 
-            verdict = verify(
-                source_path=args.source,
-                plan_path=args.plan,
-                output_path=args.output,
+        if source_target is None or repaired_target is None:
+            parser.error("sesslint verify requires both source and repaired session paths.")
+
+        try:
+            from sesslint import api
+            from sesslint.verify import render_verify_human
+
+            verdict = api.verify(
+                source_path=source_target,
+                output_path=repaired_target,
                 manifest_path=args.manifest,
+                plan_path=getattr(args, "plan", None),
+                acknowledge_side_effects=getattr(args, "acknowledge_side_effects", False),
             )
-            print(verdict.to_json())
+            use_json = getattr(args, "json", False)
+            is_legacy_flags = args.source is None and getattr(args, "source_flag", None) is not None
+            if use_json or is_legacy_flags:
+                print(verdict.to_json())
+            else:
+                use_color = should_color(args, sys.stdout)
+                print(render_verify_human(verdict, color=use_color))
             return 0 if verdict.ok else 1
         except (FileNotFoundError, OSError) as err:
             print(f"Verify I/O error: {err}", file=sys.stderr)

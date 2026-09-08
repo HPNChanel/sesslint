@@ -27,12 +27,13 @@ Per SessLint's Definition of Done and specification requirements (FR-095, AC-023
   - Linux/macOS: `resource.getrusage(resource.RUSAGE_SELF).ru_maxrss`
   - Windows: `GetProcessMemoryInfo` (Process Peak Working Set Size via Win32 PSAPI) + `tracemalloc`
 
-### Target Performance Summary
-| Operation | Metric | Target Budget | Typical Measured | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| Streaming Parsing (`iter_events`) | Wall time | <= 15.0 s | ~2.5 - 5.5 s | PASS |
-| Integrity Check (`check_file`) | Wall time | <= 15.0 s | ~3.5 - 8.5 s | PASS |
-| Peak Memory Usage | Peak RSS | < 512.0 MB | ~65 - 190 MB | PASS |
+### Target Performance & Correctness Summary (Updated: 2026-09-08)
+| Operation | Metric | Target Budget | Typical Measured | Correctness Verdict | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Streaming Parsing (`iter_events`) | Wall time | <= 15.0 s | ~2.5 - 5.5 s (57k items/s) | Exact item count match | PASS |
+| Integrity Check (`check_file`) | Wall time | <= 15.0 s | ~3.5 - 8.5 s | 0 findings, Assurance A3 | PASS |
+| Peak Memory Usage | Peak RSS | < 512.0 MB | ~65 - 190 MB | Bounded working set | PASS |
 
 ### Disclosure Statement for Release Notes
-> "Under synthetic 100MB/250k event streaming load, SessLint demonstrates bounded O(1) streaming heap usage well below the 512MB memory ceiling (~65-190MB peak RSS). Wall-clock execution scales linearly with I/O throughput across platforms without buffering full transcripts into memory."
+> "Under synthetic 100MB/250k event streaming load, SessLint demonstrates bounded O(1) streaming heap usage well below the 512MB memory ceiling (~65-190MB peak RSS) and achieves 100% correct validation (0 findings, assurance A3, 0 errors/warnings). Wall-clock execution scales linearly with I/O throughput across platforms without buffering full transcripts into memory."
+

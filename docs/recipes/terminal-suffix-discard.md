@@ -3,9 +3,9 @@
 ## Overview
 
 - **Recipe Name**: `terminal-suffix-discard`
-- **Handles Codes**: `SL005`, `SL203`
+- **Handles Codes**: `SL005`
 - **Lossy**: `true`
-- **Salvage Only**: `false`
+- **Salvage Only**: `true`
 
 ## Preconditions
 

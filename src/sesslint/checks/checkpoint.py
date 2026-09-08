@@ -304,6 +304,27 @@ def check_checkpoint_gap(
                         )
                     )
                 last_checkpoint_seq = seq
+            elif checkpoint_sensitivity == "high":
+                expected_seq = 0 if last_checkpoint_seq is None else last_checkpoint_seq + 1
+                fp = compute_checkpoint_fingerprint(
+                    SL201, [str(idx), str(expected_seq), "missing_seq"]
+                )
+                findings.append(
+                    make_finding(
+                        code=SL201,
+                        severity=Severity.ERROR,
+                        repairability=Repairability.MANUAL,
+                        message_template=_MSG_SL201,
+                        source=SourceRef(path=path, line=line, record_id=rec_id),
+                        fingerprint=fp,
+                        evidence={
+                            "at_index": idx,
+                            "expected_seq": expected_seq,
+                            "found_seq": None,
+                            "sensitivity": "high",
+                        },
+                    )
+                )
 
     return cap_checkpoint_findings(
         findings,

@@ -73,6 +73,36 @@
     "idempotency_key": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "plan_fingerprint": {
+      "type": "string"
+    },
+    "assurance": {
+      "type": "string"
+    },
+    "recipe_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "profile_version": {
+      "type": "string"
+    },
+    "adapter_version": {
+      "type": "string"
+    },
+    "byte_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "record_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
     }
   },
   "additionalProperties": false

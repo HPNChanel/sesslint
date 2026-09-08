@@ -28,6 +28,8 @@ class Recipe:
     lossy: bool
     salvage_only: bool
     apply: Any = None
+    min_policy: str = "conservative"
+    version: str = "1.0.0"
 
     def __post_init__(self) -> None:
         if not self.name or not isinstance(self.name, str):
@@ -36,6 +38,10 @@ class Recipe:
         sorted_handles = tuple(sorted(self.handles))
         if sorted_handles != self.handles:
             object.__setattr__(self, "handles", sorted_handles)
+        if (self.salvage_only or self.lossy) and self.min_policy == "conservative":
+            object.__setattr__(self, "min_policy", "salvage")
+        if self.lossy and not self.salvage_only:
+            object.__setattr__(self, "salvage_only", True)
 
 
 _REGISTRY: dict[str, Recipe] = {}

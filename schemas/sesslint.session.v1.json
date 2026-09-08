@@ -63,6 +63,14 @@
         "^experimental_": {}
       },
       "additionalProperties": false
+    },
+    {
+      "$ref": "#/$defs/header",
+      "description": "Session header metadata record (Line 1 of canonical JSONL stream)"
+    },
+    {
+      "$ref": "#/$defs/event",
+      "description": "Canonical session event record (Lines 2+ of canonical JSONL stream)"
     }
   ],
   "$defs": {
@@ -174,6 +182,9 @@
           "type": ["string", "null"]
         },
         "source_location": {
+          "type": ["string", "null"]
+        },
+        "side_effects": {
           "type": ["string", "null"]
         }
       },

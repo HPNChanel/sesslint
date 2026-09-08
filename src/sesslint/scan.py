@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from sesslint.codes import SL001, SL301, SL302, Repairability, Severity
+from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.profiles import resolve_effective_config
 from sesslint.report import minimize_path
@@ -42,16 +43,18 @@ class FileResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize file result to canonical JSON-compatible dictionary."""
+        from sesslint.report import format_finding_content_free, minimize_path
+
         res: dict[str, Any] = {
             "error_count": self.error_count,
-            "path": self.path,
+            "path": minimize_path(self.path),
             "verdict": self.verdict,
             "warning_count": self.warning_count,
         }
         if self.skipped_reason is not None:
             res["skipped_reason"] = self.skipped_reason
         if self.findings:
-            res["findings"] = [f.to_dict() for f in self.findings]
+            res["findings"] = [format_finding_content_free(f) for f in self.findings]
         return res
 
 
@@ -117,14 +120,14 @@ def _scan_single_file(
     # 1. Read file with I/O and non-UTF8 / binary safety
     try:
         raw_bytes = file_path.read_bytes()
-    except OSError as err:
+    except OSError:
         finding = make_finding(
             code=SL001,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
             message_template="Unreadable file or I/O error",
-            source=SourceRef(path=str(file_path)),
-            evidence={"detail": str(err)},
+            source=SourceRef(path=display_path),
+            evidence={"reason": "os_error", "detail": "io_error"},
         )
         return FileResult(
             path=display_path,
@@ -141,7 +144,7 @@ def _scan_single_file(
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
             message_template="File contains forbidden NUL byte or binary data",
-            source=SourceRef(path=str(file_path)),
+            source=SourceRef(path=display_path),
         )
         return FileResult(
             path=display_path,
@@ -153,14 +156,14 @@ def _scan_single_file(
 
     try:
         raw_bytes.decode("utf-8")
-    except UnicodeDecodeError as err:
+    except UnicodeDecodeError:
         finding = make_finding(
             code=SL001,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
             message_template="File encoding error non-UTF-8",
-            source=SourceRef(path=str(file_path)),
-            evidence={"detail": str(err)},
+            source=SourceRef(path=display_path),
+            evidence={"reason": "encoding_error", "detail": "invalid_utf8"},
         )
         return FileResult(
             path=display_path,
@@ -170,123 +173,156 @@ def _scan_single_file(
             warning_count=0,
         )
 
-    # 2. Format resolution and detection
-    from sesslint.adapters.detect import (
-        FORMAT_CANONICAL,
-        FORMAT_CLAUDE_CODE,
-        FORMAT_OPENAI_AGENTS,
-        resolve_format,
-    )
+    # 2. Format resolution, 3. Adapter loading, 4. Invariant checks, 5. Bucket classification
+    try:
+        from sesslint.adapters.detect import (
+            FORMAT_CANONICAL,
+            FORMAT_CLAUDE_CODE,
+            FORMAT_OPENAI_AGENTS,
+            resolve_format,
+        )
 
-    resolved_fmt, detection_res, det_findings = resolve_format(format, file_path)
-    if resolved_fmt is None:
-        rep_findings = list(det_findings)
-        if not rep_findings:
-            rep_findings.append(
-                make_finding(
-                    code=SL302,
-                    severity=Severity.ERROR,
-                    repairability=Repairability.MANUAL,
-                    message_template="Format detection failed",
-                    source=SourceRef(path=str(file_path)),
-                    evidence={"detail": detection_res.reason if detection_res else "unknown"},
+        resolved_fmt, detection_res, det_findings = resolve_format(format, file_path)
+        if resolved_fmt is None:
+            rep_findings = list(det_findings)
+            if not rep_findings:
+                rep_findings.append(
+                    make_finding(
+                        code=SL302,
+                        severity=Severity.ERROR,
+                        repairability=Repairability.MANUAL,
+                        message_template="Format detection failed",
+                        source=SourceRef(path=display_path),
+                        evidence={"detail": detection_res.reason if detection_res else "unknown"},
+                    )
                 )
+            err_c = sum(1 for f in rep_findings if f.severity in (Severity.ERROR, Severity.FATAL))
+            warn_c = sum(1 for f in rep_findings if f.severity == Severity.WARNING)
+            return FileResult(
+                path=display_path,
+                verdict="invalid",
+                findings=tuple(rep_findings),
+                error_count=err_c,
+                warning_count=warn_c,
             )
-        err_c = sum(1 for f in rep_findings if f.severity in (Severity.ERROR, Severity.FATAL))
-        warn_c = sum(1 for f in rep_findings if f.severity == Severity.WARNING)
+
+        effective_cfg = resolve_effective_config(
+            profile,
+            format=format if format != "auto" else None,
+        )
+        fmt_key = (
+            "claude"
+            if resolved_fmt == FORMAT_CLAUDE_CODE
+            else (
+                "openai"
+                if resolved_fmt == FORMAT_OPENAI_AGENTS
+                else ("canonical" if resolved_fmt == FORMAT_CANONICAL else resolved_fmt)
+            )
+        )
+        if (
+            fmt_key not in effective_cfg.allowed_adapters
+            and resolved_fmt not in effective_cfg.allowed_adapters
+        ):
+            finding = make_finding(
+                code=SL302,
+                severity=Severity.ERROR,
+                repairability=Repairability.MANUAL,
+                message_template="Format is not permitted by profile",
+                source=SourceRef(path=display_path),
+                evidence={"format": resolved_fmt, "profile": effective_cfg.profile},
+            )
+            return FileResult(
+                path=display_path,
+                verdict="invalid",
+                findings=(finding,),
+                error_count=1,
+                warning_count=0,
+            )
+
+        # 3. Adapter loading
+        events: list[Any] = []
+        adapter_findings: list[Finding] = list(det_findings)
+
+        if resolved_fmt == FORMAT_CANONICAL:
+            from sesslint.adapters.canonical import load_canonical
+
+            can_events, can_findings = load_canonical(file_path)
+            events = list(can_events)
+            adapter_findings.extend(can_findings)
+        elif resolved_fmt == FORMAT_CLAUDE_CODE:
+            from sesslint.adapters.claude_code import load_claude_code
+
+            c_events, c_findings = load_claude_code(file_path)
+            events = list(c_events)
+            adapter_findings.extend(c_findings)
+        elif resolved_fmt == FORMAT_OPENAI_AGENTS:
+            from sesslint.adapters.openai_agents import load_openai_agents
+
+            o_events, o_findings = load_openai_agents(file_path)
+            events = list(o_events)
+            adapter_findings.extend(o_findings)
+
+        # 4. Invariant checks
+        from sesslint.repair.executor import run_all_checks
+
+        check_findings = run_all_checks(
+            events,
+            profile=effective_cfg.profile,
+            source_path=str(file_path),
+        )
+        all_findings = tuple(adapter_findings + list(check_findings))
+
+        err_count = sum(1 for f in all_findings if f.severity in (Severity.ERROR, Severity.FATAL))
+        warn_count = sum(1 for f in all_findings if f.severity == Severity.WARNING)
+
+        # 5. Bucket classification
+        has_sl301 = any(f.code == SL301 for f in all_findings)
+        if has_sl301:
+            verdict: Verdict = "unsupported"
+        elif err_count > 0:
+            verdict = "invalid"
+        else:
+            verdict = "healthy"
+
         return FileResult(
             path=display_path,
-            verdict="invalid",
-            findings=tuple(rep_findings),
-            error_count=err_c,
-            warning_count=warn_c,
+            verdict=verdict,
+            findings=all_findings,
+            error_count=err_count,
+            warning_count=warn_count,
         )
-
-    effective_cfg = resolve_effective_config(
-        profile,
-        format=format if format != "auto" else None,
-    )
-    fmt_key = (
-        "claude"
-        if resolved_fmt == FORMAT_CLAUDE_CODE
-        else (
-            "openai"
-            if resolved_fmt == FORMAT_OPENAI_AGENTS
-            else ("canonical" if resolved_fmt == FORMAT_CANONICAL else resolved_fmt)
-        )
-    )
-    if (
-        fmt_key not in effective_cfg.allowed_adapters
-        and resolved_fmt not in effective_cfg.allowed_adapters
-    ):
-        finding = make_finding(
-            code=SL302,
+    except (FileTooLargeError, MaxRecordsExceededError, OSError) as err:
+        f = make_finding(
+            code=SL001,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
-            message_template="Format is not permitted by profile",
-            source=SourceRef(path=str(file_path)),
-            evidence={"format": resolved_fmt, "profile": effective_cfg.profile},
+            message_template="Unreadable file [detail: LIMIT_OR_IO]",
+            source=SourceRef(path=display_path),
+            evidence={"reason": "limit_or_io_error", "detail": type(err).__name__},
         )
         return FileResult(
             path=display_path,
-            verdict="invalid",
-            findings=(finding,),
+            verdict="unreadable",
+            findings=(f,),
             error_count=1,
             warning_count=0,
         )
-
-    # 3. Adapter loading
-    events: list[Any] = []
-    adapter_findings: list[Finding] = list(det_findings)
-
-    if resolved_fmt == FORMAT_CANONICAL:
-        from sesslint.adapters.canonical import load_canonical
-
-        can_events, can_findings = load_canonical(file_path)
-        events = list(can_events)
-        adapter_findings.extend(can_findings)
-    elif resolved_fmt == FORMAT_CLAUDE_CODE:
-        from sesslint.adapters.claude_code import load_claude_code
-
-        c_events, c_findings = load_claude_code(file_path)
-        events = list(c_events)
-        adapter_findings.extend(c_findings)
-    elif resolved_fmt == FORMAT_OPENAI_AGENTS:
-        from sesslint.adapters.openai_agents import load_openai_agents
-
-        o_events, o_findings = load_openai_agents(file_path)
-        events = list(o_events)
-        adapter_findings.extend(o_findings)
-
-    # 4. Invariant checks
-    from sesslint.repair.executor import run_all_checks
-
-    check_findings = run_all_checks(
-        events,
-        profile=effective_cfg.profile,
-        source_path=str(file_path),
-    )
-    all_findings = tuple(adapter_findings + list(check_findings))
-
-    err_count = sum(1 for f in all_findings if f.severity in (Severity.ERROR, Severity.FATAL))
-    warn_count = sum(1 for f in all_findings if f.severity == Severity.WARNING)
-
-    # 5. Bucket classification
-    has_sl301 = any(f.code == SL301 for f in all_findings)
-    if has_sl301:
-        verdict: Verdict = "unsupported"
-    elif err_count > 0:
-        verdict = "invalid"
-    else:
-        verdict = "healthy"
-
-    return FileResult(
-        path=display_path,
-        verdict=verdict,
-        findings=all_findings,
-        error_count=err_count,
-        warning_count=warn_count,
-    )
+    except Exception as err:
+        f = make_finding(
+            code=SL001,
+            severity=Severity.ERROR,
+            repairability=Repairability.MANUAL,
+            message_template="Failed to process file [detail: INTERNAL_ERROR]",
+            source=SourceRef(path=display_path),
+            evidence={"reason": "unhandled_exception", "detail": type(err).__name__},
+        )
+        return FileResult(
+            path=display_path,
+            verdict="invalid",
+            findings=(f,),
+            error_count=1,
+            warning_count=0,
+        )
 
 
 def scan_path(

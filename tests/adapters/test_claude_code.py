@@ -399,3 +399,129 @@ def test_deep_nesting_limit(tmp_path: Path) -> None:
     assert len(events) == 0
     assert len(findings) == 1
     assert "detail: LIMIT" in findings[0].message
+
+
+def test_real_claude_code_shape_with_parent_uuid_and_tool_blocks(tmp_path: Path) -> None:
+    """Verify real Claude Code JSONL shape with parentUuid, nested tool blocks, and sessionId."""
+    session_file = tmp_path / "real_claude.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "uuid": "u1",
+                "parentUuid": None,
+                "type": "user",
+                "sessionId": "sess_real_123",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Check git status"}],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "uuid": "u2",
+                "parentUuid": "u1",
+                "type": "assistant",
+                "sessionId": "sess_real_123",
+                "agentId": "subagent-1",
+                "branchId": "branch-main",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Running git status now."},
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_git_1",
+                            "name": "bash",
+                            "input": {"command": "git status"},
+                        },
+                    ],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "uuid": "u3",
+                "parentUuid": "u2",
+                "type": "user",
+                "sessionId": "sess_real_123",
+                "agentId": "subagent-1",
+                "branchId": "branch-main",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_git_1",
+                            "content": "nothing to commit, working tree clean",
+                        },
+                    ],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "uuid": "u4",
+                "parentUuid": "u3",
+                "type": "assistant",
+                "sessionId": "sess_real_123",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "All clean!"}],
+                },
+            }
+        ),
+    ]
+    session_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    session, findings = load_claude_code_session(session_file)
+    assert len(findings) == 0
+    assert session.header.session_id == "sess_real_123"
+
+    events = session.events
+    assert len(events) == 5  # u1, u2_text, u2 (tool_call), u3 (tool_result), u4
+
+    # u1: user message
+    assert events[0].id == "u1"
+    assert events[0].actor == "user"
+    assert events[0].kind == "message"
+    assert events[0].parent_id is None
+
+    # u2_text: assistant preamble
+    assert events[1].id == "u2_text"
+    assert events[1].actor == "assistant"
+    assert events[1].kind == "message"
+    assert events[1].parent_id == "u1"
+
+    # u2: assistant tool call
+    assert events[2].id == "u2"
+    assert events[2].actor == "assistant"
+    assert events[2].kind == "tool_call"
+    assert events[2].parent_id == "u2_text"
+    assert events[2].correlation_id == "toolu_git_1"
+    assert events[2].payload.get("tool_name") == "bash"
+    assert events[2].agent_id == "subagent-1"
+    assert events[2].branch_id == "branch-main"
+
+    # u3: tool result
+    assert events[3].id == "u3"
+    assert events[3].actor == "tool"
+    assert events[3].kind == "tool_result"
+    assert events[3].parent_id == "u2"
+    assert events[3].correlation_id == "toolu_git_1"
+    assert events[3].execution_state == "success"
+    assert events[3].agent_id == "subagent-1"
+    assert events[3].branch_id == "branch-main"
+
+    # u4: assistant message
+    assert events[4].id == "u4"
+    assert events[4].actor == "assistant"
+    assert events[4].kind == "message"
+    assert events[4].parent_id == "u3"
+
+    # Verify run_all_checks passes with 0 error findings on real-shaped session
+    from sesslint.repair.executor import run_all_checks
+
+    check_findings = run_all_checks(events)
+    error_findings = [f for f in check_findings if f.severity == Severity.ERROR]
+    assert len(error_findings) == 0

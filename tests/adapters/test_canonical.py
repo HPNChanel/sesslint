@@ -663,3 +663,48 @@ def test_unicode_utf8_roundtrip() -> None:
     assert events2[0].payload.get("text") == "Kiểm tra tính toàn vẹn phiên làm việc 🚀"
     bytes2 = dump_canonical(events2)
     assert bytes1 == bytes2
+
+
+def test_single_doc_without_version_key_loads_cleanly() -> None:
+    """Verify single-doc canonical session without version key loads cleanly (RVW-001)."""
+    doc = {
+        "schema_version": "sesslint.session/v1",
+        "session_id": "sess_no_ver",
+        "created_at": "2026-09-05T12:00:00Z",
+        "events": [
+            {
+                "actor": "user",
+                "id": "evt_01",
+                "kind": "message",
+                "parent_id": None,
+                "payload": {"text": "hello"},
+                "seq": 0,
+                "ts": "2026-09-05T12:00:00Z",
+            }
+        ],
+    }
+    raw = json.dumps(doc).encode("utf-8")
+    events, findings = load_canonical(raw)
+    assert len(findings) == 0
+    assert len(events) == 1
+    assert events[0].id == "evt_01"
+
+
+def test_dump_canonical_json_format_parses_with_canonical_model() -> None:
+    """Verify dump_canonical(format='json') output parses cleanly with canonical parse_session."""
+    from sesslint.canonical import parse_session
+
+    minimal_path = FIXTURES_DIR / "minimal.json"
+    events, findings = load_canonical(minimal_path)
+    assert len(findings) == 0
+
+    json_bytes = dump_canonical(events, format="json")
+    doc = json.loads(json_bytes.decode("utf-8"))
+
+    # Must contain schema_version, must NOT contain unauthorized schema key
+    assert "schema_version" in doc
+    assert "schema" not in doc
+
+    session = parse_session(doc)
+    assert len(session.events) == 2
+    assert session.header.schema_version == "sesslint.session/v1"

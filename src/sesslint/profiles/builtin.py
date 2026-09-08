@@ -31,6 +31,7 @@ from sesslint.codes import (
     SL203,
     SL301,
     SL302,
+    Severity,
 )
 from sesslint.profiles.profile import Profile
 
@@ -59,6 +60,7 @@ ALL_RULES: Final[tuple[str, ...]] = (
 
 NEUTRAL_PROFILE: Final[Profile] = Profile(
     name="neutral",
+    version="1.0.0",
     description=(
         "Vendor-neutral baseline profile using standard generic rules and default thresholds."
     ),
@@ -67,10 +69,12 @@ NEUTRAL_PROFILE: Final[Profile] = Profile(
     thresholds={"confidence_min": 0.55, "margin_min": 0.15},
     strict_unknown_critical=False,
     checkpoint_sensitivity="default",
+    rule_severities={"SL107": Severity.WARNING, "SL108": Severity.WARNING},
 )
 
 CLAUDE_STRICT_PROFILE: Final[Profile] = Profile(
     name="claude-strict",
+    version="1.0.0",
     description=(
         "Strict profile for Claude Code sessions with tight format margins "
         "and strict version checks."
@@ -80,16 +84,19 @@ CLAUDE_STRICT_PROFILE: Final[Profile] = Profile(
     thresholds={"confidence_min": 0.55, "margin_min": 0.20},
     strict_unknown_critical=True,
     checkpoint_sensitivity="default",
+    rule_severities={"SL107": Severity.ERROR, "SL108": Severity.ERROR},
 )
 
 OPENAI_STRICT_PROFILE: Final[Profile] = Profile(
     name="openai-strict",
+    version="1.0.0",
     description="Strict profile for OpenAI Agents SDK sessions with high checkpoint sensitivity.",
     allowed_adapters=("openai", "canonical", "auto"),
     enabled_rules=ALL_RULES,
     thresholds={"confidence_min": 0.55, "margin_min": 0.15},
     strict_unknown_critical=True,
     checkpoint_sensitivity="high",
+    rule_severities={"SL107": Severity.ERROR, "SL108": Severity.ERROR},
 )
 
 REGISTRY: Final[dict[str, Profile]] = {

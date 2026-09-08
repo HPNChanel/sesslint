@@ -242,17 +242,41 @@ def check_missing_parent(
                 record_id=clean_rec_id,
             )
 
+            target_idx = g.id_to_index[id_str]
+            candidates: list[int] = []
+            for i in range(target_idx):
+                cand = events[i]
+                c_id = getattr(cand, "id", None)
+                if c_id is None and isinstance(cand, Mapping):
+                    c_id = cand.get("id")
+                c_id_str = str(c_id) if c_id is not None else ""
+                if c_id_str == id_str:
+                    continue
+                c_hash = ""
+                if hasattr(cand, "canonical_hash"):
+                    try:
+                        c_hash = cand.canonical_hash()
+                    except Exception:
+                        pass
+                if (c_id_str and c_id_str.startswith(parent_id)) or (
+                    c_hash and c_hash.startswith(parent_id)
+                ):
+                    candidates.append(i)
+
+            rep = Repairability.DETERMINISTIC if len(candidates) == 1 else Repairability.MANUAL
+
             evidence: dict[str, Any] = {
                 "id": clean_rec_id,
-                "index": g.id_to_index[id_str],
+                "index": target_idx,
                 "parent_id": clean_parent_id,
+                "candidate_count": len(candidates),
             }
 
             findings.append(
                 make_finding(
                     code=SL004,
                     severity=Severity.ERROR,
-                    repairability=Repairability.MANUAL,
+                    repairability=rep,
                     message_template=_MSG_SL004,
                     source=source_ref,
                     related_ids=related,

@@ -28,6 +28,7 @@ from sesslint.adapters.canonical import load_canonical
 from sesslint.canonical import SessionEvent
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import (
+    check_adjacency,
     check_cross_branch,
     check_reversed_order,
     check_sl105,
@@ -157,7 +158,7 @@ def test_sl108_compaction_fixture() -> None:
 
     f108 = next(f for f in findings if f.code == SL108)
     assert f108.severity == Severity.WARNING
-    assert f108.repairability == Repairability.MANUAL
+    assert f108.repairability == Repairability.DETERMINISTIC
     assert f108.source.record_id == "evt-call"
 
     ev = _evidence(f108)
@@ -613,3 +614,145 @@ def test_mapping_input_support() -> None:
     assert findings[0].code == SL105
     assert findings[0].source.path == "test.jsonl:1"
     assert findings[0].source.line == 1
+
+
+def test_sl106_scope_mismatch_interleaved_agent() -> None:
+    """Interleaved main/sub-agent cross-pair fires SL106 even within same parent tree (RVW-018)."""
+    events = [
+        SessionEvent(
+            id="root",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="user",
+            kind="message",
+        ),
+        SessionEvent(
+            id="call-1",
+            parent_id="root",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-1",
+            agent_id="main-agent",
+        ),
+        SessionEvent(
+            id="res-1",
+            parent_id="call-1",
+            seq=2,
+            ts="2026-09-05T12:00:02Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-1",
+            agent_id="sub-agent-a",
+        ),
+    ]
+
+    findings = check_cross_branch(events)
+    assert len(findings) == 1
+    assert findings[0].code == SL106
+    assert findings[0].evidence is not None
+    assert findings[0].evidence["scope_mismatch"] is True
+    assert findings[0].evidence["call_agent_id"] == "main-agent"
+    assert findings[0].evidence["result_agent_id"] == "sub-agent-a"
+
+
+def test_sl106_same_scope_disconnected_does_not_fire() -> None:
+    """Same-scope disconnected pair does not fire SL106 (belongs to graph checks) (RVW-018)."""
+    events = [
+        SessionEvent(
+            id="call-1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:01Z",
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-1",
+            agent_id="main-agent",
+        ),
+        SessionEvent(
+            id="res-1",
+            parent_id=None,
+            seq=1,
+            ts="2026-09-05T12:00:02Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-1",
+            agent_id="main-agent",
+        ),
+    ]
+
+    findings = check_cross_branch(events)
+    assert len(findings) == 0
+
+
+def test_sl106_empty_id_deterministic() -> None:
+    """Empty IDs produce deterministic behavior without id() addresses (RVW-034)."""
+    events = [
+        SessionEvent(
+            id="",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:01Z",
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-1",
+        ),
+        SessionEvent(
+            id="",
+            parent_id=None,
+            seq=1,
+            ts="2026-09-05T12:00:02Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-1",
+        ),
+    ]
+    findings1 = check_cross_branch(events)
+    findings2 = check_cross_branch(events)
+    assert findings1 == findings2
+    assert len(findings1) == 0
+
+
+def test_profile_severity_modulation_sl107_sl108() -> None:
+    """SL107 and SL108 are warning under neutral and error under strict (RVW-012)."""
+    from sesslint.profiles import CLAUDE_STRICT_PROFILE, NEUTRAL_PROFILE
+
+    # SL107 fixture (interleaved non-tool message)
+    events_sl107 = [
+        SessionEvent(
+            id="c1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-gap",
+        ),
+        SessionEvent(
+            id="m1",
+            parent_id="c1",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="user",
+            kind="message",
+        ),
+        SessionEvent(
+            id="r1",
+            parent_id="m1",
+            seq=2,
+            ts="2026-09-05T12:00:02Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-gap",
+        ),
+    ]
+
+    f_neutral = check_adjacency(events_sl107, profile=NEUTRAL_PROFILE)
+    assert len(f_neutral) == 1
+    assert f_neutral[0].severity == Severity.WARNING
+
+    f_strict = check_adjacency(events_sl107, profile=CLAUDE_STRICT_PROFILE)
+    assert len(f_strict) == 1
+    assert f_strict[0].severity == Severity.ERROR

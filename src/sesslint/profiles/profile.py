@@ -10,10 +10,11 @@ from __future__ import annotations
 import difflib
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 from sesslint.canonical import SCHEMA_VERSION, SessionEvent
+from sesslint.codes import Severity
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +28,12 @@ class Profile:
     thresholds: Mapping[str, float]
     strict_unknown_critical: bool
     checkpoint_sensitivity: str
+    version: str = "1.0.0"
+    rule_severities: Mapping[str, Severity] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize profile definition to standard dictionary with sorted keys."""
-        return {
+        res: dict[str, Any] = {
             "allowed_adapters": list(self.allowed_adapters),
             "checkpoint_sensitivity": self.checkpoint_sensitivity,
             "description": self.description,
@@ -38,7 +41,14 @@ class Profile:
             "name": self.name,
             "strict_unknown_critical": self.strict_unknown_critical,
             "thresholds": dict(self.thresholds),
+            "version": self.version,
         }
+        if self.rule_severities:
+            res["rule_severities"] = {
+                k: v.value if hasattr(v, "value") else str(v)
+                for k, v in sorted(self.rule_severities.items())
+            }
+        return res
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +65,7 @@ class EffectiveConfig:
     checkpoint_sensitivity: str
     format_override: str | None
     thresholds_source: str  # "profile" | "cli"
+    version: str = "1.0.0"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize effective config to dictionary suitable for JSON snapshots."""
@@ -181,6 +192,7 @@ def resolve_effective_config(
         checkpoint_sensitivity=prof.checkpoint_sensitivity,
         format_override=fmt_override,
         thresholds_source=thresholds_source,
+        version=prof.version,
     )
 
 
@@ -195,11 +207,13 @@ def require_canonical(session_or_events: Any) -> None:
 
     # Check if dict-like session
     if isinstance(session_or_events, Mapping):
-        schema = session_or_events.get("schema")
+        schema = session_or_events.get("schema") or session_or_events.get("schema_version")
         if schema != SCHEMA_VERSION:
             raise TypeError(f"Expected canonical session schema {SCHEMA_VERSION!r}, got {schema!r}")
-        if "events" not in session_or_events:
-            raise TypeError("Canonical session dictionary must contain 'events' array")
+        if "events" not in session_or_events and "session_id" not in session_or_events:
+            raise TypeError(
+                "Canonical session dictionary must contain 'events' array or 'session_id'"
+            )
         return
 
     # Check if sequence of events

@@ -18,10 +18,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from sesslint.canonical import (
+    PROVENANCE_FIELDS,
     SessionEvent,
     canonical_bytes,
     compute_content_hash,
     to_canonical_dict,
+    to_canonical_json,
 )
 from sesslint.codes import SL003, Repairability, Severity
 from sesslint.finding import (
@@ -70,7 +72,7 @@ def diff_field_names(events: Sequence[SessionEvent]) -> list[str]:
         else to_canonical_dict(e)
         for e in events
     ]
-    all_keys = set().union(*(d.keys() for d in dicts))
+    all_keys = set().union(*(d.keys() for d in dicts)) - PROVENANCE_FIELDS
 
     differing: set[str] = set()
     first_dict = dicts[0]
@@ -188,8 +190,20 @@ def check_identities(
         canonical_hashes: list[str] = []
         payload_hashes: list[str] = []
         for e in evs:
-            if hasattr(e, "canonical_hash") and callable(e.canonical_hash):
-                canonical_hashes.append(str(e.canonical_hash()))
+            if hasattr(e, "content_identity_hash") and callable(e.content_identity_hash):
+                canonical_hashes.append(str(e.content_identity_hash()))
+            elif hasattr(e, "to_canonical_dict") and callable(e.to_canonical_dict):
+                d = dict(e.to_canonical_dict())
+                for field in PROVENANCE_FIELDS:
+                    d.pop(field, None)
+                canonical_hashes.append(
+                    hashlib.sha256(to_canonical_json(d).encode("utf-8")).hexdigest()
+                )
+            elif isinstance(e, Mapping):
+                d = {k: v for k, v in e.items() if str(k) not in PROVENANCE_FIELDS}
+                canonical_hashes.append(
+                    hashlib.sha256(to_canonical_json(d).encode("utf-8")).hexdigest()
+                )
             else:
                 canonical_hashes.append(hashlib.sha256(canonical_bytes(e)).hexdigest())
 

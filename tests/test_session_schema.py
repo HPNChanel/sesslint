@@ -262,3 +262,57 @@ def test_cli_validate_session_unexpected_error(
     assert exit_code == 2
     captured = capsys.readouterr()
     assert "Unexpected error: Unexpected boom" in captured.err
+
+
+def test_jsonl_header_and_event_lines_satisfy_schema() -> None:
+    """Verify JSONL stream Line 1 header and Lines 2+ events satisfy session schema (RVW-001)."""
+    schema_text = SCHEMA_PATH.read_text(encoding="utf-8")
+    schema = json.loads(schema_text)
+
+    # Validate oneOf contains header and event references
+    one_of_refs = [branch.get("$ref") for branch in schema["oneOf"]]
+    assert "#/$defs/header" in one_of_refs
+    assert "#/$defs/event" in one_of_refs
+
+    min_valid = FIXTURES_DIR / "minimal-valid.jsonl"
+    lines = [
+        line.strip() for line in min_valid.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    assert len(lines) >= 2
+
+    # Line 1: Header
+    hdr = json.loads(lines[0])
+    hdr_required = set(schema["$defs"]["header"]["required"])
+    hdr_known = set(schema["$defs"]["header"]["properties"].keys())
+    assert hdr_required.issubset(set(hdr.keys()))
+    assert set(hdr.keys()).issubset(hdr_known)
+
+    # Lines 2+: Events
+    ev_required = set(schema["$defs"]["event"]["required"])
+    ev_known = set(schema["$defs"]["event"]["properties"].keys())
+    for ev_line in lines[1:]:
+        ev = json.loads(ev_line)
+        assert ev_required.issubset(set(ev.keys()))
+        assert set(ev.keys()).issubset(ev_known)
+
+
+def test_minimal_canonical_fixture_satisfies_flat_schema() -> None:
+    """Verify fixtures/canonical/minimal.json satisfies the published flat schema (RVW-001)."""
+    minimal_path = REPO_ROOT / "fixtures" / "canonical" / "minimal.json"
+    doc = json.loads(minimal_path.read_text(encoding="utf-8"))
+
+    schema_text = SCHEMA_PATH.read_text(encoding="utf-8")
+    schema = json.loads(schema_text)
+    flat_required = set(schema["oneOf"][0]["required"])
+    flat_known = set(schema["oneOf"][0]["properties"].keys())
+
+    missing_keys = flat_required - set(doc.keys())
+    assert flat_required.issubset(set(doc.keys())), f"Missing keys: {missing_keys}"
+    assert set(doc.keys()).issubset(flat_known), f"Unknown keys: {set(doc.keys()) - flat_known}"
+
+    # Also verify parse_session parses it without error
+    from sesslint.canonical import parse_session
+
+    session = parse_session(doc)
+    assert session.header.session_id == "canonical-session"
+    assert len(session.events) == 2

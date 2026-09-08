@@ -26,6 +26,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal
 
+from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
 from sesslint.canonical import (
     Session,
     SessionEvent,
@@ -41,12 +42,14 @@ from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
 from sesslint.codes import Severity
 from sesslint.finding import Finding
-from sesslint.policy.abstention import must_abstain
+from sesslint.policy.abstention import should_abstain_from_repair
 from sesslint.profiles.builtin import NEUTRAL_PROFILE
 from sesslint.profiles.profile import Profile, get_profile
+from sesslint.repair.assurance import cap_assurance
 from sesslint.repair.errors import (
     Abstained,
     OutputInvalid,
+    PlanSourceMismatch,
     PlanTampered,
     PolicyMismatch,
     RepairRefused,
@@ -59,12 +62,16 @@ from sesslint.repair.planner import (
     Loss,
     PlanStep,
     RepairPlan,
+    compute_events_source_hash,
 )
 from sesslint.repair.recipes_conservative import (
     register_all as register_all_conservative_recipes,
 )
 from sesslint.repair.recipes_salvage import (
     register_all as register_all_salvage_recipes,
+)
+from sesslint.repair.recipes_sl002 import (
+    register_all as register_all_sl002_recipes,
 )
 from sesslint.repair.registry import get_recipe
 
@@ -248,8 +255,7 @@ def run_all_checks(
     if profile is None:
         resolved_profile = NEUTRAL_PROFILE
     elif isinstance(profile, str):
-        p = get_profile(profile)
-        resolved_profile = p if p is not None else NEUTRAL_PROFILE
+        resolved_profile = get_profile(profile)
     else:
         resolved_profile = profile
 
@@ -269,7 +275,13 @@ def run_all_checks(
 
     tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
     if tp2_rules & enabled:
-        findings.extend(check_tool_pairing_2(events, source_path=source_path))
+        findings.extend(
+            check_tool_pairing_2(
+                events,
+                source_path=source_path,
+                profile=resolved_profile,
+            )
+        )
 
     cp_rules = {"SL201", "SL202", "SL203"}
     if cp_rules & enabled:
@@ -359,6 +371,13 @@ def execute(
             f"recomputed '{recomputed_fp}'"
         )
 
+    # RVW-019: Direct repair of vendor formats is rejected (canonical only)
+    if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+        raise RepairRefused(
+            f"Direct repair of vendor format '{format}' is not supported. "
+            "Repair operates exclusively on canonical session streams (JSONL)."
+        )
+
     # Step 1c: Policy match
     if plan.policy != policy:
         raise PolicyMismatch(
@@ -380,19 +399,23 @@ def execute(
     else:
         source_header, loaded_events = load_session_source(source_p)
 
-    # Step 1e: TOCTOU abstention re-check on current source
+    events_hash = compute_events_source_hash(loaded_events)
+    if plan.source_hash != source_pre_hash and plan.source_hash != events_hash:
+        raise PlanSourceMismatch(
+            f"Plan source_hash mismatch: plan '{plan.source_hash}' matches neither "
+            f"source file SHA-256 ('{source_pre_hash}') nor events hash ('{events_hash}')"
+        )
+
+    # Step 1e: TOCTOU abstention re-check on current source (RVW-011)
     chk_findings = check_checkpoint(loaded_events)
-    abst = must_abstain(
+    abst = should_abstain_from_repair(
         chk_findings,
         loaded_events,
-        allow_unknown_side_effects=acknowledge_side_effects,
+        policy=policy,
+        acknowledge_side_effects=acknowledge_side_effects,
     )
     if abst.abstain:
-        has_sl203 = any(f.code == "SL203" for f in chk_findings)
-        if policy == "conservative" or has_sl203:
-            raise Abstained(f"Repair abstained: {', '.join(abst.reasons)}")
-        if not acknowledge_side_effects and any(r.startswith("side-effect-") for r in abst.reasons):
-            raise Abstained(f"Repair abstained: {', '.join(abst.reasons)}")
+        raise Abstained(f"Repair abstained: {', '.join(abst.reasons)}")
 
     # -------------------------------------------------------------------------
     # STEP 2: Pre-flight destination path checks
@@ -424,6 +447,7 @@ def execute(
     # -------------------------------------------------------------------------
     register_all_conservative_recipes()
     register_all_salvage_recipes()
+    register_all_sl002_recipes()
 
     working_events = _copy_events_as_dicts(loaded_events)
     sorted_steps = sorted(plan.steps, key=lambda s: s.seq)
@@ -432,6 +456,22 @@ def execute(
         recipe = get_recipe(step.recipe)
         if recipe is None or recipe.apply is None:
             raise OutputInvalid(f"Recipe '{step.recipe}' not found or has no apply handler")
+
+        # RVW-004: Enforce per-step minimum policy regardless of plan provenance
+        step_min_policy = getattr(step, "min_policy", "conservative")
+        rec_min_policy = getattr(recipe, "min_policy", "conservative")
+        if (
+            recipe.salvage_only
+            or recipe.lossy
+            or step.lossy
+            or step_min_policy == "salvage"
+            or rec_min_policy == "salvage"
+        ):
+            if policy != "salvage":
+                raise PolicyMismatch(
+                    f"Step {step.seq} (recipe '{step.recipe}') requires 'salvage' policy, "
+                    f"but repair execution was invoked under policy '{policy}'"
+                )
 
         try:
             working_events = recipe.apply(working_events, step)
@@ -622,6 +662,31 @@ def execute(
     manifest_policy: Literal["conservative", "salvage"] = (
         "salvage" if plan.policy == "salvage" else "conservative"
     )
+
+    recipe_versions: dict[str, str] = {}
+    for step in sorted_steps:
+        rec = get_recipe(step.recipe)
+        if rec is not None:
+            recipe_versions[step.recipe] = getattr(rec, "version", "1.0.0")
+
+    reval_prof = (
+        get_profile(reval_profile_name)
+        if isinstance(reval_profile_name, str)
+        else reval_profile_name
+    )
+    prof_version = getattr(reval_prof, "version", "1.0.0")
+    adp_version = "1.0.0"
+
+    byte_counts = {
+        "output": len(output_bytes),
+        "source": len(source_bytes),
+    }
+    record_counts = {
+        "output": len(parsed_output_events),
+        "source": len(loaded_events),
+    }
+    capped_assurance = cap_assurance("clean", plan)
+
     manifest = build_manifest(
         input_fingerprint=source_pre_hash,
         output_fingerprint=output_hash,
@@ -629,6 +694,13 @@ def execute(
         actions=actions,
         declared_loss=tuple(declared_loss),
         revalidate_report=None,
+        plan_fingerprint=plan.fingerprint,
+        assurance=capped_assurance,
+        recipe_versions=recipe_versions,
+        profile_version=prof_version,
+        adapter_version=adp_version,
+        byte_counts=byte_counts,
+        record_counts=record_counts,
     )
 
     if not dry_run:

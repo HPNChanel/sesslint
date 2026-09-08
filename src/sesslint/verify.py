@@ -35,7 +35,7 @@ from sesslint.checks.identity import check_identities
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
 from sesslint.finding import Finding
-from sesslint.profiles import NEUTRAL_PROFILE, get_profile
+from sesslint.profiles import get_profile
 from sesslint.repair.assurance import cap_assurance
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
@@ -53,6 +53,7 @@ from sesslint.repair.recipes_salvage import (
     register_all as register_all_salvage_recipes,
 )
 from sesslint.repair.registry import get_recipe
+from sesslint.report import parse_manifest
 
 StrPath = str | os.PathLike[str]
 
@@ -159,39 +160,43 @@ def _parse_session_events(
 
     # Single-document JSON format check (supports both compact and indented JSON)
     if text.startswith("{") and "events" in text:
-        is_single_doc = False
-        data: Any = None
         try:
             data = json.loads(text)
             if isinstance(data, Mapping) and "events" in data and isinstance(data["events"], list):
-                is_single_doc = True
-        except json.JSONDecodeError:
-            is_single_doc = False
+                from sesslint.adapters.canonical import load_canonical
 
-        if is_single_doc and isinstance(data, Mapping):
-            hdr: SessionHeader | None = None
-            hdr_dict = (
-                dict(data["header"])
-                if isinstance(data.get("header"), Mapping)
-                else {k: v for k, v in data.items() if k != "events"}
-            )
-            try:
-                hdr = parse_session_header(hdr_dict)
-            except Exception:
-                if (
-                    "schema_version" in hdr_dict
-                    and "session_id" in hdr_dict
-                    and "kind" not in hdr_dict
-                ):
-                    hdr = SessionHeader(
-                        schema_version=hdr_dict["schema_version"],
-                        session_id=str(hdr_dict["session_id"]),
-                        created_at=str(hdr_dict.get("created_at", "")),
-                        title=str(hdr_dict["title"]) if "title" in hdr_dict else None,
-                    )
-
-            doc_events = [parse_session_event(e, seen_ids=None) for e in data["events"]]
-            return hdr, doc_events
+                ev_list, _ = load_canonical(raw_bytes)
+                hdr: SessionHeader | None = None
+                hdr_dict = (
+                    dict(data["header"])
+                    if isinstance(data.get("header"), Mapping)
+                    else {k: v for k, v in data.items() if k != "events"}
+                )
+                try:
+                    hdr = parse_session_header(hdr_dict)
+                except Exception:
+                    if (
+                        "schema_version" in hdr_dict
+                        and "session_id" in hdr_dict
+                        and "kind" not in hdr_dict
+                    ):
+                        hdr = SessionHeader(
+                            schema_version=hdr_dict["schema_version"],
+                            session_id=str(hdr_dict["session_id"]),
+                            created_at=str(hdr_dict.get("created_at", "")),
+                            title=str(hdr_dict["title"]) if "title" in hdr_dict else None,
+                        )
+                    else:
+                        sess_id = str(ev_list.source.get("session_id", "canonical-session"))
+                        created_at = str(ev_list.source.get("created_at", "2026-09-05T12:00:00Z"))
+                        hdr = SessionHeader(
+                            schema_version="sesslint.session/v1",
+                            session_id=sess_id,
+                            created_at=created_at,
+                        )
+                return hdr, list(ev_list)
+        except Exception:
+            pass
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
@@ -232,6 +237,39 @@ def _parse_session_events(
     return header, events
 
 
+def _load_source_with_stream_findings(
+    path: StrPath,
+) -> tuple[SessionHeader | None, list[SessionEvent], list[Finding]]:
+    """Load session header, events, and stream findings using io module."""
+    from sesslint.io import iter_events, read_header
+
+    p = Path(path)
+    try:
+        hdr = read_header(p)
+        items = list(iter_events(p))
+        events = [e for e in items if isinstance(e, SessionEvent)]
+        stream_findings = [f for f in items if isinstance(f, Finding)]
+        return hdr, events, stream_findings
+    except Exception:
+        try:
+            text = p.read_text(encoding="utf-8-sig").strip()
+            if text.startswith("{"):
+                data = json.loads(text)
+                if isinstance(data, Mapping) and "events" in data:
+                    from sesslint.adapters.canonical import load_canonical
+
+                    ev_list, can_findings = load_canonical(p)
+                    hdr = SessionHeader(
+                        schema_version="sesslint.session/v1",
+                        session_id=str(ev_list.source.get("session_id", p.stem)),
+                        created_at=str(ev_list.source.get("created_at", "2026-09-05T12:00:00Z")),
+                    )
+                    return hdr, list(ev_list), list(can_findings)
+        except Exception:
+            pass
+        raise
+
+
 def _run_detector_checks(
     events: Sequence[SessionEvent],
     *,
@@ -239,9 +277,6 @@ def _run_detector_checks(
 ) -> list[Finding]:
     """Run detector checks directly from checks modules without importing mutator."""
     profile = get_profile(profile_name)
-    if profile is None:
-        profile = NEUTRAL_PROFILE
-
     enabled = set(profile.enabled_rules)
     findings: list[Finding] = []
 
@@ -258,7 +293,7 @@ def _run_detector_checks(
 
     tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
     if tp2_rules & enabled:
-        findings.extend(check_tool_pairing_2(events, source_path="<repaired>"))
+        findings.extend(check_tool_pairing_2(events, source_path="<repaired>", profile=profile))
 
     cp_rules = {"SL201", "SL202", "SL203"}
     if cp_rules & enabled:
@@ -276,9 +311,10 @@ def _run_detector_checks(
 def verify(
     *,
     source_path: StrPath,
-    plan_path: StrPath,
     output_path: StrPath,
     manifest_path: StrPath,
+    plan_path: StrPath | None = None,
+    acknowledge_side_effects: bool = False,
 ) -> Verdict:
     """Independently verify a repair manifest, hash bindings, replay, and idempotence.
 
@@ -292,47 +328,89 @@ def verify(
     register_all_salvage_recipes()
 
     src_p = Path(source_path)
-    pln_p = Path(plan_path)
     out_p = Path(output_path)
     man_p = Path(manifest_path)
 
-    for p, label in [(src_p, "Source"), (pln_p, "Plan"), (out_p, "Output"), (man_p, "Manifest")]:
+    for p, label in [(src_p, "Source"), (out_p, "Output"), (man_p, "Manifest")]:
         if not p.exists():
             raise FileNotFoundError(f"{label} file not found: {p}")
         if p.is_dir():
             raise IsADirectoryError(f"{label} path is a directory: {p}")
 
     source_bytes = src_p.read_bytes()
-    plan_bytes = pln_p.read_bytes()
     output_bytes = out_p.read_bytes()
     manifest_bytes = man_p.read_bytes()
 
-    # Safely parse JSON payloads
+    # Safely parse manifest via parse_manifest (route verify through parse_manifest per RVW-008)
     manifest_dict: dict[str, Any] | None = None
     try:
-        parsed_m = json.loads(manifest_bytes.decode("utf-8-sig"))
-        if isinstance(parsed_m, dict):
-            manifest_dict = parsed_m
+        manifest_obj = parse_manifest(manifest_bytes.decode("utf-8-sig"))
+        manifest_dict = manifest_obj.to_dict()
     except Exception:
-        manifest_dict = None
+        try:
+            parsed_m = json.loads(manifest_bytes.decode("utf-8-sig"))
+            if isinstance(parsed_m, dict):
+                manifest_dict = parsed_m
+        except Exception:
+            manifest_dict = None
 
     plan_dict: dict[str, Any] | None = None
-    try:
-        parsed_p = json.loads(plan_bytes.decode("utf-8-sig"))
-        if isinstance(parsed_p, dict):
-            plan_dict = parsed_p
-    except Exception:
-        plan_dict = None
-
     plan_obj: RepairPlan | None = None
-    if plan_dict is not None:
+    actual_source_hash = hashlib.sha256(source_bytes).hexdigest()
+
+    if plan_path is not None:
+        pln_p = Path(plan_path)
+        if not pln_p.exists():
+            raise FileNotFoundError(f"Plan file not found: {pln_p}")
+        if pln_p.is_dir():
+            raise IsADirectoryError(f"Plan path is a directory: {pln_p}")
+        plan_bytes = pln_p.read_bytes()
         try:
-            plan_obj = _load_plan_from_dict(plan_dict)
+            parsed_p = json.loads(plan_bytes.decode("utf-8-sig"))
+            if isinstance(parsed_p, dict):
+                plan_dict = parsed_p
+                plan_obj = _load_plan_from_dict(plan_dict)
+        except Exception:
+            plan_dict = None
+            plan_obj = None
+    else:
+        # Reconstruct plan from source events and manifest policy/profile (RVW-024)
+        target_policy = (
+            str(manifest_dict.get("policy", "conservative"))
+            if manifest_dict is not None and "policy" in manifest_dict
+            else "conservative"
+        )
+        target_profile = (
+            str(manifest_dict.get("profile", "neutral"))
+            if manifest_dict is not None and "profile" in manifest_dict
+            else "neutral"
+        )
+        try:
+            try:
+                _, src_events, stream_findings = _load_source_with_stream_findings(source_path)
+            except Exception:
+                _, src_events = _parse_session_events(source_bytes)
+                stream_findings = []
+
+            check_findings = _run_detector_checks(
+                src_events,
+                profile_name=target_profile,
+            )
+            findings = list(stream_findings) + list(check_findings)
+            plan_obj = plan(
+                findings=findings,
+                events=src_events,
+                profile=target_profile,
+                policy=target_policy,
+                source_hash=actual_source_hash,
+                acknowledge_side_effects=acknowledge_side_effects,
+            )
+            plan_dict = plan_obj.to_dict()
         except Exception:
             plan_obj = None
+            plan_dict = None
 
     # Check 1: source_hash
-    actual_source_hash = hashlib.sha256(source_bytes).hexdigest()
     if manifest_dict is None:
         c1 = Check(name="source_hash", ok=False, detail="manifest-invalid-json")
     else:
@@ -361,7 +439,11 @@ def verify(
 
     # Check 2: plan_fingerprint
     if plan_dict is None:
-        c2 = Check(name="plan_fingerprint", ok=False, detail="invalid-plan-json")
+        c2 = Check(
+            name="plan_fingerprint",
+            ok=False,
+            detail="invalid-plan-json" if plan_path is not None else "plan-missing",
+        )
     else:
         declared_fp = plan_dict.get("fingerprint")
         recomputed_fp = compute_plan_fingerprint(plan_dict)
@@ -385,7 +467,11 @@ def verify(
             else:
                 c2 = Check(name="plan_fingerprint", ok=True, detail="matched")
         else:
-            c2 = Check(name="plan_fingerprint", ok=True, detail="matched")
+            c2 = Check(
+                name="plan_fingerprint",
+                ok=False,
+                detail="manifest-missing-plan-fingerprint",
+            )
 
     # Check 3: output_hash
     actual_output_hash = hashlib.sha256(output_bytes).hexdigest()
@@ -413,12 +499,18 @@ def verify(
     output_events: list[SessionEvent] = []
 
     try:
-        source_header, source_events = _parse_session_events(source_bytes)
+        try:
+            source_header, source_events, _ = _load_source_with_stream_findings(source_path)
+        except Exception:
+            source_header, source_events = _parse_session_events(source_bytes)
     except Exception as err:
         c4 = Check(name="transformation_audit", ok=False, detail=f"source-parse-failed: {err}")
     else:
         try:
-            output_header, output_events = _parse_session_events(output_bytes)
+            try:
+                output_header, output_events, _ = _load_source_with_stream_findings(output_path)
+            except Exception:
+                output_header, output_events = _parse_session_events(output_bytes)
         except Exception as err:
             c4 = Check(name="transformation_audit", ok=False, detail=f"output-parse-failed: {err}")
         else:
@@ -427,61 +519,96 @@ def verify(
             elif not output_events and output_bytes.strip():
                 c4 = Check(name="transformation_audit", ok=False, detail="output-events-empty")
             else:
-                working_events = [to_canonical_dict(e) for e in source_events]
-                sorted_steps = sorted(plan_obj.steps, key=lambda s: s.seq)
-                replay_err: str | None = None
-
-                for step in sorted_steps:
-                    recipe = get_recipe(step.recipe)
-                    if recipe is None or recipe.apply is None:
-                        replay_err = f"recipe-missing: {step.recipe}"
-                        break
-                    try:
-                        working_events = recipe.apply(working_events, step)
-                    except Exception as err:
-                        replay_err = f"recipe-apply-failed: {step.recipe} ({err})"
-                        break
-
-                if replay_err is not None:
-                    c4 = Check(name="transformation_audit", ok=False, detail=replay_err)
+                # RVW-021: Audit manifest actions against plan steps
+                manifest_actions = (
+                    manifest_dict.get("actions") if manifest_dict is not None else None
+                )
+                actions_audit_ok = True
+                actions_audit_err = ""
+                if manifest_actions is None:
+                    actions_audit_ok = False
+                    actions_audit_err = "manifest-missing-actions"
+                elif not isinstance(manifest_actions, (list, tuple)):
+                    actions_audit_ok = False
+                    actions_audit_err = "manifest-actions-invalid-format"
+                elif len(manifest_actions) != len(plan_obj.steps):
+                    actions_audit_ok = False
+                    actions_audit_err = (
+                        f"manifest-actions-count-mismatch: expected {len(plan_obj.steps)}, "
+                        f"got {len(manifest_actions)}"
+                    )
                 else:
-                    replayed_events: list[SessionEvent] = []
-                    schema_err: str | None = None
-                    for idx, ev_dict in enumerate(working_events):
+                    act_kinds = [
+                        str(
+                            a.get("kind")
+                            if isinstance(a, Mapping)
+                            else getattr(a, "kind", None) or ""
+                        )
+                        for a in manifest_actions
+                    ]
+                    step_recipes = [s.recipe for s in plan_obj.steps]
+                    if sorted(act_kinds) != sorted(step_recipes):
+                        actions_audit_ok = False
+                        actions_audit_err = "manifest-actions-recipes-mismatch"
+
+                if not actions_audit_ok:
+                    c4 = Check(name="transformation_audit", ok=False, detail=actions_audit_err)
+                else:
+                    working_events = [to_canonical_dict(e) for e in source_events]
+                    sorted_steps = sorted(plan_obj.steps, key=lambda s: s.seq)
+                    replay_err: str | None = None
+
+                    for step in sorted_steps:
+                        recipe = get_recipe(step.recipe)
+                        if recipe is None or recipe.apply is None:
+                            replay_err = f"recipe-missing: {step.recipe}"
+                            break
                         try:
-                            replayed_events.append(parse_session_event(ev_dict, seen_ids=None))
+                            working_events = recipe.apply(working_events, step)
                         except Exception as err:
-                            schema_err = f"replayed-schema-invalid at index {idx}: {err}"
+                            replay_err = f"recipe-apply-failed: {step.recipe} ({err})"
                             break
 
-                    if schema_err is not None:
-                        c4 = Check(name="transformation_audit", ok=False, detail=schema_err)
+                    if replay_err is not None:
+                        c4 = Check(name="transformation_audit", ok=False, detail=replay_err)
                     else:
-                        replayed_canon = "\n".join(
-                            to_canonical_json(to_canonical_dict(e)) for e in replayed_events
-                        )
-                        output_canon = "\n".join(
-                            to_canonical_json(to_canonical_dict(e)) for e in output_events
-                        )
+                        replayed_events: list[SessionEvent] = []
+                        schema_err: str | None = None
+                        for idx, ev_dict in enumerate(working_events):
+                            try:
+                                replayed_events.append(parse_session_event(ev_dict, seen_ids=None))
+                            except Exception as err:
+                                schema_err = f"replayed-schema-invalid at index {idx}: {err}"
+                                break
 
-                        if replayed_canon.encode("utf-8") != output_canon.encode("utf-8"):
-                            c4 = Check(
-                                name="transformation_audit",
-                                ok=False,
-                                detail="events-mismatch: replay differs from output",
-                            )
-                        elif (
-                            source_header is not None
-                            and output_header is not None
-                            and source_header.session_id != output_header.session_id
-                        ):
-                            c4 = Check(
-                                name="transformation_audit",
-                                ok=False,
-                                detail="header-mismatch: session_id mismatch",
-                            )
+                        if schema_err is not None:
+                            c4 = Check(name="transformation_audit", ok=False, detail=schema_err)
                         else:
-                            c4 = Check(name="transformation_audit", ok=True, detail="matched")
+                            replayed_canon = "\n".join(
+                                to_canonical_json(to_canonical_dict(e)) for e in replayed_events
+                            )
+                            output_canon = "\n".join(
+                                to_canonical_json(to_canonical_dict(e)) for e in output_events
+                            )
+
+                            if replayed_canon.encode("utf-8") != output_canon.encode("utf-8"):
+                                c4 = Check(
+                                    name="transformation_audit",
+                                    ok=False,
+                                    detail="events-mismatch: replay differs from output",
+                                )
+                            elif (
+                                source_header is not None
+                                and output_header is not None
+                                and source_header.session_id != output_header.session_id
+                            ):
+                                c4 = Check(
+                                    name="transformation_audit",
+                                    ok=False,
+                                    detail="header-mismatch: session_id mismatch",
+                                )
+                            else:
+                                c4 = Check(name="transformation_audit", ok=True, detail="matched")
 
     # Check 5: loss_audit
     try:
@@ -574,6 +701,8 @@ def verify(
 
     if manifest_dict is None:
         c6 = Check(name="assurance_audit", ok=False, detail="manifest-invalid-json")
+    elif plan_obj is None:
+        c6 = Check(name="assurance_audit", ok=False, detail="plan-missing")
     elif "assurance" in manifest_dict:
         declared_assurance = str(manifest_dict["assurance"])
         if declared_assurance == recomputed_assurance:
@@ -584,34 +713,8 @@ def verify(
                 ok=False,
                 detail=f"mismatch: expected {declared_assurance}, got {recomputed_assurance}",
             )
-    elif "policy" in manifest_dict:
-        declared_policy = str(manifest_dict["policy"])
-        if declared_policy == "conservative":
-            if recomputed_assurance in ("repaired-lossless", "clean"):
-                c6 = Check(name="assurance_audit", ok=True, detail="matched")
-            else:
-                c6 = Check(
-                    name="assurance_audit",
-                    ok=False,
-                    detail=f"policy mismatch: conservative got {recomputed_assurance}",
-                )
-        elif declared_policy == "salvage":
-            if recomputed_assurance in ("salvaged", "repaired-lossless", "clean"):
-                c6 = Check(name="assurance_audit", ok=True, detail="matched")
-            else:
-                c6 = Check(
-                    name="assurance_audit",
-                    ok=False,
-                    detail=f"policy mismatch: salvage got {recomputed_assurance}",
-                )
-        else:
-            c6 = Check(
-                name="assurance_audit",
-                ok=False,
-                detail=f"unknown-policy: {declared_policy}",
-            )
     else:
-        c6 = Check(name="assurance_audit", ok=False, detail="field-missing")
+        c6 = Check(name="assurance_audit", ok=False, detail="manifest-missing-assurance")
 
     # Check 7: idempotence
     try:
@@ -633,7 +736,8 @@ def verify(
                 events=fresh_output_events,
                 profile=target_profile,
                 policy=target_policy,
-                acknowledge_side_effects=True,
+                source_hash=hashlib.sha256(output_bytes).hexdigest(),
+                acknowledge_side_effects=acknowledge_side_effects,
             )
             if len(fresh_plan.steps) == 0:
                 c7 = Check(name="idempotence", ok=True, detail="0-steps (converged)")
@@ -653,3 +757,30 @@ def verify(
         checks=checks,
         assurance=recomputed_assurance,
     )
+
+
+def render_verify_human(verdict: Verdict, *, color: bool = False) -> str:
+    """Render verify Verdict to human-readable format."""
+    green = "\033[32m" if color else ""
+    red = "\033[31m" if color else ""
+    bold = "\033[1m" if color else ""
+    reset = "\033[0m" if color else ""
+
+    status_str = f"{green}PASSED{reset}" if verdict.ok else f"{red}FAILED{reset}"
+    lines = [
+        f"Verification: {bold}{status_str}",
+        f"Assurance: {verdict.assurance}",
+        "Checks:",
+    ]
+    for c in verdict.checks:
+        mark = f"{green}[PASS]{reset}" if c.ok else f"{red}[FAIL]{reset}"
+        lines.append(f"  {mark} {c.name}: {c.detail}")
+    return "\n".join(lines)
+
+
+__all__ = [
+    "Check",
+    "Verdict",
+    "render_verify_human",
+    "verify",
+]

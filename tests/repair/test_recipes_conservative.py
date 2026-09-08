@@ -131,10 +131,10 @@ def test_conservative_recipes_registration_and_handles() -> None:
 
     suffix_r = get_recipe("terminal-suffix-discard")
     assert suffix_r is not None
-    assert suffix_r.handles == (SL005, SL203)
+    assert suffix_r.handles == (SL005,)
     assert suffix_r.preconditions == ("no_prior_safe_tool_after_cut",)
     assert suffix_r.lossy is True
-    assert suffix_r.salvage_only is False
+    assert suffix_r.salvage_only is True
 
     collapse_r = get_recipe("identical-duplicate-collapse")
     assert collapse_r is not None
@@ -170,7 +170,7 @@ def test_conservative_recipes_registration_and_handles() -> None:
     assert recipes_for(SL005) == (suffix_r,)
     assert recipes_for(SL104) == (removal_r,)
     assert recipes_for(SL108) == (reunion_r,)
-    assert recipes_for(SL203) == (suffix_r,)
+    assert recipes_for(SL203) == ()
     assert recipes_for(SL101) == ()
 
 
@@ -557,16 +557,11 @@ def test_sl203_refusal_blocks_other_conservative_recipes() -> None:
         fp_suffix="sl003",
     )
 
-    # 1. When side-effects are safe: suffix-discard is planned, collapse is blocked by no_sl203
+    # 1. When SL203 is present: hard refusal blocks automated repair across all findings
     p = plan([f_sl203, f_sl003], events)
-    assert len(p.steps) == 1
-    assert p.steps[0].recipe == "terminal-suffix-discard"
-    assert p.steps[0].target_index == 3
-    assert p.loss_accounting.preview["discarded-suffix"] == 1  # event at index 3 dropped
-
-    assert len(p.blocked) == 1
-    assert p.blocked[0].code == SL003
-    assert p.blocked[0].reason == "precondition-failed:no_sl203"
+    assert len(p.steps) == 0
+    assert len(p.blocked) == 2
+    assert all(b.reason == "SL203-refusal" for b in p.blocked)
 
 
 def test_sl203_refusal_when_side_effects_unknown() -> None:
@@ -1005,7 +1000,7 @@ def test_terminal_suffix_discard_sl005_entry_index() -> None:
         evidence={"entry_index": 2, "cycle_path": ["e2", "e1"]},
         fp_suffix="sl005-entry",
     )
-    p = plan([f_sl005], events)
+    p = plan([f_sl005], events, policy="salvage")
     assert len(p.steps) == 1
     assert p.steps[0].recipe == "terminal-suffix-discard"
     assert p.steps[0].target_index == 2

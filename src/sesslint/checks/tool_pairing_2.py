@@ -28,7 +28,7 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from sesslint.canonical import SessionEvent
 from sesslint.codes import (
@@ -300,8 +300,26 @@ class _ToolPairing2Indexer:
     def component(self, event_id: str | None) -> str:
         """Return canonical component root for an event ID."""
         if event_id is None or not str(event_id).strip():
-            return f"<unknown:{id(event_id)}>"
+            return "<unknown>"
         return self.ds.find(str(event_id))
+
+
+def _extract_scope(ev: Any) -> tuple[str | None, str | None, str | None]:
+    """Extract (agent_id, branch_id, interaction_id) coordinates from an event."""
+    agent = getattr(ev, "agent_id", None)
+    if agent is None and isinstance(ev, Mapping):
+        agent = ev.get("agent_id") or ev.get("agentId")
+    branch = getattr(ev, "branch_id", None)
+    if branch is None and isinstance(ev, Mapping):
+        branch = ev.get("branch_id") or ev.get("branchId")
+    inter = getattr(ev, "interaction_id", None)
+    if inter is None and isinstance(ev, Mapping):
+        inter = ev.get("interaction_id") or ev.get("interactionId")
+
+    agent_str = str(agent).strip() if agent is not None and str(agent).strip() else None
+    branch_str = str(branch).strip() if branch is not None and str(branch).strip() else None
+    inter_str = str(inter).strip() if inter is not None and str(inter).strip() else None
+    return agent_str, branch_str, inter_str
 
 
 def check_reversed_order(
@@ -368,13 +386,18 @@ def check_cross_branch(
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
 ) -> list[Finding]:
-    """Check for cross-branch tool pairing (SL106) where call and result belong to different trees.
+    """Check for cross-branch tool pairing (SL106).
 
     Guarantees:
     - Runs only on clean pairs (1 call, 1 result).
-    - Trigger: component(use_id) != component(result_id).
+    - Scope-aware check:
+      1) When explicit scope (agent_id, branch_id, interaction_id) is present on either event:
+         Triggers if and only if scopes mismatch. Same-scope disconnected pairs do not
+         trigger SL106.
+      2) When explicit scope is not present on both events:
+         Falls back to causal tree component check (component(use_id) != component(result_id)).
     - severity: error, repairability: manual.
-    - evidence: {correlation_id, result_id, result_index, use_id, use_index}.
+    - evidence: {correlation_id, result_id, result_index, use_id, use_index, ...}.
     """
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
@@ -393,20 +416,75 @@ def check_cross_branch(
             raw_res_id = res_ev.get("id")
         res_id_str = str(raw_res_id) if raw_res_id is not None else None
 
+        use_agent, use_branch, use_inter = _extract_scope(use_ev)
+        res_agent, res_branch, res_inter = _extract_scope(res_ev)
+
+        has_explicit_scope = any(
+            x is not None
+            for x in (use_agent, use_branch, use_inter, res_agent, res_branch, res_inter)
+        )
+
+        should_trigger = False
+        scope_mismatch = False
+        scope_evidence: dict[str, Any] = {}
         comp_use = indexer.component(use_id_str)
         comp_res = indexer.component(res_id_str)
 
-        if comp_use != comp_res:
+        if has_explicit_scope:
+            if use_agent != res_agent:
+                scope_mismatch = True
+                if use_agent is not None:
+                    scope_evidence["call_agent_id"] = _safe_id(use_agent)
+                if res_agent is not None:
+                    scope_evidence["result_agent_id"] = _safe_id(res_agent)
+            if use_branch != res_branch:
+                scope_mismatch = True
+                if use_branch is not None:
+                    scope_evidence["call_branch_id"] = _safe_id(use_branch)
+                if res_branch is not None:
+                    scope_evidence["result_branch_id"] = _safe_id(res_branch)
+            if use_inter != res_inter:
+                scope_mismatch = True
+                if use_inter is not None:
+                    scope_evidence["call_interaction_id"] = _safe_id(use_inter)
+                if res_inter is not None:
+                    scope_evidence["result_interaction_id"] = _safe_id(res_inter)
+            should_trigger = scope_mismatch
+        else:
+            should_trigger = (
+                comp_use != comp_res and comp_use != "<unknown>" and comp_res != "<unknown>"
+            )
+
+        if should_trigger:
             safe_corr = _safe_id(corr)
             safe_use_id = _safe_id(use_id_str)
             safe_res_id = _safe_id(res_id_str)
             rec_id = _source_record_id(use_id_str)
             path, line = _resolve_source_coords(res_ev, source_path)
 
-            fp = compute_pairing_fingerprint(
-                SL106,
-                [corr, str(use_idx), str(res_idx), comp_use, comp_res],
-            )
+            fp_items = [corr, str(use_idx), str(res_idx)]
+            if scope_mismatch:
+                fp_items.extend(
+                    [
+                        str(use_agent or use_branch or use_inter),
+                        str(res_agent or res_branch or res_inter),
+                    ]
+                )
+            else:
+                fp_items.extend([comp_use, comp_res])
+
+            fp = compute_pairing_fingerprint(SL106, fp_items)
+
+            evidence_dict: dict[str, Any] = {
+                "correlation_id": safe_corr,
+                "result_id": safe_res_id,
+                "result_index": res_idx,
+                "use_id": safe_use_id,
+                "use_index": use_idx,
+            }
+            if scope_mismatch:
+                evidence_dict["scope_mismatch"] = True
+                evidence_dict.update(scope_evidence)
 
             findings.append(
                 make_finding(
@@ -417,13 +495,7 @@ def check_cross_branch(
                     source=SourceRef(path=path, line=line, record_id=rec_id),
                     fingerprint=fp,
                     related_ids=(safe_res_id,) if safe_res_id != "<redacted>" else (),
-                    evidence={
-                        "correlation_id": safe_corr,
-                        "result_id": safe_res_id,
-                        "result_index": res_idx,
-                        "use_id": safe_use_id,
-                        "use_index": use_idx,
-                    },
+                    evidence=evidence_dict,
                 )
             )
 
@@ -435,11 +507,28 @@ def check_cross_branch(
     )
 
 
+def _resolve_rule_severity(code: str, profile: Any, default_severity: Severity) -> Severity:
+    if profile is None:
+        return default_severity
+    if isinstance(profile, str):
+        try:
+            from sesslint.profiles import get_profile
+
+            profile = get_profile(profile)
+        except Exception:
+            return default_severity
+    if hasattr(profile, "rule_severities") and code in profile.rule_severities:
+        return cast(Severity, profile.rule_severities[code])
+    return default_severity
+
+
 def check_adjacency(
     events: Sequence[SessionEvent],
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    profile: Any = None,
+    severity: Severity | None = None,
 ) -> list[Finding]:
     """Check for non-adjacent tool pairing (SL107) with parallel-exemption for concurrent tools.
 
@@ -449,11 +538,12 @@ def check_adjacency(
       is NOT a tool event.
     - Parallel-exemption: If ALL intervening events have kind in (tool_call, tool_use,
       tool_result), SL107 is suppressed to allow concurrent tool fan-out.
-    - severity: warning, repairability: manual.
+    - severity: profile-aware (error under strict profiles, warning under neutral).
     - evidence: {correlation_id, intervening_count, intervening_kinds, result_index, use_index}.
     """
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
+    target_severity = severity or _resolve_rule_severity(SL107, profile, Severity.WARNING)
 
     for corr in indexer.clean_corrs:
         use_idx, use_ev = indexer.uses_by_corr[corr][0]
@@ -490,7 +580,7 @@ def check_adjacency(
         findings.append(
             make_finding(
                 code=SL107,
-                severity=Severity.WARNING,
+                severity=target_severity,
                 repairability=Repairability.MANUAL,
                 message_template=_MSG_SL107,
                 source=SourceRef(path=path, line=line, record_id=rec_id),
@@ -519,17 +609,20 @@ def check_compaction_split(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    profile: Any = None,
+    severity: Severity | None = None,
 ) -> list[Finding]:
     """Check for compaction boundaries splitting a tool pair (SL108).
 
     Guarantees:
     - Runs only on clean pairs (1 call, 1 result).
     - Trigger: A compaction_boundary event index k exists strictly between use_idx and result_idx.
-    - severity: warning, repairability: manual.
+    - severity: profile-aware (error under strict profiles, warning under neutral).
     - evidence: {boundary_index, correlation_id, result_index, use_index}.
     """
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
+    target_severity = severity or _resolve_rule_severity(SL108, profile, Severity.WARNING)
 
     for corr in indexer.clean_corrs:
         use_idx, use_ev = indexer.uses_by_corr[corr][0]
@@ -556,11 +649,17 @@ def check_compaction_split(
             [corr, str(use_idx), str(res_idx), str(first_boundary_idx)],
         )
 
+        rep = (
+            Repairability.DETERMINISTIC
+            if len(split_boundaries) == 1
+            else Repairability.LOSSY_EXPLICIT
+        )
+
         findings.append(
             make_finding(
                 code=SL108,
-                severity=Severity.WARNING,
-                repairability=Repairability.MANUAL,
+                severity=target_severity,
+                repairability=rep,
                 message_template=_MSG_SL108,
                 source=SourceRef(path=path, line=line, record_id=rec_id),
                 fingerprint=fp,
@@ -587,6 +686,7 @@ def check_tool_pairing_2(
     *,
     source_path: str = "<canonical>",
     max_findings_per_family: int = MAX_PAIRING_FINDINGS,
+    profile: Any = None,
 ) -> list[Finding]:
     """Run all part-2 tool pairing checks (SL105, SL106, SL107, SL108) over canonical events.
 
@@ -618,6 +718,7 @@ def check_tool_pairing_2(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            profile=profile,
         )
     )
     all_findings.extend(
@@ -625,6 +726,7 @@ def check_tool_pairing_2(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            profile=profile,
         )
     )
 

@@ -11,7 +11,7 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sesslint.finding import Finding
+from sesslint.finding import Finding, finding_sort_key
 
 
 def canonical_json_bytes(obj: Any) -> bytes:
@@ -38,20 +38,11 @@ def canonical_json_bytes(obj: Any) -> bytes:
     )
 
 
-def finding_sort_key(f: Finding) -> tuple[str, str, int, int, str]:
-    """Return deterministic sort key for a finding: (code, path, line, byte, fingerprint)."""
-    norm_path = f.source.path.replace("\\", "/")
-    line_num = f.source.line if f.source.line is not None else -1
-    byte_num = -1
-    if f.evidence and isinstance(f.evidence, Mapping):
-        b = f.evidence.get("byte_offset", f.evidence.get("byte"))
-        if isinstance(b, int):
-            byte_num = b
-    return (f.code, norm_path, line_num, byte_num, f.fingerprint)
-
-
 def stable_sort_findings(findings: Iterable[Finding]) -> list[Finding]:
-    """Sort an iterable of findings in deterministic order (code, path, line, byte, fingerprint)."""
+    """Sort an iterable of findings in deterministic FR-094 order.
+
+    Order: (position -> severity -> code -> fingerprint).
+    """
     return sorted(findings, key=finding_sort_key)
 
 

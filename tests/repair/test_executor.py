@@ -36,6 +36,7 @@ from sesslint.repair import (
     Abstained,
     Loss,
     OutputInvalid,
+    PlanSourceMismatch,
     PlanStep,
     PlanTampered,
     PolicyMismatch,
@@ -932,3 +933,138 @@ def test_source_events_direct_parameter(tmp_path: Path) -> None:
     )
     assert manifest is not None
     assert output_file.is_file()
+
+
+def test_refuse_plan_source_mismatch_cross_file(tmp_path: Path) -> None:
+    """Plan generated for source A must be refused when applied to source B (RVW-003)."""
+    source_b = tmp_path / "source_b.jsonl"
+    source_b.write_text(
+        '{"schema_version":"sesslint.session/v1","session_id":"s_diff","created_at":"2026-09-05T12:00:00Z"}\n'
+        '{"actor":"user","id":"evt_diff","kind":"message","parent_id":null,"payload":{"text":"unrelated"},"seq":0,"ts":"2026-09-05T12:00:00Z"}\n',
+        encoding="utf-8",
+    )
+
+    plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    output_file = tmp_path / "out.jsonl"
+
+    # Direct execution raises PlanSourceMismatch
+    with pytest.raises(PlanSourceMismatch, match="Plan source_hash mismatch"):
+        execute(
+            source_path=source_b,
+            plan=plan,
+            output_path=output_file,
+            policy="conservative",
+        )
+    assert not output_file.exists()
+
+    # CLI repair exits with code 1 and refuses repair
+    plan_file = FIXTURES_DIR / "exec_basic" / "plan.json"
+    code = main(
+        [
+            "repair",
+            str(source_b),
+            "--output",
+            str(output_file),
+            "--plan",
+            str(plan_file),
+        ]
+    )
+    assert code == 1
+    assert not output_file.exists()
+
+
+def test_refuse_plan_source_mismatch_mutated_source(tmp_path: Path) -> None:
+    """Source file modified after plan creation must be refused by execute (RVW-003)."""
+    from sesslint.repair.fingerprint import compute_plan_fingerprint
+
+    source_file = tmp_path / "source.jsonl"
+    shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
+    source_bytes = source_file.read_bytes()
+    source_hash = hashlib.sha256(source_bytes).hexdigest()
+
+    base_plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    plan_dict = base_plan.to_dict()
+    plan_dict["source_hash"] = source_hash
+    plan_dict["fingerprint"] = compute_plan_fingerprint(plan_dict)
+    plan = load_plan(plan_dict)
+
+    # Mutate source file with an extra byte
+    source_file.write_text(source_file.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    output_file = tmp_path / "out_mutated.jsonl"
+
+    with pytest.raises(PlanSourceMismatch):
+        execute(
+            source_path=source_file,
+            plan=plan,
+            output_path=output_file,
+            policy="conservative",
+        )
+    assert not output_file.exists()
+
+
+def test_refuse_crafted_conservative_plan_with_salvage_step(tmp_path: Path) -> None:
+    """A self-consistent plan labeled conservative containing salvage steps is refused (RVW-004)."""
+    from sesslint.repair.fingerprint import compute_plan_fingerprint
+
+    source_file = tmp_path / "source.jsonl"
+    shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
+    source_bytes = source_file.read_bytes()
+    source_hash = hashlib.sha256(source_bytes).hexdigest()
+
+    # Author a crafted plan with policy='conservative' but containing a salvage recipe step
+    crafted_plan_dict = {
+        "version": "sesslint.plan/v1",
+        "source_hash": source_hash,
+        "profile": "neutral",
+        "steps": [
+            {
+                "seq": 0,
+                "recipe": "unresolvable-branch-amputate",
+                "target_finding_fp": "f000",
+                "target_index": 0,
+                "params": {},
+                "lossy": True,
+                "loss": {"amputated-branch": 1},
+            }
+        ],
+        "blocked": [],
+        "loss_accounting": {
+            "preview": {"amputated-branch": 1},
+            "total_lost": 1,
+            "total_kept": 2,
+        },
+    }
+    plan = load_plan(crafted_plan_dict)
+    plan_dict = plan.to_dict()
+    plan_dict["fingerprint"] = compute_plan_fingerprint(plan_dict)
+    plan = load_plan(plan_dict)
+
+    output_file = tmp_path / "out_crafted.jsonl"
+    with pytest.raises(PolicyMismatch, match="requires 'salvage' policy"):
+        execute(
+            source_path=source_file,
+            plan=plan,
+            output_path=output_file,
+            policy="conservative",
+        )
+    assert not output_file.exists()
+
+
+@pytest.mark.parametrize("vendor_fmt", ["claude-code-jsonl", "openai-agents"])
+def test_executor_refuses_direct_vendor_format_repair(tmp_path: Path, vendor_fmt: str) -> None:
+    """Direct repair invocation on vendor formats is rejected with RepairRefused (RVW-019)."""
+    source_file = tmp_path / "source.jsonl"
+    shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
+    plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    output_file = tmp_path / "out_vendor.jsonl"
+
+    with pytest.raises(RepairRefused, match="Direct repair of vendor format"):
+        execute(
+            source_path=source_file,
+            plan=plan,
+            output_path=output_file,
+            policy="conservative",
+            format=vendor_fmt,
+        )
+    assert not output_file.exists()

@@ -288,14 +288,27 @@ class Finding:
         return d
 
 
-def _finding_sort_key(f: Finding) -> tuple[int, str, str, tuple[int, int], tuple[int, str], str]:
-    """Pure sort key ensuring deterministic total ordering of findings."""
+def _finding_sort_key(
+    f: Finding,
+) -> tuple[int, str, str, tuple[int, int], tuple[int, str], str]:
+    """Pure sort key ensuring deterministic total ordering of findings.
+
+    Total ordering hierarchy:
+    1. severity_rank (fatal < error < warning < info)
+    2. code (lexicographical)
+    3. path (lexicographical, forward-slash normalized)
+    4. line (None sorts before line 1, then ascending integer)
+    5. record_id (None sorts before any string, then lexicographical)
+    6. fingerprint (16-character sha256 hex string)
+    """
     sev_rank = SEVERITY_ORDER[f.severity]
-    # None sorts before any physical 1-based line number
+    norm_path = f.source.path.replace("\\", "/")
     line_key = (0, 0) if f.source.line is None else (1, f.source.line)
-    # None sorts before any record_id string
-    rec_key = (0, "") if f.source.record_id is None else (1, f.source.record_id)
-    return (sev_rank, f.code, f.source.path, line_key, rec_key, f.fingerprint)
+    rec_key = (0, "") if f.source.record_id is None else (1, str(f.source.record_id))
+    return (sev_rank, f.code, norm_path, line_key, rec_key, f.fingerprint)
+
+
+finding_sort_key = _finding_sort_key
 
 
 def sort_findings(fs: Iterable[Finding]) -> list[Finding]:
@@ -320,6 +333,8 @@ def compute_fingerprint(
     message_template: str,
     source: SourceRef,
     related_ids: Iterable[str] = (),
+    adapter_version: str | None = None,
+    profile_version: str | None = None,
 ) -> str:
     """Compute deterministic 16-character sha256 fingerprint for a finding.
 
@@ -330,6 +345,7 @@ def compute_fingerprint(
     - message_template (structural template only, never raw payload content)
     - source coordinates (path normalized to forward slashes, line, record_id)
     - sorted, deduplicated related_ids
+    - optional adapter_version and profile_version per FR-046
     """
     sev_str = severity.value if isinstance(severity, Severity) else str(severity)
     rep_str = (
@@ -346,6 +362,10 @@ def compute_fingerprint(
         "repairability": rep_str,
         "severity": sev_str,
     }
+    if adapter_version is not None:
+        payload["adapter_version"] = adapter_version
+    if profile_version is not None:
+        payload["profile_version"] = profile_version
     canonical_str = to_canonical_json(payload)
     return hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()[:16]
 
@@ -380,6 +400,8 @@ def make_finding(
     related_ids: Iterable[str] = (),
     evidence: Mapping[str, Any] | None = None,
     fingerprint: str | None = None,
+    adapter_version: str | None = None,
+    profile_version: str | None = None,
 ) -> Finding:
     """Construct, validate, and fingerprint a Finding instance.
 
@@ -512,6 +534,8 @@ def make_finding(
             message_template=message_template,
             source=source,
             related_ids=norm_related_ids,
+            adapter_version=adapter_version,
+            profile_version=profile_version,
         )
 
     return Finding(
@@ -655,6 +679,7 @@ __all__ = [
     "SourceRef",
     "compute_fingerprint",
     "enforce_content_free_text",
+    "finding_sort_key",
     "fingerprint_finding",
     "get_code_info",
     "get_finding_schema_path",

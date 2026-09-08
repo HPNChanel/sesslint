@@ -46,9 +46,16 @@ class RepairRefused(RepairError):
     code: str = "REPAIR_REFUSED"
 
 
+class PlanSourceMismatch(RepairError):
+    """Raised when plan.source_hash does not match the source file bytes SHA-256."""
+
+    code: str = "PLAN_SOURCE_MISMATCH"
+
+
 __all__ = [
     "Abstained",
     "OutputInvalid",
+    "PlanSourceMismatch",
     "PlanTampered",
     "PolicyMismatch",
     "RepairError",

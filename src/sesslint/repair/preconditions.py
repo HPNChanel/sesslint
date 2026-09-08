@@ -516,6 +516,13 @@ def sl108_present(ctx: PreconditionContext) -> bool:
     return False
 
 
+def torn_terminal_record(ctx: PreconditionContext) -> bool:
+    """Precondition: finding SL002 is present on terminal incomplete record."""
+    if ctx.finding is not None:
+        return ctx.finding.code == "SL002"
+    return any(f.code == "SL002" for f in ctx.findings)
+
+
 PRECONDITION_FUNCS: dict[str, Callable[[PreconditionContext], bool]] = {
     "acknowledge_side_effects": acknowledge_side_effects,
     "adjacent_identical_duplicate": adjacent_identical_duplicate,
@@ -530,6 +537,7 @@ PRECONDITION_FUNCS: dict[str, Callable[[PreconditionContext], bool]] = {
     "single_boundary_split": single_boundary_split,
     "sl108_present": sl108_present,
     "source_hash_pinned": source_hash_pinned,
+    "torn_terminal_record": torn_terminal_record,
     "unique_parent_candidate": unique_parent_candidate,
 }
 
@@ -580,5 +588,6 @@ __all__ = [
     "single_boundary_split",
     "sl108_present",
     "source_hash_pinned",
+    "torn_terminal_record",
     "unique_parent_candidate",
 ]

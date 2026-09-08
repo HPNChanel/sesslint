@@ -714,3 +714,255 @@ def test_verdict_and_check_dataclasses() -> None:
     v_json = v.to_json(indent=2)
     assert '"assurance": "clean"' in v_json
     assert '"ok": true' in v_json
+
+
+def test_verify_without_plan_bootstrapping(tmp_path: Path) -> None:
+    """verify() succeeds without plan_path by re-planning from source events and manifest."""
+    from sesslint.api import repair
+
+    src_lines = [
+        '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"test-verify-sess"}',
+        '{"actor":"user","id":"msg-0","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-05T12:00:00Z"}',
+        '{"actor":"assistant","id":"msg-1","kind":"message","parent_id":"msg-0","payload":{"text":"ack"},"seq":1,"ts":"2026-09-05T12:00:01Z"}',
+        '{"actor":"assistant","id":"msg-1","kind":"message","parent_id":"msg-0","payload":{"text":"ack"},"seq":1,"ts":"2026-09-05T12:00:01Z"}',
+        '{"actor":"user","id":"msg-2","kind":"message","parent_id":"msg-1","payload":{"text":"next"},"seq":2,"ts":"2026-09-05T12:00:02Z"}',
+    ]
+    src = tmp_path / "source.jsonl"
+    src.write_text("\n".join(src_lines) + "\n", encoding="utf-8")
+    out = tmp_path / "output.jsonl"
+    man = tmp_path / "output.jsonl.manifest.json"
+
+    plan_obj, manifest = repair(src, out)
+    assert manifest is not None
+    assert man.is_file()
+
+    verdict = verify(
+        source_path=src,
+        output_path=out,
+        manifest_path=man,
+    )
+    assert verdict.ok is True
+    c2 = verdict.checks[1]
+    assert c2.name == "plan_fingerprint"
+    assert c2.ok is True
+    assert c2.detail == "matched"
+
+
+def test_verify_manifest_actions_tampered_fails_check_4(tmp_path: Path) -> None:
+    """verify() fails Check 4 when manifest.actions does not match planned steps."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    # Alter the action kind
+    manifest_data["actions"][0]["kind"] = "unauthorized-synthetic-recipe"
+    man.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    verdict = verify(
+        source_path=src,
+        plan_path=pln,
+        output_path=out,
+        manifest_path=man,
+    )
+    assert verdict.ok is False
+    c4 = verdict.checks[3]
+    assert c4.name == "transformation_audit"
+    assert c4.ok is False
+    assert "actions" in c4.detail or "mismatch" in c4.detail
+
+
+def test_verify_missing_plan_fingerprint_fails_check_2(tmp_path: Path) -> None:
+    """verify() fails Check 2 (plan_fingerprint) if plan_fingerprint is missing from manifest."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    del manifest_data["plan_fingerprint"]
+    man.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    verdict = verify(
+        source_path=src,
+        plan_path=pln,
+        output_path=out,
+        manifest_path=man,
+    )
+    assert verdict.ok is False
+    c2 = verdict.checks[1]
+    assert c2.name == "plan_fingerprint"
+    assert c2.ok is False
+    assert c2.detail == "manifest-missing-plan-fingerprint"
+
+
+def test_verify_missing_assurance_fails_check_6(tmp_path: Path) -> None:
+    """verify() fails Check 6 (assurance_audit) if assurance is missing from manifest."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    del manifest_data["assurance"]
+    man.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    verdict = verify(
+        source_path=src,
+        plan_path=pln,
+        output_path=out,
+        manifest_path=man,
+    )
+    assert verdict.ok is False
+    c6 = verdict.checks[5]
+    assert c6.name == "assurance_audit"
+    assert c6.ok is False
+    assert c6.detail == "manifest-missing-assurance"
+
+
+def test_render_verify_human_formatting() -> None:
+    """render_verify_human formats pass and fail verdicts with check details."""
+    from sesslint.verify import render_verify_human
+
+    c_pass = Check(name="source_hash", ok=True, detail="matched")
+    c_fail = Check(name="idempotence", ok=False, detail="non-idempotent")
+
+    v_pass = Verdict(ok=True, checks=(c_pass,), assurance="repaired-lossless")
+    text_pass = render_verify_human(v_pass, color=False)
+    assert "Verification: PASSED" in text_pass
+    assert "[PASS] source_hash: matched" in text_pass
+
+    v_fail = Verdict(ok=False, checks=(c_fail,), assurance="unrepairable")
+    text_fail = render_verify_human(v_fail, color=True)
+    assert "FAILED" in text_fail
+    assert "idempotence: non-idempotent" in text_fail
+
+
+def test_verify_missing_actions_fails_check_4(tmp_path: Path) -> None:
+    """verify() fails Check 4 (transformation_audit) if actions is missing from manifest."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    del manifest_data["actions"]
+    man.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    verdict = verify(
+        source_path=src,
+        plan_path=pln,
+        output_path=out,
+        manifest_path=man,
+    )
+    assert verdict.ok is False
+    c4 = verdict.checks[3]
+    assert c4.name == "transformation_audit"
+    assert c4.ok is False
+    assert c4.detail == "manifest-missing-actions"
+
+
+def test_verify_with_real_manifest_from_executor(tmp_path: Path) -> None:
+    """verify() succeeds on a real manifest emitted by executor.py (RVW-008, RVW-036)."""
+    from sesslint.api import repair
+
+    src = tmp_path / "real_source.jsonl"
+    out = tmp_path / "real_repaired.jsonl"
+
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_real_verify"}',
+        '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-08T12:00:00Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+        # Duplicate identical record
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+    ]
+    src.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # Run real programmatic repair which invokes executor.execute()
+    plan_obj, manifest = repair(src, out)
+    assert plan_obj is not None
+    assert manifest is not None
+    assert out.is_file()
+
+    manifest_path = Path(f"{out}.manifest.json")
+    assert manifest_path.is_file()
+
+    # Verify directly with real manifest from executor
+    verdict = verify(
+        source_path=src,
+        output_path=out,
+        manifest_path=manifest_path,
+    )
+    assert verdict.ok is True
+    for check in verdict.checks:
+        assert check.ok is True, f"Check {check.name} failed with detail: {check.detail}"
+
+
+def test_verify_cli_with_real_manifest(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """CLI verify passes with exit 0 when given real manifest generated by CLI repair."""
+    src = tmp_path / "cli_source.jsonl"
+    out = tmp_path / "cli_repaired.jsonl"
+
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_cli_verify"}',
+        '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-08T12:00:00Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+    ]
+    src.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # 1. Repair via CLI
+    code_rep = main(["repair", str(src), "--out", str(out)])
+    assert code_rep == 0
+    capsys.readouterr()  # Clear repair stdout
+    manifest_p = Path(f"{out}.manifest.json")
+    assert manifest_p.is_file()
+
+    # 2. Verify via CLI in JSON mode
+    code_ver = main(
+        [
+            "verify",
+            str(src),
+            str(out),
+            "--manifest",
+            str(manifest_p),
+            "--json",
+        ]
+    )
+    assert code_ver == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["ok"] is True
+
+    # 3. Verify via CLI in human mode
+    code_ver_human = main(
+        [
+            "verify",
+            str(src),
+            str(out),
+            "--manifest",
+            str(manifest_p),
+        ]
+    )
+    assert code_ver_human == 0
+    captured_human = capsys.readouterr()
+    assert "Verification: PASSED" in captured_human.out
+
+
+def test_verify_detects_tampered_output_with_real_manifest(tmp_path: Path) -> None:
+    """verify() fails when output file is tampered after real repair execution."""
+    from sesslint.api import repair
+
+    src = tmp_path / "tamper_source.jsonl"
+    out = tmp_path / "tamper_repaired.jsonl"
+
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_tamper"}',
+        '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-08T12:00:00Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+    ]
+    src.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    plan_obj, manifest = repair(src, out)
+    assert plan_obj is not None
+    assert manifest is not None
+    manifest_p = Path(f"{out}.manifest.json")
+
+    tampered_evt = (
+        '{"actor":"user","id":"evt_tampered","kind":"message",'
+        '"parent_id":null,"payload":{},"seq":3,"ts":"2026-09-08T12:00:05Z"}\n'
+    )
+    out.write_text(out.read_text(encoding="utf-8") + tampered_evt)
+
+    verdict = verify(
+        source_path=src,
+        output_path=out,
+        manifest_path=manifest_p,
+    )
+    assert verdict.ok is False

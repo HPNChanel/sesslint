@@ -20,6 +20,7 @@ from sesslint.finding import (
     Repairability,
     Severity,
     SourceRef,
+    compute_fingerprint,
     enforce_content_free_text,
     fingerprint_finding,
     get_finding_schema_path,
@@ -1179,3 +1180,78 @@ def test_schema_loader_file_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mod, "get_finding_schema_path", lambda: Path("nonexistent/schema.json"))
     with pytest.raises(FileNotFoundError):
         load_finding_schema()
+
+
+def test_fingerprint_with_adapter_and_profile_versions() -> None:
+    """Verify adapter and profile versions differentiate finding fingerprints (RVW-007)."""
+    s = SourceRef(path="session.jsonl", line=5, record_id="evt_01")
+
+    # Base fingerprint without versions
+    fp_base = compute_fingerprint(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+    )
+
+    # Fingerprint with adapter_version
+    fp_adapter_v1 = compute_fingerprint(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+        adapter_version="claude-code@1.0.0",
+    )
+    fp_adapter_v2 = compute_fingerprint(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+        adapter_version="claude-code@2.0.0",
+    )
+
+    # Fingerprint with profile_version
+    fp_prof_neutral = compute_fingerprint(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+        profile_version="neutral@1.0.0",
+    )
+    fp_prof_strict = compute_fingerprint(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+        profile_version="claude-strict@1.0.0",
+    )
+
+    # All fingerprints must be mutually distinct
+    fps = {fp_base, fp_adapter_v1, fp_adapter_v2, fp_prof_neutral, fp_prof_strict}
+    assert len(fps) == 5
+
+    # make_finding threads adapter_version and profile_version
+    f1 = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+        adapter_version="claude-code@1.0.0",
+        profile_version="neutral@1.0.0",
+    )
+    f2 = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Syntax error at line {line}",
+        source=s,
+        adapter_version="claude-code@1.0.0",
+        profile_version="claude-strict@1.0.0",
+    )
+    assert f1.fingerprint != f2.fingerprint

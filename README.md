@@ -8,7 +8,7 @@
   <a href="#requirements"><img src="https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/runtime_deps-zero-brightgreen?style=flat-square" alt="Zero Runtime Dependencies"></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/tests-600%2B_passed-success?style=flat-square" alt="Tests Passing"></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/tests-1000%2B_passed-success?style=flat-square" alt="Tests Passing"></a>
   <a href="#development"><img src="https://img.shields.io/badge/mypy-strict-purple?style=flat-square" alt="Strict Typing"></a>
 </p>
 
@@ -135,8 +135,10 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
+SessLint exposes five primary commands:
+
 #### `sesslint check`
-Scan and validate session files for structural corruptions and provider rule violations.
+Scan and validate session files or directories for structural corruptions and provider rule violations.
 
 ```bash
 sesslint check <path> [OPTIONS]
@@ -144,15 +146,16 @@ sesslint check <path> [OPTIONS]
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `path` | `Path` | *required* | Session file path (`.json` or `.jsonl`). |
+| `path` | `Path` | *required* | Session file path (`.json` or `.jsonl`) or directory (with `--recursive`). |
+| `--recursive` | `flag` | `False` | Recursively scan directories and report 5-bucket totals. |
 | `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
-| `--policy` | `choice` | `conservative` | Policy mode: `conservative`, `salvage`. |
+| `--json` | `flag` | `False` | Emit machine-readable JSON report. |
 | `--confidence-min` | `float` | `0.55` | Minimum auto-detection confidence threshold. |
 | `--margin-min` | `float` | `0.15` | Minimum auto-detection margin above second-place format. |
 
 #### `sesslint repair`
-Plan and execute verified, atomic session repairs.
+Plan and execute verified, atomic session repairs (Alpha scope: Canonical Session format).
 
 ```bash
 sesslint repair <path> --output <out_path> [OPTIONS]
@@ -160,27 +163,44 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `path` | `Path` | *required* | Source session file to repair. |
-| `--output` | `Path` | `None` | Distinct destination path (required unless `--dry-run`). |
+| `path` | `Path` | *required* | Source session file to repair (Canonical format). |
+| `--output` | `Path` | *required* | Distinct destination path (required unless `--dry-run`). |
 | `--dry-run` | `flag` | `False` | Computes and displays plan; creates zero files on disk. |
 | `--policy` | `choice` | `conservative` | `conservative` (zero data loss) or `salvage` (explicit lossy pruning). |
+| `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--plan` | `Path` | `None` | Path to a pre-computed plan JSON file to execute. |
-| `--acknowledge-side-effects`| `flag` | `False` | Acknowledge unknown side effects (required for `SL102` salvage). |
+| `--acknowledge-side-effects`| `flag` | `False` | Acknowledge tool side-effects for salvage policy. |
 | `--json` | `flag` | `False` | Emit machine-readable JSON plan or repair manifest. |
 
-#### `sesslint validate-session`
-Low-level canonical schema conformance check.
+> [!NOTE]
+> **Alpha Format Boundary**: Repair currently supports Canonical Session stream format (`schema_version: sesslint.session/v1`). Repair attempts on vendor formats (Claude Code / OpenAI Agents) safely refuse with Exit Code 2 and actionable instructions.
+
+#### `sesslint verify`
+Independently audit integrity, cryptographic hash bindings, manifest actions, and idempotence of a repaired session.
 
 ```bash
-sesslint validate-session <path>
+sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
 ```
 
-#### `sesslint scan`
-Diagnostic inspector for hostile-input reader limits.
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `source` | `Path` | *required* | Original source session file path. |
+| `repaired`| `Path` | *required* | Repaired output session file path. |
+| `--manifest` | `Path` | *required* | Cryptographically bound repair manifest JSON path. |
+| `--json` | `flag` | `False` | Emit machine-readable JSON verdict. |
+
+#### `sesslint formats`
+List supported session format adapters and their schema version specifications.
 
 ```bash
-sesslint scan --show-limits
-# Output: max_line_bytes=10MB, max_depth=64, max_file_bytes=500MB, max_records=250k
+sesslint formats [--json]
+```
+
+#### `sesslint version`
+Display detailed component, CLI, schema, adapter, and profile version information.
+
+```bash
+sesslint version [--json]
 ```
 
 ### Exit Codes

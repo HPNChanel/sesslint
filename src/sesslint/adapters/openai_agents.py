@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any, BinaryIO, Final
 
 from sesslint.canonical import (
+    MUTATING_TOOL_NAMES,
+    READ_ONLY_TOOL_NAMES,
     ActorLiteral,
     KindLiteral,
     Session,
@@ -123,6 +125,15 @@ KNOWN_RECORD_KEYS: Final[frozenset[str]] = frozenset(
         "user",
     }
 )
+
+
+def _safe_type_value(val: Any) -> str:
+    """Return safe type and size descriptor without leaking field content (FR-081, FR-082)."""
+    t_name = type(val).__name__
+    if isinstance(val, (str, bytes, list, dict, set, tuple)):
+        return f"<{t_name}:len={len(val)}>"
+    return f"<{t_name}>"
+
 
 # Explicit mapping from OpenAI item types to canonical (actor, kind) pairs
 ITEM_TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
@@ -945,7 +956,7 @@ def _process_openai_item(
                     source=source,
                     evidence={
                         "field_path": key,
-                        "type_value": str(obj[key]),
+                        "type_value": _safe_type_value(obj[key]),
                         "record_id": rec_id_str,
                     },
                 )
@@ -969,6 +980,18 @@ def _process_openai_item(
     if kind == "tool_result":
         execution_state = "failure" if obj.get("is_error") or obj.get("error") else "success"
 
+    side_effects: str | None = None
+    if kind == "tool_result":
+        side_effects = "none"
+    elif kind == "tool_call":
+        t_name = str(obj.get("name") or obj.get("tool_name") or payload.get("name") or "").lower()
+        if t_name in READ_ONLY_TOOL_NAMES:
+            side_effects = "none"
+        elif t_name in MUTATING_TOOL_NAMES:
+            side_effects = "possible"
+        else:
+            side_effects = "unknown"
+
     event = SessionEvent(
         id=rec_id_str,
         parent_id=parent_id,
@@ -985,6 +1008,7 @@ def _process_openai_item(
         source_adapter="openai-agents",
         source_location=None,
         execution_state=execution_state,
+        side_effects=side_effects,
     )
     events.append(event)
 

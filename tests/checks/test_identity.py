@@ -773,3 +773,57 @@ def test_cap_findings_overflow_schema_valid() -> None:
     d = overflow.to_dict()
     reparsed = parse_finding_dict(d)
     assert reparsed == overflow
+
+
+def test_provenance_coordinates_do_not_cause_conflicting_duplicate() -> None:
+    """Ensure different provenance coordinates classify as identical-duplicate (RVW-017)."""
+    e1 = SessionEvent(
+        id="same-id",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+        payload={"text": "hello"},
+        source_line=10,
+        source_location="file1.jsonl:10",
+        source_record_hash="sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    )
+    e2 = SessionEvent(
+        id="same-id",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+        payload={"text": "hello"},
+        source_line=99,
+        source_location="file1.jsonl:99",
+        source_record_hash="sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    )
+    findings = check_identities([e1, e2])
+    assert len(findings) == 1
+    assert findings[0].variant == "identical-duplicate"
+    assert findings[0].severity == Severity.WARNING
+    assert findings[0].repairability == Repairability.DETERMINISTIC
+    assert findings[0].evidence is not None
+    assert "source_line" not in findings[0].evidence.get("differing_fields", [])
+
+    # Now with different payload: must classify as conflicting
+    e3 = SessionEvent(
+        id="same-id",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+        payload={"text": "different payload"},
+        source_line=100,
+    )
+    findings_conflict = check_identities([e1, e3])
+    assert len(findings_conflict) == 1
+    assert findings_conflict[0].variant == "conflicting-duplicate"
+    assert findings_conflict[0].severity == Severity.ERROR
+    assert findings_conflict[0].repairability == Repairability.MANUAL
+    assert findings_conflict[0].evidence is not None
+    assert findings_conflict[0].evidence["differing_fields"] == ["payload"]

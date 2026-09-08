@@ -253,3 +253,63 @@ class TestEdgeCases:
         assert items[2].source.line == 3
         assert isinstance(items[3], SessionEvent)
         assert items[3].id == "evt_002"
+
+
+def test_sl002_repair_round_trip(tmp_path: Path) -> None:
+    """Detector -> Planner -> Executor -> Re-check round-trip for SL002 (RVW-002)."""
+    from sesslint import api
+    from sesslint.repair.planner import plan
+
+    source_file = tmp_path / "torn_canonical.jsonl"
+    source_file.write_text(
+        '{"schema_version":"sesslint.session/v1","session_id":"sess_sl002_rt","created_at":"2026-09-05T12:00:00Z"}\n'
+        '{"actor":"user","id":"e0","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-05T12:00:00Z"}\n'
+        '{"actor":"assistant","id":"e1","kind":"message","parent_id":"e0","payload":{"text":"hi"},"seq":1,"ts":"2026-09-05T12:00:01Z"}\n'
+        '{"actor":"assistant","id":"e2","kind":"message","parent_id":"e1","payload":',
+        encoding="utf-8",
+    )
+
+    # 1. Detector: check_file emits SL002 with deterministic repairability
+    report = api.check_file(source_file)
+    assert report.counts.by_code.get("SL002") == 1
+    sl002_findings = [f for f in report.findings if f.code == "SL002"]
+    assert len(sl002_findings) == 1
+    assert sl002_findings[0].repairability == Repairability.DETERMINISTIC
+
+    # 2. Planner: plans torn-terminal-record-discard
+    events = [
+        SessionEvent(
+            id="e0",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="user",
+            kind="message",
+            payload={"text": "hello"},
+        ),
+        SessionEvent(
+            id="e1",
+            parent_id="e0",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="assistant",
+            kind="message",
+            payload={"text": "hi"},
+        ),
+    ]
+    p = plan(sl002_findings, events)
+    assert len(p.steps) == 1
+    assert p.steps[0].recipe == "torn-terminal-record-discard"
+
+    # 3. Executor: api.repair executes cleanly
+    output_file = tmp_path / "repaired_sl002.jsonl"
+    res_plan, manifest = api.repair(source_file, output_file)
+    assert output_file.is_file()
+    assert len(res_plan.steps) == 1
+    assert res_plan.steps[0].recipe == "torn-terminal-record-discard"
+    assert manifest is not None
+
+    # 4. Re-check: output has 0 findings
+    recheck_report = api.check_file(output_file)
+    assert recheck_report.counts.total == 0
+    assert len(recheck_report.findings) == 0

@@ -77,15 +77,32 @@ def test_repair_cli_refuses_self_path(tmp_path: Path, capsys: pytest.CaptureFixt
 
 
 def test_repair_cli_refuses_live_store(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Repair refuses to write to a detected live store path, exiting 1."""
+    """Repair refuses to write to a live store (.db, .sqlite, magic bytes), exiting 1."""
     src = FIXTURES_DIR / "basic" / "source.jsonl"
-    live_out = tmp_path / ".claude" / "projects" / "out.jsonl"
 
-    code = main(["repair", str(src), "--out", str(live_out)])
-    assert code == 1
+    # 1. Refusal on .sqlite extension
+    live_out_sqlite = tmp_path / "live_state.sqlite"
+    code_sqlite = main(["repair", str(src), "--out", str(live_out_sqlite)])
+    assert code_sqlite == 1
+    captured_sqlite = capsys.readouterr()
+    assert "refusing to write to live-store path" in captured_sqlite.err.lower()
+    assert not live_out_sqlite.exists()
 
-    captured = capsys.readouterr()
-    assert "live-store" in captured.err.lower() or "repair refused" in captured.err.lower()
+    # 2. Refusal on .db extension
+    live_out_db = tmp_path / "app_database.db"
+    code_db = main(["repair", str(src), "--out", str(live_out_db)])
+    assert code_db == 1
+    captured_db = capsys.readouterr()
+    assert "refusing to write to live-store path" in captured_db.err.lower()
+    assert not live_out_db.exists()
+
+    # 3. Refusal on file with SQLite magic header
+    fake_db = tmp_path / "custom_magic_file.bin"
+    fake_db.write_bytes(b"SQLite format 3\x00" + b"\x00" * 48)
+    code_magic = main(["repair", str(src), "--out", str(fake_db)])
+    assert code_magic == 1
+    captured_magic = capsys.readouterr()
+    assert "refusing to write to live-store path" in captured_magic.err.lower()
 
 
 def test_repair_cli_invalid_policy_shorthand_exits_2(tmp_path: Path) -> None:
@@ -96,3 +113,95 @@ def test_repair_cli_invalid_policy_shorthand_exits_2(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["repair", str(src), "--out", str(out), "--policy", "s"])
     assert exc_info.value.code == 2
+
+
+def test_repair_cli_rejects_vendor_format_flag_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Repair with explicit vendor --format option exits 2 with instructive message (RVW-019)."""
+    src = FIXTURES_DIR / "basic" / "source.jsonl"
+    out = tmp_path / "out.jsonl"
+
+    code = main(["repair", str(src), "--out", str(out), "--format", "claude-code-jsonl"])
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "Direct repair of vendor format 'claude-code-jsonl' is not supported" in captured.err
+    assert not out.exists()
+
+
+def test_repair_cli_rejects_detected_vendor_format_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Repair on auto-detected vendor format file exits 2 with instructive message (RVW-019)."""
+    fixtures_root = Path(__file__).resolve().parent.parent.parent / "fixtures"
+    claude_fixture = fixtures_root / "detect" / "claude_sample.jsonl"
+    out = tmp_path / "out.jsonl"
+
+    code = main(["repair", str(claude_fixture), "--out", str(out)])
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "Direct repair of vendor format" in captured.err
+    assert "canonical session streams" in captured.err
+    assert not out.exists()
+
+
+def test_repair_api_rejects_vendor_format(tmp_path: Path) -> None:
+    """Programmatic api.repair rejects vendor format with RepairRefused (RVW-019)."""
+    from sesslint import api
+    from sesslint.repair.errors import RepairRefused
+
+    fixtures_root = Path(__file__).resolve().parent.parent.parent / "fixtures"
+    claude_fixture = fixtures_root / "detect" / "claude_sample.jsonl"
+    out = tmp_path / "out.jsonl"
+
+    with pytest.raises(RepairRefused, match="Direct repair of vendor format"):
+        api.repair(claude_fixture, out)
+    assert not out.exists()
+
+
+def test_repair_cli_salvage_unsupported_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Repair with --salvage-unsupported flag automatically maps policy to salvage."""
+    src = FIXTURES_DIR / "basic" / "source.jsonl"
+    out = tmp_path / "out.jsonl"
+
+    cmd = [
+        "repair",
+        str(src),
+        "--out",
+        str(out),
+        "--salvage-unsupported",
+        "--dry-run",
+        "--json",
+    ]
+    code = main(cmd)
+    assert code == 0
+    captured = capsys.readouterr()
+    import json
+
+    plan_data = json.loads(captured.out)
+    assert plan_data.get("policy") == "salvage"
+
+
+def test_repair_cli_sl002_success(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Repair execution on canonical session with SL002 torn tail exits 0 and fixes session."""
+    from sesslint import api
+
+    src = tmp_path / "torn_source.jsonl"
+    src.write_text(
+        '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"s_sl002"}\n'
+        '{"actor":"user","id":"e0","kind":"message","parent_id":null,"payload":{"text":"hi"},"seq":0,"ts":"2026-09-05T12:00:00Z"}\n'
+        '{"id":"e1_torn", "actor":"tool", "payload":',
+        encoding="utf-8",
+    )
+    out = tmp_path / "repaired_sl002.jsonl"
+
+    code = main(["repair", str(src), "--out", str(out)])
+    assert code == 0
+    assert out.is_file()
+    assert (tmp_path / "repaired_sl002.jsonl.manifest.json").is_file()
+
+    recheck = api.check_file(out)
+    assert recheck.counts.total == 0
+    assert len(recheck.findings) == 0

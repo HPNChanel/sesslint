@@ -16,6 +16,7 @@ from sesslint.repair.assurance import (
 from sesslint.repair.errors import (
     Abstained,
     OutputInvalid,
+    PlanSourceMismatch,
     PlanTampered,
     PolicyMismatch,
     RepairError,
@@ -108,6 +109,13 @@ from sesslint.repair.recipes_salvage import (
 from sesslint.repair.recipes_salvage import (
     register_all as register_all_salvage_recipes,
 )
+from sesslint.repair.recipes_sl002 import (
+    RECIPE_TORN_TERMINAL_RECORD_DISCARD,
+    apply_torn_terminal_record_discard,
+)
+from sesslint.repair.recipes_sl002 import (
+    register_all as register_all_sl002_recipes,
+)
 from sesslint.repair.registry import (
     REGISTRY,
     Recipe,
@@ -129,6 +137,7 @@ __all__ = [
     "OutputInvalid",
     "PLAN_VERSION",
     "PRECONDITION_FUNCS",
+    "PlanSourceMismatch",
     "PlanTampered",
     "PolicyMismatch",
     "PreconditionFailed",
@@ -189,6 +198,7 @@ __all__ = [
     "recipes_for",
     "register_all_conservative_recipes",
     "register_all_salvage_recipes",
+    "register_all_sl002_recipes",
     "register_precondition",
     "register_recipe",
     "repairability_is_safe_auto",
@@ -201,4 +211,10 @@ __all__ = [
     "source_hash_pinned",
     "terminal_suffix_discard",
     "unique_parent_candidate",
+    "RECIPE_TORN_TERMINAL_RECORD_DISCARD",
+    "apply_torn_terminal_record_discard",
 ]
+
+register_all_conservative_recipes()
+register_all_salvage_recipes()
+register_all_sl002_recipes()

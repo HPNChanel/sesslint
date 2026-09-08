@@ -59,6 +59,66 @@ VALID_KINDS: Final[frozenset[str]] = frozenset(
 VALID_EXECUTION_STATES: Final[frozenset[str]] = frozenset(
     {"success", "failure", "pending", "aborted", "unknown"}
 )
+VALID_SIDE_EFFECTS: Final[frozenset[str]] = frozenset({"none", "possible", "unknown"})
+
+READ_ONLY_TOOL_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "cat",
+        "check",
+        "fetch",
+        "find",
+        "find_by_name",
+        "get",
+        "get_file",
+        "glob",
+        "globtool",
+        "grep",
+        "greptool",
+        "head",
+        "inspect",
+        "list_dir",
+        "ls",
+        "query",
+        "read",
+        "read_file",
+        "readnotebook",
+        "scan",
+        "scan_dir",
+        "search",
+        "search_web",
+        "tail",
+        "view",
+        "view_file",
+    }
+)
+
+MUTATING_TOOL_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "apply_patch",
+        "bash",
+        "create",
+        "delete",
+        "edit",
+        "exec",
+        "execute",
+        "git_commit",
+        "git_push",
+        "kill",
+        "killprocess",
+        "mkdir",
+        "notebookeditcell",
+        "patch",
+        "remove",
+        "replace_file_content",
+        "rm",
+        "run",
+        "run_command",
+        "sh",
+        "write",
+        "write_file",
+        "write_to_file",
+    }
+)
 
 REQUIRED_HEADER_FIELDS: Final[frozenset[str]] = frozenset(
     {"schema_version", "session_id", "created_at"}
@@ -93,12 +153,17 @@ KNOWN_EVENT_FIELDS: Final[frozenset[str]] = frozenset(
         "parent_id",
         "payload",
         "seq",
+        "side_effects",
         "source_adapter",
         "source_line",
         "source_location",
         "source_record_hash",
         "ts",
     }
+)
+
+PROVENANCE_FIELDS: Final[frozenset[str]] = frozenset(
+    {"source_line", "source_location", "source_record_hash"}
 )
 
 _RFC3339_UTC_REGEX: Final[re.Pattern[str]] = re.compile(
@@ -184,6 +249,7 @@ class SessionEvent:
     original_id: str | None = None
     source_adapter: str | None = None
     source_location: str | None = None
+    side_effects: str | None = None
     extra_fields: Mapping[str, Any] = field(default_factory=dict)
 
     def to_canonical_dict(self) -> dict[str, Any]:
@@ -197,6 +263,17 @@ class SessionEvent:
     def canonical_hash(self) -> str:
         """Compute SHA-256 hex digest of this event's canonical bytes."""
         return hashlib.sha256(self.to_canonical_bytes()).hexdigest()
+
+    def content_identity_bytes(self) -> bytes:
+        """Return canonical UTF-8 bytes for this event excluding provenance fields."""
+        d = dict(self.to_canonical_dict())
+        for f_name in PROVENANCE_FIELDS:
+            d.pop(f_name, None)
+        return to_canonical_json(d).encode("utf-8")
+
+    def content_identity_hash(self) -> str:
+        """Compute SHA-256 hex digest of this event's content, excluding provenance fields."""
+        return hashlib.sha256(self.content_identity_bytes()).hexdigest()
 
     def payload_hash(self) -> str:
         """Return content_hash or compute SHA-256 of payload canonical bytes."""
@@ -520,6 +597,20 @@ def parse_session_event(obj: Mapping[str, Any], seen_ids: set[str] | None = None
             f"Field 'source_location' must be a string or None, got {source_location!r}"
         )
 
+    side_effects = obj.get("side_effects")
+    if side_effects is not None:
+        if not isinstance(side_effects, str):
+            raise SchemaError(
+                f"Field 'side_effects' must be a string or None, got {side_effects!r}"
+            )
+        if side_effects not in VALID_SIDE_EFFECTS:
+            allowed = sorted(VALID_SIDE_EFFECTS)
+            raise SchemaError(
+                f"Field 'side_effects' must be one of {allowed}, got {side_effects!r}"
+            )
+    elif isinstance(payload, Mapping) and payload.get("side_effects") in VALID_SIDE_EFFECTS:
+        side_effects = str(payload["side_effects"])
+
     return SessionEvent(
         id=event_id,
         parent_id=parent_id,
@@ -539,6 +630,7 @@ def parse_session_event(obj: Mapping[str, Any], seen_ids: set[str] | None = None
         original_id=original_id,
         source_adapter=source_adapter,
         source_location=source_location,
+        side_effects=side_effects,
         extra_fields=extra_fields,
     )
 

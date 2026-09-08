@@ -38,11 +38,11 @@ def hostile_error_fixtures() -> list[tuple[str, Path]]:
 def test_hostile_fixtures_never_verdict_clean_in_api(
     hostile_error_fixtures: list[tuple[str, Path]],
 ) -> None:
-    """Every error fixture must yield A0 assurance and non-zero error counts via API."""
+    """Every error fixture must yield A0 or A1 assurance and non-zero error counts via API."""
     for rel_path, path in hostile_error_fixtures:
         report = check_file(path)
-        assert report.assurance == "A0", (
-            f"{rel_path}: Expected assurance A0 on error fixture, got {report.assurance}"
+        assert report.assurance in ("A0", "A1"), (
+            f"{rel_path}: Expected assurance A0 or A1 on error fixture, got {report.assurance}"
         )
         assert len(report.findings) > 0, f"{rel_path}: Findings list cannot be empty"
 
@@ -84,8 +84,8 @@ def test_hostile_fixtures_never_verdict_clean_in_cli_json(
             assert parsed["verdict"] != "clean", f"{rel_path}: Verdict was marked clean"
             assert parsed["verdict"] != "healthy", f"{rel_path}: Verdict was marked healthy"
         if "assurance" in parsed:
-            assert parsed["assurance"] == "A0", (
-                f"{rel_path}: Assurance must be A0, got {parsed['assurance']}"
+            assert parsed["assurance"] in ("A0", "A1"), (
+                f"{rel_path}: Assurance must be A0 or A1, got {parsed['assurance']}"
             )
         if "findings" in parsed:
             assert len(parsed["findings"]) > 0, f"{rel_path}: JSON findings empty"

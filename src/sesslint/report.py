@@ -12,8 +12,8 @@ import json
 import re
 import sys
 from collections import Counter
-from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal, cast
 
@@ -30,6 +30,7 @@ from sesslint.errors import (
 from sesslint.finding import (
     Finding,
     enforce_content_free_text,
+    finding_sort_key,
     parse_finding_dict,
     sort_findings,
 )
@@ -54,6 +55,59 @@ ASSURANCE_LIMITATIONS: Final[dict[Assurance, str]] = {
     "A3": "Does not prove semantic equivalence or external side effects.",
     "A4": "Still not proof of model behavior, business correctness, or exactly-once effects.",
 }
+
+ASSURANCE_DESCRIPTIONS: Final[dict[Assurance, str]] = {
+    "A0": "unreadable",
+    "A1": "parseable",
+    "A2": "structurally valid",
+    "A3": "profile-replay valid",
+    "A4": "reference-replay valid",
+}
+
+
+def compute_assurance(
+    events: Sequence[Any] | None,
+    findings: Sequence[Finding],
+    *,
+    has_profile_replay: bool = True,
+) -> tuple[Assurance, str]:
+    """Compute staged assurance level and limitation based on pipeline outcomes (RVW-015).
+
+    Pipeline stages mapped to A-levels:
+    - A0: unreadable (could not safely parse raw artifact into events: len(events) == 0
+          with findings, or findings contain parse/stream integrity codes SL001/SL002).
+    - A1: parseable (events parsed successfully, but structural or profile errors found).
+    - A2: structurally valid (zero errors, but warnings found or replay not independently
+          exercised).
+    - A3: profile-replay valid (zero errors and zero warnings under active replay profile).
+    - A4: reference-replay valid (reserved/reference equivalent).
+    """
+    from sesslint.codes import SL001, SL002, Severity
+
+    has_error = any(f.severity in (Severity.ERROR, Severity.FATAL) for f in findings)
+    has_warning = any(f.severity == Severity.WARNING for f in findings)
+
+    # A0: Could not safely parse raw artifact
+    is_unparseable = (
+        events is None or len(events) == 0 or any(f.code in (SL001, SL002) for f in findings)
+    )
+    if is_unparseable and (
+        has_error or (events is not None and len(events) == 0 and bool(findings))
+    ):
+        assurance: Assurance = "A0"
+        return assurance, ASSURANCE_LIMITATIONS["A0"]
+
+    if has_error:
+        assurance = "A1"
+        return assurance, ASSURANCE_LIMITATIONS["A1"]
+
+    if has_warning or not has_profile_replay:
+        assurance = "A2"
+        return assurance, ASSURANCE_LIMITATIONS["A2"]
+
+    assurance = "A3"
+    return assurance, ASSURANCE_LIMITATIONS["A3"]
+
 
 KNOWN_REPORT_FIELDS: Final[frozenset[str]] = frozenset(
     {
@@ -105,6 +159,13 @@ KNOWN_MANIFEST_FIELDS: Final[frozenset[str]] = frozenset(
         "schema_version",
         "input_fingerprint",
         "output_fingerprint",
+        "plan_fingerprint",
+        "assurance",
+        "recipe_versions",
+        "profile_version",
+        "adapter_version",
+        "byte_counts",
+        "record_counts",
         "policy",
         "actions",
         "declared_loss",
@@ -375,7 +436,7 @@ class RepairManifest:
     """Immutable repair audit manifest (sesslint.repair-manifest/v1).
 
     Binds input/output fingerprints, repair policy, atomic actions, loss accounting,
-    revalidation report reference, and cryptographic idempotency key.
+    revalidation report reference, cryptographic idempotency key, and FR-072/FR-073 audit bindings.
 
     Never-Synthetic-Success Contract:
     This model explicitly does NOT contain a 'success' or 'passed' boolean field.
@@ -392,6 +453,13 @@ class RepairManifest:
     declared_loss: tuple[str, ...]
     revalidate_report: str | None
     idempotency_key: str
+    plan_fingerprint: str | None = None
+    assurance: str | None = None
+    recipe_versions: Mapping[str, str] = field(default_factory=dict)
+    profile_version: str | None = None
+    adapter_version: str | None = None
+    byte_counts: Mapping[str, int] = field(default_factory=dict)
+    record_counts: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.schema_version != MANIFEST_SCHEMA_VERSION:
@@ -453,9 +521,28 @@ class RepairManifest:
                 f"got {self.idempotency_key!r}"
             )
 
+        if self.plan_fingerprint is not None:
+            if not isinstance(self.plan_fingerprint, str) or not self.plan_fingerprint.strip():
+                raise SchemaError("RepairManifest.plan_fingerprint must be a non-empty string")
+        if self.assurance is not None:
+            if not isinstance(self.assurance, str) or not self.assurance.strip():
+                raise SchemaError("RepairManifest.assurance must be a non-empty string")
+        if not isinstance(self.recipe_versions, Mapping):
+            raise SchemaError("RepairManifest.recipe_versions must be a Mapping")
+        if self.profile_version is not None:
+            if not isinstance(self.profile_version, str) or not self.profile_version.strip():
+                raise SchemaError("RepairManifest.profile_version must be a non-empty string")
+        if self.adapter_version is not None:
+            if not isinstance(self.adapter_version, str) or not self.adapter_version.strip():
+                raise SchemaError("RepairManifest.adapter_version must be a non-empty string")
+        if not isinstance(self.byte_counts, Mapping):
+            raise SchemaError("RepairManifest.byte_counts must be a Mapping")
+        if not isinstance(self.record_counts, Mapping):
+            raise SchemaError("RepairManifest.record_counts must be a Mapping")
+
     def to_dict(self) -> dict[str, Any]:
         """Convert RepairManifest to dictionary matching schema."""
-        return {
+        d: dict[str, Any] = {
             "schema_version": self.schema_version,
             "input_fingerprint": self.input_fingerprint,
             "output_fingerprint": self.output_fingerprint,
@@ -465,6 +552,21 @@ class RepairManifest:
             "revalidate_report": self.revalidate_report,
             "idempotency_key": self.idempotency_key,
         }
+        if self.plan_fingerprint is not None:
+            d["plan_fingerprint"] = self.plan_fingerprint
+        if self.assurance is not None:
+            d["assurance"] = self.assurance
+        if self.recipe_versions:
+            d["recipe_versions"] = dict(sorted(self.recipe_versions.items()))
+        if self.profile_version is not None:
+            d["profile_version"] = self.profile_version
+        if self.adapter_version is not None:
+            d["adapter_version"] = self.adapter_version
+        if self.byte_counts:
+            d["byte_counts"] = dict(sorted(self.byte_counts.items()))
+        if self.record_counts:
+            d["record_counts"] = dict(sorted(self.record_counts.items()))
+        return d
 
 
 def build_report(
@@ -582,6 +684,13 @@ def build_manifest(
     actions: Iterable[RepairAction] = (),
     declared_loss: Iterable[str] = (),
     revalidate_report: str | None = None,
+    plan_fingerprint: str | None = None,
+    assurance: str | None = None,
+    recipe_versions: Mapping[str, str] | None = None,
+    profile_version: str | None = None,
+    adapter_version: str | None = None,
+    byte_counts: Mapping[str, int] | None = None,
+    record_counts: Mapping[str, int] | None = None,
 ) -> RepairManifest:
     """Construct an immutable RepairManifest, sorting actions and computing the idempotency key.
 
@@ -590,6 +699,7 @@ def build_manifest(
     - Idempotency key is computed from canonical serialization of input_fingerprint,
       policy, and sorted actions.
     - Declared loss items are validated as non-empty strings.
+    - Binds plan_fingerprint, assurance, versions, and byte/record counts per FR-072/FR-073.
     - Never generates or accepts a 'success' or 'passed' field.
     """
     if not isinstance(input_fingerprint, str) or not input_fingerprint.strip():
@@ -645,6 +755,13 @@ def build_manifest(
         declared_loss=sorted_loss,
         revalidate_report=norm_reval,
         idempotency_key=idempotency_key,
+        plan_fingerprint=plan_fingerprint.strip() if plan_fingerprint is not None else None,
+        assurance=assurance.strip() if assurance is not None else None,
+        recipe_versions=dict(recipe_versions) if recipe_versions is not None else {},
+        profile_version=profile_version.strip() if profile_version is not None else None,
+        adapter_version=adapter_version.strip() if adapter_version is not None else None,
+        byte_counts=dict(byte_counts) if byte_counts is not None else {},
+        record_counts=dict(record_counts) if record_counts is not None else {},
     )
 
 
@@ -904,6 +1021,40 @@ def parse_manifest(obj: Mapping[str, Any] | str) -> RepairManifest:
             f"got {idempotency_key!r}"
         )
 
+    plan_fingerprint = data.get("plan_fingerprint")
+    if plan_fingerprint is not None and (
+        not isinstance(plan_fingerprint, str) or not plan_fingerprint.strip()
+    ):
+        raise SchemaError("RepairManifest.plan_fingerprint must be a non-empty string")
+
+    assurance = data.get("assurance")
+    if assurance is not None and (not isinstance(assurance, str) or not assurance.strip()):
+        raise SchemaError("RepairManifest.assurance must be a non-empty string")
+
+    recipe_versions = data.get("recipe_versions")
+    if recipe_versions is not None and not isinstance(recipe_versions, Mapping):
+        raise SchemaError("RepairManifest.recipe_versions must be a mapping")
+
+    profile_version = data.get("profile_version")
+    if profile_version is not None and (
+        not isinstance(profile_version, str) or not profile_version.strip()
+    ):
+        raise SchemaError("RepairManifest.profile_version must be a non-empty string")
+
+    adapter_version = data.get("adapter_version")
+    if adapter_version is not None and (
+        not isinstance(adapter_version, str) or not adapter_version.strip()
+    ):
+        raise SchemaError("RepairManifest.adapter_version must be a non-empty string")
+
+    byte_counts = data.get("byte_counts")
+    if byte_counts is not None and not isinstance(byte_counts, Mapping):
+        raise SchemaError("RepairManifest.byte_counts must be a mapping")
+
+    record_counts = data.get("record_counts")
+    if record_counts is not None and not isinstance(record_counts, Mapping):
+        raise SchemaError("RepairManifest.record_counts must be a mapping")
+
     return RepairManifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
         input_fingerprint=input_fingerprint.strip(),
@@ -913,6 +1064,13 @@ def parse_manifest(obj: Mapping[str, Any] | str) -> RepairManifest:
         declared_loss=loss_tuple,
         revalidate_report=reval_str,
         idempotency_key=idempotency_key,
+        plan_fingerprint=plan_fingerprint.strip() if plan_fingerprint is not None else None,
+        assurance=assurance.strip() if assurance is not None else None,
+        recipe_versions=dict(recipe_versions) if recipe_versions is not None else {},
+        profile_version=profile_version.strip() if profile_version is not None else None,
+        adapter_version=adapter_version.strip() if adapter_version is not None else None,
+        byte_counts=dict(byte_counts) if byte_counts is not None else {},
+        record_counts=dict(record_counts) if record_counts is not None else {},
     )
 
 
@@ -1040,21 +1198,38 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
             return path
 
     p = Path(path)
-    h = (home if home is not None else Path.home()).resolve()
+    p_str = str(path).replace("\\", "/")
+    is_abs = p.is_absolute() or p_str.startswith("/") or (len(p_str) > 1 and p_str[1] == ":")
+    h = home if home is not None else Path.home()
 
-    try:
-        resolved = p.resolve()
-        rel = resolved.relative_to(h)
-        if rel.parts == ():
-            return "~"
-        return f"~/{rel.as_posix()}"
-    except (ValueError, RuntimeError):
-        pass
+    if is_abs:
+        try:
+            rel = p.relative_to(h)
+            if rel.parts == ():
+                return "~"
+            return f"~/{rel.as_posix()}"
+        except (ValueError, RuntimeError):
+            pass
 
-    resolved_target = p.resolve() if p.is_absolute() else p
-    parent_str = str(resolved_target.parent).replace("\\", "/")
-    p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
-    return f".._{p_hash}/{resolved_target.name}"
+        try:
+            resolved_p = p.resolve()
+            resolved_h = h.resolve()
+            rel = resolved_p.relative_to(resolved_h)
+            if rel.parts == ():
+                return "~"
+            return f"~/{rel.as_posix()}"
+        except (ValueError, RuntimeError):
+            pass
+
+        parent_str = str(p.parent).replace("\\", "/")
+        p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+        return f".._{p_hash}/{p.name}"
+
+    parent_str = str(p.parent).replace("\\", "/") if p.parent != Path(".") else ""
+    if parent_str:
+        p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+        return f".._{p_hash}/{p.name}"
+    return p.name
 
 
 def short_hash(identifier: str, length: int = 8) -> str:
@@ -1146,32 +1321,21 @@ def build_repro_metadata(
     )
 
 
-def get_finding_remediation(f: Finding) -> str:
+def get_finding_remediation(f: Finding, *, home: Path | None = None) -> str:
     """Return concise content-free remediation instructions for a finding."""
     from sesslint.codes import Repairability
 
+    min_path = minimize_path(f.source.path, home=home)
     if f.repairability == Repairability.DETERMINISTIC:
-        return f"deterministic recipe available: run 'sesslint repair {f.source.path}'"
+        return f"deterministic recipe available: run 'sesslint repair {min_path}'"
     if f.repairability == Repairability.LOSSY_EXPLICIT:
-        return (
-            f"lossy-explicit recipe available: "
-            f"run 'sesslint repair {f.source.path} --policy salvage'"
-        )
+        return f"lossy-explicit recipe available: run 'sesslint repair {min_path} --policy salvage'"
     if f.repairability == Repairability.MANUAL:
         return "manual inspection required; automated repair refused"
     return "unsupported defect or structure; automated repair refused"
 
 
-def finding_report_sort_key(f: Finding) -> tuple[str, str, int, int, str]:
-    """Sort key for findings: (code, path, line, byte, fingerprint)."""
-    norm_path = f.source.path.replace("\\", "/")
-    line_num = f.source.line if f.source.line is not None else -1
-    byte_num = -1
-    if f.evidence and isinstance(f.evidence, Mapping):
-        b = f.evidence.get("byte_offset", f.evidence.get("byte"))
-        if isinstance(b, int):
-            byte_num = b
-    return (f.code, norm_path, line_num, byte_num, f.fingerprint)
+finding_report_sort_key = finding_sort_key
 
 
 def format_finding_content_free(
@@ -1211,7 +1375,7 @@ def format_finding_content_free(
     if ordinal is not None and "ordinal" not in ev_dict:
         ev_dict["ordinal"] = ordinal
 
-    remediation = get_finding_remediation(f)
+    remediation = get_finding_remediation(f, home=home)
 
     res: dict[str, Any] = {
         "code": f.code,
@@ -1399,6 +1563,7 @@ def render_human(
     lines: list[str] = [
         f"[read-only] {verdict_colored} ({summary_meta})",
         f"Next Action: {next_action}",
+        f"Assurance: {report.assurance} - {report.limitation}",
         f"Limitation: {report.limitation}",
         f"Source fingerprint: {report.source_fingerprint}",
     ]
@@ -1413,7 +1578,7 @@ def render_human(
             loc_str = f"{min_path}:{f.source.line}" if f.source.line is not None else min_path
             sev_color = red if f.severity.value in ("error", "fatal") else yellow
             why_str = f.message
-            fix_str = get_finding_remediation(f)
+            fix_str = get_finding_remediation(f, home=home)
 
             sev_rep = f"({f.severity.value.upper()}, {f.repairability.value})"
             lines.append(f"  [{f.code}] {sev_color}{title}{reset} {sev_rep}")
@@ -1426,6 +1591,7 @@ def render_human(
 
 
 __all__ = [
+    "ASSURANCE_DESCRIPTIONS",
     "ASSURANCE_LIMITATIONS",
     "KNOWN_MANIFEST_FIELDS",
     "KNOWN_REPORT_FIELDS",
@@ -1452,6 +1618,7 @@ __all__ = [
     "build_report",
     "build_repro_metadata",
     "cap_assurance",
+    "compute_assurance",
     "compute_manifest_idempotency_key",
     "dump_manifest",
     "dump_report",

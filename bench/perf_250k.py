@@ -48,12 +48,15 @@ def generate_benchmark_file(path: Path, num_records: int) -> None:
         )
         for start in range(0, num_records, batch_size):
             end = min(start + batch_size, num_records)
-            lines = [
-                f'{{"actor":"user","id":"evt_{i:07d}","kind":"message","parent_id":null,'
-                f'"payload":{{"index":{i},"text":"{padding_pool[i % 100]}"}},'
-                f'"seq":{i},"ts":"2026-09-06T00:00:00Z"}}'
-                for i in range(start, end)
-            ]
+            lines: list[str] = []
+            for i in range(start, end):
+                pid_str = "null" if i == 0 else f'"evt_{i - 1:07d}"'
+                lines.append(
+                    f'{{"actor":"user","id":"evt_{i:07d}","kind":"message",'
+                    f'"parent_id":{pid_str},'
+                    f'"payload":{{"index":{i},"text":"{padding_pool[i % 100]}"}},'
+                    f'"seq":{i},"ts":"2026-09-06T00:00:00Z"}}'
+                )
             f.write("\n".join(lines) + "\n")
 
 
@@ -170,24 +173,56 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
         print(f"Tracemalloc heap peak (sample): {tracemalloc_mb:.3f} MB")
         print(f"Process peak RSS: {rss_str} (Budget: {mem_budget:.1f} MB)")
 
-        passed = True
-        reasons: list[str] = []
-
+        # 1. Functional correctness: MUST ALWAYS PASS (RVW-037).
+        # Disclosure rule applies ONLY to performance budget shortfalls, never functional bugs.
+        functional_failures: list[str] = []
         if count != records:
-            passed = False
-            reasons.append(f"Item count mismatch: expected {records}, got {count}")
+            functional_failures.append(f"Item count mismatch: expected {records}, got {count}")
 
-        # Total processing time evaluated against budget
+        if len(report.findings) != 0:
+            finding_codes = [f.code for f in report.findings]
+            functional_failures.append(
+                f"Expected 0 findings on clean session, got {len(report.findings)}: {finding_codes}"
+            )
+
+        if report.assurance != "A3":
+            functional_failures.append(
+                f"Expected assurance A3 on clean session, got {report.assurance}"
+            )
+
+        error_cnt = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get(
+            "fatal", 0
+        )
+        if error_cnt != 0:
+            functional_failures.append(f"Expected 0 errors on clean session, got {error_cnt}")
+
+        warn_cnt = report.counts.by_severity.get("warning", 0)
+        if warn_cnt != 0:
+            functional_failures.append(f"Expected 0 warnings on clean session, got {warn_cnt}")
+
+        if functional_failures:
+            print(
+                f"FATAL FUNCTIONAL CORRECTNESS FAILURE (RVW-037):\n"
+                f"  {'; '.join(functional_failures)}\n"
+                "Functional correctness cannot be excused by performance disclosure.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # 2. Performance budget evaluation
+        perf_shortfalls: list[str] = []
         total_eval_time = stream_elapsed + check_elapsed
         if total_eval_time > time_budget:
-            passed = False
-            reasons.append(f"Time exceeded budget: {total_eval_time:.3f}s > {time_budget:.1f}s")
+            perf_shortfalls.append(
+                f"Time exceeded budget: {total_eval_time:.3f}s > {time_budget:.1f}s"
+            )
 
         if reported_mem_mb > mem_budget:
-            passed = False
-            reasons.append(f"Memory exceeded budget: {reported_mem_mb:.2f}MB > {mem_budget:.1f}MB")
+            perf_shortfalls.append(
+                f"Memory exceeded budget: {reported_mem_mb:.2f}MB > {mem_budget:.1f}MB"
+            )
 
-        if passed:
+        if not perf_shortfalls:
             print(
                 f"PASS: {count:,} records ({file_size_mb:.1f} MB) evaluated in "
                 f"{total_eval_time:.3f}s (budget: {time_budget:.1f}s), "
@@ -195,17 +230,18 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
             )
             return 0
         else:
-            # Disclosure check: If budget exceeded, must be documented in bench/PERF_NOTES.md
-            disclosed = verify_disclosure_recorded(reasons)
+            # Disclosure check: If performance budget exceeded,
+            # must be documented in bench/PERF_NOTES.md
+            disclosed = verify_disclosure_recorded(perf_shortfalls)
             if disclosed:
                 print(
-                    f"DISCLOSED SHORTFALL (FR-095 / AC-023): {'; '.join(reasons)}\n"
+                    f"DISCLOSED SHORTFALL (FR-095 / AC-023): {'; '.join(perf_shortfalls)}\n"
                     "Verified disclosure in bench/PERF_NOTES.md. Passing under disclosure rule."
                 )
                 return 0
             else:
                 print(
-                    f"FAIL: {'; '.join(reasons)}\n"
+                    f"FAIL: {'; '.join(perf_shortfalls)}\n"
                     "No disclosure found in bench/PERF_NOTES.md. Undisclosed shortfall forbidden.",
                     file=sys.stderr,
                 )

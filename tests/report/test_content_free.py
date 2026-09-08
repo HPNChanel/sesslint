@@ -161,3 +161,224 @@ def test_shorthand_flag_c_is_refused(capsys: pytest.CaptureFixture[str]) -> None
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
     assert "unrecognized arguments" in captured.err or "-c" in captured.err
+
+
+def test_failing_fixture_with_unknown_critical_secret_does_not_leak(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify unknown-critical secret fields never leak into evidence or output (RVW-005)."""
+    secret_token = "sk-ant-api03-SECRET-CANARY-TOKEN-XYZ123"
+    fixture = tmp_path / "failing_secret.jsonl"
+    # Write Claude JSONL line with an unknown critical field containing the secret token
+    record = {
+        "id": "evt_secret_01",
+        "parent_id": None,
+        "type": "user",
+        "unknown_critical_auth": secret_token,
+        "ts": "2026-09-05T12:00:00Z",
+    }
+    fixture.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    code = main(["check", str(fixture), "--format", "claude-code-jsonl", "--json"])
+    assert code == 1  # Failing session
+    captured = capsys.readouterr()
+
+    # Secret token must NOT appear anywhere in stdout or stderr
+    assert secret_token not in captured.out
+    assert secret_token not in captured.err
+
+    data = json.loads(captured.out)
+    assert len(data.get("findings", [])) >= 1
+    for f in data["findings"]:
+        ev = f.get("evidence") or {}
+        if "type_value" in ev:
+            # type_value must be type/length descriptor, not raw secret
+            assert secret_token not in ev["type_value"]
+            assert ev["type_value"].startswith("<") and ev["type_value"].endswith(">")
+
+
+def test_remediation_and_span_path_minimize_absolute_paths_on_failing_fixture(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify default reports minimize paths and never leak raw absolute paths (RVW-005)."""
+    abs_fixture = (tmp_path / "failing_path_leak.jsonl").resolve()
+    # Write an invalid record causing SL001
+    abs_fixture.write_text('{"invalid_json": true\n', encoding="utf-8")
+
+    code = main(["check", str(abs_fixture), "--format", "canonical", "--json"])
+    assert code == 1
+    captured = capsys.readouterr()
+
+    data = json.loads(captured.out)
+    findings = data.get("findings", [])
+    assert len(findings) >= 1
+
+    abs_str = str(abs_fixture).replace("\\", "/")
+    # Raw absolute path must not appear in remediation
+    for f in findings:
+        remediation = f.get("remediation", "")
+        assert abs_str not in remediation
+        span_path = f.get("span", {}).get("path", "")
+        # span path must be minimized (basename or relative)
+        assert span_path == abs_fixture.name or not span_path.startswith(str(tmp_path))
+
+
+def test_secret_seed_zero_leak_on_failing_openai(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify zero secret token leakage on failing OpenAI fixture (human & JSON modes)."""
+    secret_token = "sk-live-OPENAI-SECRET-TOKEN-51Nz888"
+    fixture = tmp_path / "failing_openai_secret.json"
+    content = {
+        "session_id": "sess_openai_sec",
+        "created_at": "2026-09-08T12:00:00Z",
+        "items": [
+            {
+                "id": "item_0",
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "text", "text": "hello"}],
+                "unknown_critical_auth": secret_token,
+            }
+        ],
+    }
+    fixture.write_text(json.dumps(content), encoding="utf-8")
+
+    # 1. JSON check mode
+    code_json = main(["check", str(fixture), "--format", "openai-agents", "--json"])
+    assert code_json == 1
+    captured_json = capsys.readouterr()
+    assert secret_token not in captured_json.out
+    assert secret_token not in captured_json.err
+
+    # 2. Human check mode
+    code_human = main(["check", str(fixture), "--format", "openai-agents"])
+    assert code_human == 1
+    captured_human = capsys.readouterr()
+    assert secret_token not in captured_human.out
+    assert secret_token not in captured_human.err
+
+
+def test_secret_seed_zero_leak_on_failing_canonical(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify zero secret token leakage on failing Canonical fixture (human & JSON modes)."""
+    secret_token = "sk-live-CANONICAL-SECRET-TOKEN-42"
+    fixture = tmp_path / "failing_canonical_secret.jsonl"
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_can_sec"}',
+        json.dumps(
+            {
+                "actor": "user",
+                "id": "evt_001",
+                "kind": "message",
+                "parent_id": None,
+                "payload": {"text": "hi"},
+                "seq": 0,
+                "ts": "2026-09-08T12:00:00Z",
+                "unknown_critical_env": secret_token,
+            }
+        ),
+    ]
+    fixture.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # 1. JSON check mode
+    code_json = main(["check", str(fixture), "--format", "canonical", "--json"])
+    assert code_json == 1
+    captured_json = capsys.readouterr()
+    assert secret_token not in captured_json.out
+    assert secret_token not in captured_json.err
+
+    # 2. Human check mode
+    code_human = main(["check", str(fixture), "--format", "canonical"])
+    assert code_human == 1
+    captured_human = capsys.readouterr()
+    assert secret_token not in captured_human.out
+    assert secret_token not in captured_human.err
+
+
+def test_secret_seed_zero_leak_in_scan_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify recursive directory scan on failing fixtures leaks zero secrets (RVW-005)."""
+    scan_dir = tmp_path / "scan_secrets"
+    scan_dir.mkdir()
+    secret_token = "sk-live-SCAN-SECRET-TOKEN-777xyz"
+
+    f1 = scan_dir / "failing1.jsonl"
+    f1.write_text(
+        json.dumps(
+            {
+                "id": "rec_01",
+                "type": "user",
+                "parent_id": None,
+                "secret_key": secret_token,
+                "unknown_critical_flag": secret_token,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    f2 = scan_dir / "failing2.jsonl"
+    f2.write_text(f'{{"invalid": "{secret_token}"\n', encoding="utf-8")
+
+    # 1. JSON scan mode
+    code_json = main(["check", str(scan_dir), "--recursive", "--json"])
+    assert code_json == 1
+    captured_json = capsys.readouterr()
+    assert secret_token not in captured_json.out
+    assert secret_token not in captured_json.err
+
+    # 2. Human scan mode
+    code_human = main(["check", str(scan_dir), "--recursive"])
+    assert code_human == 1
+    captured_human = capsys.readouterr()
+    assert secret_token not in captured_human.out
+    assert secret_token not in captured_human.err
+
+
+def test_secret_seed_zero_leak_in_repair_manifest(tmp_path: Path) -> None:
+    """Verify repair manifest never leaks payload secrets when repairing sessions."""
+    secret_token = "sk-live-REPAIR-MANIFEST-SECRET-999"
+    src_file = tmp_path / "src_secret.jsonl"
+    out_file = tmp_path / "out_repaired.jsonl"
+
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_rep_sec"}',
+        json.dumps(
+            {
+                "actor": "user",
+                "id": "evt_001",
+                "kind": "message",
+                "parent_id": None,
+                "payload": {"text": f"secret token is {secret_token}"},
+                "seq": 0,
+                "ts": "2026-09-08T12:00:00Z",
+            }
+        ),
+        # Duplicate identical record triggers SL003 repair
+        json.dumps(
+            {
+                "actor": "user",
+                "id": "evt_001",
+                "kind": "message",
+                "parent_id": None,
+                "payload": {"text": f"secret token is {secret_token}"},
+                "seq": 0,
+                "ts": "2026-09-08T12:00:00Z",
+            }
+        ),
+    ]
+    src_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    exit_code = main(["repair", str(src_file), "--output", str(out_file)])
+    assert exit_code == 0
+    assert out_file.is_file()
+
+    manifest_file = tmp_path / "out_repaired.jsonl.manifest.json"
+    assert manifest_file.is_file()
+    manifest_content = manifest_file.read_text(encoding="utf-8")
+
+    # Manifest must be content-free: must not leak the payload secret
+    assert secret_token not in manifest_content

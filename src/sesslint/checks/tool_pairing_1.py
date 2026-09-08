@@ -37,7 +37,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Final
 
-from sesslint.canonical import SessionEvent
+from sesslint.canonical import SessionEvent, compute_content_hash
 from sesslint.codes import (
     SL101,
     SL102,
@@ -518,11 +518,30 @@ def check_multi_results(
             "truncated": is_truncated,
         }
 
+        # Check if candidate results for this correlation_id have identical content fingerprints
+        res_events = [events[i] for i in result_indexes if 0 <= i < len(events)]
+        fps: set[str] = set()
+        for e in res_events:
+            p = getattr(e, "payload", None)
+            if p is None and isinstance(e, Mapping):
+                p = e.get("payload")
+            if isinstance(p, Mapping):
+                fps.add(compute_content_hash(p))
+            else:
+                fps.add(str(p))
+
+        call_count = len(indexer.uses_by_corr.get(corr, []))
+        rep = (
+            Repairability.DETERMINISTIC
+            if call_count == 1 and len(res_events) >= 2 and len(fps) == 1
+            else Repairability.MANUAL
+        )
+
         findings.append(
             make_finding(
                 code=SL104,
                 severity=Severity.ERROR,
-                repairability=Repairability.MANUAL,
+                repairability=rep,
                 message_template=_MSG_SL104,
                 source=SourceRef(
                     path=path,

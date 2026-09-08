@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from sesslint.finding import Finding, Repairability
-from sesslint.policy.abstention import must_abstain
+from sesslint.policy.abstention import should_abstain_from_repair
 from sesslint.repair.fingerprint import canonical_json_bytes, compute_plan_fingerprint
 from sesslint.repair.preconditions import (
     PreconditionContext,
@@ -28,6 +28,7 @@ from sesslint.repair.preconditions import (
     _find_torn_compaction_dropped_indices,
     check_preconditions,
 )
+from sesslint.repair.recipes_sl002 import register_all as register_all_sl002_recipes
 from sesslint.repair.registry import recipes_for
 
 MAX_STEPS: Final[int] = 256
@@ -57,6 +58,8 @@ class PlanStep:
     params: Mapping[str, Any] = field(default_factory=dict)
     lossy: bool = False
     loss: Mapping[str, int] = field(default_factory=dict)
+    min_policy: str = "conservative"
+    recipe_version: str = "1.0.0"
 
     def __post_init__(self) -> None:
         """Validate step fields and ensure loss classes are in allowlist."""
@@ -274,6 +277,9 @@ def plan(
     )
     profile_name = getattr(profile, "name", str(profile))
 
+    # Register SL002 torn-terminal-record recipe
+    register_all_sl002_recipes()
+
     # 1. Deduplicate findings by fingerprint (preserving first encounter)
     unique_findings: list[Finding] = []
     seen_fps: set[str] = set()
@@ -285,22 +291,18 @@ def plan(
     # Sort unique findings by fingerprint for deterministic processing order
     sorted_findings = sorted(unique_findings, key=lambda x: x.fingerprint)
 
-    # 2. Hard refusal gate on SL203 & side-effect abstention
-    has_sl203 = any(f.code == "SL203" for f in findings)
-    abstention = must_abstain(findings, events, allow_unknown_side_effects=acknowledge_side_effects)
+    # 2. Hard refusal gate on SL203 (RVW-011)
+    abstention = should_abstain_from_repair(
+        findings,
+        events,
+        policy=policy,
+        acknowledge_side_effects=acknowledge_side_effects,
+    )
 
-    has_side_effect_abstention = any(r.startswith("side-effect-") for r in abstention.reasons)
-    has_sl203_recipe = bool(recipes_for("SL203"))
-
-    if policy == "conservative":
-        should_refuse = (has_sl203 and (has_side_effect_abstention or not has_sl203_recipe)) or (
-            has_side_effect_abstention and not has_sl203_recipe
-        )
-    else:
-        # salvage policy: SL203 still unconditionally refuses
-        should_refuse = has_sl203
-
-    if should_refuse:
+    has_sl203 = any(f.code == "SL203" for f in findings) or any(
+        r == "SL203 present" for r in abstention.reasons
+    )
+    if has_sl203:
         blocked_sl203 = tuple(
             Blocked(finding_fp=f.fingerprint, code=f.code, reason="SL203-refusal")
             for f in sorted_findings
@@ -340,7 +342,7 @@ def plan(
 
     # 3. Partition findings and match recipes
     candidate_steps: list[
-        tuple[int | None, str, str, str, Mapping[str, Any], bool, Mapping[str, int]]
+        tuple[int | None, str, str, str, Mapping[str, Any], bool, Mapping[str, int], str, str]
     ] = []
     blocked_items: list[Blocked] = []
     num_events = len(events)
@@ -367,12 +369,12 @@ def plan(
             else str(f.repairability)
         )
 
-        if rep_val in ("manual", Repairability.MANUAL.value):
+        if rep_val in ("unsupported", Repairability.UNSUPPORTED.value):
             blocked_items.append(
                 Blocked(
                     finding_fp=f.fingerprint,
                     code=f.code,
-                    reason="repairability-manual",
+                    reason="repairability-unsupported",
                 )
             )
             continue
@@ -387,23 +389,6 @@ def plan(
             )
             continue
 
-        if rep_val not in (
-            "safe-auto",
-            "salvage",
-            "deterministic",
-            "lossy-explicit",
-            Repairability.DETERMINISTIC.value,
-            Repairability.LOSSY_EXPLICIT.value,
-        ):
-            blocked_items.append(
-                Blocked(
-                    finding_fp=f.fingerprint,
-                    code=f.code,
-                    reason="repairability-unsupported",
-                )
-            )
-            continue
-
         # Match registered recipes
         available_recipes = recipes_for(f.code)
         if not available_recipes:
@@ -412,6 +397,66 @@ def plan(
                     finding_fp=f.fingerprint,
                     code=f.code,
                     reason="no-recipe",
+                )
+            )
+            continue
+
+        if policy == "conservative" and all(r.salvage_only for r in available_recipes):
+            blocked_items.append(
+                Blocked(
+                    finding_fp=f.fingerprint,
+                    code=f.code,
+                    reason="needs-salvage-policy",
+                )
+            )
+            continue
+
+        if (
+            rep_val
+            in (
+                "lossy-explicit",
+                Repairability.LOSSY_EXPLICIT.value,
+                "salvage",
+            )
+            and policy != "salvage"
+        ):
+            blocked_items.append(
+                Blocked(
+                    finding_fp=f.fingerprint,
+                    code=f.code,
+                    reason="needs-salvage-policy",
+                )
+            )
+            continue
+
+        if rep_val in ("manual", Repairability.MANUAL.value):
+            if policy == "salvage" and any(r.salvage_only for r in available_recipes):
+                pass
+            else:
+                blocked_items.append(
+                    Blocked(
+                        finding_fp=f.fingerprint,
+                        code=f.code,
+                        reason="repairability-manual",
+                    )
+                )
+                continue
+
+        if rep_val not in (
+            "safe-auto",
+            "salvage",
+            "deterministic",
+            "lossy-explicit",
+            "manual",
+            Repairability.DETERMINISTIC.value,
+            Repairability.LOSSY_EXPLICIT.value,
+            Repairability.MANUAL.value,
+        ):
+            blocked_items.append(
+                Blocked(
+                    finding_fp=f.fingerprint,
+                    code=f.code,
+                    reason="repairability-unsupported",
                 )
             )
             continue
@@ -512,6 +557,18 @@ def plan(
                     f"Invalid loss class: {k!r}. Must be one of {sorted(ALLOWED_LOSS_CLASSES)}"
                 )
 
+        # Abstention check: if session has unacknowledged side effects,
+        # conservative steps cannot be planned (RVW-011)
+        if abstention.abstain and policy == "conservative":
+            blocked_items.append(
+                Blocked(
+                    finding_fp=f.fingerprint,
+                    code=f.code,
+                    reason="side-effect-abstention",
+                )
+            )
+            continue
+
         candidate_steps.append(
             (
                 target_idx,
@@ -521,12 +578,16 @@ def plan(
                 step_params,
                 matched_recipe.lossy,
                 step_loss,
+                getattr(matched_recipe, "min_policy", "conservative"),
+                getattr(matched_recipe, "version", "1.0.0"),
             )
         )
 
     # 4. Sort steps by (target_index, recipe, finding_fp)
     def _step_sort_key(
-        item: tuple[int | None, str, str, str, Mapping[str, Any], bool, Mapping[str, int]],
+        item: tuple[
+            int | None, str, str, str, Mapping[str, Any], bool, Mapping[str, int], str, str
+        ],
     ) -> tuple[int, str, str]:
         idx_val = item[0] if item[0] is not None else 0
         return (idx_val, item[1], item[2])
@@ -544,6 +605,8 @@ def plan(
             params,
             is_lossy,
             s_loss,
+            rec_min_policy,
+            rec_version,
         ) in enumerate(candidate_steps):
             final_steps.append(
                 PlanStep(
@@ -554,6 +617,8 @@ def plan(
                     params=params,
                     lossy=is_lossy,
                     loss=s_loss,
+                    min_policy=rec_min_policy,
+                    recipe_version=rec_version,
                 )
             )
     else:
@@ -565,6 +630,8 @@ def plan(
             params,
             is_lossy,
             s_loss,
+            rec_min_policy,
+            rec_version,
         ) in enumerate(candidate_steps[:MAX_STEPS]):
             final_steps.append(
                 PlanStep(
@@ -575,9 +642,11 @@ def plan(
                     params=params,
                     lossy=is_lossy,
                     loss=s_loss,
+                    min_policy=rec_min_policy,
+                    recipe_version=rec_version,
                 )
             )
-        for _, _, f_fp, f_code, _, _, _ in candidate_steps[MAX_STEPS:]:
+        for _, _, f_fp, f_code, _, _, _, _, _ in candidate_steps[MAX_STEPS:]:
             blocked_items.append(
                 Blocked(
                     finding_fp=f_fp,
