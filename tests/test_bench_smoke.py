@@ -54,4 +54,3 @@ def test_bench_functional_failure_not_excused() -> None:
         result = run_benchmark(records=100, time_budget=10.0, mem_budget=512.0)
         # MUST return 1 despite bench/PERF_NOTES.md existing
         assert result == 1
-
