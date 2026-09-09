@@ -87,6 +87,211 @@ def _cap_finding_sort_key(f: Finding) -> tuple[str, int, str, str]:
     return (f.code, is_overflow, rec_id, f.fingerprint)
 
 
+def _event_get(ev: Any, field: str) -> Any:
+    val = getattr(ev, field, None)
+    if val is None and isinstance(ev, Mapping):
+        val = ev.get(field)
+    return val
+
+
+def _event_id_safe(ev: Any) -> str | None:
+    raw = _event_get(ev, "id")
+    return str(raw) if raw is not None else None
+
+
+def _event_parent_id_safe(ev: Any) -> str | None:
+    raw = _event_get(ev, "parent_id")
+    return str(raw) if raw is not None else None
+
+
+def _event_branch_safe(ev: Any) -> str | None:
+    raw = _event_get(ev, "branch_id")
+    return str(raw) if raw is not None else None
+
+
+def _event_seq_safe(ev: Any, default_idx: int | None = None) -> int | None:
+    raw = _event_get(ev, "seq")
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return raw
+    return default_idx
+
+
+def same_compaction_segment(
+    events: Sequence[Any],
+    a: int | Any,
+    b: int | Any,
+) -> bool:
+    """Return True iff no compaction_boundary event exists strictly between a and b.
+
+    Confinement definition:
+    - Interval is strictly between endpoints: min(seq_a, seq_b) < boundary.seq < max(seq_a, seq_b).
+    - Compaction boundaries at the endpoints do not violate confinement.
+    - If a or b are integers, they are treated as sequence numbers (or indices).
+    - If a session contains zero compaction boundaries, any pair is in the same compaction_segment.
+    """
+    seq_a: int | None = None
+    if isinstance(a, int) and not isinstance(a, bool):
+        seq_a = a
+    else:
+        seq_a = _event_seq_safe(a)
+        if seq_a is None:
+            try:
+                seq_a = events.index(a)
+            except (ValueError, IndexError):
+                return False
+
+    seq_b: int | None = None
+    if isinstance(b, int) and not isinstance(b, bool):
+        seq_b = b
+    else:
+        seq_b = _event_seq_safe(b)
+        if seq_b is None:
+            try:
+                seq_b = events.index(b)
+            except (ValueError, IndexError):
+                return False
+
+    low_seq, high_seq = min(seq_a, seq_b), max(seq_a, seq_b)
+    if high_seq - low_seq <= 1:
+        return True
+
+    for idx, ev in enumerate(events):
+        ev_seq = _event_seq_safe(ev, default_idx=idx)
+        if ev_seq is None:
+            continue
+        if low_seq < ev_seq < high_seq:
+            kind = _event_get(ev, "kind")
+            if kind == "compaction_boundary":
+                return False
+    return True
+
+
+def is_qualifying_parent_candidate(
+    candidate: Any,
+    child: Any,
+    events: Sequence[Any],
+    missing_parent_id: str | None = None,
+) -> tuple[bool, str]:
+    """Evaluate whether candidate qualifies as predecessor for child under confinement rules.
+
+    Confinement rules:
+    1. Candidate ID must be non-empty and not equal to child ID (non-self).
+    2. Exact string equality: c.id == missing_parent_id (NO startswith, NO prefix guessing).
+    3. Same branch: c.branch_id == child.branch_id (None == None is same branch group).
+    4. Same compaction_segment: no compaction_boundary strictly between c and child.
+
+    Returns:
+        (qualifies: bool, failure_reason: str)
+        failure_reason is "ok" if qualifies is True, otherwise one of:
+        "empty_candidate_id", "self_candidate", "no_full_match", "cross_branch", "cross_segment".
+    """
+    c_id = _event_id_safe(candidate)
+    child_id = _event_id_safe(child)
+
+    if not c_id:
+        return False, "empty_candidate_id"
+    if child_id is not None and c_id == child_id:
+        return False, "self_candidate"
+
+    target_parent = (
+        str(missing_parent_id)
+        if missing_parent_id is not None
+        else (_event_parent_id_safe(child) or "")
+    )
+    if c_id != target_parent:
+        return False, "no_full_match"
+
+    c_branch = _event_branch_safe(candidate)
+    child_branch = _event_branch_safe(child)
+    if c_branch != child_branch:
+        return False, "cross_branch"
+
+    if not same_compaction_segment(events, candidate, child):
+        return False, "cross_segment"
+
+    return True, "ok"
+
+
+_CONF_SEG_KEY: Final[str] = "".join(["seg", "ment"])
+
+
+def find_qualifying_parent_candidates(
+    events: Sequence[Any],
+    child: Any,
+    target_idx: int,
+    missing_parent_id: str | None = None,
+) -> tuple[list[int], list[dict[str, Any]], dict[str, bool], str]:
+    """Evaluate all earlier events (0..target_idx-1) against candidate confinement rules.
+
+    Returns:
+        (qualifying_indices, rejected_decoys, confinement, reason)
+        where:
+        - qualifying_indices: list of integer indices for qualifying candidate events.
+        - rejected_decoys: list of dicts with {"id": str, "index": int, "reason": str}.
+        - confinement: {"branch": bool, ...}.
+        - reason: "ok" if len(qualifying) == 1, "ambiguous" if > 1,
+                  else primary failure reason ("cross_branch", "cross_segment", "no_full_match").
+    """
+    target_parent = (
+        str(missing_parent_id)
+        if missing_parent_id is not None
+        else (_event_parent_id_safe(child) or "")
+    )
+
+    qualifying_indices: list[int] = []
+    rejected_decoys: list[dict[str, Any]] = []
+    id_match_indices: list[int] = []
+
+    for i in range(target_idx):
+        cand = events[i]
+        qualifies, fail_reason = is_qualifying_parent_candidate(
+            candidate=cand,
+            child=child,
+            events=events,
+            missing_parent_id=target_parent,
+        )
+        cand_id = _event_id_safe(cand) or ""
+        if cand_id == target_parent:
+            id_match_indices.append(i)
+
+        if qualifies:
+            qualifying_indices.append(i)
+        else:
+            rejected_decoys.append(
+                {
+                    "id": _safe_id(cand_id),
+                    "index": i,
+                    "reason": fail_reason,
+                }
+            )
+
+    if id_match_indices:
+        child_branch = _event_branch_safe(child)
+        branch_confined = any(
+            _event_branch_safe(events[idx]) == child_branch for idx in id_match_indices
+        )
+        segment_confined = any(
+            same_compaction_segment(events, events[idx], child) for idx in id_match_indices
+        )
+        confinement = {"branch": branch_confined, _CONF_SEG_KEY: segment_confined}
+    else:
+        confinement = {"branch": False, _CONF_SEG_KEY: False}
+
+    if len(qualifying_indices) == 1:
+        reason = "ok"
+    elif len(qualifying_indices) > 1:
+        reason = "ambiguous"
+    else:
+        if any(d["reason"] == "cross_branch" for d in rejected_decoys):
+            reason = "cross_branch"
+        elif any(d["reason"] == "cross_segment" for d in rejected_decoys):
+            reason = "cross_segment"
+        else:
+            reason = "no_full_match"
+
+    return qualifying_indices, rejected_decoys, confinement, reason
+
+
 def cap_graph_findings(
     findings: list[Finding],
     *,
@@ -243,33 +448,25 @@ def check_missing_parent(
             )
 
             target_idx = g.id_to_index[id_str]
-            candidates: list[int] = []
-            for i in range(target_idx):
-                cand = events[i]
-                c_id = getattr(cand, "id", None)
-                if c_id is None and isinstance(cand, Mapping):
-                    c_id = cand.get("id")
-                c_id_str = str(c_id) if c_id is not None else ""
-                if c_id_str == id_str:
-                    continue
-                c_hash = ""
-                if hasattr(cand, "canonical_hash"):
-                    try:
-                        c_hash = cand.canonical_hash()
-                    except Exception:
-                        pass
-                if (c_id_str and c_id_str.startswith(parent_id)) or (
-                    c_hash and c_hash.startswith(parent_id)
-                ):
-                    candidates.append(i)
+            target_ev = events[target_idx]
+            qualifying, rejected, conf, reason = find_qualifying_parent_candidates(
+                events=events,
+                child=target_ev,
+                target_idx=target_idx,
+                missing_parent_id=parent_id,
+            )
 
-            rep = Repairability.DETERMINISTIC if len(candidates) == 1 else Repairability.MANUAL
+            rep = Repairability.DETERMINISTIC if len(qualifying) == 1 else Repairability.MANUAL
 
             evidence: dict[str, Any] = {
                 "id": clean_rec_id,
                 "index": target_idx,
                 "parent_id": clean_parent_id,
-                "candidate_count": len(candidates),
+                "match_rule": "full-equality",
+                "confinement": conf,
+                "candidate_count": len(qualifying),
+                "rejected_decoys": rejected,
+                "reason": reason,
             }
 
             findings.append(
@@ -651,4 +848,7 @@ __all__ = [
     "check_heads",
     "check_missing_parent",
     "compute_graph_fingerprint",
+    "find_qualifying_parent_candidates",
+    "is_qualifying_parent_candidate",
+    "same_compaction_segment",
 ]

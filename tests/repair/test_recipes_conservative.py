@@ -377,6 +377,65 @@ def test_parent_restore_refusal_self_candidate() -> None:
         apply_proven_unique_parent_restore(events, step)
 
 
+def test_parent_restore_refusal_cross_branch() -> None:
+    """Parent restore refuses candidate with exact matching ID on a different branch."""
+    events = [
+        {
+            "id": "node-target",
+            "kind": "message",
+            "parent_id": None,
+            "seq": 0,
+            "branch_id": "branch-a",
+        },
+        {
+            "id": "node-child",
+            "kind": "message",
+            "parent_id": "node-target",
+            "seq": 1,
+            "branch_id": "branch-b",
+        },
+    ]
+    step = PlanStep(
+        seq=0,
+        recipe="proven-unique-parent-restore",
+        target_finding_fp="f0",
+        target_index=1,
+        params={"parent_id": "node-target"},
+    )
+    with pytest.raises(PreconditionFailed, match="cross_branch"):
+        apply_proven_unique_parent_restore(events, step)
+
+
+def test_parent_restore_refusal_cross_segment() -> None:
+    """Parent restore refuses candidate separated by a compaction_boundary."""
+    events = [
+        {"id": "node-target", "kind": "message", "parent_id": None, "seq": 0, "branch_id": "main"},
+        {
+            "id": "b-1",
+            "kind": "compaction_boundary",
+            "parent_id": "node-target",
+            "seq": 1,
+            "branch_id": "main",
+        },
+        {
+            "id": "node-child",
+            "kind": "message",
+            "parent_id": "node-target",
+            "seq": 2,
+            "branch_id": "main",
+        },
+    ]
+    step = PlanStep(
+        seq=0,
+        recipe="proven-unique-parent-restore",
+        target_finding_fp="f0",
+        target_index=2,
+        params={"parent_id": "node-target"},
+    )
+    with pytest.raises(PreconditionFailed, match="cross_segment"):
+        apply_proven_unique_parent_restore(events, step)
+
+
 def test_reunion_refusal_zero_boundaries() -> None:
     """Compaction reunion with zero boundaries between pair raises PreconditionFailed."""
     events = [
@@ -963,7 +1022,7 @@ def test_plan_and_apply_duplicate_projection_full_flow() -> None:
 def test_plan_and_apply_parent_restore_full_flow() -> None:
     """Full end-to-end plan and apply flow for SL004 finding with detector index evidence."""
     events = [
-        {"id": "msg-root-12345", "kind": "message", "seq": 0, "parent_id": None},
+        {"id": "msg-root-123", "kind": "message", "seq": 0, "parent_id": None},
         {"id": "msg-child-1", "kind": "message", "seq": 1, "parent_id": "msg-root-123"},
     ]
     f = _make_test_finding(
@@ -983,7 +1042,7 @@ def test_plan_and_apply_parent_restore_full_flow() -> None:
 
     out = apply_proven_unique_parent_restore(events, p.steps[0])
     assert len(out) == 2
-    assert out[1]["parent_id"] == "msg-root-12345"
+    assert out[1]["parent_id"] == "msg-root-123"
 
 
 def test_terminal_suffix_discard_sl005_entry_index() -> None:

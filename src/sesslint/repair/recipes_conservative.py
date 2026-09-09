@@ -29,6 +29,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from sesslint.canonical import to_canonical_dict
+from sesslint.checks.graph import find_qualifying_parent_candidates
 from sesslint.codes import SL003, SL004, SL005, SL104, SL108
 from sesslint.repair.fingerprint import canonical_json_bytes
 from sesslint.repair.planner import PlanStep
@@ -263,7 +264,7 @@ def apply_proven_unique_parent_restore(
     events: Sequence[Any],
     step: PlanStep,
 ) -> list[dict[str, Any]]:
-    """Reattach missing parent pointer when exactly one non-self candidate matches prefix.
+    """Reattach missing parent pointer when candidate satisfies full-equality and confinement.
 
     Raises:
         PreconditionFailed: If target index invalid or candidates != 1.
@@ -285,39 +286,35 @@ def apply_proven_unique_parent_restore(
         raise PreconditionFailed("proven-unique-parent-restore: missing or invalid target_index")
 
     target_ev = events[target_idx]
-    target_id = _event_id(target_ev)
 
-    prefix: Any = None
+    parent_id: Any = None
     if isinstance(step.params, Mapping):
-        prefix = step.params.get("parent_fingerprint_prefix") or step.params.get("parent_id")
-    if not prefix:
-        prefix = _event_parent_id(target_ev)
+        parent_id = step.params.get("parent_id") or step.params.get("parent_fingerprint_prefix")
+    if not parent_id:
+        parent_id = _event_parent_id(target_ev)
 
-    if not prefix:
-        raise PreconditionFailed("proven-unique-parent-restore: missing parent_fingerprint_prefix")
-    prefix_str = str(prefix)
+    if not parent_id:
+        raise PreconditionFailed("proven-unique-parent-restore: missing parent_id")
+    parent_id_str = str(parent_id)
 
-    candidates: list[int] = []
-    for i in range(target_idx):
-        cand = events[i]
-        c_id = _event_id(cand)
-        if c_id == target_id:
-            continue
-        c_hash = _event_canonical_hash(cand)
-        if (c_id and c_id.startswith(prefix_str)) or (c_hash and c_hash.startswith(prefix_str)):
-            candidates.append(i)
+    qualifying, _, _, reason = find_qualifying_parent_candidates(
+        events=events,
+        child=target_ev,
+        target_idx=target_idx,
+        missing_parent_id=parent_id_str,
+    )
 
-    if len(candidates) == 0:
+    if len(qualifying) == 0:
         raise PreconditionFailed(
-            f"proven-unique-parent-restore: zero candidates matching prefix '{prefix_str}'"
+            f"proven-unique-parent-restore: zero candidates matching '{parent_id_str}' ({reason})"
         )
-    if len(candidates) > 1:
+    if len(qualifying) > 1:
         raise PreconditionFailed(
-            f"proven-unique-parent-restore: ambiguous candidates ({len(candidates)}) "
-            f"matching '{prefix_str}'"
+            f"proven-unique-parent-restore: ambiguous candidates ({len(qualifying)}) "
+            f"matching '{parent_id_str}'"
         )
 
-    winning_cand = events[candidates[0]]
+    winning_cand = events[qualifying[0]]
     winning_id = _event_id(winning_cand)
     if not winning_id:
         raise PreconditionFailed("proven-unique-parent-restore: candidate parent has empty ID")

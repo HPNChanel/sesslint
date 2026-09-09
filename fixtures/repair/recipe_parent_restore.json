@@ -3,7 +3,7 @@
     "recipe": "proven-unique-parent-restore",
     "step": {
       "params": {
-        "parent_fingerprint_prefix": "msg-parent-uniq"
+        "parent_id": "msg-parent-uniq"
       },
       "recipe": "proven-unique-parent-restore",
       "seq": 0,
@@ -13,7 +13,7 @@
     "input_events": [
       {
         "actor": "user",
-        "id": "msg-parent-uniq-9999",
+        "id": "msg-parent-uniq",
         "kind": "message",
         "parent_id": null,
         "payload": {
@@ -37,7 +37,7 @@
     "expected_events": [
       {
         "actor": "user",
-        "id": "msg-parent-uniq-9999",
+        "id": "msg-parent-uniq",
         "kind": "message",
         "parent_id": null,
         "payload": {
@@ -50,7 +50,7 @@
         "actor": "assistant",
         "id": "msg-child-2",
         "kind": "message",
-        "parent_id": "msg-parent-uniq-9999",
+        "parent_id": "msg-parent-uniq",
         "payload": {
           "text": "Response from model"
         },
@@ -65,7 +65,7 @@
     "recipe": "proven-unique-parent-restore",
     "step": {
       "params": {
-        "parent_fingerprint_prefix": "msg-parent-ambig"
+        "parent_id": "msg-parent-ambig"
       },
       "recipe": "proven-unique-parent-restore",
       "seq": 0,
@@ -75,7 +75,7 @@
     "input_events": [
       {
         "actor": "user",
-        "id": "msg-parent-ambig-1",
+        "id": "msg-parent-ambig",
         "kind": "message",
         "parent_id": null,
         "payload": {
@@ -86,7 +86,7 @@
       },
       {
         "actor": "user",
-        "id": "msg-parent-ambig-2",
+        "id": "msg-parent-ambig",
         "kind": "message",
         "parent_id": null,
         "payload": {

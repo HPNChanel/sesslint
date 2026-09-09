@@ -1,0 +1,45 @@
+{
+  "events": [
+    {
+      "actor": "user",
+      "branch_id": "main",
+      "id": "msg-seg-parent",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Pre-compaction event"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "system",
+      "branch_id": "main",
+      "id": "boundary-1",
+      "kind": "compaction_boundary",
+      "parent_id": "msg-seg-parent",
+      "payload": {
+        "trigger": "token_limit"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "branch_id": "main",
+      "id": "msg-seg-child",
+      "kind": "message",
+      "parent_id": "ghost-seg",
+      "payload": {
+        "text": "Post-compaction child referencing missing ghost-seg"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    }
+  ],
+  "schema": "sesslint.session/v1",
+  "source": {
+    "format": "canonical"
+  },
+  "version": 1
+}

@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from sesslint.checks.graph import find_qualifying_parent_candidates
 from sesslint.finding import Finding, Repairability
 from sesslint.policy.abstention import must_abstain
 from sesslint.repair.fingerprint import canonical_json_bytes
@@ -240,7 +241,7 @@ def adjacent_identical_duplicate(ctx: PreconditionContext) -> bool:
 
 
 def unique_parent_candidate(ctx: PreconditionContext) -> bool:
-    """Precondition: exactly one non-self candidate parent matches prefix."""
+    """Precondition: exactly one non-self candidate parent matches full-equality and confinement."""
     if not ctx.finding:
         return False
     evidence = ctx.finding.evidence if isinstance(ctx.finding.evidence, Mapping) else {}
@@ -262,26 +263,23 @@ def unique_parent_candidate(ctx: PreconditionContext) -> bool:
         return False
 
     target_ev = ctx.events[target_idx]
-    target_id = _event_id(target_ev)
 
-    prefix = evidence.get("parent_fingerprint_prefix") or evidence.get("parent_id")
-    if not prefix:
-        prefix = _event_parent_id(target_ev)
-    if not prefix:
+    parent_id = evidence.get("parent_id")
+    if not parent_id:
+        parent_id = _event_parent_id(target_ev)
+    if not parent_id:
+        parent_id = evidence.get("parent_fingerprint_prefix")
+    if not parent_id:
         return False
-    prefix_str = str(prefix)
 
-    candidates: list[int] = []
-    for i in range(target_idx):
-        cand = ctx.events[i]
-        c_id = _event_id(cand)
-        if c_id == target_id:
-            continue
-        c_hash = _event_canonical_hash(cand)
-        if (c_id and c_id.startswith(prefix_str)) or (c_hash and c_hash.startswith(prefix_str)):
-            candidates.append(i)
+    qualifying, _, _, _ = find_qualifying_parent_candidates(
+        events=ctx.events,
+        child=target_ev,
+        target_idx=target_idx,
+        missing_parent_id=str(parent_id),
+    )
 
-    return len(candidates) == 1
+    return len(qualifying) == 1
 
 
 def single_boundary_split(ctx: PreconditionContext) -> bool:
