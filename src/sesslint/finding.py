@@ -141,9 +141,14 @@ class SourceRef:
 class Finding:
     """Immutable finding envelope capturing an integrity defect.
 
-    Implements a total ordering contract:
-    severity_rank (fatal < error < warning < info) -> code -> path -> line ->
-    record_id -> fingerprint.
+    Total ordering hierarchy (FR-094):
+    1. path (lexicographical, forward-slash normalized)
+    2. line (None sorts as -1 before line 0, then ascending integer)
+    3. ordinal (stream record ordinal from evidence['record_ordinal'], None/-1 sorts before 0)
+    4. severity_rank (fatal < error < warning < info)
+    5. code (lexicographical)
+    6. record_id (None sorts as empty string before any non-empty string, then lexicographical)
+    7. fingerprint (16-character sha256 hex string)
     """
 
     code: str
@@ -290,37 +295,44 @@ class Finding:
 
 def _finding_sort_key(
     f: Finding,
-) -> tuple[int, str, str, tuple[int, int], tuple[int, str], str]:
-    """Pure sort key ensuring deterministic total ordering of findings.
+) -> tuple[str, int, int, int, str, str, str]:
+    """Pure sort key ensuring deterministic total ordering of findings (FR-094).
 
     Total ordering hierarchy:
-    1. severity_rank (fatal < error < warning < info)
-    2. code (lexicographical)
-    3. path (lexicographical, forward-slash normalized)
-    4. line (None sorts before line 1, then ascending integer)
-    5. record_id (None sorts before any string, then lexicographical)
-    6. fingerprint (16-character sha256 hex string)
+    1. path (lexicographical, forward-slash normalized)
+    2. line (None sorts as -1 before line 0, then ascending integer)
+    3. ordinal (stream record ordinal from evidence['record_ordinal'], None/-1 sorts before 0)
+    4. severity_rank (fatal < error < warning < info)
+    5. code (lexicographical)
+    6. record_id (None sorts as empty string before any non-empty string, then lexicographical)
+    7. fingerprint (16-character sha256 hex string)
     """
-    sev_rank = SEVERITY_ORDER[f.severity]
     norm_path = f.source.path.replace("\\", "/")
-    line_key = (0, 0) if f.source.line is None else (1, f.source.line)
-    rec_key = (0, "") if f.source.record_id is None else (1, str(f.source.record_id))
-    return (sev_rank, f.code, norm_path, line_key, rec_key, f.fingerprint)
+    line_val = -1 if f.source.line is None else f.source.line
+    ordinal_val = -1
+    if f.evidence is not None:
+        raw_ordinal = f.evidence.get("record_ordinal")
+        if isinstance(raw_ordinal, int) and not isinstance(raw_ordinal, bool) and raw_ordinal >= 0:
+            ordinal_val = raw_ordinal
+    sev_rank = SEVERITY_ORDER[f.severity]
+    rec_val = "" if f.source.record_id is None else str(f.source.record_id)
+    return (norm_path, line_val, ordinal_val, sev_rank, f.code, rec_val, f.fingerprint)
 
 
 finding_sort_key = _finding_sort_key
 
 
 def sort_findings(fs: Iterable[Finding]) -> list[Finding]:
-    """Return a new list of findings sorted in deterministic total order.
+    """Return a new list of findings sorted in deterministic total order (FR-094).
 
     Total ordering hierarchy:
-    1. severity_rank (fatal < error < warning < info)
-    2. code (lexicographical)
-    3. path (lexicographical, forward-slash normalized)
-    4. line (None sorts before line 1, then ascending integer)
-    5. record_id (None sorts before any string, then lexicographical)
-    6. fingerprint (16-character sha256 hex string)
+    1. path (lexicographical, forward-slash normalized)
+    2. line (None sorts as -1 before line 0, then ascending integer)
+    3. ordinal (stream record ordinal from evidence['record_ordinal'], None/-1 sorts before 0)
+    4. severity_rank (fatal < error < warning < info)
+    5. code (lexicographical)
+    6. record_id (None sorts as empty string before any non-empty string, then lexicographical)
+    7. fingerprint (16-character sha256 hex string)
     """
     return sorted(fs, key=_finding_sort_key)
 

@@ -648,10 +648,79 @@ def test_sort_findings_does_not_mutate_input() -> None:
 
 
 def test_ordering_rules_hierarchy() -> None:
-    """Verify total ordering: severity -> code -> path -> line -> record_id -> fingerprint."""
-    # 1. Severity: fatal < error < warning < info
+    """Verify total ordering (FR-094):
+    path -> line -> ordinal -> severity -> code -> record_id -> fingerprint.
+    """
+    # 1. Path lexicographical
+    f_path_a = make_finding(
+        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
+    )
+    f_path_b = make_finding(
+        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("b.jsonl", 1)
+    )
+    assert sort_findings([f_path_b, f_path_a]) == [f_path_a, f_path_b]
+
+    # 2. Line: None (-1) sorts before 1, then ascending integer
+    f_line_none = make_finding(
+        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", None)
+    )
+    f_line_1 = make_finding(
+        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
+    )
+    f_line_2 = make_finding(
+        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 2)
+    )
+    assert sort_findings([f_line_2, f_line_1, f_line_none]) == [f_line_none, f_line_1, f_line_2]
+
+    # 3. Ordinal: None (-1) sorts before 0, then ascending integer.
+    # Defensive behavior: negative ordinals, booleans, and non-ints fall back to -1.
+    f_ord_none = make_finding(
+        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
+    )
+    f_ord_neg = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1),
+        evidence={"record_ordinal": -5},
+    )
+    f_ord_bool = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1),
+        evidence={"record_ordinal": True},
+    )
+    f_ord_str = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1),
+        evidence={"record_ordinal": "1"},
+    )
+    f_ord_0 = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1),
+        evidence={"record_ordinal": 0},
+    )
+    f_ord_1 = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1),
+        evidence={"record_ordinal": 1},
+    )
+    assert sort_findings([f_ord_1, f_ord_0, f_ord_none]) == [f_ord_none, f_ord_0, f_ord_1]
+    # Defensively verify fallback to ordinal -1 sorts before 0
+    assert sort_findings([f_ord_0, f_ord_neg]) == [f_ord_neg, f_ord_0]
+    assert sort_findings([f_ord_0, f_ord_bool]) == [f_ord_bool, f_ord_0]
+    assert sort_findings([f_ord_0, f_ord_str]) == [f_ord_str, f_ord_0]
+
+    # 4. Severity: fatal < error < warning < info (with identical position/ordinal)
     f_fatal = make_finding(
-        code=SL001, severity=Severity.FATAL, message_template="T", source=SourceRef("b.jsonl", 10)
+        code=SL001, severity=Severity.FATAL, message_template="T", source=SourceRef("a.jsonl", 1)
     )
     f_error = make_finding(
         code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
@@ -669,7 +738,7 @@ def test_ordering_rules_hierarchy() -> None:
         f_info,
     ]
 
-    # 2. Code lexicographical
+    # 5. Code lexicographical
     f_sl001 = make_finding(
         code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
     )
@@ -678,28 +747,7 @@ def test_ordering_rules_hierarchy() -> None:
     )
     assert sort_findings([f_sl002, f_sl001]) == [f_sl001, f_sl002]
 
-    # 3. Path lexicographical
-    f_path_a = make_finding(
-        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
-    )
-    f_path_b = make_finding(
-        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("b.jsonl", 1)
-    )
-    assert sort_findings([f_path_b, f_path_a]) == [f_path_a, f_path_b]
-
-    # 4. Line: None sorts before 1
-    f_line_none = make_finding(
-        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", None)
-    )
-    f_line_1 = make_finding(
-        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 1)
-    )
-    f_line_2 = make_finding(
-        code=SL001, severity=Severity.ERROR, message_template="T", source=SourceRef("a.jsonl", 2)
-    )
-    assert sort_findings([f_line_2, f_line_1, f_line_none]) == [f_line_none, f_line_1, f_line_2]
-
-    # 5. Record ID: None sorts before string
+    # 6. Record ID: None ("") sorts before string, then lexicographical
     f_rec_none = make_finding(
         code=SL001,
         severity=Severity.ERROR,
@@ -719,6 +767,23 @@ def test_ordering_rules_hierarchy() -> None:
         source=SourceRef("a.jsonl", 1, "evt-b"),
     )
     assert sort_findings([f_rec_b, f_rec_a, f_rec_none]) == [f_rec_none, f_rec_a, f_rec_b]
+
+    # 7. Fingerprint lexicographical tiebreak
+    f_fp_a = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1, "evt-a"),
+        fingerprint="0000000000000001",
+    )
+    f_fp_b = make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        message_template="T",
+        source=SourceRef("a.jsonl", 1, "evt-a"),
+        fingerprint="0000000000000002",
+    )
+    assert sort_findings([f_fp_b, f_fp_a]) == [f_fp_a, f_fp_b]
 
 
 def test_schema_file_matches_dataclass() -> None:

@@ -1336,6 +1336,7 @@ def get_finding_remediation(f: Finding, *, home: Path | None = None) -> str:
 
 
 finding_report_sort_key = finding_sort_key
+"""Alias to finding_sort_key ensuring reports and renderers use deterministic FR-094 order."""
 
 
 def format_finding_content_free(

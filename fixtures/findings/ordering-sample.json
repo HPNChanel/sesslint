@@ -1,17 +1,17 @@
 {
   "description": "Golden ordering sample fixture for sort_findings deterministic total order verification",
   "expected_fingerprints": [
-    "48af72ba8ea58753",
     "02254779f97db750",
     "856fe6ff7fd85a3c",
     "3f4419f2aedb3b84",
-    "ce5fc6972894bff7",
-    "c138a1d135207110",
-    "c4d5d275b1d08d62",
-    "478475256f195246",
+    "69fc52f70206bc29",
+    "48af72ba8ea58753",
     "453b841578d035d5",
+    "c4d5d275b1d08d62",
     "f821f364eb2d9e4f",
-    "69fc52f70206bc29"
+    "478475256f195246",
+    "c138a1d135207110",
+    "ce5fc6972894bff7"
   ],
   "findings": [
     {

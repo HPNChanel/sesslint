@@ -41,7 +41,14 @@ def canonical_json_bytes(obj: Any) -> bytes:
 def stable_sort_findings(findings: Iterable[Finding]) -> list[Finding]:
     """Sort an iterable of findings in deterministic FR-094 order.
 
-    Order: (position -> severity -> code -> fingerprint).
+    Total ordering hierarchy:
+    1. path (lexicographical, forward-slash normalized)
+    2. line (None sorts as -1 before line 0, then ascending integer)
+    3. ordinal (stream record ordinal from evidence['record_ordinal'], None/-1 sorts before 0)
+    4. severity_rank (fatal < error < warning < info)
+    5. code (lexicographical)
+    6. record_id (None sorts as empty string before any non-empty string, then lexicographical)
+    7. fingerprint (16-character sha256 hex string)
     """
     return sorted(findings, key=finding_sort_key)
 
