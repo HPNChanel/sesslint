@@ -1,6 +1,6 @@
 {
   "blocked": [],
-  "fingerprint": "e6e050f8c07ab36595c97f2e77638a617451a10bb0d2202495006a832623bcbb",
+  "fingerprint": "1e7a055cfac026ceb293d777f321b84056dc7006109ab1df4c9e557dc7fd8d2f",
   "loss_accounting": {
     "preview": {
       "discarded-suffix": 0,
@@ -15,7 +15,7 @@
       "params": {},
       "recipe": "identical-duplicate-collapse",
       "seq": 0,
-      "target_finding_fp": "070ceee4b3954eb0",
+      "target_finding_fp": "b323969e9dfca06a",
       "target_index": 1
     }
   ],

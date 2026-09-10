@@ -80,11 +80,11 @@ def _event_content_fingerprint(ev: Any) -> str:
     if payload is None and isinstance(ev, Mapping):
         payload = ev.get("payload")
     if isinstance(payload, Mapping):
-        return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+        return hashlib.sha256(canonical_json_bytes(payload, newline=False)).hexdigest()
     if hasattr(ev, "to_canonical_bytes"):
         return hashlib.sha256(ev.to_canonical_bytes()).hexdigest()
     if isinstance(ev, Mapping):
-        return hashlib.sha256(canonical_json_bytes(ev)).hexdigest()
+        return hashlib.sha256(canonical_json_bytes(ev, newline=False)).hexdigest()
     return hashlib.sha256(str(ev).encode("utf-8")).hexdigest()
 
 
@@ -94,7 +94,7 @@ def _event_canonical_hash(ev: Any) -> str:
     if hasattr(ev, "to_canonical_bytes"):
         return hashlib.sha256(ev.to_canonical_bytes()).hexdigest()
     if isinstance(ev, Mapping):
-        return hashlib.sha256(canonical_json_bytes(ev)).hexdigest()
+        return hashlib.sha256(canonical_json_bytes(ev, newline=False)).hexdigest()
     return hashlib.sha256(str(ev).encode("utf-8")).hexdigest()
 
 

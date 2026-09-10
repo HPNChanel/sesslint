@@ -46,6 +46,7 @@ from sesslint.codes import (
     Repairability,
     Severity,
 )
+from sesslint.context import CheckContext
 from sesslint.finding import (
     Finding,
     SourceRef,
@@ -117,6 +118,7 @@ def cap_pairing_findings(
     code: str,
     max_findings: int = MAX_PAIRING_FINDINGS,
     source_path: str = "<canonical>",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Sort findings by (code, primary_id) and cap family at max_findings with overflow finding."""
     sorted_findings = sorted(findings, key=_cap_finding_sort_key)
@@ -128,7 +130,7 @@ def cap_pairing_findings(
     total_count = len(sorted_findings)
     truncated_count = total_count - max_findings
 
-    overflow_fp = hashlib.sha256(f"{code}|overflow|{max_findings}".encode()).hexdigest()[:16]
+    ctx = context if context is not None else CheckContext()
     norm_source_path = source_path.replace("\\", "/")
 
     overflow_finding = make_finding(
@@ -137,7 +139,6 @@ def cap_pairing_findings(
         repairability=Repairability.MANUAL,
         message_template=_MSG_OVERFLOW,
         source=SourceRef(path=norm_source_path, line=None, record_id=None),
-        fingerprint=overflow_fp,
         evidence={
             "cap": max_findings,
             "overflow": True,
@@ -145,6 +146,10 @@ def cap_pairing_findings(
             "truncated_count": truncated_count,
             "variant": "overflow-summary",
         },
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
     kept.append(overflow_finding)
     return kept
@@ -228,6 +233,7 @@ def check_orphans(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for orphan tool results (SL101) matching zero tool calls.
 
@@ -236,6 +242,7 @@ def check_orphans(
     - severity: error, repairability: manual.
     - evidence: {result_id, correlation_id, index}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairingIndexer(events, source_path=source_path)
     findings: list[Finding] = []
 
@@ -252,7 +259,6 @@ def check_orphans(
             rec_id = _source_record_id(ev_id_str)
 
             path, line = _resolve_source_coords(ev, source_path)
-            fp = compute_pairing_fingerprint(SL101, [corr, ev_id_str, str(idx)])
 
             findings.append(
                 make_finding(
@@ -261,13 +267,16 @@ def check_orphans(
                     repairability=Repairability.MANUAL,
                     message_template=_MSG_SL101,
                     source=SourceRef(path=path, line=line, record_id=rec_id),
-                    fingerprint=fp,
                     related_ids=(safe_corr,) if safe_corr != "<redacted>" else (),
                     evidence={
                         "correlation_id": safe_corr,
                         "index": idx,
                         "result_id": safe_ev_id,
                     },
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
 
@@ -281,7 +290,6 @@ def check_orphans(
         rec_id = _source_record_id(ev_id_str)
 
         path, line = _resolve_source_coords(ev, source_path)
-        fp = compute_pairing_fingerprint(SL101, ["null", ev_id_str, str(idx)])
 
         findings.append(
             make_finding(
@@ -290,12 +298,15 @@ def check_orphans(
                 repairability=Repairability.MANUAL,
                 message_template=_MSG_SL101,
                 source=SourceRef(path=path, line=line, record_id=rec_id),
-                fingerprint=fp,
                 evidence={
                     "correlation_id": None,
                     "index": idx,
                     "result_id": safe_ev_id,
                 },
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -304,6 +315,7 @@ def check_orphans(
         code=SL101,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -312,6 +324,7 @@ def check_dangling(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for dangling tool calls (SL102) with zero matching tool_result events.
 
@@ -320,6 +333,7 @@ def check_dangling(
     - severity: error, repairability: manual.
     - evidence: {correlation_id, event_id, index}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairingIndexer(events, source_path=source_path)
     findings: list[Finding] = []
 
@@ -336,7 +350,6 @@ def check_dangling(
             rec_id = _source_record_id(ev_id_str)
 
             path, line = _resolve_source_coords(ev, source_path)
-            fp = compute_pairing_fingerprint(SL102, [corr, ev_id_str, str(idx)])
 
             findings.append(
                 make_finding(
@@ -345,13 +358,16 @@ def check_dangling(
                     repairability=Repairability.MANUAL,
                     message_template=_MSG_SL102,
                     source=SourceRef(path=path, line=line, record_id=rec_id),
-                    fingerprint=fp,
                     related_ids=(safe_corr,) if safe_corr != "<redacted>" else (),
                     evidence={
                         "correlation_id": safe_corr,
                         "event_id": safe_ev_id,
                         "index": idx,
                     },
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
 
@@ -365,7 +381,6 @@ def check_dangling(
         rec_id = _source_record_id(ev_id_str)
 
         path, line = _resolve_source_coords(ev, source_path)
-        fp = compute_pairing_fingerprint(SL102, ["null", ev_id_str, str(idx)])
 
         findings.append(
             make_finding(
@@ -374,12 +389,15 @@ def check_dangling(
                 repairability=Repairability.MANUAL,
                 message_template=_MSG_SL102,
                 source=SourceRef(path=path, line=line, record_id=rec_id),
-                fingerprint=fp,
                 evidence={
                     "correlation_id": None,
                     "event_id": safe_ev_id,
                     "index": idx,
                 },
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -388,6 +406,7 @@ def check_dangling(
         code=SL102,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -396,6 +415,7 @@ def check_reused(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for reused tool-call IDs (SL103) where >1 tool calls share correlation_id.
 
@@ -404,6 +424,7 @@ def check_reused(
     - severity: error, repairability: manual.
     - evidence: {correlation_id, count, call_indexes[], event_ids[], call_ids[], truncated}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairingIndexer(events, source_path=source_path)
     findings: list[Finding] = []
 
@@ -426,8 +447,6 @@ def check_reused(
         first_ev_id = call_ids[0] if call_ids else None
         rec_id = _source_record_id(first_ev_id)
         path, line = _resolve_source_coords(first_ev, source_path)
-
-        fp = compute_pairing_fingerprint(SL103, [corr] + [str(i) for i in sorted(call_indexes)])
 
         sample_indexes = call_indexes[:MAX_INDEX_SAMPLE_SIZE]
         sample_ids = call_ids[:MAX_INDEX_SAMPLE_SIZE]
@@ -453,9 +472,12 @@ def check_reused(
                     line=line,
                     record_id=rec_id,
                 ),
-                fingerprint=fp,
                 related_ids=tuple(call_ids[:MAX_INDEX_SAMPLE_SIZE]),
                 evidence=evidence,
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -464,6 +486,7 @@ def check_reused(
         code=SL103,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -472,6 +495,7 @@ def check_multi_results(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for multiple tool results (SL104) where >1 tool_result events share correlation_id.
 
@@ -480,6 +504,7 @@ def check_multi_results(
     - severity: error, repairability: manual.
     - evidence: {correlation_id, count, result_indexes[], event_ids[], result_ids[], truncated}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairingIndexer(events, source_path=source_path)
     findings: list[Finding] = []
 
@@ -502,8 +527,6 @@ def check_multi_results(
         first_ev_id = result_ids[0] if result_ids else None
         rec_id = _source_record_id(first_ev_id)
         path, line = _resolve_source_coords(first_ev, source_path)
-
-        fp = compute_pairing_fingerprint(SL104, [corr] + [str(i) for i in sorted(result_indexes)])
 
         sample_indexes = result_indexes[:MAX_INDEX_SAMPLE_SIZE]
         sample_ids = result_ids[:MAX_INDEX_SAMPLE_SIZE]
@@ -548,9 +571,12 @@ def check_multi_results(
                     line=line,
                     record_id=rec_id,
                 ),
-                fingerprint=fp,
                 related_ids=tuple(result_ids[:MAX_INDEX_SAMPLE_SIZE]),
                 evidence=evidence,
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -559,6 +585,7 @@ def check_multi_results(
         code=SL104,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -567,6 +594,7 @@ def check_tool_pairing_1(
     *,
     source_path: str = "<canonical>",
     max_findings_per_family: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Run all part-1 tool pairing checks (SL101, SL102, SL103, SL104) over canonical events.
 
@@ -583,6 +611,7 @@ def check_tool_pairing_1(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            context=context,
         )
     )
     all_findings.extend(
@@ -590,6 +619,7 @@ def check_tool_pairing_1(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            context=context,
         )
     )
     all_findings.extend(
@@ -597,6 +627,7 @@ def check_tool_pairing_1(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            context=context,
         )
     )
     all_findings.extend(
@@ -604,6 +635,7 @@ def check_tool_pairing_1(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            context=context,
         )
     )
 

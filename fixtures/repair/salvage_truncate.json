@@ -60,8 +60,8 @@
         "record_id": "tc_unsafe"
       },
       "related_ids": [],
-      "fingerprint": "e687fe46f25af4a9",
-      "message_template": "Dangling tool call with unknown side effects",
+      "fingerprint": "4d0ac9a58962bf3d",
+      "message_template": "Tool call missing paired result (side-effects unknown)",
       "evidence": {
         "at_index": 2,
         "first_unsafe_index": 2
@@ -70,7 +70,7 @@
   ],
   "expected_plan": {
     "blocked": [],
-    "fingerprint": "10a480f12f23d5ead224018d718d6cda44e34f2b532b5bc3330dea26fee3d4d0",
+    "fingerprint": "5bcf81c027a260496dbb965cb7c811d4f98d3b593c4a8b2ab65929916fe42157",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,
@@ -88,7 +88,7 @@
         "params": {},
         "recipe": "side-effect-unknown-truncate",
         "seq": 0,
-        "target_finding_fp": "e687fe46f25af4a9",
+        "target_finding_fp": "4d0ac9a58962bf3d",
         "target_index": 2,
         "lossy": true,
         "loss": {
@@ -103,11 +103,11 @@
     "blocked": [
       {
         "code": "SL102",
-        "finding_fp": "e687fe46f25af4a9",
+        "finding_fp": "4d0ac9a58962bf3d",
         "reason": "needs-acknowledgement"
       }
     ],
-    "fingerprint": "fa5c313258da90c548a254ff564c89ff60221b9eb3afa1a99f69d851510869c5",
+    "fingerprint": "2d14b3b40d2187fc4f6f197b685ff5bc63de925617ddb62b429e44efe6226149",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,
@@ -127,11 +127,11 @@
     "blocked": [
       {
         "code": "SL102",
-        "finding_fp": "e687fe46f25af4a9",
+        "finding_fp": "4d0ac9a58962bf3d",
         "reason": "needs-salvage-policy"
       }
     ],
-    "fingerprint": "ec119cb7f13578c9a1d9380060c3d81e4393fbc46689f3f83080c1f0aeecafa1",
+    "fingerprint": "9b0bb2cfe59b3f9144b925ff1562f9b97535d790ff9e19519e1a26f89fab7017",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,

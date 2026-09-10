@@ -1,0 +1,90 @@
+{
+  "description": "Deterministic non-ASCII fixture spanning CJK, emoji, and accented latin",
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt_用户_1",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "こんにちは 🌍 世界! café & naïve 🚀"
+      },
+      "seq": 0,
+      "ts": "2026-09-09T00:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt_助手_2",
+      "kind": "message",
+      "parent_id": "evt_用户_1",
+      "payload": {
+        "text": "はい、承知いたしました 🛠️ 한국어 테스트"
+      },
+      "seq": 1,
+      "ts": "2026-09-09T00:00:01Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "evt_助手_2",
+      "kind": "message",
+      "parent_id": "evt_用户_1",
+      "payload": {
+        "text": "はい、承知いたしました 🛠️ 한국어 테스트"
+      },
+      "seq": 1,
+      "ts": "2026-09-09T00:00:01Z"
+    }
+  ],
+  "finding": {
+    "schema_version": "sesslint.finding/v1",
+    "code": "SL003",
+    "severity": "warning",
+    "repairability": "deterministic",
+    "message": "Identical duplicate record evt_助手_2",
+    "source": {
+      "path": "nonascii_session.jsonl",
+      "line": 2,
+      "record_id": "evt_助手_2"
+    },
+    "related_ids": [],
+    "fingerprint": "2f416d11011ef0b7",
+    "message_template": "Identical duplicate record {record_id}",
+    "evidence": {
+      "id": "evt_助手_2",
+      "count": 2,
+      "variant": "identical",
+      "differing_fields": [],
+      "details": "CJK/emoji/accented text test 🛠️"
+    }
+  },
+  "plan": {
+    "version": "sesslint.plan/v1",
+    "profile": "neutral",
+    "source_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0",
+    "steps": [
+      {
+        "seq": 0,
+        "recipe": "identical-duplicate-collapse",
+        "target_finding_fp": "2f416d11011ef0b7",
+        "target_index": 2,
+        "params": {
+          "label": "重複レコード削除 🚀",
+          "description": "한국어 설명: café & naïve"
+        },
+        "lossy": false,
+        "loss": {}
+      }
+    ],
+    "blocked": [],
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      },
+      "total_lost": 0,
+      "total_kept": 2
+    },
+    "fingerprint": "f71dbb66ffd2934a91adac37f03141a3ef3651a071742170023a034914a0e625"
+  }
+}

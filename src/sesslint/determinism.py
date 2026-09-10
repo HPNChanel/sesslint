@@ -7,35 +7,35 @@ across runs and environments, independent of PYTHONHASHSEED, OS platform, or loc
 from __future__ import annotations
 
 import hashlib
-import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import Any
 
+from sesslint.canonical import to_canonical_json
 from sesslint.finding import Finding, finding_sort_key
 
 
-def canonical_json_bytes(obj: Any) -> bytes:
+def canonical_json_bytes(obj: Any, *, newline: bool = True) -> bytes:
     """Serialize an object or dictionary to deterministic canonical UTF-8 JSON bytes.
 
-    Encodes with sorted keys, compact separators (",", ":"), unescaped UTF-8 characters,
-    and a terminating newline byte (b"\\n").
-    """
-    if hasattr(obj, "to_dict") and callable(obj.to_dict):
-        raw = obj.to_dict()
-    elif isinstance(obj, Mapping):
-        raw = dict(obj)
-    else:
-        raw = obj
+    Unifies canonical JSON serialization across SessLint into a single primitive.
+    Guarantees:
+    - Keys are sorted lexicographically (sort_keys=True)
+    - Compact separators without whitespace (",", ":")
+    - Non-ASCII characters preserved directly as UTF-8 (ensure_ascii=False)
+    - Strict RFC 8785 compliance (rejects out-of-range floats like NaN/Inf and cyclic structures)
 
-    return (
-        json.dumps(
-            raw,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-        + b"\n"
-    )
+    Two domains are explicitly supported:
+    1. Serialization / file writing domain (newline=True, default): terminates
+       strictly with LF (b"\n").
+    2. Hash domain (newline=False): produces compact bytes without trailing newline
+       for cryptographic fingerprinting and hashing (findings, plans).
+    """
+    target = obj.to_dict() if hasattr(obj, "to_dict") and callable(obj.to_dict) else obj
+    raw_str = to_canonical_json(target)
+    raw_bytes = raw_str.encode("utf-8")
+    if newline:
+        return raw_bytes + b"\n"
+    return raw_bytes
 
 
 def stable_sort_findings(findings: Iterable[Finding]) -> list[Finding]:

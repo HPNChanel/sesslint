@@ -753,6 +753,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 events,
                 profile=effective_cfg.profile,
                 source_path=str(target_path),
+                adapter=resolved_fmt,
             )
             all_findings = list(adapter_findings) + list(check_findings)
 

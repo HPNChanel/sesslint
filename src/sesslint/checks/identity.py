@@ -21,11 +21,11 @@ from sesslint.canonical import (
     PROVENANCE_FIELDS,
     SessionEvent,
     canonical_bytes,
-    compute_content_hash,
     to_canonical_dict,
     to_canonical_json,
 )
 from sesslint.codes import SL003, Repairability, Severity
+from sesslint.context import CheckContext
 from sesslint.finding import (
     Finding,
     SourceRef,
@@ -100,6 +100,7 @@ def cap_findings(
     *,
     max_findings: int = MAX_IDENTITY_FINDINGS,
     source_path: str = "<canonical>",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Sort and cap identity findings, appending a deterministic overflow finding if truncated."""
     sorted_findings = sorted(findings, key=_cap_finding_sort_key)
@@ -111,7 +112,7 @@ def cap_findings(
     total_count = len(sorted_findings)
     truncated_count = total_count - max_findings
 
-    overflow_fp = hashlib.sha256(f"SL003|overflow|{max_findings}".encode()).hexdigest()[:16]
+    ctx = context if context is not None else CheckContext()
     norm_source_path = source_path.replace("\\", "/")
 
     overflow_finding = make_finding(
@@ -120,7 +121,6 @@ def cap_findings(
         repairability=Repairability.MANUAL,
         message_template=_MSG_OVERFLOW,
         source=SourceRef(path=norm_source_path, line=None, record_id=None),
-        fingerprint=overflow_fp,
         evidence={
             "cap": max_findings,
             "overflow": True,
@@ -128,6 +128,10 @@ def cap_findings(
             "truncated_count": truncated_count,
             "variant": "overflow-summary",
         },
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
     kept.append(overflow_finding)
     return kept
@@ -138,6 +142,7 @@ def check_identities(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_IDENTITY_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check a sequence of canonical session events for duplicate or conflicting IDs.
 
@@ -156,6 +161,7 @@ def check_identities(
     if not events:
         return []
 
+    ctx = context if context is not None else CheckContext()
     groups: dict[str, list[tuple[int, Any]]] = defaultdict(list)
     coerced_ids: set[str] = set()
 
@@ -188,7 +194,6 @@ def check_identities(
         first_event = evs[0]
 
         canonical_hashes: list[str] = []
-        payload_hashes: list[str] = []
         for e in evs:
             if hasattr(e, "content_identity_hash") and callable(e.content_identity_hash):
                 canonical_hashes.append(str(e.content_identity_hash()))
@@ -206,19 +211,6 @@ def check_identities(
                 )
             else:
                 canonical_hashes.append(hashlib.sha256(canonical_bytes(e)).hexdigest())
-
-            if hasattr(e, "payload_hash") and callable(e.payload_hash):
-                payload_hashes.append(str(e.payload_hash()))
-            else:
-                p = getattr(e, "payload", None)
-                if p is None and isinstance(e, Mapping):
-                    p = e.get("payload", {})
-                ch = getattr(e, "content_hash", None)
-                if ch is None and isinstance(e, Mapping):
-                    ch = e.get("content_hash")
-                payload_hashes.append(str(ch) if ch else compute_content_hash(p or {}))
-
-        fp = compute_identity_fingerprint(id_, payload_hashes)
 
         # Sanitize record_id for SourceRef and message
         safe_rec_id: str | None = id_ if bool(id_.strip()) else None
@@ -278,8 +270,11 @@ def check_identities(
                     repairability=Repairability.DETERMINISTIC,
                     message_template=_MSG_IDENTICAL,
                     source=source_ref,
-                    fingerprint=fp,
                     evidence=evidence,
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
         else:
@@ -305,12 +300,15 @@ def check_identities(
                     repairability=Repairability.MANUAL,
                     message_template=_MSG_CONFLICTING,
                     source=source_ref,
-                    fingerprint=fp,
                     evidence=evidence,
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
 
-    return cap_findings(findings, max_findings=max_findings, source_path=source_path)
+    return cap_findings(findings, max_findings=max_findings, source_path=source_path, context=ctx)
 
 
 __all__ = [

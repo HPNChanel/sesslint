@@ -13,28 +13,21 @@ Guarantees:
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping
 from typing import Any
 
-
-def canonical_json_bytes(data: Any) -> bytes:
-    """Serialize arbitrary data structure to deterministic canonical UTF-8 bytes."""
-    return json.dumps(
-        data,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    ).encode("utf-8")
+from sesslint.determinism import canonical_json_bytes
 
 
 def compute_plan_fingerprint(plan_data: Mapping[str, Any]) -> str:
     """Compute a deterministic 64-character SHA-256 fingerprint for a repair plan dictionary.
 
     The 'fingerprint' key is excluded from the input dictionary if present.
+    Uses the unified canonical JSON primitive in the hash domain
+    (newline=False, ensure_ascii=False).
     """
     cleaned: dict[str, Any] = {k: v for k, v in plan_data.items() if k != "fingerprint"}
-    encoded = canonical_json_bytes(cleaned)
+    encoded = canonical_json_bytes(cleaned, newline=False)
     return hashlib.sha256(encoded).hexdigest()
 
 

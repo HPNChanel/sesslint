@@ -34,6 +34,7 @@ from sesslint.checks.graph import check_graph
 from sesslint.checks.identity import check_identities
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
+from sesslint.context import CheckContext
 from sesslint.finding import Finding
 from sesslint.profiles import get_profile
 from sesslint.repair.assurance import cap_assurance
@@ -273,35 +274,45 @@ def _load_source_with_stream_findings(
 def _run_detector_checks(
     events: Sequence[SessionEvent],
     *,
+    source_path: str = "<canonical>",
     profile_name: str = "neutral",
 ) -> list[Finding]:
     """Run detector checks directly from checks modules without importing mutator."""
     profile = get_profile(profile_name)
+    context = CheckContext.from_profile_and_adapter(profile, "canonical")
     enabled = set(profile.enabled_rules)
     findings: list[Finding] = []
 
     if "SL003" in enabled:
-        findings.extend(check_identities(events, source_path="<repaired>"))
+        findings.extend(check_identities(events, source_path=source_path, context=context))
 
     graph_rules = {"SL004", "SL005", "SL006", "SL007"}
     if graph_rules & enabled:
-        findings.extend(check_graph(events, source_path="<repaired>"))
+        findings.extend(check_graph(events, source_path=source_path, context=context))
 
     tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
     if tp1_rules & enabled:
-        findings.extend(check_tool_pairing_1(events, source_path="<repaired>"))
+        findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
 
     tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
     if tp2_rules & enabled:
-        findings.extend(check_tool_pairing_2(events, source_path="<repaired>", profile=profile))
+        findings.extend(
+            check_tool_pairing_2(
+                events,
+                source_path=source_path,
+                profile=profile,
+                context=context,
+            )
+        )
 
     cp_rules = {"SL201", "SL202", "SL203"}
     if cp_rules & enabled:
         findings.extend(
             check_checkpoint(
                 events,
-                source_path="<repaired>",
+                source_path=source_path,
                 checkpoint_sensitivity=profile.checkpoint_sensitivity,
+                context=context,
             )
         )
 
@@ -392,8 +403,14 @@ def verify(
                 _, src_events = _parse_session_events(source_bytes)
                 stream_findings = []
 
+            src_name = (
+                Path(source_path).name
+                if source_path and not str(source_path).startswith("<")
+                else str(source_path)
+            )
             check_findings = _run_detector_checks(
                 src_events,
+                source_path=src_name,
                 profile_name=target_profile,
             )
             findings = list(stream_findings) + list(check_findings)
@@ -730,7 +747,16 @@ def verify(
             elif manifest_dict is not None and "policy" in manifest_dict:
                 target_policy = str(manifest_dict["policy"])
 
-            findings = _run_detector_checks(fresh_output_events, profile_name=target_profile)
+            out_name = (
+                Path(output_path).name
+                if output_path and not str(output_path).startswith("<")
+                else str(output_path)
+            )
+            findings = _run_detector_checks(
+                fresh_output_events,
+                source_path=out_name,
+                profile_name=target_profile,
+            )
             fresh_plan = plan(
                 findings=findings,
                 events=fresh_output_events,

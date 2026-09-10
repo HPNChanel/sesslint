@@ -170,14 +170,14 @@ def test_fr094_position_first_exact_order_three_entry_points() -> None:
         severity=Severity.ERROR,
         message_template="Ordinal 1 error SL002 rec_2 candidate A on line 1",
         source=SourceRef(path="sessions/a.jsonl", line=1, record_id="rec_2"),
-        evidence={"record_ordinal": 1},
+        evidence={"record_ordinal": 1, "variant": "cand_a"},
     )
     f7_candidate_b = make_finding(
         code=SL002,
         severity=Severity.ERROR,
         message_template="Ordinal 1 error SL002 rec_2 candidate B on line 1",
         source=SourceRef(path="sessions/a.jsonl", line=1, record_id="rec_2"),
-        evidence={"record_ordinal": 1},
+        evidence={"record_ordinal": 1, "variant": "cand_b"},
     )
     # Ensure deterministic tiebreak by fingerprint
     if f7_candidate_a.fingerprint < f7_candidate_b.fingerprint:

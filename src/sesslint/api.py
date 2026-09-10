@@ -156,6 +156,7 @@ def check_file(
         events,
         profile=effective_cfg.profile,
         source_path=str(target_path),
+        adapter=resolved_fmt,
     )
     all_findings = list(adapter_findings) + list(check_findings)
 
@@ -280,7 +281,8 @@ def repair(
         check_findings = run_all_checks(
             source_events,
             profile=profile,
-            source_path=str(src),
+            source_path=src.name,
+            adapter="canonical",
         )
         source_findings = list(stream_findings) + list(check_findings)
         source_hash = hashlib.sha256(src.read_bytes()).hexdigest()

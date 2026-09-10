@@ -1,5 +1,3 @@
-"""Detector checks package for SessLint."""
-
 from sesslint.checks.checkpoint import (
     MAX_CHECKPOINT_FINDINGS,
     cap_checkpoint_findings,
@@ -61,8 +59,11 @@ from sesslint.checks.tool_pairing_2 import (
     check_sl108,
     check_tool_pairing_2,
 )
+from sesslint.context import CheckContext
+from sesslint.finding import compute_finding_fingerprint
 
 __all__ = [
+    "CheckContext",
     "CALL_KINDS",
     "COMPACTION_KINDS",
     "MAX_CHECKPOINT_FINDINGS",
@@ -110,6 +111,7 @@ __all__ = [
     "check_tool_pairing_2",
     "check_unsafe_continuation",
     "compute_checkpoint_fingerprint",
+    "compute_finding_fingerprint",
     "compute_graph_fingerprint",
     "compute_identity_fingerprint",
     "compute_pairing_fingerprint",

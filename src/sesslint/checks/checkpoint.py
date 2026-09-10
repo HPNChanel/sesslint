@@ -30,6 +30,7 @@ from sesslint.codes import (
     Repairability,
     Severity,
 )
+from sesslint.context import CheckContext
 from sesslint.finding import (
     Finding,
     SourceRef,
@@ -91,6 +92,7 @@ def cap_checkpoint_findings(
     code: str,
     max_findings: int = MAX_CHECKPOINT_FINDINGS,
     source_path: str = "<canonical>",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Sort findings and cap family at max_findings with overflow finding."""
     sorted_findings = sorted(findings, key=_cap_finding_sort_key)
@@ -102,7 +104,7 @@ def cap_checkpoint_findings(
     total_count = len(sorted_findings)
     truncated_count = total_count - max_findings
 
-    overflow_fp = hashlib.sha256(f"{code}|overflow|{max_findings}".encode()).hexdigest()[:16]
+    ctx = context if context is not None else CheckContext()
     norm_source_path = source_path.replace("\\", "/")
 
     overflow_finding = make_finding(
@@ -111,7 +113,6 @@ def cap_checkpoint_findings(
         repairability=Repairability.MANUAL,
         message_template=_MSG_OVERFLOW,
         source=SourceRef(path=norm_source_path, line=None, record_id=None),
-        fingerprint=overflow_fp,
         evidence={
             "cap": max_findings,
             "overflow": True,
@@ -119,6 +120,10 @@ def cap_checkpoint_findings(
             "truncated_count": truncated_count,
             "variant": "overflow-summary",
         },
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
     kept.append(overflow_finding)
     return kept
@@ -206,6 +211,7 @@ def check_checkpoint_gap(
     source_path: str = "<canonical>",
     max_findings: int = MAX_CHECKPOINT_FINDINGS,
     checkpoint_sensitivity: str = "default",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for checkpoint gaps (SL201).
 
@@ -216,6 +222,7 @@ def check_checkpoint_gap(
     - sensitivity flag ('default' or 'high') preserved with pinned parity.
     - severity: error, repairability: manual.
     """
+    ctx = context if context is not None else CheckContext()
     findings: list[Finding] = []
     last_checkpoint_seq: int | None = None
     has_seen_checkpoint = False
@@ -236,7 +243,6 @@ def check_checkpoint_gap(
         # 1. Resumption without preceding checkpoint
         if kind_str in _KIND_RUN_START:
             if not has_seen_checkpoint:
-                fp = compute_checkpoint_fingerprint(SL201, [str(idx), "0", "None"])
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -244,12 +250,15 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        fingerprint=fp,
                         evidence={
                             "at_index": idx,
                             "expected_seq": 0,
                             "found_seq": None,
                         },
+                        adapter_id=ctx.adapter_id,
+                        adapter_version=ctx.adapter_version,
+                        profile_id=ctx.profile_id,
+                        profile_version=ctx.profile_version,
                     )
                 )
 
@@ -260,9 +269,6 @@ def check_checkpoint_gap(
 
             # Missing or empty state_hash is gap evidence
             if not state_hash:
-                fp = compute_checkpoint_fingerprint(
-                    SL201, [str(idx), str(seq or 0), "missing_hash"]
-                )
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -270,7 +276,6 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        fingerprint=fp,
                         evidence={
                             "at_index": idx,
                             "expected_seq": (
@@ -278,6 +283,10 @@ def check_checkpoint_gap(
                             ),
                             "found_seq": seq,
                         },
+                        adapter_id=ctx.adapter_id,
+                        adapter_version=ctx.adapter_version,
+                        profile_id=ctx.profile_id,
+                        profile_version=ctx.profile_version,
                     )
                 )
 
@@ -285,9 +294,6 @@ def check_checkpoint_gap(
             if seq is not None:
                 if last_checkpoint_seq is not None and (seq - last_checkpoint_seq) > 1:
                     expected_seq = last_checkpoint_seq + 1
-                    fp = compute_checkpoint_fingerprint(
-                        SL201, [str(idx), str(expected_seq), str(seq)]
-                    )
                     findings.append(
                         make_finding(
                             code=SL201,
@@ -295,20 +301,20 @@ def check_checkpoint_gap(
                             repairability=Repairability.MANUAL,
                             message_template=_MSG_SL201,
                             source=SourceRef(path=path, line=line, record_id=rec_id),
-                            fingerprint=fp,
                             evidence={
                                 "at_index": idx,
                                 "expected_seq": expected_seq,
                                 "found_seq": seq,
                             },
+                            adapter_id=ctx.adapter_id,
+                            adapter_version=ctx.adapter_version,
+                            profile_id=ctx.profile_id,
+                            profile_version=ctx.profile_version,
                         )
                     )
                 last_checkpoint_seq = seq
             elif checkpoint_sensitivity == "high":
                 expected_seq = 0 if last_checkpoint_seq is None else last_checkpoint_seq + 1
-                fp = compute_checkpoint_fingerprint(
-                    SL201, [str(idx), str(expected_seq), "missing_seq"]
-                )
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -316,13 +322,16 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        fingerprint=fp,
                         evidence={
                             "at_index": idx,
                             "expected_seq": expected_seq,
                             "found_seq": None,
                             "sensitivity": "high",
                         },
+                        adapter_id=ctx.adapter_id,
+                        adapter_version=ctx.adapter_version,
+                        profile_id=ctx.profile_id,
+                        profile_version=ctx.profile_version,
                     )
                 )
 
@@ -331,6 +340,7 @@ def check_checkpoint_gap(
         code=SL201,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -339,6 +349,7 @@ def check_checkpoint_divergence(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_CHECKPOINT_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for checkpoint divergence (SL202).
 
@@ -348,6 +359,7 @@ def check_checkpoint_divergence(
     - Truncates reported hashes to 16 characters in evidence.
     - severity: error, repairability: manual.
     """
+    ctx = context if context is not None else CheckContext()
     findings: list[Finding] = []
     seen_seq_to_hash: dict[int, str] = {}
 
@@ -374,7 +386,6 @@ def check_checkpoint_divergence(
             if prev_hash != state_hash:
                 hash_a = prev_hash[:16]
                 hash_b = state_hash[:16]
-                fp = compute_checkpoint_fingerprint(SL202, [str(seq), hash_a, hash_b])
 
                 findings.append(
                     make_finding(
@@ -383,12 +394,15 @@ def check_checkpoint_divergence(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL202,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        fingerprint=fp,
                         evidence={
                             "hash_a": hash_a,
                             "hash_b": hash_b,
                             "seq": seq,
                         },
+                        adapter_id=ctx.adapter_id,
+                        adapter_version=ctx.adapter_version,
+                        profile_id=ctx.profile_id,
+                        profile_version=ctx.profile_version,
                     )
                 )
         else:
@@ -399,6 +413,7 @@ def check_checkpoint_divergence(
         code=SL202,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -408,6 +423,7 @@ def check_unsafe_continuation(
     source_path: str = "<canonical>",
     prior_sl201_findings: Sequence[Finding] | None = None,
     prior_sl202_findings: Sequence[Finding] | None = None,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for unsafe continuation across loss (SL203).
 
@@ -418,16 +434,17 @@ def check_unsafe_continuation(
     - severity: error, repairability: manual.
     - evidence: {caused_by: [sorted triggers], first_unsafe_index}.
     """
+    ctx = context if context is not None else CheckContext()
     # Compute SL201 and SL202 if not provided
     f201 = (
         prior_sl201_findings
         if prior_sl201_findings is not None
-        else check_checkpoint_gap(events, source_path=source_path)
+        else check_checkpoint_gap(events, source_path=source_path, context=ctx)
     )
     f202 = (
         prior_sl202_findings
         if prior_sl202_findings is not None
-        else check_checkpoint_divergence(events, source_path=source_path)
+        else check_checkpoint_divergence(events, source_path=source_path, context=ctx)
     )
 
     triggers: list[tuple[int, str]] = []
@@ -499,19 +516,20 @@ def check_unsafe_continuation(
     rec_id = _source_record_id(ev_id)
     path, line = _resolve_source_coords(unsafe_ev, source_path)
 
-    fp = compute_checkpoint_fingerprint(SL203, [str(unsafe_idx)] + active_causes)
-
     finding = make_finding(
         code=SL203,
         severity=Severity.ERROR,
         repairability=Repairability.MANUAL,
         message_template=_MSG_SL203,
         source=SourceRef(path=path, line=line, record_id=rec_id),
-        fingerprint=fp,
         evidence={
             "caused_by": active_causes,
             "first_unsafe_index": unsafe_idx,
         },
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
 
     return [finding]
@@ -523,6 +541,7 @@ def check_checkpoint(
     source_path: str = "<canonical>",
     max_findings_per_family: int = MAX_CHECKPOINT_FINDINGS,
     checkpoint_sensitivity: str = "default",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Run all checkpoint checks (SL201, SL202, SL203) over canonical events."""
     all_findings: list[Finding] = []
@@ -532,6 +551,7 @@ def check_checkpoint(
         source_path=source_path,
         max_findings=max_findings_per_family,
         checkpoint_sensitivity=checkpoint_sensitivity,
+        context=context,
     )
     all_findings.extend(f201)
 
@@ -539,6 +559,7 @@ def check_checkpoint(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
+        context=context,
     )
     all_findings.extend(f202)
 
@@ -547,8 +568,11 @@ def check_checkpoint(
         source_path=source_path,
         prior_sl201_findings=f201,
         prior_sl202_findings=f202,
+        context=context,
     )
     all_findings.extend(f203)
+
+    return sorted(all_findings, key=_cap_finding_sort_key)
 
     return sorted(all_findings, key=_cap_finding_sort_key)
 

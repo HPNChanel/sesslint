@@ -42,6 +42,7 @@ from sesslint.codes import (
     Repairability,
     Severity,
 )
+from sesslint.context import CheckContext
 from sesslint.finding import (
     Finding,
     SourceRef,
@@ -298,6 +299,7 @@ def cap_graph_findings(
     code: str,
     max_findings: int = MAX_GRAPH_FINDINGS,
     source_path: str = "<canonical>",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Sort findings by (code, primary_id) and cap family at max_findings with overflow finding."""
     sorted_findings = sorted(findings, key=_cap_finding_sort_key)
@@ -309,7 +311,7 @@ def cap_graph_findings(
     total_count = len(sorted_findings)
     truncated_count = total_count - max_findings
 
-    overflow_fp = hashlib.sha256(f"{code}|overflow|{max_findings}".encode()).hexdigest()[:16]
+    ctx = context if context is not None else CheckContext()
     norm_source_path = source_path.replace("\\", "/")
 
     overflow_finding = make_finding(
@@ -318,7 +320,6 @@ def cap_graph_findings(
         repairability=Repairability.MANUAL,
         message_template=_MSG_OVERFLOW,
         source=SourceRef(path=norm_source_path, line=None, record_id=None),
-        fingerprint=overflow_fp,
         evidence={
             "cap": max_findings,
             "overflow": True,
@@ -326,6 +327,10 @@ def cap_graph_findings(
             "truncated_count": truncated_count,
             "variant": "overflow-summary",
         },
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
     kept.append(overflow_finding)
     return kept
@@ -413,6 +418,7 @@ def check_missing_parent(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """SL004: Detect events referencing a non-existent parent event.
 
@@ -424,6 +430,7 @@ def check_missing_parent(
     - Self-loops (parent_id == id) do not fire SL004 (deferred to SL005).
     - Sorts output by primary ID, capped at max_findings with overflow summary.
     """
+    ctx = context if context is not None else CheckContext()
     g = _OccurrenceGraph(events, source_path)
     findings: list[Finding] = []
 
@@ -440,7 +447,6 @@ def check_missing_parent(
             if clean_parent_id.strip():
                 related.append(clean_parent_id.strip())
 
-            fp = compute_graph_fingerprint(SL004, [id_str, parent_id])
             source_ref = SourceRef(
                 path=resolved_path,
                 line=line_num,
@@ -477,8 +483,11 @@ def check_missing_parent(
                     message_template=_MSG_SL004,
                     source=source_ref,
                     related_ids=related,
-                    fingerprint=fp,
                     evidence=evidence,
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
 
@@ -487,6 +496,7 @@ def check_missing_parent(
         code=SL004,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -495,6 +505,7 @@ def check_cycles(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """SL005: Detect all elementary directed cycles in the child-to-parent graph.
 
@@ -506,6 +517,7 @@ def check_cycles(
        follows parent links, and appends the start ID to close the loop.
     - Output sorted by primary ID (cycle_path[0]), capped at max_findings.
     """
+    ctx = context if context is not None else CheckContext()
     g = _OccurrenceGraph(events, source_path)
     color: dict[str, int] = {}
     cycles: list[list[str]] = []
@@ -565,8 +577,6 @@ def check_cycles(
             set(_safe_id(node) for node in cycle_path if _safe_id(node).strip())
         )
 
-        cycle_nodes_raw = sorted(set(cycle_path))
-        fp = compute_graph_fingerprint(SL005, cycle_nodes_raw)
         source_ref = SourceRef(
             path=resolved_path,
             line=line_num,
@@ -586,8 +596,11 @@ def check_cycles(
                 message_template=_MSG_SL005,
                 source=source_ref,
                 related_ids=safe_cycle_nodes,
-                fingerprint=fp,
                 evidence=evidence,
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -596,6 +609,7 @@ def check_cycles(
         code=SL005,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -604,6 +618,7 @@ def check_components(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """SL006: Detect extra disconnected weakly-connected components over present parent edges.
 
@@ -618,6 +633,7 @@ def check_components(
       components emit one SL006 finding each.
     - Output sorted by primary ID, capped at max_findings with overflow summary.
     """
+    ctx = context if context is not None else CheckContext()
     g = _OccurrenceGraph(events, source_path)
     if not g.id_set:
         return []
@@ -694,8 +710,6 @@ def check_components(
             set(_safe_id(node) for node in sorted_members if _safe_id(node).strip())
         )
 
-        fp = compute_graph_fingerprint(SL006, sorted_members)
-
         source_ref = SourceRef(
             path=resolved_path,
             line=line_num,
@@ -716,8 +730,11 @@ def check_components(
                 message_template=_MSG_SL006,
                 source=source_ref,
                 related_ids=safe_related_ids,
-                fingerprint=fp,
                 evidence=evidence,
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -726,6 +743,7 @@ def check_components(
         code=SL006,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -734,6 +752,7 @@ def check_heads(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """SL007: Detect ambiguous session heads (multiple terminal leaf tips).
 
@@ -744,6 +763,7 @@ def check_heads(
     - Emits exactly one SL007 finding when count > 1 with sorted head IDs in evidence.
     - Primary ID is the lexicographically smallest head ID.
     """
+    ctx = context if context is not None else CheckContext()
     g = _OccurrenceGraph(events, source_path)
     if not g.id_set:
         return []
@@ -768,7 +788,6 @@ def check_heads(
     safe_heads = [_safe_id(h) for h in heads]
     safe_related_ids = sorted(set(_safe_id(h) for h in heads if _safe_id(h).strip()))
 
-    fp = compute_graph_fingerprint(SL007, heads)
     source_ref = SourceRef(
         path=resolved_path,
         line=line_num,
@@ -787,8 +806,11 @@ def check_heads(
         message_template=_MSG_SL007,
         source=source_ref,
         related_ids=safe_related_ids,
-        fingerprint=fp,
         evidence=evidence,
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
 
     return cap_graph_findings(
@@ -796,6 +818,7 @@ def check_heads(
         code=SL007,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -804,6 +827,7 @@ def check_graph(
     *,
     source_path: str = "<canonical>",
     max_findings_per_family: int = MAX_GRAPH_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Execute all four generic parent-graph checks (SL004, SL005, SL006, SL007).
 
@@ -817,21 +841,25 @@ def check_graph(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
+        context=context,
     )
     sl005_findings = check_cycles(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
+        context=context,
     )
     sl006_findings = check_components(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
+        context=context,
     )
     sl007_findings = check_heads(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
+        context=context,
     )
 
     all_findings = sl004_findings + sl005_findings + sl006_findings + sl007_findings

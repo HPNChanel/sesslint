@@ -173,7 +173,7 @@ def compute_events_source_hash(events: Sequence[Any]) -> str:
         if hasattr(ev, "to_canonical_bytes"):
             hasher.update(ev.to_canonical_bytes())
         elif isinstance(ev, Mapping):
-            hasher.update(canonical_json_bytes(ev))
+            hasher.update(canonical_json_bytes(ev, newline=False))
         else:
             hasher.update(str(ev).encode("utf-8"))
     return hasher.hexdigest()

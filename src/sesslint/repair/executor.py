@@ -41,6 +41,7 @@ from sesslint.checks.identity import check_identities
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
 from sesslint.codes import Severity
+from sesslint.context import CheckContext
 from sesslint.finding import Finding
 from sesslint.policy.abstention import should_abstain_from_repair
 from sesslint.profiles.builtin import NEUTRAL_PROFILE
@@ -249,6 +250,8 @@ def run_all_checks(
     *,
     profile: Profile | str | None = None,
     source_path: str = "<repaired>",
+    context: CheckContext | None = None,
+    adapter: str | None = None,
 ) -> list[Finding]:
     """Run all active rule checks enabled by the profile over canonical events."""
     resolved_profile: Profile
@@ -259,19 +262,22 @@ def run_all_checks(
     else:
         resolved_profile = profile
 
+    if context is None:
+        context = CheckContext.from_profile_and_adapter(profile=resolved_profile, adapter=adapter)
+
     enabled = set(resolved_profile.enabled_rules)
     findings: list[Finding] = []
 
     if "SL003" in enabled:
-        findings.extend(check_identities(events, source_path=source_path))
+        findings.extend(check_identities(events, source_path=source_path, context=context))
 
     graph_rules = {"SL004", "SL005", "SL006", "SL007"}
     if graph_rules & enabled:
-        findings.extend(check_graph(events, source_path=source_path))
+        findings.extend(check_graph(events, source_path=source_path, context=context))
 
     tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
     if tp1_rules & enabled:
-        findings.extend(check_tool_pairing_1(events, source_path=source_path))
+        findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
 
     tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
     if tp2_rules & enabled:
@@ -280,6 +286,7 @@ def run_all_checks(
                 events,
                 source_path=source_path,
                 profile=resolved_profile,
+                context=context,
             )
         )
 
@@ -290,6 +297,7 @@ def run_all_checks(
                 events,
                 source_path=source_path,
                 checkpoint_sensitivity=resolved_profile.checkpoint_sensitivity,
+                context=context,
             )
         )
 

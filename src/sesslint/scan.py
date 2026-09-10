@@ -265,11 +265,19 @@ def _scan_single_file(
         # 4. Invariant checks
         from sesslint.repair.executor import run_all_checks
 
-        check_findings = run_all_checks(
-            events,
-            profile=effective_cfg.profile,
-            source_path=str(file_path),
-        )
+        try:
+            check_findings = run_all_checks(
+                events,
+                profile=effective_cfg.profile,
+                source_path=str(file_path),
+                adapter=resolved_fmt,
+            )
+        except TypeError:
+            check_findings = run_all_checks(
+                events,
+                profile=effective_cfg.profile,
+                source_path=str(file_path),
+            )
         all_findings = tuple(adapter_findings + list(check_findings))
 
         err_count = sum(1 for f in all_findings if f.severity in (Severity.ERROR, Severity.FATAL))

@@ -40,6 +40,9 @@ from sesslint.codes import (
     get_code_info,
     is_valid_code,
 )
+from sesslint.context import (
+    CheckContext,
+)
 from sesslint.determinism import (
     canonical_json_bytes,
     repeat_hash,
@@ -65,6 +68,7 @@ from sesslint.finding import (
     Repairability,
     Severity,
     SourceRef,
+    compute_finding_fingerprint,
     compute_fingerprint,
     enforce_content_free_text,
     fingerprint_finding,
@@ -134,6 +138,7 @@ __all__ = [
     "AssuranceError",
     "AtomicWriteError",
     "CanonicalEvent",
+    "CheckContext",
     "Code",
     "CodeInfo",
     "ContentLeakError",
@@ -179,6 +184,7 @@ __all__ = [
     "scan_path",
     "check_nesting_depth",
     "compute_content_hash",
+    "compute_finding_fingerprint",
     "compute_fingerprint",
     "compute_manifest_idempotency_key",
     "dump_manifest",

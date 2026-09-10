@@ -70,7 +70,7 @@
         "record_id": "cb1"
       },
       "related_ids": [],
-      "fingerprint": "39833980b954418f",
+      "fingerprint": "b9a67fda38908d9a",
       "message_template": "Compaction boundary splits tool pair",
       "evidence": {
         "at_index": 2,
@@ -80,7 +80,7 @@
   ],
   "expected_plan": {
     "blocked": [],
-    "fingerprint": "1f09f9550689c1bce09c0401c286035980e5ba6cb14937cc938c7f25d6e9f7c1",
+    "fingerprint": "ae05918ee8e131a2497aad0b532083875f9b69ec6f62049f83f9318723ae4318",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,
@@ -100,7 +100,7 @@
         },
         "recipe": "torn-compaction-project",
         "seq": 0,
-        "target_finding_fp": "39833980b954418f",
+        "target_finding_fp": "b9a67fda38908d9a",
         "target_index": 2,
         "lossy": true,
         "loss": {
@@ -115,11 +115,11 @@
     "blocked": [
       {
         "code": "SL108",
-        "finding_fp": "39833980b954418f",
+        "finding_fp": "b9a67fda38908d9a",
         "reason": "needs-salvage-policy"
       }
     ],
-    "fingerprint": "8a93315dd85ef5e7186dd1ba611ccaec2d092f09be3bc96d1e174858f8017514",
+    "fingerprint": "5c56b1f64063c70aa110ecdae3f0eea4ad2d0831301cfe7d22d159ef5f1790fb",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,

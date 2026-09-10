@@ -39,6 +39,7 @@ from sesslint.codes import (
     Repairability,
     Severity,
 )
+from sesslint.context import CheckContext
 from sesslint.finding import (
     Finding,
     SourceRef,
@@ -115,6 +116,7 @@ def cap_pairing_findings(
     code: str,
     max_findings: int = MAX_PAIRING_FINDINGS,
     source_path: str = "<canonical>",
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Sort findings by (code, primary_id) and cap family at max_findings with overflow finding."""
     sorted_findings = sorted(findings, key=_cap_finding_sort_key)
@@ -126,7 +128,7 @@ def cap_pairing_findings(
     total_count = len(sorted_findings)
     truncated_count = total_count - max_findings
 
-    overflow_fp = hashlib.sha256(f"{code}|overflow|{max_findings}".encode()).hexdigest()[:16]
+    ctx = context if context is not None else CheckContext()
     norm_source_path = source_path.replace("\\", "/")
 
     overflow_finding = make_finding(
@@ -135,7 +137,6 @@ def cap_pairing_findings(
         repairability=Repairability.MANUAL,
         message_template=_MSG_OVERFLOW,
         source=SourceRef(path=norm_source_path, line=None, record_id=None),
-        fingerprint=overflow_fp,
         evidence={
             "cap": max_findings,
             "overflow": True,
@@ -143,6 +144,10 @@ def cap_pairing_findings(
             "truncated_count": truncated_count,
             "variant": "overflow-summary",
         },
+        adapter_id=ctx.adapter_id,
+        adapter_version=ctx.adapter_version,
+        profile_id=ctx.profile_id,
+        profile_version=ctx.profile_version,
     )
     kept.append(overflow_finding)
     return kept
@@ -327,6 +332,7 @@ def check_reversed_order(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for reversed tool pairing (SL105) where result index precedes call index.
 
@@ -336,6 +342,7 @@ def check_reversed_order(
     - severity: error, repairability: manual.
     - evidence: {correlation_id, result_index, use_index}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
 
@@ -353,8 +360,6 @@ def check_reversed_order(
             rec_id = _source_record_id(use_id_str)
             path, line = _resolve_source_coords(res_ev, source_path)
 
-            fp = compute_pairing_fingerprint(SL105, [corr, str(use_idx), str(res_idx)])
-
             findings.append(
                 make_finding(
                     code=SL105,
@@ -362,13 +367,16 @@ def check_reversed_order(
                     repairability=Repairability.MANUAL,
                     message_template=_MSG_SL105,
                     source=SourceRef(path=path, line=line, record_id=rec_id),
-                    fingerprint=fp,
                     related_ids=(safe_corr,) if safe_corr != "<redacted>" else (),
                     evidence={
                         "correlation_id": safe_corr,
                         "result_index": res_idx,
                         "use_index": use_idx,
                     },
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
 
@@ -377,6 +385,7 @@ def check_reversed_order(
         code=SL105,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -385,6 +394,7 @@ def check_cross_branch(
     *,
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for cross-branch tool pairing (SL106).
 
@@ -399,6 +409,7 @@ def check_cross_branch(
     - severity: error, repairability: manual.
     - evidence: {correlation_id, result_id, result_index, use_id, use_index, ...}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
 
@@ -462,19 +473,6 @@ def check_cross_branch(
             rec_id = _source_record_id(use_id_str)
             path, line = _resolve_source_coords(res_ev, source_path)
 
-            fp_items = [corr, str(use_idx), str(res_idx)]
-            if scope_mismatch:
-                fp_items.extend(
-                    [
-                        str(use_agent or use_branch or use_inter),
-                        str(res_agent or res_branch or res_inter),
-                    ]
-                )
-            else:
-                fp_items.extend([comp_use, comp_res])
-
-            fp = compute_pairing_fingerprint(SL106, fp_items)
-
             evidence_dict: dict[str, Any] = {
                 "correlation_id": safe_corr,
                 "result_id": safe_res_id,
@@ -493,9 +491,12 @@ def check_cross_branch(
                     repairability=Repairability.MANUAL,
                     message_template=_MSG_SL106,
                     source=SourceRef(path=path, line=line, record_id=rec_id),
-                    fingerprint=fp,
                     related_ids=(safe_res_id,) if safe_res_id != "<redacted>" else (),
                     evidence=evidence_dict,
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
                 )
             )
 
@@ -504,6 +505,7 @@ def check_cross_branch(
         code=SL106,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -529,6 +531,7 @@ def check_adjacency(
     max_findings: int = MAX_PAIRING_FINDINGS,
     profile: Any = None,
     severity: Severity | None = None,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for non-adjacent tool pairing (SL107) with parallel-exemption for concurrent tools.
 
@@ -541,6 +544,7 @@ def check_adjacency(
     - severity: profile-aware (error under strict profiles, warning under neutral).
     - evidence: {correlation_id, intervening_count, intervening_kinds, result_index, use_index}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
     target_severity = severity or _resolve_rule_severity(SL107, profile, Severity.WARNING)
@@ -572,11 +576,6 @@ def check_adjacency(
 
         unique_intervening_kinds = sorted(set(intervening_kinds_slice))
 
-        fp = compute_pairing_fingerprint(
-            SL107,
-            [corr, str(use_idx), str(res_idx), str(intervening_count)],
-        )
-
         findings.append(
             make_finding(
                 code=SL107,
@@ -584,7 +583,6 @@ def check_adjacency(
                 repairability=Repairability.MANUAL,
                 message_template=_MSG_SL107,
                 source=SourceRef(path=path, line=line, record_id=rec_id),
-                fingerprint=fp,
                 related_ids=(safe_corr,) if safe_corr != "<redacted>" else (),
                 evidence={
                     "correlation_id": safe_corr,
@@ -593,6 +591,10 @@ def check_adjacency(
                     "result_index": res_idx,
                     "use_index": use_idx,
                 },
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -601,6 +603,7 @@ def check_adjacency(
         code=SL107,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -611,6 +614,7 @@ def check_compaction_split(
     max_findings: int = MAX_PAIRING_FINDINGS,
     profile: Any = None,
     severity: Severity | None = None,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Check for compaction boundaries splitting a tool pair (SL108).
 
@@ -620,6 +624,7 @@ def check_compaction_split(
     - severity: profile-aware (error under strict profiles, warning under neutral).
     - evidence: {boundary_index, correlation_id, result_index, use_index}.
     """
+    ctx = context if context is not None else CheckContext()
     indexer = _ToolPairing2Indexer(events, source_path=source_path)
     findings: list[Finding] = []
     target_severity = severity or _resolve_rule_severity(SL108, profile, Severity.WARNING)
@@ -644,11 +649,6 @@ def check_compaction_split(
         rec_id = _source_record_id(use_id_str)
         path, line = _resolve_source_coords(use_ev, source_path)
 
-        fp = compute_pairing_fingerprint(
-            SL108,
-            [corr, str(use_idx), str(res_idx), str(first_boundary_idx)],
-        )
-
         rep = (
             Repairability.DETERMINISTIC
             if len(split_boundaries) == 1
@@ -662,7 +662,6 @@ def check_compaction_split(
                 repairability=rep,
                 message_template=_MSG_SL108,
                 source=SourceRef(path=path, line=line, record_id=rec_id),
-                fingerprint=fp,
                 related_ids=(safe_corr,) if safe_corr != "<redacted>" else (),
                 evidence={
                     "boundary_index": first_boundary_idx,
@@ -670,6 +669,10 @@ def check_compaction_split(
                     "result_index": res_idx,
                     "use_index": use_idx,
                 },
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
             )
         )
 
@@ -678,6 +681,7 @@ def check_compaction_split(
         code=SL108,
         max_findings=max_findings,
         source_path=source_path,
+        context=ctx,
     )
 
 
@@ -687,6 +691,7 @@ def check_tool_pairing_2(
     source_path: str = "<canonical>",
     max_findings_per_family: int = MAX_PAIRING_FINDINGS,
     profile: Any = None,
+    context: CheckContext | None = None,
 ) -> list[Finding]:
     """Run all part-2 tool pairing checks (SL105, SL106, SL107, SL108) over canonical events.
 
@@ -704,6 +709,7 @@ def check_tool_pairing_2(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            context=context,
         )
     )
     all_findings.extend(
@@ -711,6 +717,7 @@ def check_tool_pairing_2(
             events,
             source_path=source_path,
             max_findings=max_findings_per_family,
+            context=context,
         )
     )
     all_findings.extend(
@@ -719,6 +726,7 @@ def check_tool_pairing_2(
             source_path=source_path,
             max_findings=max_findings_per_family,
             profile=profile,
+            context=context,
         )
     )
     all_findings.extend(
@@ -727,6 +735,7 @@ def check_tool_pairing_2(
             source_path=source_path,
             max_findings=max_findings_per_family,
             profile=profile,
+            context=context,
         )
     )
 

@@ -387,8 +387,13 @@ def to_canonical_json(obj: Any) -> str:
 
 
 def canonical_bytes(obj: Any) -> bytes:
-    """Serialize an object to canonical UTF-8 bytes."""
-    return to_canonical_json(obj).encode("utf-8")
+    """Serialize an object to canonical UTF-8 bytes (without trailing newline).
+
+    Delegates to the unified determinism.canonical_json_bytes primitive in the hash domain.
+    """
+    from sesslint.determinism import canonical_json_bytes
+
+    return canonical_json_bytes(obj, newline=False)
 
 
 def to_canonical_dict(obj: Any) -> dict[str, Any]:

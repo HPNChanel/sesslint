@@ -26,7 +26,7 @@
   ],
   "expected_plan": {
     "blocked": [],
-    "fingerprint": "f865b4226e6803fa8545584e274a1119164a989018d0060a02988bc50dae2bb5",
+    "fingerprint": "0081f62c60bb47215697e2f602479d351aaa9340744e6e61d4ec0a68c31975e6",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,
@@ -41,7 +41,7 @@
         "params": {},
         "recipe": "stub-strip-call",
         "seq": 0,
-        "target_finding_fp": "ee8b1e5c3fb63d40",
+        "target_finding_fp": "9b95bb6a036cde92",
         "target_index": 1
       }
     ],
@@ -53,7 +53,7 @@
       "evidence": {
         "at_index": 1
       },
-      "fingerprint": "ee8b1e5c3fb63d40",
+      "fingerprint": "9b95bb6a036cde92",
       "message": "Unmatched call at index 1",
       "repairability": "deterministic",
       "severity": "error",

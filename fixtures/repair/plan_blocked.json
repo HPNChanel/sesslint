@@ -28,11 +28,11 @@
     "blocked": [
       {
         "code": "SL203",
-        "finding_fp": "792b144d79249521",
+        "finding_fp": "b0eff614bda6e723",
         "reason": "SL203-refusal"
       }
     ],
-    "fingerprint": "d464e4b33873377f46d243333811ce96228ba2f00fa52cbdf418c457e7731296",
+    "fingerprint": "0fed474ae182c5d2be9141e48c2aa4b0db7efef7a19b62cab7811cd4df4c53da",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,
@@ -51,7 +51,7 @@
       "evidence": {
         "first_unsafe_index": 1
       },
-      "fingerprint": "792b144d79249521",
+      "fingerprint": "b0eff614bda6e723",
       "message": "Unsafe continuation",
       "repairability": "manual",
       "severity": "error",

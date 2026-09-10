@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal, cast
 
-from sesslint.canonical import to_canonical_json
 from sesslint.codes import (
     ALL_CODES,
     CODE_REGISTRY,
@@ -29,6 +28,7 @@ from sesslint.codes import (
     get_code_info,
     is_valid_code,
 )
+from sesslint.context import CheckContext
 from sesslint.errors import FindingError
 
 SchemaVersionLiteral = Literal["sesslint.finding/v1"]
@@ -295,7 +295,7 @@ class Finding:
 
 def _finding_sort_key(
     f: Finding,
-) -> tuple[str, int, int, int, str, str, str]:
+) -> tuple[str, int, int, int, str, str, str, tuple[str, ...], str, str]:
     """Pure sort key ensuring deterministic total ordering of findings (FR-094).
 
     Total ordering hierarchy:
@@ -306,6 +306,7 @@ def _finding_sort_key(
     5. code (lexicographical)
     6. record_id (None sorts as empty string before any non-empty string, then lexicographical)
     7. fingerprint (16-character sha256 hex string)
+    Followed by related_ids, message, repairability for strict trichotomy/totality.
     """
     norm_path = f.source.path.replace("\\", "/")
     line_val = -1 if f.source.line is None else f.source.line
@@ -316,7 +317,18 @@ def _finding_sort_key(
             ordinal_val = raw_ordinal
     sev_rank = SEVERITY_ORDER[f.severity]
     rec_val = "" if f.source.record_id is None else str(f.source.record_id)
-    return (norm_path, line_val, ordinal_val, sev_rank, f.code, rec_val, f.fingerprint)
+    return (
+        norm_path,
+        line_val,
+        ordinal_val,
+        sev_rank,
+        f.code,
+        rec_val,
+        f.fingerprint,
+        f.related_ids,
+        f.message,
+        f.repairability.value,
+    )
 
 
 finding_sort_key = _finding_sort_key
@@ -337,67 +349,214 @@ def sort_findings(fs: Iterable[Finding]) -> list[Finding]:
     return sorted(fs, key=_finding_sort_key)
 
 
-def compute_fingerprint(
+CANONICAL_EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "actual_seq",
+        "at_index",
+        "boundary_index",
+        "byte_end",
+        "byte_offset",
+        "call_agent_id",
+        "call_branch_id",
+        "call_ids",
+        "call_indexes",
+        "call_interaction_id",
+        "candidate_count",
+        "caused_by",
+        "classification",
+        "coerced",
+        "component_index",
+        "component_members",
+        "component_size",
+        "confinement",
+        "correlation_id",
+        "count",
+        "cycle_events",
+        "cycle_length",
+        "cycle_nodes",
+        "cycle_parent_edges",
+        "detail",
+        "differing_fields",
+        "event_id",
+        "event_ids",
+        "expected_seq",
+        "field",
+        "first_unsafe_index",
+        "format",
+        "head_count",
+        "head_ids",
+        "id",
+        "index",
+        "intervening_count",
+        "intervening_kinds",
+        "match_rule",
+        "overflow",
+        "parent_id",
+        "profile",
+        "reason",
+        "record_ordinal",
+        "rejected_decoys",
+        "result_agent_id",
+        "result_branch_id",
+        "result_id",
+        "result_ids",
+        "result_indexes",
+        "result_interaction_id",
+        "schema",
+        "scope_mismatch",
+        "seq",
+        "state_hash_a",
+        "state_hash_b",
+        "truncated",
+        "use_id",
+        "use_index",
+        "variant",
+    }
+)
+
+
+def _canonical_evidence_for_fingerprint(
+    evidence: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Extract and normalize a content-free subset of evidence for fingerprinting (FR-046, FR-081).
+
+    Only allowlisted structural/coordinate keys are included in the preimage to guarantee
+    content-free hashing. Keys are sorted lexicographically.
+    """
+    if not evidence:
+        return {}
+    subset: dict[str, Any] = {}
+    for k in sorted(evidence):
+        if k in CANONICAL_EVIDENCE_KEYS:
+            subset[k] = evidence[k]
+    return subset
+
+
+def compute_finding_fingerprint(
     *,
     code: str,
-    severity: Severity | str,
-    repairability: Repairability | str,
-    message_template: str,
     source: SourceRef,
-    related_ids: Iterable[str] = (),
+    adapter_id: str | None = None,
     adapter_version: str | None = None,
+    profile_id: str | None = None,
     profile_version: str | None = None,
+    ordinal: int | None = None,
+    evidence: Mapping[str, Any] | None = None,
+    # Optional parameters accepted for backward compatibility with older tests/call sites:
+    severity: Severity | str | None = None,
+    repairability: Repairability | str | None = None,
+    message_template: str | None = None,
+    related_ids: Iterable[str] = (),
+    context: CheckContext | None = None,
 ) -> str:
-    """Compute deterministic 16-character sha256 fingerprint for a finding.
+    """Compute deterministic 16-character sha256 fingerprint for a finding (FR-046).
 
-    Fingerprint covers:
-    - code
-    - severity
-    - repairability
-    - message_template (structural template only, never raw payload content)
-    - source coordinates (path normalized to forward slashes, line, record_id)
-    - sorted, deduplicated related_ids
-    - optional adapter_version and profile_version per FR-046
+    Preimage array contract (FR-046, DEV-004):
+    [
+        code,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        path,
+        line,
+        ordinal,
+        record_id,
+        canonical_evidence_subset,
+    ]
+    Hashed with unified canonical_json_bytes(preimage, newline=False), 16-hex digest.
+    Unavailable or omitted versions MUST be explicit "unknown" (never empty string).
     """
-    sev_str = severity.value if isinstance(severity, Severity) else str(severity)
-    rep_str = (
-        repairability.value if isinstance(repairability, Repairability) else str(repairability)
-    )
-    norm_related_ids = sorted(set(str(x).strip() for x in related_ids))
-    payload: dict[str, Any] = {
-        "code": code,
-        "line": source.line,
-        "message_template": message_template,
-        "path": source.path.replace("\\", "/"),
-        "record_id": source.record_id,
-        "related_ids": norm_related_ids,
-        "repairability": rep_str,
-        "severity": sev_str,
-    }
-    if adapter_version is not None:
-        payload["adapter_version"] = adapter_version
-    if profile_version is not None:
-        payload["profile_version"] = profile_version
-    canonical_str = to_canonical_json(payload)
-    return hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()[:16]
+    ad_id: str
+    ad_ver: str
+    prof_id: str
+    prof_ver: str
+
+    if context is not None:
+        ad_id = adapter_id.strip() if adapter_id and adapter_id.strip() else context.adapter_id
+        ad_ver = (
+            adapter_version.strip()
+            if adapter_version and adapter_version.strip()
+            else context.adapter_version
+        )
+        prof_id = profile_id.strip() if profile_id and profile_id.strip() else context.profile_id
+        prof_ver = (
+            profile_version.strip()
+            if profile_version and profile_version.strip()
+            else context.profile_version
+        )
+    else:
+        ad_id = adapter_id.strip() if adapter_id and adapter_id.strip() else "unknown"
+        ad_ver = (
+            adapter_version.strip() if adapter_version and adapter_version.strip() else "unknown"
+        )
+        prof_id = profile_id.strip() if profile_id and profile_id.strip() else "unknown"
+        prof_ver = (
+            profile_version.strip() if profile_version and profile_version.strip() else "unknown"
+        )
+
+    norm_path = source.path.replace("\\", "/")
+
+    ord_val = ordinal
+    if ord_val is None and evidence is not None:
+        raw_ord = evidence.get("record_ordinal")
+        if isinstance(raw_ord, int) and not isinstance(raw_ord, bool) and raw_ord >= 0:
+            ord_val = raw_ord
+
+    ev_subset = _canonical_evidence_for_fingerprint(evidence)
+
+    preimage: list[Any] = [
+        code,
+        ad_id,
+        ad_ver,
+        prof_id,
+        prof_ver,
+        norm_path,
+        source.line,
+        ord_val,
+        source.record_id,
+        ev_subset,
+    ]
+
+    from sesslint.determinism import canonical_json_bytes
+
+    encoded = canonical_json_bytes(preimage, newline=False)
+    return hashlib.sha256(encoded).hexdigest()[:16]
 
 
-def fingerprint_finding(f: Finding, *, without_fingerprint: bool = True) -> str:
+compute_fingerprint = compute_finding_fingerprint
+
+
+def fingerprint_finding(
+    f: Finding,
+    *,
+    without_fingerprint: bool = True,
+    adapter_id: str | None = None,
+    adapter_version: str | None = None,
+    profile_id: str | None = None,
+    profile_version: str | None = None,
+    context: CheckContext | None = None,
+) -> str:
     """Return or recompute the 16-character deterministic sha256 fingerprint for a finding.
 
-    When without_fingerprint=True, recomputes from coordinates and template.
+    When without_fingerprint=True, recomputes from coordinates, versions, and allowlisted evidence.
     When without_fingerprint=False, returns the finding's stored fingerprint.
     """
     if not without_fingerprint:
         return f.fingerprint
-    template_str = f.message_template if f.message_template is not None else f.message
-    return compute_fingerprint(
+    return compute_finding_fingerprint(
         code=f.code,
+        source=f.source,
+        adapter_id=adapter_id,
+        adapter_version=adapter_version,
+        profile_id=profile_id,
+        profile_version=profile_version,
+        evidence=f.evidence,
         severity=f.severity,
         repairability=f.repairability,
-        message_template=template_str,
-        source=f.source,
+        message_template=f.message_template if f.message_template is not None else f.message,
         related_ids=f.related_ids,
+        context=context,
     )
 
 
@@ -412,8 +571,12 @@ def make_finding(
     related_ids: Iterable[str] = (),
     evidence: Mapping[str, Any] | None = None,
     fingerprint: str | None = None,
+    adapter_id: str | None = None,
     adapter_version: str | None = None,
+    profile_id: str | None = None,
     profile_version: str | None = None,
+    ordinal: int | None = None,
+    context: CheckContext | None = None,
 ) -> Finding:
     """Construct, validate, and fingerprint a Finding instance.
 
@@ -539,15 +702,20 @@ def make_finding(
             )
         fp = fingerprint
     else:
-        fp = compute_fingerprint(
+        fp = compute_finding_fingerprint(
             code=code,
+            source=source,
+            adapter_id=adapter_id,
+            adapter_version=adapter_version,
+            profile_id=profile_id,
+            profile_version=profile_version,
+            ordinal=ordinal,
+            evidence=evidence,
             severity=sev,
             repairability=rep,
             message_template=message_template,
-            source=source,
             related_ids=norm_related_ids,
-            adapter_version=adapter_version,
-            profile_version=profile_version,
+            context=context,
         )
 
     return Finding(
@@ -683,12 +851,15 @@ __all__ = [
     "SCHEMA_VERSION",
     "SEVERITY_ORDER",
     "TRUNCATION_MARKER",
+    "CANONICAL_EVIDENCE_KEYS",
     "Code",
     "CodeInfo",
     "Finding",
     "Repairability",
     "Severity",
     "SourceRef",
+    "_canonical_evidence_for_fingerprint",
+    "compute_finding_fingerprint",
     "compute_fingerprint",
     "enforce_content_free_text",
     "finding_sort_key",
