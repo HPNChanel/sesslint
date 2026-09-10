@@ -1641,7 +1641,7 @@ def format_finding_content_free(
     byte_val = None
     if f.evidence and isinstance(f.evidence, Mapping):
         b = f.evidence.get("byte_offset", f.evidence.get("byte"))
-        if isinstance(b, int):
+        if isinstance(b, int) and not isinstance(b, bool) and b >= 0:
             byte_val = b
 
     span_dict: dict[str, Any] = {
@@ -1876,6 +1876,23 @@ def render_human(
             title = CODE_REGISTRY[f.code].name if f.code in CODE_REGISTRY else "Integrity finding"
             min_path = minimize_path(f.source.path, home=home)
             loc_str = f"{min_path}:{f.source.line}" if f.source.line is not None else min_path
+            if (
+                f.evidence
+                and isinstance(f.evidence, Mapping)
+                and "byte_offset" in f.evidence
+                and "byte_end" in f.evidence
+            ):
+                b_start = f.evidence["byte_offset"]
+                b_end = f.evidence["byte_end"]
+                if (
+                    isinstance(b_start, int)
+                    and not isinstance(b_start, bool)
+                    and b_start >= 0
+                    and isinstance(b_end, int)
+                    and not isinstance(b_end, bool)
+                    and b_end >= b_start
+                ):
+                    loc_str = f"{loc_str} (bytes {b_start}-{b_end})"
             sev_color = red if f.severity.value in ("error", "fatal") else yellow
             why_str = f.message
             fix_str = get_finding_remediation(f, home=home)

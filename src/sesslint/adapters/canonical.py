@@ -54,6 +54,7 @@ from sesslint.io import (
     _STRICT_JSON_DECODER,
     DEFAULT_READER_LIMITS,
     ReaderLimits,
+    _validate_stream_coordinates,
     check_nesting_depth,
 )
 
@@ -419,8 +420,24 @@ def _parse_canonical_event_record(
     line_num: int,
     path_str: str,
     add_finding: Any,
+    *,
+    byte_offset: int | None = None,
+    byte_end: int | None = None,
+    record_ordinal: int | None = None,
 ) -> SessionEvent:
     """Parse and validate a single canonical event record, emitting findings as needed."""
+
+    def _ev_dict(base: dict[str, Any]) -> dict[str, Any]:
+        if byte_offset is not None and byte_end is not None and record_ordinal is not None:
+            _validate_stream_coordinates(byte_offset, byte_end, record_ordinal)
+            return {
+                "byte_offset": byte_offset,
+                "byte_end": byte_end,
+                "record_ordinal": record_ordinal,
+                **base,
+            }
+        return base
+
     raw_id = ev_raw.get("id")
     has_id_key = "id" in ev_raw
     rec_id_str: str | None = _safe_rec_id(raw_id)
@@ -436,11 +453,13 @@ def _parse_canonical_event_record(
                 message_template=_MSG_MISSING_REQ_EVENT,
                 source=SourceRef(path=path_str, line=line_num, record_id=None),
                 related_ids=("id",),
-                evidence={
-                    "reason": "missing_id_key",
-                    "field": "id",
-                    "record_id": None,
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "missing_id_key",
+                        "field": "id",
+                        "record_id": None,
+                    }
+                ),
             )
         )
     elif not is_valid_id:
@@ -452,11 +471,13 @@ def _parse_canonical_event_record(
                 message_template="Invalid event id on line {line} for record {record_id}",
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                 related_ids=("id",),
-                evidence={
-                    "reason": "invalid_id",
-                    "field": "id",
-                    "record_id": _safe_evidence_val(raw_id),
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "invalid_id",
+                        "field": "id",
+                        "record_id": _safe_evidence_val(raw_id),
+                    }
+                ),
             )
         )
 
@@ -470,11 +491,13 @@ def _parse_canonical_event_record(
                 message_template=_MSG_MISSING_REQ_EVENT,
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                 related_ids=("parent_id",),
-                evidence={
-                    "reason": "missing_parent_id_key",
-                    "field": "parent_id",
-                    "record_id": rec_id_str,
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "missing_parent_id_key",
+                        "field": "parent_id",
+                        "record_id": rec_id_str,
+                    }
+                ),
             )
         )
     else:
@@ -488,11 +511,13 @@ def _parse_canonical_event_record(
                     message_template=_MSG_INVALID_PARENT_ID,
                     source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                     related_ids=("parent_id",),
-                    evidence={
-                        "reason": "invalid_parent_id",
-                        "field": "parent_id",
-                        "record_id": rec_id_str,
-                    },
+                    evidence=_ev_dict(
+                        {
+                            "reason": "invalid_parent_id",
+                            "field": "parent_id",
+                            "record_id": rec_id_str,
+                        }
+                    ),
                 )
             )
 
@@ -505,11 +530,13 @@ def _parse_canonical_event_record(
                 message_template=_MSG_MISSING_REQ_EVENT,
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                 related_ids=("kind",),
-                evidence={
-                    "reason": "missing_kind_key",
-                    "field": "kind",
-                    "record_id": rec_id_str,
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "missing_kind_key",
+                        "field": "kind",
+                        "record_id": rec_id_str,
+                    }
+                ),
             )
         )
     elif ev_raw["kind"] not in VALID_KINDS:
@@ -521,11 +548,13 @@ def _parse_canonical_event_record(
                 message_template="Invalid kind on line {line} for record {record_id}",
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                 related_ids=("kind",),
-                evidence={
-                    "reason": "invalid_kind",
-                    "kind": str(ev_raw["kind"]),
-                    "record_id": rec_id_str,
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "invalid_kind",
+                        "kind": str(ev_raw["kind"]),
+                        "record_id": rec_id_str,
+                    }
+                ),
             )
         )
 
@@ -538,11 +567,13 @@ def _parse_canonical_event_record(
                 message_template=_MSG_MISSING_REQ_EVENT,
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                 related_ids=("ts",),
-                evidence={
-                    "reason": "missing_ts_key",
-                    "field": "ts",
-                    "record_id": rec_id_str,
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "missing_ts_key",
+                        "field": "ts",
+                        "record_id": rec_id_str,
+                    }
+                ),
             )
         )
     else:
@@ -556,11 +587,13 @@ def _parse_canonical_event_record(
                     message_template=_MSG_INVALID_TS,
                     source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                     related_ids=("ts",),
-                    evidence={
-                        "reason": "invalid_timestamp",
-                        "ts": str(raw_ts),
-                        "record_id": rec_id_str,
-                    },
+                    evidence=_ev_dict(
+                        {
+                            "reason": "invalid_timestamp",
+                            "ts": str(raw_ts),
+                            "record_id": rec_id_str,
+                        }
+                    ),
                 )
             )
         else:
@@ -575,11 +608,13 @@ def _parse_canonical_event_record(
                         message_template=_MSG_INVALID_TS,
                         source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                         related_ids=("ts",),
-                        evidence={
-                            "reason": "invalid_timestamp",
-                            "ts": str(raw_ts),
-                            "record_id": rec_id_str,
-                        },
+                        evidence=_ev_dict(
+                            {
+                                "reason": "invalid_timestamp",
+                                "ts": str(raw_ts),
+                                "record_id": rec_id_str,
+                            }
+                        ),
                     )
                 )
 
@@ -598,7 +633,7 @@ def _parse_canonical_event_record(
                 repairability=Repairability.MANUAL,
                 message_template="Invalid actor on line {line} for record {record_id}",
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
-                evidence={"reason": "invalid_actor", "actor": str(raw_actor)},
+                evidence=_ev_dict({"reason": "invalid_actor", "actor": str(raw_actor)}),
             )
         )
 
@@ -630,11 +665,13 @@ def _parse_canonical_event_record(
                                 "Unknown critical record on line {line} for record {record_id}"
                             ),
                             source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
-                            evidence={
-                                "field_path": k,
-                                "type_value": safe_tv,
-                                "record_id": rec_id_str,
-                            },
+                            evidence=_ev_dict(
+                                {
+                                    "field_path": k,
+                                    "type_value": safe_tv,
+                                    "record_id": rec_id_str,
+                                }
+                            ),
                         )
                     )
                     has_emitted_event_sl302 = True
@@ -650,11 +687,13 @@ def _parse_canonical_event_record(
                 message_template=_MSG_INVALID_PAYLOAD,
                 source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                 related_ids=("payload",),
-                evidence={
-                    "reason": "invalid_payload_type",
-                    "type": type(ev_raw["payload"]).__name__,
-                    "record_id": rec_id_str,
-                },
+                evidence=_ev_dict(
+                    {
+                        "reason": "invalid_payload_type",
+                        "type": type(ev_raw["payload"]).__name__,
+                        "record_id": rec_id_str,
+                    }
+                ),
             )
         )
     raw_payload = ev_raw.get("payload")
@@ -684,11 +723,13 @@ def _parse_canonical_event_record(
                     message_template=_MSG_INVALID_SEQ,
                     source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
                     related_ids=("seq",),
-                    evidence={
-                        "reason": "invalid_seq",
-                        "seq": str(seq_val),
-                        "record_id": rec_id_str,
-                    },
+                    evidence=_ev_dict(
+                        {
+                            "reason": "invalid_seq",
+                            "seq": str(seq_val),
+                            "record_id": rec_id_str,
+                        }
+                    ),
                 )
             )
             seq = idx
@@ -826,6 +867,7 @@ def load_canonical(
 
     try:
         data = stream.read(effective_limits.max_file_bytes + 1)
+        raw_data = data
         if len(data) > effective_limits.max_file_bytes:
             finding = make_finding(
                 code=SL001,
@@ -866,24 +908,11 @@ def load_canonical(
             )
             return EventList([], source=source_metadata), [finding]
 
-        # UTF-8 decoding
-        try:
-            decoded_text = stripped_data.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            finding = make_finding(
-                code=SL001,
-                severity=Severity.ERROR,
-                repairability=Repairability.MANUAL,
-                message_template=("Invalid UTF-8 encoding on line {line} for record {record_id}"),
-                source=SourceRef(path=path_str, line=1, record_id=None),
-                evidence={"reason": "invalid_utf8"},
-            )
-            return EventList([], source=source_metadata), [finding]
-
         # Check if single-document JSON
         is_single_doc = False
         doc: Any = None
         try:
+            decoded_text = stripped_data.decode("utf-8", errors="strict")
             doc = _STRICT_JSON_DECODER.decode(decoded_text)
             if isinstance(doc, dict) and "events" in doc:
                 is_single_doc = True
@@ -897,7 +926,7 @@ def load_canonical(
             elif not isinstance(doc, dict):
                 # Valid JSON value that is not an object (e.g. array, integer, string)
                 is_single_doc = True
-        except (json.JSONDecodeError, ValueError):
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             is_single_doc = False
 
         if is_single_doc:
@@ -1103,15 +1132,30 @@ def load_canonical(
         # ---------------------------------------------------------------------
         # JSONL Stream Parsing (Line 1: Header, Lines 2+: Events)
         # ---------------------------------------------------------------------
-        raw_lines = [
-            line[:-1] if line.endswith("\r") else line for line in decoded_text.split("\n")
-        ]
-        non_empty_lines = [
-            (idx + 1, line_str.strip())
-            for idx, line_str in enumerate(raw_lines)
-            if line_str.strip()
-        ]
-        if not non_empty_lines:
+        lines_info: list[tuple[int, bytes, int, int]] = []
+        curr_offset = 0
+        raw_len = len(raw_data)
+        line_no = 0
+
+        while curr_offset < raw_len:
+            line_no += 1
+            nl_pos = raw_data.find(b"\n", curr_offset)
+            if nl_pos == -1:
+                chunk = raw_data[curr_offset:]
+                end_pos = raw_len
+            else:
+                end_pos = nl_pos + 1
+                chunk = raw_data[curr_offset:end_pos]
+
+            start_pos = curr_offset
+            curr_offset = end_pos
+
+            if not chunk.strip():
+                continue
+
+            lines_info.append((line_no, chunk, start_pos, end_pos))
+
+        if not lines_info:
             finding = make_finding(
                 code=SL001,
                 severity=Severity.ERROR,
@@ -1123,9 +1167,32 @@ def load_canonical(
             return EventList([], source=source_metadata), [finding]
 
         # Line 1: Header
-        hdr_line_no, hdr_str = non_empty_lines[0]
+        hdr_line_no, hdr_chunk, hdr_byte_offset, hdr_byte_end = lines_info[0]
+        hdr_ordinal = 1
+        _validate_stream_coordinates(hdr_byte_offset, hdr_byte_end, hdr_ordinal)
+        hdr_coord_ev: dict[str, Any] = {
+            "byte_offset": hdr_byte_offset,
+            "byte_end": hdr_byte_end,
+            "record_ordinal": hdr_ordinal,
+        }
+
+        hdr_decode = hdr_chunk
+        if hdr_line_no == 1 and hdr_decode.startswith(b"\xef\xbb\xbf"):
+            hdr_decode = hdr_decode[3:]
+
         try:
+            hdr_str = hdr_decode.decode("utf-8", errors="strict").strip()
             hdr_doc = _STRICT_JSON_DECODER.decode(hdr_str)
+        except UnicodeDecodeError as err:
+            finding = make_finding(
+                code=SL001,
+                severity=Severity.ERROR,
+                repairability=Repairability.MANUAL,
+                message_template="Invalid UTF-8 encoding on line {line} for record {record_id}",
+                source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
+                evidence={**hdr_coord_ev, "reason": "invalid_utf8", "detail": str(err)},
+            )
+            return EventList([], source=source_metadata), [finding]
         except (json.JSONDecodeError, ValueError) as err:
             finding = make_finding(
                 code=SL001,
@@ -1133,7 +1200,7 @@ def load_canonical(
                 repairability=Repairability.MANUAL,
                 message_template="Malformed record on line {line} for record {record_id}",
                 source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
-                evidence={"reason": "malformed_json", "detail": str(err)},
+                evidence={**hdr_coord_ev, "reason": "malformed_json", "detail": str(err)},
             )
             return EventList([], source=source_metadata), [finding]
 
@@ -1144,7 +1211,7 @@ def load_canonical(
                 repairability=Repairability.MANUAL,
                 message_template="Canonical document must be a JSON object on line {line}",
                 source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
-                evidence={"reason": "invalid_document_type"},
+                evidence={**hdr_coord_ev, "reason": "invalid_document_type"},
             )
             return EventList([], source=source_metadata), [finding]
 
@@ -1158,7 +1225,7 @@ def load_canonical(
                     "for record {record_id}"
                 ),
                 source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
-                evidence={"reason": "depth_exceeded"},
+                evidence={**hdr_coord_ev, "reason": "depth_exceeded"},
             )
             return EventList([], source=source_metadata), [finding]
 
@@ -1171,7 +1238,11 @@ def load_canonical(
                     repairability=Repairability.MANUAL,
                     message_template="Missing required field on line {line}",
                     source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
-                    evidence={"reason": "missing_schema_version_key", "field": "schema_version"},
+                    evidence={
+                        **hdr_coord_ev,
+                        "reason": "missing_schema_version_key",
+                        "field": "schema_version",
+                    },
                 )
             )
             return EventList([], source=source_metadata), sort_findings(findings)
@@ -1184,7 +1255,11 @@ def load_canonical(
                     repairability=Repairability.MANUAL,
                     message_template="Unsupported or invalid schema on line {line}",
                     source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
-                    evidence={"reason": "invalid_schema", "schema": str(schema_candidate)},
+                    evidence={
+                        **hdr_coord_ev,
+                        "reason": "invalid_schema",
+                        "schema": str(schema_candidate),
+                    },
                 )
             )
             return EventList([], source=source_metadata), sort_findings(findings)
@@ -1204,6 +1279,7 @@ def load_canonical(
                     message_template="Unsupported canonical format version on line {line}",
                     source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
                     evidence={
+                        **hdr_coord_ev,
                         "version_raw": str(raw_version),
                         "supported_set": tuple(sorted(SUPPORTED_CANONICAL_VERSIONS)),
                     },
@@ -1248,6 +1324,7 @@ def load_canonical(
                                 message_template="Unknown critical record on line {line}",
                                 source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
                                 evidence={
+                                    **hdr_coord_ev,
                                     "field_path": key,
                                     "type_value": _safe_type_value(hdr_doc[key]),
                                 },
@@ -1256,7 +1333,7 @@ def load_canonical(
                         has_emitted_hdr_sl302 = True
 
         # Lines 2+: Events
-        event_lines = non_empty_lines[1:]
+        event_lines = lines_info[1:]
         if (
             effective_limits.max_records is not None
             and len(event_lines) > effective_limits.max_records
@@ -1266,10 +1343,41 @@ def load_canonical(
             )
 
         events_stream: list[SessionEvent] = []
-        for ev_idx, (line_no, ev_str) in enumerate(event_lines):
+        for ev_idx, (line_no, ev_chunk, ev_byte_offset, ev_byte_end) in enumerate(event_lines):
             is_terminal = ev_idx == len(event_lines) - 1
+            ev_ordinal = ev_idx + 2
+            _validate_stream_coordinates(ev_byte_offset, ev_byte_end, ev_ordinal)
+            ev_coord_ev: dict[str, Any] = {
+                "byte_offset": ev_byte_offset,
+                "byte_end": ev_byte_end,
+                "record_ordinal": ev_ordinal,
+            }
             try:
+                ev_str = ev_chunk.decode("utf-8", errors="strict").strip()
                 ev_raw = _STRICT_JSON_DECODER.decode(ev_str)
+            except UnicodeDecodeError as err:
+                code = SL002 if is_terminal else SL001
+                rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
+                msg = (
+                    "Torn terminal record on line {line} for record {record_id}"
+                    if is_terminal
+                    else "Invalid UTF-8 encoding on line {line} for record {record_id}"
+                )
+                add_finding(
+                    make_finding(
+                        code=code,
+                        severity=Severity.ERROR,
+                        repairability=rep,
+                        message_template=msg,
+                        source=SourceRef(path=path_str, line=line_no, record_id=None),
+                        evidence={
+                            **ev_coord_ev,
+                            "reason": "invalid_utf8",
+                            "detail": str(err),
+                        },
+                    )
+                )
+                continue
             except (json.JSONDecodeError, ValueError) as err:
                 code = SL002 if is_terminal else SL001
                 rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
@@ -1285,7 +1393,11 @@ def load_canonical(
                         repairability=rep,
                         message_template=msg,
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
-                        evidence={"reason": "malformed_json", "detail": str(err)},
+                        evidence={
+                            **ev_coord_ev,
+                            "reason": "malformed_json",
+                            "detail": str(err),
+                        },
                     )
                 )
                 continue
@@ -1305,7 +1417,10 @@ def load_canonical(
                         repairability=rep,
                         message_template=msg,
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
-                        evidence={"reason": "event_not_dict"},
+                        evidence={
+                            **ev_coord_ev,
+                            "reason": "event_not_dict",
+                        },
                     )
                 )
                 continue
@@ -1321,7 +1436,10 @@ def load_canonical(
                             "for record {record_id}"
                         ),
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
-                        evidence={"reason": "depth_exceeded"},
+                        evidence={
+                            **ev_coord_ev,
+                            "reason": "depth_exceeded",
+                        },
                     )
                 )
                 continue
@@ -1332,6 +1450,9 @@ def load_canonical(
                 line_num=line_no,
                 path_str=path_str,
                 add_finding=add_finding,
+                byte_offset=ev_byte_offset,
+                byte_end=ev_byte_end,
+                record_ordinal=ev_ordinal,
             )
             events_stream.append(event)
 

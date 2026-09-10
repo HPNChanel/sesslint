@@ -173,13 +173,35 @@ def extract_record_id(raw_text: str | None, obj: Any | None = None) -> str | Non
     return None
 
 
+def _validate_stream_coordinates(byte_offset: int, byte_end: int, record_ordinal: int) -> None:
+    """Validate physical stream coordinate invariants (fail-closed, DEV-006)."""
+    if isinstance(byte_offset, bool) or not isinstance(byte_offset, int) or byte_offset < 0:
+        raise ValueError(f"Invalid byte_offset: {byte_offset!r} (must be integer >= 0)")
+    if isinstance(byte_end, bool) or not isinstance(byte_end, int) or byte_end < byte_offset:
+        raise ValueError(
+            f"Invalid byte_end: {byte_end!r} (must be integer >= byte_offset={byte_offset})"
+        )
+    if (
+        isinstance(record_ordinal, bool)
+        or not isinstance(record_ordinal, int)
+        or record_ordinal < 1
+    ):
+        raise ValueError(f"Invalid record_ordinal: {record_ordinal!r} (must be integer >= 1)")
+
+
 @dataclass(slots=True)
 class _RawLine:
-    """Internal container for a non-empty physical line read with length guards."""
+    """Internal container for a non-empty physical line read with length guards and coordinates."""
 
     line_number: int
     raw_bytes: bytes
     truncated_limit: bool
+    byte_offset: int = 0
+    byte_end: int = 0
+    record_ordinal: int = 1
+
+    def __post_init__(self) -> None:
+        _validate_stream_coordinates(self.byte_offset, self.byte_end, self.record_ordinal)
 
 
 def _process_line(
@@ -199,6 +221,11 @@ def _process_line(
     - Finding(SL001) if nonterminal line has any error (malformed record).
     """
     code = SL002 if is_terminal else SL001
+    coord_evidence: dict[str, Any] = {
+        "byte_offset": raw.byte_offset,
+        "byte_end": raw.byte_end,
+        "record_ordinal": raw.record_ordinal,
+    }
 
     # 1. Check if line length exceeded max_line_bytes
     if raw.truncated_limit:
@@ -207,25 +234,44 @@ def _process_line(
         msg_template = (
             "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
     # 2. Check for NUL bytes in record
     if b"\x00" in raw.raw_bytes:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
-    # 3. Check UTF-8 decoding
+    # 3. Check UTF-8 decoding (strip BOM on line 1 if present for decode only)
+    to_decode = raw.raw_bytes
+    if raw.line_number == 1 and to_decode.startswith(b"\xef\xbb\xbf"):
+        to_decode = to_decode[3:]
+
     try:
-        decoded_text = raw.raw_bytes.decode("utf-8", errors="strict").strip()
+        decoded_text = to_decode.decode("utf-8", errors="strict").strip()
     except UnicodeDecodeError:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
     # 4. Strict JSON decoding (rejects NaN, Infinity, 1e999, and maps recursion depth overflow)
     try:
@@ -237,7 +283,12 @@ def _process_line(
             "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
             "for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
     except (json.JSONDecodeError, ValueError):
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
@@ -246,7 +297,12 @@ def _process_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
     # 5. Check mapping structure
     if not isinstance(obj, dict):
@@ -257,7 +313,12 @@ def _process_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
     # 6. Check nesting depth limit
     if not check_nesting_depth(obj, limits.max_depth):
@@ -267,7 +328,12 @@ def _process_line(
             "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
             "for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
     # 7. Check if first non-empty record is session header
     if is_first_record and ("schema_version" in obj or "session_id" in obj):
@@ -282,7 +348,12 @@ def _process_line(
                 if is_terminal
                 else "Malformed record on line {line} for record {record_id}"
             )
-            return make_finding(code=code, message_template=msg_template, source=source)
+            return make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
 
     # 8. Event record validation (TASK-002 model)
     try:
@@ -296,7 +367,12 @@ def _process_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        return make_finding(code=code, message_template=msg_template, source=source)
+        return make_finding(
+            code=code,
+            message_template=msg_template,
+            source=source,
+            evidence=coord_evidence,
+        )
 
 
 def read_header(
@@ -422,7 +498,7 @@ def read_header(
 def iter_events(
     path: str | os.PathLike[str] | Path | BinaryIO,
     *,
-    limits: ReaderLimits = DEFAULT_READER_LIMITS,
+    limits: ReaderLimits | None = None,
 ) -> Iterator[SessionEvent | Finding]:
     """Stream a canonical session JSONL file line-by-line with hostile-input limits.
 
@@ -445,6 +521,7 @@ def iter_events(
         MaxRecordsExceededError: If record count exceeds limits.max_records.
         FileNotFoundError: If path does not exist.
     """
+    effective_limits = limits if limits is not None else DEFAULT_READER_LIMITS
     path_str: str
     stream: BinaryIO
     is_owned_file = False
@@ -459,10 +536,11 @@ def iter_events(
         try:
             if path_obj.is_file():
                 file_size = path_obj.stat().st_size
-                if file_size > limits.max_file_bytes:
+                if file_size > effective_limits.max_file_bytes:
                     raise FileTooLargeError(
                         f"File size {file_size} bytes exceeds maximum limit "
-                        f"({limits.max_file_bytes} bytes); split file into smaller sessions"
+                        f"({effective_limits.max_file_bytes} bytes); "
+                        f"split file into smaller sessions"
                     )
         except OSError:
             pass
@@ -481,24 +559,22 @@ def iter_events(
         has_any_records = False
 
         while True:
-            line_number += 1
-            chunk = stream.readline(limits.max_line_bytes + 1)
+            line_start_offset = total_bytes_read
+            chunk = stream.readline(effective_limits.max_line_bytes + 1)
             if not chunk:
                 break
 
+            line_number += 1
             total_bytes_read += len(chunk)
-            if total_bytes_read > limits.max_file_bytes:
+            if total_bytes_read > effective_limits.max_file_bytes:
                 raise FileTooLargeError(
-                    f"Stream exceeded maximum file size limit ({limits.max_file_bytes} bytes); "
+                    f"Stream exceeded maximum file size limit "
+                    f"({effective_limits.max_file_bytes} bytes); "
                     f"split file into smaller sessions"
                 )
 
-            # Strip UTF-8 BOM on first read
-            if line_number == 1 and chunk.startswith(b"\xef\xbb\xbf"):
-                chunk = chunk[3:]
-
             truncated = False
-            if len(chunk) > limits.max_line_bytes:
+            if len(chunk) > effective_limits.max_line_bytes:
                 truncated = True
                 # Drain remainder of runaway line without unbounded buffering
                 if not chunk.endswith(b"\n"):
@@ -507,10 +583,10 @@ def iter_events(
                         if not drain:
                             break
                         total_bytes_read += len(drain)
-                        if total_bytes_read > limits.max_file_bytes:
+                        if total_bytes_read > effective_limits.max_file_bytes:
                             raise FileTooLargeError(
                                 f"Stream exceeded maximum file size limit "
-                                f"({limits.max_file_bytes} bytes); "
+                                f"({effective_limits.max_file_bytes} bytes); "
                                 f"split file into smaller sessions"
                             )
                         if drain.endswith(b"\n"):
@@ -521,27 +597,35 @@ def iter_events(
             if not chunk.strip() and not truncated:
                 continue
 
+            record_count += 1
+            line_end_offset = line_start_offset + len(chunk)
             current_raw = _RawLine(
                 line_number=line_number,
                 raw_bytes=chunk,
                 truncated_limit=truncated,
+                byte_offset=line_start_offset,
+                byte_end=line_end_offset,
+                record_ordinal=record_count,
             )
 
             # If we had a previous non-empty line, it is definitively NONTERMINAL
             if pending_raw is not None:
                 has_any_records = True
-                is_first = record_count == 0
-                record_count += 1
-                if limits.max_records is not None and record_count > limits.max_records:
+                is_first = pending_raw.record_ordinal == 1
+                if (
+                    effective_limits.max_records is not None
+                    and pending_raw.record_ordinal > effective_limits.max_records
+                ):
                     raise MaxRecordsExceededError(
-                        f"Record count {record_count} exceeds limit of {limits.max_records}"
+                        f"Record count {pending_raw.record_ordinal} exceeds limit of "
+                        f"{effective_limits.max_records}"
                     )
 
                 item = _process_line(
                     pending_raw,
                     is_terminal=False,
                     path_str=path_str,
-                    limits=limits,
+                    limits=effective_limits,
                     is_first_record=is_first,
                 )
                 if item is not None:
@@ -552,18 +636,21 @@ def iter_events(
         # EOF reached: pending_raw is the final non-empty record in the stream (TERMINAL)
         if pending_raw is not None:
             has_any_records = True
-            is_first = record_count == 0
-            record_count += 1
-            if limits.max_records is not None and record_count > limits.max_records:
+            is_first = pending_raw.record_ordinal == 1
+            if (
+                effective_limits.max_records is not None
+                and pending_raw.record_ordinal > effective_limits.max_records
+            ):
                 raise MaxRecordsExceededError(
-                    f"Record count {record_count} exceeds limit of {limits.max_records}"
+                    f"Record count {pending_raw.record_ordinal} exceeds limit of "
+                    f"{effective_limits.max_records}"
                 )
 
             item = _process_line(
                 pending_raw,
                 is_terminal=True,
                 path_str=path_str,
-                limits=limits,
+                limits=effective_limits,
                 is_first_record=is_first,
             )
             if item is not None:

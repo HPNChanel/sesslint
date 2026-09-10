@@ -9,6 +9,7 @@ critical record fields to detector SL302 while preserving graph integrity.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -318,7 +319,10 @@ def _load_claude_code_internal(
     stream: BinaryIO
     is_owned_file = False
 
-    if isinstance(path, (str, os.PathLike, Path)):
+    if isinstance(path, bytes):
+        stream = io.BytesIO(path)
+        path_str = "<bytes>"
+    elif isinstance(path, (str, os.PathLike, Path)):
         path_obj = Path(path)
         path_str = str(path_obj).replace("\\", "/")
         if not path_obj.exists():
@@ -353,21 +357,18 @@ def _load_claude_code_internal(
         pending_raw: _RawLine | None = None
 
         while True:
-            line_number += 1
+            line_start_offset = total_bytes_read
             chunk = stream.readline(effective_limits.max_line_bytes + 1)
             if not chunk:
                 break
 
+            line_number += 1
             total_bytes_read += len(chunk)
             if total_bytes_read > effective_limits.max_file_bytes:
                 raise FileTooLargeError(
                     f"Stream exceeded maximum file size limit "
                     f"({effective_limits.max_file_bytes} bytes)"
                 )
-
-            # Strip UTF-8 BOM on first line
-            if line_number == 1 and chunk.startswith(b"\xef\xbb\xbf"):
-                chunk = chunk[3:]
 
             truncated = False
             if len(chunk) > effective_limits.max_line_bytes:
@@ -389,20 +390,24 @@ def _load_claude_code_internal(
             if not chunk.strip() and not truncated:
                 continue
 
+            record_count += 1
+            line_end_offset = line_start_offset + len(chunk)
             current_raw = _RawLine(
                 line_number=line_number,
                 raw_bytes=chunk,
                 truncated_limit=truncated,
+                byte_offset=line_start_offset,
+                byte_end=line_end_offset,
+                record_ordinal=record_count,
             )
 
             if pending_raw is not None:
-                record_count += 1
                 if (
                     effective_limits.max_records is not None
-                    and record_count > effective_limits.max_records
+                    and pending_raw.record_ordinal > effective_limits.max_records
                 ):
                     raise MaxRecordsExceededError(
-                        f"Record count {record_count} exceeds limit of "
+                        f"Record count {pending_raw.record_ordinal} exceeds limit of "
                         f"{effective_limits.max_records}"
                     )
 
@@ -420,13 +425,13 @@ def _load_claude_code_internal(
 
         # Handle final terminal record (EOF reached)
         if pending_raw is not None:
-            record_count += 1
             if (
                 effective_limits.max_records is not None
-                and record_count > effective_limits.max_records
+                and pending_raw.record_ordinal > effective_limits.max_records
             ):
                 raise MaxRecordsExceededError(
-                    f"Record count {record_count} exceeds limit of {effective_limits.max_records}"
+                    f"Record count {pending_raw.record_ordinal} exceeds limit of "
+                    f"{effective_limits.max_records}"
                 )
 
             _process_claude_line(
@@ -482,6 +487,11 @@ def _process_claude_line(
 ) -> None:
     """Process a single physical line, emitting either SessionEvent or syntax/integrity findings."""
     code = SL002 if is_terminal else SL001
+    coord_evidence: dict[str, Any] = {
+        "byte_offset": raw.byte_offset,
+        "byte_end": raw.byte_end,
+        "record_ordinal": raw.record_ordinal,
+    }
 
     # 1. Line length limit check
     if raw.truncated_limit:
@@ -490,7 +500,14 @@ def _process_claude_line(
         msg_template = (
             "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     # 2. Check for NUL bytes
@@ -498,19 +515,37 @@ def _process_claude_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
-    # 3. UTF-8 decode
+    # 3. UTF-8 decode (strip BOM on line 1 if present for decode only)
+    to_decode = raw.raw_bytes
+    if raw.line_number == 1 and to_decode.startswith(b"\xef\xbb\xbf"):
+        to_decode = to_decode[3:]
+
     try:
-        decoded_text = raw.raw_bytes.decode("utf-8", errors="strict").strip()
+        decoded_text = to_decode.decode("utf-8", errors="strict").strip()
     except UnicodeDecodeError:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     # 4. Strict JSON decode
@@ -523,7 +558,14 @@ def _process_claude_line(
             "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
             "for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
     except (json.JSONDecodeError, ValueError):
         rec_id = extract_record_id(decoded_text)
@@ -533,7 +575,14 @@ def _process_claude_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     # 5. Check object is dictionary
@@ -545,7 +594,14 @@ def _process_claude_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     # 6. Check nesting depth
@@ -556,7 +612,14 @@ def _process_claude_line(
             "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
             "for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     # Discover session_id if present
@@ -623,6 +686,7 @@ def _process_claude_line(
                     ),
                     source=source,
                     evidence={
+                        **coord_evidence,
                         "version_raw": version_raw,
                         "supported_set": tuple(sorted(SUPPORTED_CLAUDE_VERSIONS)),
                     },
@@ -642,6 +706,7 @@ def _process_claude_line(
                     ),
                     source=source,
                     evidence={
+                        **coord_evidence,
                         "version_raw": "<invalid_version_type>",
                         "supported_set": tuple(sorted(SUPPORTED_CLAUDE_VERSIONS)),
                     },
@@ -680,6 +745,7 @@ def _process_claude_line(
             message_template="Unknown critical record on line {line} for record {record_id}",
             source=source,
             evidence={
+                **coord_evidence,
                 "field_path": "type",
                 "type_value": type_val,
                 "record_id": rec_id_str,
@@ -706,6 +772,7 @@ def _process_claude_line(
                     ),
                     source=source,
                     evidence={
+                        **coord_evidence,
                         "field_path": key,
                         "type_value": _safe_type_value(obj[key]),
                         "record_id": rec_id_str,

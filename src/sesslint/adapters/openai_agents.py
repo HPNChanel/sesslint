@@ -422,11 +422,11 @@ def load_openai_agents(
             )
             return EventList([], source=SourceMetadata()), [finding]
 
-        data = full_bytes
-        if data.startswith(b"\xef\xbb\xbf"):
-            data = data[3:]
+        stripped_prefix = full_bytes
+        if stripped_prefix.startswith(b"\xef\xbb\xbf"):
+            stripped_prefix = stripped_prefix[3:]
 
-        stripped_data = data.strip()
+        stripped_data = stripped_prefix.strip()
         if not stripped_data:
             return EventList([], source=SourceMetadata()), []
 
@@ -449,8 +449,8 @@ def load_openai_agents(
                 is_json_doc = True
 
         if is_json_doc:
-            return _load_openai_agents_json(data, path_str=path_str, limits=effective_limits)
-        return _load_openai_agents_jsonl(data, path_str=path_str, limits=effective_limits)
+            return _load_openai_agents_json(full_bytes, path_str=path_str, limits=effective_limits)
+        return _load_openai_agents_jsonl(full_bytes, path_str=path_str, limits=effective_limits)
 
     finally:
         if is_owned_file:
@@ -463,7 +463,14 @@ def _load_openai_agents_json(
     path_str: str,
     limits: ReaderLimits,
 ) -> tuple[EventList, list[Finding]]:
-    """Parse a single JSON document export with hostile input validation."""
+    """Parse a single JSON document export with hostile input validation.
+
+    Note on source coordinates: in a single-doc JSON export, internal record
+    elements cannot be mapped to physical stream byte offsets without an
+    AST/parser with token offset tracking. Therefore, single-doc JSON records
+    emit `record_ordinal` and `line_number` (best-available), without faked
+    byte offsets.
+    """
     findings: list[Finding] = []
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
 
@@ -480,8 +487,11 @@ def _load_openai_agents_json(
         return EventList([], source=source_metadata), [finding]
 
     # UTF-8 decoding
+    to_decode = data
+    if to_decode.startswith(b"\xef\xbb\xbf"):
+        to_decode = to_decode[3:]
     try:
-        decoded_text = data.decode("utf-8", errors="strict")
+        decoded_text = to_decode.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
         finding = make_finding(
             code=SL001,
@@ -619,6 +629,7 @@ def _load_openai_agents_json(
             findings=findings,
             source_metadata=source_metadata,
             seen_version_sl301=seen_version_sl301,
+            record_ordinal=idx + 1,
         )
 
     return EventList(events, source=source_metadata), sort_findings(findings)
@@ -636,33 +647,50 @@ def _load_openai_agents_jsonl(
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
     seen_version_sl301 = False
 
-    lines = data.split(b"\n")
-    total_lines = len(lines)
-    record_count = 0
-
-    pending_raw: _RawLine | None = None
+    current_offset = 0
     line_number = 0
+    record_count = 0
+    total_len = len(data)
+    pending_raw: _RawLine | None = None
 
-    for idx, line_chunk in enumerate(lines):
+    while current_offset < total_len:
         line_number += 1
-        if idx == total_lines - 1 and not line_chunk and pending_raw is not None:
-            break
+        nl_pos = data.find(b"\n", current_offset)
+        if nl_pos == -1:
+            line_chunk = data[current_offset:]
+            line_end = total_len
+        else:
+            line_end = nl_pos + 1
+            line_chunk = data[current_offset:line_end]
+
+        line_start = current_offset
+        current_offset = line_end
 
         truncated = len(line_chunk) > limits.max_line_bytes
         if not line_chunk.strip() and not truncated:
             continue
 
+        record_count += 1
+        record_bytes = line_chunk
+        rec_byte_end = line_end
+        if truncated:
+            record_bytes = line_chunk[: limits.max_line_bytes + 1]
+            rec_byte_end = line_start + len(record_bytes)
+
         current_raw = _RawLine(
             line_number=line_number,
-            raw_bytes=line_chunk,
+            raw_bytes=record_bytes,
             truncated_limit=truncated,
+            byte_offset=line_start,
+            byte_end=rec_byte_end,
+            record_ordinal=record_count,
         )
 
         if pending_raw is not None:
-            record_count += 1
-            if limits.max_records is not None and record_count > limits.max_records:
+            if limits.max_records is not None and pending_raw.record_ordinal > limits.max_records:
                 raise MaxRecordsExceededError(
-                    f"Record count {record_count} exceeds limit of {limits.max_records}"
+                    f"Record count {pending_raw.record_ordinal} exceeds limit of "
+                    f"{limits.max_records}"
                 )
             _process_jsonl_line(
                 pending_raw,
@@ -678,10 +706,9 @@ def _load_openai_agents_jsonl(
         pending_raw = current_raw
 
     if pending_raw is not None:
-        record_count += 1
-        if limits.max_records is not None and record_count > limits.max_records:
+        if limits.max_records is not None and pending_raw.record_ordinal > limits.max_records:
             raise MaxRecordsExceededError(
-                f"Record count {record_count} exceeds limit of {limits.max_records}"
+                f"Record count {pending_raw.record_ordinal} exceeds limit of {limits.max_records}"
             )
         _process_jsonl_line(
             pending_raw,
@@ -710,6 +737,11 @@ def _process_jsonl_line(
 ) -> None:
     """Process a single JSONL line, emitting SessionEvent or SL001/SL002."""
     code = SL002 if is_terminal else SL001
+    coord_evidence: dict[str, Any] = {
+        "byte_offset": raw.byte_offset,
+        "byte_end": raw.byte_end,
+        "record_ordinal": raw.record_ordinal,
+    }
 
     if raw.truncated_limit:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
@@ -717,25 +749,51 @@ def _process_jsonl_line(
         msg_template = (
             "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     if b"\x00" in raw.raw_bytes:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
+    # Strip UTF-8 BOM on line 1 if present for decode only
+    to_decode = raw.raw_bytes
+    if raw.line_number == 1 and to_decode.startswith(b"\xef\xbb\xbf"):
+        to_decode = to_decode[3:]
+
     try:
-        decoded_text = raw.raw_bytes.decode("utf-8", errors="strict").strip()
+        decoded_text = to_decode.decode("utf-8", errors="strict").strip()
     except UnicodeDecodeError:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     try:
@@ -747,7 +805,14 @@ def _process_jsonl_line(
             "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
             "for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
     except (json.JSONDecodeError, ValueError):
         rec_id = extract_record_id(decoded_text)
@@ -757,7 +822,14 @@ def _process_jsonl_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     if not isinstance(obj, dict):
@@ -767,7 +839,14 @@ def _process_jsonl_line(
             if is_terminal
             else "Malformed record on line {line} for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     if not check_nesting_depth(obj, limits.max_depth):
@@ -777,7 +856,14 @@ def _process_jsonl_line(
             "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
             "for record {record_id}"
         )
-        findings.append(make_finding(code=code, message_template=msg_template, source=source))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=source,
+                evidence=coord_evidence,
+            )
+        )
         return
 
     _process_openai_item(
@@ -788,6 +874,9 @@ def _process_jsonl_line(
         findings=findings,
         source_metadata=source_metadata,
         seen_version_sl301=seen_version_sl301,
+        byte_offset=raw.byte_offset,
+        byte_end=raw.byte_end,
+        record_ordinal=raw.record_ordinal,
     )
 
 
@@ -800,12 +889,23 @@ def _check_version(
     findings: list[Finding],
     source_metadata: SourceMetadata,
     seen_version_sl301: bool,
+    byte_offset: int | None = None,
+    byte_end: int | None = None,
+    record_ordinal: int | None = None,
 ) -> bool:
     """Evaluate format version against supported registry and record SL301 if obsolete."""
     if version_candidate is None:
         return seen_version_sl301
 
     rec_id_str = rec_id if rec_id is not None else "rec_0"
+
+    coord_ev: dict[str, Any] = {}
+    if byte_offset is not None:
+        coord_ev["byte_offset"] = byte_offset
+    if byte_end is not None:
+        coord_ev["byte_end"] = byte_end
+    if record_ordinal is not None:
+        coord_ev["record_ordinal"] = record_ordinal
 
     if isinstance(version_candidate, (str, int, float)):
         version_raw = str(version_candidate).strip()
@@ -822,6 +922,7 @@ def _check_version(
                 evidence={
                     "version_raw": version_raw,
                     "supported_set": tuple(sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS)),
+                    **coord_ev,
                 },
             )
             findings.append(finding_sl301)
@@ -838,6 +939,7 @@ def _check_version(
                 evidence={
                     "version_raw": "<invalid_version_type>",
                     "supported_set": tuple(sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS)),
+                    **coord_ev,
                 },
             )
             findings.append(finding_sl301)
@@ -854,6 +956,9 @@ def _process_openai_item(
     findings: list[Finding],
     source_metadata: SourceMetadata,
     seen_version_sl301: bool,
+    byte_offset: int | None = None,
+    byte_end: int | None = None,
+    record_ordinal: int | None = None,
 ) -> None:
     """Canonicalize a single item dict into a SessionEvent, emitting findings as needed."""
     seq_index = len(events)
@@ -867,6 +972,14 @@ def _process_openai_item(
     parent_id = (
         str(raw_parent).strip() if raw_parent is not None and str(raw_parent).strip() else None
     )
+
+    coord_ev: dict[str, Any] = {}
+    if byte_offset is not None:
+        coord_ev["byte_offset"] = byte_offset
+    if byte_end is not None:
+        coord_ev["byte_end"] = byte_end
+    if record_ordinal is not None:
+        coord_ev["record_ordinal"] = record_ordinal
 
     # Check for version candidate on item level
     version_candidate = (
@@ -884,6 +997,9 @@ def _process_openai_item(
             findings=findings,
             source_metadata=source_metadata,
             seen_version_sl301=seen_version_sl301,
+            byte_offset=byte_offset,
+            byte_end=byte_end,
+            record_ordinal=record_ordinal,
         )
 
     # Type resolution and role disambiguation
@@ -932,6 +1048,7 @@ def _process_openai_item(
                 "field_path": "type",
                 "type_value": type_val,
                 "record_id": rec_id_str,
+                **coord_ev,
             },
         )
         findings.append(finding_sl302)
@@ -958,6 +1075,7 @@ def _process_openai_item(
                         "field_path": key,
                         "type_value": _safe_type_value(obj[key]),
                         "record_id": rec_id_str,
+                        **coord_ev,
                     },
                 )
                 findings.append(finding_sl302)
