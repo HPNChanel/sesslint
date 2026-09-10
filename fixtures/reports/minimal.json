@@ -49,5 +49,38 @@
     "total": 2
   },
   "assurance": "A1",
-  "limitation": "Relationships may still be invalid."
+  "limitation": "Relationships may still be invalid.",
+  "coverage": {
+    "adapter": {
+      "id": "canonical",
+      "version": "1.0.0"
+    },
+    "performed": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL201",
+      "SL202",
+      "SL203",
+      "SL301",
+      "SL302"
+    ],
+    "profile": {
+      "id": "neutral",
+      "version": "1.0.0"
+    },
+    "skipped": []
+  }
 }

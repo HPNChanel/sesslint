@@ -75,6 +75,7 @@ from sesslint.repair.recipes_sl002 import (
     register_all as register_all_sl002_recipes,
 )
 from sesslint.repair.registry import get_recipe
+from sesslint.report import Coverage, CoverageSkip
 
 if TYPE_CHECKING:
     from sesslint.report import RepairManifest
@@ -252,8 +253,15 @@ def run_all_checks(
     source_path: str = "<repaired>",
     context: CheckContext | None = None,
     adapter: str | None = None,
-) -> list[Finding]:
-    """Run all active rule checks enabled by the profile over canonical events."""
+    adapter_skips: Sequence[CoverageSkip] = (),
+    adapter_performed: Sequence[str] = (),
+    return_coverage: bool = False,
+) -> Any:
+    """Run all active rule checks enabled by the profile over canonical events.
+
+    When return_coverage is True, returns (findings, Coverage) collecting executed
+    check families and rules alongside gated or skipped rules with closed reasons (FR-047).
+    """
     resolved_profile: Profile
     if profile is None:
         resolved_profile = NEUTRAL_PROFILE
@@ -268,40 +276,194 @@ def run_all_checks(
     enabled = set(resolved_profile.enabled_rules)
     findings: list[Finding] = []
 
-    if "SL003" in enabled:
-        findings.extend(check_identities(events, source_path=source_path, context=context))
+    performed_checks: set[str] = set()
+    skipped_checks: list[CoverageSkip] = list(adapter_skips)
+    already_skipped_checks: set[str] = {s.check for s in skipped_checks}
 
-    graph_rules = {"SL004", "SL005", "SL006", "SL007"}
-    if graph_rules & enabled:
-        findings.extend(check_graph(events, source_path=source_path, context=context))
+    # Ingest adapter checks
+    if adapter_performed:
+        for ap in adapter_performed:
+            if ap in enabled and ap not in already_skipped_checks:
+                performed_checks.add(ap)
+            elif ap not in enabled and ap not in already_skipped_checks:
+                skipped_checks.append(
+                    CoverageSkip(
+                        check=ap, reason="profile-gated", detail="rule disabled by profile"
+                    )
+                )
+                already_skipped_checks.add(ap)
+    else:
+        adapter_rules = ("SL001", "SL002", "SL301", "SL302")
+        for ar in adapter_rules:
+            if ar not in already_skipped_checks:
+                if ar in enabled:
+                    performed_checks.add(ar)
+                else:
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check=ar, reason="profile-gated", detail="rule disabled by profile"
+                        )
+                    )
+                    already_skipped_checks.add(ar)
 
-    tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
-    if tp1_rules & enabled:
-        findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
+    is_empty_input = len(events) == 0
+    has_version_abort = any(s.reason == "version-gated" for s in adapter_skips)
+    has_cap_abort = any(s.reason == "cap-exceeded" for s in adapter_skips)
 
-    tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
-    if tp2_rules & enabled:
-        findings.extend(
-            check_tool_pairing_2(
-                events,
-                source_path=source_path,
-                profile=resolved_profile,
-                context=context,
+    families: list[tuple[str, tuple[str, ...]]] = [
+        ("identity", ("SL003",)),
+        ("graph", ("SL004", "SL005", "SL006", "SL007")),
+        ("tool_pairing_1", ("SL101", "SL102", "SL103", "SL104")),
+        ("tool_pairing_2", ("SL105", "SL106", "SL107", "SL108")),
+        ("checkpoint", ("SL201", "SL202", "SL203")),
+    ]
+
+    for fam_name, fam_rules in families:
+        fam_enabled_rules = [r for r in fam_rules if r in enabled]
+        if not fam_enabled_rules:
+            if fam_name not in already_skipped_checks:
+                skipped_checks.append(
+                    CoverageSkip(
+                        check=fam_name,
+                        reason="profile-gated",
+                        detail="family disabled by profile",
+                    )
+                )
+                already_skipped_checks.add(fam_name)
+            for r in fam_rules:
+                if r not in already_skipped_checks:
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check=r, reason="profile-gated", detail="rule disabled by profile"
+                        )
+                    )
+                    already_skipped_checks.add(r)
+        elif is_empty_input:
+            if fam_name not in already_skipped_checks:
+                skipped_checks.append(
+                    CoverageSkip(
+                        check=fam_name,
+                        reason="empty-input",
+                        detail="zero records in event stream",
+                    )
+                )
+                already_skipped_checks.add(fam_name)
+            for r in fam_rules:
+                if r not in already_skipped_checks:
+                    if r in enabled:
+                        skipped_checks.append(
+                            CoverageSkip(
+                                check=r,
+                                reason="empty-input",
+                                detail="zero records in event stream",
+                            )
+                        )
+                    else:
+                        skipped_checks.append(
+                            CoverageSkip(
+                                check=r,
+                                reason="profile-gated",
+                                detail="rule disabled by profile",
+                            )
+                        )
+                    already_skipped_checks.add(r)
+        elif has_version_abort:
+            if fam_name not in already_skipped_checks:
+                skipped_checks.append(
+                    CoverageSkip(
+                        check=fam_name,
+                        reason="version-gated",
+                        detail="unsupported format version (SL301)",
+                    )
+                )
+                already_skipped_checks.add(fam_name)
+            for r in fam_rules:
+                if r not in already_skipped_checks:
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check=r,
+                            reason="version-gated",
+                            detail="unsupported format version (SL301)",
+                        )
+                    )
+                    already_skipped_checks.add(r)
+        elif has_cap_abort:
+            if fam_name not in already_skipped_checks:
+                skipped_checks.append(
+                    CoverageSkip(
+                        check=fam_name,
+                        reason="cap-exceeded",
+                        detail="stream limit cap exceeded",
+                    )
+                )
+                already_skipped_checks.add(fam_name)
+            for r in fam_rules:
+                if r not in already_skipped_checks:
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check=r,
+                            reason="cap-exceeded",
+                            detail="stream limit cap exceeded",
+                        )
+                    )
+                    already_skipped_checks.add(r)
+        else:
+            performed_checks.add(fam_name)
+            for r in fam_rules:
+                if r in enabled:
+                    performed_checks.add(r)
+                elif r not in already_skipped_checks:
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check=r, reason="profile-gated", detail="rule disabled by profile"
+                        )
+                    )
+                    already_skipped_checks.add(r)
+
+    if not is_empty_input and not has_version_abort and not has_cap_abort:
+        if "SL003" in enabled:
+            findings.extend(check_identities(events, source_path=source_path, context=context))
+
+        graph_rules = {"SL004", "SL005", "SL006", "SL007"}
+        if graph_rules & enabled:
+            findings.extend(check_graph(events, source_path=source_path, context=context))
+
+        tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
+        if tp1_rules & enabled:
+            findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
+
+        tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
+        if tp2_rules & enabled:
+            findings.extend(
+                check_tool_pairing_2(
+                    events,
+                    source_path=source_path,
+                    profile=resolved_profile,
+                    context=context,
+                )
             )
-        )
 
-    cp_rules = {"SL201", "SL202", "SL203"}
-    if cp_rules & enabled:
-        findings.extend(
-            check_checkpoint(
-                events,
-                source_path=source_path,
-                checkpoint_sensitivity=resolved_profile.checkpoint_sensitivity,
-                context=context,
+        cp_rules = {"SL201", "SL202", "SL203"}
+        if cp_rules & enabled:
+            findings.extend(
+                check_checkpoint(
+                    events,
+                    source_path=source_path,
+                    checkpoint_sensitivity=resolved_profile.checkpoint_sensitivity,
+                    context=context,
+                )
             )
-        )
 
-    return [f for f in findings if f.code in enabled]
+    filtered_findings = [f for f in findings if f.code in enabled]
+    if return_coverage:
+        cov = Coverage(
+            performed=tuple(sorted(performed_checks)),
+            skipped=tuple(sorted(skipped_checks)),
+            adapter={"id": context.adapter_id, "version": context.adapter_version},
+            profile={"id": context.profile_id, "version": context.profile_version},
+        )
+        return filtered_findings, cov
+    return filtered_findings
 
 
 def execute(

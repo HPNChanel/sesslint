@@ -109,6 +109,17 @@ def compute_assurance(
     return assurance, ASSURANCE_LIMITATIONS["A3"]
 
 
+VALID_COVERAGE_SKIP_REASONS: Final[frozenset[str]] = frozenset(
+    {
+        "profile-gated",
+        "adapter-not-applicable",
+        "version-gated",
+        "empty-input",
+        "cap-exceeded",
+        "single-doc-fallback",
+    }
+)
+
 KNOWN_REPORT_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "schema_version",
@@ -119,6 +130,7 @@ KNOWN_REPORT_FIELDS: Final[frozenset[str]] = frozenset(
         "counts",
         "assurance",
         "limitation",
+        "coverage",
         "repro",
         "content_warning",
         "included_content",
@@ -151,6 +163,7 @@ REQUIRED_REPORT_FIELDS: Final[frozenset[str]] = frozenset(
         "counts",
         "assurance",
         "limitation",
+        "coverage",
     }
 )
 
@@ -242,6 +255,166 @@ class Counts:
         }
 
 
+def _skip_sort_key(s: CoverageSkip) -> tuple[str, str, str]:
+    return (s.check, s.reason, s.detail)
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageSkip:
+    """Record of a check or check-family skipped during evaluation (FR-047)."""
+
+    check: str
+    reason: str
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.check, str) or not self.check.strip():
+            raise SchemaError(f"CoverageSkip.check must be a non-empty string, got {self.check!r}")
+        if self.reason not in VALID_COVERAGE_SKIP_REASONS:
+            valid_sorted = sorted(VALID_COVERAGE_SKIP_REASONS)
+            raise SchemaError(
+                f"CoverageSkip.reason must be one of {valid_sorted}, got {self.reason!r}"
+            )
+        if not isinstance(self.detail, str):
+            raise SchemaError(
+                f"CoverageSkip.detail must be a string, got {type(self.detail).__name__}"
+            )
+
+        norm_check = self.check.strip()
+        norm_detail = self.detail.strip()
+        try:
+            enforce_content_free_text(norm_check, context="CoverageSkip.check")
+        except FindingError as err:
+            raise ContentLeakError(f"Intrinsic content leak in CoverageSkip.check: {err}") from err
+        try:
+            enforce_content_free_text(norm_detail, context="CoverageSkip.detail")
+        except FindingError as err:
+            raise ContentLeakError(f"Intrinsic content leak in CoverageSkip.detail: {err}") from err
+
+        if norm_check != self.check:
+            object.__setattr__(self, "check", norm_check)
+        if norm_detail != self.detail:
+            object.__setattr__(self, "detail", norm_detail)
+
+    def to_dict(self) -> dict[str, str]:
+        """Convert CoverageSkip to dictionary."""
+        return {
+            "check": self.check,
+            "detail": self.detail,
+            "reason": self.reason,
+        }
+
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(other, CoverageSkip):
+            return NotImplemented
+        return _skip_sort_key(self) < _skip_sort_key(other)
+
+    def __le__(self, other: Any) -> bool:
+        if not isinstance(other, CoverageSkip):
+            return NotImplemented
+        return _skip_sort_key(self) <= _skip_sort_key(other)
+
+    def __gt__(self, other: Any) -> bool:
+        if not isinstance(other, CoverageSkip):
+            return NotImplemented
+        return _skip_sort_key(self) > _skip_sort_key(other)
+
+    def __ge__(self, other: Any) -> bool:
+        if not isinstance(other, CoverageSkip):
+            return NotImplemented
+        return _skip_sort_key(self) >= _skip_sort_key(other)
+
+
+@dataclass(frozen=True, slots=True)
+class Coverage:
+    """Immutable record of checks performed and skipped, binding versions (FR-047)."""
+
+    performed: tuple[str, ...]
+    skipped: tuple[CoverageSkip, ...]
+    adapter: Mapping[str, str]
+    profile: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.performed, (tuple, list, set)):
+            raise SchemaError(
+                f"Coverage.performed must be a sequence of strings, "
+                f"got {type(self.performed).__name__}"
+            )
+        for idx, item in enumerate(self.performed):
+            if not isinstance(item, str) or not item.strip():
+                raise SchemaError(
+                    f"Coverage.performed[{idx}] must be a non-empty string, got {item!r}"
+                )
+        object.__setattr__(self, "performed", tuple(sorted(self.performed)))
+
+        if not isinstance(self.skipped, (tuple, list, set)):
+            raise SchemaError(
+                f"Coverage.skipped must be a sequence of CoverageSkip, "
+                f"got {type(self.skipped).__name__}"
+            )
+        for idx, s in enumerate(self.skipped):
+            if not isinstance(s, CoverageSkip):
+                raise SchemaError(
+                    f"Coverage.skipped[{idx}] must be a CoverageSkip instance, "
+                    f"got {type(s).__name__}"
+                )
+        object.__setattr__(self, "skipped", tuple(sorted(self.skipped, key=_skip_sort_key)))
+
+        if not isinstance(self.adapter, Mapping):
+            raise SchemaError(
+                f"Coverage.adapter must be a Mapping, got {type(self.adapter).__name__}"
+            )
+        ad_dict = dict(self.adapter)
+        if "id" not in ad_dict and "name" in ad_dict:
+            ad_dict["id"] = ad_dict["name"]
+        if "id" not in ad_dict:
+            raise SchemaError("Coverage.adapter must contain 'id'")
+        if "version" not in ad_dict:
+            raise SchemaError("Coverage.adapter must contain 'version'")
+        if ad_dict != self.adapter:
+            object.__setattr__(self, "adapter", dict(sorted(ad_dict.items())))
+
+        if not isinstance(self.profile, Mapping):
+            raise SchemaError(
+                f"Coverage.profile must be a Mapping, got {type(self.profile).__name__}"
+            )
+        pr_dict = dict(self.profile)
+        if "id" not in pr_dict and "name" in pr_dict:
+            pr_dict["id"] = pr_dict["name"]
+        if "id" not in pr_dict:
+            raise SchemaError("Coverage.profile must contain 'id'")
+        if "version" not in pr_dict:
+            raise SchemaError("Coverage.profile must contain 'version'")
+        if pr_dict != self.profile:
+            object.__setattr__(self, "profile", dict(sorted(pr_dict.items())))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert Coverage to dictionary matching schema."""
+        ad_out = {"id": self.adapter["id"], "version": self.adapter["version"]}
+        if "name" in self.adapter:
+            ad_out["name"] = self.adapter["name"]
+        pr_out = {"id": self.profile["id"], "version": self.profile["version"]}
+        if "name" in self.profile:
+            pr_out["name"] = self.profile["name"]
+        return {
+            "adapter": dict(sorted(ad_out.items())),
+            "performed": list(self.performed),
+            "profile": dict(sorted(pr_out.items())),
+            "skipped": [s.to_dict() for s in sorted(self.skipped, key=_skip_sort_key)],
+        }
+
+
+def _default_coverage() -> Coverage:
+    from sesslint.profiles.builtin import ALL_RULES
+
+    return Coverage(
+        performed=ALL_RULES,
+        skipped=(),
+        adapter={"id": "canonical", "version": "1.0.0"},
+        profile={"id": "neutral", "version": "1.0.0"},
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Report:
     """Immutable integrity check report envelope (sesslint.report/v1).
@@ -259,6 +432,7 @@ class Report:
     counts: Counts
     assurance: Assurance
     limitation: str
+    coverage: Coverage = field(default_factory=_default_coverage)
 
     def __post_init__(self) -> None:
         if self.schema_version != REPORT_SCHEMA_VERSION:
@@ -291,6 +465,11 @@ class Report:
             raise AssuranceError(
                 f"Report.limitation is required and must be non-empty for assurance "
                 f"level {self.assurance!r}"
+            )
+
+        if not isinstance(self.coverage, Coverage):
+            raise SchemaError(
+                f"Report.coverage must be a Coverage instance, got {type(self.coverage).__name__}"
             )
 
         if not isinstance(self.findings, tuple):
@@ -335,14 +514,15 @@ class Report:
     def to_dict(self) -> dict[str, Any]:
         """Convert Report to schema-compliant dictionary representation."""
         return {
+            "assurance": self.assurance,
+            "counts": self.counts.to_dict(),
+            "coverage": self.coverage.to_dict(),
+            "findings": [f.to_dict() for f in self.findings],
+            "limitation": self.limitation,
             "schema_version": self.schema_version,
             "session_id": self.session_id,
             "source_fingerprint": self.source_fingerprint,
             "tool_version": self.tool_version,
-            "findings": [f.to_dict() for f in self.findings],
-            "counts": self.counts.to_dict(),
-            "assurance": self.assurance,
-            "limitation": self.limitation,
         }
 
 
@@ -577,6 +757,7 @@ def build_report(
     findings: Iterable[Finding],
     assurance: Assurance,
     limitation: str,
+    coverage: Coverage | None = None,
 ) -> Report:
     """Construct an immutable Report from findings, deriving counts and sorting in total order.
 
@@ -609,6 +790,11 @@ def build_report(
             f"limitation is required and must be non-empty for assurance level {assurance!r}"
         )
 
+    if coverage is None:
+        coverage = _default_coverage()
+    elif not isinstance(coverage, Coverage):
+        raise SchemaError(f"coverage must be a Coverage instance, got {type(coverage).__name__}")
+
     sorted_findings = tuple(sort_findings(findings))
 
     # Compute counts in O(n) without retaining payload
@@ -637,6 +823,7 @@ def build_report(
         counts=counts,
         assurance=assurance,
         limitation=limitation.strip(),
+        coverage=coverage,
     )
 
 
@@ -871,6 +1058,105 @@ def parse_report(obj: Mapping[str, Any] | str) -> Report:
     if not isinstance(limitation, str) or not limitation.strip():
         raise AssuranceError(f"Report limitation must be a non-empty string, got {limitation!r}")
 
+    raw_cov = data["coverage"]
+    if not isinstance(raw_cov, Mapping):
+        raise SchemaError(f"Report.coverage must be a mapping, got {type(raw_cov).__name__}")
+    for cov_k in raw_cov:
+        if cov_k not in ("performed", "skipped", "adapter", "profile"):
+            raise UnknownFieldError(f"Unknown field in coverage: '{cov_k}'", field_name=cov_k)
+    for req_cov in ("performed", "skipped", "adapter", "profile"):
+        if req_cov not in raw_cov:
+            raise SchemaError(f"Missing required field in coverage: '{req_cov}'")
+
+    raw_perf = raw_cov["performed"]
+    if not isinstance(raw_perf, (list, tuple)):
+        raise SchemaError(
+            f"coverage.performed must be a list or tuple, got {type(raw_perf).__name__}"
+        )
+    parsed_perf: list[str] = []
+    for idx, item in enumerate(raw_perf):
+        if not isinstance(item, str) or not item.strip():
+            raise SchemaError(f"coverage.performed[{idx}] must be a non-empty string, got {item!r}")
+        parsed_perf.append(item.strip())
+
+    raw_skipped = raw_cov["skipped"]
+    if not isinstance(raw_skipped, (list, tuple)):
+        raise SchemaError(
+            f"coverage.skipped must be a list or tuple, got {type(raw_skipped).__name__}"
+        )
+    parsed_skips: list[CoverageSkip] = []
+    for idx, item in enumerate(raw_skipped):
+        if not isinstance(item, Mapping):
+            raise SchemaError(
+                f"coverage.skipped[{idx}] must be a mapping, got {type(item).__name__}"
+            )
+        for sk_k in item:
+            if sk_k not in ("check", "reason", "detail"):
+                raise UnknownFieldError(
+                    f"Unknown field in coverage.skipped[{idx}]: '{sk_k}'", field_name=sk_k
+                )
+        if "check" not in item:
+            raise SchemaError(f"coverage.skipped[{idx}] missing required field 'check'")
+        if "reason" not in item:
+            raise SchemaError(f"coverage.skipped[{idx}] missing required field 'reason'")
+        chk = item["check"]
+        if not isinstance(chk, str) or not chk.strip():
+            raise SchemaError(
+                f"coverage.skipped[{idx}].check must be a non-empty string, got {chk!r}"
+            )
+        rsn = item["reason"]
+        if rsn not in VALID_COVERAGE_SKIP_REASONS:
+            valid_rsns = sorted(VALID_COVERAGE_SKIP_REASONS)
+            raise SchemaError(
+                f"Invalid coverage skip reason '{rsn}' in skipped[{idx}]. "
+                f"Must be one of {valid_rsns}"
+            )
+        dtl = item.get("detail", "")
+        if not isinstance(dtl, str):
+            raise SchemaError(
+                f"coverage.skipped[{idx}].detail must be a string, got {type(dtl).__name__}"
+            )
+        parsed_skips.append(CoverageSkip(check=chk.strip(), reason=rsn, detail=dtl.strip()))
+
+    raw_adapter = raw_cov["adapter"]
+    if not isinstance(raw_adapter, Mapping):
+        raise SchemaError(f"coverage.adapter must be a mapping, got {type(raw_adapter).__name__}")
+    for k in raw_adapter:
+        if k not in ("id", "name", "version"):
+            raise UnknownFieldError(f"Unknown field in coverage.adapter: '{k}'", field_name=k)
+    ad_id = raw_adapter.get("id") or raw_adapter.get("name")
+    if not isinstance(ad_id, str) or not ad_id.strip():
+        raise SchemaError("coverage.adapter must contain non-empty 'id'")
+    ad_ver = raw_adapter.get("version")
+    if not isinstance(ad_ver, str) or not ad_ver.strip():
+        raise SchemaError("coverage.adapter must contain non-empty 'version'")
+    parsed_adapter = {"id": ad_id.strip(), "version": ad_ver.strip()}
+    if "name" in raw_adapter and isinstance(raw_adapter["name"], str):
+        parsed_adapter["name"] = raw_adapter["name"].strip()
+
+    raw_profile = raw_cov["profile"]
+    if not isinstance(raw_profile, Mapping):
+        raise SchemaError(f"coverage.profile must be a mapping, got {type(raw_profile).__name__}")
+    for k in raw_profile:
+        if k not in ("id", "name", "version"):
+            raise UnknownFieldError(f"Unknown field in coverage.profile: '{k}'", field_name=k)
+    pr_id = raw_profile.get("id") or raw_profile.get("name")
+    if not isinstance(pr_id, str) or not pr_id.strip():
+        raise SchemaError("coverage.profile must contain non-empty 'id'")
+    pr_ver = raw_profile.get("version")
+    if not isinstance(pr_ver, str) or not pr_ver.strip():
+        raise SchemaError("coverage.profile must contain non-empty 'version'")
+    parsed_profile = {"id": pr_id.strip(), "version": pr_ver.strip()}
+    if "name" in raw_profile and isinstance(raw_profile["name"], str):
+        parsed_profile["name"] = raw_profile["name"].strip()
+
+    coverage = Coverage(
+        performed=tuple(parsed_perf),
+        skipped=tuple(sorted(parsed_skips, key=_skip_sort_key)),
+        adapter=parsed_adapter,
+        profile=parsed_profile,
+    )
+
     return Report(
         schema_version=REPORT_SCHEMA_VERSION,
         session_id=session_id.strip(),
@@ -880,6 +1166,7 @@ def parse_report(obj: Mapping[str, Any] | str) -> Report:
         counts=counts,
         assurance=cast(Assurance, assurance),
         limitation=limitation.strip(),
+        coverage=coverage,
     )
 
 
@@ -1112,6 +1399,9 @@ def enforce_content_free(
         check_text(artifact.source_fingerprint, "Report.source_fingerprint")
         check_text(artifact.tool_version, "Report.tool_version")
         check_text(artifact.limitation, "Report.limitation")
+        for s_idx, sk in enumerate(artifact.coverage.skipped):
+            check_text(sk.check, f"Report.coverage.skipped[{s_idx}].check")
+            check_text(sk.detail, f"Report.coverage.skipped[{s_idx}].detail")
         for idx, f in enumerate(artifact.findings):
             check_text(f.message, f"Report.findings[{idx}].message")
             if f.message_template is not None:
@@ -1426,6 +1716,7 @@ def render_json(
         data: dict[str, Any] = {
             "assurance": report.assurance,
             "counts": report.counts.to_dict(),
+            "coverage": report.coverage.to_dict(),
             "findings": findings_json,
             "limitation": report.limitation,
             "schema_version": report.schema_version,
@@ -1569,6 +1860,14 @@ def render_human(
         f"Source fingerprint: {report.source_fingerprint}",
     ]
 
+    # Coverage section (FR-047)
+    cov = report.coverage
+    perf_str = ", ".join(cov.performed) if cov.performed else "none"
+    lines.append(f"Coverage: {len(cov.performed)} checks performed ({perf_str})")
+    if cov.skipped:
+        skip_items = [f"{s.check} ({s.reason})" for s in cov.skipped]
+        lines.append(f"  Skipped ({len(cov.skipped)}): {', '.join(skip_items)}")
+
     if report.findings:
         sorted_findings = sorted(report.findings, key=finding_report_sort_key)
         lines.append("")
@@ -1606,9 +1905,12 @@ __all__ = [
     "REQUIRED_REPORT_FIELDS",
     "REQUIRED_SEVERITIES",
     "VALID_ASSURANCE_LEVELS",
+    "VALID_COVERAGE_SKIP_REASONS",
     "VALID_POLICIES",
     "Assurance",
     "Counts",
+    "Coverage",
+    "CoverageSkip",
     "Policy",
     "RepairAction",
     "RepairManifest",

@@ -55,6 +55,24 @@ def _validate_report_dict_strictly(data: dict[str, Any], *, include_content: boo
         assert "detection" in repro
         assert "platform" in repro
 
+    # Coverage validation (FR-047)
+    assert "coverage" in data
+    cov = data["coverage"]
+    assert isinstance(cov, dict)
+    assert isinstance(cov["performed"], list)
+    for p in cov["performed"]:
+        assert isinstance(p, str) and p
+    assert isinstance(cov["skipped"], list)
+    for s in cov["skipped"]:
+        assert isinstance(s, dict)
+        assert isinstance(s["check"], str) and s["check"]
+        assert isinstance(s["reason"], str) and s["reason"]
+        assert isinstance(s.get("detail", ""), str)
+    assert isinstance(cov["adapter"], dict)
+    assert "id" in cov["adapter"] and "version" in cov["adapter"]
+    assert isinstance(cov["profile"], dict)
+    assert "id" in cov["profile"] and "version" in cov["profile"]
+
     # Findings validation
     findings = data["findings"]
     assert isinstance(findings, list)
@@ -125,6 +143,13 @@ def test_load_report_schema_contains_updated_properties() -> None:
     assert "repro" in props
     assert "content_warning" in props
     assert "included_content" in props
+    assert "coverage" in props
+
+    cov_props = props["coverage"]["properties"]
+    assert "performed" in cov_props
+    assert "skipped" in cov_props
+    assert "adapter" in cov_props
+    assert "profile" in cov_props
 
     finding_props = props["findings"]["items"]["properties"]
     assert "span" in finding_props

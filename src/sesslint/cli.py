@@ -652,7 +652,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 if getattr(args, "json", False):
                     from sesslint.codes import SL302, Repairability, Severity
                     from sesslint.finding import SourceRef, make_finding
-                    from sesslint.report import build_report
+                    from sesslint.report import Coverage, CoverageSkip, build_report
                     from sesslint.source import fingerprint_file
 
                     rep_findings = (
@@ -672,6 +672,40 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                         ]
                     )
                     fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
+                    cov = Coverage(
+                        performed=(),
+                        skipped=tuple(
+                            CoverageSkip(
+                                check=r,
+                                reason="adapter-not-applicable",
+                                detail="format detection failed",
+                            )
+                            for r in (
+                                "SL001",
+                                "SL002",
+                                "SL003",
+                                "SL004",
+                                "SL005",
+                                "SL006",
+                                "SL007",
+                                "SL101",
+                                "SL102",
+                                "SL103",
+                                "SL104",
+                                "SL105",
+                                "SL106",
+                                "SL107",
+                                "SL108",
+                                "SL201",
+                                "SL202",
+                                "SL203",
+                                "SL301",
+                                "SL302",
+                            )
+                        ),
+                        adapter={"id": "unknown", "version": "unknown"},
+                        profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+                    )
                     rep = build_report(
                         session_id=target_path.stem,
                         source_fingerprint=fp,
@@ -679,6 +713,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                         findings=rep_findings,
                         assurance="A0",
                         limitation="No structural conclusion.",
+                        coverage=cov,
                     )
                     from sesslint.report import build_repro_metadata, render_json
 
@@ -746,14 +781,31 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
             from sesslint.codes import Severity
             from sesslint.repair.executor import run_all_checks
-            from sesslint.report import build_report, compute_assurance
+            from sesslint.report import (
+                Coverage,
+                CoverageSkip,
+                build_report,
+                compute_assurance,
+            )
             from sesslint.source import fingerprint_file
 
-            check_findings = run_all_checks(
+            adapter_skips: list[CoverageSkip] = []
+            if any(f.code == "SL301" for f in adapter_findings):
+                adapter_skips.append(
+                    CoverageSkip(
+                        check="SL301",
+                        reason="version-gated",
+                        detail="unsupported format version (SL301)",
+                    )
+                )
+
+            check_findings, coverage = run_all_checks(
                 events,
                 profile=effective_cfg.profile,
                 source_path=str(target_path),
                 adapter=resolved_fmt,
+                adapter_skips=adapter_skips,
+                return_coverage=True,
             )
             all_findings = list(adapter_findings) + list(check_findings)
 
@@ -779,6 +831,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 findings=all_findings,
                 assurance=assurance,
                 limitation=limitation,
+                coverage=coverage,
             )
 
             exit_code = 1 if has_error else 0

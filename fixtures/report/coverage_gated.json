@@ -1,0 +1,74 @@
+{
+  "schema_version": "sesslint.report/v1",
+  "session_id": "session-coverage-gated-001",
+  "source_fingerprint": "c0ffee00112233445566778899aabbccddeeff00112233445566778899aabbcc",
+  "tool_version": "0.1.0",
+  "findings": [],
+  "counts": {
+    "by_severity": {
+      "fatal": 0,
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "by_code": {},
+    "total": 0
+  },
+  "assurance": "A2",
+  "limitation": "Profile-replay valid with gated rules.",
+  "coverage": {
+    "adapter": {
+      "id": "canonical",
+      "version": "1.0.0"
+    },
+    "performed": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL301",
+      "SL302",
+      "graph",
+      "identity",
+      "tool_pairing_1",
+      "tool_pairing_2"
+    ],
+    "profile": {
+      "id": "claude-strict",
+      "version": "1.0.0"
+    },
+    "skipped": [
+      {
+        "check": "SL201",
+        "detail": "rule disabled by profile",
+        "reason": "profile-gated"
+      },
+      {
+        "check": "SL202",
+        "detail": "rule disabled by profile",
+        "reason": "profile-gated"
+      },
+      {
+        "check": "SL203",
+        "detail": "rule disabled by profile",
+        "reason": "profile-gated"
+      },
+      {
+        "check": "checkpoint",
+        "detail": "family disabled by profile",
+        "reason": "profile-gated"
+      }
+    ]
+  }
+}

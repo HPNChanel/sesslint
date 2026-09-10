@@ -27,7 +27,14 @@ from sesslint.repair import (
     run_all_checks,
 )
 from sesslint.repair.planner import plan as planner_plan
-from sesslint.report import RepairManifest, Report, build_report, compute_assurance
+from sesslint.report import (
+    Coverage,
+    CoverageSkip,
+    RepairManifest,
+    Report,
+    build_report,
+    compute_assurance,
+)
 from sesslint.scan import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_FILES,
@@ -90,6 +97,38 @@ def check_file(
             ]
         )
         fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
+        cov = Coverage(
+            performed=(),
+            skipped=tuple(
+                CoverageSkip(
+                    check=r, reason="adapter-not-applicable", detail="format detection failed"
+                )
+                for r in (
+                    "SL001",
+                    "SL002",
+                    "SL003",
+                    "SL004",
+                    "SL005",
+                    "SL006",
+                    "SL007",
+                    "SL101",
+                    "SL102",
+                    "SL103",
+                    "SL104",
+                    "SL105",
+                    "SL106",
+                    "SL107",
+                    "SL108",
+                    "SL201",
+                    "SL202",
+                    "SL203",
+                    "SL301",
+                    "SL302",
+                )
+            ),
+            adapter={"id": "unknown", "version": "unknown"},
+            profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+        )
         return build_report(
             session_id=target_path.stem,
             source_fingerprint=fp,
@@ -97,6 +136,7 @@ def check_file(
             findings=rep_findings,
             assurance="A0",
             limitation="No structural conclusion.",
+            coverage=cov,
         )
 
     fmt_key = (
@@ -121,6 +161,38 @@ def check_file(
             evidence={"format": resolved_fmt, "profile": effective_cfg.profile},
         )
         fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
+        cov = Coverage(
+            performed=(),
+            skipped=tuple(
+                CoverageSkip(
+                    check=r, reason="profile-gated", detail="format not allowed by profile"
+                )
+                for r in (
+                    "SL001",
+                    "SL002",
+                    "SL003",
+                    "SL004",
+                    "SL005",
+                    "SL006",
+                    "SL007",
+                    "SL101",
+                    "SL102",
+                    "SL103",
+                    "SL104",
+                    "SL105",
+                    "SL106",
+                    "SL107",
+                    "SL108",
+                    "SL201",
+                    "SL202",
+                    "SL203",
+                    "SL301",
+                    "SL302",
+                )
+            ),
+            adapter={"id": str(resolved_fmt), "version": "unknown"},
+            profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+        )
         return build_report(
             session_id=target_path.stem,
             source_fingerprint=fp,
@@ -128,6 +200,7 @@ def check_file(
             findings=[finding],
             assurance="A0",
             limitation="No structural conclusion.",
+            coverage=cov,
         )
 
     events: list[Any] = []
@@ -152,11 +225,23 @@ def check_file(
         events = list(o_events)
         adapter_findings.extend(o_findings)
 
-    check_findings = run_all_checks(
+    adapter_skips: list[CoverageSkip] = []
+    if any(f.code == "SL301" for f in adapter_findings):
+        adapter_skips.append(
+            CoverageSkip(
+                check="SL301",
+                reason="version-gated",
+                detail="unsupported format version (SL301)",
+            )
+        )
+
+    check_findings, coverage = run_all_checks(
         events,
         profile=effective_cfg.profile,
         source_path=str(target_path),
         adapter=resolved_fmt,
+        adapter_skips=adapter_skips,
+        return_coverage=True,
     )
     all_findings = list(adapter_findings) + list(check_findings)
 
@@ -180,6 +265,7 @@ def check_file(
         findings=all_findings,
         assurance=assurance,
         limitation=limitation,
+        coverage=coverage,
     )
 
 
