@@ -92,7 +92,72 @@ def cap_assurance(base: str, plan: Any) -> str:
     return base if base_rank < lossless_rank else "repaired-lossless"
 
 
+ASSURANCE_CEILING_TABLE: Final[dict[str, dict[str, str]]] = {
+    "conservative": {
+        "A0": "A0",
+        "A1": "A1",
+        "A2": "A2",
+        "A3": "A3",
+        "A4": "A4",
+    },
+    "salvage": {
+        "A0": "A0",
+        "A1": "A1",
+        "A2": "A2",
+        "A3": "A2",
+        "A4": "A2",
+    },
+}
+
+
+def compute_assurance_ceiling(revalidation_assurance: str, policy_or_pedigree: str) -> str:
+    """Derive bounded assurance ceiling based on revalidation A-level and repair pedigree.
+
+    Vocabulary relationship:
+    - Revalidation A-level: Evaluated under active profile rules (A0-A4).
+    - Repair Pedigree: Invasiveness of applied transformations ('conservative'/'repaired-lossless'
+      vs 'salvage'/'salvaged').
+
+    Ceiling Rules:
+    - Conservative (lossless) preserves the output's revalidation A-level.
+    - Salvage (lossy) is bounded at A2 (structural replay ceiling); it cannot claim A3/A4 even
+      if post-repair checks pass completely with zero warnings.
+
+    Args:
+        revalidation_assurance: A-level string ('A0', 'A1', 'A2', 'A3', 'A4').
+        policy_or_pedigree: Policy ('conservative', 'salvage') or lattice pedigree
+            ('clean', 'repaired-lossless', 'salvaged').
+
+    Returns:
+        Bounded assurance ceiling string ('A0'-'A4').
+
+    Raises:
+        ValueError: If revalidation_assurance or policy_or_pedigree is invalid.
+    """
+    clean_reval = revalidation_assurance.strip().upper()
+    valid_a = ("A0", "A1", "A2", "A3", "A4")
+    if clean_reval not in valid_a:
+        raise ValueError(
+            f"Invalid revalidation assurance: {revalidation_assurance!r}. Must be one of {valid_a}"
+        )
+
+    norm_pol = policy_or_pedigree.strip().lower()
+    if norm_pol in ("conservative", "repaired-lossless", "clean"):
+        key = "conservative"
+    elif norm_pol in ("salvage", "salvaged"):
+        key = "salvage"
+    else:
+        raise ValueError(
+            f"Invalid policy or pedigree: {policy_or_pedigree!r}. "
+            "Must be one of ('conservative', 'salvage', 'repaired-lossless', 'salvaged', 'clean')"
+        )
+
+    return ASSURANCE_CEILING_TABLE[key][clean_reval]
+
+
 __all__ = [
+    "ASSURANCE_CEILING_TABLE",
     "ASSURANCE_LATTICE",
     "cap_assurance",
+    "compute_assurance_ceiling",
 ]

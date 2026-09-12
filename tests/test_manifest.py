@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from sesslint.errors import (
+    AssuranceError,
     ContentLeakError,
     SchemaError,
     UnknownFieldError,
@@ -20,6 +21,7 @@ from sesslint.report import (
     VALID_POLICIES,
     RepairAction,
     RepairManifest,
+    RevalidationSummary,
     build_manifest,
     compute_manifest_idempotency_key,
     dump_manifest,
@@ -332,6 +334,14 @@ def test_repair_action_comparison_edge_cases() -> None:
 def test_repair_manifest_model_validation_errors() -> None:
     """Verify RepairManifest constructor rejects invalid inputs and bad types."""
     valid_key = "0" * 64
+    valid_reval = RevalidationSummary(
+        assurance="A3",
+        error_count=0,
+        warning_count=0,
+        profile_id="neutral",
+        profile_version="1.0.0",
+    )
+    valid_ceiling = "A3"
 
     with pytest.raises(VersionError, match="RepairManifest.schema_version must be"):
         RepairManifest(
@@ -343,6 +353,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(
@@ -357,6 +369,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(
@@ -371,6 +385,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(SchemaError, match="RepairManifest.policy must be one of"):
@@ -383,6 +399,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(SchemaError, match="RepairManifest.actions must be a tuple"):
@@ -395,6 +413,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(SchemaError, match="RepairManifest.actions\\[0\\] must be a RepairAction"):
@@ -407,6 +427,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(SchemaError, match="RepairManifest.declared_loss must be a tuple"):
@@ -419,6 +441,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=[],  # type: ignore[arg-type]
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(
@@ -433,6 +457,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=("",),
             revalidate_report=None,
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(
@@ -447,6 +473,8 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report="",
             idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
         )
 
     with pytest.raises(SchemaError, match="RepairManifest.idempotency_key must be a 64-character"):
@@ -459,6 +487,38 @@ def test_repair_manifest_model_validation_errors() -> None:
             declared_loss=(),
             revalidate_report=None,
             idempotency_key="too-short",
+            revalidation=valid_reval,
+            assurance_ceiling=valid_ceiling,
+        )
+
+    with pytest.raises(
+        SchemaError, match="RepairManifest.revalidation must be a RevalidationSummary"
+    ):
+        RepairManifest(
+            schema_version="sesslint.repair-manifest/v1",
+            input_fingerprint="in-1",
+            output_fingerprint="out-1",
+            policy="conservative",
+            actions=(),
+            declared_loss=(),
+            revalidate_report=None,
+            idempotency_key=valid_key,
+            revalidation="not-a-revalidation",  # type: ignore[arg-type]
+            assurance_ceiling=valid_ceiling,
+        )
+
+    with pytest.raises(AssuranceError, match="RepairManifest.assurance_ceiling must be one of"):
+        RepairManifest(
+            schema_version="sesslint.repair-manifest/v1",
+            input_fingerprint="in-1",
+            output_fingerprint="out-1",
+            policy="conservative",
+            actions=(),
+            declared_loss=(),
+            revalidate_report=None,
+            idempotency_key=valid_key,
+            revalidation=valid_reval,
+            assurance_ceiling="INVALID",
         )
 
 
@@ -699,6 +759,14 @@ def test_parse_manifest_sorts_actions_into_canonical_order() -> None:
         ],
         "declared_loss": [],
         "revalidate_report": None,
+        "revalidation": {
+            "assurance": "A3",
+            "error_count": 0,
+            "warning_count": 0,
+            "profile_id": "neutral",
+            "profile_version": "1.0.0",
+        },
+        "assurance_ceiling": "A3",
         "idempotency_key": "0" * 64,
     }
     m = parse_manifest(m_dict)
@@ -755,8 +823,71 @@ def test_parse_manifest_normalizes_paths_and_loss() -> None:
         "actions": [{"kind": "neutralize", "record_id": "rec-1", "detail": "clean"}],
         "declared_loss": ["omitted_orphan:rec-1"],
         "revalidate_report": "reports\\validation_v1.json",
+        "revalidation": {
+            "assurance": "A2",
+            "error_count": 0,
+            "warning_count": 1,
+            "profile_id": "neutral",
+            "profile_version": "1.0.0",
+        },
+        "assurance_ceiling": "A2",
         "idempotency_key": "0" * 64,
     }
     m = parse_manifest(m_dict)
     assert m.revalidate_report == "reports/validation_v1.json"
     assert m.declared_loss == ("omitted_orphan:rec-1",)
+    assert m.revalidation.assurance == "A2"
+    assert m.revalidation.warning_count == 1
+    assert m.assurance_ceiling == "A2"
+
+
+def test_revalidation_summary_validations() -> None:
+    """Verify RevalidationSummary model validates field types and ranges."""
+    with pytest.raises(AssuranceError, match="Invalid revalidation assurance"):
+        RevalidationSummary(
+            assurance="INVALID",
+            error_count=0,
+            warning_count=0,
+            profile_id="neutral",
+            profile_version="1.0.0",
+        )
+
+    with pytest.raises(SchemaError, match="RevalidationSummary.error_count must be non-negative"):
+        RevalidationSummary(
+            assurance="A3",
+            error_count=-1,
+            warning_count=0,
+            profile_id="neutral",
+            profile_version="1.0.0",
+        )
+
+    with pytest.raises(SchemaError, match="RevalidationSummary.warning_count must be non-negative"):
+        RevalidationSummary(
+            assurance="A3",
+            error_count=0,
+            warning_count=-1,
+            profile_id="neutral",
+            profile_version="1.0.0",
+        )
+
+    with pytest.raises(
+        SchemaError, match="RevalidationSummary.profile_id must be a non-empty string"
+    ):
+        RevalidationSummary(
+            assurance="A3",
+            error_count=0,
+            warning_count=0,
+            profile_id="",
+            profile_version="1.0.0",
+        )
+
+    with pytest.raises(
+        SchemaError, match="RevalidationSummary.profile_version must be a non-empty string"
+    ):
+        RevalidationSummary(
+            assurance="A3",
+            error_count=0,
+            warning_count=0,
+            profile_id="neutral",
+            profile_version="",
+        )

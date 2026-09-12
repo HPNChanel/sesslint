@@ -108,6 +108,15 @@ def _write_ok_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         "plan_fingerprint": plan_fp,
         "policy": "conservative",
         "revalidate_report": None,
+        "revalidation": {
+            "assurance": "A3",
+            "error_count": 0,
+            "warning_count": 0,
+            "profile_id": "neutral",
+            "profile_version": "1.0.0",
+            "report_fingerprint": None,
+        },
+        "assurance_ceiling": "A3",
         "schema_version": "sesslint.repair-manifest/v1",
     }
     manifest_path = dest_dir / "manifest.json"
@@ -224,18 +233,19 @@ def test_tampered_source(tmp_path: Path) -> None:
     assert "mismatch" in c_map["source_hash"].detail
 
 
-def test_in_place_manifest(tmp_path: Path) -> None:
-    """Check 1 checks source_post_hash / output_fingerprint when manifest has in_place: true."""
+def test_in_place_manifest_rejected(tmp_path: Path) -> None:
+    """Unknown-shape manifest with in_place: true is rejected with manifest-schema."""
     src, pln, out, man = _write_ok_bundle(tmp_path)
-    # In-place means source file has been modified to match output
     src.write_bytes(out.read_bytes())
     manifest_data = json.loads(man.read_text(encoding="utf-8"))
     manifest_data["in_place"] = True
     man.write_text(json.dumps(manifest_data), encoding="utf-8")
 
     verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    assert verdict.ok is False
     c_map = {c.name: c for c in verdict.checks}
-    assert c_map["source_hash"].ok is True
+    assert c_map["source_hash"].ok is False
+    assert c_map["source_hash"].detail == "manifest-schema"
 
 
 def test_tampered_plan_fingerprint(tmp_path: Path) -> None:
@@ -344,7 +354,7 @@ def test_tampered_loss_audit(tmp_path: Path) -> None:
 
 
 def test_loss_totals_fallback(tmp_path: Path) -> None:
-    """Check 5 validates against loss_totals mapping if declared_loss is absent."""
+    """Missing required declared_loss with legacy loss_totals is rejected with manifest-schema."""
     src, pln, out, man = _write_ok_bundle(tmp_path)
     manifest_data = json.loads(man.read_text(encoding="utf-8"))
     del manifest_data["declared_loss"]
@@ -352,8 +362,10 @@ def test_loss_totals_fallback(tmp_path: Path) -> None:
     man.write_text(json.dumps(manifest_data), encoding="utf-8")
 
     verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    assert verdict.ok is False
     c_map = {c.name: c for c in verdict.checks}
-    assert c_map["loss_audit"].ok is True
+    assert c_map["loss_audit"].ok is False
+    assert c_map["loss_audit"].detail == "manifest-schema"
 
 
 def test_tampered_assurance_audit(tmp_path: Path) -> None:
@@ -397,7 +409,7 @@ def test_non_short_circuiting(tmp_path: Path) -> None:
 
 
 def test_truncated_manifest(tmp_path: Path) -> None:
-    """Missing output_fingerprint evaluates to ok=False with detail='field-missing'."""
+    """Missing output_fingerprint evaluates to ok=False with detail='manifest-schema'."""
     src, pln, out, man = _write_ok_bundle(tmp_path)
     manifest_data = json.loads(man.read_text(encoding="utf-8"))
     del manifest_data["output_fingerprint"]
@@ -407,7 +419,7 @@ def test_truncated_manifest(tmp_path: Path) -> None:
     assert verdict.ok is False
     c_map = {c.name: c for c in verdict.checks}
     assert c_map["output_hash"].ok is False
-    assert c_map["output_hash"].detail == "field-missing"
+    assert c_map["output_hash"].detail in ("field-missing", "manifest-schema")
 
 
 def test_empty_output_file(tmp_path: Path) -> None:
@@ -550,6 +562,15 @@ def test_50_step_plan_replay_perf(tmp_path: Path) -> None:
         "plan_fingerprint": plan_fp,
         "policy": "conservative",
         "revalidate_report": None,
+        "revalidation": {
+            "assurance": "A3",
+            "error_count": 0,
+            "warning_count": 0,
+            "profile_id": "neutral",
+            "profile_version": "1.0.0",
+            "report_fingerprint": None,
+        },
+        "assurance_ceiling": "A3",
         "schema_version": "sesslint.repair-manifest/v1",
     }
     manifest_path = dest_dir / "manifest.json"
@@ -844,7 +865,24 @@ def test_verify_missing_actions_fails_check_4(tmp_path: Path) -> None:
     c4 = verdict.checks[3]
     assert c4.name == "transformation_audit"
     assert c4.ok is False
-    assert c4.detail == "manifest-missing-actions"
+    assert c4.detail in ("manifest-missing-actions", "manifest-schema")
+
+
+def test_old_shape_manifest_rejected_with_manifest_schema(tmp_path: Path) -> None:
+    """Old-shape manifest missing revalidation is rejected with manifest-schema."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    del manifest_data["revalidation"]
+    del manifest_data["assurance_ceiling"]
+    man.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    assert verdict.ok is False
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["source_hash"].ok is False
+    assert c_map["source_hash"].detail == "manifest-schema"
+    assert c_map["assurance_audit"].ok is False
+    assert c_map["assurance_audit"].detail == "manifest-schema"
 
 
 def test_verify_with_real_manifest_from_executor(tmp_path: Path) -> None:

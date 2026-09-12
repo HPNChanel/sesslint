@@ -174,8 +174,10 @@ KNOWN_MANIFEST_FIELDS: Final[frozenset[str]] = frozenset(
         "output_fingerprint",
         "plan_fingerprint",
         "assurance",
+        "assurance_ceiling",
         "recipe_versions",
         "profile_version",
+        "adapter_id",
         "adapter_version",
         "byte_counts",
         "record_counts",
@@ -183,6 +185,7 @@ KNOWN_MANIFEST_FIELDS: Final[frozenset[str]] = frozenset(
         "actions",
         "declared_loss",
         "revalidate_report",
+        "revalidation",
         "idempotency_key",
     }
 )
@@ -197,6 +200,8 @@ REQUIRED_MANIFEST_FIELDS: Final[frozenset[str]] = frozenset(
         "declared_loss",
         "revalidate_report",
         "idempotency_key",
+        "revalidation",
+        "assurance_ceiling",
     }
 )
 
@@ -612,6 +617,72 @@ class RepairAction:
 
 
 @dataclass(frozen=True, slots=True)
+class RevalidationSummary:
+    """Embedded revalidation summary struct for RepairManifest (FR-072)."""
+
+    assurance: Assurance
+    error_count: int
+    warning_count: int
+    profile_id: str
+    profile_version: str
+    report_fingerprint: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.assurance not in VALID_ASSURANCE_LEVELS:
+            valid_sorted = sorted(VALID_ASSURANCE_LEVELS)
+            raise AssuranceError(
+                f"Invalid revalidation assurance {self.assurance!r}. Must be one of {valid_sorted}"
+            )
+        if (
+            not isinstance(self.error_count, int)
+            or isinstance(self.error_count, bool)
+            or self.error_count < 0
+        ):
+            raise SchemaError(
+                "RevalidationSummary.error_count must be non-negative integer, "
+                f"got {self.error_count!r}"
+            )
+        if (
+            not isinstance(self.warning_count, int)
+            or isinstance(self.warning_count, bool)
+            or self.warning_count < 0
+        ):
+            raise SchemaError(
+                "RevalidationSummary.warning_count must be non-negative integer, "
+                f"got {self.warning_count!r}"
+            )
+        if not isinstance(self.profile_id, str) or not self.profile_id.strip():
+            raise SchemaError(
+                "RevalidationSummary.profile_id must be a non-empty string, "
+                f"got {self.profile_id!r}"
+            )
+        if not isinstance(self.profile_version, str) or not self.profile_version.strip():
+            raise SchemaError(
+                "RevalidationSummary.profile_version must be a non-empty string, "
+                f"got {self.profile_version!r}"
+            )
+        if self.report_fingerprint is not None and (
+            not isinstance(self.report_fingerprint, str) or not self.report_fingerprint.strip()
+        ):
+            raise SchemaError(
+                "RevalidationSummary.report_fingerprint must be a non-empty string or None"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert RevalidationSummary to dictionary with sorted keys."""
+        d: dict[str, Any] = {
+            "assurance": self.assurance,
+            "error_count": self.error_count,
+            "profile_id": self.profile_id,
+            "profile_version": self.profile_version,
+            "warning_count": self.warning_count,
+        }
+        if self.report_fingerprint is not None:
+            d["report_fingerprint"] = self.report_fingerprint
+        return d
+
+
+@dataclass(frozen=True, slots=True)
 class RepairManifest:
     """Immutable repair audit manifest (sesslint.repair-manifest/v1).
 
@@ -633,10 +704,13 @@ class RepairManifest:
     declared_loss: tuple[str, ...]
     revalidate_report: str | None
     idempotency_key: str
+    revalidation: RevalidationSummary
+    assurance_ceiling: str
     plan_fingerprint: str | None = None
     assurance: str | None = None
     recipe_versions: Mapping[str, str] = field(default_factory=dict)
     profile_version: str | None = None
+    adapter_id: str | None = None
     adapter_version: str | None = None
     byte_counts: Mapping[str, int] = field(default_factory=dict)
     record_counts: Mapping[str, int] = field(default_factory=dict)
@@ -701,6 +775,19 @@ class RepairManifest:
                 f"got {self.idempotency_key!r}"
             )
 
+        if not isinstance(self.revalidation, RevalidationSummary):
+            raise SchemaError(
+                f"RepairManifest.revalidation must be a RevalidationSummary, "
+                f"got {type(self.revalidation).__name__}"
+            )
+
+        if self.assurance_ceiling not in VALID_ASSURANCE_LEVELS:
+            valid_sorted = sorted(VALID_ASSURANCE_LEVELS)
+            raise AssuranceError(
+                f"RepairManifest.assurance_ceiling must be one of {valid_sorted}, "
+                f"got {self.assurance_ceiling!r}"
+            )
+
         if self.plan_fingerprint is not None:
             if not isinstance(self.plan_fingerprint, str) or not self.plan_fingerprint.strip():
                 raise SchemaError("RepairManifest.plan_fingerprint must be a non-empty string")
@@ -712,6 +799,9 @@ class RepairManifest:
         if self.profile_version is not None:
             if not isinstance(self.profile_version, str) or not self.profile_version.strip():
                 raise SchemaError("RepairManifest.profile_version must be a non-empty string")
+        if self.adapter_id is not None:
+            if not isinstance(self.adapter_id, str) or not self.adapter_id.strip():
+                raise SchemaError("RepairManifest.adapter_id must be a non-empty string")
         if self.adapter_version is not None:
             if not isinstance(self.adapter_version, str) or not self.adapter_version.strip():
                 raise SchemaError("RepairManifest.adapter_version must be a non-empty string")
@@ -723,14 +813,16 @@ class RepairManifest:
     def to_dict(self) -> dict[str, Any]:
         """Convert RepairManifest to dictionary matching schema."""
         d: dict[str, Any] = {
-            "schema_version": self.schema_version,
+            "actions": [a.to_dict() for a in self.actions],
+            "assurance_ceiling": self.assurance_ceiling,
+            "declared_loss": list(self.declared_loss),
+            "idempotency_key": self.idempotency_key,
             "input_fingerprint": self.input_fingerprint,
             "output_fingerprint": self.output_fingerprint,
             "policy": self.policy,
-            "actions": [a.to_dict() for a in self.actions],
-            "declared_loss": list(self.declared_loss),
             "revalidate_report": self.revalidate_report,
-            "idempotency_key": self.idempotency_key,
+            "revalidation": self.revalidation.to_dict(),
+            "schema_version": self.schema_version,
         }
         if self.plan_fingerprint is not None:
             d["plan_fingerprint"] = self.plan_fingerprint
@@ -740,6 +832,8 @@ class RepairManifest:
             d["recipe_versions"] = dict(sorted(self.recipe_versions.items()))
         if self.profile_version is not None:
             d["profile_version"] = self.profile_version
+        if self.adapter_id is not None:
+            d["adapter_id"] = self.adapter_id
         if self.adapter_version is not None:
             d["adapter_version"] = self.adapter_version
         if self.byte_counts:
@@ -871,10 +965,13 @@ def build_manifest(
     actions: Iterable[RepairAction] = (),
     declared_loss: Iterable[str] = (),
     revalidate_report: str | None = None,
+    revalidation: RevalidationSummary | Mapping[str, Any] | None = None,
+    assurance_ceiling: str | None = None,
     plan_fingerprint: str | None = None,
     assurance: str | None = None,
     recipe_versions: Mapping[str, str] | None = None,
     profile_version: str | None = None,
+    adapter_id: str | None = None,
     adapter_version: str | None = None,
     byte_counts: Mapping[str, int] | None = None,
     record_counts: Mapping[str, int] | None = None,
@@ -887,6 +984,7 @@ def build_manifest(
       policy, and sorted actions.
     - Declared loss items are validated as non-empty strings.
     - Binds plan_fingerprint, assurance, versions, and byte/record counts per FR-072/FR-073.
+    - Binds revalidation summary struct and bounded assurance_ceiling.
     - Never generates or accepts a 'success' or 'passed' field.
     """
     if not isinstance(input_fingerprint, str) or not input_fingerprint.strip():
@@ -927,6 +1025,68 @@ def build_manifest(
         except FindingError as err:
             raise ContentLeakError(f"Content leak in revalidate_report: {err}") from err
 
+    # Normalize revalidation summary
+    norm_reval_obj: RevalidationSummary
+    if revalidation is None:
+        norm_reval_obj = RevalidationSummary(
+            assurance="A3",
+            error_count=0,
+            warning_count=0,
+            profile_id="neutral",
+            profile_version="1.0.0",
+        )
+    elif isinstance(revalidation, RevalidationSummary):
+        norm_reval_obj = revalidation
+    elif isinstance(revalidation, Mapping):
+        for rf in ("assurance", "error_count", "warning_count", "profile_id", "profile_version"):
+            if rf not in revalidation:
+                raise SchemaError(f"revalidation missing required field '{rf}'")
+        norm_reval_obj = RevalidationSummary(
+            assurance=cast(Assurance, revalidation["assurance"]),
+            error_count=int(revalidation["error_count"]),
+            warning_count=int(revalidation["warning_count"]),
+            profile_id=str(revalidation["profile_id"]),
+            profile_version=str(revalidation["profile_version"]),
+            report_fingerprint=(
+                str(revalidation["report_fingerprint"])
+                if revalidation.get("report_fingerprint") is not None
+                else None
+            ),
+        )
+    else:
+        raise SchemaError(
+            "revalidation must be a RevalidationSummary or Mapping, "
+            f"got {type(revalidation).__name__}"
+        )
+
+    # Normalize assurance ceiling
+    norm_ceiling: str
+    if assurance_ceiling is None:
+        from sesslint.repair.assurance import compute_assurance_ceiling
+
+        norm_ceiling = compute_assurance_ceiling(norm_reval_obj.assurance, policy)
+    else:
+        if assurance_ceiling not in VALID_ASSURANCE_LEVELS:
+            valid_sorted = sorted(VALID_ASSURANCE_LEVELS)
+            raise AssuranceError(
+                f"Invalid assurance_ceiling {assurance_ceiling!r}. Must be one of {valid_sorted}"
+            )
+        norm_ceiling = assurance_ceiling
+
+    try:
+        enforce_content_free_text(norm_reval_obj.profile_id, context="revalidation.profile_id")
+        enforce_content_free_text(
+            norm_reval_obj.profile_version, context="revalidation.profile_version"
+        )
+        if norm_reval_obj.report_fingerprint is not None:
+            enforce_content_free_text(
+                norm_reval_obj.report_fingerprint, context="revalidation.report_fingerprint"
+            )
+        if adapter_id is not None:
+            enforce_content_free_text(adapter_id, context="adapter_id")
+    except FindingError as err:
+        raise ContentLeakError(f"Content leak in manifest metadata: {err}") from err
+
     idempotency_key = compute_manifest_idempotency_key(
         input_fingerprint=input_fingerprint.strip(),
         policy=policy,
@@ -942,10 +1102,13 @@ def build_manifest(
         declared_loss=sorted_loss,
         revalidate_report=norm_reval,
         idempotency_key=idempotency_key,
+        revalidation=norm_reval_obj,
+        assurance_ceiling=norm_ceiling,
         plan_fingerprint=plan_fingerprint.strip() if plan_fingerprint is not None else None,
         assurance=assurance.strip() if assurance is not None else None,
         recipe_versions=dict(recipe_versions) if recipe_versions is not None else {},
         profile_version=profile_version.strip() if profile_version is not None else None,
+        adapter_id=adapter_id.strip() if adapter_id is not None else None,
         adapter_version=adapter_version.strip() if adapter_version is not None else None,
         byte_counts=dict(byte_counts) if byte_counts is not None else {},
         record_counts=dict(record_counts) if record_counts is not None else {},
@@ -1328,6 +1491,10 @@ def parse_manifest(obj: Mapping[str, Any] | str) -> RepairManifest:
     ):
         raise SchemaError("RepairManifest.profile_version must be a non-empty string")
 
+    adapter_id = data.get("adapter_id")
+    if adapter_id is not None and (not isinstance(adapter_id, str) or not adapter_id.strip()):
+        raise SchemaError("RepairManifest.adapter_id must be a non-empty string")
+
     adapter_version = data.get("adapter_version")
     if adapter_version is not None and (
         not isinstance(adapter_version, str) or not adapter_version.strip()
@@ -1342,6 +1509,76 @@ def parse_manifest(obj: Mapping[str, Any] | str) -> RepairManifest:
     if record_counts is not None and not isinstance(record_counts, Mapping):
         raise SchemaError("RepairManifest.record_counts must be a mapping")
 
+    # Validate and parse revalidation summary
+    raw_reval = data["revalidation"]
+    if not isinstance(raw_reval, Mapping):
+        raise SchemaError(
+            f"RepairManifest.revalidation must be a mapping, got {type(raw_reval).__name__}"
+        )
+    for k in raw_reval:
+        if k not in (
+            "assurance",
+            "error_count",
+            "warning_count",
+            "profile_id",
+            "profile_version",
+            "report_fingerprint",
+        ):
+            raise UnknownFieldError(
+                f"Unknown field in manifest revalidation: '{k}'",
+                field_name=k,
+            )
+    for req_rf in ("assurance", "error_count", "warning_count", "profile_id", "profile_version"):
+        if req_rf not in raw_reval:
+            raise SchemaError(f"Missing required field in manifest revalidation: '{req_rf}'")
+
+    rev_assurance = raw_reval["assurance"]
+    if rev_assurance not in VALID_ASSURANCE_LEVELS:
+        valid_sorted = sorted(VALID_ASSURANCE_LEVELS)
+        raise AssuranceError(
+            f"Invalid revalidation assurance: {rev_assurance!r}. Must be one of {valid_sorted}"
+        )
+
+    rev_errors = raw_reval["error_count"]
+    if not isinstance(rev_errors, int) or isinstance(rev_errors, bool) or rev_errors < 0:
+        raise SchemaError(
+            f"revalidation.error_count must be a non-negative integer, got {rev_errors!r}"
+        )
+
+    rev_warnings = raw_reval["warning_count"]
+    if not isinstance(rev_warnings, int) or isinstance(rev_warnings, bool) or rev_warnings < 0:
+        raise SchemaError(
+            f"revalidation.warning_count must be a non-negative integer, got {rev_warnings!r}"
+        )
+
+    rev_prof_id = raw_reval["profile_id"]
+    if not isinstance(rev_prof_id, str) or not rev_prof_id.strip():
+        raise SchemaError("revalidation.profile_id must be a non-empty string")
+
+    rev_prof_ver = raw_reval["profile_version"]
+    if not isinstance(rev_prof_ver, str) or not rev_prof_ver.strip():
+        raise SchemaError("revalidation.profile_version must be a non-empty string")
+
+    rev_rfp = raw_reval.get("report_fingerprint")
+    if rev_rfp is not None and (not isinstance(rev_rfp, str) or not rev_rfp.strip()):
+        raise SchemaError("revalidation.report_fingerprint must be a non-empty string or None")
+
+    parsed_reval = RevalidationSummary(
+        assurance=cast(Assurance, rev_assurance),
+        error_count=rev_errors,
+        warning_count=rev_warnings,
+        profile_id=rev_prof_id.strip(),
+        profile_version=rev_prof_ver.strip(),
+        report_fingerprint=rev_rfp.strip() if rev_rfp is not None else None,
+    )
+
+    assurance_ceiling = data["assurance_ceiling"]
+    if assurance_ceiling not in VALID_ASSURANCE_LEVELS:
+        valid_sorted = sorted(VALID_ASSURANCE_LEVELS)
+        raise AssuranceError(
+            f"Invalid assurance_ceiling: {assurance_ceiling!r}. Must be one of {valid_sorted}"
+        )
+
     return RepairManifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
         input_fingerprint=input_fingerprint.strip(),
@@ -1351,10 +1588,13 @@ def parse_manifest(obj: Mapping[str, Any] | str) -> RepairManifest:
         declared_loss=loss_tuple,
         revalidate_report=reval_str,
         idempotency_key=idempotency_key,
+        revalidation=parsed_reval,
+        assurance_ceiling=assurance_ceiling,
         plan_fingerprint=plan_fingerprint.strip() if plan_fingerprint is not None else None,
         assurance=assurance.strip() if assurance is not None else None,
         recipe_versions=dict(recipe_versions) if recipe_versions is not None else {},
         profile_version=profile_version.strip() if profile_version is not None else None,
+        adapter_id=adapter_id.strip() if adapter_id is not None else None,
         adapter_version=adapter_version.strip() if adapter_version is not None else None,
         byte_counts=dict(byte_counts) if byte_counts is not None else {},
         record_counts=dict(record_counts) if record_counts is not None else {},
@@ -1424,6 +1664,17 @@ def enforce_content_free(
             if act.record_id is not None:
                 check_text(act.record_id, f"RepairManifest.actions[{a_idx}].record_id")
             check_text(act.detail, f"RepairManifest.actions[{a_idx}].detail")
+        check_text(artifact.revalidation.profile_id, "RepairManifest.revalidation.profile_id")
+        check_text(
+            artifact.revalidation.profile_version, "RepairManifest.revalidation.profile_version"
+        )
+        if artifact.revalidation.report_fingerprint is not None:
+            check_text(
+                artifact.revalidation.report_fingerprint,
+                "RepairManifest.revalidation.report_fingerprint",
+            )
+        if artifact.adapter_id is not None:
+            check_text(artifact.adapter_id, "RepairManifest.adapter_id")
     else:
         raise TypeError(f"Expected Report or RepairManifest, got {type(artifact).__name__}")
 
@@ -1933,6 +2184,7 @@ __all__ = [
     "RepairManifest",
     "Report",
     "ReproMetadata",
+    "RevalidationSummary",
     "apply_plan_assurance",
     "build_manifest",
     "build_report",

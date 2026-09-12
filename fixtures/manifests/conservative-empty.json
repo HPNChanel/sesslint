@@ -6,5 +6,14 @@
   "actions": [],
   "declared_loss": [],
   "revalidate_report": null,
+  "revalidation": {
+    "assurance": "A3",
+    "error_count": 0,
+    "profile_id": "neutral",
+    "profile_version": "1.0.0",
+    "report_fingerprint": null,
+    "warning_count": 0
+  },
+  "assurance_ceiling": "A3",
   "idempotency_key": "8d92273d321c477430a9a41d0b2224dd26912b4daf1b11ec3ba5c7b954e81c3e"
 }
