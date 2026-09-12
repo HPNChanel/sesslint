@@ -37,7 +37,7 @@ Thank you for your interest in contributing to SessLint! SessLint is an offline,
 
 ### Setting up Environment
 ```bash
-git clone https://github.com/sesslint/sesslint.git
+git clone https://github.com/HPNChanel/sesslint.git
 cd sesslint
 uv sync --extra dev
 ```
@@ -47,11 +47,11 @@ Before submitting any pull request, all gates must be 100% green:
 
 ```bash
 # 1. Lint and style checks
-uv run ruff check
-uv run ruff format --check
+uv run ruff check src tests
+uv run ruff format --check src tests
 
 # 2. Strict static type analysis
-uv run mypy --strict
+uv run mypy --strict src/sesslint
 
 # 3. Unit, adversarial, and conformance tests
 uv run pytest
