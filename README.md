@@ -30,15 +30,19 @@
   - [Exit Codes](#exit-codes)
 - [Supported Formats & Conformance Matrix](#supported-formats)
 - [Diagnostic Reason Codes (SL001–SL302)](#diagnostic-reason-codes-sl001sl302)
+- [Finding Fingerprints & Deterministic Ordering](#finding-fingerprints--deterministic-ordering)
+- [Report Coverage & Run-State Evidence](#report-coverage--run-state-evidence)
 - [Repair Engine](#repair-engine)
   - [Policies: Conservative vs. Salvage](#policies-conservative-vs-salvage)
   - [Recipe Catalog](#recipe-catalog)
   - [Atomic 8-Step Execution Protocol](#atomic-8-step-execution-protocol)
+  - [Repair Manifest Schema & Cryptographic Binding](#repair-manifest-schema--cryptographic-binding)
   - [Assurance Taxonomy (A0–A4)](#assurance-taxonomy-a0a4)
 - [Replay Profiles](#replay-profiles)
 - [Architecture & Anti-Leak Boundaries](#architecture--anti-leak-boundaries)
 - [Python Library API](#python-library-api)
 - [JSON Schemas](#json-schemas)
+- [Compatibility & Migration Notes (NDP-001)](#compatibility--migration-notes-ndp-001)
 - [Test Suite & Verification](#test-suite--verification)
 - [Safe Issue Reporting](#safe-issue-reporting)
 - [Contributing & Fixture Provenance](#contributing--fixture-provenance)
@@ -147,12 +151,18 @@ sesslint check <path> [OPTIONS]
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `path` | `Path` | *required* | Session file path (`.json` or `.jsonl`) or directory (with `--recursive`). |
-| `--recursive` | `flag` | `False` | Recursively scan directories and report 5-bucket totals. |
+| `--recursive`, `-r` | `flag` | `False` | Recursively scan directories and report 5-bucket totals. |
 | `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--json` | `flag` | `False` | Emit machine-readable JSON report. |
 | `--confidence-min` | `float` | `0.55` | Minimum auto-detection confidence threshold. |
 | `--margin-min` | `float` | `0.15` | Minimum auto-detection margin above second-place format. |
+| `--max-files` | `int` | `10000` | Maximum number of files to inspect during recursive scan. |
+| `--max-bytes` | `int` | `1GB` | Maximum cumulative bytes to read during recursive scan. |
+| `--follow-symlinks` | `flag` | `False` | Follow directory symlinks during recursive scanning. |
+| `--include-content` | `flag` | `False` | Embed raw transcript content in reports (warning: emits raw sensitive data). |
+| `--color` | `choice` | `auto` | Control colored output: `auto`, `always`, `never`. |
+| `--no-color` | `flag` | `False` | Disable ANSI color styling (equivalent to `NO_COLOR=1`). |
 
 > [!NOTE]
 > `--policy` is valid exclusively for `repair`, not `check`. Passing `--policy` to `check` errors immediately with exit code 2.
@@ -161,7 +171,7 @@ sesslint check <path> [OPTIONS]
 Scan directory trees for session artifacts or display reader resource limits.
 
 ```bash
-sesslint scan <path> [OPTIONS]
+sesslint scan [path] [OPTIONS]
 sesslint scan --show-limits
 ```
 
@@ -169,12 +179,15 @@ sesslint scan --show-limits
 | :--- | :--- | :--- | :--- |
 | `path` | `Path` | *optional* | Directory path to scan recursively (required unless `--show-limits`). |
 | `--show-limits` | `flag` | `False` | Display configured reader resource limits (max line length, max bytes) and exit 0. |
+| `--recursive`, `-r` | `flag` | `True` | Recursively scan directory trees (default: `True`). |
 | `--max-files` | `int` | `10000` | Maximum number of files to process before aborting. |
 | `--max-bytes` | `int` | `1GB` | Maximum cumulative bytes to process before aborting. |
 | `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--json` | `flag` | `False` | Emit machine-readable JSON scan report with 5-bucket totals. |
 | `--follow-symlinks` | `flag` | `False` | Follow symbolic links during directory traversal. |
+| `--color` | `choice` | `auto` | Control colored output: `auto`, `always`, `never`. |
+| `--no-color` | `flag` | `False` | Disable ANSI color styling. |
 
 #### `sesslint repair`
 Plan and execute verified, atomic session repairs (Alpha scope: Canonical Session format).
@@ -186,16 +199,19 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `path` | `Path` | *required* | Source session file to repair (Canonical format). |
-| `--output` | `Path` | *required* | Distinct destination path (required unless `--dry-run`). |
+| `--output`, `-o` | `Path` | *required* | Distinct destination path (required unless `--dry-run`). |
 | `--dry-run` | `flag` | `False` | Computes and displays plan; creates zero files on disk. |
 | `--policy` | `choice` | `conservative` | `conservative` (zero data loss) or `salvage` (explicit lossy pruning). |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--plan` | `Path` | `None` | Path to a pre-computed plan JSON file to execute. |
 | `--acknowledge-side-effects`| `flag` | `False` | Acknowledge tool side-effects for salvage policy. |
+| `--salvage-unsupported` | `flag` | `False` | *Deprecated*: Use `--policy salvage` instead. |
+| `--include-content` | `flag` | `False` | Embed raw transcript content in manifests (warning: emits raw sensitive data). |
 | `--json` | `flag` | `False` | Emit machine-readable JSON plan or repair manifest. |
 
 > [!NOTE]
-> The legacy `--salvage-unsupported` flag has been removed. Use `--policy salvage` instead.
+> The `--salvage-unsupported` flag is deprecated. Use `--policy salvage` instead.
 >
 > **Alpha Format Boundary**: Repair currently supports Canonical Session stream format (`schema_version: sesslint.session/v1`). Repair attempts on vendor formats (Claude Code / OpenAI Agents) safely refuse with Exit Code 2 and actionable instructions.
 
@@ -208,10 +224,15 @@ sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `source` | `Path` | *required* | Original source session file path. |
-| `repaired`| `Path` | *required* | Repaired output session file path. |
+| `source` | `Path` | *required* | Original source session file path (positional or `--source`). |
+| `repaired`| `Path` | *required* | Repaired output session file path (positional or `--output`). |
 | `--manifest` | `Path` | *required* | Cryptographically bound repair manifest JSON path. |
+| `--plan` | `Path` | `None` | Path to repair plan JSON file (optional). |
+| `--acknowledge-side-effects`| `flag` | `False` | Acknowledge tool side-effects for salvage policy during verify idempotence check. |
+| `--include-content` | `flag` | `False` | Embed raw transcript content (warning: emits raw sensitive data). |
 | `--json` | `flag` | `False` | Emit machine-readable JSON verdict. |
+| `--color` | `choice` | `auto` | Control colored output: `auto`, `always`, `never`. |
+| `--no-color` | `flag` | `False` | Disable ANSI color styling. |
 
 #### `sesslint validate-session`
 Validate a canonical session file against the official `sesslint.session/v1` JSON Schema specification.
@@ -275,7 +296,7 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 | Code | Name | Default Severity | Repairability | Action & Rationale |
 | :---: | :--- | :---: | :---: | :--- |
 | **`SL001`** | Malformed record | `error` | `manual` | Nonterminal malformed records block automated repair. |
-| **`SL002`** | Torn terminal record | `error` | `deterministic` | Incomplete final append repairable via `terminal-suffix-discard`. |
+| **`SL002`** | Torn terminal record | `error` | `deterministic` | Incomplete final append repairable via `torn-terminal-record-discard`. |
 
 ### 2. Event Identity
 | Code | Name | Default Severity | Repairability | Action & Rationale |
@@ -285,7 +306,7 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 ### 3. Graph Lineage & DAG Consistency
 | Code | Name | Default Severity | Repairability | Action & Rationale |
 | :---: | :--- | :---: | :---: | :--- |
-| **`SL004`** | Missing parent | `error` | `manual` | Repair requires a proven, unique candidate predecessor. |
+| **`SL004`** | Missing parent | `error` | `manual` | Repair requires proven unique predecessor (full equality, same branch, same compaction segment). |
 | **`SL005`** | Parent cycle | `fatal` | `unsupported` | Causal cycles invalidate DAG ordering; fatal by default. |
 | **`SL006`** | Disconnected branch | `warning` | `manual` | Unreachable subtrees require manual review before pruning. |
 | **`SL007`** | Ambiguous session head | `warning` | `manual` | Multiple leaf heads require operator branch selection. |
@@ -317,6 +338,105 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 
 ---
 
+## Finding Fingerprints & Deterministic Ordering
+
+### Finding Fingerprint Scheme (FR-046)
+
+Every diagnostic finding is assigned a deterministic 16-hex SHA-256 fingerprint computed across a normalized canonical preimage tuple:
+
+```python
+preimage = [
+    code,  # Diagnostic reason code (e.g., "SL001")
+    adapter_id,  # Active adapter name (e.g., "canonical", "claude-code-jsonl")
+    adapter_version,  # Active adapter version (e.g., "1.0.0")
+    profile_id,  # Active profile name (e.g., "neutral", "claude-strict")
+    profile_version,  # Active profile version (e.g., "1.0.0")
+    norm_path,  # Forward-slash normalized source path
+    line,  # 1-based source line (or None)
+    ordinal,  # 0-based stream record counter (or None)
+    record_id,  # Canonical or vendor record identifier (or None)
+    canonical_evidence_subset,  # Stable sorted subset of structural finding evidence
+]
+```
+
+- **Canonical Encoding**: Preimage is serialized via SessLint's unified canonical JSON primitive (`sort_keys=True`, `separators=(',', ':')`, `ensure_ascii=False`, `newline=False`) and hashed with SHA-256, returning the first 16 lowercase hex characters.
+- **Version Pinning**: Omitted or unresolved versions default strictly to `"unknown"` (never empty string), ensuring findings are version-stable across refactors and deterministic across platforms.
+- **Plan Fingerprints**: Repair plans are hashed with the identical canonical JSON primitive, guaranteeing cross-platform hash stability over UTF-8 data.
+
+### Deterministic Finding Ordering (FR-094)
+
+All SessLint renderers (JSON, scan summaries, and human-readable terminal reports) sort findings using a strict, position-first total ordering:
+
+1. **`path`**: Lexicographical order (forward-slash normalized).
+2. **`line`**: Source line number (`None` sorts as `-1` before line 0, followed by ascending integer).
+3. **`ordinal`**: Stream record index from `evidence["record_ordinal"]` (`None` / `-1` sorts before 0).
+4. **`severity_rank`**: Strict severity hierarchy (`fatal` < `error` < `warning` < `info`).
+5. **`code`**: Lexicographical order of the diagnostic code (e.g. `SL001`, `SL002`).
+6. **`record_id`**: Event identifier (`None` sorts as empty string before non-empty string, then lexicographical).
+7. **`fingerprint`**: 16-character SHA-256 hex digest for total ordering tie-breaking.
+
+---
+
+## Report Coverage & Run-State Evidence
+
+### Report Coverage Block (FR-047)
+
+Every report emitted by `sesslint check --json` embeds a top-level `coverage` block certifying which rules and checks were executed versus skipped:
+
+```json
+"coverage": {
+  "adapter": {
+    "id": "canonical",
+    "version": "1.0.0"
+  },
+  "performed": [
+    "SL001", "SL002", "SL003", "SL004", "SL005", "SL006", "SL007",
+    "SL101", "SL102", "SL103", "SL104", "SL105", "SL106", "SL107", "SL108",
+    "SL201", "SL202", "SL203", "SL301", "SL302",
+    "checkpoint", "graph", "identity", "tool_pairing_1", "tool_pairing_2"
+  ],
+  "profile": {
+    "id": "neutral",
+    "version": "1.0.0"
+  },
+  "skipped": []
+}
+```
+
+Any skipped check must record a machine-readable reason drawn exclusively from a **closed vocabulary**:
+- `profile-gated`: Rule or family disabled by the active replay profile.
+- `adapter-not-applicable`: Check does not apply to the resolved format or auto-detection failed.
+- `version-gated`: Format version is unsupported (`SL301`), aborting downstream checking.
+- `empty-input`: Stream contains zero records, preventing graph or semantic evaluation.
+- `cap-exceeded`: Stream resource limits exceeded (`max_line_bytes`, `max_file_bytes`, etc.).
+- `single-doc-fallback`: Non-streaming single-document parsing fallback was used.
+
+### Run-State & Checkpoint Evidence (FR-044, DEV-011)
+
+- **Events-Only Verdict Boundary**: Current checkpoint rules (`SL201`, `SL202`) evaluate causal consistency strictly over durable events in the session stream.
+- **Content-Free Structural Projection**: When runtime continuation state and checkpoints are provided (e.g. OpenAI Agents SDK exports), SessLint redacts state variables to structural projections (`keys`, `shapes`, `checkpoints`, `truncated`) and preserves them in `evidence["run_state"]`. Raw values, secrets, and prompts are never preserved.
+- **Future Continuation Ownership**: Verifying deep continuation-step ownership between runtime state variables and historical actions requires upstream vendor semantics, tracked under research item **OPP-019**.
+
+### Source Coordinates & Byte Offsets (FR-015, AC-003)
+
+Streaming readers (`io.py`, Claude Code, OpenAI Agents SDK JSONL) compute exact byte boundaries:
+- Finding evidence carries `byte_offset` (start byte), `byte_end` (end byte), and `record_ordinal`.
+- Report spans populate `span.byte = (byte_offset, byte_end)` alongside 1-indexed line coordinates.
+
+### Synthetic Event IDs & Namespace Isolation (DEV-007)
+
+When source records lack native event IDs, SessLint synthesizes IDs in a reserved namespace:
+- **Format**: `sesslint:synthetic:<adapter>:<ordinal>:<8-hex-hash>`, where `<8-hex-hash>` is derived from SHA-256 over `{source_hint}:{ordinal}:{payload_len}`.
+- **Collision Guard**: `SyntheticIdCollisionGuard` enforces at load time that no synthetic ID can collide with a vendor-supplied real ID, eliminating synthetic ID squatting and false `SL003` findings.
+
+### Discriminator Privacy Bounding (SL302, DEV-008)
+
+To prevent prompt or credential leaks via unknown record discriminators:
+- Safe identifiers matching `^[A-Za-z0-9_.-]{1,64}$` are echoed verbatim in `evidence["type_value"]`.
+- Non-matching, oversized, or multi-line strings are sanitized to `<type:len=N>` shape descriptors with `truncated: true` in evidence.
+
+---
+
 ## Repair Engine
 
 ### Policies: Conservative vs. Salvage
@@ -343,14 +463,17 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 
 ### Recipe Catalog
 
+SessLint registers **9 deterministic repair recipes** partitioned into conservative and salvage policies:
+
 #### Conservative Recipes (Default)
-- **`terminal-suffix-discard`** (`SL002`): Truncates incomplete trailing bytes after the last validated record boundary.
+- **`torn-terminal-record-discard`** (`SL002`): Discards incomplete or unparseable trailing bytes at the end of a session stream while preserving all validated preceding records.
 - **`identical-duplicate-collapse`** (`SL003`): Deduplicates adjacent byte-identical events.
-- **`proven-unique-parent-restore`** (`SL004`): Reattaches missing parent pointers when exactly one unambiguous ancestor exists.
+- **`proven-unique-parent-restore`** (`SL004`): Reattaches missing parent pointers when exactly one unambiguous ancestor exists in the same branch and compaction segment via full-equality match.
 - **`compaction-projection-reunion`** (`SL108`): Relocates compaction markers to reunite split tool call/result pairs.
 - **`duplicate-projection-removal`** (`SL104`): Discards duplicate identical result projections.
 
 #### Salvage Recipes (Explicit Opt-In)
+- **`terminal-suffix-discard`** (`SL005`): Discards trailing cyclic events after the cut point provided no durable checkpoints or safe tool results exist beyond the cut.
 - **`unresolvable-branch-amputate`** (`SL005`, `SL006`): Prunes dead-end cyclic or unreachable branches lacking checkpoints.
 - **`torn-compaction-project`** (`SL108`): Resolves asymmetric compaction splits by dropping orphaned half-turns.
 - **`side-effect-unknown-truncate`** (`SL102`): Truncates session immediately before an unresolvable tool call (requires `--acknowledge-side-effects`).
@@ -365,12 +488,40 @@ Repair execution is guaranteed atomic across all platforms:
 [Step 1] Pre-Validation ──> Fingerprint check + TOCTOU abstention scan + policy verification
 [Step 2] Source Hashing ──> SHA-256 pre-hash of source + destination pre-flight checks
 [Step 3] Apply Recipes  ──> Pure in-memory sequential execution of fingerprinted plan
-[Step 4] Revalidation   ──> Output schema parse + multiset parity + zero SL203 check
+[Step 4] Revalidation   ──> Output schema parse + multiset parity + zero SL203 + revalidation summary
 [Step 5] Atomic Commit  ──> Write <target>.tmp.<pid>.<rand> ──> fsync ──> os.replace
 [Step 6] Post-Hashing   ──> Verify source is byte-identical + compute output SHA-256
 [Step 7] Error Cleanup  ──> try...finally unlinks temporary file on any failure
-[Step 8] Manifest Emit  ──> Atomic write of <target>.manifest.json binding audit hashes
+[Step 8] Manifest Emit  ──> Exclusive create (O_EXCL) of <target>.manifest.json + directory fsync
 ```
+
+### Repair Manifest Schema & Cryptographic Binding (FR-072)
+
+Every successful repair writes a cryptographically bound `<target>.manifest.json` receipt conforming to `schemas/sesslint.repair-manifest.v1.json`:
+
+| Manifest Field | Type | Description |
+| :--- | :--- | :--- |
+| `schema_version` | `string` | Manifest contract version (`sesslint.repair-manifest/v1`). |
+| `input_fingerprint` | `string` | SHA-256 digest of original source file before mutation. |
+| `output_fingerprint` | `string` | SHA-256 digest of final repaired output file. |
+| `policy` | `string` | Policy used during repair (`conservative` or `salvage`). |
+| `actions` | `array` | Sequence of applied recipe actions with finding references. |
+| `declared_loss` | `array` | Itemized declared loss counters (e.g. `["events_dropped:2"]`). |
+| `idempotency_key` | `string` | 64-hex SHA-256 idempotency key binding input fingerprint, policy, and actions. |
+| `revalidation` | `object` | Embedded post-repair verdict: `{assurance, error_count, warning_count, profile_id, profile_version, report_fingerprint}`. |
+| `assurance_ceiling` | `string` | Revalidated output assurance level ceiling (`A0`–`A4`). |
+| `assurance` | `string` | Repair lattice assurance (`repaired-lossless` or `repaired-salvage`). |
+| `plan_fingerprint` | `string` | Deterministic SHA-256 digest of the executed repair plan. |
+| `revalidate_report` | `string \| null` | Embedded post-repair revalidation report JSON string, or null. |
+| `adapter_id` | `string` | Format adapter used for repair validation (e.g. `canonical`). |
+| `adapter_version` | `string` | Format adapter semantic version. |
+| `profile_version` | `string` | Replay validation profile semantic version. |
+| `byte_counts` | `object` | Source and output byte sizes (`{source: N, output: M}`). |
+| `record_counts` | `object` | Source and output event counts (`{source: N, output: M}`). |
+| `recipe_versions` | `object` | Mapping of applied recipe names to implementation versions. |
+
+> [!IMPORTANT]
+> **Receipt Immutability**: Manifest publication uses `O_EXCL` creation flags. SessLint refuses to silently overwrite an existing receipt file, ensuring that repair audit trails cannot be overwritten.
 
 ---
 
@@ -522,6 +673,25 @@ Formal versioned JSON Schemas are maintained in `schemas/`:
 | **Finding** | `v1` | `schemas/sesslint.finding.v1.json` | Diagnostic finding contract |
 | **Report** | `v1` | `schemas/sesslint.report.v1.json` | Aggregated analysis report |
 | **Repair Manifest** | `v1` | `schemas/sesslint.repair-manifest.v1.json` | Cryptographic audit trail |
+
+---
+
+## Compatibility & Migration Notes (NDP-001)
+
+The NDP-001 "Trustworthy Alpha" program introduces several intentional behavioral changes and schema additions relative to initial 0.1.0 releases:
+
+| Feature Area | Pre-NDP-001 Behavior | NDP-001 Code Truth | Migration & Output Diff Impact |
+| :--- | :--- | :--- | :--- |
+| **Finding Order** | Severity-first sorting: `(severity, code, path, line, record_id, fingerprint)`. | Position-first sorting (FR-094): `(path, line, ordinal, severity, code, record_id, fingerprint)`. | Findings in JSON and terminal outputs appear in physical stream order rather than grouped by severity. |
+| **Finding Fingerprints** | Per-family hashing algorithms ignoring adapter/profile versions. | Unified 16-hex SHA-256 over canonical JSON preimage including `(adapter_id, adapter_version, profile_id, profile_version)`. | All finding `fingerprint` values differ from 0.1.0 baselines; cross-version stability is now guaranteed. |
+| **Plan Fingerprints** | Canonical JSON formatted with `ensure_ascii=True`. | Unified canonical JSON with `ensure_ascii=False` and `\n` normalization. | Plan SHA-256 hashes differ for non-ASCII records; plan schemas remain backward compatible. |
+| **Report Coverage** | Reports contained only finding arrays and metadata; no check coverage tracking. | Embedded `coverage` block (FR-047) enumerating performed and skipped checks with closed reason vocabulary. | Additive schema change in `schemas/sesslint.report.v1.json`. CI gates can verify full test execution. |
+| **Source Coordinates** | Finding `span.byte` coordinates were always null. | Streaming readers track byte offsets and emit `byte_offset`, `byte_end`, and `record_ordinal` in evidence and `span.byte`. | Additive evidence fields; allows exact byte-range auditing. |
+| **Synthetic Event IDs** | Guessable synthetic IDs (`rec_0`, `rec_1`) without namespace isolation. | Reserved collision-resistant namespace `sesslint:synthetic:<adapter>:<ordinal>:<hash>` with load-time collision guard. | Eliminates false `SL003` findings caused by synthetic ID collisions with real session IDs. |
+| **SL302 Type Discriminator** | Unknown event discriminator echoed raw into `evidence.type_value`. | Allowlist echo `^[A-Za-z0-9_.-]{1,64}$`; complex or long discriminators masked to `<type:len=N>` with `truncated: true`. | Protects against secret and prompt leakage in default reports (FR-081/FR-082). |
+| **Repair Manifest** | Manifests lacked revalidation proof and allowed silent file overwrite. | Embedded `revalidation` summary struct, `assurance_ceiling`, real adapter versions, `O_EXCL` exclusive create, and directory fsync. | Additive manifest fields; existing receipt files are never silently overwritten. |
+| **SL004 Parent Restoration** | `proven-unique-parent-restore` matched candidate parents across the entire session by string/hash prefix. | Candidate matching requires exact full string equality, same-branch confinement, and same-compaction-segment confinement. | Eliminates prefix guessing; ambiguous or unconfined missing-parent cases remain `manual` without auto-repair. |
+| **CLI Command Surface** | `check` accepted meaningless `--policy` flag; `repair` accepted `--salvage-unsupported`; `cmd_check` had duplicated orchestration. | `check` unified onto `api.check_file` / `api.check_dir`; `--policy` on `check` raises exit code 2; `--salvage-unsupported` deprecated in favor of `--policy salvage`. | Clean CLI contract with zero behavioral drift between CLI and Python API. |
 
 ---
 

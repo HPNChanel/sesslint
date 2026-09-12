@@ -13,19 +13,19 @@
 
 ## Risk
 
-Loss of incomplete trailing event data if the trailing record contained partially accepted user intent.
+Loss of trailing events forming or following a cycle if the discarded turns contained valid agent reasoning or user intent.
 
 ## Evidence
 
-The trailing line is incomplete or torn, and no subsequent events or safe tool results exist beyond the cut point.
+A causal parent cycle or trailing loop exists at the tail of the session stream, and no durable checkpoints or safe tool results exist beyond the cut point.
 
 ## Non-Proof Statement
 
-Does not prove that the discarded fragment had no external side effects if executed asynchronously.
+Does not prove that the discarded turns had no external side effects or that omitted conversational context is unneeded.
 
 ## Loss Behavior
 
-Discards the torn trailing bytes up to the last clean newline boundary.
+Discards all trailing events after the cut point to eliminate the cycle (lossy, salvage only).
 
 ## Tested Fixture
 
