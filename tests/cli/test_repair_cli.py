@@ -162,7 +162,7 @@ def test_repair_api_rejects_vendor_format(tmp_path: Path) -> None:
 def test_repair_cli_salvage_unsupported_flag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Repair with --salvage-unsupported flag automatically maps policy to salvage."""
+    """Repair with deprecated --salvage-unsupported flag exits 2 with migration guidance."""
     src = FIXTURES_DIR / "basic" / "source.jsonl"
     out = tmp_path / "out.jsonl"
 
@@ -176,12 +176,12 @@ def test_repair_cli_salvage_unsupported_flag(
         "--json",
     ]
     code = main(cmd)
-    assert code == 0
+    assert code == 2
     captured = capsys.readouterr()
-    import json
-
-    plan_data = json.loads(captured.out)
-    assert plan_data.get("policy") == "salvage"
+    assert (
+        "Error: The --salvage-unsupported flag has been deprecated and removed. "
+        "Please use '--policy salvage' instead."
+    ) in captured.err
 
 
 def test_repair_cli_sl002_success(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

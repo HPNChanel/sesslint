@@ -135,7 +135,7 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
-SessLint exposes five primary commands:
+SessLint exposes seven CLI commands:
 
 #### `sesslint check`
 Scan and validate session files or directories for structural corruptions and provider rule violations.
@@ -153,6 +153,28 @@ sesslint check <path> [OPTIONS]
 | `--json` | `flag` | `False` | Emit machine-readable JSON report. |
 | `--confidence-min` | `float` | `0.55` | Minimum auto-detection confidence threshold. |
 | `--margin-min` | `float` | `0.15` | Minimum auto-detection margin above second-place format. |
+
+> [!NOTE]
+> `--policy` is valid exclusively for `repair`, not `check`. Passing `--policy` to `check` errors immediately with exit code 2.
+
+#### `sesslint scan`
+Scan directory trees for session artifacts or display reader resource limits.
+
+```bash
+sesslint scan <path> [OPTIONS]
+sesslint scan --show-limits
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `path` | `Path` | *optional* | Directory path to scan recursively (required unless `--show-limits`). |
+| `--show-limits` | `flag` | `False` | Display configured reader resource limits (max line length, max bytes) and exit 0. |
+| `--max-files` | `int` | `10000` | Maximum number of files to process before aborting. |
+| `--max-bytes` | `int` | `1GB` | Maximum cumulative bytes to process before aborting. |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
+| `--json` | `flag` | `False` | Emit machine-readable JSON scan report with 5-bucket totals. |
+| `--follow-symlinks` | `flag` | `False` | Follow symbolic links during directory traversal. |
 
 #### `sesslint repair`
 Plan and execute verified, atomic session repairs (Alpha scope: Canonical Session format).
@@ -173,6 +195,8 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 | `--json` | `flag` | `False` | Emit machine-readable JSON plan or repair manifest. |
 
 > [!NOTE]
+> The legacy `--salvage-unsupported` flag has been removed. Use `--policy salvage` instead.
+>
 > **Alpha Format Boundary**: Repair currently supports Canonical Session stream format (`schema_version: sesslint.session/v1`). Repair attempts on vendor formats (Claude Code / OpenAI Agents) safely refuse with Exit Code 2 and actionable instructions.
 
 #### `sesslint verify`
@@ -188,6 +212,17 @@ sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
 | `repaired`| `Path` | *required* | Repaired output session file path. |
 | `--manifest` | `Path` | *required* | Cryptographically bound repair manifest JSON path. |
 | `--json` | `flag` | `False` | Emit machine-readable JSON verdict. |
+
+#### `sesslint validate-session`
+Validate a canonical session file against the official `sesslint.session/v1` JSON Schema specification.
+
+```bash
+sesslint validate-session <path>
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `path` | `Path` | *required* | Path to canonical session file (`.json` or `.jsonl`). |
 
 #### `sesslint formats`
 List supported session format adapters and their schema version specifications.
@@ -406,35 +441,66 @@ SessLint enforces strict inward-only dependency layering:
 
 ## Python Library API
 
-SessLint is engineered as both a standalone CLI and a high-performance Python library:
+SessLint is engineered as both a standalone CLI and a high-performance, strictly typed Python library with 1:1 parity:
+
+### High-Level Programmatic API (`sesslint.api`)
+
+```python
+from pathlib import Path
+from sesslint import api
+
+# 1. Single-file check returning frozen Report dataclass
+report = api.check_file("session.jsonl", profile="neutral")
+print(f"Assurance: {report.assurance}, Findings: {len(report.findings)}")
+for finding in report.findings:
+    print(f"  [{finding.code}] {finding.severity.value}: {finding.message}")
+
+# 2. Directory scan returning ScanReport with 5-bucket totals
+scan_report = api.check_dir("logs/", recursive=True)
+print(f"Totals: {scan_report.totals}")
+
+# 3. Dry-run repair plan or full verified repair execution
+plan, manifest = api.repair(
+    source_path="corrupted.jsonl",
+    output_path="repaired.jsonl",
+    policy="conservative",
+    profile="neutral",
+)
+if manifest:
+    print(f"Repair certified at assurance level: {manifest.assurance}")
+
+# 4. Independent audit and verification of repair artifacts
+verdict = api.verify(
+    source_path="corrupted.jsonl",
+    output_path="repaired.jsonl",
+    manifest_path="repaired.jsonl.manifest.json",
+)
+assert verdict.ok, "Verification audit failed!"
+```
+
+### Low-Level Modular Primitives
 
 ```python
 from pathlib import Path
 import sesslint
 
-# 1. Load and parse a session
+# 1. Load and parse canonical session events
 header, events = sesslint.load_session_source(Path("session.jsonl"))
 
-# 2. Run validation checks under a specific profile
+# 2. Run check suite with explicit profile
 findings = sesslint.run_all_checks(
     events=events,
     profile="claude-strict",
     source_path="session.jsonl",
 )
 
-for finding in findings:
-    print(f"[{finding.code}] ({finding.severity.value}): {finding.message}")
-
-# 3. Generate a deterministic repair plan
+# 3. Plan and atomically execute repair
 plan = sesslint.plan(
     findings=findings,
     events=events,
     profile="claude-strict",
     policy="conservative",
 )
-print(f"Plan fingerprint: {plan.fingerprint}")
-
-# 4. Atomically execute repair
 manifest = sesslint.execute(
     source_path=Path("session.jsonl"),
     plan=plan,
@@ -442,7 +508,6 @@ manifest = sesslint.execute(
     policy="conservative",
     profile="claude-strict",
 )
-print(f"Repair certified at assurance level: {manifest.assurance}")
 ```
 
 ---
