@@ -6,13 +6,16 @@ information through check runners into finding fingerprint computations.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sesslint._version import ADAPTER_VERSIONS, PROFILE_VERSIONS
 
 if TYPE_CHECKING:
     from sesslint.profiles.profile import Profile
+
+_UNSET: Any = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,12 +26,14 @@ class CheckContext:
     versions + structural coords.
     When a version coordinate is unavailable or omitted, it MUST be explicit "unknown"
     (never empty string) so absence is visible in the fingerprint preimage.
+    Also threads preserved source metadata / projections into checks (DEV-011).
     """
 
     adapter_id: str = "unknown"
     adapter_version: str = "unknown"
     profile_id: str = "unknown"
     profile_version: str = "unknown"
+    source_metadata: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.adapter_id or not self.adapter_id.strip():
@@ -48,6 +53,7 @@ class CheckContext:
         adapter_version: str | None = None,
         profile_id: str | None = None,
         profile_version: str | None = None,
+        source_metadata: Mapping[str, Any] | None = None,
     ) -> CheckContext:
         """Create a CheckContext, looking up registered version strings when unspecified."""
         clean_ad_id = adapter_id.strip() if adapter_id and adapter_id.strip() else "unknown"
@@ -71,6 +77,7 @@ class CheckContext:
             adapter_version=clean_ad_ver,
             profile_id=clean_prof_id,
             profile_version=clean_prof_ver,
+            source_metadata=source_metadata,
         )
 
     @classmethod
@@ -78,6 +85,7 @@ class CheckContext:
         cls,
         profile: Profile | str | None = None,
         adapter: str | None = None,
+        source_metadata: Mapping[str, Any] | None = None,
     ) -> CheckContext:
         """Construct CheckContext by resolving a Profile (or profile name) and adapter name."""
         from sesslint.profiles.builtin import NEUTRAL_PROFILE
@@ -107,6 +115,7 @@ class CheckContext:
             adapter_version=clean_ad_ver,
             profile_id=prof_id,
             profile_version=prof_ver,
+            source_metadata=source_metadata,
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -125,6 +134,7 @@ class CheckContext:
         adapter_version: str | None = None,
         profile_id: str | None = None,
         profile_version: str | None = None,
+        source_metadata: Mapping[str, Any] | None | object = _UNSET,
     ) -> CheckContext:
         """Return a copy of CheckContext with overridden fields."""
         return CheckContext(
@@ -132,6 +142,15 @@ class CheckContext:
             adapter_version=self.adapter_version if adapter_version is None else adapter_version,
             profile_id=self.profile_id if profile_id is None else profile_id,
             profile_version=self.profile_version if profile_version is None else profile_version,
+            source_metadata=(
+                self.source_metadata
+                if source_metadata is _UNSET
+                else (
+                    source_metadata
+                    if (isinstance(source_metadata, Mapping) or source_metadata is None)
+                    else None
+                )
+            ),
         )
 
 

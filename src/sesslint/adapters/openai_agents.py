@@ -137,6 +137,158 @@ def _safe_type_value(val: Any) -> str:
     return safe_type_value(val)
 
 
+MAX_PROJECTED_RUN_STATE_KEYS: Final[int] = 32
+MAX_PROJECTED_CHECKPOINTS: Final[int] = 8
+
+
+def project_run_state(source: Any) -> dict[str, Any]:
+    """Redact runtime state and checkpoints to a content-free structural projection.
+
+    Guarantees (FR-044, DEV-011):
+    - Bounded: max 32 keys, max 8 checkpoint entries projected.
+    - Zero raw values or prompts: values are mapped to safe shape strings (<type:len>).
+    - Keys are filtered through safe discriminator allowlist or safe shape strings.
+    - Checkpoint entries project to (id, seq, hash: <shape>, ts: bool).
+    - If bounded limits are exceeded, truncated is True and counts are added.
+    """
+    if (
+        isinstance(source, Mapping)
+        and "keys" in source
+        and "shapes" in source
+        and "checkpoints" in source
+    ):
+        return dict(source)
+
+    if (
+        hasattr(source, "run_state_projection")
+        and isinstance(source.run_state_projection, Mapping)
+        and (
+            source.run_state_projection.get("keys")
+            or source.run_state_projection.get("checkpoints")
+        )
+    ):
+        return dict(source.run_state_projection)
+
+    run_state_map: Mapping[Any, Any] = {}
+    chk_list: list[Any] = []
+
+    if source is not None:
+        if isinstance(source, Mapping):
+            raw_rs = source.get("run_state")
+            if isinstance(raw_rs, Mapping):
+                run_state_map = raw_rs
+            raw_chks = source.get("checkpoints")
+            if isinstance(raw_chks, Sequence) and not isinstance(raw_chks, (str, bytes)):
+                chk_list = list(raw_chks)
+        else:
+            raw_rs = getattr(source, "run_state", None)
+            if isinstance(raw_rs, Mapping):
+                run_state_map = raw_rs
+            raw_chks = getattr(source, "checkpoints", None)
+            if isinstance(raw_chks, Sequence) and not isinstance(raw_chks, (str, bytes)):
+                chk_list = list(raw_chks)
+
+    raw_items_list: list[tuple[Any, Any]] = []
+    try:
+        raw_items_list = list(run_state_map.items())
+    except Exception:
+        raw_items_list = []
+
+    sorted_items = sorted(raw_items_list, key=lambda item: str(item[0]))
+    total_keys = len(sorted_items)
+    is_keys_truncated = total_keys > MAX_PROJECTED_RUN_STATE_KEYS
+    projected_items = sorted_items[:MAX_PROJECTED_RUN_STATE_KEYS]
+
+    projected_keys: list[str] = []
+    shapes: dict[str, str] = {}
+
+    for raw_k, raw_v in projected_items:
+        str_k = str(raw_k)
+        safe_k, _ = safe_discriminator(str_k)
+        orig_safe_k = safe_k
+        dup_suffix = 1
+        while safe_k in shapes:
+            safe_k = f"{orig_safe_k}#{dup_suffix}"
+            dup_suffix += 1
+        projected_keys.append(safe_k)
+        shapes[safe_k] = _safe_type_value(raw_v)
+
+    total_checkpoints = len(chk_list)
+    is_chk_truncated = total_checkpoints > MAX_PROJECTED_CHECKPOINTS
+    projected_raw_chks = chk_list[:MAX_PROJECTED_CHECKPOINTS]
+
+    projected_checkpoints: list[dict[str, Any]] = []
+    for chk in projected_raw_chks:
+        if isinstance(chk, Mapping):
+            raw_id = chk.get("id") or chk.get("checkpoint_id") or ""
+            raw_seq = chk.get("seq") if chk.get("seq") is not None else chk.get("checkpoint_seq")
+            raw_hash = chk.get("hash") or chk.get("payload_hash") or chk.get("state_hash")
+            raw_ts = chk.get("ts") or chk.get("created_at")
+        elif chk is not None and not isinstance(chk, (str, bytes, int, float, bool)):
+            raw_id = getattr(chk, "id", None) or getattr(chk, "checkpoint_id", None) or ""
+            raw_seq = (
+                getattr(chk, "seq", None)
+                if getattr(chk, "seq", None) is not None
+                else getattr(chk, "checkpoint_seq", None)
+            )
+            raw_hash = (
+                getattr(chk, "hash", None)
+                or getattr(chk, "payload_hash", None)
+                or getattr(chk, "state_hash", None)
+            )
+            raw_ts = getattr(chk, "ts", None) or getattr(chk, "created_at", None)
+        else:
+            projected_checkpoints.append(
+                {
+                    "hash": "<NoneType>",
+                    "id": "<invalid>",
+                    "seq": None,
+                    "ts": False,
+                }
+            )
+            continue
+
+        safe_id_str, id_trunc = safe_discriminator(str(raw_id)) if raw_id else ("", False)
+        chk_id = safe_id_str if not id_trunc else "<redacted>"
+
+        seq_val: int | None = None
+        if isinstance(raw_seq, int) and not isinstance(raw_seq, bool):
+            seq_val = raw_seq
+        elif isinstance(raw_seq, str) and raw_seq.strip().isdigit():
+            try:
+                seq_val = int(raw_seq.strip())
+            except ValueError:
+                seq_val = None
+
+        hash_shape = _safe_type_value(raw_hash) if raw_hash is not None else "<NoneType>"
+        ts_present = bool(raw_ts)
+
+        projected_checkpoints.append(
+            {
+                "hash": hash_shape,
+                "id": chk_id,
+                "seq": seq_val,
+                "ts": ts_present,
+            }
+        )
+
+    is_truncated = is_keys_truncated or is_chk_truncated
+
+    projection: dict[str, Any] = {
+        "checkpoints": projected_checkpoints,
+        "keys": projected_keys,
+        "shapes": shapes,
+        "truncated": is_truncated,
+    }
+    if is_truncated:
+        projection["total_keys"] = total_keys
+        projection["total_checkpoints"] = total_checkpoints
+        projection["truncated_keys"] = max(0, total_keys - MAX_PROJECTED_RUN_STATE_KEYS)
+        projection["truncated_checkpoints"] = max(0, total_checkpoints - MAX_PROJECTED_CHECKPOINTS)
+
+    return projection
+
+
 # Explicit mapping from OpenAI item types to canonical (actor, kind) pairs
 ITEM_TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
     "message": ("assistant", "message"),  # Disambiguated by role if present
@@ -638,6 +790,7 @@ def _load_openai_agents_json(
         )
 
     guard.assert_no_collision()
+    source_metadata.run_state_projection = project_run_state(source_metadata)
     return EventList(events, source=source_metadata), sort_findings(findings)
 
 
@@ -731,6 +884,7 @@ def _load_openai_agents_jsonl(
         )
 
     guard.assert_no_collision()
+    source_metadata.run_state_projection = project_run_state(source_metadata)
     return EventList(events, source=source_metadata), sort_findings(findings)
 
 
@@ -1207,6 +1361,8 @@ __all__ = [
     "EventList",
     "ITEM_TYPE_MAP",
     "KNOWN_RECORD_KEYS",
+    "MAX_PROJECTED_CHECKPOINTS",
+    "MAX_PROJECTED_RUN_STATE_KEYS",
     "SQLITE_MAGIC",
     "SUPPORTED_OPENAI_AGENTS_VERSIONS",
     "SourceMetadata",
@@ -1214,4 +1370,5 @@ __all__ = [
     "load_openai_agents",
     "load_openai_agents_session",
     "normalize_version",
+    "project_run_state",
 ]
