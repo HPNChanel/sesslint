@@ -34,11 +34,14 @@ from sesslint.adapters.detect import (
     to_source_block,
 )
 from sesslint.adapters.openai_agents import (
+    MAX_PROJECTED_CHECKPOINTS,
+    MAX_PROJECTED_RUN_STATE_KEYS,
     EventList,
     SourceMetadata,
     detect_openai_agents,
     load_openai_agents,
     load_openai_agents_session,
+    project_run_state,
 )
 from sesslint.adapters.safe_value import (
     safe_discriminator,
@@ -61,6 +64,8 @@ __all__ = [
     "FORMAT_CLAUDE_CODE",
     "FORMAT_OPENAI_AGENTS",
     "MARGIN_MIN",
+    "MAX_PROJECTED_CHECKPOINTS",
+    "MAX_PROJECTED_RUN_STATE_KEYS",
     "SNIFF_BYTES",
     "SUPPORTED_FORMATS",
     "SYNTHETIC_ID_PREFIX",
@@ -79,6 +84,7 @@ __all__ = [
     "load_claude_code_session",
     "load_openai_agents",
     "load_openai_agents_session",
+    "project_run_state",
     "resolve_format",
     "safe_discriminator",
     "safe_type_value",

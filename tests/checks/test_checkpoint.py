@@ -417,3 +417,249 @@ def test_sensitivity_parity() -> None:
     assert f_default[0].code == SL201
     assert f_high[0].code == SL201
     assert f_default[0].to_dict() == f_high[0].to_dict()
+
+
+def test_sl201_run_state_evidence_preservation() -> None:
+    """SL201 finding includes run_state projection when supplied via context or param."""
+    events = [
+        SessionEvent(
+            id="c1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 1, "state_hash": "hash1"},
+        ),
+        SessionEvent(
+            id="c2",
+            parent_id="c1",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 5, "state_hash": "hash2"},
+        ),
+    ]
+
+    proj = {
+        "checkpoints": [{"hash": "<str:len=5>", "id": "chk_1", "seq": 1, "ts": True}],
+        "keys": ["agent_mode", "step_count"],
+        "shapes": {"agent_mode": "<str:len=10>", "step_count": "<int>"},
+        "truncated": False,
+    }
+
+    # 1. Via explicit run_state_projection param
+    findings_param = check_checkpoint_gap(events, run_state_projection=proj)
+    assert len(findings_param) == 1
+    ev_param = _evidence(findings_param[0])
+    assert "run_state" in ev_param
+    assert ev_param["run_state"] == proj
+
+    # 2. Via CheckContext.source_metadata
+    from sesslint.context import CheckContext
+
+    ctx = CheckContext(
+        adapter_id="openai-agents",
+        adapter_version="1.0.0",
+        profile_id="openai-strict",
+        profile_version="1.0.0",
+        source_metadata={"run_state_projection": proj},
+    )
+    findings_ctx = check_checkpoint_gap(events, context=ctx)
+    assert len(findings_ctx) == 1
+    ev_ctx = _evidence(findings_ctx[0])
+    assert "run_state" in ev_ctx
+    assert ev_ctx["run_state"] == proj
+
+    # 3. Via EventList.source
+    from sesslint.adapters.openai_agents import EventList, SourceMetadata
+
+    src_meta = SourceMetadata(run_state_projection=proj)
+    event_list = EventList(events, source=src_meta)
+    findings_el = check_checkpoint_gap(event_list)
+    assert len(findings_el) == 1
+    ev_el = _evidence(findings_el[0])
+    assert "run_state" in ev_el
+    assert ev_el["run_state"] == proj
+
+
+def test_sl202_run_state_evidence_preservation() -> None:
+    """SL202 finding includes run_state projection when supplied."""
+    events = [
+        SessionEvent(
+            id="c1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 1, "state_hash": "hash_a_123456789"},
+        ),
+        SessionEvent(
+            id="c2",
+            parent_id="c1",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 1, "state_hash": "hash_b_987654321"},
+        ),
+    ]
+
+    proj = {
+        "checkpoints": [],
+        "keys": ["active_task"],
+        "shapes": {"active_task": "<str:len=8>"},
+        "truncated": False,
+    }
+
+    findings = check_checkpoint_divergence(events, run_state_projection=proj)
+    assert len(findings) == 1
+    ev = _evidence(findings[0])
+    assert "run_state" in ev
+    assert ev["run_state"] == proj
+
+
+def test_run_state_absence_keeps_evidence_minimal() -> None:
+    """When run_state is absent, finding evidence contains no run_state key."""
+    events = [
+        SessionEvent(
+            id="c1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 1, "state_hash": "hash1"},
+        ),
+        SessionEvent(
+            id="c2",
+            parent_id="c1",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 5, "state_hash": "hash2"},
+        ),
+    ]
+
+    findings = check_checkpoint_gap(events)
+    assert len(findings) == 1
+    ev = _evidence(findings[0])
+    assert "run_state" not in ev
+    assert "at_index" in ev
+    assert "expected_seq" in ev
+    assert "found_seq" in ev
+
+
+def test_verdict_matrix_unchanged_by_run_state_projection() -> None:
+    """SL201/SL202 finding count, codes, severities, and fingerprints are unchanged."""
+    events = [
+        SessionEvent(
+            id="c1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 1, "state_hash": "h1"},
+        ),
+        SessionEvent(
+            id="c2",
+            parent_id="c1",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 5, "state_hash": "h2"},
+        ),
+    ]
+
+    findings_without = check_checkpoint_gap(events)
+    findings_with = check_checkpoint_gap(
+        events,
+        run_state_projection={
+            "checkpoints": [],
+            "keys": ["k1"],
+            "shapes": {"k1": "<int>"},
+            "truncated": False,
+        },
+    )
+
+    assert len(findings_without) == len(findings_with) == 1
+    assert findings_without[0].code == findings_with[0].code == SL201
+    assert findings_without[0].severity == findings_with[0].severity
+    assert findings_without[0].repairability == findings_with[0].repairability
+    assert findings_without[0].source == findings_with[0].source
+    # Fingerprint must be identical because run_state is not in CANONICAL_EVIDENCE_KEYS
+    assert findings_without[0].fingerprint == findings_with[0].fingerprint
+
+
+def test_check_checkpoint_composite_run_state_preservation() -> None:
+    """Composite check_checkpoint attaches run_state to SL201/SL202 and keeps SL203 minimal."""
+    from sesslint.checks.checkpoint import check_checkpoint
+    from sesslint.context import CheckContext
+
+    proj = {
+        "checkpoints": [{"hash": "<str:len=5>", "id": "chk_1", "seq": 1, "ts": True}],
+        "keys": ["agent_mode"],
+        "shapes": {"agent_mode": "<str:len=10>"},
+        "truncated": False,
+    }
+
+    ctx = CheckContext(
+        adapter_id="openai-agents",
+        adapter_version="1.0.0",
+        profile_id="openai-strict",
+        profile_version="1.0.0",
+        source_metadata={"run_state_projection": proj},
+    )
+
+    # Stream with SL201 gap (1 -> 5) followed by tool event triggering SL203
+    events = [
+        SessionEvent(
+            id="c1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 1, "state_hash": "hash1"},
+        ),
+        SessionEvent(
+            id="c2",
+            parent_id="c1",
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="system",
+            kind="checkpoint",
+            payload={"seq": 5, "state_hash": "hash2"},
+        ),
+        SessionEvent(
+            id="t1",
+            parent_id="c2",
+            seq=2,
+            ts="2026-09-05T12:00:02Z",
+            actor="assistant",
+            kind="tool_call",
+            payload={"name": "bash", "call_id": "call_1"},
+        ),
+    ]
+
+    findings = check_checkpoint(events, context=ctx)
+    codes = [f.code for f in findings]
+    assert "SL201" in codes
+    assert "SL203" in codes
+
+    f201 = [f for f in findings if f.code == "SL201"][0]
+    f203 = [f for f in findings if f.code == "SL203"][0]
+
+    # SL201 carries run_state projection
+    assert f201.evidence is not None
+    assert "run_state" in f201.evidence
+    assert f201.evidence["run_state"] == proj
+
+    # SL203 remains strictly minimal (no run_state)
+    assert f203.evidence is not None
+    assert "run_state" not in f203.evidence

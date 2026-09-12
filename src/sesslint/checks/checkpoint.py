@@ -14,6 +14,16 @@ This module implements three vendor-neutral safeguard rules over canonical event
   Severity: error, Repairability: manual.
   Rationale: Continuing to invoke tools across lost or corrupted state compounds damage;
   SL203 acts as a mandatory hard refusal gate against automated repair.
+
+Boundary Note (FR-044, DEV-011):
+- SL201 and SL202 verdicts are strictly events-only (evaluating checkpoint records and
+  continuation boundaries present in the canonical event stream).
+- When runtime state or checkpoints are supplied by the adapter (e.g. provider run-state metadata),
+  a content-free structural projection is preserved and attached to SL201/SL202 evidence
+  under `run_state`.
+- Full runtime ownership verdicts (validating continuation steps and terminal outputs
+  against provider runtime state) require upstream provider semantics and are deferred
+  to OPP-019 research.
 """
 
 from __future__ import annotations
@@ -205,6 +215,37 @@ def _extract_checkpoint_fields(event: Any) -> tuple[str | None, int | None, str 
     return chk_id_str, seq_val, hash_str
 
 
+def _extract_run_state_projection(
+    *,
+    context: CheckContext | None = None,
+    events: Sequence[SessionEvent] | None = None,
+    run_state_projection: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Resolve content-free run_state projection from explicit param, context, or events."""
+    if run_state_projection is not None:
+        return dict(run_state_projection)
+
+    candidates: list[Mapping[str, Any]] = []
+    if context is not None and isinstance(context.source_metadata, Mapping):
+        candidates.append(context.source_metadata)
+    if events is not None:
+        raw_source = getattr(events, "source", None)
+        if isinstance(raw_source, Mapping) and raw_source not in candidates:
+            candidates.append(raw_source)
+
+    for source_meta in candidates:
+        cached_proj = source_meta.get("run_state_projection")
+        if isinstance(cached_proj, Mapping):
+            if cached_proj.get("keys") or cached_proj.get("checkpoints"):
+                return dict(cached_proj)
+
+        if "keys" in source_meta and "shapes" in source_meta:
+            if source_meta.get("keys") or source_meta.get("checkpoints"):
+                return dict(source_meta)
+
+    return None
+
+
 def check_checkpoint_gap(
     events: Sequence[SessionEvent],
     *,
@@ -212,6 +253,7 @@ def check_checkpoint_gap(
     max_findings: int = MAX_CHECKPOINT_FINDINGS,
     checkpoint_sensitivity: str = "default",
     context: CheckContext | None = None,
+    run_state_projection: Mapping[str, Any] | None = None,
 ) -> list[Finding]:
     """Check for checkpoint gaps (SL201).
 
@@ -221,8 +263,14 @@ def check_checkpoint_gap(
     - Fires when a checkpoint has missing or empty state_hash.
     - sensitivity flag ('default' or 'high') preserved with pinned parity.
     - severity: error, repairability: manual.
+    - Preserves and attaches content-free run_state projection when present (DEV-011).
     """
     ctx = context if context is not None else CheckContext()
+    proj = _extract_run_state_projection(
+        context=ctx,
+        events=events,
+        run_state_projection=run_state_projection,
+    )
     findings: list[Finding] = []
     last_checkpoint_seq: int | None = None
     has_seen_checkpoint = False
@@ -243,6 +291,13 @@ def check_checkpoint_gap(
         # 1. Resumption without preceding checkpoint
         if kind_str in _KIND_RUN_START:
             if not has_seen_checkpoint:
+                evidence_gap: dict[str, Any] = {
+                    "at_index": idx,
+                    "expected_seq": 0,
+                    "found_seq": None,
+                }
+                if proj is not None:
+                    evidence_gap["run_state"] = proj
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -250,11 +305,7 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        evidence={
-                            "at_index": idx,
-                            "expected_seq": 0,
-                            "found_seq": None,
-                        },
+                        evidence=evidence_gap,
                         adapter_id=ctx.adapter_id,
                         adapter_version=ctx.adapter_version,
                         profile_id=ctx.profile_id,
@@ -269,6 +320,15 @@ def check_checkpoint_gap(
 
             # Missing or empty state_hash is gap evidence
             if not state_hash:
+                evidence_nohash: dict[str, Any] = {
+                    "at_index": idx,
+                    "expected_seq": (
+                        last_checkpoint_seq + 1 if last_checkpoint_seq is not None else 0
+                    ),
+                    "found_seq": seq,
+                }
+                if proj is not None:
+                    evidence_nohash["run_state"] = proj
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -276,13 +336,7 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        evidence={
-                            "at_index": idx,
-                            "expected_seq": (
-                                last_checkpoint_seq + 1 if last_checkpoint_seq is not None else 0
-                            ),
-                            "found_seq": seq,
-                        },
+                        evidence=evidence_nohash,
                         adapter_id=ctx.adapter_id,
                         adapter_version=ctx.adapter_version,
                         profile_id=ctx.profile_id,
@@ -294,6 +348,13 @@ def check_checkpoint_gap(
             if seq is not None:
                 if last_checkpoint_seq is not None and (seq - last_checkpoint_seq) > 1:
                     expected_seq = last_checkpoint_seq + 1
+                    evidence_jump: dict[str, Any] = {
+                        "at_index": idx,
+                        "expected_seq": expected_seq,
+                        "found_seq": seq,
+                    }
+                    if proj is not None:
+                        evidence_jump["run_state"] = proj
                     findings.append(
                         make_finding(
                             code=SL201,
@@ -301,11 +362,7 @@ def check_checkpoint_gap(
                             repairability=Repairability.MANUAL,
                             message_template=_MSG_SL201,
                             source=SourceRef(path=path, line=line, record_id=rec_id),
-                            evidence={
-                                "at_index": idx,
-                                "expected_seq": expected_seq,
-                                "found_seq": seq,
-                            },
+                            evidence=evidence_jump,
                             adapter_id=ctx.adapter_id,
                             adapter_version=ctx.adapter_version,
                             profile_id=ctx.profile_id,
@@ -315,6 +372,14 @@ def check_checkpoint_gap(
                 last_checkpoint_seq = seq
             elif checkpoint_sensitivity == "high":
                 expected_seq = 0 if last_checkpoint_seq is None else last_checkpoint_seq + 1
+                evidence_sens: dict[str, Any] = {
+                    "at_index": idx,
+                    "expected_seq": expected_seq,
+                    "found_seq": None,
+                    "sensitivity": "high",
+                }
+                if proj is not None:
+                    evidence_sens["run_state"] = proj
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -322,12 +387,7 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        evidence={
-                            "at_index": idx,
-                            "expected_seq": expected_seq,
-                            "found_seq": None,
-                            "sensitivity": "high",
-                        },
+                        evidence=evidence_sens,
                         adapter_id=ctx.adapter_id,
                         adapter_version=ctx.adapter_version,
                         profile_id=ctx.profile_id,
@@ -350,6 +410,7 @@ def check_checkpoint_divergence(
     source_path: str = "<canonical>",
     max_findings: int = MAX_CHECKPOINT_FINDINGS,
     context: CheckContext | None = None,
+    run_state_projection: Mapping[str, Any] | None = None,
 ) -> list[Finding]:
     """Check for checkpoint divergence (SL202).
 
@@ -358,8 +419,14 @@ def check_checkpoint_divergence(
     - Idempotent re-emission (identical seq and hash) does not fire.
     - Truncates reported hashes to 16 characters in evidence.
     - severity: error, repairability: manual.
+    - Preserves and attaches content-free run_state projection when present (DEV-011).
     """
     ctx = context if context is not None else CheckContext()
+    proj = _extract_run_state_projection(
+        context=ctx,
+        events=events,
+        run_state_projection=run_state_projection,
+    )
     findings: list[Finding] = []
     seen_seq_to_hash: dict[int, str] = {}
 
@@ -387,6 +454,14 @@ def check_checkpoint_divergence(
                 hash_a = prev_hash[:16]
                 hash_b = state_hash[:16]
 
+                evidence_div: dict[str, Any] = {
+                    "hash_a": hash_a,
+                    "hash_b": hash_b,
+                    "seq": seq,
+                }
+                if proj is not None:
+                    evidence_div["run_state"] = proj
+
                 findings.append(
                     make_finding(
                         code=SL202,
@@ -394,11 +469,7 @@ def check_checkpoint_divergence(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL202,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        evidence={
-                            "hash_a": hash_a,
-                            "hash_b": hash_b,
-                            "seq": seq,
-                        },
+                        evidence=evidence_div,
                         adapter_id=ctx.adapter_id,
                         adapter_version=ctx.adapter_version,
                         profile_id=ctx.profile_id,
@@ -542,8 +613,15 @@ def check_checkpoint(
     max_findings_per_family: int = MAX_CHECKPOINT_FINDINGS,
     checkpoint_sensitivity: str = "default",
     context: CheckContext | None = None,
+    run_state_projection: Mapping[str, Any] | None = None,
 ) -> list[Finding]:
     """Run all checkpoint checks (SL201, SL202, SL203) over canonical events."""
+    ctx = context if context is not None else CheckContext()
+    proj = _extract_run_state_projection(
+        context=ctx,
+        events=events,
+        run_state_projection=run_state_projection,
+    )
     all_findings: list[Finding] = []
 
     f201 = check_checkpoint_gap(
@@ -551,7 +629,8 @@ def check_checkpoint(
         source_path=source_path,
         max_findings=max_findings_per_family,
         checkpoint_sensitivity=checkpoint_sensitivity,
-        context=context,
+        context=ctx,
+        run_state_projection=proj,
     )
     all_findings.extend(f201)
 
@@ -559,7 +638,8 @@ def check_checkpoint(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
-        context=context,
+        context=ctx,
+        run_state_projection=proj,
     )
     all_findings.extend(f202)
 
@@ -568,11 +648,9 @@ def check_checkpoint(
         source_path=source_path,
         prior_sl201_findings=f201,
         prior_sl202_findings=f202,
-        context=context,
+        context=ctx,
     )
     all_findings.extend(f203)
-
-    return sorted(all_findings, key=_cap_finding_sort_key)
 
     return sorted(all_findings, key=_cap_finding_sort_key)
 

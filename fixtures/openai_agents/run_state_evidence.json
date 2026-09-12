@@ -1,0 +1,40 @@
+{
+  "sdk_version": "1.0.0",
+  "run_state": {
+    "current_agent": "triage_agent",
+    "secret_token": "sec_seed_secret_token_99999_xyz_alpha",
+    "thread_id": "thread_abc123",
+    "user_prompt": "Confidential prompt: please reset credentials for internal user"
+  },
+  "checkpoints": [
+    {
+      "id": "chk_01",
+      "seq": 1,
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "ts": "2025-01-01T12:00:00Z"
+    },
+    {
+      "id": "chk_02",
+      "seq": 5,
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ts": "2025-01-01T12:01:00Z"
+    }
+  ],
+  "items": [
+    {
+      "id": "item_01",
+      "type": "checkpoint",
+      "seq": 1,
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "timestamp": "2025-01-01T12:00:00Z"
+    },
+    {
+      "id": "item_02",
+      "parent_id": "item_01",
+      "type": "checkpoint",
+      "seq": 5,
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "timestamp": "2025-01-01T12:01:00Z"
+    }
+  ]
+}

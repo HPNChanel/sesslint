@@ -7,6 +7,7 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,6 +19,7 @@ from sesslint.adapters.detect import (
     resolve_format,
 )
 from sesslint.codes import SL302, Repairability, Severity
+from sesslint.context import CheckContext
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.profiles import resolve_effective_config
 from sesslint.repair import (
@@ -156,26 +158,23 @@ def check_file(
             f"Format {resolved_fmt} is not permitted by profile {effective_cfg.profile}"
         )
 
-    events: list[Any] = []
+    events: Any = ()
     adapter_findings: list[Finding] = list(det_findings)
 
     if resolved_fmt == FORMAT_CANONICAL:
         from sesslint.adapters.canonical import load_canonical
 
-        can_events, can_findings = load_canonical(target_path)
-        events = list(can_events)
+        events, can_findings = load_canonical(target_path)
         adapter_findings.extend(can_findings)
     elif resolved_fmt == FORMAT_CLAUDE_CODE:
         from sesslint.adapters.claude_code import load_claude_code
 
-        c_events, c_findings = load_claude_code(target_path)
-        events = list(c_events)
+        events, c_findings = load_claude_code(target_path)
         adapter_findings.extend(c_findings)
     elif resolved_fmt == FORMAT_OPENAI_AGENTS:
         from sesslint.adapters.openai_agents import load_openai_agents
 
-        o_events, o_findings = load_openai_agents(target_path)
-        events = list(o_events)
+        events, o_findings = load_openai_agents(target_path)
         adapter_findings.extend(o_findings)
 
     adapter_skips: list[CoverageSkip] = []
@@ -188,10 +187,18 @@ def check_file(
             )
         )
 
+    source_meta = getattr(events, "source", None)
+    check_ctx = CheckContext.from_profile_and_adapter(
+        profile=effective_cfg.profile,
+        adapter=resolved_fmt,
+        source_metadata=source_meta if isinstance(source_meta, Mapping) else None,
+    )
+
     check_findings, coverage = repair_executor.run_all_checks(
         events,
         profile=effective_cfg.profile,
         source_path=str(target_path),
+        context=check_ctx,
         adapter=resolved_fmt,
         adapter_skips=adapter_skips,
         return_coverage=True,

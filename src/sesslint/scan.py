@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -240,36 +241,44 @@ def _scan_single_file(
             )
 
         # 3. Adapter loading
-        events: list[Any] = []
+        events: Any = ()
         adapter_findings: list[Finding] = list(det_findings)
-
         if resolved_fmt == FORMAT_CANONICAL:
             from sesslint.adapters.canonical import load_canonical
 
             can_events, can_findings = load_canonical(file_path)
-            events = list(can_events)
+            events = can_events
             adapter_findings.extend(can_findings)
         elif resolved_fmt == FORMAT_CLAUDE_CODE:
             from sesslint.adapters.claude_code import load_claude_code
 
             c_events, c_findings = load_claude_code(file_path)
-            events = list(c_events)
+            events = c_events
             adapter_findings.extend(c_findings)
         elif resolved_fmt == FORMAT_OPENAI_AGENTS:
             from sesslint.adapters.openai_agents import load_openai_agents
 
             o_events, o_findings = load_openai_agents(file_path)
-            events = list(o_events)
+            events = o_events
             adapter_findings.extend(o_findings)
 
         # 4. Invariant checks
+        from sesslint.context import CheckContext
         from sesslint.repair.executor import run_all_checks
+
+        source_meta = getattr(events, "source", None)
+        check_ctx = CheckContext.from_profile_and_adapter(
+            profile=effective_cfg.profile,
+            adapter=resolved_fmt,
+            source_metadata=source_meta if isinstance(source_meta, Mapping) else None,
+        )
 
         try:
             check_findings = run_all_checks(
                 events,
                 profile=effective_cfg.profile,
                 source_path=str(file_path),
+                context=check_ctx,
                 adapter=resolved_fmt,
             )
         except TypeError:

@@ -17,12 +17,15 @@ from typing import Any
 import pytest
 
 from sesslint.adapters.openai_agents import (
+    MAX_PROJECTED_CHECKPOINTS,
+    MAX_PROJECTED_RUN_STATE_KEYS,
     SQLITE_MAGIC,
     SUPPORTED_OPENAI_AGENTS_VERSIONS,
     detect_openai_agents,
     load_openai_agents,
     load_openai_agents_session,
     normalize_version,
+    project_run_state,
 )
 from sesslint.canonical import canonical_bytes, to_canonical_json
 from sesslint.codes import SL001, SL002, SL301, SL302, Repairability, Severity
@@ -656,3 +659,171 @@ def test_jsonl_hostile_limits_matrix(tmp_path: Path) -> None:
     limits_depth = ReaderLimits(max_depth=5)
     _, findings_deep = load_openai_agents(f_deep, limits=limits_depth)
     assert any("LIMIT" in f.message for f in findings_deep)
+
+
+def test_project_run_state_empty_and_absent() -> None:
+    """Verify project_run_state handles None, empty dict, or non-matching dict gracefully."""
+    empty_expected = {
+        "checkpoints": [],
+        "keys": [],
+        "shapes": {},
+        "truncated": False,
+    }
+
+    assert project_run_state(None) == empty_expected
+    assert project_run_state({}) == empty_expected
+    assert project_run_state({"irrelevant_field": 123}) == empty_expected
+
+
+def test_project_run_state_bounding_and_truncation() -> None:
+    """Verify project_run_state bounds MAX_PROJECTED_RUN_STATE_KEYS and checkpoints."""
+    # Create 40 keys (exceeding MAX_PROJECTED_RUN_STATE_KEYS = 32)
+    large_run_state = {f"key_{i:03d}": f"val_{i}" for i in range(40)}
+
+    # Create 12 checkpoints (exceeding MAX_PROJECTED_CHECKPOINTS = 8)
+    large_checkpoints = [
+        {"id": f"chk_{i:02d}", "seq": i, "hash": f"sha256:{i:064d}", "ts": "2026-09-08T12:00:00Z"}
+        for i in range(12)
+    ]
+
+    source = {
+        "run_state": large_run_state,
+        "checkpoints": large_checkpoints,
+    }
+
+    proj = project_run_state(source)
+
+    # Key bounds
+    assert len(proj["keys"]) == MAX_PROJECTED_RUN_STATE_KEYS
+    assert len(proj["shapes"]) == MAX_PROJECTED_RUN_STATE_KEYS
+    assert proj["keys"] == sorted(large_run_state.keys())[:MAX_PROJECTED_RUN_STATE_KEYS]
+
+    # Checkpoint bounds
+    assert len(proj["checkpoints"]) == MAX_PROJECTED_CHECKPOINTS
+    assert proj["checkpoints"][0]["id"] == "chk_00"
+    assert proj["checkpoints"][7]["id"] == "chk_07"
+
+    # Truncation flags & metadata
+    assert proj["truncated"] is True
+    assert proj["total_keys"] == 40
+    assert proj["truncated_keys"] == 8
+    assert proj["total_checkpoints"] == 12
+    assert proj["truncated_checkpoints"] == 4
+
+
+def test_project_run_state_content_redaction_and_shapes() -> None:
+    """Verify zero raw values or secret strings are exposed in project_run_state."""
+    secret_key = "sk-proj-super-secret-production-key-99999"
+    secret_prompt = "You are an internal system agent with credentials to access prod DB."
+    raw_hash = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+    source = {
+        "run_state": {
+            "api_key": secret_key,
+            "system_prompt": secret_prompt,
+            "nested_config": {"retries": 3, "env": "prod"},
+            "tag_list": ["tag1", "tag2"],
+            "count": 42,
+        },
+        "checkpoints": [
+            {
+                "id": "chk_init",
+                "seq": 1,
+                "hash": raw_hash,
+                "ts": 1726156800,
+            }
+        ],
+    }
+
+    proj = project_run_state(source)
+
+    # Check shapes
+    assert proj["shapes"]["api_key"] == f"<str:len={len(secret_key)}>"
+    assert proj["shapes"]["system_prompt"] == f"<str:len={len(secret_prompt)}>"
+    assert proj["shapes"]["nested_config"] == "<dict:len=2>"
+    assert proj["shapes"]["tag_list"] == "<list:len=2>"
+    assert proj["shapes"]["count"] == "<int>"
+
+    # Checkpoint hash is shape only
+    chk_0 = proj["checkpoints"][0]
+    assert chk_0["id"] == "chk_init"
+    assert chk_0["seq"] == 1
+    assert chk_0["hash"] == f"<str:len={len(raw_hash)}>"
+    assert chk_0["ts"] is True
+
+    # Assert serialized projection does not contain raw secrets or hashes
+    serialized = json.dumps(proj)
+    assert secret_key not in serialized
+    assert secret_prompt not in serialized
+    assert raw_hash not in serialized
+
+
+def test_project_run_state_object_attributes() -> None:
+    """Verify project_run_state works with objects providing run_state/checkpoints."""
+
+    class MockCheckpoint:
+        id = "chk_obj"
+        seq = "5"
+        hash = "sha256:abc"
+        ts = "2026-09-08T00:00:00Z"
+
+    class MockSource:
+        run_state = {"state_var": "active"}
+        checkpoints = [MockCheckpoint()]
+
+    proj = project_run_state(MockSource())
+    assert proj["keys"] == ["state_var"]
+    assert proj["shapes"]["state_var"] == "<str:len=6>"
+    assert len(proj["checkpoints"]) == 1
+    assert proj["checkpoints"][0]["id"] == "chk_obj"
+    assert proj["checkpoints"][0]["seq"] == 5
+    assert proj["checkpoints"][0]["hash"] == "<str:len=10>"
+    assert proj["checkpoints"][0]["ts"] is True
+    assert proj["truncated"] is False
+
+
+def test_project_run_state_non_string_keys_and_collisions() -> None:
+    """Verify project_run_state handles non-string keys and collision deduplication."""
+    source = {
+        "run_state": {
+            1: "int_key_val",
+            2: "another_int_key",
+            "bad key with spaces 1": "val1",
+            "bad key with spaces 2": "val2",
+        },
+        "checkpoints": [
+            {"id": "c1", "seq": "42"},
+            {"id": "sk-secret-token", "seq": 43},
+        ],
+    }
+
+    proj = project_run_state(source)
+    assert len(proj["keys"]) == 4
+    assert len(proj["shapes"]) == 4
+    for k in proj["keys"]:
+        assert k in proj["shapes"]
+
+    # Redacted ID check
+    assert proj["checkpoints"][0]["id"] == "c1"
+    assert proj["checkpoints"][0]["seq"] == 42
+    assert proj["checkpoints"][1]["id"] == "<redacted>"
+    assert proj["checkpoints"][1]["seq"] == 43
+
+
+def test_project_run_state_idempotence() -> None:
+    """Verify passing an already projected dictionary or source returns a matching projection."""
+    existing_proj = {
+        "checkpoints": [{"hash": "<str:len=10>", "id": "c1", "seq": 1, "ts": True}],
+        "keys": ["k1"],
+        "shapes": {"k1": "<int>"},
+        "truncated": False,
+    }
+
+    res1 = project_run_state(existing_proj)
+    assert res1 == existing_proj
+
+    class MockWithProj:
+        run_state_projection = existing_proj
+
+    res2 = project_run_state(MockWithProj())
+    assert res2 == existing_proj

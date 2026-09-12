@@ -307,7 +307,16 @@ def run_all_checks(
         resolved_profile = profile
 
     if context is None:
-        context = CheckContext.from_profile_and_adapter(profile=resolved_profile, adapter=adapter)
+        source_meta = getattr(events, "source", None)
+        context = CheckContext.from_profile_and_adapter(
+            profile=resolved_profile,
+            adapter=adapter,
+            source_metadata=source_meta if isinstance(source_meta, Mapping) else None,
+        )
+    elif context.source_metadata is None:
+        source_meta = getattr(events, "source", None)
+        if isinstance(source_meta, Mapping):
+            context = context.with_overrides(source_metadata=source_meta)
 
     enabled = set(resolved_profile.enabled_rules)
     findings: list[Finding] = []
