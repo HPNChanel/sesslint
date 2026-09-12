@@ -24,8 +24,10 @@ import tempfile
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Literal
+from typing import Any, Final, Literal
 
+import sesslint.report
+from sesslint._version import ADAPTER_VERSIONS, CLI_VERSION
 from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
 from sesslint.canonical import (
     Session,
@@ -46,9 +48,10 @@ from sesslint.finding import Finding
 from sesslint.policy.abstention import should_abstain_from_repair
 from sesslint.profiles.builtin import NEUTRAL_PROFILE
 from sesslint.profiles.profile import Profile, get_profile
-from sesslint.repair.assurance import cap_assurance
+from sesslint.repair.assurance import cap_assurance, compute_assurance_ceiling
 from sesslint.repair.errors import (
     Abstained,
+    ManifestCollision,
     OutputInvalid,
     PlanSourceMismatch,
     PlanTampered,
@@ -75,14 +78,47 @@ from sesslint.repair.recipes_sl002 import (
     register_all as register_all_sl002_recipes,
 )
 from sesslint.repair.registry import get_recipe
-from sesslint.report import Coverage, CoverageSkip
-
-if TYPE_CHECKING:
-    from sesslint.report import RepairManifest
-
+from sesslint.report import (
+    Coverage,
+    CoverageSkip,
+    RepairAction,
+    RepairManifest,
+    RevalidationSummary,
+    build_manifest,
+    build_report,
+    compute_assurance,
+    dump_report,
+)
 
 StrPath = str | os.PathLike[str]
 SQLITE_MAGIC: Final[bytes] = b"SQLite format 3\x00"
+
+_ATOMIC_TEST_HOOKS: dict[str, Any] = {
+    "pre_write": None,
+    "pre_rename": None,
+    "post_apply": None,
+    "mid_publish": None,
+    "post_publish": None,
+}
+
+
+def _sync_dir(path: Path) -> None:
+    """Best-effort parent directory fsync across platforms (guarded for Windows)."""
+    if os.name == "nt":
+        return
+    try:
+        dir_fd = os.open(str(path), os.O_RDONLY)
+    except (OSError, PermissionError):
+        return
+    try:
+        os.fsync(dir_fd)
+    except (OSError, PermissionError):
+        pass
+    finally:
+        try:
+            os.close(dir_fd)
+        except OSError:
+            pass
 
 
 def is_live_store_path(path: StrPath) -> bool:
@@ -480,6 +516,8 @@ def execute(
     pre_rename_hook: Callable[[Path], None] | None = None,
     pre_write_hook: Callable[[], None] | None = None,
     post_apply_hook: Callable[[], None] | None = None,
+    mid_publish_hook: Callable[[], None] | None = None,
+    post_publish_hook: Callable[[], None] | None = None,
 ) -> RepairManifest:
     """Execute a fingerprinted repair plan atomically against a session source.
 
@@ -507,6 +545,8 @@ def execute(
         pre_rename_hook: Testing hook invoked after temp fsync before os.replace.
         pre_write_hook: Testing hook invoked before writing temp file.
         post_apply_hook: Testing hook invoked after memory apply before write.
+        mid_publish_hook: Testing hook invoked after manifest link before output rename.
+        post_publish_hook: Testing hook invoked after publish and directory fsync.
 
     Returns:
         A validated RepairManifest instance.
@@ -517,6 +557,7 @@ def execute(
         PolicyMismatch: If plan policy does not match execution policy.
         Abstained: If SL203 or unacknowledged side-effects are present.
         RepairRefused: If destination path is missing, self, existing, or a live store.
+        ManifestCollision: If destination manifest already exists (receipt collision).
         OutputInvalid: If output validation fails (schema, synthetic success, SL203, cap, reval).
         FileNotFoundError: If source file does not exist.
     """
@@ -612,6 +653,14 @@ def execute(
         if output_p.exists():
             raise RepairRefused(f"Output path already exists (refusing to overwrite): {output_p}")
 
+        # Refuse existing manifest file (exclusive create / receipt collision prevention)
+        manifest_p = Path(f"{output_p}.manifest.json")
+        if manifest_p.exists():
+            raise ManifestCollision(
+                "Repair manifest destination already exists "
+                f"(refusing to overwrite receipt): {manifest_p}"
+            )
+
     # -------------------------------------------------------------------------
     # STEP 3: Apply recipe steps sequentially in memory
     # -------------------------------------------------------------------------
@@ -692,7 +741,12 @@ def execute(
 
     # (d) Full profile revalidation
     reval_profile_name = profile if profile is not None else plan.profile
-    reval_findings = run_all_checks(parsed_output_events, profile=reval_profile_name)
+    reval_findings, reval_coverage = run_all_checks(
+        parsed_output_events,
+        profile=reval_profile_name,
+        adapter="canonical",
+        return_coverage=True,
+    )
     error_findings = [f for f in reval_findings if f.severity in (Severity.ERROR, Severity.FATAL)]
     if error_findings:
         codes = [f.code for f in error_findings]
@@ -701,12 +755,24 @@ def execute(
             f"error finding(s): {codes}"
         )
 
+    # Capture revalidation outcomes directly from Step 4d run (FR-072)
+    reval_assurance, reval_limitation = compute_assurance(parsed_output_events, reval_findings)
+    reval_prof = (
+        get_profile(reval_profile_name)
+        if isinstance(reval_profile_name, str)
+        else reval_profile_name
+    )
+    reval_prof_id = getattr(reval_prof, "id", str(reval_profile_name))
+    reval_prof_ver = getattr(reval_prof, "version", "1.0.0")
+    warning_count = len([f for f in reval_findings if f.severity == Severity.WARNING])
+
     # Hook for testing TOCTOU mutation of source file before writing/renaming
-    if post_apply_hook is not None:
-        post_apply_hook()
+    active_post_apply = post_apply_hook or _ATOMIC_TEST_HOOKS.get("post_apply")
+    if active_post_apply is not None:
+        active_post_apply()
 
     # -------------------------------------------------------------------------
-    # STEP 5: Write temp file in same directory, fsync, atomic rename (os.replace)
+    # STEP 5 & 8: Construct repaired artifacts, revalidation binding & manifest
     # -------------------------------------------------------------------------
     repaired_header = (
         source_header
@@ -720,98 +786,38 @@ def execute(
     repaired_session = Session(header=repaired_header, events=tuple(parsed_output_events))
     output_text = dump_session(repaired_session)
     output_bytes = output_text.encode("utf-8")
+    output_hash = hashlib.sha256(output_bytes).hexdigest()
 
-    temp_path: Path | None = None
-    target_created = False
-    output_hash: str
-
-    if dry_run:
-        output_hash = hashlib.sha256(output_bytes).hexdigest()
-    else:
-        assert output_p is not None
-        target_dir = output_p.parent
-        if not target_dir.exists():
-            raise OutputInvalid(f"Destination directory does not exist: {target_dir}")
-        if not os.access(target_dir, os.W_OK):
-            raise OutputInvalid(f"Destination directory is not writable: {target_dir}")
-
-        try:
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="wb",
-                    dir=target_dir,
-                    delete=False,
-                    prefix=".sesslint-tmp-",
-                    suffix=".jsonl",
-                ) as tmp_file:
-                    temp_path = Path(tmp_file.name)
-                    if pre_write_hook is not None:
-                        pre_write_hook()
-                    tmp_file.write(output_bytes)
-                    tmp_file.flush()
-                    os.fsync(tmp_file.fileno())
-
-                if pre_rename_hook is not None:
-                    pre_rename_hook(temp_path)
-
-                os.replace(temp_path, output_p)
-                target_created = True
-                temp_path = None  # rename succeeded
-            except OSError as err:
-                if err.errno == errno.EXDEV:
-                    raise OutputInvalid(
-                        f"Cross-device link error during atomic rename: {err}"
-                    ) from err
-                if err.errno == errno.ENOSPC:
-                    raise OutputInvalid(f"Disk full during repair write: {err}") from err
-                if isinstance(err, PermissionError) or err.errno in (errno.EACCES, errno.EPERM):
-                    raise OutputInvalid(f"Permission denied writing to destination: {err}") from err
-                raise OutputInvalid(f"Atomic write to destination failed: {err}") from err
-        except BaseException:
-            # STEP 7: Failure cleanup
-            if temp_path is not None and temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
-            if target_created and output_p.exists():
-                try:
-                    output_p.unlink()
-                except OSError:
-                    pass
-            raise
-
-    # -------------------------------------------------------------------------
-    # STEP 6: Post-hash verification
-    # -------------------------------------------------------------------------
-    if not dry_run:
-        assert output_p is not None
-        # Re-read source bytes to verify source was never modified
-        source_post_bytes = source_p.read_bytes()
-        source_post_hash = hashlib.sha256(source_post_bytes).hexdigest()
-        if source_post_hash != source_pre_hash:
-            if output_p.exists():
-                try:
-                    output_p.unlink()
-                except OSError:
-                    pass
-            raise OutputInvalid(
-                f"Source file was concurrently modified during repair: "
-                f"pre={source_pre_hash}, post={source_post_hash}"
-            )
-
-        # Read back target bytes to compute exact output digest
-        target_bytes = output_p.read_bytes()
-        output_hash = hashlib.sha256(target_bytes).hexdigest()
-
-    # -------------------------------------------------------------------------
-    # STEP 8: Manifest generation per schema & atomic sidecar write
-    # -------------------------------------------------------------------------
-    from sesslint.report import (
-        RepairAction,
-        build_manifest,
-        dump_manifest,
+    # Final Step-6 revalidation report object
+    reval_report = build_report(
+        session_id=repaired_header.session_id,
+        source_fingerprint=output_hash,
+        tool_version=CLI_VERSION,
+        findings=reval_findings,
+        assurance=reval_assurance,
+        limitation=reval_limitation,
+        coverage=reval_coverage,
     )
+    reval_report_fp = hashlib.sha256(dump_report(reval_report).encode("utf-8")).hexdigest()
+
+    revalidation_summary = RevalidationSummary(
+        assurance=reval_assurance,
+        error_count=len(error_findings),
+        warning_count=warning_count,
+        profile_id=reval_prof_id,
+        profile_version=reval_prof_ver,
+        report_fingerprint=reval_report_fp,
+    )
+
+    manifest_policy: Literal["conservative", "salvage"] = (
+        "salvage" if plan.policy == "salvage" else "conservative"
+    )
+    assurance_ceiling = compute_assurance_ceiling(reval_assurance, manifest_policy)
+
+    adapter_id = "canonical"
+    if format in ADAPTER_VERSIONS:
+        adapter_id = format
+    adp_version = ADAPTER_VERSIONS.get(adapter_id, "unknown")
 
     actions = tuple(
         RepairAction(
@@ -829,23 +835,11 @@ def execute(
                 if v > 0:
                     declared_loss.append(f"{k}:{v}")
 
-    manifest_policy: Literal["conservative", "salvage"] = (
-        "salvage" if plan.policy == "salvage" else "conservative"
-    )
-
     recipe_versions: dict[str, str] = {}
     for step in sorted_steps:
         rec = get_recipe(step.recipe)
         if rec is not None:
             recipe_versions[step.recipe] = getattr(rec, "version", "1.0.0")
-
-    reval_prof = (
-        get_profile(reval_profile_name)
-        if isinstance(reval_profile_name, str)
-        else reval_profile_name
-    )
-    prof_version = getattr(reval_prof, "version", "1.0.0")
-    adp_version = "1.0.0"
 
     byte_counts = {
         "output": len(output_bytes),
@@ -864,66 +858,159 @@ def execute(
         actions=actions,
         declared_loss=tuple(declared_loss),
         revalidate_report=None,
+        revalidation=revalidation_summary,
+        assurance_ceiling=assurance_ceiling,
         plan_fingerprint=plan.fingerprint,
         assurance=capped_assurance,
         recipe_versions=recipe_versions,
-        profile_version=prof_version,
+        profile_version=reval_prof_ver,
+        adapter_id=adapter_id,
         adapter_version=adp_version,
         byte_counts=byte_counts,
         record_counts=record_counts,
     )
 
-    if not dry_run:
-        assert output_p is not None
-        target_dir = output_p.parent
-        manifest_p = Path(f"{output_p}.manifest.json")
+    if dry_run:
+        return manifest
 
-        m_temp: Path | None = None
+    # -------------------------------------------------------------------------
+    # STEP 6 & 7: Verify source integrity, publish exclusive pair & fsync
+    # -------------------------------------------------------------------------
+    assert output_p is not None
+    # Re-read source bytes to verify source was never concurrently modified
+    source_post_bytes = source_p.read_bytes()
+    source_post_hash = hashlib.sha256(source_post_bytes).hexdigest()
+    if source_post_hash != source_pre_hash:
+        raise OutputInvalid(
+            f"Source file was concurrently modified during repair: "
+            f"pre={source_pre_hash}, post={source_post_hash}"
+        )
+
+    target_dir = output_p.parent
+    if not target_dir.exists():
+        raise OutputInvalid(f"Destination directory does not exist: {target_dir}")
+    if not os.access(target_dir, os.W_OK):
+        raise OutputInvalid(f"Destination directory is not writable: {target_dir}")
+
+    manifest_p = Path(f"{output_p}.manifest.json")
+    manifest_text = sesslint.report.dump_manifest(manifest) + "\n"
+    manifest_bytes = manifest_text.encode("utf-8")
+
+    temp_path: Path | None = None
+    m_temp: Path | None = None
+    manifest_linked = False
+    output_replaced = False
+
+    try:
         try:
-            manifest_text = dump_manifest(manifest) + "\n"
-            manifest_bytes = manifest_text.encode("utf-8")
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="wb",
-                    dir=target_dir,
-                    delete=False,
-                    prefix=".sesslint-tmp-",
-                    suffix=".json",
-                ) as m_file:
-                    m_temp = Path(m_file.name)
-                    m_file.write(manifest_bytes)
-                    m_file.flush()
-                    os.fsync(m_file.fileno())
+            # 1. Write output temp file
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=target_dir,
+                delete=False,
+                prefix=".sesslint-tmp-out-",
+                suffix=".jsonl",
+            ) as tmp_file:
+                temp_path = Path(tmp_file.name)
+                active_pre_write = pre_write_hook or _ATOMIC_TEST_HOOKS.get("pre_write")
+                if active_pre_write is not None:
+                    active_pre_write()
+                tmp_file.write(output_bytes)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
 
-                os.replace(m_temp, manifest_p)
+            # 2. Write manifest temp file
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=target_dir,
+                delete=False,
+                prefix=".sesslint-tmp-man-",
+                suffix=".json",
+            ) as m_file:
+                m_temp = Path(m_file.name)
+                m_file.write(manifest_bytes)
+                m_file.flush()
+                os.fsync(m_file.fileno())
+
+            # 3. Exclusive-create manifest receipt (O_EXCL via os.link)
+            try:
+                os.link(m_temp, manifest_p)
+                manifest_linked = True
+            except FileExistsError as err:
+                raise ManifestCollision(
+                    "Repair manifest destination already exists "
+                    f"(refusing to overwrite receipt): {manifest_p}"
+                ) from err
+            finally:
+                if m_temp.exists():
+                    try:
+                        m_temp.unlink()
+                    except OSError:
+                        pass
                 m_temp = None
-            except OSError as err:
-                if err.errno == errno.ENOSPC:
-                    raise OutputInvalid(f"Disk full writing repair manifest: {err}") from err
-                if isinstance(err, PermissionError) or err.errno in (errno.EACCES, errno.EPERM):
-                    raise OutputInvalid(
-                        f"Permission denied writing repair manifest: {err}"
-                    ) from err
-                raise OutputInvalid(f"Failed to write repair manifest: {err}") from err
-        except BaseException:
-            if m_temp is not None and m_temp.exists():
-                try:
-                    m_temp.unlink()
-                except OSError:
-                    pass
-            # Atomic repair invariant: never leave output file without valid manifest
-            if output_p.exists():
-                try:
-                    output_p.unlink()
-                except OSError:
-                    pass
-            raise
+
+            # Mid-publish fault-injection hook (e.g. crash simulation)
+            active_mid_publish = mid_publish_hook or _ATOMIC_TEST_HOOKS.get("mid_publish")
+            if active_mid_publish is not None:
+                active_mid_publish()
+
+            # Pre-rename hook before final output replace
+            active_pre_rename = pre_rename_hook or _ATOMIC_TEST_HOOKS.get("pre_rename")
+            if active_pre_rename is not None:
+                active_pre_rename(temp_path)
+
+            # 4. Atomic replace of output
+            os.replace(temp_path, output_p)
+            output_replaced = True
+            temp_path = None
+
+            # 5. Directory fsync after both published
+            _sync_dir(target_dir)
+
+            active_post_publish = post_publish_hook or _ATOMIC_TEST_HOOKS.get("post_publish")
+            if active_post_publish is not None:
+                active_post_publish()
+
+        except OSError as err:
+            if isinstance(err, FileExistsError):
+                raise
+            if err.errno == errno.EXDEV:
+                raise OutputInvalid(f"Cross-device link error during atomic rename: {err}") from err
+            if err.errno == errno.ENOSPC:
+                raise OutputInvalid(f"Disk full during repair write: {err}") from err
+            if isinstance(err, PermissionError) or err.errno in (errno.EACCES, errno.EPERM):
+                raise OutputInvalid(f"Permission denied writing to destination: {err}") from err
+            raise OutputInvalid(f"Atomic write to destination failed: {err}") from err
+    except BaseException:
+        # Atomic repair invariant: never leave output or manifest orphaned
+        if temp_path is not None and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        if m_temp is not None and m_temp.exists():
+            try:
+                m_temp.unlink()
+            except OSError:
+                pass
+        if manifest_linked and manifest_p.exists() and not output_replaced:
+            try:
+                manifest_p.unlink()
+            except OSError:
+                pass
+        if output_replaced and output_p.exists() and not manifest_p.exists():
+            try:
+                output_p.unlink()
+            except OSError:
+                pass
+        raise
 
     return manifest
 
 
 __all__ = [
     "SQLITE_MAGIC",
+    "_ATOMIC_TEST_HOOKS",
     "execute",
     "is_live_store_path",
     "load_plan",

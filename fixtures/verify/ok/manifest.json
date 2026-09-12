@@ -7,6 +7,7 @@
     }
   ],
   "assurance": "repaired-lossless",
+  "assurance_ceiling": "A3",
   "declared_loss": [],
   "idempotency_key": "d74db087f9461f8565b339e59f0d24ded18aa5c99a7b8478926d6cfdf5808987",
   "input_fingerprint": "1f29d80685dd355b2bbf0f74febc5031bd1b774bbdd29d8bc576a99353cc6c7a",
@@ -14,5 +15,13 @@
   "plan_fingerprint": "1e7a055cfac026ceb293d777f321b84056dc7006109ab1df4c9e557dc7fd8d2f",
   "policy": "conservative",
   "revalidate_report": null,
+  "revalidation": {
+    "assurance": "A3",
+    "error_count": 0,
+    "profile_id": "neutral",
+    "profile_version": "1.0.0",
+    "report_fingerprint": null,
+    "warning_count": 0
+  },
   "schema_version": "sesslint.repair-manifest/v1"
 }

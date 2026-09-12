@@ -102,6 +102,15 @@ def _make_base_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         "plan_fingerprint": plan_fp,
         "policy": "conservative",
         "revalidate_report": None,
+        "revalidation": {
+            "assurance": "A3",
+            "error_count": 0,
+            "warning_count": 0,
+            "profile_id": "neutral",
+            "profile_version": "1.0.0",
+            "report_fingerprint": None,
+        },
+        "assurance_ceiling": "A3",
         "schema_version": "sesslint.repair-manifest/v1",
     }
     manifest_path = dest_dir / "manifest.json"

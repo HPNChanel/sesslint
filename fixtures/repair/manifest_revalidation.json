@@ -1,0 +1,41 @@
+{
+  "schema_version": "sesslint.repair-manifest/v1",
+  "input_fingerprint": "ad96f2a760a8054b95027fb1771b6158d8edc313aad98e8323a8ddfc8c53d4a6",
+  "output_fingerprint": "2c6da187e0203f22d155f9262e909c6244a3ad3975c8c54d61117a69b6587dba",
+  "policy": "conservative",
+  "actions": [
+    {
+      "kind": "identical-duplicate-collapse",
+      "record_id": "070ceee4b3954eb0",
+      "detail": "step 0"
+    }
+  ],
+  "declared_loss": [],
+  "revalidate_report": null,
+  "idempotency_key": "d74db087f9461f8565b339e59f0d24ded18aa5c99a7b8478926d6cfdf5808987",
+  "plan_fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "assurance": "clean",
+  "recipe_versions": {
+    "identical-duplicate-collapse": "1.0.0"
+  },
+  "profile_version": "1.0.0",
+  "adapter_id": "canonical",
+  "adapter_version": "1.0.0",
+  "assurance_ceiling": "A3",
+  "revalidation": {
+    "assurance": "A3",
+    "error_count": 0,
+    "warning_count": 0,
+    "profile_id": "neutral",
+    "profile_version": "1.0.0",
+    "report_fingerprint": "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0"
+  },
+  "byte_counts": {
+    "input": 128,
+    "output": 96
+  },
+  "record_counts": {
+    "input": 2,
+    "output": 1
+  }
+}

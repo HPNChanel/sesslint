@@ -34,10 +34,11 @@ from sesslint.checks.graph import check_graph
 from sesslint.checks.identity import check_identities
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
+from sesslint.codes import Severity
 from sesslint.context import CheckContext
 from sesslint.finding import Finding
 from sesslint.profiles import get_profile
-from sesslint.repair.assurance import cap_assurance
+from sesslint.repair.assurance import cap_assurance, compute_assurance_ceiling
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
     PLAN_VERSION,
@@ -54,7 +55,7 @@ from sesslint.repair.recipes_salvage import (
     register_all as register_all_salvage_recipes,
 )
 from sesslint.repair.registry import get_recipe
-from sesslint.report import parse_manifest
+from sesslint.report import compute_assurance, parse_manifest
 
 StrPath = str | os.PathLike[str]
 
@@ -352,18 +353,22 @@ def verify(
     output_bytes = out_p.read_bytes()
     manifest_bytes = man_p.read_bytes()
 
-    # Safely parse manifest via parse_manifest (route verify through parse_manifest per RVW-008)
+    # Safely parse manifest via parse_manifest (DEV-009: no fallback to raw JSON)
     manifest_dict: dict[str, Any] | None = None
+    manifest_err_detail: str = "manifest-invalid-json"
     try:
         manifest_obj = parse_manifest(manifest_bytes.decode("utf-8-sig"))
         manifest_dict = manifest_obj.to_dict()
     except Exception:
+        manifest_dict = None
         try:
-            parsed_m = json.loads(manifest_bytes.decode("utf-8-sig"))
-            if isinstance(parsed_m, dict):
-                manifest_dict = parsed_m
+            raw_parsed = json.loads(manifest_bytes.decode("utf-8-sig"))
+            if isinstance(raw_parsed, dict):
+                manifest_err_detail = "manifest-schema"
+            else:
+                manifest_err_detail = "manifest-invalid-json"
         except Exception:
-            manifest_dict = None
+            manifest_err_detail = "manifest-invalid-json"
 
     plan_dict: dict[str, Any] | None = None
     plan_obj: RepairPlan | None = None
@@ -429,7 +434,7 @@ def verify(
 
     # Check 1: source_hash
     if manifest_dict is None:
-        c1 = Check(name="source_hash", ok=False, detail="manifest-invalid-json")
+        c1 = Check(name="source_hash", ok=False, detail=manifest_err_detail)
     else:
         in_place = bool(manifest_dict.get("in_place", False))
         if in_place:
@@ -487,13 +492,15 @@ def verify(
             c2 = Check(
                 name="plan_fingerprint",
                 ok=False,
-                detail="manifest-missing-plan-fingerprint",
+                detail=manifest_err_detail
+                if manifest_dict is None
+                else "manifest-missing-plan-fingerprint",
             )
 
     # Check 3: output_hash
     actual_output_hash = hashlib.sha256(output_bytes).hexdigest()
     if manifest_dict is None:
-        c3 = Check(name="output_hash", ok=False, detail="manifest-invalid-json")
+        c3 = Check(name="output_hash", ok=False, detail=manifest_err_detail)
     else:
         expected_out_hash = manifest_dict.get("output_fingerprint") or manifest_dict.get(
             "output_hash"
@@ -514,6 +521,7 @@ def verify(
     source_events: list[SessionEvent] = []
     output_header: SessionHeader | None = None
     output_events: list[SessionEvent] = []
+    output_stream_findings: list[Finding] = []
 
     try:
         try:
@@ -525,7 +533,9 @@ def verify(
     else:
         try:
             try:
-                output_header, output_events, _ = _load_source_with_stream_findings(output_path)
+                output_header, output_events, output_stream_findings = (
+                    _load_source_with_stream_findings(output_path)
+                )
             except Exception:
                 output_header, output_events = _parse_session_events(output_bytes)
         except Exception as err:
@@ -542,7 +552,10 @@ def verify(
                 )
                 actions_audit_ok = True
                 actions_audit_err = ""
-                if manifest_actions is None:
+                if manifest_dict is None:
+                    actions_audit_ok = False
+                    actions_audit_err = manifest_err_detail
+                elif manifest_actions is None:
                     actions_audit_ok = False
                     actions_audit_err = "manifest-missing-actions"
                 elif not isinstance(manifest_actions, (list, tuple)):
@@ -632,7 +645,7 @@ def verify(
         if plan_obj is None:
             c5 = Check(name="loss_audit", ok=False, detail="invalid-plan")
         elif manifest_dict is None:
-            c5 = Check(name="loss_audit", ok=False, detail="manifest-invalid-json")
+            c5 = Check(name="loss_audit", ok=False, detail=manifest_err_detail)
         else:
             sorted_steps = sorted(plan_obj.steps, key=lambda s: s.seq)
             recomputed_loss_items: list[str] = []
@@ -717,19 +730,111 @@ def verify(
             recomputed_assurance = "unrepairable"
 
     if manifest_dict is None:
-        c6 = Check(name="assurance_audit", ok=False, detail="manifest-invalid-json")
+        c6 = Check(name="assurance_audit", ok=False, detail=manifest_err_detail)
     elif plan_obj is None:
         c6 = Check(name="assurance_audit", ok=False, detail="plan-missing")
-    elif "assurance" in manifest_dict:
+    elif "assurance" in manifest_dict and manifest_dict.get("assurance") is not None:
         declared_assurance = str(manifest_dict["assurance"])
-        if declared_assurance == recomputed_assurance:
-            c6 = Check(name="assurance_audit", ok=True, detail="matched")
-        else:
+        if declared_assurance != recomputed_assurance:
             c6 = Check(
                 name="assurance_audit",
                 ok=False,
                 detail=f"mismatch: expected {declared_assurance}, got {recomputed_assurance}",
             )
+        else:
+            # Cross-check revalidation and assurance_ceiling (DEV-009 / FR-072)
+            decl_reval = manifest_dict.get("revalidation")
+            decl_ceiling = manifest_dict.get("assurance_ceiling")
+
+            target_profile = (
+                str(manifest_dict.get("profile", "neutral"))
+                if "profile" in manifest_dict
+                else (plan_obj.profile if plan_obj is not None else "neutral")
+            )
+            out_name = (
+                Path(output_path).name
+                if output_path and not str(output_path).startswith("<")
+                else str(output_path)
+            )
+            try:
+                reval_findings = _run_detector_checks(
+                    output_events,
+                    source_path=out_name,
+                    profile_name=target_profile,
+                )
+                if output_stream_findings:
+                    reval_findings = list(output_stream_findings) + reval_findings
+                actual_reval_assurance, _ = compute_assurance(output_events, reval_findings)
+                actual_err_count = len(
+                    [f for f in reval_findings if f.severity in (Severity.ERROR, Severity.FATAL)]
+                )
+                actual_warn_count = len(
+                    [f for f in reval_findings if f.severity == Severity.WARNING]
+                )
+            except Exception:
+                actual_reval_assurance = "A0"
+                actual_err_count = 0
+                actual_warn_count = 0
+
+            manifest_policy_val = str(manifest_dict.get("policy", "conservative"))
+            expected_ceiling = compute_assurance_ceiling(
+                actual_reval_assurance, manifest_policy_val
+            )
+
+            if isinstance(decl_reval, Mapping):
+                decl_reval_assurance = str(decl_reval.get("assurance", ""))
+                decl_err_count = decl_reval.get("error_count")
+                decl_warn_count = decl_reval.get("warning_count")
+
+                if decl_reval_assurance != actual_reval_assurance:
+                    c6 = Check(
+                        name="assurance_audit",
+                        ok=False,
+                        detail=(
+                            f"revalidation-mismatch: expected {decl_reval_assurance}, "
+                            f"got {actual_reval_assurance}"
+                        ),
+                    )
+                elif decl_err_count != actual_err_count:
+                    c6 = Check(
+                        name="assurance_audit",
+                        ok=False,
+                        detail=(
+                            f"revalidation-error-count-mismatch: expected {decl_err_count}, "
+                            f"got {actual_err_count}"
+                        ),
+                    )
+                elif decl_warn_count != actual_warn_count:
+                    c6 = Check(
+                        name="assurance_audit",
+                        ok=False,
+                        detail=(
+                            f"revalidation-warning-count-mismatch: expected {decl_warn_count}, "
+                            f"got {actual_warn_count}"
+                        ),
+                    )
+                elif decl_ceiling != expected_ceiling:
+                    c6 = Check(
+                        name="assurance_audit",
+                        ok=False,
+                        detail=(
+                            f"assurance-ceiling-mismatch: expected {decl_ceiling}, "
+                            f"got {expected_ceiling}"
+                        ),
+                    )
+                else:
+                    c6 = Check(name="assurance_audit", ok=True, detail="matched")
+            elif decl_ceiling != expected_ceiling:
+                c6 = Check(
+                    name="assurance_audit",
+                    ok=False,
+                    detail=(
+                        f"assurance-ceiling-mismatch: expected {decl_ceiling}, "
+                        f"got {expected_ceiling}"
+                    ),
+                )
+            else:
+                c6 = Check(name="assurance_audit", ok=True, detail="matched")
     else:
         c6 = Check(name="assurance_audit", ok=False, detail="manifest-missing-assurance")
 

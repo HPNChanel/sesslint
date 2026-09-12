@@ -10,11 +10,14 @@ This package implements the dry-run repair planning core for SessLint:
 from __future__ import annotations
 
 from sesslint.repair.assurance import (
+    ASSURANCE_CEILING_TABLE,
     ASSURANCE_LATTICE,
     cap_assurance,
+    compute_assurance_ceiling,
 )
 from sesslint.repair.errors import (
     Abstained,
+    ManifestCollision,
     OutputInvalid,
     PlanSourceMismatch,
     PlanTampered,
@@ -128,12 +131,14 @@ from sesslint.repair.registry import (
 
 __all__ = [
     "ALLOWED_LOSS_CLASSES",
+    "ASSURANCE_CEILING_TABLE",
     "ASSURANCE_LATTICE",
     "Abstained",
     "CONSERVATIVE_RECIPES",
     "EMPTY_EVENTS_HASH",
     "MAX_COMPONENT_SIZE",
     "MAX_STEPS",
+    "ManifestCollision",
     "OutputInvalid",
     "PLAN_VERSION",
     "PRECONDITION_FUNCS",
@@ -179,6 +184,7 @@ __all__ = [
     "check_preconditions",
     "clear_registry",
     "compaction_projection_reunion",
+    "compute_assurance_ceiling",
     "compute_events_source_hash",
     "compute_plan_fingerprint",
     "duplicate_projection_identical",

@@ -30,11 +30,13 @@ from unittest.mock import patch
 
 import pytest
 
+from sesslint._version import ADAPTER_VERSIONS
 from sesslint.cli import main
 from sesslint.repair import (
     MAX_STEPS,
     Abstained,
     Loss,
+    ManifestCollision,
     OutputInvalid,
     PlanSourceMismatch,
     PlanStep,
@@ -44,6 +46,7 @@ from sesslint.repair import (
     RepairPlan,
     RepairRefused,
     clear_registry,
+    compute_assurance_ceiling,
     compute_plan_fingerprint,
     execute,
     is_live_store_path,
@@ -1068,3 +1071,172 @@ def test_executor_refuses_direct_vendor_format_repair(tmp_path: Path, vendor_fmt
             format=vendor_fmt,
         )
     assert not output_file.exists()
+
+
+# =============================================================================
+# 14. DEV-009: Manifest Revalidation Binding, Ceiling Matrix & Publish Hardening
+# =============================================================================
+
+
+def test_compute_assurance_ceiling_matrix() -> None:
+    """Verify ceiling table matrix across policies and revalidation levels (DEV-009)."""
+    # Conservative policy preserves the revalidation assurance level exactly
+    for a_level in ("A0", "A1", "A2", "A3", "A4"):
+        assert compute_assurance_ceiling(a_level, "conservative") == a_level
+
+    # Salvage policy caps at A2 (structural replay ceiling)
+    assert compute_assurance_ceiling("A0", "salvage") == "A0"
+    assert compute_assurance_ceiling("A1", "salvage") == "A1"
+    assert compute_assurance_ceiling("A2", "salvage") == "A2"
+    assert compute_assurance_ceiling("A3", "salvage") == "A2"
+    assert compute_assurance_ceiling("A4", "salvage") == "A2"
+
+    # Invalid values raise ValueError
+    with pytest.raises(ValueError, match="Invalid revalidation assurance"):
+        compute_assurance_ceiling("INVALID", "conservative")
+    with pytest.raises(ValueError, match="Invalid policy or pedigree"):
+        compute_assurance_ceiling("A3", "unknown_policy")
+
+
+def test_preplanted_manifest_collision(tmp_path: Path) -> None:
+    """Pre-planted manifest blocks publish with ManifestCollision; output untouched (DEV-009)."""
+    source_file = tmp_path / "source.jsonl"
+    shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
+    plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    output_file = tmp_path / "repaired.jsonl"
+    manifest_file = tmp_path / "repaired.jsonl.manifest.json"
+
+    # Pre-plant a manifest before repair
+    pre_planted_content = "PRE-PLANTED-MANIFEST-RECEIPT"
+    manifest_file.write_text(pre_planted_content, encoding="utf-8")
+
+    with pytest.raises(ManifestCollision, match="Repair manifest destination already exists"):
+        execute(
+            source_path=source_file,
+            plan=plan,
+            output_path=output_file,
+            policy="conservative",
+        )
+
+    # Output file must NOT be created / untouched
+    assert not output_file.exists()
+    # Manifest file must NOT be overwritten
+    assert manifest_file.read_text(encoding="utf-8") == pre_planted_content
+
+
+def test_mid_publish_crash_rollback(tmp_path: Path) -> None:
+    """Crash between manifest publish and output rename leaves no orphan files (DEV-009)."""
+    source_file = tmp_path / "source.jsonl"
+    shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
+    plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    output_file = tmp_path / "repaired.jsonl"
+    manifest_file = tmp_path / "repaired.jsonl.manifest.json"
+
+    def _crash_hook() -> None:
+        # Verify manifest link actually succeeded before crash
+        assert manifest_file.is_file()
+        raise RuntimeError("Simulated crash right after manifest link")
+
+    with pytest.raises(RuntimeError, match="Simulated crash right after manifest link"):
+        execute(
+            source_path=source_file,
+            plan=plan,
+            output_path=output_file,
+            policy="conservative",
+            mid_publish_hook=_crash_hook,
+        )
+
+    # Atomic pair invariant: neither output nor manifest remains on disk
+    assert not output_file.exists()
+    assert not manifest_file.exists()
+    # Check no temp files leaked in directory
+    remaining_files = list(tmp_path.iterdir())
+    assert remaining_files == [source_file]
+
+
+def test_real_adapter_version_plumbing(tmp_path: Path) -> None:
+    """Manifest contains real adapter version and full revalidation summary (DEV-009)."""
+    source_file = tmp_path / "source.jsonl"
+    shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
+    plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    output_file = tmp_path / "repaired.jsonl"
+    manifest_file = tmp_path / "repaired.jsonl.manifest.json"
+
+    manifest = execute(
+        source_path=source_file,
+        plan=plan,
+        output_path=output_file,
+        policy="conservative",
+    )
+
+    # Check real adapter version from ADAPTER_VERSIONS
+    assert manifest.adapter_id == "canonical"
+    assert manifest.adapter_version == ADAPTER_VERSIONS["canonical"]
+    assert manifest.adapter_version != "unknown"
+
+    # Check revalidation summary
+    assert manifest.revalidation is not None
+    assert manifest.revalidation.assurance in ("A0", "A1", "A2", "A3", "A4")
+    assert manifest.revalidation.error_count == 0
+    assert manifest.revalidation.warning_count == 0
+    assert manifest.revalidation.profile_id == "neutral"
+    assert manifest.revalidation.profile_version == "1.0.0"
+    assert manifest.revalidation.report_fingerprint is not None
+
+    # Check assurance ceiling
+    assert manifest.assurance_ceiling == manifest.revalidation.assurance
+    assert manifest_file.is_file()
+
+
+def test_salvage_e2e_manifest_ceiling(tmp_path: Path) -> None:
+    """E2E salvage repair emits manifest with bounded ceiling (A2) (DEV-009)."""
+    import json
+
+    from sesslint.canonical import Session, SessionEvent, SessionHeader, dump_session
+
+    salvage_fixture = FIXTURES_DIR / "salvage_branch.json"
+    with open(salvage_fixture, encoding="utf-8") as fh:
+        fixture_data = json.load(fh)
+
+    events = [SessionEvent(**e) for e in fixture_data["events"]]
+    header = SessionHeader(
+        schema_version="sesslint.session/v1",
+        session_id="salvage-test-sess",
+        created_at="2026-09-05T12:00:00Z",
+    )
+    source_file = tmp_path / "salvage_source.jsonl"
+    source_file.write_text(
+        dump_session(Session(header=header, events=tuple(events))), encoding="utf-8"
+    )
+    source_hash = hashlib.sha256(source_file.read_bytes()).hexdigest()
+
+    raw_plan = dict(fixture_data["expected_plan"])
+    raw_plan["source_hash"] = source_hash
+    raw_plan["fingerprint"] = compute_plan_fingerprint(raw_plan)
+    salvage_plan = load_plan(raw_plan)
+
+    output_file = tmp_path / "salvage_repaired.jsonl"
+    manifest_file = tmp_path / "salvage_repaired.jsonl.manifest.json"
+
+    manifest = execute(
+        source_path=source_file,
+        plan=salvage_plan,
+        output_path=output_file,
+        policy="salvage",
+    )
+
+    # 1. Output and manifest exist
+    assert output_file.is_file()
+    assert manifest_file.is_file()
+
+    # 2. Manifest policy is salvage
+    assert manifest.policy == "salvage"
+
+    # 3. Assurance ceiling is bounded at A2 under salvage policy
+    assert manifest.assurance_ceiling == "A2"
+    assert manifest.revalidation is not None
+    assert manifest.revalidation.assurance in ("A2", "A3", "A4")
+
+    # 4. Manifest roundtrips cleanly via parse_manifest
+    parsed_m = parse_manifest(manifest_file.read_text(encoding="utf-8"))
+    assert parsed_m == manifest

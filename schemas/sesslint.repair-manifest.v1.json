@@ -12,7 +12,9 @@
     "actions",
     "declared_loss",
     "revalidate_report",
-    "idempotency_key"
+    "idempotency_key",
+    "revalidation",
+    "assurance_ceiling"
   ],
   "properties": {
     "schema_version": {
@@ -89,8 +91,66 @@
     "profile_version": {
       "type": "string"
     },
+    "adapter_id": {
+      "type": "string"
+    },
     "adapter_version": {
       "type": "string"
+    },
+    "assurance_ceiling": {
+      "type": "string",
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ]
+    },
+    "revalidation": {
+      "type": "object",
+      "required": [
+        "assurance",
+        "error_count",
+        "warning_count",
+        "profile_id",
+        "profile_version"
+      ],
+      "properties": {
+        "assurance": {
+          "type": "string",
+          "enum": [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4"
+          ]
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "profile_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profile_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "report_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "byte_counts": {
       "type": "object",

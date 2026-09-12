@@ -111,6 +111,15 @@ def _build_valid_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         "plan_fingerprint": plan_fp,
         "policy": "conservative",
         "revalidate_report": None,
+        "revalidation": {
+            "assurance": "A3",
+            "error_count": 0,
+            "warning_count": 0,
+            "profile_id": "neutral",
+            "profile_version": "1.0.0",
+            "report_fingerprint": None,
+        },
+        "assurance_ceiling": "A3",
         "schema_version": "sesslint.repair-manifest/v1",
     }
     man_p = dest_dir / "manifest.json"
@@ -148,6 +157,9 @@ def test_idempotence_incomplete_repair_single_defect(tmp_path: Path) -> None:
     m_data["actions"] = []
     m_data["assurance"] = "clean"
     m_data["plan_fingerprint"] = p_fp
+    m_data["revalidation"]["assurance"] = "A2"
+    m_data["revalidation"]["warning_count"] = 1
+    m_data["assurance_ceiling"] = "A2"
     man.write_text(json.dumps(m_data), encoding="utf-8")
 
     verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
@@ -531,7 +543,10 @@ def test_bug_loss_audit_crashes_on_non_iterable_declared_loss(tmp_path: Path) ->
     assert verdict.ok is False
     c_map = {c.name: c for c in verdict.checks}
     assert c_map["loss_audit"].ok is False
-    assert "invalid-declared-loss-format" in c_map["loss_audit"].detail
+    assert (
+        "invalid-declared-loss-format" in c_map["loss_audit"].detail
+        or "manifest-schema" in c_map["loss_audit"].detail
+    )
 
 
 def test_bug_loss_audit_crashes_on_non_int_loss_totals(tmp_path: Path) -> None:
@@ -546,7 +561,10 @@ def test_bug_loss_audit_crashes_on_non_int_loss_totals(tmp_path: Path) -> None:
     assert verdict.ok is False
     c_map = {c.name: c for c in verdict.checks}
     assert c_map["loss_audit"].ok is False
-    assert "invalid-loss-totals-format" in c_map["loss_audit"].detail
+    assert (
+        "invalid-loss-totals-format" in c_map["loss_audit"].detail
+        or "manifest-schema" in c_map["loss_audit"].detail
+    )
 
 
 def test_bug_indented_single_document_json_session_rejected(tmp_path: Path) -> None:

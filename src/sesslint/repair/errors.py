@@ -46,6 +46,12 @@ class RepairRefused(RepairError):
     code: str = "REPAIR_REFUSED"
 
 
+class ManifestCollision(RepairRefused):
+    """Raised when destination repair manifest already exists (refusing to overwrite receipt)."""
+
+    code: str = "MANIFEST_COLLISION"
+
+
 class PlanSourceMismatch(RepairError):
     """Raised when plan.source_hash does not match the source file bytes SHA-256."""
 
@@ -54,6 +60,7 @@ class PlanSourceMismatch(RepairError):
 
 __all__ = [
     "Abstained",
+    "ManifestCollision",
     "OutputInvalid",
     "PlanSourceMismatch",
     "PlanTampered",
