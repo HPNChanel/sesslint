@@ -40,6 +40,12 @@ from sesslint.adapters.openai_agents import (
     load_openai_agents,
     load_openai_agents_session,
 )
+from sesslint.adapters.synthetic import (
+    SYNTHETIC_ID_PREFIX,
+    SyntheticIdCollisionGuard,
+    is_synthetic_id,
+    synthetic_event_id,
+)
 
 __all__ = [
     "CONFIDENCE_MIN",
@@ -53,13 +59,16 @@ __all__ = [
     "MARGIN_MIN",
     "SNIFF_BYTES",
     "SUPPORTED_FORMATS",
+    "SYNTHETIC_ID_PREFIX",
     "SourceMetadata",
+    "SyntheticIdCollisionGuard",
     "VALID_FORMAT_OPTIONS",
     "detect_canonical",
     "detect_claude_code",
     "detect_format",
     "detect_openai_agents",
     "dump_canonical",
+    "is_synthetic_id",
     "load_canonical",
     "load_canonical_session",
     "load_claude_code",
@@ -67,5 +76,6 @@ __all__ = [
     "load_openai_agents",
     "load_openai_agents_session",
     "resolve_format",
+    "synthetic_event_id",
     "to_source_block",
 ]

@@ -17,6 +17,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.synthetic import (
+    SyntheticIdCollisionGuard,
+    synthetic_event_id,
+)
 from sesslint.canonical import (
     MUTATING_TOOL_NAMES,
     READ_ONLY_TOOL_NAMES,
@@ -348,7 +352,12 @@ def _load_claude_code_internal(
 
     events: list[SessionEvent] = []
     findings: list[Finding] = []
-    context: dict[str, Any] = {"session_id": None, "seen_version_sl301": False}
+    guard = SyntheticIdCollisionGuard()
+    context: dict[str, Any] = {
+        "session_id": None,
+        "seen_version_sl301": False,
+        "collision_guard": guard,
+    }
 
     try:
         line_number = 0
@@ -444,6 +453,7 @@ def _load_claude_code_internal(
                 context=context,
             )
 
+        guard.assert_no_collision()
         return events, sort_findings(findings), context.get("session_id")
 
     finally:
@@ -629,12 +639,24 @@ def _process_claude_line(
             context["session_id"] = sess_val.strip()
 
     # 7. Extract event identity and lineage coordinates (FR-026, FR-037)
+    guard: SyntheticIdCollisionGuard = context.setdefault(
+        "collision_guard", SyntheticIdCollisionGuard()
+    )
     raw_id = obj.get("uuid") or obj.get("id") or obj.get("record_id") or obj.get("message_id")
     seq_index = len(events)
-    rec_id_str = (
-        str(raw_id).strip() if raw_id is not None and str(raw_id).strip() else f"rec_{seq_index}"
-    )
-    original_id = str(raw_id).strip() if raw_id is not None and str(raw_id).strip() else None
+    if raw_id is not None and str(raw_id).strip():
+        rec_id_str = str(raw_id).strip()
+        original_id = rec_id_str
+        guard.register_real(rec_id_str)
+    else:
+        rec_id_str = synthetic_event_id(
+            "claude_code",
+            seq_index,
+            source_hint=path_str,
+            payload_len=len(raw.raw_bytes),
+        )
+        original_id = None
+        guard.register_synthetic(rec_id_str)
 
     raw_parent = (
         obj.get("parentUuid")
@@ -834,6 +856,7 @@ def _process_claude_line(
                 interaction_id=interaction_id,
             )
             events.append(msg_event)
+            guard.check_event(msg_event)
             current_parent = text_event_id
 
         num_tu = len(tool_use_blocks)
@@ -877,6 +900,7 @@ def _process_claude_line(
                 interaction_id=interaction_id,
             )
             events.append(call_event)
+            guard.check_event(call_event)
             current_parent = call_event_id
         return
 
@@ -918,6 +942,7 @@ def _process_claude_line(
                 interaction_id=interaction_id,
             )
             events.append(res_event)
+            guard.check_event(res_event)
         return
 
     # Default payload canonicalization
@@ -980,6 +1005,7 @@ def _process_claude_line(
         interaction_id=interaction_id,
     )
     events.append(event)
+    guard.check_event(event)
 
 
 def load_claude_code_session(

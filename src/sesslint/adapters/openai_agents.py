@@ -26,6 +26,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.synthetic import (
+    SyntheticIdCollisionGuard,
+    synthetic_event_id,
+)
 from sesslint.canonical import (
     MUTATING_TOOL_NAMES,
     READ_ONLY_TOOL_NAMES,
@@ -473,6 +477,7 @@ def _load_openai_agents_json(
     """
     findings: list[Finding] = []
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
+    guard = SyntheticIdCollisionGuard()
 
     # Check for forbidden NUL bytes
     if b"\x00" in data:
@@ -553,6 +558,7 @@ def _load_openai_agents_json(
             findings=findings,
             source_metadata=source_metadata,
             seen_version_sl301=seen_version_sl301,
+            guard=guard,
         )
 
         # Ingest checkpoints
@@ -630,8 +636,10 @@ def _load_openai_agents_json(
             source_metadata=source_metadata,
             seen_version_sl301=seen_version_sl301,
             record_ordinal=idx + 1,
+            guard=guard,
         )
 
+    guard.assert_no_collision()
     return EventList(events, source=source_metadata), sort_findings(findings)
 
 
@@ -645,6 +653,7 @@ def _load_openai_agents_jsonl(
     events: list[SessionEvent] = []
     findings: list[Finding] = []
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
+    guard = SyntheticIdCollisionGuard()
     seen_version_sl301 = False
 
     current_offset = 0
@@ -701,6 +710,7 @@ def _load_openai_agents_jsonl(
                 findings=findings,
                 source_metadata=source_metadata,
                 seen_version_sl301=seen_version_sl301,
+                guard=guard,
             )
 
         pending_raw = current_raw
@@ -719,8 +729,10 @@ def _load_openai_agents_jsonl(
             findings=findings,
             source_metadata=source_metadata,
             seen_version_sl301=seen_version_sl301,
+            guard=guard,
         )
 
+    guard.assert_no_collision()
     return EventList(events, source=source_metadata), sort_findings(findings)
 
 
@@ -734,6 +746,7 @@ def _process_jsonl_line(
     findings: list[Finding],
     source_metadata: SourceMetadata,
     seen_version_sl301: bool,
+    guard: SyntheticIdCollisionGuard | None = None,
 ) -> None:
     """Process a single JSONL line, emitting SessionEvent or SL001/SL002."""
     code = SL002 if is_terminal else SL001
@@ -877,6 +890,7 @@ def _process_jsonl_line(
         byte_offset=raw.byte_offset,
         byte_end=raw.byte_end,
         record_ordinal=raw.record_ordinal,
+        guard=guard,
     )
 
 
@@ -892,12 +906,27 @@ def _check_version(
     byte_offset: int | None = None,
     byte_end: int | None = None,
     record_ordinal: int | None = None,
+    guard: SyntheticIdCollisionGuard | None = None,
 ) -> bool:
     """Evaluate format version against supported registry and record SL301 if obsolete."""
     if version_candidate is None:
         return seen_version_sl301
 
-    rec_id_str = rec_id if rec_id is not None else "rec_0"
+    if rec_id is not None:
+        rec_id_str = rec_id
+    else:
+        ord_val = record_ordinal if record_ordinal is not None else 0
+        p_len = (
+            (byte_end - byte_offset) if (byte_offset is not None and byte_end is not None) else 0
+        )
+        rec_id_str = synthetic_event_id(
+            adapter="openai_agents",
+            ordinal=ord_val,
+            source_hint=path_str,
+            payload_len=p_len,
+        )
+        if guard is not None:
+            guard.register_synthetic(rec_id_str)
 
     coord_ev: dict[str, Any] = {}
     if byte_offset is not None:
@@ -959,14 +988,34 @@ def _process_openai_item(
     byte_offset: int | None = None,
     byte_end: int | None = None,
     record_ordinal: int | None = None,
+    guard: SyntheticIdCollisionGuard | None = None,
 ) -> None:
     """Canonicalize a single item dict into a SessionEvent, emitting findings as needed."""
     seq_index = len(events)
     raw_id = obj.get("id") or obj.get("item_id")
-    rec_id_str = (
-        str(raw_id).strip() if raw_id is not None and str(raw_id).strip() else f"rec_{seq_index}"
-    )
-    original_id = str(raw_id).strip() if raw_id is not None and str(raw_id).strip() else None
+    if byte_offset is not None and byte_end is not None:
+        p_len = byte_end - byte_offset
+    else:
+        try:
+            p_len = len(canonical_bytes(obj))
+        except Exception:
+            p_len = 0
+
+    if raw_id is not None and str(raw_id).strip():
+        rec_id_str = str(raw_id).strip()
+        original_id = rec_id_str
+        if guard is not None:
+            guard.register_real(rec_id_str)
+    else:
+        rec_id_str = synthetic_event_id(
+            adapter="openai_agents",
+            ordinal=seq_index,
+            source_hint=path_str,
+            payload_len=p_len,
+        )
+        original_id = None
+        if guard is not None:
+            guard.register_synthetic(rec_id_str)
 
     raw_parent = obj.get("parent_id") or obj.get("prev_id")
     parent_id = (
@@ -1000,6 +1049,7 @@ def _process_openai_item(
             byte_offset=byte_offset,
             byte_end=byte_end,
             record_ordinal=record_ordinal,
+            guard=guard,
         )
 
     # Type resolution and role disambiguation
@@ -1129,6 +1179,8 @@ def _process_openai_item(
         side_effects=side_effects,
     )
     events.append(event)
+    if guard is not None:
+        guard.check_event(event)
 
 
 def load_openai_agents_session(

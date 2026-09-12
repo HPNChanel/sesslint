@@ -1,0 +1,4 @@
+{"id": "rec_0", "type": "message", "role": "user", "message": "Initial prompt", "content": "Initial prompt", "timestamp": "2026-01-01T00:00:00Z"}
+{"type": "message", "role": "assistant", "message": "First response", "content": "First response", "timestamp": "2026-01-01T00:00:01Z"}
+{"id": "rec_1", "type": "message", "role": "user", "message": "Follow-up question", "content": "Follow-up question", "timestamp": "2026-01-01T00:00:02Z"}
+{"type": "message", "role": "assistant", "message": "Final answer", "content": "Final answer", "timestamp": "2026-01-01T00:00:03Z"}

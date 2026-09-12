@@ -127,3 +127,12 @@ class OperationalError(SesslintError):
 
     def __init__(self, message: str, *, code: str = "OPERATIONAL_ERROR") -> None:
         super().__init__(message, code=code)
+
+
+class AdapterError(SesslintError):
+    """Raised when an adapter invariant or parsing constraint fails."""
+
+    code: str = "ADAPTER_ERROR"
+
+    def __init__(self, message: str, *, code: str = "ADAPTER_ERROR") -> None:
+        super().__init__(message, code=code)

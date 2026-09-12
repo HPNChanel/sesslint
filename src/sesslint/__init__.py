@@ -49,6 +49,7 @@ from sesslint.determinism import (
     stable_sort_findings,
 )
 from sesslint.errors import (
+    AdapterError,
     AssuranceError,
     AtomicWriteError,
     ContentLeakError,
@@ -134,6 +135,7 @@ __all__ = [
     "SESSION_SCHEMA_VERSION",
     "__version__",
     "ALL_CODES",
+    "AdapterError",
     "Assurance",
     "AssuranceError",
     "AtomicWriteError",
