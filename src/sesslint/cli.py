@@ -8,14 +8,20 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from sesslint import __version__, load_session_file
-from sesslint._version import CLI_VERSION, get_version_info
+from sesslint._version import get_version_info
 from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
 from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
 from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
 from sesslint.errors import SesslintError
+
+FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
+    "canonical": "canonical",
+    "claude-code-jsonl": "Claude Code",
+    "openai-agents": "OpenAI Agents",
+}
 
 
 def _handle_internal_error(err: Exception, args: argparse.Namespace | None = None) -> int:
@@ -204,9 +210,9 @@ def create_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "--policy",
-        choices=["conservative", "salvage"],
-        default="conservative",
-        help="Repair policy (choices: conservative, salvage; default: conservative)",
+        dest="check_policy",
+        default=None,
+        help="[Invalid for check] Repair policy is only applicable to 'repair'",
     )
     check_parser.add_argument(
         "--recursive",
@@ -297,13 +303,72 @@ def create_parser() -> argparse.ArgumentParser:
     # scan
     scan_parser = subparsers.add_parser(
         "scan",
-        help="[read-only] Scan a session file (limits diagnostic).",
-        description="[read-only] Scan a session file (limits diagnostic).",
+        help="[read-only] Scan directory trees for session artifacts or display limits.",
+        description="[read-only] Scan directory trees for session artifacts or display limits.",
+    )
+    scan_parser.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        default=None,
+        help="Directory path to scan (or omit when using --show-limits)",
     )
     scan_parser.add_argument(
         "--show-limits",
         action="store_true",
         help="Display default hostile-input reader limits.",
+    )
+    scan_parser.add_argument(
+        "--recursive",
+        "-r",
+        action="store_true",
+        default=True,
+        help="Recursively scan directory trees (default: True)",
+    )
+    scan_parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        default=False,
+        help="Follow directory symlinks during scan",
+    )
+    scan_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=10000,
+        help="Maximum files to scan (default: 10000)",
+    )
+    scan_parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=1024 * 1024 * 1024,
+        help="Maximum cumulative bytes to read during recursive scan (default: 1GB)",
+    )
+    scan_parser.add_argument(
+        "--format",
+        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        default="auto",
+        help="Session format adapter (default: auto)",
+    )
+    scan_parser.add_argument(
+        "--profile",
+        default="neutral",
+        help="Replay validation profile (default: neutral)",
+    )
+    scan_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output scan report as JSON",
+    )
+    scan_parser.add_argument(
+        "--color",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Control colored terminal output",
+    )
+    scan_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color styling",
     )
 
     # repair
@@ -377,7 +442,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--salvage-unsupported",
         action="store_true",
         default=False,
-        help="Allow salvage (lossy) repair transformations for unsupported/broken structures",
+        help="[Deprecated] Use '--policy salvage' instead",
     )
     repair_parser.add_argument(
         "--include-content",
@@ -544,8 +609,41 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 f"max_records={limits.max_records}"
             )
             return 0
-        parser.print_help(sys.stderr)
-        return 2
+
+        if getattr(args, "path", None) is None:
+            parser.print_help(sys.stderr)
+            return 2
+
+        target_scan_path: Path = args.path
+        if not target_scan_path.exists():
+            print(f"Error: Path not found: {target_scan_path}", file=sys.stderr)
+            return 2
+
+        from sesslint.api import check_dir
+
+        scan_rep = check_dir(
+            target_scan_path,
+            recursive=getattr(args, "recursive", True),
+            follow_symlinks=getattr(args, "follow_symlinks", False),
+            max_files=getattr(args, "max_files", 10000),
+            max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
+            format=getattr(args, "format", "auto"),
+            profile=getattr(args, "profile", "neutral"),
+        )
+
+        if getattr(args, "json", False):
+            print(scan_rep.to_json())
+        else:
+            use_color = should_color(args, sys.stdout)
+            print(format_scan_report_human(scan_rep, color=use_color))
+
+        if (
+            scan_rep.totals.invalid > 0
+            or scan_rep.totals.unsupported > 0
+            or scan_rep.totals.unreadable > 0
+        ):
+            return 1
+        return 0
 
     if args.command == "validate-session":
         try:
@@ -563,6 +661,13 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return 2
 
     if args.command == "check":
+        if getattr(args, "check_policy", None) is not None:
+            print(
+                "Error: The --policy option is only valid for 'repair', not 'check'.",
+                file=sys.stderr,
+            )
+            return 2
+
         target_path: Path = args.path
         if target_path.is_dir():
             if not getattr(args, "recursive", False):
@@ -605,248 +710,62 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
         format_opt = getattr(args, "format", "auto")
         profile_opt = getattr(args, "profile", "neutral")
-        from sesslint.profiles import resolve_effective_config
 
         try:
-            effective_cfg = resolve_effective_config(
-                profile_opt,
-                format=format_opt if format_opt != "auto" else None,
-                confidence_min=getattr(args, "confidence_min", None),
-                margin_min=getattr(args, "margin_min", None),
+            from sesslint.api import check_file
+
+            try:
+                report = check_file(
+                    target_path,
+                    format=format_opt if format_opt != "auto" else None,
+                    profile=profile_opt,
+                    confidence_min=getattr(args, "confidence_min", None),
+                    margin_min=getattr(args, "margin_min", None),
+                )
+            except (ValueError, KeyError) as err:
+                if "not permitted by profile" in str(err):
+                    print(str(err), file=sys.stderr)
+                    return 2
+                parser.error(str(err))
+
+            has_error = (
+                report.counts.by_severity.get("error", 0) > 0
+                or report.counts.by_severity.get("fatal", 0) > 0
             )
-        except Exception as err:
-            parser.error(str(err))
+            exit_code = 1 if has_error else 0
 
-        if not effective_cfg.allowed_adapters:
-            print(f"Profile {effective_cfg.profile} has empty adapter allowlist", file=sys.stderr)
-            return 2
-
-        from sesslint.adapters.detect import (
-            FORMAT_CANONICAL,
-            FORMAT_CLAUDE_CODE,
-            FORMAT_OPENAI_AGENTS,
-            resolve_format,
-        )
-
-        try:
-            resolved_fmt, detection_res, det_findings = resolve_format(format_opt, target_path)
-            if resolved_fmt is None:
-                if detection_res and detection_res.reason in ("tie", "low-confidence", "empty"):
-                    print(
-                        "Format detection ambiguous. Please specify --format explicitly "
-                        "(see sesslint formats).",
-                        file=sys.stderr,
-                    )
-                    if detection_res.confidences:
-                        sorted_conf = dict(sorted(detection_res.confidences.items()))
+            # If format detection failed or was ambiguous, emit actionable hints on stderr
+            for f in report.findings:
+                if f.code == "SL302" and isinstance(f.evidence, dict):
+                    reason = f.evidence.get("reason")
+                    if reason in ("tie", "low-confidence", "empty"):
                         print(
-                            f"Candidate confidences: {sorted_conf}",
+                            "Format detection ambiguous. Please specify --format explicitly "
+                            "(see sesslint formats).",
                             file=sys.stderr,
                         )
-                if det_findings:
-                    f = det_findings[0]
+                        confidences = f.evidence.get("confidences")
+                        if confidences and isinstance(confidences, dict):
+                            sorted_conf = dict(sorted(confidences.items()))
+                            print(
+                                f"Candidate confidences: {sorted_conf}",
+                                file=sys.stderr,
+                            )
                     print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
-                else:
-                    print(f"Format detection failed for {target_path}", file=sys.stderr)
+                elif f.code == "SL301":
+                    print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
 
-                if getattr(args, "json", False):
-                    from sesslint.codes import SL302, Repairability, Severity
-                    from sesslint.finding import SourceRef, make_finding
-                    from sesslint.report import Coverage, CoverageSkip, build_report
-                    from sesslint.source import fingerprint_file
-
-                    rep_findings = (
-                        list(det_findings)
-                        if det_findings
-                        else [
-                            make_finding(
-                                code=SL302,
-                                severity=Severity.ERROR,
-                                repairability=Repairability.MANUAL,
-                                message_template="Format detection failed [detail: {detail}]",
-                                source=SourceRef(path=str(target_path)),
-                                template_args={
-                                    "detail": detection_res.reason if detection_res else "unknown"
-                                },
-                            )
-                        ]
-                    )
-                    fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
-                    cov = Coverage(
-                        performed=(),
-                        skipped=tuple(
-                            CoverageSkip(
-                                check=r,
-                                reason="adapter-not-applicable",
-                                detail="format detection failed",
-                            )
-                            for r in (
-                                "SL001",
-                                "SL002",
-                                "SL003",
-                                "SL004",
-                                "SL005",
-                                "SL006",
-                                "SL007",
-                                "SL101",
-                                "SL102",
-                                "SL103",
-                                "SL104",
-                                "SL105",
-                                "SL106",
-                                "SL107",
-                                "SL108",
-                                "SL201",
-                                "SL202",
-                                "SL203",
-                                "SL301",
-                                "SL302",
-                            )
-                        ),
-                        adapter={"id": "unknown", "version": "unknown"},
-                        profile={"id": effective_cfg.profile, "version": effective_cfg.version},
-                    )
-                    rep = build_report(
-                        session_id=target_path.stem,
-                        source_fingerprint=fp,
-                        tool_version=CLI_VERSION,
-                        findings=rep_findings,
-                        assurance="A0",
-                        limitation="No structural conclusion.",
-                        coverage=cov,
-                    )
-                    from sesslint.report import build_repro_metadata, render_json
-
-                    repro_meta = build_repro_metadata(
-                        adapter_name="unknown",
-                        profile_name=effective_cfg.profile,
-                        detection_method="auto",
-                        detection_confidence=0.0,
-                    )
-                    print(
-                        render_json(
-                            rep,
-                            include_content=getattr(args, "include_content", False),
-                            repro=repro_meta,
-                        )
-                    )
-                return 1
-
-            fmt_key = (
-                "claude"
-                if resolved_fmt == FORMAT_CLAUDE_CODE
-                else (
-                    "openai"
-                    if resolved_fmt == FORMAT_OPENAI_AGENTS
-                    else ("canonical" if resolved_fmt == FORMAT_CANONICAL else resolved_fmt)
-                )
-            )
-            if (
-                fmt_key not in effective_cfg.allowed_adapters
-                and resolved_fmt not in effective_cfg.allowed_adapters
-            ):
-                print(
-                    f"Format {resolved_fmt} is not permitted by profile {effective_cfg.profile}",
-                    file=sys.stderr,
-                )
-                return 2
-
-            events: list[Any] = []
-            adapter_findings: list[Any] = list(det_findings)
-
-            if resolved_fmt == FORMAT_CANONICAL:
-                from sesslint.adapters.canonical import load_canonical
-
-                can_events, can_findings = load_canonical(target_path)
-                events = list(can_events)
-                adapter_findings.extend(can_findings)
-                format_display = "canonical"
-            elif resolved_fmt == FORMAT_CLAUDE_CODE:
-                from sesslint.adapters.claude_code import load_claude_code
-
-                c_events, c_findings = load_claude_code(target_path)
-                events = list(c_events)
-                adapter_findings.extend(c_findings)
-                format_display = "Claude Code"
-            elif resolved_fmt == FORMAT_OPENAI_AGENTS:
-                from sesslint.adapters.openai_agents import load_openai_agents
-
-                o_events, o_findings = load_openai_agents(target_path)
-                events = list(o_events)
-                adapter_findings.extend(o_findings)
-                format_display = "OpenAI Agents"
-            else:
-                print(f"Unsupported format: {resolved_fmt}", file=sys.stderr)
-                return 2
-
-            from sesslint.codes import Severity
-            from sesslint.repair.executor import run_all_checks
-            from sesslint.report import (
-                Coverage,
-                CoverageSkip,
-                build_report,
-                compute_assurance,
-            )
-            from sesslint.source import fingerprint_file
-
-            adapter_skips: list[CoverageSkip] = []
-            if any(f.code == "SL301" for f in adapter_findings):
-                adapter_skips.append(
-                    CoverageSkip(
-                        check="SL301",
-                        reason="version-gated",
-                        detail="unsupported format version (SL301)",
-                    )
-                )
-
-            check_findings, coverage = run_all_checks(
-                events,
-                profile=effective_cfg.profile,
-                source_path=str(target_path),
-                adapter=resolved_fmt,
-                adapter_skips=adapter_skips,
-                return_coverage=True,
-            )
-            all_findings = list(adapter_findings) + list(check_findings)
-
-            session_id: str = target_path.stem
-            if (
-                hasattr(events, "source")
-                and isinstance(events.source, dict)
-                and events.source.get("session_id")
-            ):
-                session_id = str(events.source["session_id"])
-            elif events and hasattr(events[0], "session_id") and events[0].session_id:
-                session_id = str(events[0].session_id)
-
-            has_error = any(f.severity in (Severity.ERROR, Severity.FATAL) for f in all_findings)
-
-            assurance, limitation = compute_assurance(events, all_findings)
-
-            fp = fingerprint_file(target_path)
-            report = build_report(
-                session_id=session_id,
-                source_fingerprint=fp,
-                tool_version=CLI_VERSION,
-                findings=all_findings,
-                assurance=assurance,
-                limitation=limitation,
-                coverage=coverage,
-            )
-
-            exit_code = 1 if has_error else 0
+            adapter_id = report.coverage.adapter.get("id", "canonical")
+            format_display = FORMAT_DISPLAY_NAMES.get(adapter_id, adapter_id)
 
             if getattr(args, "json", False):
                 from sesslint.report import build_repro_metadata, render_json
 
-                conf_val = 1.0
-                if detection_res and detection_res.confidences:
-                    conf_val = detection_res.confidences.get(resolved_fmt, 1.0)
                 repro_meta = build_repro_metadata(
                     adapter_name=format_display,
-                    profile_name=effective_cfg.profile,
+                    profile_name=report.coverage.profile.get("id", profile_opt),
                     detection_method="manual" if format_opt != "auto" else "auto",
-                    detection_confidence=conf_val,
+                    detection_confidence=1.0,
                 )
                 print(
                     render_json(
@@ -864,10 +783,10 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     report,
                     color=use_color,
                     adapter=format_display,
-                    profile=effective_cfg.profile,
+                    profile=report.coverage.profile.get("id", profile_opt),
                 )
                 if not has_error:
-                    print(f"Valid {format_display} session ({len(events)} events)")
+                    print(f"Valid {format_display} session")
                 print(human_text)
                 return exit_code
 
@@ -881,6 +800,14 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return _handle_internal_error(err, args)
 
     if args.command == "repair":
+        if getattr(args, "salvage_unsupported", False):
+            print(
+                "Error: The --salvage-unsupported flag has been deprecated and removed. "
+                "Please use '--policy salvage' instead.",
+                file=sys.stderr,
+            )
+            return 2
+
         if not args.dry_run and args.output is None:
             print("Error: --output is required unless --dry-run is specified.", file=sys.stderr)
             return 2
@@ -890,10 +817,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return 2
 
         policy_opt: Literal["conservative", "salvage"] = (
-            "salvage"
-            if getattr(args, "salvage_unsupported", False)
-            or getattr(args, "policy", "conservative") == "salvage"
-            else "conservative"
+            "salvage" if getattr(args, "policy", "conservative") == "salvage" else "conservative"
         )
         profile_opt = getattr(args, "profile", "neutral")
         ack_side_effects = getattr(args, "acknowledge_side_effects", False)

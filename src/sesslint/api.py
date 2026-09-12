@@ -24,8 +24,8 @@ from sesslint.repair import (
     RepairPlan,
     execute,
     load_plan,
-    run_all_checks,
 )
+from sesslint.repair import executor as repair_executor
 from sesslint.repair.planner import plan as planner_plan
 from sesslint.report import (
     Coverage,
@@ -152,55 +152,8 @@ def check_file(
         fmt_key not in effective_cfg.allowed_adapters
         and resolved_fmt not in effective_cfg.allowed_adapters
     ):
-        finding = make_finding(
-            code=SL302,
-            severity=Severity.ERROR,
-            repairability=Repairability.MANUAL,
-            message_template="Format is not permitted by profile",
-            source=SourceRef(path=str(target_path)),
-            evidence={"format": resolved_fmt, "profile": effective_cfg.profile},
-        )
-        fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
-        cov = Coverage(
-            performed=(),
-            skipped=tuple(
-                CoverageSkip(
-                    check=r, reason="profile-gated", detail="format not allowed by profile"
-                )
-                for r in (
-                    "SL001",
-                    "SL002",
-                    "SL003",
-                    "SL004",
-                    "SL005",
-                    "SL006",
-                    "SL007",
-                    "SL101",
-                    "SL102",
-                    "SL103",
-                    "SL104",
-                    "SL105",
-                    "SL106",
-                    "SL107",
-                    "SL108",
-                    "SL201",
-                    "SL202",
-                    "SL203",
-                    "SL301",
-                    "SL302",
-                )
-            ),
-            adapter={"id": str(resolved_fmt), "version": "unknown"},
-            profile={"id": effective_cfg.profile, "version": effective_cfg.version},
-        )
-        return build_report(
-            session_id=target_path.stem,
-            source_fingerprint=fp,
-            tool_version=CLI_VERSION,
-            findings=[finding],
-            assurance="A0",
-            limitation="No structural conclusion.",
-            coverage=cov,
+        raise ValueError(
+            f"Format {resolved_fmt} is not permitted by profile {effective_cfg.profile}"
         )
 
     events: list[Any] = []
@@ -235,7 +188,7 @@ def check_file(
             )
         )
 
-    check_findings, coverage = run_all_checks(
+    check_findings, coverage = repair_executor.run_all_checks(
         events,
         profile=effective_cfg.profile,
         source_path=str(target_path),
@@ -246,13 +199,7 @@ def check_file(
     all_findings = list(adapter_findings) + list(check_findings)
 
     session_id: str = target_path.stem
-    if (
-        hasattr(events, "source")
-        and isinstance(events.source, dict)
-        and events.source.get("session_id")
-    ):
-        session_id = str(events.source["session_id"])
-    elif events and hasattr(events[0], "session_id") and events[0].session_id:
+    if events and hasattr(events[0], "session_id") and events[0].session_id:
         session_id = str(events[0].session_id)
 
     assurance, limitation = compute_assurance(events, all_findings)
@@ -486,6 +433,7 @@ def plan(
 
 
 __all__ = [
+    "ScanReport",
     "VerifyVerdict",
     "check_dir",
     "check_file",
