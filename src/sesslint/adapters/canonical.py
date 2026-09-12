@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Literal, cast
 
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
 from sesslint.canonical import (
     KNOWN_HEADER_FIELDS,
     MUTATING_TOOL_NAMES,
@@ -243,10 +244,7 @@ def event_to_dict(event: Any) -> dict[str, Any]:
 
 def _safe_type_value(val: Any) -> str:
     """Return safe type and size descriptor without leaking field content (FR-081, FR-082)."""
-    t_name = type(val).__name__
-    if isinstance(val, (str, bytes, list, dict, set, tuple)):
-        return f"<{t_name}:len={len(val)}>"
-    return f"<{t_name}>"
+    return safe_type_value(val)
 
 
 def dump_canonical(
@@ -655,7 +653,18 @@ def _parse_canonical_event_record(
         if k not in KNOWN_EVENT_KEYS:
             if k in CRITICAL_KEYS or k.startswith("critical_") or k.startswith("unknown_critical"):
                 if not has_emitted_event_sl302:
-                    safe_tv = _safe_type_value(v)
+                    if k == "type":
+                        safe_tv, type_truncated = safe_discriminator(v)
+                    else:
+                        safe_tv = _safe_type_value(v)
+                        type_truncated = False
+                    ev_data: dict[str, Any] = {
+                        "field_path": k,
+                        "type_value": safe_tv,
+                        "record_id": rec_id_str,
+                    }
+                    if type_truncated:
+                        ev_data["type_truncated"] = True
                     add_finding(
                         make_finding(
                             code=SL302,
@@ -665,13 +674,7 @@ def _parse_canonical_event_record(
                                 "Unknown critical record on line {line} for record {record_id}"
                             ),
                             source=SourceRef(path=path_str, line=line_num, record_id=rec_id_str),
-                            evidence=_ev_dict(
-                                {
-                                    "field_path": k,
-                                    "type_value": safe_tv,
-                                    "record_id": rec_id_str,
-                                }
-                            ),
+                            evidence=_ev_dict(ev_data),
                         )
                     )
                     has_emitted_event_sl302 = True
@@ -1062,6 +1065,17 @@ def load_canonical(
                         or key.startswith("unknown_critical")
                     ):
                         if not has_emitted_top_sl302:
+                            if key == "type":
+                                safe_tv, type_truncated = safe_discriminator(doc[key])
+                            else:
+                                safe_tv = _safe_type_value(doc[key])
+                                type_truncated = False
+                            ev_data: dict[str, Any] = {
+                                "field_path": key,
+                                "type_value": safe_tv,
+                            }
+                            if type_truncated:
+                                ev_data["type_truncated"] = True
                             add_finding(
                                 make_finding(
                                     code=SL302,
@@ -1069,10 +1083,7 @@ def load_canonical(
                                     repairability=Repairability.MANUAL,
                                     message_template="Unknown critical record on line {line}",
                                     source=SourceRef(path=path_str, line=1, record_id=None),
-                                    evidence={
-                                        "field_path": key,
-                                        "type_value": _safe_type_value(doc[key]),
-                                    },
+                                    evidence=ev_data,
                                 )
                             )
                             has_emitted_top_sl302 = True
@@ -1316,6 +1327,18 @@ def load_canonical(
                     or key.startswith("unknown_critical")
                 ):
                     if not has_emitted_hdr_sl302:
+                        if key == "type":
+                            safe_tv, type_truncated = safe_discriminator(hdr_doc[key])
+                        else:
+                            safe_tv = _safe_type_value(hdr_doc[key])
+                            type_truncated = False
+                        hdr_evidence: dict[str, Any] = {
+                            **hdr_coord_ev,
+                            "field_path": key,
+                            "type_value": safe_tv,
+                        }
+                        if type_truncated:
+                            hdr_evidence["type_truncated"] = True
                         add_finding(
                             make_finding(
                                 code=SL302,
@@ -1323,11 +1346,7 @@ def load_canonical(
                                 repairability=Repairability.MANUAL,
                                 message_template="Unknown critical record on line {line}",
                                 source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
-                                evidence={
-                                    **hdr_coord_ev,
-                                    "field_path": key,
-                                    "type_value": _safe_type_value(hdr_doc[key]),
-                                },
+                                evidence=hdr_evidence,
                             )
                         )
                         has_emitted_hdr_sl302 = True

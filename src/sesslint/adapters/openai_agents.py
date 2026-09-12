@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -133,10 +134,7 @@ KNOWN_RECORD_KEYS: Final[frozenset[str]] = frozenset(
 
 def _safe_type_value(val: Any) -> str:
     """Return safe type and size descriptor without leaking field content (FR-081, FR-082)."""
-    t_name = type(val).__name__
-    if isinstance(val, (str, bytes, list, dict, set, tuple)):
-        return f"<{t_name}:len={len(val)}>"
-    return f"<{t_name}>"
+    return safe_type_value(val)
 
 
 # Explicit mapping from OpenAI item types to canonical (actor, kind) pairs
@@ -1086,20 +1084,23 @@ def _process_openai_item(
     else:
         actor = "system"
         kind = "unknown"
-        type_val = str(raw_type) if raw_type is not None else "<missing>"
+        type_val, type_truncated = safe_discriminator(raw_type)
         source = SourceRef(path=path_str, line=line_number, record_id=rec_id_str)
+        evidence_sl302: dict[str, Any] = {
+            "field_path": "type",
+            "type_value": type_val,
+            "record_id": rec_id_str,
+            **coord_ev,
+        }
+        if type_truncated:
+            evidence_sl302["type_truncated"] = True
         finding_sl302 = make_finding(
             code=SL302,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
             message_template="Unknown critical record on line {line} for record {record_id}",
             source=source,
-            evidence={
-                "field_path": "type",
-                "type_value": type_val,
-                "record_id": rec_id_str,
-                **coord_ev,
-            },
+            evidence=evidence_sl302,
         )
         findings.append(finding_sl302)
         has_emitted_sl302 = True

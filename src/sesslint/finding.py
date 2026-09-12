@@ -408,6 +408,7 @@ CANONICAL_EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
         "state_hash_a",
         "state_hash_b",
         "truncated",
+        "type_truncated",
         "use_id",
         "use_index",
         "variant",

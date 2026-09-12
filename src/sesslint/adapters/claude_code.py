@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -168,10 +169,7 @@ _TIMESTAMP_ISO_REGEX: Final[re.Pattern[str]] = re.compile(
 
 def _safe_type_value(val: Any) -> str:
     """Return safe type and size descriptor without leaking field content (FR-081, FR-082)."""
-    t_name = type(val).__name__
-    if isinstance(val, (str, bytes, list, dict, set, tuple)):
-        return f"<{t_name}:len={len(val)}>"
-    return f"<{t_name}>"
+    return safe_type_value(val)
 
 
 def normalize_version(version: str) -> str:
@@ -758,20 +756,23 @@ def _process_claude_line(
     else:
         actor = "system"
         kind = "unknown"
-        type_val = str(raw_type) if raw_type is not None else "<missing>"
+        type_val, type_truncated = safe_discriminator(raw_type)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id_str)
+        evidence_sl302: dict[str, Any] = {
+            **coord_evidence,
+            "field_path": "type",
+            "type_value": type_val,
+            "record_id": rec_id_str,
+        }
+        if type_truncated:
+            evidence_sl302["type_truncated"] = True
         finding_sl302 = make_finding(
             code=SL302,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
             message_template="Unknown critical record on line {line} for record {record_id}",
             source=source,
-            evidence={
-                **coord_evidence,
-                "field_path": "type",
-                "type_value": type_val,
-                "record_id": rec_id_str,
-            },
+            evidence=evidence_sl302,
         )
         findings.append(finding_sl302)
         has_emitted_sl302 = True

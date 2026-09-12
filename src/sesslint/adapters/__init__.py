@@ -40,6 +40,10 @@ from sesslint.adapters.openai_agents import (
     load_openai_agents,
     load_openai_agents_session,
 )
+from sesslint.adapters.safe_value import (
+    safe_discriminator,
+    safe_type_value,
+)
 from sesslint.adapters.synthetic import (
     SYNTHETIC_ID_PREFIX,
     SyntheticIdCollisionGuard,
@@ -76,6 +80,8 @@ __all__ = [
     "load_openai_agents",
     "load_openai_agents_session",
     "resolve_format",
+    "safe_discriminator",
+    "safe_type_value",
     "synthetic_event_id",
     "to_source_block",
 ]
