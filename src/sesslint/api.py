@@ -22,6 +22,7 @@ from sesslint.bundle import Bundle, build_bundle
 from sesslint.codes import SL302, Repairability, Severity
 from sesslint.context import CheckContext
 from sesslint.finding import Finding, SourceRef, make_finding
+from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
 from sesslint.profiles import resolve_effective_config
 from sesslint.repair import (
     RepairPlan,
@@ -442,12 +443,15 @@ def plan(
 
 __all__ = [
     "Bundle",
+    "PrecheckReason",
+    "PrecheckResult",
     "ScanReport",
     "VerifyVerdict",
     "build_bundle",
     "check_dir",
     "check_file",
     "plan",
+    "precheck",
     "repair",
     "verify",
 ]

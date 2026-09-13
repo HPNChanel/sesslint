@@ -8,9 +8,12 @@ from sesslint._version import (
 )
 from sesslint.api import (
     Bundle,
+    PrecheckReason,
+    PrecheckResult,
     build_bundle,
     check_dir,
     check_file,
+    precheck,
 )
 from sesslint.atomic import (
     atomic_write_bytes,
@@ -158,6 +161,8 @@ __all__ = [
     "MaxRecordsExceededError",
     "OperationalError",
     "Policy",
+    "PrecheckReason",
+    "PrecheckResult",
     "ReaderLimits",
     "RepairAction",
     "RepairManifest",
@@ -225,6 +230,7 @@ __all__ = [
     "parse_manifest",
     "parse_report",
     "parse_session",
+    "precheck",
     "read_header",
     "render_human",
     "render_json",

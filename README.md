@@ -41,6 +41,7 @@
 - [Replay Profiles](#replay-profiles)
 - [Architecture & Anti-Leak Boundaries](#architecture--anti-leak-boundaries)
 - [Python Library API](#python-library-api)
+- [CI & Pre-Commit Integration](#ci--pre-commit-integration)
 - [JSON Schemas](#json-schemas)
 - [Compatibility & Migration Notes (NDP-001)](#compatibility--migration-notes-ndp-001)
 - [Test Suite & Verification](#test-suite--verification)
@@ -681,6 +682,93 @@ manifest = sesslint.execute(
     policy="conservative",
     profile="claude-strict",
 )
+```
+
+---
+
+## CI & Pre-Commit Integration
+
+SessLint provides one-call prevention primitives and integration assets to gate on session integrity across automated workflows, pre-commit hooks, and runtime pipelines.
+
+### GitHub Action (`sesslint-check`)
+
+Run SessLint session checks natively in GitHub Actions with content-free summaries rendered directly to job step summaries:
+
+```yaml
+name: Session Integrity Gate
+
+on: [push, pull_request]
+
+jobs:
+  check-sessions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Session Artifacts
+        uses: HPNChanel/sesslint/.github/actions/sesslint-check@main
+        with:
+          path: sessions/
+          profile: neutral
+          fail-on: error
+```
+
+#### Action Inputs
+
+| Input | Description | Default |
+| :--- | :--- | :--- |
+| `path` | Path to session file or directory (required). | *required* |
+| `profile` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). | `neutral` |
+| `format` | Session format adapter (`auto`, `canonical`, `claude-code-jsonl`, `openai-agents`). | `auto` |
+| `fail-on` | Failure threshold (`error` or `warning`). | `error` |
+| `package` | PyPI package specifier (activates on first PyPI release). | `sesslint` |
+| `source-ref`| Local checkout path (`.`) or git ref for source install. | `""` |
+| `python-version` | Python runtime version. | `3.11` |
+
+### Pre-Commit Hook
+
+Enforce session integrity locally before commits are created by adding SessLint to `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/HPNChanel/sesslint
+    rev: v0.1.0  # or git commit SHA
+    hooks:
+      - id: sesslint-check
+```
+
+### Programmatic Prevention Gate (`precheck`)
+
+The `sesslint.precheck` function provides a zero-exception, one-call gate for agent runtime systems. It returns a frozen `PrecheckResult` with exit codes (`0`, `1`, `2`) and normalized reason codes (`clean`, `findings-error`, `findings-warning`, `detection-failed`, `io-error`, `usage-error`).
+
+#### 1. Pre-Resume Gate (Prevent corrupt session reload)
+```python
+from sesslint import precheck
+
+result = precheck("sessions/active.jsonl")
+if not result.ok:
+    raise RuntimeError(f"Cannot resume corrupted session: {result.reason}")
+# Session verified; safe to resume agent execution
+```
+
+#### 2. Pre-Request Gate (Gate before invoking LLM provider)
+```python
+from sesslint import precheck
+
+result = precheck("sessions/active.jsonl", profile="claude-strict")
+if not result.ok:
+    abort_request(f"Pre-request gate rejected session ({result.reason})")
+# Session conforms to provider turn rules; send prompt to provider
+```
+
+#### 3. Pre-Compaction Gate (Safeguard before history compaction)
+```python
+from sesslint import precheck
+
+result = precheck("sessions/active.jsonl")
+if not result.ok:
+    logger.warning("Session compaction skipped due to integrity issue: %s", result.reason)
+    return
+# Session structure intact; safe to compute compaction summary
 ```
 
 ---
