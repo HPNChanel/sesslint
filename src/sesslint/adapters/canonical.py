@@ -538,6 +538,7 @@ def _parse_canonical_event_record(
             )
         )
     elif ev_raw["kind"] not in VALID_KINDS:
+        safe_kind, _ = safe_discriminator(ev_raw["kind"])
         add_finding(
             make_finding(
                 code=SL001,
@@ -549,7 +550,7 @@ def _parse_canonical_event_record(
                 evidence=_ev_dict(
                     {
                         "reason": "invalid_kind",
-                        "kind": str(ev_raw["kind"]),
+                        "kind": safe_kind,
                         "record_id": rec_id_str,
                     }
                 ),
@@ -658,8 +659,9 @@ def _parse_canonical_event_record(
                     else:
                         safe_tv = _safe_type_value(v)
                         type_truncated = False
+                    safe_k, _ = safe_discriminator(k)
                     ev_data: dict[str, Any] = {
-                        "field_path": k,
+                        "field_path": safe_k,
                         "type_value": safe_tv,
                         "record_id": rec_id_str,
                     }
@@ -1008,6 +1010,7 @@ def load_canonical(
                 and raw_version != 1
                 and norm_ver not in SUPPORTED_CANONICAL_VERSIONS
             ):
+                safe_v, _ = safe_discriminator(str(raw_version))
                 add_finding(
                     make_finding(
                         code=SL301,
@@ -1016,7 +1019,7 @@ def load_canonical(
                         message_template="Unsupported canonical format version on line {line}",
                         source=SourceRef(path=path_str, line=1, record_id=None),
                         evidence={
-                            "version_raw": str(raw_version),
+                            "version_raw": safe_v,
                             "supported_set": tuple(sorted(SUPPORTED_CANONICAL_VERSIONS)),
                         },
                     )
@@ -1070,8 +1073,9 @@ def load_canonical(
                             else:
                                 safe_tv = _safe_type_value(doc[key])
                                 type_truncated = False
+                            safe_k, _ = safe_discriminator(key)
                             ev_data: dict[str, Any] = {
-                                "field_path": key,
+                                "field_path": safe_k,
                                 "type_value": safe_tv,
                             }
                             if type_truncated:
@@ -1282,6 +1286,7 @@ def load_canonical(
             and raw_version != 1
             and norm_ver not in SUPPORTED_CANONICAL_VERSIONS
         ):
+            safe_v, _ = safe_discriminator(str(raw_version))
             add_finding(
                 make_finding(
                     code=SL301,
@@ -1291,7 +1296,7 @@ def load_canonical(
                     source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
                     evidence={
                         **hdr_coord_ev,
-                        "version_raw": str(raw_version),
+                        "version_raw": safe_v,
                         "supported_set": tuple(sorted(SUPPORTED_CANONICAL_VERSIONS)),
                     },
                 )
@@ -1332,9 +1337,10 @@ def load_canonical(
                         else:
                             safe_tv = _safe_type_value(hdr_doc[key])
                             type_truncated = False
+                        safe_k, _ = safe_discriminator(key)
                         hdr_evidence: dict[str, Any] = {
                             **hdr_coord_ev,
-                            "field_path": key,
+                            "field_path": safe_k,
                             "type_value": safe_tv,
                         }
                         if type_truncated:

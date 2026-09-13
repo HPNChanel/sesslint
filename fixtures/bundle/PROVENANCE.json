@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "sesslint.test_harness",
+  "seed": 42,
+  "created": "2026-09-13",
+  "contains_real_data": false,
+  "description": "Synthetic secret-seeded, PII-laden, and golden diagnostic bundle fixtures for bundle privacy red-team and structural contract testing."
+}

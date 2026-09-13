@@ -23,13 +23,15 @@ VERIFY_DIR = FIXTURES_ROOT / "verify" / "ok"
 def test_api_module_exports() -> None:
     """Verify sesslint.api exports the mandatory programmatic surface."""
     expected_exports = {
-        "check_file",
-        "check_dir",
-        "repair",
-        "verify",
-        "plan",
+        "Bundle",
         "ScanReport",
         "VerifyVerdict",
+        "build_bundle",
+        "check_dir",
+        "check_file",
+        "plan",
+        "repair",
+        "verify",
     }
     assert expected_exports.issubset(set(api.__all__))
     for name in expected_exports:
@@ -161,3 +163,20 @@ def test_verify_contract() -> None:
     assert isinstance(verdict, Verdict)
     assert verdict.ok is True
     assert isinstance(verdict.to_json(), str)
+
+
+def test_build_bundle_contract() -> None:
+    """Verify build_bundle programmatic function contract and returned Bundle instance."""
+    bundle = api.build_bundle(HEALTHY_FIXTURE)
+    assert isinstance(bundle, api.Bundle)
+    assert bundle.bundle_version == "sesslint.bundle/v1"
+    assert bundle.source["path"] == HEALTHY_FIXTURE.name
+    assert isinstance(bundle.source["sha256"], str)
+    assert len(bundle.source["sha256"]) == 64
+    assert isinstance(bundle.source["size"], int)
+    assert bundle.source["size"] > 0
+    assert "tool" in bundle.created_by
+    assert bundle.created_by["tool"] == "sesslint"
+    assert "report" in bundle.to_dict()
+    assert "fixture_skeleton" in bundle.to_dict()
+    assert isinstance(bundle.to_json(), str)

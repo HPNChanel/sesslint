@@ -3,3 +3,6 @@ contact_links:
   - name: Security Vulnerabilities
     url: https://github.com/sesslint/sesslint/security/advisories/new
     about: Please report security issues confidentially via GitHub Security Advisories.
+  - name: Request Adapter Support
+    url: https://github.com/sesslint/sesslint/issues/new?template=adapter_request.md
+    about: Request support for a new AI agent session format or unsupported schema version using sesslint bundle.
