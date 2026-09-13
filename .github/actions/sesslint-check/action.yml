@@ -1,0 +1,164 @@
+name: "SessLint Check"
+description: "Offline, vendor-neutral session integrity checker for AI agent sessions"
+author: "SessLint Maintainers"
+
+inputs:
+  path:
+    description: "Path to session file or directory to check"
+    required: true
+  profile:
+    description: "Replay validation profile"
+    required: false
+    default: "neutral"
+  format:
+    description: "Session format adapter"
+    required: false
+    default: "auto"
+  fail-on:
+    description: "Failure threshold: 'error' (default) or 'warning'"
+    required: false
+    default: "error"
+  package:
+    description: "PyPI package specifier"
+    required: false
+    default: "sesslint"
+  source-ref:
+    description: "Source path or git ref for source install"
+    required: false
+    default: ""
+  python-version:
+    description: "Python version for runner"
+    required: false
+    default: "3.11"
+
+outputs:
+  exit-code:
+    description: "Exit code from sesslint check"
+    value: ${{ steps.sesslint-check.outputs.exit-code }}
+  verdict:
+    description: "Verdict ('pass' or 'fail')"
+    value: ${{ steps.sesslint-check.outputs.verdict }}
+  report-json:
+    description: "JSON report output from sesslint check"
+    value: ${{ steps.sesslint-check.outputs.report-json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install SessLint
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        if [ -n "${{ inputs.source-ref }}" ]; then
+          python -m pip install "${{ inputs.source-ref }}"
+        else
+          python -m pip install "${{ inputs.package }}"
+        fi
+
+    - name: Run SessLint Check
+      id: sesslint-check
+      shell: bash
+      env:
+        TARGET_PATH: ${{ inputs.path }}
+        PROFILE: ${{ inputs.profile }}
+        FORMAT: ${{ inputs.format }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        CMD=(python -m sesslint.cli check "$TARGET_PATH" --profile "$PROFILE" --json)
+        if [ -n "$FORMAT" ] && [ "$FORMAT" != "auto" ]; then
+          CMD+=(--format "$FORMAT")
+        fi
+        if [ -d "$TARGET_PATH" ]; then
+          CMD+=(--recursive)
+        fi
+
+        set +e
+        "${CMD[@]}" > sesslint_stdout.json 2> sesslint_stderr.log
+        CLI_EXIT=$?
+        set -e
+
+        export CLI_EXIT
+        python - << 'EOF'
+        import json
+        import os
+        import sys
+        import uuid
+
+        target = os.environ.get("TARGET_PATH", "")
+        fail_on = os.environ.get("FAIL_ON", "error").strip().lower()
+        cli_exit_raw = os.environ.get("CLI_EXIT", "0")
+        try:
+            cli_exit = int(cli_exit_raw)
+        except ValueError:
+            cli_exit = 2
+
+        stdout_text = ""
+        if os.path.exists("sesslint_stdout.json"):
+            with open("sesslint_stdout.json", "r", encoding="utf-8") as f:
+                stdout_text = f.read()
+
+        stderr_text = ""
+        if os.path.exists("sesslint_stderr.log"):
+            with open("sesslint_stderr.log", "r", encoding="utf-8") as f:
+                stderr_text = f.read()
+
+        assurance = "-"
+        error_count = 0
+        warning_count = 0
+
+        try:
+            data = json.loads(stdout_text) if stdout_text.strip() else {}
+            if isinstance(data, dict):
+                if "counts" in data:
+                    by_sev = data.get("counts", {}).get("by_severity", {})
+                    error_count = by_sev.get("error", 0) + by_sev.get("fatal", 0)
+                    warning_count = by_sev.get("warning", 0)
+                    assurance = str(data.get("assurance", "-"))
+                elif "totals" in data:
+                    files = data.get("files", [])
+                    error_count = sum(f.get("error_count", 0) for f in files)
+                    warning_count = sum(f.get("warning_count", 0) for f in files)
+                    assurance = "N/A"
+        except Exception:
+            if cli_exit != 0:
+                error_count = 1
+
+        if cli_exit != 0:
+            verdict = "fail"
+        elif fail_on == "warning" and warning_count > 0:
+            verdict = "fail"
+        else:
+            verdict = "pass"
+
+        step_exit = 0 if verdict == "pass" else (cli_exit if cli_exit != 0 else 1)
+
+        if out_path := os.environ.get("GITHUB_OUTPUT"):
+            with open(out_path, "a", encoding="utf-8") as f:
+                f.write(f"exit-code={step_exit}\n")
+                f.write(f"verdict={verdict}\n")
+                delim = f"EOF_{uuid.uuid4().hex}"
+                f.write(f"report-json<<{delim}\n{stdout_text}\n{delim}\n")
+
+        if summary_path := os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(summary_path, "a", encoding="utf-8") as f:
+                f.write("### SessLint Check Summary\n\n")
+                f.write("| Target | Verdict | Assurance | Error count | Warning count |\n")
+                f.write("| :--- | :--- | :--- | :--- | :--- |\n")
+                f.write(
+                    f"| `{target}` | **{verdict.upper()}** | {assurance} | {error_count} | {warning_count} |\n\n"
+                )
+
+        print(
+            f"[sesslint-check] Target: {target} | Verdict: {verdict} | Assurance: {assurance} | Errors: {error_count} | Warnings: {warning_count}"
+        )
+        if stderr_text.strip():
+            sys.stderr.write(stderr_text)
+            sys.stderr.flush()
+
+        sys.exit(step_exit)
+        EOF

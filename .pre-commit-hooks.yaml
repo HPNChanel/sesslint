@@ -1,0 +1,7 @@
+- id: sesslint-check
+  name: sesslint check
+  description: "Offline, vendor-neutral session integrity checker for AI agent sessions"
+  entry: sesslint check
+  language: python
+  files: \.(json|jsonl)$
+  require_serial: true

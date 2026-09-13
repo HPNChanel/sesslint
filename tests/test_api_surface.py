@@ -24,12 +24,15 @@ def test_api_module_exports() -> None:
     """Verify sesslint.api exports the mandatory programmatic surface."""
     expected_exports = {
         "Bundle",
+        "PrecheckReason",
+        "PrecheckResult",
         "ScanReport",
         "VerifyVerdict",
         "build_bundle",
         "check_dir",
         "check_file",
         "plan",
+        "precheck",
         "repair",
         "verify",
     }
@@ -180,3 +183,39 @@ def test_build_bundle_contract() -> None:
     assert "report" in bundle.to_dict()
     assert "fixture_skeleton" in bundle.to_dict()
     assert isinstance(bundle.to_json(), str)
+
+
+def test_precheck_contract() -> None:
+    """Verify precheck return types, parameters, and contract on public API surface."""
+    from sesslint.precheck import PrecheckResult
+
+    res = api.precheck(HEALTHY_FIXTURE)
+    assert isinstance(res, PrecheckResult)
+    assert res.ok is True
+    assert res.reason == "clean"
+    assert res.exit_code == 0
+    assert isinstance(res.report, Report)
+
+    # Missing file returns io-error result without raising
+    res_missing = api.precheck("non_existent_file_path_12345.jsonl")
+    assert isinstance(res_missing, PrecheckResult)
+    assert res_missing.ok is False
+    assert res_missing.reason == "io-error"
+    assert res_missing.exit_code == 2
+    assert res_missing.report is None
+
+    # Invalid profile returns usage-error
+    res_usage = api.precheck(HEALTHY_FIXTURE, profile="unknown_profile_xyz")
+    assert isinstance(res_usage, PrecheckResult)
+    assert res_usage.ok is False
+    assert res_usage.reason == "usage-error"
+    assert res_usage.exit_code == 2
+    assert res_usage.report is None
+
+    # Ambiguous format returns detection-failed with report attached
+    res_ambig = api.precheck(FIXTURES_ROOT / "cli" / "check_ambiguity" / "polyglot.json")
+    assert isinstance(res_ambig, PrecheckResult)
+    assert res_ambig.ok is False
+    assert res_ambig.reason == "detection-failed"
+    assert res_ambig.exit_code == 1
+    assert isinstance(res_ambig.report, Report)

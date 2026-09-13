@@ -80,10 +80,58 @@ jobs:
         run: |
           pytest -q tests/accept/test_offline.py tests/accept/test_kill.py
 
+  action-dogfood:
+    name: Dogfood sesslint-check (${{ matrix.fixture }}, ${{ matrix.expected }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: fixtures/canonical/minimal.json
+            expected: pass
+          - fixture: fixtures/cli/check_basic/healthy.jsonl
+            expected: pass
+          - fixture: fixtures/checks/graph_healthy.json
+            expected: pass
+          - fixture: fixtures/checks/sl005_cycle.json
+            expected: fail
+          - fixture: fixtures/checks/sl101_orphan.json
+            expected: fail
+          - fixture: fixtures/canonical/unknown_critical.json
+            expected: fail
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run sesslint-check (Healthy fixture)
+        if: matrix.expected == 'pass'
+        uses: ./.github/actions/sesslint-check
+        with:
+          path: ${{ matrix.fixture }}
+          source-ref: .
+
+      - name: Run sesslint-check (Corrupt fixture)
+        id: corrupt-check
+        if: matrix.expected == 'fail'
+        continue-on-error: true
+        uses: ./.github/actions/sesslint-check
+        with:
+          path: ${{ matrix.fixture }}
+          source-ref: .
+
+      - name: Verify corrupt fixture failed as expected
+        if: matrix.expected == 'fail'
+        run: |
+          if [ "${{ steps.corrupt-check.outcome }}" != "failure" ]; then
+            echo "Expected outcome to be failure, but got: ${{ steps.corrupt-check.outcome }}"
+            exit 1
+          fi
+          echo "Corrupt fixture ${{ matrix.fixture }} was correctly rejected by sesslint-check action."
+
   build-and-smoke:
     name: Reproducible Build & Release Smoke
     runs-on: ubuntu-latest
-    needs: [test, offline-verification]
+    needs: [test, offline-verification, action-dogfood]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
