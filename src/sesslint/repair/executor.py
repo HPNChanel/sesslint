@@ -45,7 +45,11 @@ from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
 from sesslint.codes import Severity
 from sesslint.context import CheckContext
 from sesslint.finding import Finding
-from sesslint.policy.abstention import should_abstain_from_repair
+from sesslint.policy.abstention import (
+    check_step_scope,
+    must_abstain,
+    should_abstain_from_repair,
+)
 from sesslint.profiles.builtin import NEUTRAL_PROFILE
 from sesslint.profiles.profile import Profile, get_profile
 from sesslint.repair.assurance import cap_assurance, compute_assurance_ceiling
@@ -700,6 +704,33 @@ def execute(
                     f"Step {step.seq} (recipe '{step.recipe}') requires 'salvage' policy, "
                     f"but repair execution was invoked under policy '{policy}'"
                 )
+
+        # DEV-013: Re-derive scoped abstention check per step (fail-closed against crafted plans)
+        if policy == "conservative":
+            reg_fn = getattr(recipe, "affected_region", None)
+            if reg_fn is not None:
+                is_disjoint, refusal_reason = check_step_scope(
+                    step,
+                    loaded_events,
+                    recipe_region_fn=reg_fn,
+                    findings=chk_findings,
+                    excludes_execution_dependence=getattr(
+                        recipe, "excludes_execution_dependence", False
+                    ),
+                )
+                if not is_disjoint:
+                    raise Abstained(
+                        f"Repair abstained: step {step.seq} (recipe '{step.recipe}') "
+                        f"scope unproven ({refusal_reason or 'side-effect-scope-unproven'})"
+                    )
+            else:
+                # Recipe does not declare affected_region: keeps global gating
+                global_abst = must_abstain(chk_findings, loaded_events)
+                if global_abst.abstain:
+                    raise Abstained(
+                        f"Repair abstained: step {step.seq} (recipe '{step.recipe}') "
+                        f"side-effect abstention"
+                    )
 
         try:
             working_events = recipe.apply(working_events, step)

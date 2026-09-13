@@ -461,6 +461,13 @@ To prevent prompt or credential leaks via unknown record discriminators:
                                  No data loss                       Prunes dead branches
 ```
 
+> [!NOTE]
+> **Normative Interpretation: Global vs. Scoped Side-Effect Abstention (DEV-013)**
+> Automated session repair enforces side-effect safety at two distinct layers:
+> 1. **Global Gate (`SL203`)**: Unsafe continuation across loss (`SL203`) represents unresolved causal corruption. When `SL203` is present anywhere in a session, automated repair refuses all conservative and salvage transformations globally across the entire session (`SL203-refusal`).
+> 2. **Scoped Gate (Conservative Recipes)**: For sessions containing side-effect-bearing tool calls without `SL203`, conservative repair does not refuse globally. Instead, each candidate repair step must prove region-disjointness: the step's affected record set (target records, relinked ancestors, and truncated spans) must have zero intersection with any event whose execution state is ambiguous (dangling calls, unknown side-effects, or unresolved results). If disjointness is proven, safe conservative repairs proceed cleanly. If the proof fails, repair fail-closes with `side-effect-scope-unproven` at both planning and execution layers.
+
+
 ### Recipe Catalog
 
 SessLint registers **9 deterministic repair recipes** partitioned into conservative and salvage policies:
