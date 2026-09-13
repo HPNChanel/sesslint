@@ -539,9 +539,10 @@ def test_event_optional_fields_type_checks() -> None:
 
 
 def test_to_canonical_json_type_error() -> None:
-    """Verify to_canonical_json raises TypeError on non-serializable objects."""
-    with pytest.raises(TypeError, match="is not JSON serializable"):
+    """Verify to_canonical_json maps TypeError to SchemaError (P1-05)."""
+    with pytest.raises(SchemaError, match="Canonical serialization error") as exc_info:
         to_canonical_json({"func": lambda x: x})
+    assert isinstance(exc_info.value.__cause__, TypeError)
 
 
 def test_load_session_file_edge_cases(tmp_path: Path) -> None:
@@ -864,3 +865,130 @@ def test_parse_session_lines_all_blank() -> None:
     """Verify parse_session_lines on stream with only whitespace/empty lines raises SchemaError."""
     with pytest.raises(SchemaError, match="Session stream contains no records"):
         parse_session_lines(["  ", "\n", "\t  \r\n"])
+
+
+def test_to_canonical_json_rejects_non_string_keys() -> None:
+    """Reject non-string dict keys with SchemaError under RFC 8785 Section 3.2.2 (P0-08)."""
+    # Integer key
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({1: "val"})  # type: ignore[dict-item]
+
+    # Boolean key
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({True: "val"})  # type: ignore[dict-item]
+
+    # Tuple key
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({(1, 2): "val"})  # type: ignore[dict-item]
+
+    # Key collapse prevention: {1: 'a', '1': 'b'} must not silently collapse
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({1: "a", "1": "b"})  # type: ignore[dict-item]
+
+    # None key
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({None: "val"})  # type: ignore[dict-item]
+
+    # Float key
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({1.5: "val"})  # type: ignore[dict-item]
+
+    # Nested mapping with non-string key
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json({"nested": {2: "val"}})  # type: ignore[dict-item]
+
+    # Dataclass extra_fields with non-string key
+    header = create_sample_header()
+    session = Session(header=header, events=(), extra_fields={100: "custom"})  # type: ignore[dict-item]
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        to_canonical_json(session)
+
+
+def test_to_canonical_json_unserializable_maps_to_schema_error() -> None:
+    """Unserializable types (bytes, set, object) raise SchemaError with TypeError cause (P1-05)."""
+    # bytes
+    with pytest.raises(SchemaError) as exc_info:
+        to_canonical_json({"data": b"raw bytes"})
+    assert isinstance(exc_info.value.__cause__, TypeError)
+
+    # set
+    with pytest.raises(SchemaError) as exc_info:
+        to_canonical_json({"unique_tags": {1, 2, 3}})
+    assert isinstance(exc_info.value.__cause__, TypeError)
+
+    # custom object
+    class CustomItem:
+        pass
+
+    with pytest.raises(SchemaError) as exc_info:
+        to_canonical_json({"item": CustomItem()})
+    assert isinstance(exc_info.value.__cause__, TypeError)
+
+
+def test_validate_rfc3339_utc_offset_variations() -> None:
+    """Valid UTC offset formats (+0000, -0000, +00, -00) pass validation (P1-05)."""
+    valid_offsets = [
+        "2026-09-05T12:00:00Z",
+        "2026-09-05T12:00:00+00:00",
+        "2026-09-05T12:00:00-00:00",
+        "2026-09-05T12:00:00+0000",
+        "2026-09-05T12:00:00-0000",
+        "2026-09-05T12:00:00+00",
+        "2026-09-05T12:00:00-00",
+        "2026-09-05T12:00:00.123456Z",
+        "2026-09-05T12:00:00.123456+0000",
+    ]
+    for ts in valid_offsets:
+        event = parse_session_event(
+            {
+                "id": "evt_offset",
+                "parent_id": None,
+                "seq": 0,
+                "ts": ts,
+                "actor": "user",
+                "kind": "message",
+                "payload": {"content": "ok"},
+            }
+        )
+        assert event.ts == ts
+
+    # Invalid calendar date with offset is rejected
+    with pytest.raises(SchemaError, match="invalid calendar date/time"):
+        parse_session_event(
+            {
+                "id": "evt_invalid_cal",
+                "parent_id": None,
+                "seq": 0,
+                "ts": "2026-02-31T12:00:00+0000",
+                "actor": "user",
+                "kind": "message",
+                "payload": {},
+            }
+        )
+
+
+def test_depth_validation_and_io_alignment() -> None:
+    """Depth validation in canonical is exactly aligned with io.check_nesting_depth (P1-05)."""
+    from sesslint.canonical import _validate_depth
+    from sesslint.io import check_nesting_depth
+
+    # Depth 3 structure: {"a": {"b": {"c": 1}}}
+    # Root container is depth 1, {"b": ...} is depth 2, {"c": 1} is depth 3
+    depth_3 = {"a": {"b": {"c": 1}}}
+    assert check_nesting_depth(depth_3, max_depth=3) is True
+    assert check_nesting_depth(depth_3, max_depth=2) is False
+
+    # Build structure of depth exactly MAX_PAYLOAD_DEPTH
+    deep_exact: dict[str, Any] = {"val": 1}
+    for _ in range(MAX_PAYLOAD_DEPTH - 1):
+        deep_exact = {"nested": deep_exact}
+
+    # Depth MAX_PAYLOAD_DEPTH passes both
+    assert check_nesting_depth(deep_exact, max_depth=MAX_PAYLOAD_DEPTH) is True
+    _validate_depth(deep_exact)  # does not raise
+
+    # Depth MAX_PAYLOAD_DEPTH + 1 fails both
+    deep_overflow = {"root": deep_exact}
+    assert check_nesting_depth(deep_overflow, max_depth=MAX_PAYLOAD_DEPTH) is False
+    with pytest.raises(SchemaError, match="exceeds limit"):
+        _validate_depth(deep_overflow)

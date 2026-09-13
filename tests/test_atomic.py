@@ -123,3 +123,79 @@ def test_atomic_write_mode_applied(tmp_path: Path) -> None:
     if os.name != "nt":
         stat_mode = dest.stat().st_mode & 0o777
         assert stat_mode == 0o600
+
+
+def test_atomic_write_custom_prefix(tmp_path: Path) -> None:
+    """atomic_write_bytes respects custom temporary file prefix during write."""
+    dest = tmp_path / "custom_prefix_target.jsonl"
+    created_prefix: list[str] = []
+
+    def inspect_temp_prefix(temp_path: Path) -> None:
+        created_prefix.append(temp_path.name)
+
+    atomic_write_bytes(
+        dest,
+        b"data",
+        prefix=".custom_sesslint_prefix_",
+        pre_rename_hook=inspect_temp_prefix,
+    )
+    assert len(created_prefix) == 1
+    assert created_prefix[0].startswith(".custom_sesslint_prefix_")
+    assert dest.read_bytes() == b"data"
+
+
+def test_atomic_write_hooks_lifecycle(tmp_path: Path) -> None:
+    """pre_write_hook and pre_rename_hook fire in correct order and clean up on failure."""
+    dest = tmp_path / "hook_target.jsonl"
+    lifecycle: list[str] = []
+
+    def on_pre_write() -> None:
+        lifecycle.append("pre_write")
+
+    def on_pre_rename(temp_p: Path) -> None:
+        lifecycle.append("pre_rename")
+        assert temp_p.exists()
+        assert temp_p.read_bytes() == b"payload"
+
+    atomic_write_bytes(
+        dest,
+        b"payload",
+        pre_write_hook=on_pre_write,
+        pre_rename_hook=on_pre_rename,
+        sync_dir=True,
+    )
+    assert lifecycle == ["pre_write", "pre_rename"]
+    assert dest.read_bytes() == b"payload"
+
+    # Verify failure in pre_rename_hook cleans up temporary file
+    failing_dest = tmp_path / "fail_target.jsonl"
+
+    def failing_rename_hook(temp_p: Path) -> None:
+        raise RuntimeError("Fault injection before rename")
+
+    with pytest.raises(AtomicWriteError, match="Fault injection before rename"):
+        atomic_write_bytes(failing_dest, b"fail", pre_rename_hook=failing_rename_hook)
+
+    assert not failing_dest.exists()
+    assert list(tmp_path.glob(".sesslint_tmp_*")) == []
+
+
+def test_atomic_write_text_passthrough_options(tmp_path: Path) -> None:
+    """atomic_write_text correctly forwards prefix, hooks, and sync_dir."""
+    dest = tmp_path / "text_target.jsonl"
+    hook_fired = False
+
+    def on_rename(temp_p: Path) -> None:
+        nonlocal hook_fired
+        hook_fired = True
+        assert temp_p.name.startswith(".text_prefix_")
+
+    atomic_write_text(
+        dest,
+        "text data",
+        prefix=".text_prefix_",
+        pre_rename_hook=on_rename,
+        sync_dir=True,
+    )
+    assert hook_fired is True
+    assert dest.read_text(encoding="utf-8") == "text data"

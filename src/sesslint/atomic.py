@@ -5,12 +5,31 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from pathlib import Path
 
 from sesslint.errors import AtomicWriteError
 
 StrPath = str | os.PathLike[str]
+
+
+def _sync_dir(path: Path) -> None:
+    """Best-effort parent directory fsync across platforms (guarded for Windows)."""
+    if os.name == "nt":
+        return
+    try:
+        dir_fd = os.open(str(path), os.O_RDONLY)
+    except (OSError, PermissionError):
+        return
+    try:
+        os.fsync(dir_fd)
+    except (OSError, PermissionError):
+        pass
+    finally:
+        try:
+            os.close(dir_fd)
+        except OSError:
+            pass
 
 
 def atomic_write_bytes(
@@ -20,6 +39,10 @@ def atomic_write_bytes(
     mode: int | None = None,
     fsync: bool = True,
     refuse_paths: Collection[StrPath] = (),
+    prefix: str = ".sesslint_tmp_",
+    pre_write_hook: Callable[[], None] | None = None,
+    pre_rename_hook: Callable[[Path], None] | None = None,
+    sync_dir: bool = False,
 ) -> str:
     """Write bytes to dest atomically using a temporary file in dest's parent directory.
 
@@ -36,6 +59,10 @@ def atomic_write_bytes(
         mode: Optional permissions mode (e.g. 0o600) to apply before atomic rename.
         fsync: Whether to flush and fsync before rename (defaults to True).
         refuse_paths: Prohibited paths that must never be overwritten.
+        prefix: Prefix for the temporary file name.
+        pre_write_hook: Optional hook called after temp file creation before write.
+        pre_rename_hook: Optional hook called with temp Path before atomic rename.
+        sync_dir: Whether to fsync parent directory after rename.
 
     Returns:
         64-character lowercase SHA-256 hexadecimal digest of the written bytes.
@@ -68,9 +95,11 @@ def atomic_write_bytes(
         with tempfile.NamedTemporaryFile(
             delete=False,
             dir=parent_dir,
-            prefix=".sesslint_tmp_",
+            prefix=prefix,
         ) as tmp_file:
             temp_path = Path(tmp_file.name)
+            if pre_write_hook is not None:
+                pre_write_hook()
             tmp_file.write(data)
             if fsync:
                 tmp_file.flush()
@@ -79,8 +108,14 @@ def atomic_write_bytes(
         if mode is not None:
             os.chmod(temp_path, mode)
 
+        if pre_rename_hook is not None:
+            pre_rename_hook(temp_path)
+
         os.replace(temp_path, dest_path)
         temp_path = None  # Successfully replaced, no cleanup needed
+
+        if sync_dir:
+            _sync_dir(parent_dir)
     except BaseException as err:
         if temp_path is not None and temp_path.exists():
             try:
@@ -102,6 +137,10 @@ def atomic_write_text(
     mode: int | None = None,
     fsync: bool = True,
     refuse_paths: Collection[StrPath] = (),
+    prefix: str = ".sesslint_tmp_",
+    pre_write_hook: Callable[[], None] | None = None,
+    pre_rename_hook: Callable[[Path], None] | None = None,
+    sync_dir: bool = False,
 ) -> str:
     """Convenience helper to write text to dest atomically using strict encoding.
 
@@ -112,6 +151,10 @@ def atomic_write_text(
         mode: Optional permissions mode to apply before rename.
         fsync: Whether to flush and fsync before rename (defaults to True).
         refuse_paths: Prohibited paths that must never be overwritten.
+        prefix: Prefix for the temporary file name.
+        pre_write_hook: Optional hook called after temp file creation before write.
+        pre_rename_hook: Optional hook called with temp Path before atomic rename.
+        sync_dir: Whether to fsync parent directory after rename.
 
     Returns:
         64-character lowercase SHA-256 hexadecimal digest of the written bytes.
@@ -130,4 +173,8 @@ def atomic_write_text(
         mode=mode,
         fsync=fsync,
         refuse_paths=refuse_paths,
+        prefix=prefix,
+        pre_write_hook=pre_write_hook,
+        pre_rename_hook=pre_rename_hook,
+        sync_dir=sync_dir,
     )

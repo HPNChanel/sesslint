@@ -246,6 +246,141 @@ def _extract_run_state_projection(
     return None
 
 
+def _extract_run_state_checkpoints(
+    *,
+    context: CheckContext | None = None,
+    events: Sequence[SessionEvent] | None = None,
+    run_state_projection: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve and normalize list of checkpoints from run_state / source metadata / projection."""
+    raw_list: Sequence[Any] | None = None
+    candidates: list[Mapping[str, Any]] = []
+    if context is not None and isinstance(context.source_metadata, Mapping):
+        candidates.append(context.source_metadata)
+    if events is not None:
+        raw_source = getattr(events, "source", None)
+        if isinstance(raw_source, Mapping) and raw_source not in candidates:
+            candidates.append(raw_source)
+
+    for source_meta in candidates:
+        # 1. Direct "checkpoints" in source_meta
+        chks = source_meta.get("checkpoints")
+        if isinstance(chks, Sequence) and not isinstance(chks, (str, bytes)):
+            raw_list = chks
+            break
+        # 2. "run_state" in source_meta
+        rs = source_meta.get("run_state")
+        if isinstance(rs, Mapping):
+            chks = rs.get("checkpoints")
+            if isinstance(chks, Sequence) and not isinstance(chks, (str, bytes)):
+                raw_list = chks
+                break
+        # 3. "metadata" inside source_meta
+        meta = source_meta.get("metadata")
+        if isinstance(meta, Mapping):
+            chks = meta.get("checkpoints")
+            if isinstance(chks, Sequence) and not isinstance(chks, (str, bytes)):
+                raw_list = chks
+                break
+            rs_m = meta.get("run_state")
+            if isinstance(rs_m, Mapping):
+                chks = rs_m.get("checkpoints")
+                if isinstance(chks, Sequence) and not isinstance(chks, (str, bytes)):
+                    raw_list = chks
+                    break
+
+    # Fallback to projection if no unredacted checkpoints available
+    if raw_list is None and run_state_projection is not None:
+        chks = run_state_projection.get("checkpoints")
+        if isinstance(chks, Sequence) and not isinstance(chks, (str, bytes)):
+            raw_list = chks
+
+    if raw_list is None:
+        for source_meta in candidates:
+            rsp = source_meta.get("run_state_projection")
+            if isinstance(rsp, Mapping):
+                chks = rsp.get("checkpoints")
+                if isinstance(chks, Sequence) and not isinstance(chks, (str, bytes)):
+                    raw_list = chks
+                    break
+
+    if not raw_list:
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_list):
+        chk_id: Any = None
+        seq: Any = None
+        state_hash: Any = None
+
+        if isinstance(item, Mapping):
+            raw_id = item.get("id") if item.get("id") is not None else item.get("checkpoint_id")
+            chk_id = raw_id
+            if "seq" in item:
+                seq = item["seq"]
+            elif "checkpoint_seq" in item:
+                seq = item["checkpoint_seq"]
+            state_hash = (
+                item.get("hash")
+                if item.get("hash") is not None
+                else (
+                    item.get("state_hash")
+                    if item.get("state_hash") is not None
+                    else item.get("payload_hash")
+                )
+            )
+        elif item is not None and not isinstance(item, (str, bytes, int, float, bool)):
+            raw_id = (
+                getattr(item, "id", None)
+                if getattr(item, "id", None) is not None
+                else getattr(item, "checkpoint_id", None)
+            )
+            chk_id = raw_id
+            seq = (
+                getattr(item, "seq", None)
+                if getattr(item, "seq", None) is not None
+                else getattr(item, "checkpoint_seq", None)
+            )
+            state_hash = (
+                getattr(item, "hash", None)
+                if getattr(item, "hash", None) is not None
+                else (
+                    getattr(item, "state_hash", None)
+                    if getattr(item, "state_hash", None) is not None
+                    else getattr(item, "payload_hash", None)
+                )
+            )
+
+        chk_id_str = (
+            str(chk_id) if chk_id is not None and str(chk_id).strip() else f"chk-runstate-{idx}"
+        )
+        seq_val: int | None = None
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            seq_val = seq
+        elif isinstance(seq, str) and seq.strip().isdigit():
+            try:
+                seq_val = int(seq.strip())
+            except ValueError:
+                seq_val = None
+
+        hash_str: str | None = (
+            str(state_hash).strip() if state_hash is not None and str(state_hash).strip() else None
+        )
+        if hash_str in ("<NoneType>", "<null>", "None", "", "null"):
+            hash_str = None
+
+        normalized.append(
+            {
+                "hash": hash_str,
+                "id": chk_id_str,
+                "index": idx,
+                "seq": seq_val,
+            }
+        )
+
+    return normalized
+
+
 def check_checkpoint_gap(
     events: Sequence[SessionEvent],
     *,
@@ -261,6 +396,7 @@ def check_checkpoint_gap(
     - Fires when run_start/continuation appears with no preceding checkpoint.
     - Fires when consecutive checkpoints have a seq jump > 1.
     - Fires when a checkpoint has missing or empty state_hash.
+    - Validates run-state checkpoints from source metadata / projection (FR-044).
     - sensitivity flag ('default' or 'high') preserved with pinned parity.
     - severity: error, repairability: manual.
     - Preserves and attaches content-free run_state projection when present (DEV-011).
@@ -271,10 +407,138 @@ def check_checkpoint_gap(
         events=events,
         run_state_projection=run_state_projection,
     )
+    rs_checkpoints = _extract_run_state_checkpoints(
+        context=ctx,
+        events=events,
+        run_state_projection=run_state_projection,
+    )
     findings: list[Finding] = []
     last_checkpoint_seq: int | None = None
-    has_seen_checkpoint = False
+    has_seen_checkpoint = bool(rs_checkpoints)
 
+    # Collect all sequence numbers present in event-level checkpoints
+    event_checkpoint_seqs: set[int] = set()
+    for ev in events:
+        raw_kind = getattr(ev, "kind", None)
+        if raw_kind is None and isinstance(ev, Mapping):
+            raw_kind = ev.get("kind")
+        if raw_kind == _KIND_CHECKPOINT:
+            _, ev_seq, _ = _extract_checkpoint_fields(ev)
+            if ev_seq is not None:
+                event_checkpoint_seqs.add(ev_seq)
+
+    min_event_seq = min(event_checkpoint_seqs) if event_checkpoint_seqs else None
+
+    # 1. Validate run-state checkpoints (FR-044)
+    sorted_rs_checkpoints = sorted(
+        rs_checkpoints,
+        key=lambda c: (
+            c["seq"] is None,
+            c["seq"] if c["seq"] is not None else 0,
+            c["index"],
+        ),
+    )
+    last_rs_seq: int | None = None
+    for rs_chk in sorted_rs_checkpoints:
+        chk_id = rs_chk["id"]
+        rec_id = _source_record_id(chk_id)
+        seq = rs_chk["seq"]
+        state_hash = rs_chk["hash"]
+        idx = rs_chk["index"]
+
+        is_covered_by_event = seq is not None and seq in event_checkpoint_seqs
+
+        # Missing or empty state_hash in run-state checkpoint
+        if not state_hash and not is_covered_by_event:
+            evidence_nohash: dict[str, Any] = {
+                "at_index": idx,
+                "expected_seq": (last_rs_seq + 1 if last_rs_seq is not None else 0),
+                "found_seq": seq,
+                "source": "run_state",
+            }
+            if proj is not None:
+                evidence_nohash["run_state"] = proj
+            findings.append(
+                make_finding(
+                    code=SL201,
+                    severity=Severity.ERROR,
+                    repairability=Repairability.MANUAL,
+                    message_template=_MSG_SL201,
+                    source=SourceRef(path=source_path, line=1, record_id=rec_id),
+                    evidence=evidence_nohash,
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
+                )
+            )
+
+        # Sequence jump check within run-state
+        if seq is not None:
+            if not is_covered_by_event and last_rs_seq is not None and (seq - last_rs_seq) > 1:
+                expected_seq = last_rs_seq + 1
+                evidence_jump: dict[str, Any] = {
+                    "at_index": idx,
+                    "expected_seq": expected_seq,
+                    "found_seq": seq,
+                    "source": "run_state",
+                }
+                if proj is not None:
+                    evidence_jump["run_state"] = proj
+                findings.append(
+                    make_finding(
+                        code=SL201,
+                        severity=Severity.ERROR,
+                        repairability=Repairability.MANUAL,
+                        message_template=_MSG_SL201,
+                        source=SourceRef(path=source_path, line=1, record_id=rec_id),
+                        evidence=evidence_jump,
+                        adapter_id=ctx.adapter_id,
+                        adapter_version=ctx.adapter_version,
+                        profile_id=ctx.profile_id,
+                        profile_version=ctx.profile_version,
+                    )
+                )
+            last_rs_seq = seq
+        elif checkpoint_sensitivity == "high":
+            expected_seq = 0 if last_rs_seq is None else last_rs_seq + 1
+            evidence_sens: dict[str, Any] = {
+                "at_index": idx,
+                "expected_seq": expected_seq,
+                "found_seq": None,
+                "sensitivity": "high",
+                "source": "run_state",
+            }
+            if proj is not None:
+                evidence_sens["run_state"] = proj
+            findings.append(
+                make_finding(
+                    code=SL201,
+                    severity=Severity.ERROR,
+                    repairability=Repairability.MANUAL,
+                    message_template=_MSG_SL201,
+                    source=SourceRef(path=source_path, line=1, record_id=rec_id),
+                    evidence=evidence_sens,
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
+                )
+            )
+
+    if sorted_rs_checkpoints:
+        if min_event_seq is not None:
+            preceding = [
+                c["seq"]
+                for c in sorted_rs_checkpoints
+                if c["seq"] is not None and c["seq"] < min_event_seq
+            ]
+            if preceding:
+                last_checkpoint_seq = max(preceding)
+        elif last_rs_seq is not None:
+            last_checkpoint_seq = last_rs_seq
+
+    # 2. Validate events stream
     for idx, ev in enumerate(events):
         raw_kind = getattr(ev, "kind", None)
         if raw_kind is None and isinstance(ev, Mapping):
@@ -288,7 +552,7 @@ def check_checkpoint_gap(
         rec_id = _source_record_id(ev_id)
         path, line = _resolve_source_coords(ev, source_path)
 
-        # 1. Resumption without preceding checkpoint
+        # 2a. Resumption without preceding checkpoint
         if kind_str in _KIND_RUN_START:
             if not has_seen_checkpoint:
                 evidence_gap: dict[str, Any] = {
@@ -313,14 +577,14 @@ def check_checkpoint_gap(
                     )
                 )
 
-        # 2. Checkpoint sequence and hash checks
+        # 2b. Checkpoint sequence and hash checks
         elif kind_str == _KIND_CHECKPOINT:
             chk_id, seq, state_hash = _extract_checkpoint_fields(ev)
             has_seen_checkpoint = True
 
             # Missing or empty state_hash is gap evidence
             if not state_hash:
-                evidence_nohash: dict[str, Any] = {
+                evidence_nohash_ev: dict[str, Any] = {
                     "at_index": idx,
                     "expected_seq": (
                         last_checkpoint_seq + 1 if last_checkpoint_seq is not None else 0
@@ -328,7 +592,7 @@ def check_checkpoint_gap(
                     "found_seq": seq,
                 }
                 if proj is not None:
-                    evidence_nohash["run_state"] = proj
+                    evidence_nohash_ev["run_state"] = proj
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -336,7 +600,7 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        evidence=evidence_nohash,
+                        evidence=evidence_nohash_ev,
                         adapter_id=ctx.adapter_id,
                         adapter_version=ctx.adapter_version,
                         profile_id=ctx.profile_id,
@@ -348,13 +612,13 @@ def check_checkpoint_gap(
             if seq is not None:
                 if last_checkpoint_seq is not None and (seq - last_checkpoint_seq) > 1:
                     expected_seq = last_checkpoint_seq + 1
-                    evidence_jump: dict[str, Any] = {
+                    evidence_jump_ev: dict[str, Any] = {
                         "at_index": idx,
                         "expected_seq": expected_seq,
                         "found_seq": seq,
                     }
                     if proj is not None:
-                        evidence_jump["run_state"] = proj
+                        evidence_jump_ev["run_state"] = proj
                     findings.append(
                         make_finding(
                             code=SL201,
@@ -362,7 +626,7 @@ def check_checkpoint_gap(
                             repairability=Repairability.MANUAL,
                             message_template=_MSG_SL201,
                             source=SourceRef(path=path, line=line, record_id=rec_id),
-                            evidence=evidence_jump,
+                            evidence=evidence_jump_ev,
                             adapter_id=ctx.adapter_id,
                             adapter_version=ctx.adapter_version,
                             profile_id=ctx.profile_id,
@@ -372,14 +636,14 @@ def check_checkpoint_gap(
                 last_checkpoint_seq = seq
             elif checkpoint_sensitivity == "high":
                 expected_seq = 0 if last_checkpoint_seq is None else last_checkpoint_seq + 1
-                evidence_sens: dict[str, Any] = {
+                evidence_sens_ev: dict[str, Any] = {
                     "at_index": idx,
                     "expected_seq": expected_seq,
                     "found_seq": None,
                     "sensitivity": "high",
                 }
                 if proj is not None:
-                    evidence_sens["run_state"] = proj
+                    evidence_sens_ev["run_state"] = proj
                 findings.append(
                     make_finding(
                         code=SL201,
@@ -387,7 +651,7 @@ def check_checkpoint_gap(
                         repairability=Repairability.MANUAL,
                         message_template=_MSG_SL201,
                         source=SourceRef(path=path, line=line, record_id=rec_id),
-                        evidence=evidence_sens,
+                        evidence=evidence_sens_ev,
                         adapter_id=ctx.adapter_id,
                         adapter_version=ctx.adapter_version,
                         profile_id=ctx.profile_id,
@@ -416,6 +680,7 @@ def check_checkpoint_divergence(
 
     Guarantees:
     - Fires when two checkpoints with identical seq have differing state_hash.
+    - Validates run-state checkpoints against each other and event checkpoints (FR-044).
     - Idempotent re-emission (identical seq and hash) does not fire.
     - Truncates reported hashes to 16 characters in evidence.
     - severity: error, repairability: manual.
@@ -427,9 +692,65 @@ def check_checkpoint_divergence(
         events=events,
         run_state_projection=run_state_projection,
     )
+    rs_checkpoints = _extract_run_state_checkpoints(
+        context=ctx,
+        events=events,
+        run_state_projection=run_state_projection,
+    )
     findings: list[Finding] = []
     seen_seq_to_hash: dict[int, str] = {}
 
+    # 1. Process run-state checkpoints (FR-044)
+    sorted_rs_checkpoints = sorted(
+        rs_checkpoints,
+        key=lambda c: (
+            c["seq"] is None,
+            c["seq"] if c["seq"] is not None else 0,
+            c["index"],
+        ),
+    )
+    for rs_chk in sorted_rs_checkpoints:
+        chk_id = rs_chk["id"]
+        rec_id = _source_record_id(chk_id)
+        seq = rs_chk["seq"]
+        state_hash = rs_chk["hash"]
+
+        if seq is None or state_hash is None:
+            continue
+
+        if seq in seen_seq_to_hash:
+            prev_hash = seen_seq_to_hash[seq]
+            if prev_hash != state_hash:
+                hash_a = prev_hash[:16]
+                hash_b = state_hash[:16]
+
+                evidence_div_rs: dict[str, Any] = {
+                    "hash_a": hash_a,
+                    "hash_b": hash_b,
+                    "seq": seq,
+                    "source": "run_state",
+                }
+                if proj is not None:
+                    evidence_div_rs["run_state"] = proj
+
+                findings.append(
+                    make_finding(
+                        code=SL202,
+                        severity=Severity.ERROR,
+                        repairability=Repairability.MANUAL,
+                        message_template=_MSG_SL202,
+                        source=SourceRef(path=source_path, line=1, record_id=rec_id),
+                        evidence=evidence_div_rs,
+                        adapter_id=ctx.adapter_id,
+                        adapter_version=ctx.adapter_version,
+                        profile_id=ctx.profile_id,
+                        profile_version=ctx.profile_version,
+                    )
+                )
+        else:
+            seen_seq_to_hash[seq] = state_hash
+
+    # 2. Process event checkpoints
     for idx, ev in enumerate(events):
         raw_kind = getattr(ev, "kind", None)
         if raw_kind is None and isinstance(ev, Mapping):
@@ -521,20 +842,26 @@ def check_unsafe_continuation(
     triggers: list[tuple[int, str]] = []
 
     for f in f201:
-        if f.evidence and isinstance(f.evidence.get("at_index"), int):
-            triggers.append((f.evidence["at_index"], "SL201"))
+        if f.evidence:
+            if f.evidence.get("source") == "run_state":
+                triggers.append((-1, "SL201"))
+            elif isinstance(f.evidence.get("at_index"), int):
+                triggers.append((f.evidence["at_index"], "SL201"))
 
     for f in f202:
-        # Resolve index of divergent checkpoint
-        seq = f.evidence.get("seq") if f.evidence else None
-        if seq is not None:
-            for idx, ev in enumerate(events):
-                if getattr(ev, "kind", None) == _KIND_CHECKPOINT or (
-                    isinstance(ev, Mapping) and ev.get("kind") == _KIND_CHECKPOINT
-                ):
-                    _, ev_seq, _ = _extract_checkpoint_fields(ev)
-                    if ev_seq == seq:
-                        triggers.append((idx, "SL202"))
+        if f.evidence and f.evidence.get("source") == "run_state":
+            triggers.append((-1, "SL202"))
+        else:
+            # Resolve index of divergent checkpoint
+            seq = f.evidence.get("seq") if f.evidence else None
+            if seq is not None:
+                for idx, ev in enumerate(events):
+                    if getattr(ev, "kind", None) == _KIND_CHECKPOINT or (
+                        isinstance(ev, Mapping) and ev.get("kind") == _KIND_CHECKPOINT
+                    ):
+                        _, ev_seq, _ = _extract_checkpoint_fields(ev)
+                        if ev_seq == seq:
+                            triggers.append((idx, "SL202"))
 
     # Compaction boundary with no intervening checkpoint before tool event
     checkpoint_indices = [

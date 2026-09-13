@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ from sesslint.adapters.detect import (
     to_source_block,
 )
 from sesslint.adapters.safe_value import safe_discriminator
+from sesslint.errors import FileTooLargeError, SourceChangedError
 
 BUNDLE_SCHEMA_VERSION: Final[str] = "sesslint.bundle/v1"
 
@@ -150,7 +152,10 @@ def _sanitize_evidence(evidence: dict[str, Any], basename: str) -> dict[str, Any
 
 
 def _count_records_bounded(path: Path) -> int:
-    """Count non-empty lines in text file using bounded chunk streaming."""
+    """Count non-empty lines in text file using bounded chunk streaming.
+
+    Returns non-empty record count or -1 sentinel if an I/O error occurs.
+    """
     count = 0
     try:
         with open(path, "rb") as stream:
@@ -165,8 +170,8 @@ def _count_records_bounded(path: Path) -> int:
                         non_empty_line = True
             if non_empty_line:
                 count += 1
-    except Exception:
-        return 0
+    except OSError:
+        return -1
     return count
 
 
@@ -225,6 +230,30 @@ def build_bundle(
         FileNotFoundError: If the target session file does not exist.
         IsADirectoryError: If the path points to a directory.
     """
+    if confidence_min is not None:
+        if (
+            isinstance(confidence_min, bool)
+            or not isinstance(confidence_min, (int, float))
+            or math.isnan(confidence_min)
+            or math.isinf(confidence_min)
+            or not (0.0 < confidence_min < 1.0)
+        ):
+            raise ValueError(
+                "confidence_min must be strictly between 0.0 and 1.0 exclusive, "
+                f"got {confidence_min}"
+            )
+    if margin_min is not None:
+        if (
+            isinstance(margin_min, bool)
+            or not isinstance(margin_min, (int, float))
+            or math.isnan(margin_min)
+            or math.isinf(margin_min)
+            or not (0.0 < margin_min < 1.0)
+        ):
+            raise ValueError(
+                f"margin_min must be strictly between 0.0 and 1.0 exclusive, got {margin_min}"
+            )
+
     target_path = Path(path)
     if not target_path.exists():
         raise FileNotFoundError(f"Path not found: {target_path}")
@@ -235,12 +264,21 @@ def build_bundle(
     norm_path_str = str(path).replace("\\", "/")
     basename = Path(norm_path_str).name
 
+    # Stat size check (1GB default limit)
+    try:
+        if target_path.stat().st_size > 1024 * 1024 * 1024:
+            raise FileTooLargeError(f"File exceeds maximum size limit (1GB): {target_path}")
+    except OSError:
+        pass
+
     # Chunked hashing and size calculation (O(1) peak RSS bounded by 64KB buffer)
     hasher = hashlib.sha256()
     file_size = 0
     with open(target_path, "rb") as stream:
         while chunk := stream.read(65536):
             file_size += len(chunk)
+            if file_size > 1024 * 1024 * 1024:
+                raise FileTooLargeError(f"File exceeds maximum size limit (1GB): {target_path}")
             hasher.update(chunk)
     file_sha256 = hasher.hexdigest()
 
@@ -341,7 +379,8 @@ def build_bundle(
                 kinds_counter[safe_k] += 1
     else:
         record_count = _count_records_bounded(target_path)
-        kinds_counter = _extract_kinds_fallback(target_path)
+        if record_count >= 0:
+            kinds_counter = _extract_kinds_fallback(target_path)
 
     emitted_codes = sorted(list({f.code for f in report.findings}))
 
@@ -351,6 +390,26 @@ def build_bundle(
         "record_count": record_count,
         "template": FIXTURE_TEMPLATE,
     }
+    if record_count < 0:
+        skeleton_dict["error"] = "read_error"
+
+    # TOCTOU resilience: verify file was not mutated during bundle creation
+    try:
+        final_hasher = hashlib.sha256()
+        final_size = 0
+        with open(target_path, "rb") as stream:
+            while chunk := stream.read(65536):
+                final_size += len(chunk)
+                final_hasher.update(chunk)
+    except OSError as err:
+        raise SourceChangedError(
+            f"File mutated or unreadable during bundle creation (TOCTOU detected): {target_path}"
+        ) from err
+
+    if final_size != file_size or final_hasher.hexdigest() != file_sha256:
+        raise SourceChangedError(
+            f"File mutated during bundle creation (TOCTOU detected): {target_path}"
+        )
 
     return Bundle(
         bundle_version=BUNDLE_SCHEMA_VERSION,

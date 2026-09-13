@@ -1,9 +1,8 @@
-"""Performance benchmark: streaming ~100MB / 250k records within 15s and 512MB budget (TASK-026).
+"""Performance benchmark: streaming ~100MB / 250k records within 15s and 512MB (TASK-026 / P2-04).
 
 This benchmark verifies SessLint's streaming reader throughput, bounded heap, and peak
 RSS memory guarantees under production-scale load (FR-013, FR-014, FR-095, AC-023).
-Mandatory disclosure rule: If either time or memory budget is exceeded, bench/PERF_NOTES.md
-must document the shortfall and disclosure statement.
+It asserts strict adherence to time and memory budgets, exiting with non-zero code on breach.
 
 Usage:
     python bench/perf_250k.py [--records 250000] [--time-budget 15.0] [--mem-budget 512.0]
@@ -222,30 +221,29 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
                 f"Memory exceeded budget: {reported_mem_mb:.2f}MB > {mem_budget:.1f}MB"
             )
 
-        if not perf_shortfalls:
-            print(
-                f"PASS: {count:,} records ({file_size_mb:.1f} MB) evaluated in "
-                f"{total_eval_time:.3f}s (budget: {time_budget:.1f}s), "
-                f"peak memory {reported_mem_mb:.2f}MB (budget: {mem_budget:.1f}MB)"
-            )
-            return 0
-        else:
-            # Disclosure check: If performance budget exceeded,
-            # must be documented in bench/PERF_NOTES.md
+        if perf_shortfalls:
             disclosed = verify_disclosure_recorded(perf_shortfalls)
-            if disclosed:
-                print(
-                    f"DISCLOSED SHORTFALL (FR-095 / AC-023): {'; '.join(perf_shortfalls)}\n"
-                    "Verified disclosure in bench/PERF_NOTES.md. Passing under disclosure rule."
-                )
-                return 0
-            else:
-                print(
-                    f"FAIL: {'; '.join(perf_shortfalls)}\n"
-                    "No disclosure found in bench/PERF_NOTES.md. Undisclosed shortfall forbidden.",
-                    file=sys.stderr,
-                )
-                return 1
+            disclosure_info = (
+                "Documented disclosure statement present in bench/PERF_NOTES.md."
+                if disclosed
+                else "No disclosure found in bench/PERF_NOTES.md."
+            )
+            print(
+                f"PERFORMANCE BUDGET BREACH (FAIL):\n"
+                f"  {'; '.join(perf_shortfalls)}\n"
+                f"  Total time: {total_eval_time:.3f}s (budget: {time_budget:.1f}s)\n"
+                f"  Peak memory: {reported_mem_mb:.2f}MB (budget: {mem_budget:.1f}MB)\n"
+                f"  {disclosure_info}",
+                file=sys.stderr,
+            )
+            return 1
+
+        print(
+            f"PASS: {count:,} records ({file_size_mb:.1f} MB) evaluated in "
+            f"{total_eval_time:.3f}s (budget: {time_budget:.1f}s), "
+            f"peak memory {reported_mem_mb:.2f}MB (budget: {mem_budget:.1f}MB)"
+        )
+        return 0
 
 
 def main() -> int:

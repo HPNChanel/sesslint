@@ -30,6 +30,7 @@ from sesslint.report import (
     Counts,
     Report,
     build_report,
+    compute_assurance,
     dump_report,
     enforce_content_free,
     get_report_schema_path,
@@ -999,3 +1000,73 @@ def test_parse_report_counts_subfield_types() -> None:
     d_bad_total_bool["counts"]["total"] = True
     with pytest.raises(SchemaError, match="counts.total must be a non-negative integer"):
         parse_report(d_bad_total_bool)
+
+
+def test_compute_assurance_empty_matrix() -> None:
+    """Verify empty or None events strictly verdict A0 with ASSURANCE_LIMITATIONS['A0'] (P0-05)."""
+    f_warn = _make_sample_finding(code=SL003, sev=Severity.WARNING)
+    f_err = _make_sample_finding(code=SL101, sev=Severity.ERROR)
+    f_sl001 = _make_sample_finding(code=SL001, sev=Severity.ERROR)
+
+    # Empty events x empty findings -> A0
+    level, lim = compute_assurance([], [])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]
+
+    # None events x empty findings -> A0
+    level, lim = compute_assurance(None, [])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]
+
+    # Empty events x warning findings -> A0 (no structural conclusion possible)
+    level, lim = compute_assurance([], [f_warn])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]
+
+    # None events x warning findings -> A0
+    level, lim = compute_assurance(None, [f_warn])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]
+
+    # Empty events x error findings -> A0
+    level, lim = compute_assurance([], [f_err])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]
+
+    # Empty events x SL001 unparseable findings -> A0
+    level, lim = compute_assurance([], [f_sl001])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]
+
+
+def test_compute_assurance_non_empty_transitions() -> None:
+    """Verify non-empty events compute correct staged assurance (A0, A1, A2, A3)."""
+    mock_events = [{"id": "evt-1"}]
+    f_warn = _make_sample_finding(code=SL003, sev=Severity.WARNING)
+    f_err = _make_sample_finding(code=SL101, sev=Severity.ERROR)
+    f_sl001 = _make_sample_finding(code=SL001, sev=Severity.ERROR)
+
+    # Clean non-empty events -> A3
+    level, lim = compute_assurance(mock_events, [], has_profile_replay=True)
+    assert level == "A3"
+    assert lim == ASSURANCE_LIMITATIONS["A3"]
+
+    # Non-empty events without profile replay -> A2
+    level, lim = compute_assurance(mock_events, [], has_profile_replay=False)
+    assert level == "A2"
+    assert lim == ASSURANCE_LIMITATIONS["A2"]
+
+    # Non-empty events with warning -> A2
+    level, lim = compute_assurance(mock_events, [f_warn], has_profile_replay=True)
+    assert level == "A2"
+    assert lim == ASSURANCE_LIMITATIONS["A2"]
+
+    # Non-empty events with error -> A1
+    level, lim = compute_assurance(mock_events, [f_err])
+    assert level == "A1"
+    assert lim == ASSURANCE_LIMITATIONS["A1"]
+
+    # Non-empty events with parse integrity code (SL001) -> A0
+    level, lim = compute_assurance(mock_events, [f_sl001])
+    assert level == "A0"
+    assert lim == ASSURANCE_LIMITATIONS["A0"]

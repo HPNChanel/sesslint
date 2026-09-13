@@ -604,3 +604,70 @@ def test_perf_10k_findings() -> None:
     assert len(p.steps) == MAX_STEPS
     assert len(p.blocked) == count - MAX_STEPS
     assert duration < 2.0, f"Planner exceeded 2.0s threshold: took {duration:.3f}s"
+
+
+def test_planner_conservative_blocks_salvage_recipe() -> None:
+    """Planner blocks salvage-only recipes under conservative policy with needs-salvage-policy."""
+    register_recipe(
+        Recipe(
+            name="stub-salvage-recipe",
+            handles=(SL101,),
+            preconditions=(),
+            lossy=True,
+            salvage_only=True,
+            min_policy="salvage",
+        )
+    )
+    ev = SessionEvent(
+        id="e1", parent_id=None, seq=0, ts="2026-09-05T12:00:00Z", actor="user", kind="message"
+    )
+    finding = _make_finding(code=SL101, at_index=0)
+
+    # In conservative mode: blocked with needs-salvage-policy
+    p_cons = plan([finding], [ev], policy="conservative")
+    assert len(p_cons.steps) == 0
+    assert len(p_cons.blocked) == 1
+    assert p_cons.blocked[0].reason == "needs-salvage-policy"
+
+    # In salvage mode: planned successfully as a step
+    p_salv = plan([finding], [ev], policy="salvage")
+    assert len(p_salv.steps) == 1
+    assert p_salv.steps[0].recipe == "stub-salvage-recipe"
+
+
+def test_planner_conservative_invariant_raises_on_lossy_step() -> None:
+    """Planner invariant raises ValueError if lossy step reaches final steps under conservative."""
+    r = Recipe(
+        name="bypassed-recipe",
+        handles=(SL101,),
+        preconditions=(),
+        lossy=True,
+        salvage_only=False,
+        min_policy="salvage",
+    )
+    object.__setattr__(r, "salvage_only", False)
+    register_recipe(r)
+
+    ev = SessionEvent(
+        id="e1", parent_id=None, seq=0, ts="2026-09-05T12:00:00Z", actor="user", kind="message"
+    )
+    finding = _make_finding(code=SL101, at_index=0)
+
+    with pytest.raises(
+        ValueError,
+        match="Conservative plan cannot include salvage-class or lossy step",
+    ):
+        plan([finding], [ev], policy="conservative")
+
+
+def test_planner_policy_fingerprint_distinctness() -> None:
+    """Plan fingerprints strictly differ between conservative and salvage policies (P0-03)."""
+    ev = SessionEvent(
+        id="e1", parent_id=None, seq=0, ts="2026-09-05T12:00:00Z", actor="user", kind="message"
+    )
+    p_cons = plan([], [ev], policy="conservative")
+    p_salv = plan([], [ev], policy="salvage")
+
+    assert p_cons.policy == "conservative"
+    assert p_salv.policy == "salvage"
+    assert p_cons.fingerprint != p_salv.fingerprint

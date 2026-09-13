@@ -120,6 +120,26 @@ def _scan_single_file(
 
     # 1. Read file with I/O and non-UTF8 / binary safety
     try:
+        if file_path.stat().st_size > DEFAULT_MAX_BYTES:
+            finding = make_finding(
+                code=SL001,
+                severity=Severity.ERROR,
+                repairability=Repairability.MANUAL,
+                message_template="Unreadable file [detail: LIMIT_OR_IO]",
+                source=SourceRef(path=display_path),
+                evidence={"reason": "limit_or_io_error", "detail": "FileTooLargeError"},
+            )
+            return FileResult(
+                path=display_path,
+                verdict="unreadable",
+                findings=(finding,),
+                error_count=1,
+                warning_count=0,
+            )
+    except OSError:
+        pass
+
+    try:
         raw_bytes = file_path.read_bytes()
     except OSError:
         finding = make_finding(
@@ -353,6 +373,11 @@ def scan_path(
     profile: str = "neutral",
 ) -> ScanReport:
     """Scan a target path or directory tree, returning a ScanReport with 5-bucket totals."""
+    if isinstance(max_files, bool) or not isinstance(max_files, int) or max_files <= 0:
+        raise ValueError(f"max_files must be a positive integer (> 0), got {max_files}")
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError(f"max_bytes must be a positive integer (> 0), got {max_bytes}")
+
     target = Path(path)
     root_str = minimize_path(target)
 
@@ -397,7 +422,23 @@ def scan_path(
             )
             return ScanReport(root_path=root_str, totals=ScanTotals(skipped=1), files=(res,))
 
-        file_res = _scan_single_file(target, format=format, profile=profile)
+        try:
+            file_res = _scan_single_file(target, format=format, profile=profile)
+        except Exception as err:
+            err_finding = make_finding(
+                code=SL001,
+                severity=Severity.ERROR,
+                repairability=Repairability.MANUAL,
+                message_template="Unreadable file [detail: INTERNAL_ERROR]",
+                source=SourceRef(path=str(target)),
+                evidence={"reason": "unhandled_exception", "detail": type(err).__name__},
+            )
+            file_res = FileResult(
+                path=root_str,
+                verdict="unreadable",
+                findings=(err_finding,),
+                error_count=1,
+            )
         totals = ScanTotals(
             healthy=1 if file_res.verdict == "healthy" else 0,
             invalid=1 if file_res.verdict == "invalid" else 0,
@@ -601,7 +642,23 @@ def scan_path(
                 continue
 
             cumulative_bytes += st.st_size
-            res = _scan_single_file(entry_p, format=format, profile=profile)
+            try:
+                res = _scan_single_file(entry_p, format=format, profile=profile)
+            except Exception as err:
+                err_finding = make_finding(
+                    code=SL001,
+                    severity=Severity.ERROR,
+                    repairability=Repairability.MANUAL,
+                    message_template="Unreadable file [detail: INTERNAL_ERROR]",
+                    source=SourceRef(path=disp_path),
+                    evidence={"reason": "unhandled_exception", "detail": type(err).__name__},
+                )
+                res = FileResult(
+                    path=disp_path,
+                    verdict="unreadable",
+                    findings=(err_finding,),
+                    error_count=1,
+                )
             file_results.append(res)
 
     # Sort results deterministically by path

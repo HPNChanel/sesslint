@@ -254,12 +254,10 @@ def detect_claude_code(first_bytes: bytes, filename: str) -> float:
 
 
 def _normalize_timestamp(raw_ts: Any) -> str:
-    """Ensure timestamp conforms to RFC3339 UTC string format."""
+    """Ensure timestamp conforms to RFC3339 format, leaving naive timestamps as-is (P1-03)."""
     if isinstance(raw_ts, str) and raw_ts.strip():
         val = raw_ts.strip()
         if _TIMESTAMP_ISO_REGEX.match(val):
-            if not val.endswith("Z") and "+" not in val and "-" not in val[10:]:
-                return f"{val}Z"
             return val
     return "1970-01-01T00:00:00Z"
 
@@ -273,9 +271,22 @@ def _build_payload(
 ) -> dict[str, Any]:
     """Construct content-structured payload based on canonical kind."""
     if kind == "tool_call":
-        tool_name = str(obj.get("name") or obj.get("tool_name") or "")
-        tool_use_id = str(obj.get("toolUseId") or obj.get("tool_use_id") or rec_id)
-        raw_input = obj.get("input") or obj.get("args") or obj.get("arguments") or {}
+        tool_name = str(
+            obj.get("name")
+            if obj.get("name") is not None
+            else (obj.get("tool_name") if obj.get("tool_name") is not None else "")
+        )
+        raw_tu_id = (
+            obj.get("toolUseId") if obj.get("toolUseId") is not None else obj.get("tool_use_id")
+        )
+        tool_use_id = str(raw_tu_id) if raw_tu_id is not None else rec_id
+        raw_input = (
+            obj.get("input")
+            if obj.get("input") is not None
+            else (obj.get("args") if obj.get("args") is not None else obj.get("arguments"))
+        )
+        if raw_input is None:
+            raw_input = {}
         input_payload = raw_input if isinstance(raw_input, Mapping) else {"value": raw_input}
         return {
             "name": tool_name,
@@ -285,9 +296,17 @@ def _build_payload(
         }
 
     if kind == "tool_result":
-        tool_use_id = str(obj.get("toolUseId") or obj.get("tool_use_id") or "")
-        content = obj.get("content") or obj.get("output") or obj.get("result") or ""
-        is_err = bool(obj.get("is_error") or obj.get("error") or False)
+        raw_tu_id = (
+            obj.get("toolUseId") if obj.get("toolUseId") is not None else obj.get("tool_use_id")
+        )
+        tool_use_id = str(raw_tu_id) if raw_tu_id is not None else ""
+        raw_content = (
+            obj.get("content")
+            if obj.get("content") is not None
+            else (obj.get("output") if obj.get("output") is not None else obj.get("result"))
+        )
+        content = raw_content if raw_content is not None else ""
+        is_err = bool(obj.get("is_error") if obj.get("is_error") is not None else obj.get("error"))
         return {
             "tool_use_id": tool_use_id,
             "content": content,
@@ -295,14 +314,23 @@ def _build_payload(
         }
 
     if kind == "compaction_boundary":
-        summary = str(obj.get("summary") or obj.get("content") or "")
+        summary = str(
+            obj.get("summary")
+            if obj.get("summary") is not None
+            else (obj.get("content") if obj.get("content") is not None else "")
+        )
         return {"summary": summary}
 
     if kind == "unknown":
         return {"type": str(raw_type) if raw_type is not None else "<missing>"}
 
     # Default message payload
-    msg_content = obj.get("message") or obj.get("content") or obj.get("text") or ""
+    raw_msg = (
+        obj.get("message")
+        if obj.get("message") is not None
+        else (obj.get("content") if obj.get("content") is not None else obj.get("text"))
+    )
+    msg_content = raw_msg if raw_msg is not None else ""
     return {"role": actor, "content": msg_content}
 
 
@@ -838,6 +866,7 @@ def _process_claude_line(
 
         if text_content:
             text_event_id = f"{rec_id_str}_text"
+            guard.register_synthetic(text_event_id)
             text_payload = {"role": actor, "content": text_content}
             msg_event = SessionEvent(
                 id=text_event_id,
@@ -851,7 +880,7 @@ def _process_claude_line(
                 correlation_id=None,
                 source_line=raw.line_number,
                 source_record_hash=record_hash,
-                original_id=original_id,
+                original_id=None,
                 source_adapter="claude-code-jsonl",
                 source_location=loc,
                 agent_id=agent_id,
@@ -859,7 +888,6 @@ def _process_claude_line(
                 interaction_id=interaction_id,
             )
             events.append(msg_event)
-            guard.check_event(msg_event)
             current_parent = text_event_id
 
         num_tu = len(tool_use_blocks)
@@ -874,7 +902,18 @@ def _process_claude_line(
                 "tool_use_id": tu_id or rec_id_str,
                 "input": input_payload,
             }
-            call_event_id = rec_id_str if i == num_tu - 1 else (tu_id or f"{rec_id_str}_call_{i}")
+            if i == num_tu - 1:
+                call_event_id = rec_id_str
+                orig_id = original_id
+            elif tu_id:
+                call_event_id = tu_id
+                guard.register_real(call_event_id)
+                orig_id = tu_id
+            else:
+                call_event_id = f"{rec_id_str}_call_{i}"
+                guard.register_synthetic(call_event_id)
+                orig_id = None
+
             tu_side_effects = "unknown"
             t_name_lower = tool_name.lower()
             if t_name_lower in READ_ONLY_TOOL_NAMES:
@@ -894,7 +933,7 @@ def _process_claude_line(
                 correlation_id=tu_id or call_event_id,
                 source_line=raw.line_number,
                 source_record_hash=record_hash,
-                original_id=tu_id or original_id,
+                original_id=orig_id,
                 source_adapter="claude-code-jsonl",
                 source_location=loc,
                 side_effects=tu_side_effects,
@@ -903,7 +942,6 @@ def _process_claude_line(
                 interaction_id=interaction_id,
             )
             events.append(call_event)
-            guard.check_event(call_event)
             current_parent = call_event_id
         return
 
@@ -921,8 +959,16 @@ def _process_claude_line(
             }
             if num_tr == 1:
                 res_event_id = rec_id_str
+                orig_id = original_id
+            elif tr_block.get("id"):
+                res_event_id = str(tr_block["id"])
+                guard.register_real(res_event_id)
+                orig_id = res_event_id
             else:
-                res_event_id = str(tr_block.get("id") or f"{rec_id_str}_res_{i}")
+                res_event_id = f"{rec_id_str}_res_{i}"
+                guard.register_synthetic(res_event_id)
+                orig_id = None
+
             res_event = SessionEvent(
                 id=res_event_id,
                 parent_id=parent_id,
@@ -935,7 +981,7 @@ def _process_claude_line(
                 correlation_id=corr_id or None,
                 source_line=raw.line_number,
                 source_record_hash=record_hash,
-                original_id=original_id,
+                original_id=orig_id,
                 source_adapter="claude-code-jsonl",
                 source_location=loc,
                 execution_state="failure" if is_err else "success",
@@ -945,7 +991,6 @@ def _process_claude_line(
                 interaction_id=interaction_id,
             )
             events.append(res_event)
-            guard.check_event(res_event)
         return
 
     # Default payload canonicalization

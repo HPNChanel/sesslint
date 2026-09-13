@@ -525,3 +525,457 @@ def test_real_claude_code_shape_with_parent_uuid_and_tool_blocks(tmp_path: Path)
     check_findings = run_all_checks(events)
     error_findings = [f for f in check_findings if f.severity == Severity.ERROR]
     assert len(error_findings) == 0
+
+
+def test_regression_top_level_tool_use_variants(tmp_path: Path) -> None:
+    """Verify top-level tool_use records handle input shapes and side_effects."""
+    f = tmp_path / "top_level_tool_use.jsonl"
+    lines = [
+        # 1. Read-only tool with tool_name, args mapping, tool_use_id
+        json.dumps(
+            {
+                "id": "c1",
+                "type": "tool_use",
+                "tool_name": "read_file",
+                "tool_use_id": "tu_read_1",
+                "args": {"path": "/etc/hosts"},
+            }
+        ),
+        # 2. Mutating tool with name, arguments mapping, toolUseId
+        json.dumps(
+            {
+                "id": "c2",
+                "parentId": "c1",
+                "type": "tool_use",
+                "name": "write_file",
+                "toolUseId": "tu_write_2",
+                "arguments": {"path": "/tmp/out.txt", "content": "data"},
+            }
+        ),
+        # 3. Unknown tool with scalar input wrapped into {'value': ...}, missing toolUseId
+        json.dumps(
+            {
+                "id": "c3",
+                "parentId": "c2",
+                "type": "tool_use",
+                "name": "custom_diagnostic_tool",
+                "input": "probe-system",
+            }
+        ),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 3
+
+    # Event 1: read_file -> side_effects="none"
+    assert events[0].id == "c1"
+    assert events[0].kind == "tool_call"
+    assert events[0].actor == "assistant"
+    assert events[0].correlation_id == "tu_read_1"
+    assert events[0].side_effects == "none"
+    assert events[0].payload["tool_name"] == "read_file"
+    assert events[0].payload["input"] == {"path": "/etc/hosts"}
+
+    # Event 2: write_file -> side_effects="possible"
+    assert events[1].id == "c2"
+    assert events[1].kind == "tool_call"
+    assert events[1].correlation_id == "tu_write_2"
+    assert events[1].side_effects == "possible"
+    assert events[1].payload["tool_name"] == "write_file"
+    assert events[1].payload["input"] == {"path": "/tmp/out.txt", "content": "data"}
+
+    # Event 3: custom tool -> side_effects="unknown", scalar input wrapped
+    assert events[2].id == "c3"
+    assert events[2].kind == "tool_call"
+    assert events[2].correlation_id == "c3"  # falls back to rec_id
+    assert events[2].side_effects == "unknown"
+    assert events[2].payload["tool_name"] == "custom_diagnostic_tool"
+    assert events[2].payload["input"] == {"value": "probe-system"}
+
+
+def test_regression_top_level_tool_result_variants(tmp_path: Path) -> None:
+    """Verify top-level tool_result records handle output, error, and status states."""
+    f = tmp_path / "top_level_tool_result.jsonl"
+    lines = [
+        # 1. Success result with output and tool_use_id
+        json.dumps(
+            {
+                "id": "r1",
+                "type": "tool_result",
+                "tool_use_id": "tu_read_1",
+                "output": "127.0.0.1 localhost",
+                "is_error": False,
+            }
+        ),
+        # 2. Failure result with result and error=True
+        json.dumps(
+            {
+                "id": "r2",
+                "parentId": "r1",
+                "type": "tool_result",
+                "toolUseId": "tu_write_2",
+                "result": "Permission denied: /tmp/out.txt",
+                "error": True,
+            }
+        ),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 2
+
+    # Result 1: success
+    assert events[0].id == "r1"
+    assert events[0].kind == "tool_result"
+    assert events[0].actor == "tool"
+    assert events[0].correlation_id == "tu_read_1"
+    assert events[0].execution_state == "success"
+    assert events[0].side_effects == "none"
+    assert events[0].payload["content"] == "127.0.0.1 localhost"
+    assert events[0].payload["is_error"] is False
+
+    # Result 2: failure
+    assert events[1].id == "r2"
+    assert events[1].kind == "tool_result"
+    assert events[1].actor == "tool"
+    assert events[1].correlation_id == "tu_write_2"
+    assert events[1].execution_state == "failure"
+    assert events[1].side_effects == "none"
+    assert events[1].payload["content"] == "Permission denied: /tmp/out.txt"
+    assert events[1].payload["is_error"] is True
+
+
+def test_regression_content_blocks_multiple_tool_calls_and_preamble(tmp_path: Path) -> None:
+    """Verify assistant message with preamble text and multiple tool_use forms parent chain."""
+    f = tmp_path / "multi_tool_use_chain.jsonl"
+    record = {
+        "uuid": "turn_assistant_1",
+        "parentUuid": "turn_user_0",
+        "type": "assistant",
+        "content": [
+            {"type": "text", "text": "I will examine the workspace and list directory contents."},
+            {
+                "type": "tool_use",
+                "id": "tu_first",
+                "name": "read_file",
+                "input": {"path": "README.md"},
+            },
+            {"type": "tool_use", "id": "tu_second", "name": "list_dir", "input": {"path": "."}},
+        ],
+    }
+    f.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 3
+
+    # 1. Preamble text event: turn_assistant_1_text, parent=turn_user_0
+    assert events[0].id == "turn_assistant_1_text"
+    assert events[0].kind == "message"
+    assert events[0].parent_id == "turn_user_0"
+    assert events[0].original_id is None
+    assert (
+        events[0].payload["content"] == "I will examine the workspace and list directory contents."
+    )
+
+    # 2. First tool call: tu_first, parent=turn_assistant_1_text
+    assert events[1].id == "tu_first"
+    assert events[1].kind == "tool_call"
+    assert events[1].parent_id == "turn_assistant_1_text"
+    assert events[1].correlation_id == "tu_first"
+    assert events[1].original_id == "tu_first"
+    assert events[1].payload["tool_name"] == "read_file"
+
+    # 3. Second tool call: turn_assistant_1 (last tool call takes record ID), parent=tu_first
+    assert events[2].id == "turn_assistant_1"
+    assert events[2].kind == "tool_call"
+    assert events[2].parent_id == "tu_first"
+    assert events[2].correlation_id == "tu_second"
+    assert events[2].original_id == "turn_assistant_1"
+    assert events[2].payload["tool_name"] == "list_dir"
+
+
+def test_regression_content_blocks_multiple_tool_results(tmp_path: Path) -> None:
+    """Verify user message with multiple tool_result blocks generates individual events."""
+    f = tmp_path / "multi_tool_result.jsonl"
+    record = {
+        "uuid": "turn_results",
+        "parentUuid": "turn_assistant_1",
+        "type": "user",
+        "content": [
+            {
+                "type": "tool_result",
+                "id": "tr_custom_1",
+                "tool_use_id": "tu_first",
+                "content": "File content",
+            },
+            {
+                "type": "tool_result",
+                "tool_use_id": "tu_second",
+                "content": "dir listing",
+                "is_error": False,
+            },
+        ],
+    }
+    f.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 2
+
+    # First result carries block id tr_custom_1
+    assert events[0].id == "tr_custom_1"
+    assert events[0].kind == "tool_result"
+    assert events[0].correlation_id == "tu_first"
+    assert events[0].payload["content"] == "File content"
+
+    # Second result carries turn_results_res_1
+    assert events[1].id == "turn_results_res_1"
+    assert events[1].kind == "tool_result"
+    assert events[1].correlation_id == "tu_second"
+    assert events[1].payload["content"] == "dir listing"
+
+
+def test_regression_fallback_modes(tmp_path: Path) -> None:
+    """Verify fallback mechanisms for records without type or with alternative type signatures."""
+    f = tmp_path / "fallbacks.jsonl"
+    lines = [
+        # 1. No type, top-level role='user'
+        json.dumps({"id": "m1", "role": "user", "content": "Hello from user"}),
+        # 2. No type, message object with role='assistant'
+        json.dumps(
+            {"id": "m2", "parentId": "m1", "message": {"role": "assistant", "content": "Hi there"}}
+        ),
+        # 3. type='message' with role='user'
+        json.dumps(
+            {"id": "m3", "parentId": "m2", "type": "message", "role": "user", "text": "Question"}
+        ),
+        # 4. type='summary'
+        json.dumps(
+            {"id": "m4", "parentId": "m3", "type": "summary", "content": "Summary checkpoint"}
+        ),
+        # 5. type='compaction_boundary'
+        json.dumps(
+            {
+                "id": "m5",
+                "parentId": "m4",
+                "type": "compaction_boundary",
+                "summary": "Pruned 20 turns",
+            }
+        ),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 5
+
+    assert events[0].actor == "user" and events[0].kind == "message"
+    assert events[1].actor == "assistant" and events[1].kind == "message"
+    assert events[2].actor == "user" and events[2].kind == "message"
+    assert events[3].actor == "system" and events[3].kind == "message"
+    assert events[4].actor == "system" and events[4].kind == "compaction_boundary"
+
+
+def test_regression_scope_metadata_and_sidechain(tmp_path: Path) -> None:
+    """Verify agent_id, branch_id, sidechain flag, and interaction_id are captured."""
+    f = tmp_path / "scope_metadata.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "id": "m1",
+                "type": "user_message",
+                "message": "Start subagent branch",
+                "agentId": "subagent-alpha",
+                "branchId": "branch-feature",
+                "interactionId": "interaction-99",
+            }
+        ),
+        json.dumps(
+            {
+                "id": "m2",
+                "parentId": "m1",
+                "type": "assistant_message",
+                "message": "In sidechain",
+                "agent_id": "subagent-alpha",
+                "isSidechain": True,
+            }
+        ),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 2
+
+    assert events[0].agent_id == "subagent-alpha"
+    assert events[0].branch_id == "branch-feature"
+    assert events[0].interaction_id == "interaction-99"
+
+    assert events[1].agent_id == "subagent-alpha"
+    assert events[1].branch_id == "sidechain"  # isSidechain -> "sidechain"
+
+
+def test_regression_decorative_keys_ignored(tmp_path: Path) -> None:
+    """Verify recognized decorative metadata fields are silently ignored without raising SL302."""
+    f = tmp_path / "decorative_metadata.jsonl"
+    record = {
+        "id": "m1",
+        "type": "assistant_message",
+        "message": "Thinking completed",
+        "thinking": "analyzing file structure...",
+        "tokens": 450,
+        "model": "claude-3-5-sonnet",
+        "prompt_tokens": 300,
+        "completion_tokens": 150,
+        "cost": 0.0045,
+        "costUSD": 0.0045,
+        "durationMs": 1200,
+        "duration_ms": 1200,
+        "cwd": "/workspace/sesslint",
+        "git_branch": "feature-branch",
+        "slug": "sess-alpha",
+        "leafUuid": "leaf-1234",
+        "user": "developer",
+    }
+    f.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 1
+    assert events[0].id == "m1"
+
+
+def test_regression_synthetic_ids_and_original_id(tmp_path: Path) -> None:
+    """Verify records missing id/uuid obtain deterministic synthetic IDs with original_id=None."""
+    f = tmp_path / "missing_ids.jsonl"
+    lines = [
+        json.dumps({"type": "user_message", "message": "First event without ID"}),
+        json.dumps({"type": "assistant_message", "message": "Second event without ID"}),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(findings) == 0
+    assert len(events) == 2
+
+    assert events[0].id.startswith("sesslint:synthetic:claude_code:0:")
+    assert events[0].original_id is None
+
+    assert events[1].id.startswith("sesslint:synthetic:claude_code:1:")
+    assert events[1].original_id is None
+
+
+def test_regression_collision_guard_rejection(tmp_path: Path) -> None:
+    """Verify collision guard rejects hostile input that squats on an active synthetic ID."""
+    from sesslint.adapters.synthetic import synthetic_event_id
+    from sesslint.errors import AdapterError
+
+    f = tmp_path / "hostile_collision.jsonl"
+    path_str = str(f).replace("\\", "/")
+
+    line1_dict = {"type": "user_message", "message": "First event without ID"}
+    line1_bytes = json.dumps(line1_dict).encode("utf-8") + b"\n"
+    predicted_synth_id = synthetic_event_id(
+        "claude_code",
+        0,
+        source_hint=path_str,
+        payload_len=len(line1_bytes),
+    )
+
+    line2_dict = {
+        "id": predicted_synth_id,
+        "type": "assistant_message",
+        "message": "Squatter colliding with line 1",
+    }
+    line2_bytes = json.dumps(line2_dict).encode("utf-8") + b"\n"
+    f.write_bytes(line1_bytes + line2_bytes)
+
+    with pytest.raises(AdapterError, match="Synthetic ID collision"):
+        load_claude_code(f)
+
+
+def test_regression_encoding_sl001_mid_and_sl002_tail(tmp_path: Path) -> None:
+    """Verify invalid UTF-8 emits SL001 mid-file and SL002 at terminal EOF with byte coordinates."""
+    # Mid-file invalid UTF-8 byte
+    bad_mid = tmp_path / "bad_mid.jsonl"
+    part1 = b'{"id":"m1","type":"user_message","message":"good 1"}\n'
+    part2 = b'{"id":"m2",\xff,"type":"assistant_message"}\n'
+    part3 = b'{"id":"m3","type":"user_message","message":"good 3"}\n'
+    bad_mid.write_bytes(part1 + part2 + part3)
+
+    events_mid, findings_mid = load_claude_code(bad_mid)
+    assert len(events_mid) == 2
+    sl001_f = [f for f in findings_mid if f.code == SL001]
+    assert len(sl001_f) == 1
+    assert "ENCODING" in sl001_f[0].message
+    assert sl001_f[0].evidence is not None
+    assert "byte_offset" in sl001_f[0].evidence
+    assert "byte_end" in sl001_f[0].evidence
+
+    # Terminal invalid UTF-8 byte
+    bad_tail = tmp_path / "bad_tail.jsonl"
+    bad_tail.write_bytes(part1 + part2.rstrip(b"\n"))
+
+    events_tail, findings_tail = load_claude_code(bad_tail)
+    assert len(events_tail) == 1
+    sl002_f = [f for f in findings_tail if f.code == SL002]
+    assert len(sl002_f) == 1
+    assert "ENCODING" in sl002_f[0].message
+    assert sl002_f[0].evidence is not None
+    assert "byte_offset" in sl002_f[0].evidence
+
+
+def test_regression_unsupported_version_single_finding(tmp_path: Path) -> None:
+    """Verify obsolete version is reported once per session even if repeated on every record."""
+    f = tmp_path / "multi_version_old.jsonl"
+    lines = [
+        json.dumps({"id": "m1", "type": "user_message", "version": "0.0.1", "message": "One"}),
+        json.dumps(
+            {
+                "id": "m2",
+                "parentId": "m1",
+                "type": "assistant_message",
+                "version": "0.0.1",
+                "message": "Two",
+            }
+        ),
+        json.dumps(
+            {
+                "id": "m3",
+                "parentId": "m2",
+                "type": "user_message",
+                "version": "0.0.1",
+                "message": "Three",
+            }
+        ),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(events) == 3
+    sl301_f = [f for f in findings if f.code == SL301]
+    assert len(sl301_f) == 1  # Exactly 1 finding emitted for whole session
+    assert sl301_f[0].source.line == 1
+
+
+def test_regression_sl302_long_type_truncated(tmp_path: Path) -> None:
+    """Verify long unknown type discriminator is capped to prevent unbounded echo (DEV-008)."""
+    f = tmp_path / "long_unknown_type.jsonl"
+    long_type = "unsupportedType" + "X" * 300
+    record = {"id": "m1", "type": long_type, "message": "Test payload"}
+    f.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    events, findings = load_claude_code(f)
+    assert len(events) == 1
+    assert events[0].kind == "unknown"
+
+    sl302_f = [f for f in findings if f.code == SL302]
+    assert len(sl302_f) == 1
+    evidence = sl302_f[0].evidence
+    assert evidence is not None
+    assert evidence.get("type_truncated") is True
+    assert len(str(evidence.get("type_value"))) <= 100

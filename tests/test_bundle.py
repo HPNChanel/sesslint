@@ -15,11 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from sesslint import api
-from sesslint.bundle import build_bundle
+from sesslint.bundle import _count_records_bounded, build_bundle
 from sesslint.cli import main
 
 FIXTURES_ROOT = Path(__file__).resolve().parent.parent / "fixtures"
@@ -132,6 +133,32 @@ class TestBundleUnit:
         """build_bundle raises IsADirectoryError when passed a directory."""
         with pytest.raises(IsADirectoryError):
             build_bundle(FIXTURES_ROOT)
+
+    def test_count_records_bounded_io_error(self, tmp_path: Path) -> None:
+        """_count_records_bounded returns -1 sentinel on I/O error instead of 0 (P0-07)."""
+        dir_path = tmp_path / "a_directory"
+        dir_path.mkdir()
+        assert _count_records_bounded(dir_path) == -1
+        assert _count_records_bounded(tmp_path / "non_existent.jsonl") == -1
+
+    def test_bundle_surfaces_read_error_not_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When counting fails with I/O error, bundle surfaces error, not 0 count (P0-07)."""
+        monkeypatch.setattr("sesslint.bundle._count_records_bounded", lambda _p: -1)
+        from sesslint.adapters.detect import DetectionResult
+
+        monkeypatch.setattr(
+            "sesslint.bundle.resolve_format",
+            lambda *args, **kwargs: (
+                "unknown",
+                DetectionResult(format="unknown", confidences={}, reason="no-match"),
+                [],
+            ),
+        )
+        bundle = build_bundle(HEALTHY_CANONICAL)
+        skel = bundle.fixture_skeleton
+        assert skel["record_count"] == -1
+        assert skel.get("error") == "read_error"
+        assert skel["record_count"] != 0
 
 
 class TestBundleCLI:
@@ -325,3 +352,25 @@ class TestBundleIntegration:
         assert "version_raw" in bundle_data["detection"]["version_evidence"]
         assert "supported_set" in bundle_data["detection"]["version_evidence"]
         assert "SL301" in bundle_data["fixture_skeleton"]["codes"]
+
+    def test_bundle_toctou_mutation_detected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Concurrent file mutation during bundle generation raises SourceChangedError."""
+        import sesslint.api as api_mod
+        from sesslint.errors import SourceChangedError
+
+        session_file = tmp_path / "mutating_session.jsonl"
+        session_file.write_text(HEALTHY_CANONICAL.read_text(encoding="utf-8"), encoding="utf-8")
+
+        original_check_file = api_mod.check_file
+
+        def mutating_check_file(*args: Any, **kwargs: Any) -> Any:
+            with open(session_file, "a", encoding="utf-8") as f:
+                f.write('{"mutated": true}\n')
+            return original_check_file(*args, **kwargs)
+
+        monkeypatch.setattr("sesslint.api.check_file", mutating_check_file)
+
+        with pytest.raises(SourceChangedError, match="TOCTOU detected"):
+            api.build_bundle(session_file)

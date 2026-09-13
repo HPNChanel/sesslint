@@ -22,6 +22,7 @@ from sesslint.adapters.openai_agents import load_openai_agents
 from sesslint.adapters.synthetic import (
     SYNTHETIC_ID_PREFIX,
     SyntheticIdCollisionGuard,
+    _advance_synthetic_id,
     is_synthetic_id,
     synthetic_event_id,
 )
@@ -375,3 +376,119 @@ def test_hostile_collision_openai_agents_json_fails_closed(tmp_path: Path) -> No
 
     with pytest.raises(AdapterError, match="Synthetic ID collision"):
         load_openai_agents(hostile_file)
+
+
+def test_secondary_id_text_collision_claude_code_fails_closed(tmp_path: Path) -> None:
+    """Verify load_claude_code fails closed when a real ID squats on synthetic _text."""
+    hostile_file = tmp_path / "hostile_claude_text.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "id": "rec_01",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "I will run bash"},
+                    {"type": "tool_use", "id": "toolu_1", "name": "bash", "input": {"cmd": "ls"}},
+                ],
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+        ),
+        json.dumps(
+            {
+                "id": "rec_01_text",
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "text", "text": "malicious squat"}],
+                "timestamp": "2026-01-01T00:00:01Z",
+            }
+        ),
+    ]
+    hostile_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(AdapterError, match="Synthetic ID collision"):
+        load_claude_code(hostile_file)
+
+
+def test_secondary_id_call_collision_claude_code_fails_closed(tmp_path: Path) -> None:
+    """Verify load_claude_code fails closed when a real ID squats on synthetic _call_i."""
+    hostile_file = tmp_path / "hostile_claude_call.jsonl"
+
+    lines = [
+        json.dumps(
+            {
+                "id": "rec_02",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "name": "bash", "input": {"cmd": "pwd"}},
+                    {"type": "tool_use", "name": "glob", "input": {"pat": "*"}},
+                ],
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+        ),
+        json.dumps(
+            {
+                "id": "rec_02_call_0",
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "text", "text": "malicious squat call"}],
+                "timestamp": "2026-01-01T00:00:01Z",
+            }
+        ),
+    ]
+    hostile_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(AdapterError, match="Synthetic ID collision"):
+        load_claude_code(hostile_file)
+
+
+def test_secondary_id_res_collision_claude_code_fails_closed(tmp_path: Path) -> None:
+    """Verify load_claude_code fails closed when a real ID squats on synthetic _res_i."""
+    hostile_file = tmp_path / "hostile_claude_res.jsonl"
+
+    lines = [
+        json.dumps(
+            {
+                "id": "rec_03",
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "output": "file contents"},
+                    {"type": "tool_result", "output": "second output"},
+                ],
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+        ),
+        json.dumps(
+            {
+                "id": "rec_03_res_0",
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "text", "text": "malicious squat res"}],
+                "timestamp": "2026-01-01T00:00:01Z",
+            }
+        ),
+    ]
+    hostile_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(AdapterError, match="Synthetic ID collision"):
+        load_claude_code(hostile_file)
+
+
+def test_advance_synthetic_id_helper() -> None:
+    """Verify _advance_synthetic_id increments reserved namespace ordinals and suffix counters."""
+    # 1. Reserved namespace pattern: increments ordinal
+    candidate_reserved = f"{SYNTHETIC_ID_PREFIX}adapter_test:3:12345678"
+    advanced = _advance_synthetic_id(candidate_reserved)
+    assert advanced == f"{SYNTHETIC_ID_PREFIX}adapter_test:4:12345678"
+
+    # 2. Numbered suffix pattern: increments suffix
+    candidate_suffixed = "rec_item_call_2"
+    advanced_suffixed = _advance_synthetic_id(candidate_suffixed)
+    assert advanced_suffixed == "rec_item_call_3"
+
+    # 3. Non-numbered string: appends _1
+    candidate_bare = "rec_item_text"
+    advanced_bare = _advance_synthetic_id(candidate_bare)
+    assert advanced_bare == "rec_item_text_1"

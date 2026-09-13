@@ -151,24 +151,6 @@ def project_run_state(source: Any) -> dict[str, Any]:
     - Checkpoint entries project to (id, seq, hash: <shape>, ts: bool).
     - If bounded limits are exceeded, truncated is True and counts are added.
     """
-    if (
-        isinstance(source, Mapping)
-        and "keys" in source
-        and "shapes" in source
-        and "checkpoints" in source
-    ):
-        return dict(source)
-
-    if (
-        hasattr(source, "run_state_projection")
-        and isinstance(source.run_state_projection, Mapping)
-        and (
-            source.run_state_projection.get("keys")
-            or source.run_state_projection.get("checkpoints")
-        )
-    ):
-        return dict(source.run_state_projection)
-
     run_state_map: Mapping[Any, Any] = {}
     chk_list: list[Any] = []
 
@@ -405,12 +387,10 @@ def detect_openai_agents(first_bytes: bytes, filename: str) -> float:
 
 
 def _normalize_timestamp(raw_ts: Any) -> str:
-    """Ensure timestamp conforms to RFC3339 UTC string format."""
+    """Ensure timestamp conforms to RFC3339 format, leaving naive timestamps as-is (P1-03)."""
     if isinstance(raw_ts, str) and raw_ts.strip():
         val = raw_ts.strip()
         if _TIMESTAMP_ISO_REGEX.match(val):
-            if not val.endswith("Z") and "+" not in val and "-" not in val[10:]:
-                return f"{val}Z"
             return val
     return "1970-01-01T00:00:00Z"
 
@@ -424,10 +404,24 @@ def _build_payload(
 ) -> dict[str, Any]:
     """Construct content-structured payload based on canonical kind."""
     if kind == "tool_call":
-        tool_name = str(obj.get("name") or obj.get("tool_name") or obj.get("function") or "")
-        call_id = str(obj.get("call_id") or obj.get("tool_call_id") or rec_id)
-        raw_input = obj.get("args") or obj.get("arguments") or obj.get("input") or {}
-        if isinstance(raw_input, str):
+        raw_name = (
+            obj.get("name")
+            if obj.get("name") is not None
+            else (obj.get("tool_name") if obj.get("tool_name") is not None else obj.get("function"))
+        )
+        tool_name = str(raw_name) if raw_name is not None else ""
+        raw_call_id = (
+            obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
+        )
+        call_id = str(raw_call_id) if raw_call_id is not None else rec_id
+        raw_input = (
+            obj.get("args")
+            if obj.get("args") is not None
+            else (obj.get("arguments") if obj.get("arguments") is not None else obj.get("input"))
+        )
+        if raw_input is None:
+            raw_input = {}
+        elif isinstance(raw_input, str):
             try:
                 raw_input = _STRICT_JSON_DECODER.decode(raw_input)
             except Exception:
@@ -442,9 +436,21 @@ def _build_payload(
         }
 
     if kind == "tool_result":
-        call_id = str(obj.get("call_id") or obj.get("tool_call_id") or "")
-        content = obj.get("content") or obj.get("output") or obj.get("result") or ""
-        is_err = bool(obj.get("is_error") or obj.get("error") or False)
+        raw_call_id = (
+            obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
+        )
+        call_id = str(raw_call_id) if raw_call_id is not None else ""
+        raw_content = (
+            obj.get("content")
+            if obj.get("content") is not None
+            else (obj.get("output") if obj.get("output") is not None else obj.get("result"))
+        )
+        content = raw_content if raw_content is not None else ""
+        is_err = bool(
+            obj.get("is_error")
+            if obj.get("is_error") is not None
+            else (obj.get("error") if obj.get("error") is not None else False)
+        )
         return {
             "call_id": call_id,
             "content": content,
@@ -453,15 +459,23 @@ def _build_payload(
         }
 
     if kind == "handoff":
-        target = obj.get("target") or obj.get("handoff_to") or obj.get("agent")
-        res: dict[str, Any] = {"target": str(target) if target is not None else None}
+        raw_target = (
+            obj.get("target")
+            if obj.get("target") is not None
+            else (obj.get("handoff_to") if obj.get("handoff_to") is not None else obj.get("agent"))
+        )
+        res: dict[str, Any] = {"target": str(raw_target) if raw_target is not None else None}
         if "reason" in obj:
-            res["reason"] = str(obj["reason"])
+            safe_reason, _ = safe_discriminator(obj["reason"])
+            res["reason"] = safe_reason
         return res
 
     if kind == "checkpoint":
-        chk_id = obj.get("checkpoint_id") or obj.get("id") or rec_id
-        res = {"checkpoint_id": str(chk_id)}
+        raw_chk_id = (
+            obj.get("checkpoint_id") if obj.get("checkpoint_id") is not None else obj.get("id")
+        )
+        chk_id = str(raw_chk_id) if raw_chk_id is not None else rec_id
+        res = {"checkpoint_id": chk_id}
         if "seq" in obj:
             res["seq"] = obj["seq"]
         if "hash" in obj:
@@ -471,14 +485,20 @@ def _build_payload(
         return res
 
     if kind == "compaction_boundary":
-        summary = str(obj.get("summary") or obj.get("content") or "")
+        raw_summary = obj.get("summary") if obj.get("summary") is not None else obj.get("content")
+        summary = str(raw_summary) if raw_summary is not None else ""
         return {"summary": summary}
 
     if kind == "unknown":
         return {"type": str(raw_type) if raw_type is not None else "<missing>"}
 
     # Default message payload
-    msg_content = obj.get("content") or obj.get("message") or obj.get("text") or ""
+    raw_msg = (
+        obj.get("content")
+        if obj.get("content") is not None
+        else (obj.get("message") if obj.get("message") is not None else obj.get("text"))
+    )
+    msg_content = raw_msg if raw_msg is not None else ""
     return {"content": msg_content, "role": actor}
 
 
@@ -558,11 +578,13 @@ def load_openai_agents(
             )
             return EventList([], source=SourceMetadata(format="refused_live_db")), [finding]
 
-        # Read remaining prefix to inspect format (JSON vs JSONL)
-        stream_remainder = stream.read()
+        # Bounded read to prevent OOM / DoS from oversized streams (P0-06 / RVW-025)
+        max_bytes = effective_limits.max_file_bytes
+        to_read = max(0, max_bytes - len(first_16) + 1)
+        stream_remainder = stream.read(to_read)
         full_bytes = first_16 + stream_remainder
 
-        if len(full_bytes) > effective_limits.max_file_bytes:
+        if len(full_bytes) > max_bytes:
             finding = make_finding(
                 code=SL001,
                 severity=Severity.ERROR,
@@ -571,7 +593,7 @@ def load_openai_agents(
                 source=SourceRef(path=path_str, line=1, record_id=None),
                 evidence={
                     "reason": "size_limit_exceeded",
-                    "limit": effective_limits.max_file_bytes,
+                    "limit": max_bytes,
                 },
             )
             return EventList([], source=SourceMetadata()), [finding]
@@ -694,12 +716,20 @@ def _load_openai_agents_json(
 
     if isinstance(doc, dict):
         # Extract version evidence
-        version_candidate = (
+        raw_vc = (
             doc.get("sdk_version")
-            or doc.get("export_version")
-            or doc.get("agent_sdk_version")
-            or doc.get("version")
+            if doc.get("sdk_version") is not None
+            else (
+                doc.get("export_version")
+                if doc.get("export_version") is not None
+                else (
+                    doc.get("agent_sdk_version")
+                    if doc.get("agent_sdk_version") is not None
+                    else doc.get("version")
+                )
+            )
         )
+        version_candidate = raw_vc
         seen_version_sl301 = _check_version(
             version_candidate,
             path_str=path_str,
@@ -716,10 +746,21 @@ def _load_openai_agents_json(
         if isinstance(raw_checkpoints, list):
             for chk in raw_checkpoints:
                 if isinstance(chk, dict):
-                    chk_id = str(chk.get("id") or chk.get("checkpoint_id") or "")
+                    raw_chk_id = chk.get("id")
+                    if raw_chk_id is None:
+                        raw_chk_id = chk.get("checkpoint_id")
+                    chk_id = str(raw_chk_id) if raw_chk_id is not None else ""
                     seq = chk.get("seq")
-                    chk_hash = str(chk.get("hash") or chk.get("payload_hash") or "")
-                    ts = str(chk.get("ts") or chk.get("created_at") or "")
+                    if seq is None:
+                        seq = chk.get("checkpoint_seq")
+                    raw_hash = chk.get("hash")
+                    if raw_hash is None:
+                        raw_hash = chk.get("payload_hash")
+                    chk_hash = str(raw_hash) if raw_hash is not None else ""
+                    raw_ts = chk.get("ts")
+                    if raw_ts is None:
+                        raw_ts = chk.get("created_at")
+                    ts = str(raw_ts) if raw_ts is not None else ""
                     source_metadata.checkpoints.append(
                         {
                             "id": chk_id,
@@ -1145,7 +1186,7 @@ def _process_openai_item(
 ) -> None:
     """Canonicalize a single item dict into a SessionEvent, emitting findings as needed."""
     seq_index = len(events)
-    raw_id = obj.get("id") or obj.get("item_id")
+    raw_id = obj.get("id") if obj.get("id") is not None else obj.get("item_id")
     if byte_offset is not None and byte_end is not None:
         p_len = byte_end - byte_offset
     else:
@@ -1170,7 +1211,7 @@ def _process_openai_item(
         if guard is not None:
             guard.register_synthetic(rec_id_str)
 
-    raw_parent = obj.get("parent_id") or obj.get("prev_id")
+    raw_parent = obj.get("parent_id") if obj.get("parent_id") is not None else obj.get("prev_id")
     parent_id = (
         str(raw_parent).strip() if raw_parent is not None and str(raw_parent).strip() else None
     )
@@ -1291,13 +1332,20 @@ def _process_openai_item(
     # Correlation ID extraction for tool calls and tool results
     correlation_id: str | None = None
     if kind in ("tool_call", "tool_result"):
-        raw_call_id = obj.get("call_id") or obj.get("tool_call_id")
-        if raw_call_id is not None and str(raw_call_id).strip():
-            correlation_id = str(raw_call_id).strip()
+        raw_call_id = (
+            obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
+        )
+        if raw_call_id is not None:
+            correlation_id = str(raw_call_id)
         elif kind == "tool_call":
             correlation_id = rec_id_str
 
-    ts = _normalize_timestamp(obj.get("timestamp") or obj.get("ts") or obj.get("created_at"))
+    raw_ts = (
+        obj.get("timestamp")
+        if obj.get("timestamp") is not None
+        else (obj.get("ts") if obj.get("ts") is not None else obj.get("created_at"))
+    )
+    ts = _normalize_timestamp(raw_ts)
     payload = _build_payload(obj, actor, kind, rec_id_str, raw_type)
     content_hash = compute_content_hash(payload)
 

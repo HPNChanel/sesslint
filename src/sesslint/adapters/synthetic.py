@@ -13,6 +13,7 @@ Where:
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import TYPE_CHECKING, Final
 
 from sesslint.errors import AdapterError
@@ -60,11 +61,33 @@ def is_synthetic_id(event_id: str) -> bool:
     return event_id.startswith(SYNTHETIC_ID_PREFIX)
 
 
+def _advance_synthetic_id(candidate_id: str) -> str:
+    """Advance a colliding synthetic ID to the next candidate ordinal or numeric suffix.
+
+    If candidate matches `sesslint:synthetic:<adapter>:<ordinal>:<hash>`, increments <ordinal>.
+    If candidate ends with `_<counter>`, increments <counter>.
+    Otherwise, appends `_1`.
+    """
+    if candidate_id.startswith(SYNTHETIC_ID_PREFIX):
+        parts = candidate_id.split(":")
+        if len(parts) == 5 and parts[3].isdigit():
+            adapter = parts[2]
+            ordinal = int(parts[3]) + 1
+            digest = parts[4]
+            return f"{SYNTHETIC_ID_PREFIX}{adapter}:{ordinal}:{digest}"
+
+    match = re.match(r"^(.*)_(\d+)$", candidate_id)
+    if match:
+        stem, counter = match.groups()
+        return f"{stem}_{int(counter) + 1}"
+    return f"{candidate_id}_1"
+
+
 class SyntheticIdCollisionGuard:
     """Tracks real versus synthetic IDs per session load to prevent cross-namespace collisions.
 
     If any synthetic event ID matches a real (vendor-supplied) event ID in the same session,
-    the guard fails closed by raising an `AdapterError`.
+    or vice-versa, the guard fails closed by raising an `AdapterError` (FR-083).
     """
 
     def __init__(self) -> None:
