@@ -1,0 +1,2 @@
+{"id":"msg_01","sessionId":"sess_claude_conf","type":"user_message","message":"Hello from Claude Code","timestamp":"2026-09-13T00:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","sessionId":"sess_claude_conf","type":"assistant_message","message":"Hello back!","timestamp":"2026-09-13T00:00:01Z"}

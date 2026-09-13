@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "sesslint.conformance",
+  "seed": 20260913,
+  "created": "2026-09-13",
+  "contains_real_data": false,
+  "description": "Synthetic secret-seeded conformance test fixtures for default-report privacy verification"
+}

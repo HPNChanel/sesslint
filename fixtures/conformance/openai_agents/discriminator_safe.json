@@ -1,0 +1,11 @@
+{
+  "export_version": "1.0.0",
+  "items": [
+    {
+      "content": "testing safe discriminator",
+      "id": "item_01",
+      "timestamp": "2026-09-13T00:00:00Z",
+      "type": "custom_op"
+    }
+  ]
+}

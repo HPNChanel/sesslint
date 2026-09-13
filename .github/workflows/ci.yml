@@ -49,7 +49,7 @@ jobs:
         run: pytest -q tests/test_rule_docs.py tests/test_registry_docs.py
 
       - name: Run Conformance Matrix Gate
-        run: pytest -q tests/conformance/test_matrix.py
+        run: pytest -q tests/conformance/
 
       - name: Run Full Test Suite
         run: pytest -q

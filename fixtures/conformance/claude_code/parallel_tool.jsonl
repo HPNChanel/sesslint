@@ -1,0 +1,5 @@
+{"id":"msg_01","sessionId":"sess_claude_parallel","type":"user_message","message":"Execute tools in parallel","timestamp":"2026-09-13T00:00:00Z"}
+{"id":"msg_02","parentId":"msg_01","sessionId":"sess_claude_parallel","type":"tool_use","name":"read_file","toolUseId":"call_01","input":{"path":"file1.txt"},"timestamp":"2026-09-13T00:00:01Z"}
+{"id":"msg_03","parentId":"msg_01","sessionId":"sess_claude_parallel","type":"tool_use","name":"read_file","toolUseId":"call_02","input":{"path":"file2.txt"},"timestamp":"2026-09-13T00:00:01Z"}
+{"id":"msg_04","parentId":"msg_02","sessionId":"sess_claude_parallel","type":"tool_result","toolUseId":"call_01","content":"file 1 output","is_error":false,"timestamp":"2026-09-13T00:00:02Z"}
+{"id":"msg_05","parentId":"msg_03","sessionId":"sess_claude_parallel","type":"tool_result","toolUseId":"call_02","content":"file 2 output","is_error":false,"timestamp":"2026-09-13T00:00:02Z"}

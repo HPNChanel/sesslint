@@ -1,0 +1,46 @@
+{
+  "export_version": "1.0.0",
+  "items": [
+    {
+      "content": "Run parallel functions",
+      "id": "item_01",
+      "role": "user",
+      "timestamp": "2026-09-13T00:00:00Z",
+      "type": "message"
+    },
+    {
+      "args": {"path": "file1.txt"},
+      "call_id": "call_01",
+      "id": "item_02",
+      "name": "read_file",
+      "prev_id": "item_01",
+      "timestamp": "2026-09-13T00:00:01Z",
+      "type": "function_call"
+    },
+    {
+      "args": {"path": "file2.txt"},
+      "call_id": "call_02",
+      "id": "item_03",
+      "name": "read_file",
+      "prev_id": "item_01",
+      "timestamp": "2026-09-13T00:00:01Z",
+      "type": "function_call"
+    },
+    {
+      "call_id": "call_01",
+      "id": "item_04",
+      "output": "file 1 output",
+      "prev_id": "item_02",
+      "timestamp": "2026-09-13T00:00:02Z",
+      "type": "function_call_output"
+    },
+    {
+      "call_id": "call_02",
+      "id": "item_05",
+      "output": "file 2 output",
+      "prev_id": "item_03",
+      "timestamp": "2026-09-13T00:00:02Z",
+      "type": "function_call_output"
+    }
+  ]
+}

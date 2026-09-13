@@ -1,0 +1,17 @@
+{
+  "export_version": "1.0.0",
+  "items": [
+    {
+      "content": "First item without id",
+      "role": "user",
+      "timestamp": "2026-09-13T00:00:00Z",
+      "type": "message"
+    },
+    {
+      "content": "Second item without id",
+      "role": "assistant",
+      "timestamp": "2026-09-13T00:00:01Z",
+      "type": "message"
+    }
+  ]
+}

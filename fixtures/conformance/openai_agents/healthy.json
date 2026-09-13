@@ -1,0 +1,20 @@
+{
+  "export_version": "1.0.0",
+  "items": [
+    {
+      "content": "Hello OpenAI Agents",
+      "id": "item_01",
+      "role": "user",
+      "timestamp": "2026-09-13T00:00:00Z",
+      "type": "message"
+    },
+    {
+      "content": "Hello user!",
+      "id": "item_02",
+      "prev_id": "item_01",
+      "role": "assistant",
+      "timestamp": "2026-09-13T00:00:01Z",
+      "type": "message"
+    }
+  ]
+}
