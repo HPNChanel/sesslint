@@ -36,3 +36,14 @@ Thumbs.db
 
 # Internal implementation planning docs (not part of public release)
 docs/implementation/
+
+# AI Agent workspaces, prompt experiments, and internal development planning (local only)
+.agents/
+*-next-development/
+*.agent/
+.gemini/
+.claude/
+.cursor/
+.windsurf/
+scratch/
+
