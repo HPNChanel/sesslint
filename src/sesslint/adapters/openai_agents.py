@@ -1094,6 +1094,7 @@ def _check_version(
         version_norm = normalize_version(version_raw)
         if version_norm not in SUPPORTED_OPENAI_AGENTS_VERSIONS and not seen_version_sl301:
             source = SourceRef(path=path_str, line=line_number, record_id=rec_id_str)
+            safe_v, _ = safe_discriminator(version_raw)
             finding_sl301 = make_finding(
                 code=SL301,
                 severity=Severity.ERROR,
@@ -1101,7 +1102,7 @@ def _check_version(
                 message_template="Unsupported format version on line {line} for record {record_id}",
                 source=source,
                 evidence={
-                    "version_raw": version_raw,
+                    "version_raw": safe_v,
                     "supported_set": tuple(sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS)),
                     **coord_ev,
                 },
@@ -1268,6 +1269,7 @@ def _process_openai_item(
                 or key.startswith("unknown_critical")
             ):
                 source = SourceRef(path=path_str, line=line_number, record_id=rec_id_str)
+                safe_k, _ = safe_discriminator(key)
                 finding_sl302 = make_finding(
                     code=SL302,
                     severity=Severity.ERROR,
@@ -1277,7 +1279,7 @@ def _process_openai_item(
                     ),
                     source=source,
                     evidence={
-                        "field_path": key,
+                        "field_path": safe_k,
                         "type_value": _safe_type_value(obj[key]),
                         "record_id": rec_id_str,
                         **coord_ev,

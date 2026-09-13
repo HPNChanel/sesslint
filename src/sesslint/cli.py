@@ -530,6 +530,58 @@ def create_parser() -> argparse.ArgumentParser:
         help="Embed raw transcript content (warning: emits raw sensitive data)",
     )
 
+    # bundle
+    bundle_parser = subparsers.add_parser(
+        "bundle",
+        help="[read-only] Generate a privacy-safe diagnostic support bundle and fixture skeleton.",
+        description=(
+            "[read-only] Generate a privacy-safe diagnostic support bundle and fixture skeleton."
+        ),
+    )
+    bundle_parser.add_argument(
+        "path",
+        type=Path,
+        help="Path to session file (.json or .jsonl)",
+    )
+    bundle_parser.add_argument(
+        "--output",
+        "--out",
+        "-o",
+        type=Path,
+        default=None,
+        dest="output",
+        help="Path to output bundle JSON file",
+    )
+    bundle_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output bundle as JSON to stdout",
+    )
+    bundle_parser.add_argument(
+        "--format",
+        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        default="auto",
+        help="Session format adapter (default: auto)",
+    )
+    bundle_parser.add_argument(
+        "--profile",
+        default="neutral",
+        help="Replay validation profile (default: neutral)",
+    )
+    bundle_parser.add_argument(
+        "--confidence-min",
+        type=float,
+        default=None,
+        help="Minimum confidence threshold for format auto-detection",
+    )
+    bundle_parser.add_argument(
+        "--margin-min",
+        type=float,
+        default=None,
+        help="Minimum margin threshold between top candidates for auto-detection",
+    )
+
     return parser
 
 
@@ -735,25 +787,37 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             exit_code = 1 if has_error else 0
 
             # If format detection failed or was ambiguous, emit actionable hints on stderr
+            has_detection_or_version_failure = False
             for f in report.findings:
-                if f.code == "SL302" and isinstance(f.evidence, dict):
-                    reason = f.evidence.get("reason")
-                    if reason in ("tie", "low-confidence", "empty"):
-                        print(
-                            "Format detection ambiguous. Please specify --format explicitly "
-                            "(see sesslint formats).",
-                            file=sys.stderr,
-                        )
-                        confidences = f.evidence.get("confidences")
-                        if confidences and isinstance(confidences, dict):
-                            sorted_conf = dict(sorted(confidences.items()))
+                if f.code == "SL302":
+                    has_detection_or_version_failure = True
+                    if isinstance(f.evidence, dict):
+                        reason = f.evidence.get("reason")
+                        if reason in ("tie", "low-confidence", "empty"):
                             print(
-                                f"Candidate confidences: {sorted_conf}",
+                                "Format detection ambiguous. Please specify --format explicitly "
+                                "(see sesslint formats).",
                                 file=sys.stderr,
                             )
+                            confidences = f.evidence.get("confidences")
+                            if confidences and isinstance(confidences, dict):
+                                sorted_conf = dict(sorted(confidences.items()))
+                                print(
+                                    f"Candidate confidences: {sorted_conf}",
+                                    file=sys.stderr,
+                                )
                     print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
                 elif f.code == "SL301":
+                    has_detection_or_version_failure = True
                     print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
+
+            if has_detection_or_version_failure:
+                target_disp = str(target_path).replace("\\", "/")
+                print(
+                    f"hint: run 'sesslint bundle {target_disp}' "
+                    "and attach the output to an adapter request",
+                    file=sys.stderr,
+                )
 
             adapter_id = report.coverage.adapter.get("id", "canonical")
             format_display = FORMAT_DISPLAY_NAMES.get(adapter_id, adapter_id)
@@ -954,6 +1018,65 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return 2
         except Exception as err:
             return _handle_internal_error(err, args)
+
+    if args.command == "bundle":
+        target_bundle_path: Path = args.path
+        if not target_bundle_path.exists():
+            print(f"Error: Path not found: {target_bundle_path}", file=sys.stderr)
+            return 2
+        if target_bundle_path.is_dir():
+            print(
+                "Error: Path is a directory. "
+                f"Bundle requires a single session file: {target_bundle_path}",
+                file=sys.stderr,
+            )
+            return 2
+
+        from sesslint.api import build_bundle
+
+        format_opt = getattr(args, "format", "auto")
+        profile_opt = getattr(args, "profile", "neutral")
+
+        try:
+            bundle = build_bundle(
+                target_bundle_path,
+                format=format_opt if format_opt != "auto" else None,
+                profile=profile_opt,
+                confidence_min=getattr(args, "confidence_min", None),
+                margin_min=getattr(args, "margin_min", None),
+            )
+        except (ValueError, KeyError) as err:
+            if "not permitted by profile" in str(err):
+                print(str(err), file=sys.stderr)
+                return 2
+            parser.error(str(err))
+        except FileNotFoundError as err:
+            print(f"Error: {err}", file=sys.stderr)
+            return 2
+        except Exception as err:
+            return _handle_internal_error(err, args)
+
+        bundle_json = bundle.to_json()
+
+        out_path: Path | None = getattr(args, "output", None)
+        if out_path is not None:
+            try:
+                from sesslint.atomic import atomic_write_text
+
+                atomic_write_text(out_path, bundle_json)
+            except Exception as err:
+                print(f"Error writing bundle to {out_path}: {err}", file=sys.stderr)
+                return 2
+
+            if getattr(args, "json", False):
+                print(bundle_json.rstrip("\n"))
+            else:
+                print(f"Diagnostic bundle written to: {out_path}")
+            return 0
+
+        # No --out specified: emit bundle JSON to stdout
+        print(bundle_json.rstrip("\n"))
+        return 0
 
     return 0
 

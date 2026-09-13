@@ -98,3 +98,19 @@ def test_offline_repair_and_verify_commands(
         ]
     )
     assert verify_exit == 0
+
+
+def test_offline_bundle_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """sesslint bundle operates completely offline with zero network egress."""
+    out_bundle = tmp_path / "offline_bundle.json"
+
+    # 1. Bundle to file
+    exit_code = main(["bundle", str(VALID_SESSION), "--out", str(out_bundle)])
+    assert exit_code == 0
+    assert out_bundle.exists()
+
+    # 2. Bundle to stdout
+    exit_stdout = main(["bundle", str(VALID_SESSION), "--json"])
+    assert exit_stdout == 0
+    captured = capsys.readouterr()
+    assert "sesslint.bundle/v1" in captured.out

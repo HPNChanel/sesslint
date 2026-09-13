@@ -44,7 +44,7 @@
 - [JSON Schemas](#json-schemas)
 - [Compatibility & Migration Notes (NDP-001)](#compatibility--migration-notes-ndp-001)
 - [Test Suite & Verification](#test-suite--verification)
-- [Safe Issue Reporting](#safe-issue-reporting)
+- [Safe Issue Reporting & Adapter Requests](#safe-issue-reporting--adapter-requests)
 - [Contributing & Fixture Provenance](#contributing--fixture-provenance)
 - [Release & Build Protocol](#release--build-protocol)
 - [License](#license)
@@ -139,7 +139,7 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
-SessLint exposes seven CLI commands:
+SessLint exposes eight CLI commands:
 
 #### `sesslint check`
 Scan and validate session files or directories for structural corruptions and provider rule violations.
@@ -258,6 +258,21 @@ Display detailed component, CLI, schema, adapter, and profile version informatio
 ```bash
 sesslint version [--json]
 ```
+
+#### `sesslint bundle`
+Generate a privacy-safe diagnostic support bundle and fixture skeleton for troubleshooting or requesting adapter support.
+
+```bash
+sesslint bundle <path> [OPTIONS]
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `path` | `Path` | *required* | Path to session file (`.json` or `.jsonl`). |
+| `--output`, `--out`, `-o` | `Path` | `None` | Path to output bundle JSON file (prints to stdout if omitted). |
+| `--json` | `flag` | `False` | Output bundle as JSON to stdout. |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 
 ### Exit Codes
 
@@ -739,6 +754,18 @@ uv run ruff format --check src tests
 > 1. Attach only minimized, synthetic, or redacted excerpts reproducing the defect.
 > 2. Run `sesslint version --json` and attach the diagnostic environment block.
 > 3. Refer to our [Safe Bug Report Template](.github/ISSUE_TEMPLATE/bug_report.md).
+
+### Requesting Adapter Support
+
+Encountering an unsupported format or newer schema version? Use `sesslint bundle` to emit an evidence artifact and submit an adapter request:
+
+1. **Generate the bundle**:
+   ```bash
+   sesslint bundle session.jsonl --out bundle.json
+   ```
+2. **Review privacy guarantees**: The bundle is strictly content-free (paths are basename-only, discriminators bounded, long IDs hashed via SHA-256, prompt texts excluded).
+3. **Open an issue**: Use the [Adapter Request Template](.github/ISSUE_TEMPLATE/adapter_request.md).
+4. **Attach bundle output**: Paste the `bundle.json` contents and optionally fill in synthetic records using the provided fixture skeleton.
 
 ---
 

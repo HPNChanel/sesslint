@@ -7,6 +7,8 @@ from sesslint._version import (
     SESSION_SCHEMA_VERSION,
 )
 from sesslint.api import (
+    Bundle,
+    build_bundle,
     check_dir,
     check_file,
 )
@@ -140,6 +142,7 @@ __all__ = [
     "Assurance",
     "AssuranceError",
     "AtomicWriteError",
+    "Bundle",
     "CanonicalEvent",
     "CheckContext",
     "Code",
@@ -177,6 +180,7 @@ __all__ = [
     "VersionError",
     "atomic_write_bytes",
     "atomic_write_text",
+    "build_bundle",
     "build_manifest",
     "build_report",
     "build_repro_metadata",

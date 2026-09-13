@@ -697,6 +697,7 @@ def _process_claude_line(
             version_norm = normalize_version(version_raw)
             if version_norm not in SUPPORTED_CLAUDE_VERSIONS and not seen_version_sl301:
                 source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id_str)
+                safe_v, _ = safe_discriminator(version_raw)
                 finding_sl301 = make_finding(
                     code=SL301,
                     severity=Severity.ERROR,
@@ -707,7 +708,7 @@ def _process_claude_line(
                     source=source,
                     evidence={
                         **coord_evidence,
-                        "version_raw": version_raw,
+                        "version_raw": safe_v,
                         "supported_set": tuple(sorted(SUPPORTED_CLAUDE_VERSIONS)),
                     },
                 )
@@ -786,6 +787,7 @@ def _process_claude_line(
                 or key.startswith("unknown_critical")
             ):
                 source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id_str)
+                safe_k, _ = safe_discriminator(key)
                 finding_sl302 = make_finding(
                     code=SL302,
                     severity=Severity.ERROR,
@@ -796,7 +798,7 @@ def _process_claude_line(
                     source=source,
                     evidence={
                         **coord_evidence,
-                        "field_path": key,
+                        "field_path": safe_k,
                         "type_value": _safe_type_value(obj[key]),
                         "record_id": rec_id_str,
                     },

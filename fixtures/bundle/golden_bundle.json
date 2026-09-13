@@ -1,0 +1,117 @@
+{
+  "bundle_version": "sesslint.bundle/v1",
+  "created_by": {
+    "adapters": {
+      "canonical": "1.0.0",
+      "claude-code-jsonl": "1.0.0",
+      "openai-agents": "1.0.0"
+    },
+    "cli": "0.1.0",
+    "profiles": {
+      "claude-strict": "1.0.0",
+      "neutral": "1.0.0",
+      "openai-strict": "1.0.0"
+    },
+    "schema_manifest": "sesslint.repair-manifest/v1",
+    "schema_report": "sesslint.report/v1",
+    "schema_session": "sesslint.session/v1",
+    "tool": "sesslint",
+    "version": "0.1.0",
+    "versions": {
+      "adapters": {
+        "canonical": "1.0.0",
+        "claude-code-jsonl": "1.0.0",
+        "openai-agents": "1.0.0"
+      },
+      "cli": "0.1.0",
+      "profiles": {
+        "claude-strict": "1.0.0",
+        "neutral": "1.0.0",
+        "openai-strict": "1.0.0"
+      },
+      "schema_manifest": "sesslint.repair-manifest/v1",
+      "schema_report": "sesslint.report/v1",
+      "schema_session": "sesslint.session/v1"
+    }
+  },
+  "detection": {
+    "confidences": {
+      "canonical": 0.0,
+      "claude-code-jsonl": 1.0,
+      "openai-agents": 0.2
+    },
+    "reason": "clear-winner",
+    "requested": "auto",
+    "resolved": "claude-code-jsonl"
+  },
+  "fixture_skeleton": {
+    "codes": [],
+    "kinds": {
+      "message": 2
+    },
+    "record_count": 2,
+    "template": "# =============================================================================\n# SessLint Synthetic Fixture Skeleton Template\n#\n# MANDATORY PRIVACY RULES:\n# - All records in contributed fixtures must be 100% SYNTHETIC.\n# - NEVER paste raw session transcripts, real prompts, code, or secret keys.\n# - Use obviously fake identifiers (e.g., 'evt_example_1', 'tool_call_example_1').\n# - See FIXTURES.md for complete provenance and privacy requirements.\n# =============================================================================\n{\"created_at\":\"2026-01-01T00:00:00Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"session_example_1\"}\n{\"actor\":\"user\",\"id\":\"evt_example_1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"text\":\"Synthetic user message example\"},\"seq\":0,\"ts\":\"2026-01-01T00:00:01Z\"}\n{\"actor\":\"model\",\"id\":\"evt_example_2\",\"kind\":\"tool_call\",\"parent_id\":\"evt_example_1\",\"payload\":{\"arguments\":{},\"tool_name\":\"example_tool\"},\"seq\":1,\"ts\":\"2026-01-01T00:00:02Z\"}\n{\"actor\":\"tool\",\"id\":\"evt_example_3\",\"kind\":\"tool_result\",\"parent_id\":\"evt_example_2\",\"payload\":{\"output\":\"Synthetic tool output example\"},\"seq\":2,\"ts\":\"2026-01-01T00:00:03Z\"}\n"
+  },
+  "report": {
+    "assurance": "A3",
+    "counts": {
+      "by_code": {},
+      "by_severity": {
+        "error": 0,
+        "fatal": 0,
+        "info": 0,
+        "warning": 0
+      },
+      "total": 0
+    },
+    "coverage": {
+      "adapter": {
+        "id": "claude-code-jsonl",
+        "version": "1.0.0"
+      },
+      "performed": [
+        "SL001",
+        "SL002",
+        "SL003",
+        "SL004",
+        "SL005",
+        "SL006",
+        "SL007",
+        "SL101",
+        "SL102",
+        "SL103",
+        "SL104",
+        "SL105",
+        "SL106",
+        "SL107",
+        "SL108",
+        "SL201",
+        "SL202",
+        "SL203",
+        "SL301",
+        "SL302",
+        "checkpoint",
+        "graph",
+        "identity",
+        "tool_pairing_1",
+        "tool_pairing_2"
+      ],
+      "profile": {
+        "id": "neutral",
+        "version": "1.0.0"
+      },
+      "skipped": []
+    },
+    "findings": [],
+    "limitation": "Does not prove semantic equivalence or external side effects.",
+    "schema_version": "sesslint.report/v1",
+    "session_id": "healthy",
+    "source_fingerprint": "5e7b7cdc7ea6d7783e03eabee84ed86ba8810ad2cb2bdd0162a412b262d55065",
+    "tool_version": "0.1.0"
+  },
+  "source": {
+    "path": "healthy.jsonl",
+    "sha256": "5e7b7cdc7ea6d7783e03eabee84ed86ba8810ad2cb2bdd0162a412b262d55065",
+    "size": 234
+  }
+}

@@ -18,6 +18,7 @@ from sesslint.adapters.detect import (
     FORMAT_OPENAI_AGENTS,
     resolve_format,
 )
+from sesslint.bundle import Bundle, build_bundle
 from sesslint.codes import SL302, Repairability, Severity
 from sesslint.context import CheckContext
 from sesslint.finding import Finding, SourceRef, make_finding
@@ -440,8 +441,10 @@ def plan(
 
 
 __all__ = [
+    "Bundle",
     "ScanReport",
     "VerifyVerdict",
+    "build_bundle",
     "check_dir",
     "check_file",
     "plan",
