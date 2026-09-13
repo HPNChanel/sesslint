@@ -29,11 +29,14 @@ def test_api_module_exports() -> None:
         "ScanReport",
         "VerifyVerdict",
         "build_bundle",
+        "build_internal_error_envelope",
+        "check",
         "check_dir",
         "check_file",
         "plan",
         "precheck",
         "repair",
+        "validate_session",
         "verify",
     }
     assert expected_exports.issubset(set(api.__all__))
@@ -219,3 +222,41 @@ def test_precheck_contract() -> None:
     assert res_ambig.reason == "detection-failed"
     assert res_ambig.exit_code == 1
     assert isinstance(res_ambig.report, Report)
+
+
+def test_api_numeric_range_validation(tmp_path: Path) -> None:
+    """Validate numeric ranges in programmatic API entry points (P1-02).
+
+    Contract:
+    1. max_files and max_bytes must be strictly positive (> 0) (ReaderLimits contract).
+    2. Per sesslint.profiles.profile.resolve_effective_config lines 141-144:
+       0.0 < confidence_min < 1.0 (finite float)
+       0.0 < margin_min < 1.0 (finite float)
+       Boundaries 0.0 and 1.0 are rejected, as well as NaN, inf, negatives, and > 1.0.
+    """
+    from sesslint.scan import scan_path
+
+    # check_dir and scan_path: reject max_files <= 0 and max_bytes <= 0, including bool
+    for bad_int in [0, -1, -500, True, False]:  # type: ignore[list-item]
+        with pytest.raises(ValueError, match="max_files must be a positive integer"):
+            api.check_dir(tmp_path, max_files=bad_int)
+        with pytest.raises(ValueError, match="max_bytes must be a positive integer"):
+            api.check_dir(tmp_path, max_bytes=bad_int)
+        with pytest.raises(ValueError, match="max_files must be a positive integer"):
+            scan_path(tmp_path, max_files=bad_int)
+        with pytest.raises(ValueError, match="max_bytes must be a positive integer"):
+            scan_path(tmp_path, max_bytes=bad_int)
+
+    # check_file: reject confidence_min and margin_min outside (0.0, 1.0), including bool
+    for bad_float in [0.0, 1.0, -0.5, 1.5, float("nan"), float("inf"), True, False]:  # type: ignore[list-item]
+        with pytest.raises(ValueError, match="confidence_min must be strictly between"):
+            api.check_file(HEALTHY_FIXTURE, confidence_min=bad_float)
+        with pytest.raises(ValueError, match="margin_min must be strictly between"):
+            api.check_file(HEALTHY_FIXTURE, margin_min=bad_float)
+
+    # build_bundle: reject confidence_min and margin_min outside (0.0, 1.0), including bool
+    for bad_float in [0.0, 1.0, -0.5, 1.5, float("nan"), float("inf"), True, False]:  # type: ignore[list-item]
+        with pytest.raises(ValueError, match="confidence_min must be strictly between"):
+            api.build_bundle(HEALTHY_FIXTURE, confidence_min=bad_float)
+        with pytest.raises(ValueError, match="margin_min must be strictly between"):
+            api.build_bundle(HEALTHY_FIXTURE, margin_min=bad_float)

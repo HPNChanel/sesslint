@@ -181,6 +181,10 @@ def _validate_rfc3339_utc(ts: str, field_name: str) -> None:
         )
     try:
         normalized_ts = ts.replace("Z", "+00:00")
+        if normalized_ts.endswith("+0000") or normalized_ts.endswith("-0000"):
+            normalized_ts = normalized_ts[:-5] + "+00:00"
+        elif normalized_ts.endswith("+00") or normalized_ts.endswith("-00"):
+            normalized_ts = normalized_ts[:-3] + "+00:00"
         datetime.fromisoformat(normalized_ts)
     except ValueError as err:
         raise SchemaError(
@@ -188,8 +192,14 @@ def _validate_rfc3339_utc(ts: str, field_name: str) -> None:
         ) from err
 
 
-def _validate_depth(val: Any, current_depth: int = 0, seen: set[int] | None = None) -> None:
-    """Recursively guard against hostile payload nesting depth and cyclic references."""
+def _validate_depth(val: Any, current_depth: int = 1, seen: set[int] | None = None) -> None:
+    """Recursively guard against hostile payload nesting depth and cyclic references.
+
+    Nesting depth convention: 1-based (root container is depth 1), aligned with
+    io.check_nesting_depth (P1-05).
+    """
+    if not isinstance(val, (Mapping, list, tuple)):
+        return
     if current_depth > MAX_PAYLOAD_DEPTH:
         raise SchemaError(
             f"Payload nesting depth {current_depth} exceeds limit of {MAX_PAYLOAD_DEPTH}"
@@ -197,20 +207,21 @@ def _validate_depth(val: Any, current_depth: int = 0, seen: set[int] | None = No
     if seen is None:
         seen = set()
 
-    if isinstance(val, (Mapping, list, tuple)):
-        obj_id = id(val)
-        if obj_id in seen:
-            raise SchemaError("Cyclic reference detected in payload")
-        seen.add(obj_id)
-        try:
-            if isinstance(val, Mapping):
-                for sub_val in val.values():
+    obj_id = id(val)
+    if obj_id in seen:
+        raise SchemaError("Cyclic reference detected in payload")
+    seen.add(obj_id)
+    try:
+        if isinstance(val, Mapping):
+            for sub_val in val.values():
+                if isinstance(sub_val, (Mapping, list, tuple)):
                     _validate_depth(sub_val, current_depth + 1, seen)
-            else:
-                for item in val:
+        else:
+            for item in val:
+                if isinstance(item, (Mapping, list, tuple)):
                     _validate_depth(item, current_depth + 1, seen)
-        finally:
-            seen.remove(obj_id)
+    finally:
+        seen.remove(obj_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,9 +331,12 @@ def _normalize_for_canonical_json(obj: Any, seen: set[int] | None = None) -> Any
                 if f.name == "extra_fields":
                     if isinstance(val, Mapping):
                         for k, v in val.items():
-                            key_str = str(k)
-                            if key_str not in result:
-                                result[key_str] = _normalize_for_canonical_json(v, seen)
+                            if not isinstance(k, str):
+                                raise SchemaError(
+                                    f"Non-string dictionary key rejected under RFC 8785: {k!r}"
+                                )
+                            if k not in result:
+                                result[k] = _normalize_for_canonical_json(v, seen)
                     continue
                 # parent_id is required and must be present even when null
                 if val is None and f.name != "parent_id":
@@ -341,7 +355,12 @@ def _normalize_for_canonical_json(obj: Any, seen: set[int] | None = None) -> Any
             raise SchemaError("Cyclic reference detected during canonical serialization")
         seen.add(obj_id)
         try:
-            return {str(k): _normalize_for_canonical_json(v, seen) for k, v in obj.items()}
+            norm_map: dict[str, Any] = {}
+            for k, v in obj.items():
+                if not isinstance(k, str):
+                    raise SchemaError(f"Non-string dictionary key rejected under RFC 8785: {k!r}")
+                norm_map[k] = _normalize_for_canonical_json(v, seen)
+            return norm_map
         finally:
             seen.remove(obj_id)
 
@@ -382,7 +401,7 @@ def to_canonical_json(obj: Any) -> str:
         )
     except RecursionError as err:
         raise SchemaError("Object nesting depth exceeded during canonical serialization") from err
-    except ValueError as err:
+    except (TypeError, ValueError) as err:
         raise SchemaError(f"Canonical serialization error: {err}") from err
 
 

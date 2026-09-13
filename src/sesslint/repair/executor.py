@@ -29,6 +29,7 @@ from typing import Any, Final, Literal
 import sesslint.report
 from sesslint._version import ADAPTER_VERSIONS, CLI_VERSION
 from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
+from sesslint.atomic import atomic_write_bytes
 from sesslint.canonical import (
     Session,
     SessionEvent,
@@ -44,6 +45,7 @@ from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
 from sesslint.codes import Severity
 from sesslint.context import CheckContext
+from sesslint.errors import AtomicWriteError
 from sesslint.finding import Finding
 from sesslint.policy.abstention import (
     check_step_scope,
@@ -145,11 +147,41 @@ def is_live_store_path(path: StrPath) -> bool:
     return False
 
 
-def load_plan(source: StrPath | Mapping[str, Any]) -> RepairPlan:
+def _plan_requires_salvage(plan: RepairPlan) -> bool:
+    """Check if plan contains salvage-class steps, lossy recipes, or declared loss (P0-03)."""
+    if plan.policy == "salvage":
+        return True
+    if plan.loss_accounting.total_lost > 0:
+        return True
+    if any(v > 0 for v in plan.loss_accounting.preview.values() if v is not None):
+        return True
+    for step in plan.steps:
+        if step.lossy:
+            return True
+        if any(v > 0 for v in step.loss.values() if v is not None):
+            return True
+        if getattr(step, "min_policy", "conservative") == "salvage":
+            return True
+        rec = get_recipe(step.recipe)
+        if rec is not None and (
+            getattr(rec, "salvage_only", False)
+            or getattr(rec, "lossy", False)
+            or getattr(rec, "min_policy", "conservative") == "salvage"
+        ):
+            return True
+    return False
+
+
+def load_plan(
+    source: StrPath | Mapping[str, Any],
+    *,
+    policy: str | None = None,
+) -> RepairPlan:
     """Deserialize a RepairPlan from a dictionary or JSON file path.
 
     Args:
         source: A JSON file path or a dictionary containing plan attributes.
+        policy: Optional execution policy expectation ('conservative' or 'salvage').
 
     Returns:
         A strongly-typed frozen RepairPlan instance.
@@ -157,6 +189,7 @@ def load_plan(source: StrPath | Mapping[str, Any]) -> RepairPlan:
     Raises:
         TypeError: If source is neither a path nor a mapping.
         ValueError: If required plan fields are missing or invalid.
+        PolicyMismatch: If plan contains salvage-class steps/loss under conservative policy.
     """
     raw_data: Mapping[str, Any]
     if isinstance(source, (str, os.PathLike)):
@@ -213,7 +246,7 @@ def load_plan(source: StrPath | Mapping[str, Any]) -> RepairPlan:
     if not fingerprint or not isinstance(fingerprint, str):
         fingerprint = compute_plan_fingerprint(data)
 
-    return RepairPlan(
+    plan = RepairPlan(
         source_hash=str(data.get("source_hash", "")),
         profile=str(data.get("profile", "neutral")),
         steps=tuple(steps_list),
@@ -223,6 +256,19 @@ def load_plan(source: StrPath | Mapping[str, Any]) -> RepairPlan:
         version=str(data.get("version", PLAN_VERSION)),
         policy=str(data.get("policy", "conservative")),
     )
+
+    if policy is not None:
+        if policy == "conservative" and _plan_requires_salvage(plan):
+            raise PolicyMismatch(
+                "Plan requires 'salvage' policy due to salvage-class steps or declared loss, "
+                f"but invocation requested '{policy}' policy"
+            )
+        if plan.policy != policy:
+            raise PolicyMismatch(
+                f"Plan policy '{plan.policy}' does not match requested policy '{policy}'"
+            )
+
+    return plan
 
 
 def load_session_source_with_findings(
@@ -602,10 +648,15 @@ def execute(
             "Repair operates exclusively on canonical session streams (JSONL)."
         )
 
-    # Step 1c: Policy match
+    # Step 1c: Policy match & minimum policy gate (P0-03)
     if plan.policy != policy:
         raise PolicyMismatch(
             f"Plan policy '{plan.policy}' does not match execution policy '{policy}'"
+        )
+    if policy == "conservative" and _plan_requires_salvage(plan):
+        raise PolicyMismatch(
+            "Plan contains salvage-class steps or declared loss, which requires 'salvage' policy, "
+            "but repair execution was invoked under policy 'conservative'"
         )
 
     # Step 1d: Load source and pre-hash
@@ -936,30 +987,13 @@ def execute(
     manifest_text = sesslint.report.dump_manifest(manifest) + "\n"
     manifest_bytes = manifest_text.encode("utf-8")
 
-    temp_path: Path | None = None
     m_temp: Path | None = None
     manifest_linked = False
     output_replaced = False
 
     try:
         try:
-            # 1. Write output temp file
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=target_dir,
-                delete=False,
-                prefix=".sesslint-tmp-out-",
-                suffix=".jsonl",
-            ) as tmp_file:
-                temp_path = Path(tmp_file.name)
-                active_pre_write = pre_write_hook or _ATOMIC_TEST_HOOKS.get("pre_write")
-                if active_pre_write is not None:
-                    active_pre_write()
-                tmp_file.write(output_bytes)
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())
-
-            # 2. Write manifest temp file
+            # 1. Write manifest temp file
             with tempfile.NamedTemporaryFile(
                 mode="wb",
                 dir=target_dir,
@@ -972,7 +1006,7 @@ def execute(
                 m_file.flush()
                 os.fsync(m_file.fileno())
 
-            # 3. Exclusive-create manifest receipt (O_EXCL via os.link)
+            # Exclusive-create manifest receipt (O_EXCL via os.link)
             try:
                 os.link(m_temp, manifest_p)
                 manifest_linked = True
@@ -982,7 +1016,7 @@ def execute(
                     f"(refusing to overwrite receipt): {manifest_p}"
                 ) from err
             finally:
-                if m_temp.exists():
+                if m_temp is not None and m_temp.exists():
                     try:
                         m_temp.unlink()
                     except OSError:
@@ -994,23 +1028,38 @@ def execute(
             if active_mid_publish is not None:
                 active_mid_publish()
 
-            # Pre-rename hook before final output replace
+            # 2. Atomic write of output via atomic_write_bytes (P2-01)
+            active_pre_write = pre_write_hook or _ATOMIC_TEST_HOOKS.get("pre_write")
             active_pre_rename = pre_rename_hook or _ATOMIC_TEST_HOOKS.get("pre_rename")
-            if active_pre_rename is not None:
-                active_pre_rename(temp_path)
-
-            # 4. Atomic replace of output
-            os.replace(temp_path, output_p)
+            atomic_write_bytes(
+                output_p,
+                output_bytes,
+                refuse_paths=[source_p],
+                prefix=".sesslint-tmp-out-",
+                pre_write_hook=active_pre_write,
+                pre_rename_hook=active_pre_rename,
+                sync_dir=True,
+            )
             output_replaced = True
-            temp_path = None
-
-            # 5. Directory fsync after both published
-            _sync_dir(target_dir)
 
             active_post_publish = post_publish_hook or _ATOMIC_TEST_HOOKS.get("post_publish")
             if active_post_publish is not None:
                 active_post_publish()
 
+        except AtomicWriteError as err:
+            cause = err.__cause__
+            if isinstance(cause, OSError):
+                if cause.errno == errno.EXDEV:
+                    raise OutputInvalid(
+                        f"Cross-device link error during atomic rename: {cause}"
+                    ) from cause
+                if cause.errno == errno.ENOSPC:
+                    raise OutputInvalid(f"Disk full during repair write: {cause}") from cause
+                if isinstance(cause, PermissionError) or cause.errno in (errno.EACCES, errno.EPERM):
+                    raise OutputInvalid(
+                        f"Permission denied writing to destination: {cause}"
+                    ) from cause
+            raise OutputInvalid(f"Atomic write to destination failed: {err}") from err
         except OSError as err:
             if isinstance(err, FileExistsError):
                 raise
@@ -1023,11 +1072,6 @@ def execute(
             raise OutputInvalid(f"Atomic write to destination failed: {err}") from err
     except BaseException:
         # Atomic repair invariant: never leave output or manifest orphaned
-        if temp_path is not None and temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
         if m_temp is not None and m_temp.exists():
             try:
                 m_temp.unlink()

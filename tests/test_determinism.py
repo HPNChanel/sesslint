@@ -17,8 +17,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from sesslint import api
 from sesslint.determinism import canonical_json_bytes, repeat_hash
+from sesslint.errors import SchemaError
 from sesslint.repair.fingerprint import (
     canonical_json_bytes as repair_canonical_json_bytes,
 )
@@ -146,3 +149,13 @@ def test_plan_repeatability() -> None:
 
         assert plan1.fingerprint == plan2.fingerprint
         assert plan1.to_dict() == plan2.to_dict()
+
+
+def test_canonical_json_rejects_non_string_keys() -> None:
+    """canonical_json_bytes and repeat_hash reject non-string keys with SchemaError (P0-08)."""
+    bad_dict = {1: "a", 2: "b"}
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        canonical_json_bytes(bad_dict)
+
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+        repeat_hash(bad_dict)

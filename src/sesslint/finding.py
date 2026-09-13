@@ -137,6 +137,41 @@ class SourceRef:
                 object.__setattr__(self, "record_id", normalized_rec_id)
 
 
+def _enforce_content_free_evidence_recursive(
+    val: Any, context: str, seen: set[int] | None = None
+) -> None:
+    """Recursively enforce content-free invariant on evidence values (P0-04)."""
+    if isinstance(val, str):
+        enforce_content_free_text(val, context=context)
+    elif isinstance(val, Mapping):
+        if seen is None:
+            seen = set()
+        obj_id = id(val)
+        if obj_id in seen:
+            raise FindingError(f"Cyclic reference detected in evidence: {context}")
+        seen.add(obj_id)
+        try:
+            for sub_k, sub_v in val.items():
+                if not isinstance(sub_k, str) or not sub_k.strip():
+                    raise FindingError(f"{context} keys must be non-empty strings")
+                enforce_content_free_text(str(sub_k), context=f"{context} key {sub_k!r}")
+                _enforce_content_free_evidence_recursive(sub_v, f"{context}[{sub_k!r}]", seen)
+        finally:
+            seen.remove(obj_id)
+    elif isinstance(val, (list, tuple, set, frozenset)):
+        if seen is None:
+            seen = set()
+        obj_id = id(val)
+        if obj_id in seen:
+            raise FindingError(f"Cyclic reference detected in evidence: {context}")
+        seen.add(obj_id)
+        try:
+            for idx, item in enumerate(val):
+                _enforce_content_free_evidence_recursive(item, f"{context}[{idx}]", seen)
+        finally:
+            seen.remove(obj_id)
+
+
 @dataclass(frozen=True, slots=True)
 class Finding:
     """Immutable finding envelope capturing an integrity defect.
@@ -240,8 +275,7 @@ class Finding:
                 if not isinstance(k, str) or not k.strip():
                     raise FindingError("Finding.evidence keys must be non-empty strings")
                 enforce_content_free_text(str(k), context=f"Finding.evidence key {k!r}")
-                if isinstance(v, str):
-                    enforce_content_free_text(v, context=f"Finding.evidence value for {k!r}")
+                _enforce_content_free_evidence_recursive(v, f"Finding.evidence value for {k!r}")
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Finding):

@@ -114,3 +114,41 @@ def test_scan_fault_isolation_on_file_too_large(
     huge_res = next(r for r in report.files if "huge" in r.path)
     assert huge_res.verdict == "unreadable"
     assert "Unreadable file" in huge_res.findings[0].message
+
+
+def test_scan_fault_isolation_on_unhandled_scan_single_file_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash escaping _scan_single_file maps to unreadable without aborting the sweep."""
+    import sesslint.scan as scan_mod
+    from sesslint.scan import FileResult
+
+    f1 = tmp_path / "normal.jsonl"
+    f1.write_text(
+        '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"s1"}\n'
+        '{"actor":"user","id":"m1","kind":"message","parent_id":null,"payload":{"text":"hi"},"seq":0,"ts":"2026-09-05T12:00:00Z"}\n',
+        encoding="utf-8",
+    )
+    f2 = tmp_path / "fatal.jsonl"
+    f2.write_text(
+        '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"s2"}\n'
+        '{"actor":"user","id":"m2","kind":"message","parent_id":null,"payload":{"text":"boom"},"seq":0,"ts":"2026-09-05T12:00:00Z"}\n',
+        encoding="utf-8",
+    )
+
+    original_scan_single = scan_mod._scan_single_file
+
+    def exploding_scan(file_path: Path, **kwargs: Any) -> FileResult:
+        if "fatal" in str(file_path):
+            raise RuntimeError("Catastrophic disk/memory exception")
+        return original_scan_single(file_path, **kwargs)
+
+    monkeypatch.setattr(scan_mod, "_scan_single_file", exploding_scan)
+
+    report: ScanReport = check_dir(tmp_path, recursive=True)
+    assert report.totals.healthy == 1
+    assert report.totals.unreadable == 1
+    fatal_res = next(r for r in report.files if "fatal" in r.path)
+    assert fatal_res.verdict == "unreadable"
+    assert fatal_res.error_count == 1
+    assert "INTERNAL_ERROR" in fatal_res.findings[0].message

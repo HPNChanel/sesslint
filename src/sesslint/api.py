@@ -7,6 +7,7 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -19,6 +20,7 @@ from sesslint.adapters.detect import (
     resolve_format,
 )
 from sesslint.bundle import Bundle, build_bundle
+from sesslint.canonical import Session, load_session_file
 from sesslint.codes import SL302, Repairability, Severity
 from sesslint.context import CheckContext
 from sesslint.finding import Finding, SourceRef, make_finding
@@ -72,6 +74,30 @@ def check_file(
     Returns:
         A frozen Report dataclass with findings, counts, assurance, and limitation.
     """
+    if confidence_min is not None:
+        if (
+            isinstance(confidence_min, bool)
+            or not isinstance(confidence_min, (int, float))
+            or math.isnan(confidence_min)
+            or math.isinf(confidence_min)
+            or not (0.0 < confidence_min < 1.0)
+        ):
+            raise ValueError(
+                "confidence_min must be strictly between 0.0 and 1.0 exclusive, "
+                f"got {confidence_min}"
+            )
+    if margin_min is not None:
+        if (
+            isinstance(margin_min, bool)
+            or not isinstance(margin_min, (int, float))
+            or math.isnan(margin_min)
+            or math.isinf(margin_min)
+            or not (0.0 < margin_min < 1.0)
+        ):
+            raise ValueError(
+                f"margin_min must be strictly between 0.0 and 1.0 exclusive, got {margin_min}"
+            )
+
     target_path = Path(path)
     if not target_path.exists():
         raise FileNotFoundError(f"Path not found: {target_path}")
@@ -249,6 +275,10 @@ def check_dir(
     Returns:
         A frozen ScanReport dataclass.
     """
+    if isinstance(max_files, bool) or not isinstance(max_files, int) or max_files <= 0:
+        raise ValueError(f"max_files must be a positive integer (> 0), got {max_files}")
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError(f"max_bytes must be a positive integer (> 0), got {max_bytes}")
     return scan_path(
         path=path,
         recursive=recursive,
@@ -312,7 +342,7 @@ def repair(
 
     plan_obj: RepairPlan
     if plan_path is not None:
-        plan_obj = load_plan(plan_path)
+        plan_obj = load_plan(plan_path, policy=policy)
     else:
         from sesslint.repair.executor import (
             load_session_source_with_findings,
@@ -441,6 +471,95 @@ def plan(
     return res
 
 
+def check(
+    path: Path | str,
+    *,
+    format: str | None = None,
+    profile: str = "neutral",
+    recursive: bool = True,
+    follow_symlinks: bool = False,
+    max_files: int = DEFAULT_MAX_FILES,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    confidence_min: float | None = None,
+    margin_min: float | None = None,
+) -> Report | ScanReport:
+    """Unified check dispatcher: evaluates a single session file or scans a directory tree.
+
+    Args:
+        path: Path to session file or directory.
+        format: Format override ('auto', None, or known format name).
+        profile: Validation profile name (default 'neutral').
+        recursive: Whether to scan directory recursively (default True).
+        follow_symlinks: Whether to follow symlinks in directory scan (default False).
+        max_files: Maximum files to scan in directory mode.
+        max_bytes: Maximum cumulative bytes in directory mode.
+        confidence_min: Format detection minimum confidence threshold.
+        margin_min: Format detection minimum margin threshold.
+
+    Returns:
+        Report instance for single file, or ScanReport instance for directory.
+
+    Raises:
+        FileNotFoundError: If path does not exist.
+    """
+    target_path = Path(path)
+    if not target_path.exists():
+        raise FileNotFoundError(f"Path not found: {target_path}")
+
+    if target_path.is_dir():
+        return check_dir(
+            target_path,
+            recursive=recursive,
+            follow_symlinks=follow_symlinks,
+            max_files=max_files,
+            max_bytes=max_bytes,
+            format=format,
+            profile=profile,
+        )
+    return check_file(
+        target_path,
+        format=format,
+        profile=profile,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+    )
+
+
+def validate_session(path: Path | str) -> Session:
+    """Validate and parse a canonical session file, returning the frozen Session instance.
+
+    Args:
+        path: Path to the canonical session file (JSON or JSONL).
+
+    Returns:
+        A strongly-typed, immutable Session instance.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        SchemaError: If the file fails canonical schema validation.
+    """
+    target = Path(path)
+    if not target.exists():
+        raise FileNotFoundError(f"Session file not found: {target}")
+    return load_session_file(target)
+
+
+def build_internal_error_envelope(
+    err: Exception,
+    error_id: str | None = None,
+) -> dict[str, str]:
+    """Construct a structured JSON envelope for unexpected internal errors (FR-097, FR-098)."""
+    import secrets
+
+    eid = error_id if error_id is not None else f"ERR-{secrets.token_hex(4)}"
+    return {
+        "code": "INTERNAL_ERROR",
+        "error_id": eid,
+        "message": str(err),
+        "verdict": "error",
+    }
+
+
 __all__ = [
     "Bundle",
     "PrecheckReason",
@@ -448,10 +567,13 @@ __all__ = [
     "ScanReport",
     "VerifyVerdict",
     "build_bundle",
+    "build_internal_error_envelope",
+    "check",
     "check_dir",
     "check_file",
     "plan",
     "precheck",
     "repair",
+    "validate_session",
     "verify",
 ]

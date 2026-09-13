@@ -1320,3 +1320,107 @@ def test_fingerprint_with_adapter_and_profile_versions() -> None:
         profile_version="claude-strict@1.0.0",
     )
     assert f1.fingerprint != f2.fingerprint
+
+
+def test_evidence_recursive_content_free_nested_dict_secret() -> None:
+    """Secret pattern nested inside a dict in evidence raises FindingError (P0-04)."""
+    source = SourceRef(path="test.jsonl", line=1)
+    secret_evidence = {
+        "diagnostic_info": {
+            "api_key": "sk-proj-secrettoken12345678901234567890",
+        }
+    }
+    with pytest.raises(FindingError, match="Forbidden credential pattern"):
+        make_finding(
+            code=SL001,
+            source=source,
+            message_template="Test at line {line}",
+            evidence=secret_evidence,
+        )
+
+
+def test_evidence_recursive_content_free_nested_list_secret() -> None:
+    """Secret pattern nested inside a list in evidence raises FindingError (P0-04)."""
+    source = SourceRef(path="test.jsonl", line=1)
+    secret_evidence = {"details": ["normal_text", "ghp_1234567890abcdefghijklmnopqrstuvwx"]}
+    with pytest.raises(FindingError, match="Forbidden credential pattern"):
+        make_finding(
+            code=SL001,
+            source=source,
+            message_template="Test at line {line}",
+            evidence=secret_evidence,
+        )
+
+
+def test_evidence_recursive_content_free_nested_pii_email() -> None:
+    """Email address nested in evidence raises FindingError (P0-04)."""
+    source = SourceRef(path="test.jsonl", line=1)
+    pii_evidence = {
+        "metadata": {
+            "author": "developer@company.org",
+        }
+    }
+    with pytest.raises(FindingError, match="Forbidden content-bearing pattern"):
+        make_finding(
+            code=SL001,
+            source=source,
+            message_template="Test at line {line}",
+            evidence=pii_evidence,
+        )
+
+
+def test_evidence_recursive_content_free_nested_control_chars() -> None:
+    """Control characters nested in evidence raises FindingError (P0-04)."""
+    source = SourceRef(path="test.jsonl", line=1)
+    control_evidence = {"nested": [{"line": "multi\nline\tstring"}]}
+    with pytest.raises(FindingError, match="Forbidden control or newline"):
+        make_finding(
+            code=SL001,
+            source=source,
+            message_template="Test at line {line}",
+            evidence=control_evidence,
+        )
+
+
+def test_evidence_recursive_content_free_deeply_nested_valid() -> None:
+    """Deeply nested clean structure in evidence passes validation (P0-04)."""
+    source = SourceRef(path="test.jsonl", line=1)
+    clean_evidence = {
+        "trace": {
+            "spans": [
+                {"id": "span_1", "tag": "init"},
+                {"id": "span_2", "tag": "exec", "values": [1, 2, 3, "clean_val"]},
+            ]
+        }
+    }
+    f = make_finding(
+        code=SL001,
+        source=source,
+        message_template="Test at line {line}",
+        evidence=clean_evidence,
+    )
+    assert f.evidence == clean_evidence
+
+
+def test_evidence_recursive_content_free_cyclic_rejected() -> None:
+    """Cyclic references in evidence raise FindingError immediately (P0-04)."""
+    source = SourceRef(path="test.jsonl", line=1)
+    cyclic_map: dict[str, Any] = {"tag": "root"}
+    cyclic_map["self"] = cyclic_map
+    with pytest.raises(FindingError, match="Cyclic reference detected in evidence"):
+        make_finding(
+            code=SL001,
+            source=source,
+            message_template="Test at line {line}",
+            evidence={"cycle": cyclic_map},
+        )
+
+    cyclic_list: list[Any] = ["item"]
+    cyclic_list.append(cyclic_list)
+    with pytest.raises(FindingError, match="Cyclic reference detected in evidence"):
+        make_finding(
+            code=SL001,
+            source=source,
+            message_template="Test at line {line}",
+            evidence={"cycle": cyclic_list},
+        )

@@ -9,6 +9,7 @@ format-parity between JSON and JSONL, and DoS-resistant limit enforcement.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -810,20 +811,219 @@ def test_project_run_state_non_string_keys_and_collisions() -> None:
     assert proj["checkpoints"][1]["seq"] == 43
 
 
-def test_project_run_state_idempotence() -> None:
-    """Verify passing an already projected dictionary or source returns a matching projection."""
-    existing_proj = {
-        "checkpoints": [{"hash": "<str:len=10>", "id": "c1", "seq": 1, "ts": True}],
-        "keys": ["k1"],
-        "shapes": {"k1": "<int>"},
+def test_project_run_state_no_bypass_hostile_input() -> None:
+    """Hostile dict mimicking projection keys must NOT bypass bounding (P0-01)."""
+    oversized_keys = {f"k_{i:03d}": f"secret_value_{i}" for i in range(50)}
+    oversized_chks = [
+        {
+            "id": f"chk_{i:03d}",
+            "seq": i,
+            "hash": f"raw_sensitive_state_hash_{i}",
+            "ts": True,
+        }
+        for i in range(20)
+    ]
+    hostile_input = {
+        "run_state": oversized_keys,
+        "checkpoints": oversized_chks,
+        "keys": ["k1", "k2"],
+        "shapes": {"leak": "raw_sensitive_prompt"},
         "truncated": False,
     }
 
-    res1 = project_run_state(existing_proj)
-    assert res1 == existing_proj
+    proj = project_run_state(hostile_input)
+
+    # Must NOT return verbatim
+    assert proj != hostile_input
+    assert "leak" not in proj["shapes"]
+    assert "raw_sensitive_prompt" not in json.dumps(proj)
+
+    # Must clamp to MAX_PROJECTED_RUN_STATE_KEYS (32) and MAX_PROJECTED_CHECKPOINTS (8)
+    assert len(proj["keys"]) == 32
+    assert len(proj["shapes"]) == 32
+    assert len(proj["checkpoints"]) == 8
+    assert proj["truncated"] is True
+    assert proj["total_keys"] == 50
+    assert proj["total_checkpoints"] == 20
+
+    # Values must be safe shape strings, not raw strings
+    assert proj["shapes"]["k_000"].startswith("<str:len=")
+    assert "secret_value" not in json.dumps(proj)
 
     class MockWithProj:
-        run_state_projection = existing_proj
+        run_state_projection = hostile_input
 
-    res2 = project_run_state(MockWithProj())
-    assert res2 == existing_proj
+    # Object with run_state_projection also does not bypass
+    proj2 = project_run_state(MockWithProj())
+    assert proj2 != hostile_input
+    assert "leak" not in proj2["shapes"]
+
+    class MockWithBoth:
+        run_state = oversized_keys
+        checkpoints = oversized_chks
+        run_state_projection = hostile_input
+
+    # Object with both run_state and run_state_projection clamps run_state and ignores projection
+    proj3 = project_run_state(MockWithBoth())
+    assert proj3 != hostile_input
+    assert "leak" not in proj3["shapes"]
+    assert len(proj3["keys"]) == 32
+    assert len(proj3["checkpoints"]) == 8
+    assert proj3["truncated"] is True
+
+
+def test_handoff_benign_reason_echoed(tmp_path: Path) -> None:
+    """Benign handoff reason conforming to allowlist is preserved verbatim."""
+    f = tmp_path / "handoff_benign.json"
+    doc = {
+        "export_version": "1.0.0",
+        "items": [
+            {
+                "id": "h1",
+                "type": "handoff",
+                "target": "support_agent",
+                "reason": "user_escalation",
+            }
+        ],
+    }
+    f.write_text(json.dumps(doc), encoding="utf-8")
+    events, findings = load_openai_agents(f)
+    assert len(events) == 1
+    assert events[0].kind == "handoff"
+    assert events[0].payload.get("reason") == "user_escalation"
+    assert events[0].payload.get("target") == "support_agent"
+
+
+def test_handoff_secret_reason_bounded(tmp_path: Path) -> None:
+    """Secret canary in handoff reason is bounded to safe shape descriptor (P0-04)."""
+    f = tmp_path / "handoff_secret.json"
+    secret_canary = "sk-proj-supersecrettoken123456789012345"
+    doc = {
+        "export_version": "1.0.0",
+        "items": [
+            {
+                "id": "h1",
+                "type": "handoff",
+                "target": "agent_b",
+                "reason": secret_canary,
+            }
+        ],
+    }
+    f.write_text(json.dumps(doc), encoding="utf-8")
+    events, findings = load_openai_agents(f)
+    assert len(events) == 1
+    assert events[0].kind == "handoff"
+    reason_val = events[0].payload.get("reason")
+    assert reason_val == f"<str:len={len(secret_canary)}>"
+    assert secret_canary not in json.dumps(events[0].payload)
+
+
+def test_handoff_hostile_prose_reason_bounded(tmp_path: Path) -> None:
+    """Oversized prose in handoff reason is bounded to safe shape descriptor (P0-04)."""
+    f = tmp_path / "handoff_prose.json"
+    prose_reason = "Confidential handoff reasoning containing sensitive text " * 10
+    doc = {
+        "export_version": "1.0.0",
+        "items": [
+            {
+                "id": "h1",
+                "type": "handoff",
+                "target": "agent_b",
+                "reason": prose_reason,
+            }
+        ],
+    }
+    f.write_text(json.dumps(doc), encoding="utf-8")
+    events, findings = load_openai_agents(f)
+    assert len(events) == 1
+    assert events[0].kind == "handoff"
+    reason_val = events[0].payload.get("reason")
+    assert reason_val == f"<str:len={len(prose_reason)}>"
+    assert prose_reason not in json.dumps(events[0].payload)
+
+
+def test_naive_timestamp_preserves_naive(tmp_path: Path) -> None:
+    """Verify naive timestamp does not get 'Z' appended (P1-03)."""
+    f = tmp_path / "naive_ts.json"
+    naive_ts = "2026-01-01T12:00:00"
+    doc = {
+        "export_version": "1.0.0",
+        "items": [
+            {
+                "id": "m1",
+                "type": "message",
+                "role": "user",
+                "content": "hello",
+                "timestamp": naive_ts,
+            }
+        ],
+    }
+    f.write_text(json.dumps(doc), encoding="utf-8")
+    events, findings = load_openai_agents(f)
+    assert len(events) == 1
+    assert events[0].ts == naive_ts
+    assert not events[0].ts.endswith("Z")
+
+
+def test_falsy_call_id_and_input_preserved(tmp_path: Path) -> None:
+    """Verify falsy call_id and falsy input survive ingest without fallback (P1-03)."""
+
+    f = tmp_path / "falsy_ids.json"
+    doc = {
+        "export_version": "1.0.0",
+        "items": [
+            {
+                "id": "tc_0",
+                "type": "function_call",
+                "name": "calc",
+                "call_id": 0,
+                "args": 0,
+                "timestamp": "2026-01-01T12:00:00Z",
+            },
+            {
+                "id": "tr_0",
+                "type": "function_call_output",
+                "call_id": 0,
+                "output": "",
+                "timestamp": "2026-01-01T12:00:01Z",
+            },
+            {
+                "id": "tc_empty",
+                "type": "function_call",
+                "name": "calc2",
+                "call_id": "",
+                "args": {},
+                "timestamp": "2026-01-01T12:00:02Z",
+            },
+        ],
+    }
+    f.write_text(json.dumps(doc), encoding="utf-8")
+    events, findings = load_openai_agents(f)
+    assert len(events) == 3
+
+    # Event 0: tool_call with call_id=0
+    assert events[0].correlation_id == "0"
+    assert events[0].payload["call_id"] == "0"
+    assert events[0].payload["tool_use_id"] == "0"
+    assert events[0].payload["input"] == {"value": 0}
+
+    # Event 1: tool_result with call_id=0 and content=""
+    assert events[1].correlation_id == "0"
+    assert events[1].payload["call_id"] == "0"
+    assert events[1].payload["content"] == ""
+
+    # Event 2: tool_call with call_id=""
+    assert events[2].correlation_id == ""
+    assert events[2].payload["call_id"] == ""
+    assert events[2].payload["input"] == {}
+
+
+def test_stream_read_bounded_refuses_oversized() -> None:
+    """Verify stream larger than max_file_bytes is rejected with bounded read (P0-06)."""
+    limits = ReaderLimits(max_file_bytes=100)
+    stream = io.BytesIO(b'{"items": []}' + b" " * 10_000)
+    events, findings = load_openai_agents(stream, limits=limits)
+    assert len(events) == 0
+    assert len(findings) == 1
+    assert findings[0].code == SL001
+    assert "LIMIT" in findings[0].message

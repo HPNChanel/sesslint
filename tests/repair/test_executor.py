@@ -1240,3 +1240,94 @@ def test_salvage_e2e_manifest_ceiling(tmp_path: Path) -> None:
     # 4. Manifest roundtrips cleanly via parse_manifest
     parsed_m = parse_manifest(manifest_file.read_text(encoding="utf-8"))
     assert parsed_m == manifest
+
+
+def test_executor_policy_gate_minimum_policy(tmp_path: Path) -> None:
+    """Executor and load_plan enforce minimum policy gate for salvage plans (P0-03)."""
+    from sesslint.canonical import Session, SessionEvent, SessionHeader, dump_session
+    from sesslint.repair.errors import PolicyMismatch
+
+    # Build valid session
+    header = SessionHeader(
+        schema_version="sesslint.session/v1",
+        session_id="policy-gate-sess",
+        created_at="2026-09-05T12:00:00Z",
+    )
+    ev = SessionEvent(
+        id="e1", parent_id=None, seq=0, ts="2026-09-05T12:00:00Z", actor="user", kind="message"
+    )
+    source_file = tmp_path / "gate_sess.jsonl"
+    source_file.write_text(dump_session(Session(header=header, events=(ev,))), encoding="utf-8")
+    src_hash = hashlib.sha256(source_file.read_bytes()).hexdigest()
+
+    # Plan with salvage step and declared loss
+    salvage_plan_dict = {
+        "version": "sesslint.plan/v1",
+        "source_hash": src_hash,
+        "profile": "neutral",
+        "steps": [
+            {
+                "seq": 0,
+                "recipe": "unresolvable-branch-amputate",
+                "target_finding_fp": "f001",
+                "target_index": 0,
+                "params": {},
+                "lossy": True,
+                "loss": {"amputated-branch": 1},
+            }
+        ],
+        "blocked": [],
+        "loss_accounting": {
+            "preview": {"amputated-branch": 1},
+            "total_lost": 1,
+            "total_kept": 0,
+        },
+        "policy": "salvage",
+    }
+    salvage_plan_dict["fingerprint"] = compute_plan_fingerprint(salvage_plan_dict)
+
+    # 1. load_plan under conservative policy raises PolicyMismatch
+    with pytest.raises(PolicyMismatch, match="requires 'salvage' policy"):
+        load_plan(salvage_plan_dict, policy="conservative")
+
+    # 2. load_plan under salvage policy succeeds
+    plan_loaded = load_plan(salvage_plan_dict, policy="salvage")
+    assert plan_loaded.policy == "salvage"
+
+    # 3. execute salvage plan under conservative policy raises PolicyMismatch
+    out_file = tmp_path / "out_refused.jsonl"
+    with pytest.raises(
+        PolicyMismatch,
+        match="Plan policy 'salvage' does not match execution policy 'conservative'",
+    ):
+        execute(
+            source_path=source_file,
+            plan=plan_loaded,
+            output_path=out_file,
+            policy="conservative",
+        )
+
+    # 4. Crafted plan with policy="conservative" but containing salvage steps raises PolicyMismatch
+    crafted_cons_plan = dict(salvage_plan_dict, policy="conservative")
+    hostile_plan = load_plan(crafted_cons_plan)
+    # Recompute fingerprint from the loaded plan's to_dict() so fingerprint check passes:
+    plan_dict = hostile_plan.to_dict()
+    hostile_fp = compute_plan_fingerprint(plan_dict)
+    from sesslint.repair.planner import RepairPlan
+
+    valid_hostile_plan = RepairPlan(
+        source_hash=hostile_plan.source_hash,
+        profile=hostile_plan.profile,
+        steps=hostile_plan.steps,
+        blocked=hostile_plan.blocked,
+        loss_accounting=hostile_plan.loss_accounting,
+        fingerprint=hostile_fp,
+        policy=hostile_plan.policy,
+    )
+    with pytest.raises(PolicyMismatch, match="requires 'salvage' policy"):
+        execute(
+            source_path=source_file,
+            plan=valid_hostile_plan,
+            output_path=out_file,
+            policy="conservative",
+        )

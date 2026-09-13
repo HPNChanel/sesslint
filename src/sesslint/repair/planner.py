@@ -722,6 +722,13 @@ def plan(
         total_kept=total_kept,
     )
 
+    if policy == "conservative":
+        for s in final_steps:
+            if s.lossy or any(v > 0 for v in s.loss.values()) or s.min_policy == "salvage":
+                raise ValueError(
+                    f"Conservative plan cannot include salvage-class or lossy step: {s.recipe}"
+                )
+
     # Sort blocked entries deterministically
     sorted_blocked = tuple(sorted(blocked_items, key=lambda b: (b.finding_fp, b.code, b.reason)))
 

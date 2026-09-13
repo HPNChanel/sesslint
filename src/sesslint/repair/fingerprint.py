@@ -19,14 +19,21 @@ from typing import Any
 from sesslint.determinism import canonical_json_bytes
 
 
-def compute_plan_fingerprint(plan_data: Mapping[str, Any]) -> str:
+def compute_plan_fingerprint(
+    plan_data: Mapping[str, Any],
+    *,
+    policy: str | None = None,
+) -> str:
     """Compute a deterministic 64-character SHA-256 fingerprint for a repair plan dictionary.
 
     The 'fingerprint' key is excluded from the input dictionary if present.
+    Binds the 'policy' field into the fingerprint domain (P0-03).
     Uses the unified canonical JSON primitive in the hash domain
     (newline=False, ensure_ascii=False).
     """
     cleaned: dict[str, Any] = {k: v for k, v in plan_data.items() if k != "fingerprint"}
+    if policy is not None and "policy" not in cleaned:
+        cleaned["policy"] = policy
     encoded = canonical_json_bytes(cleaned, newline=False)
     return hashlib.sha256(encoded).hexdigest()
 

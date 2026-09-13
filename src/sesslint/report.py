@@ -87,14 +87,13 @@ def compute_assurance(
     has_error = any(f.severity in (Severity.ERROR, Severity.FATAL) for f in findings)
     has_warning = any(f.severity == Severity.WARNING for f in findings)
 
-    # A0: Could not safely parse raw artifact
-    is_unparseable = (
-        events is None or len(events) == 0 or any(f.code in (SL001, SL002) for f in findings)
-    )
-    if is_unparseable and (
-        has_error or (events is not None and len(events) == 0 and bool(findings))
-    ):
+    # A0: Could not safely parse raw artifact or empty input
+    if events is None or len(events) == 0:
         assurance: Assurance = "A0"
+        return assurance, ASSURANCE_LIMITATIONS["A0"]
+
+    if any(f.code in (SL001, SL002) for f in findings):
+        assurance = "A0"
         return assurance, ASSURANCE_LIMITATIONS["A0"]
 
     if has_error:

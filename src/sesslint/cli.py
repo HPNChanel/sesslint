@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import secrets
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from sesslint import __version__, load_session_file
+from sesslint import __version__
 from sesslint._version import get_version_info
 from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
 from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
 from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
+from sesslint.api import build_internal_error_envelope, validate_session
 from sesslint.errors import SesslintError
+
+load_session_file = validate_session
 
 FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "canonical": "canonical",
@@ -36,17 +41,10 @@ def _handle_internal_error(err: Exception, args: argparse.Namespace | None = Non
     - Never verdicts healthy.
     - Exits with return code 2.
     """
-    import secrets
-
     error_id = f"ERR-{secrets.token_hex(4)}"
     is_json = getattr(args, "json", False) if args is not None else False
     if is_json:
-        envelope = {
-            "code": "INTERNAL_ERROR",
-            "error_id": error_id,
-            "message": str(err),
-            "verdict": "error",
-        }
+        envelope = build_internal_error_envelope(err, error_id=error_id)
         print(json.dumps(envelope, sort_keys=True))
     else:
         print(f"Operational error [{error_id}]: {err}", file=sys.stderr)
@@ -91,23 +89,53 @@ def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
     ]
     for r in scan_report.files:
         if r.verdict == "healthy":
-            tag = f"{green}[HEALTHY]{reset}"
+            tag_color = green
+            raw_tag = "[HEALTHY]"
             detail = ""
         elif r.verdict == "invalid":
-            tag = f"{red}[INVALID]{reset}"
+            tag_color = red
+            raw_tag = "[INVALID]"
             detail = f" ({r.error_count} error(s), {r.warning_count} warning(s))"
         elif r.verdict == "unsupported":
-            tag = f"{yellow}[UNSUPPORTED]{reset}"
+            tag_color = yellow
+            raw_tag = "[UNSUPPORTED]"
             detail = " (unsupported version)"
         elif r.verdict == "unreadable":
-            tag = f"{red}[UNREADABLE]{reset}"
+            tag_color = red
+            raw_tag = "[UNREADABLE]"
             detail = " (read error or non-UTF8)"
         else:  # skipped
-            tag = f"{bold}[SKIPPED]{reset}"
+            tag_color = bold
+            raw_tag = "[SKIPPED]"
             detail = f" (reason: {r.skipped_reason})"
-        lines.append(f"  {tag:<20} {r.path}{detail}")
+        tag_col = f"{tag_color}{raw_tag}{reset}{' ' * max(0, 20 - len(raw_tag))}"
+        lines.append(f"  {tag_col} {r.path}{detail}")
 
     return "\n".join(lines)
+
+
+def _validate_positive_int(val_str: str) -> int:
+    """Validate that integer flag is strictly positive (> 0) (P1-02)."""
+    try:
+        val = int(val_str)
+    except (ValueError, TypeError) as err:
+        raise argparse.ArgumentTypeError(f"Invalid integer value: {val_str!r}") from err
+    if val <= 0:
+        raise argparse.ArgumentTypeError(f"Value must be a positive integer (> 0), got {val}")
+    return val
+
+
+def _validate_unit_interval_float(val_str: str) -> float:
+    """Validate that float threshold is strictly between 0.0 and 1.0 exclusive (P1-02)."""
+    try:
+        val = float(val_str)
+    except (ValueError, TypeError) as err:
+        raise argparse.ArgumentTypeError(f"Invalid float value: {val_str!r}") from err
+    if math.isnan(val) or math.isinf(val) or not (0.0 < val < 1.0):
+        raise argparse.ArgumentTypeError(
+            f"Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got {val}"
+        )
+    return val
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -205,7 +233,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "--profile",
-        default="neutral",
+        default=argparse.SUPPRESS,
         help="Replay validation profile (default: neutral)",
     )
     check_parser.add_argument(
@@ -229,13 +257,13 @@ def create_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "--max-files",
-        type=int,
+        type=_validate_positive_int,
         default=10000,
         help="Maximum number of files to inspect during recursive scan (default: 10000)",
     )
     check_parser.add_argument(
         "--max-bytes",
-        type=int,
+        type=_validate_positive_int,
         default=1024 * 1024 * 1024,
         help="Maximum cumulative bytes to read during recursive scan (default: 1GB)",
     )
@@ -247,30 +275,31 @@ def create_parser() -> argparse.ArgumentParser:
     check_parser.add_argument(
         "--color",
         choices=["auto", "always", "never"],
-        default="auto",
-        help="Control colored output in human report mode",
+        default=argparse.SUPPRESS,
+        help="Control colored output in human report mode (default: auto)",
     )
     check_parser.add_argument(
         "--no-color",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Disable ANSI color styling",
     )
     check_parser.add_argument(
         "--confidence-min",
-        type=float,
+        type=_validate_unit_interval_float,
         default=None,
         help="Format auto-detection minimum confidence threshold",
     )
     check_parser.add_argument(
         "--margin-min",
-        type=float,
+        type=_validate_unit_interval_float,
         default=None,
         help="Format auto-detection minimum margin threshold",
     )
     check_parser.add_argument(
         "--include-content",
         action="store_true",
-        default=False,
+        default=argparse.SUPPRESS,
         help="Embed raw transcript content in reports (warning: emits raw sensitive data)",
     )
 
@@ -333,25 +362,25 @@ def create_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--max-files",
-        type=int,
+        type=_validate_positive_int,
         default=10000,
         help="Maximum files to scan (default: 10000)",
     )
     scan_parser.add_argument(
         "--max-bytes",
-        type=int,
+        type=_validate_positive_int,
         default=1024 * 1024 * 1024,
         help="Maximum cumulative bytes to read during recursive scan (default: 1GB)",
     )
     scan_parser.add_argument(
         "--format",
         choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
-        default="auto",
+        default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
     scan_parser.add_argument(
         "--profile",
-        default="neutral",
+        default=argparse.SUPPRESS,
         help="Replay validation profile (default: neutral)",
     )
     scan_parser.add_argument(
@@ -362,12 +391,13 @@ def create_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "--color",
         choices=["auto", "always", "never"],
-        default="auto",
-        help="Control colored terminal output",
+        default=argparse.SUPPRESS,
+        help="Control colored terminal output (default: auto)",
     )
     scan_parser.add_argument(
         "--no-color",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Disable ANSI color styling",
     )
 
@@ -406,7 +436,7 @@ def create_parser() -> argparse.ArgumentParser:
     repair_parser.add_argument(
         "--policy",
         choices=["conservative", "salvage"],
-        default="conservative",
+        default=argparse.SUPPRESS,
         help="Repair policy (choices: conservative, salvage; default: conservative)",
     )
     repair_parser.add_argument(
@@ -417,7 +447,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     repair_parser.add_argument(
         "--profile",
-        default="neutral",
+        default=argparse.SUPPRESS,
         help="Replay validation profile (default: neutral)",
     )
     repair_parser.add_argument(
@@ -447,7 +477,7 @@ def create_parser() -> argparse.ArgumentParser:
     repair_parser.add_argument(
         "--include-content",
         action="store_true",
-        default=False,
+        default=argparse.SUPPRESS,
         help="Embed raw transcript content in manifests (warning: emits raw sensitive data)",
     )
 
@@ -509,12 +539,13 @@ def create_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument(
         "--color",
         choices=["auto", "always", "never"],
-        default="auto",
+        default=argparse.SUPPRESS,
         help="Control colored output in human report mode",
     )
     verify_parser.add_argument(
         "--no-color",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Disable ANSI color styling",
     )
     verify_parser.add_argument(
@@ -526,7 +557,7 @@ def create_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument(
         "--include-content",
         action="store_true",
-        default=False,
+        default=argparse.SUPPRESS,
         help="Embed raw transcript content (warning: emits raw sensitive data)",
     )
 
@@ -561,23 +592,23 @@ def create_parser() -> argparse.ArgumentParser:
     bundle_parser.add_argument(
         "--format",
         choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
-        default="auto",
+        default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
     bundle_parser.add_argument(
         "--profile",
-        default="neutral",
+        default=argparse.SUPPRESS,
         help="Replay validation profile (default: neutral)",
     )
     bundle_parser.add_argument(
         "--confidence-min",
-        type=float,
+        type=_validate_unit_interval_float,
         default=None,
         help="Minimum confidence threshold for format auto-detection",
     )
     bundle_parser.add_argument(
         "--margin-min",
-        type=float,
+        type=_validate_unit_interval_float,
         default=None,
         help="Minimum margin threshold between top candidates for auto-detection",
     )

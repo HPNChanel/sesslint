@@ -694,6 +694,30 @@ class TestIterEventsEdgeCases:
         assert check_nesting_depth(depth_3, max_depth=3) is True
         assert check_nesting_depth(depth_3, max_depth=2) is False
 
+    def test_check_nesting_depth_canonical_alignment(self) -> None:
+        """Verify 1-based root depth convention aligns with canonical _validate_depth (P1-05)."""
+        from sesslint.canonical import MAX_PAYLOAD_DEPTH, _validate_depth
+
+        # Depth 1: flat dict or list (root container only)
+        flat = {"key": "val"}
+        assert check_nesting_depth(flat, max_depth=1) is True
+        assert check_nesting_depth(flat, max_depth=0) is False
+
+        # Build deep payload of depth exactly MAX_PAYLOAD_DEPTH
+        nested: dict[str, Any] = {"leaf": 42}
+        for _ in range(MAX_PAYLOAD_DEPTH - 1):
+            nested = {"child": nested}
+
+        # Passes both at max_depth=MAX_PAYLOAD_DEPTH
+        assert check_nesting_depth(nested, max_depth=MAX_PAYLOAD_DEPTH) is True
+        _validate_depth(nested)
+
+        # Fails both at MAX_PAYLOAD_DEPTH + 1
+        overflow = {"parent": nested}
+        assert check_nesting_depth(overflow, max_depth=MAX_PAYLOAD_DEPTH) is False
+        with pytest.raises(SchemaError, match="exceeds limit"):
+            _validate_depth(overflow)
+
 
 class TestCliScanLimits:
     """CLI test for scan --show-limits."""
