@@ -1,0 +1,12 @@
+{
+  "export_version": "99.0.0",
+  "items": [
+    {
+      "content": "Testing unsupported version",
+      "id": "item_01",
+      "role": "user",
+      "timestamp": "2026-09-13T00:00:00Z",
+      "type": "message"
+    }
+  ]
+}

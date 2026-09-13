@@ -1,0 +1,2 @@
+{"sessionId":"sess_claude_synth","type":"user_message","message":"First message without ID","timestamp":"2026-09-13T00:00:00Z"}
+{"sessionId":"sess_claude_synth","type":"assistant_message","message":"Second message without ID","timestamp":"2026-09-13T00:00:01Z"}

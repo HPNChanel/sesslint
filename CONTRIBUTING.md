@@ -65,9 +65,23 @@ uv run python bench/perf_250k.py
 
 ---
 
+## Contributing Format Adapters
+
+If you are adding a new session format adapter or updating an existing one (e.g. Claude Code, OpenAI Agents SDK, or custom orchestrators):
+
+- Read and follow the [Adapter Authoring & Conformance Guide](docs/ADAPTER_GUIDE.md).
+- Ensure your adapter implements `detect_<adapter>` and `load_<adapter>` contracts, adheres to `ReaderLimits`, fail-closed `SL301` versions, bounded `SL302` discriminators, and synthetic ID namespacing (`DEV-007`).
+- All adapters must pass the unified cross-adapter conformance test suite:
+  ```bash
+  uv run pytest tests/conformance/test_adapter_suite.py -v
+  ```
+
+---
+
 ## Submitting Pull Requests
 
 1. Keep PRs focused, single-purpose, and well-tested.
 2. Include comprehensive docstrings and inline explanation for complex invariants.
 3. Update relevant reason-code documentation in `docs/codes/` if adding or modifying detection logic.
 4. Update `docs/implementation/REQUIREMENTS_TRACEABILITY.md` if addressing a tracked functional requirement.
+

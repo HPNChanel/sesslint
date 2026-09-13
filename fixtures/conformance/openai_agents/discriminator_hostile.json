@@ -1,0 +1,11 @@
+{
+  "export_version": "1.0.0",
+  "items": [
+    {
+      "content": "testing hostile discriminator",
+      "id": "item_01",
+      "timestamp": "2026-09-13T00:00:00Z",
+      "type": "this_is_an_overly_long_unknown_type_discriminator_that_exceeds_sixty_four_characters_limit"
+    }
+  ]
+}
