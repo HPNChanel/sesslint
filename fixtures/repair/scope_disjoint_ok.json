@@ -1,0 +1,84 @@
+{
+  "description": "Completed mutating call elsewhere + disjoint defect (must repair under scoped gate)",
+  "must_repair": true,
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "List the workspace directory"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c-bash-1",
+      "id": "call-bash",
+      "kind": "tool_call",
+      "parent_id": "evt-0",
+      "payload": {
+        "name": "bash",
+        "side_effects": "possible"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "c-bash-1",
+      "id": "res-bash",
+      "kind": "tool_result",
+      "parent_id": "call-bash",
+      "payload": {
+        "output": "file1.txt\nfile2.txt",
+        "side_effects": "possible"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-dup-a",
+      "kind": "message",
+      "parent_id": "res-bash",
+      "payload": {
+        "text": "Found two files in the workspace."
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-dup-b",
+      "kind": "message",
+      "parent_id": "res-bash",
+      "payload": {
+        "text": "Found two files in the workspace."
+      },
+      "seq": 4,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "findings": [
+    {
+      "code": "SL003",
+      "evidence": {
+        "index": 3,
+        "duplicate_index": 4
+      },
+      "fingerprint": "fp-sl003-disjoint",
+      "message": "Duplicate adjacent event at index 3",
+      "repairability": "deterministic",
+      "severity": "warning",
+      "source": {
+        "line": 4,
+        "path": "session.json",
+        "record_id": "msg-dup-a"
+      }
+    }
+  ],
+  "expected_recipe": "identical-duplicate-collapse"
+}

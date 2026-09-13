@@ -31,8 +31,10 @@ from typing import Any, Final
 from sesslint.canonical import to_canonical_dict
 from sesslint.checks.graph import find_qualifying_parent_candidates
 from sesslint.codes import SL003, SL004, SL005, SL104, SL108
+from sesslint.policy.abstention import AffectedRegion
 from sesslint.repair.fingerprint import canonical_json_bytes
 from sesslint.repair.planner import PlanStep
+from sesslint.repair.recipes_sl002 import affected_region_torn_terminal_record_discard
 from sesslint.repair.registry import Recipe, get_recipe, register_recipe
 
 
@@ -508,6 +510,339 @@ duplicate_projection_removal = apply_duplicate_projection_removal
 
 
 # ---------------------------------------------------------------------------
+# Region Declarations (DEV-013)
+# ---------------------------------------------------------------------------
+
+
+def affected_region_identical_duplicate_collapse(
+    step: Any,
+    events: Sequence[Any],
+) -> AffectedRegion:
+    """Declare affected region for identical-duplicate-collapse.
+
+    Guarantees:
+    - Pure function, deterministic, zero I/O.
+    - Total function: handles empty inputs, invalid indices, or malformed steps safely.
+    - Region includes the duplicate pair and any relinked children.
+    """
+    try:
+        if len(events) < 2:
+            return AffectedRegion(unproven=True)
+
+        idx = getattr(step, "target_index", None)
+        params = getattr(step, "params", None)
+        if idx is None and isinstance(params, Mapping):
+            for k in ("at_index", "index", "first_index"):
+                p_val = params.get(k)
+                if isinstance(p_val, int) and not isinstance(p_val, bool):
+                    idx = p_val
+                    break
+
+        candidate_pair: tuple[int, int] | None = None
+        if idx is not None and isinstance(idx, int) and not isinstance(idx, bool):
+            if idx < 0 or idx >= len(events):
+                return AffectedRegion(unproven=True)
+
+            candidate_pairs: list[tuple[int, int]] = []
+            if idx < len(events) - 1:
+                candidate_pairs.append((idx, idx + 1))
+            if idx > 0:
+                candidate_pairs.append((idx - 1, idx))
+
+            for keep_i, drop_i in candidate_pairs:
+                e1, e2 = events[keep_i], events[drop_i]
+                k1, k2 = _event_kind(e1), _event_kind(e2)
+                if k1 == k2 and k1 not in ("checkpoint", "compaction_boundary"):
+                    if _event_content_fingerprint(e1) == _event_content_fingerprint(e2):
+                        candidate_pair = (keep_i, drop_i)
+                        break
+        else:
+            for i in range(len(events) - 1):
+                e1, e2 = events[i], events[i + 1]
+                k1, k2 = _event_kind(e1), _event_kind(e2)
+                if k1 == k2 and k1 not in ("checkpoint", "compaction_boundary"):
+                    if _event_content_fingerprint(e1) == _event_content_fingerprint(e2):
+                        candidate_pair = (i, i + 1)
+                        break
+
+        if candidate_pair is None:
+            return AffectedRegion(unproven=True)
+
+        keep_i, drop_i = candidate_pair
+        kept_id = _event_id(events[keep_i])
+        dropped_id = _event_id(events[drop_i])
+
+        affected_indices: set[int] = {keep_i, drop_i}
+        affected_ids: set[str] = set()
+        if kept_id:
+            affected_ids.add(kept_id)
+        if dropped_id:
+            affected_ids.add(dropped_id)
+
+        # Child events referencing dropped_id will be relinked
+        if dropped_id:
+            for j, ev in enumerate(events):
+                if _event_parent_id(ev) == dropped_id:
+                    affected_indices.add(j)
+                    c_id = _event_id(ev)
+                    if c_id:
+                        affected_ids.add(c_id)
+
+        return AffectedRegion(
+            indices=frozenset(affected_indices),
+            ids=frozenset(affected_ids),
+            ranges=((min(keep_i, drop_i), max(keep_i, drop_i)),),
+        )
+    except Exception:
+        return AffectedRegion(unproven=True)
+
+
+def affected_region_proven_unique_parent_restore(
+    step: Any,
+    events: Sequence[Any],
+) -> AffectedRegion:
+    """Declare affected region for proven-unique-parent-restore.
+
+    Guarantees:
+    - Pure function, deterministic, zero I/O.
+    - Total function: handles empty inputs, invalid indices, or malformed steps safely.
+    - Explicitly includes BOTH endpoints (child + new parent) per DEV-013.
+    """
+    try:
+        if not events:
+            return AffectedRegion(unproven=True)
+
+        target_idx = getattr(step, "target_index", None)
+        params = getattr(step, "params", None)
+        if target_idx is None and isinstance(params, Mapping):
+            p_idx = params.get("index") or params.get("at_index")
+            if isinstance(p_idx, int) and not isinstance(p_idx, bool):
+                target_idx = p_idx
+
+        if (
+            target_idx is None
+            or not isinstance(target_idx, int)
+            or isinstance(target_idx, bool)
+            or not (0 <= target_idx < len(events))
+        ):
+            return AffectedRegion(unproven=True)
+
+        target_ev = events[target_idx]
+        parent_id: Any = None
+        if isinstance(params, Mapping):
+            parent_id = params.get("parent_id") or params.get("parent_fingerprint_prefix")
+        if not parent_id:
+            parent_id = _event_parent_id(target_ev)
+        if not parent_id:
+            return AffectedRegion(unproven=True)
+
+        parent_id_str = str(parent_id)
+        parent_indices = [i for i, e in enumerate(events) if _event_id(e) == parent_id_str]
+        if not parent_indices:
+            parent_indices = [
+                i
+                for i, e in enumerate(events)
+                if (eid := _event_id(e)) is not None and eid.startswith(parent_id_str)
+            ]
+
+        if len(parent_indices) != 1:
+            return AffectedRegion(unproven=True)
+
+        parent_idx = parent_indices[0]
+        child_id = _event_id(target_ev)
+        parent_ev_id = _event_id(events[parent_idx])
+
+        affected_ids: set[str] = set()
+        if child_id:
+            affected_ids.add(child_id)
+        if parent_ev_id:
+            affected_ids.add(parent_ev_id)
+        affected_ids.add(parent_id_str)
+
+        return AffectedRegion(
+            indices=frozenset({target_idx, parent_idx}),
+            ids=frozenset(affected_ids),
+            ranges=(),
+        )
+    except Exception:
+        return AffectedRegion(unproven=True)
+
+
+def affected_region_compaction_projection_reunion(
+    step: Any,
+    events: Sequence[Any],
+) -> AffectedRegion:
+    """Declare affected region for compaction-projection-reunion.
+
+    Guarantees:
+    - Pure function, deterministic, zero I/O.
+    - Total function: handles empty inputs, invalid indices, or malformed steps safely.
+    - Region includes the call, result, boundary, and intermediate span.
+    """
+    try:
+        if not events:
+            return AffectedRegion(unproven=True)
+
+        corr: Any = None
+        params = getattr(step, "params", None)
+        if isinstance(params, Mapping):
+            corr = params.get("correlation_id")
+
+        target_idx = getattr(step, "target_index", None)
+        if (
+            not corr
+            and target_idx is not None
+            and isinstance(target_idx, int)
+            and 0 <= target_idx < len(events)
+        ):
+            corr = _event_corr_id(events[target_idx])
+
+        if not corr:
+            return AffectedRegion(unproven=True)
+        corr_str = str(corr)
+
+        calls = [
+            i
+            for i, e in enumerate(events)
+            if _event_kind(e) in ("tool_call", "tool_use") and _event_corr_id(e) == corr_str
+        ]
+        results = [
+            i
+            for i, e in enumerate(events)
+            if _event_kind(e) == "tool_result" and _event_corr_id(e) == corr_str
+        ]
+
+        if len(calls) != 1 or len(results) != 1:
+            return AffectedRegion(unproven=True)
+
+        min_idx = min(calls[0], results[0])
+        max_idx = max(calls[0], results[0])
+
+        boundaries = [
+            i
+            for i in range(min_idx + 1, max_idx)
+            if _event_kind(events[i]) == "compaction_boundary"
+        ]
+        if len(boundaries) != 1:
+            return AffectedRegion(unproven=True)
+
+        affected_indices = frozenset(range(min_idx, max_idx + 1))
+        affected_ids = frozenset(
+            eid for i in affected_indices if (eid := _event_id(events[i])) is not None
+        )
+
+        return AffectedRegion(
+            indices=affected_indices,
+            ids=affected_ids,
+            ranges=((min_idx, max_idx),),
+        )
+    except Exception:
+        return AffectedRegion(unproven=True)
+
+
+def affected_region_duplicate_projection_removal(
+    step: Any,
+    events: Sequence[Any],
+) -> AffectedRegion:
+    """Declare affected region for duplicate-projection-removal.
+
+    Guarantees:
+    - Pure function, deterministic, zero I/O.
+    - Total function: handles empty inputs, invalid indices, or malformed steps safely.
+    - Region includes the kept result, dropped result, associated call, and relinked children.
+    """
+    try:
+        if not events:
+            return AffectedRegion(unproven=True)
+
+        corr: Any = None
+        params = getattr(step, "params", None)
+        if isinstance(params, Mapping):
+            corr = params.get("correlation_id")
+
+        target_idx = getattr(step, "target_index", None)
+        if (
+            not corr
+            and target_idx is not None
+            and isinstance(target_idx, int)
+            and 0 <= target_idx < len(events)
+        ):
+            corr = _event_corr_id(events[target_idx])
+
+        if not corr:
+            return AffectedRegion(unproven=True)
+        corr_str = str(corr)
+
+        results = [
+            (i, e)
+            for i, e in enumerate(events)
+            if _event_kind(e) == "tool_result" and _event_corr_id(e) == corr_str
+        ]
+
+        if len(results) < 2:
+            return AffectedRegion(unproven=True)
+
+        idx1, res1 = results[0]
+        fp1 = _event_content_fingerprint(res1)
+
+        target_cand: tuple[int, Any] | None = None
+        if target_idx is not None and isinstance(target_idx, int):
+            for idx_cand, res_cand in results[1:]:
+                if idx_cand == target_idx:
+                    target_cand = (idx_cand, res_cand)
+                    break
+
+        if target_cand is not None:
+            drop_idx, res2 = target_cand
+            if _event_content_fingerprint(res2) != fp1:
+                return AffectedRegion(unproven=True)
+        else:
+            matched_pair: tuple[int, Any] | None = None
+            for idx_cand, res_cand in results[1:]:
+                if _event_content_fingerprint(res_cand) == fp1:
+                    matched_pair = (idx_cand, res_cand)
+                    break
+            if matched_pair is None:
+                return AffectedRegion(unproven=True)
+            drop_idx, res2 = matched_pair
+
+        r1_id = _event_id(res1)
+        r2_id = _event_id(res2)
+
+        affected_indices: set[int] = {idx1, drop_idx}
+        affected_ids: set[str] = set()
+        if r1_id:
+            affected_ids.add(r1_id)
+        if r2_id:
+            affected_ids.add(r2_id)
+
+        # Tool calls for this correlation ID
+        for i, e in enumerate(events):
+            if _event_kind(e) in ("tool_call", "tool_use") and _event_corr_id(e) == corr_str:
+                affected_indices.add(i)
+                c_id = _event_id(e)
+                if c_id:
+                    affected_ids.add(c_id)
+
+        # Children referencing dropped result
+        if r2_id:
+            for i, e in enumerate(events):
+                if _event_parent_id(e) == r2_id:
+                    affected_indices.add(i)
+                    ch_id = _event_id(e)
+                    if ch_id:
+                        affected_ids.add(ch_id)
+
+        return AffectedRegion(
+            indices=frozenset(affected_indices),
+            ids=frozenset(affected_ids),
+            ranges=(),
+        )
+    except Exception:
+        return AffectedRegion(unproven=True)
+
+
+# ---------------------------------------------------------------------------
 # Recipe Registry Definitions
 # ---------------------------------------------------------------------------
 
@@ -528,6 +863,7 @@ RECIPE_IDENTICAL_DUPLICATE_COLLAPSE: Final[Recipe] = Recipe(
     lossy=False,
     salvage_only=False,
     apply=apply_identical_duplicate_collapse,
+    affected_region=affected_region_identical_duplicate_collapse,
 )
 
 RECIPE_PROVEN_UNIQUE_PARENT_RESTORE: Final[Recipe] = Recipe(
@@ -537,6 +873,7 @@ RECIPE_PROVEN_UNIQUE_PARENT_RESTORE: Final[Recipe] = Recipe(
     lossy=False,
     salvage_only=False,
     apply=apply_proven_unique_parent_restore,
+    affected_region=affected_region_proven_unique_parent_restore,
 )
 
 RECIPE_COMPACTION_PROJECTION_REUNION: Final[Recipe] = Recipe(
@@ -546,6 +883,7 @@ RECIPE_COMPACTION_PROJECTION_REUNION: Final[Recipe] = Recipe(
     lossy=False,
     salvage_only=False,
     apply=apply_compaction_projection_reunion,
+    affected_region=affected_region_compaction_projection_reunion,
 )
 
 RECIPE_DUPLICATE_PROJECTION_REMOVAL: Final[Recipe] = Recipe(
@@ -555,6 +893,7 @@ RECIPE_DUPLICATE_PROJECTION_REMOVAL: Final[Recipe] = Recipe(
     lossy=False,
     salvage_only=False,
     apply=apply_duplicate_projection_removal,
+    affected_region=affected_region_duplicate_projection_removal,
 )
 
 RECIPES: Final[tuple[Recipe, ...]] = (
@@ -583,6 +922,11 @@ __all__ = [
     "RECIPE_IDENTICAL_DUPLICATE_COLLAPSE",
     "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
     "RECIPE_TERMINAL_SUFFIX_DISCARD",
+    "affected_region_compaction_projection_reunion",
+    "affected_region_duplicate_projection_removal",
+    "affected_region_identical_duplicate_collapse",
+    "affected_region_proven_unique_parent_restore",
+    "affected_region_torn_terminal_record_discard",
     "apply_compaction_projection_reunion",
     "apply_duplicate_projection_removal",
     "apply_identical_duplicate_collapse",

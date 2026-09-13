@@ -20,7 +20,12 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from sesslint.finding import Finding, Repairability
-from sesslint.policy.abstention import should_abstain_from_repair
+from sesslint.policy.abstention import (
+    check_step_scope,
+    find_ambiguous_events,
+    must_abstain,
+    should_abstain_from_repair,
+)
 from sesslint.repair.fingerprint import canonical_json_bytes, compute_plan_fingerprint
 from sesslint.repair.preconditions import (
     PreconditionContext,
@@ -347,6 +352,13 @@ def plan(
     blocked_items: list[Blocked] = []
     num_events = len(events)
 
+    global_abst = must_abstain(sorted_findings, events) if policy == "conservative" else None
+    precomputed_ambiguous = (
+        find_ambiguous_events(events, findings=sorted_findings)
+        if policy == "conservative"
+        else None
+    )
+
     for f in sorted_findings:
         target_idx = _resolve_target_index(f, events=events)
 
@@ -557,17 +569,54 @@ def plan(
                     f"Invalid loss class: {k!r}. Must be one of {sorted(ALLOWED_LOSS_CLASSES)}"
                 )
 
-        # Abstention check: if session has unacknowledged side effects,
-        # conservative steps cannot be planned (RVW-011)
-        if abstention.abstain and policy == "conservative":
-            blocked_items.append(
-                Blocked(
-                    finding_fp=f.fingerprint,
-                    code=f.code,
-                    reason="side-effect-abstention",
+        # Abstention check:
+        # If matched recipe declares affected_region, enforce transformation-scoped gate (DEV-013).
+        # If recipe does not declare affected_region, fall back to global gating.
+        reg_fn = getattr(matched_recipe, "affected_region", None)
+        if policy == "conservative":
+            if reg_fn is not None:
+                temp_step = PlanStep(
+                    seq=0,
+                    recipe=matched_recipe.name,
+                    target_finding_fp=f.fingerprint,
+                    target_index=target_idx,
+                    params=step_params,
+                    lossy=matched_recipe.lossy,
+                    loss=step_loss,
+                    min_policy=getattr(matched_recipe, "min_policy", "conservative"),
+                    recipe_version=getattr(matched_recipe, "version", "1.0.0"),
                 )
-            )
-            continue
+                is_disjoint, refusal_reason = check_step_scope(
+                    temp_step,
+                    events,
+                    recipe_region_fn=reg_fn,
+                    findings=findings,
+                    excludes_execution_dependence=getattr(
+                        matched_recipe, "excludes_execution_dependence", False
+                    ),
+                    ambiguous=precomputed_ambiguous,
+                )
+                if not is_disjoint:
+                    blocked_items.append(
+                        Blocked(
+                            finding_fp=f.fingerprint,
+                            code=f.code,
+                            reason=refusal_reason or "side-effect-scope-unproven",
+                        )
+                    )
+                    continue
+            else:
+                # Recipe does not declare affected_region: keeps global gating.
+                # Must abstain if session has side-effect-bearing tool calls or SL203.
+                if global_abst is not None and global_abst.abstain:
+                    blocked_items.append(
+                        Blocked(
+                            finding_fp=f.fingerprint,
+                            code=f.code,
+                            reason="side-effect-abstention",
+                        )
+                    )
+                    continue
 
         candidate_steps.append(
             (

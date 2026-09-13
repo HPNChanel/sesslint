@@ -180,23 +180,24 @@ def test_abstention_12_cell_matrix(
             )
         assert not output_file.exists()
 
-    elif side_effects in ("unknown", "possible") and policy == "conservative":
-        # Conservative policy abstains on non-'none' side effects
-        assert len(planned.steps) == 0
-        assert any(b.reason == "side-effect-abstention" for b in planned.blocked)
+    elif policy == "conservative":
+        # DEV-013: Scoped abstention proves region-disjointness for the disjoint SL003 defect
+        # across all non-SL203 side_effects ("none", "possible", "unknown").
+        assert len(planned.steps) == 1
+        assert planned.steps[0].recipe == "identical-duplicate-collapse"
 
-        with pytest.raises(Abstained, match=f"side-effect-{side_effects}"):
-            execute(
-                source_path=source_file,
-                plan=planned,
-                output_path=output_file,
-                policy=policy,
-                source_events=events,
-            )
-        assert not output_file.exists()
+        manifest = execute(
+            source_path=source_file,
+            plan=planned,
+            output_path=output_file,
+            policy=policy,
+            source_events=events,
+        )
+        assert output_file.is_file()
+        assert manifest.input_fingerprint == planned.source_hash
 
-    elif side_effects == "none":
-        # Safe side effects without SL203: repairable under both conservative and salvage
+    elif policy == "salvage" and side_effects == "none":
+        # Safe side effects without SL203 under salvage policy
         assert len(planned.steps) == 1
         assert planned.steps[0].recipe == "identical-duplicate-collapse"
 

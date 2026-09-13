@@ -30,6 +30,8 @@ class Recipe:
     apply: Any = None
     min_policy: str = "conservative"
     version: str = "1.0.0"
+    affected_region: Any = None
+    excludes_execution_dependence: bool = False
 
     def __post_init__(self) -> None:
         if not self.name or not isinstance(self.name, str):

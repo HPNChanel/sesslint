@@ -1,0 +1,75 @@
+{
+  "description": "Dangling tool call in truncated region (must refuse under scoped gate)",
+  "must_repair": false,
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Run maintenance task"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c-bash-done",
+      "id": "call-bash-ok",
+      "kind": "tool_call",
+      "parent_id": "evt-0",
+      "payload": {
+        "name": "bash",
+        "side_effects": "possible"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "c-bash-done",
+      "id": "res-bash-ok",
+      "kind": "tool_result",
+      "parent_id": "call-bash-ok",
+      "payload": {
+        "output": "ok",
+        "side_effects": "possible"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c-dangling-1",
+      "id": "call-dangling",
+      "kind": "tool_call",
+      "parent_id": "res-bash-ok",
+      "payload": {
+        "name": "write_file",
+        "side_effects": "possible"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "findings": [
+    {
+      "code": "SL002",
+      "evidence": {
+        "cut_index": 3,
+        "target_index": 3
+      },
+      "fingerprint": "fp-sl002-dangling-tail",
+      "message": "Torn terminal record at index 3",
+      "repairability": "deterministic",
+      "severity": "error",
+      "source": {
+        "line": 4,
+        "path": "session.json",
+        "record_id": "call-dangling"
+      }
+    }
+  ],
+  "expected_blocked_reason": "side-effect-scope-unproven"
+}

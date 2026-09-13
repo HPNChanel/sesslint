@@ -1,0 +1,72 @@
+{
+  "description": "Unknown side_effects on the relink target (must refuse under scoped gate)",
+  "must_repair": false,
+  "events": [
+    {
+      "actor": "user",
+      "id": "evt-0",
+      "kind": "message",
+      "parent_id": null,
+      "payload": {
+        "text": "Initialize session"
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
+    },
+    {
+      "actor": "assistant",
+      "correlation_id": "c-unk-target",
+      "id": "call-unk-target",
+      "kind": "tool_call",
+      "parent_id": "evt-0",
+      "payload": {
+        "name": "opaque_plugin",
+        "side_effects": "unknown"
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
+    },
+    {
+      "actor": "tool",
+      "correlation_id": "c-unk-target",
+      "id": "res-unk-target",
+      "kind": "tool_result",
+      "parent_id": "call-unk-target",
+      "payload": {
+        "output": "processed"
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
+    },
+    {
+      "actor": "assistant",
+      "id": "msg-orphan-child",
+      "kind": "message",
+      "parent_id": "call-unk-target",
+      "payload": {
+        "text": "Continuation response"
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
+    }
+  ],
+  "findings": [
+    {
+      "code": "SL004",
+      "evidence": {
+        "at_index": 3,
+        "parent_id": "call-unk-target"
+      },
+      "fingerprint": "fp-sl004-unk-target",
+      "message": "Missing parent pointer on msg-orphan-child",
+      "repairability": "manual",
+      "severity": "error",
+      "source": {
+        "line": 4,
+        "path": "session.json",
+        "record_id": "msg-orphan-child"
+      }
+    }
+  ],
+  "expected_blocked_reason": "side-effect-scope-unproven"
+}
