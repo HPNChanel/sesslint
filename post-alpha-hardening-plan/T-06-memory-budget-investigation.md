@@ -1,6 +1,9 @@
 # T-06: 250k memory-budget investigation and recovery
 
-- Status: evidence-pending-review
+- Status: done — closed as measurement contamination; normative fresh-process check
+  measured 9.575s / 475.76MB PASS at T-08 candidate (see T-09a publication record
+  and commit 582beae "fresh-process normative metric + memory-budget recovery");
+  harness fixed to report child-process RSS separately per PERF_NOTES.md
 - Phase: 3
 - Priority: P1 performance
 - Type: investigation / gated optimization
