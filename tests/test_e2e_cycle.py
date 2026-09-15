@@ -55,10 +55,10 @@ def test_e2e_cycle_canonical_identical_duplicates(tmp_path: Path) -> None:
     assert verdict.ok is True
     assert all(c.ok for c in verdict.checks)
 
-    # Step 4: Re-check on repaired session yields 0 findings and A3 assurance
+    # Step 4: Re-check on repaired session yields 0 findings and A4 assurance
     report_recheck = api.check_file(repaired_file)
     assert len(report_recheck.findings) == 0
-    assert report_recheck.assurance == "A3"
+    assert report_recheck.assurance == "A4"
     assert report_recheck.counts.by_severity.get("error", 0) == 0
     assert report_recheck.counts.by_severity.get("warning", 0) == 0
 
@@ -101,10 +101,10 @@ def test_e2e_cycle_canonical_torn_terminal_record(tmp_path: Path) -> None:
     )
     assert verdict.ok is True
 
-    # Step 4: Re-check on repaired session is clean with A3 assurance
+    # Step 4: Re-check on repaired session is clean with A4 assurance
     report_recheck = api.check_file(repaired_file)
     assert len(report_recheck.findings) == 0
-    assert report_recheck.assurance == "A3"
+    assert report_recheck.assurance == "A4"
 
 
 def test_e2e_cli_full_cycle(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

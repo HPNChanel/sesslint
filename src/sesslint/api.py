@@ -23,6 +23,7 @@ from sesslint.bundle import Bundle, build_bundle
 from sesslint.canonical import Session, load_session_file
 from sesslint.codes import SL302, Repairability, Severity
 from sesslint.context import CheckContext
+from sesslint.exporter import ExportSummary
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
 from sesslint.profiles import resolve_effective_config
@@ -237,7 +238,17 @@ def check_file(
     if events and hasattr(events[0], "session_id") and events[0].session_id:
         session_id = str(events[0].session_id)
 
-    assurance, limitation = compute_assurance(events, all_findings)
+    from sesslint.reference import reference_equivalent_if_clean
+
+    assurance, limitation = compute_assurance(
+        events,
+        all_findings,
+        reference_equivalent=(
+            reference_equivalent_if_clean(events, all_findings)
+            if resolved_fmt == FORMAT_CANONICAL
+            else False
+        ),
+    )
 
     fp = fingerprint_file(target_path)
     return build_report(
@@ -560,8 +571,30 @@ def build_internal_error_envelope(
     }
 
 
+def export_file(
+    source_path: Path | str,
+    output_path: Path | str,
+    *,
+    format: str | None = None,
+) -> ExportSummary:
+    """Export a supported session artifact to a byte-deterministic canonical file.
+
+    Args:
+        source_path: Path to source session file.
+        output_path: Destination path for the canonical file (must not exist).
+        format: Format override ('auto', None, or known format name).
+
+    Returns:
+        Content-free ExportSummary describing the projection.
+    """
+    from sesslint.exporter import export_to_canonical
+
+    return export_to_canonical(source_path, output_path, format=format)
+
+
 __all__ = [
     "Bundle",
+    "ExportSummary",
     "PrecheckReason",
     "PrecheckResult",
     "ScanReport",
@@ -571,6 +604,7 @@ __all__ = [
     "check",
     "check_dir",
     "check_file",
+    "export_file",
     "plan",
     "precheck",
     "repair",

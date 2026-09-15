@@ -613,6 +613,53 @@ def create_parser() -> argparse.ArgumentParser:
         help="Minimum margin threshold between top candidates for auto-detection",
     )
 
+    # export
+    export_parser = subparsers.add_parser(
+        "export",
+        help="[writes: output file] Export a session artifact to canonical format for repair.",
+        description=(
+            "[writes: output file] Export a supported session artifact to a "
+            "byte-deterministic canonical file that the repair pipeline accepts."
+        ),
+    )
+    export_parser.add_argument(
+        "path",
+        type=Path,
+        help="Path to session file (.json or .jsonl)",
+    )
+    export_parser.add_argument(
+        "--output",
+        "--out",
+        "-o",
+        type=Path,
+        default=None,
+        dest="output",
+        help="Path to output canonical file (required)",
+    )
+    export_parser.add_argument(
+        "--format",
+        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        default=argparse.SUPPRESS,
+        help="Session format adapter (default: auto)",
+    )
+    export_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output export summary as JSON",
+    )
+
+    # completion
+    completion_parser = subparsers.add_parser(
+        "completion",
+        help="[read-only] Print shell completion script.",
+        description=("[read-only] Print a shell completion script generated from the live parser."),
+    )
+    completion_parser.add_argument(
+        "shell",
+        choices=["bash", "zsh", "fish"],
+        help="Shell dialect (bash, zsh, fish)",
+    )
+
     return parser
 
 
@@ -1107,6 +1154,54 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
         # No --out specified: emit bundle JSON to stdout
         print(bundle_json.rstrip("\n"))
+        return 0
+
+    if args.command == "export":
+        if args.output is None:
+            print("Error: --output is required for export.", file=sys.stderr)
+            return 2
+        if not args.path.is_file():
+            print(f"Error: Source file not found: {args.path}", file=sys.stderr)
+            return 2
+
+        from sesslint import api
+        from sesslint.exporter import ExportRefused
+
+        try:
+            summary = api.export_file(
+                source_path=args.path,
+                output_path=args.output,
+                format=getattr(args, "format", "auto"),
+            )
+        except ExportRefused as err:
+            print(f"Export refused [{err.code}]: {err}", file=sys.stderr)
+            return 1
+        except FileNotFoundError as err:
+            print(f"File error: {err}", file=sys.stderr)
+            return 2
+        except Exception as err:
+            return _handle_internal_error(err, args)
+
+        if getattr(args, "json", False):
+            print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(f"Exported {summary.event_count} events ({summary.input_format} -> canonical)")
+            print(f"Output: {args.output} (sha256: {summary.output_sha256[:16]}...)")
+            if summary.dropped_unknown_fields:
+                print(f"Dropped unknown fields: {summary.dropped_unknown_fields}")
+            print(
+                f"Next Action: Run 'sesslint repair {args.output} --output <file>' to plan repair."
+            )
+        return 0
+
+    if args.command == "completion":
+        from sesslint.completion import generate_completion
+
+        try:
+            print(generate_completion(args.shell).rstrip("\n"))
+        except ValueError as err:
+            print(f"Error: {err}", file=sys.stderr)
+            return 2
         return 0
 
     return 0

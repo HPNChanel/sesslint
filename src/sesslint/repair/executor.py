@@ -847,7 +847,13 @@ def execute(
         )
 
     # Capture revalidation outcomes directly from Step 4d run (FR-072)
-    reval_assurance, reval_limitation = compute_assurance(parsed_output_events, reval_findings)
+    from sesslint.reference import reference_equivalent_if_clean
+
+    reval_assurance, reval_limitation = compute_assurance(
+        parsed_output_events,
+        reval_findings,
+        reference_equivalent=reference_equivalent_if_clean(parsed_output_events, reval_findings),
+    )
     reval_prof = (
         get_profile(reval_profile_name)
         if isinstance(reval_profile_name, str)
