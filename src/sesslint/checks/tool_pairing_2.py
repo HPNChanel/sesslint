@@ -333,6 +333,7 @@ def check_reversed_order(
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
     context: CheckContext | None = None,
+    indexer: _ToolPairing2Indexer | None = None,
 ) -> list[Finding]:
     """Check for reversed tool pairing (SL105) where result index precedes call index.
 
@@ -343,7 +344,9 @@ def check_reversed_order(
     - evidence: {correlation_id, result_index, use_index}.
     """
     ctx = context if context is not None else CheckContext()
-    indexer = _ToolPairing2Indexer(events, source_path=source_path)
+    indexer = (
+        indexer if indexer is not None else _ToolPairing2Indexer(events, source_path=source_path)
+    )
     findings: list[Finding] = []
 
     for corr in indexer.clean_corrs:
@@ -395,6 +398,7 @@ def check_cross_branch(
     source_path: str = "<canonical>",
     max_findings: int = MAX_PAIRING_FINDINGS,
     context: CheckContext | None = None,
+    indexer: _ToolPairing2Indexer | None = None,
 ) -> list[Finding]:
     """Check for cross-branch tool pairing (SL106).
 
@@ -410,7 +414,9 @@ def check_cross_branch(
     - evidence: {correlation_id, result_id, result_index, use_id, use_index, ...}.
     """
     ctx = context if context is not None else CheckContext()
-    indexer = _ToolPairing2Indexer(events, source_path=source_path)
+    indexer = (
+        indexer if indexer is not None else _ToolPairing2Indexer(events, source_path=source_path)
+    )
     findings: list[Finding] = []
 
     for corr in indexer.clean_corrs:
@@ -532,6 +538,7 @@ def check_adjacency(
     profile: Any = None,
     severity: Severity | None = None,
     context: CheckContext | None = None,
+    indexer: _ToolPairing2Indexer | None = None,
 ) -> list[Finding]:
     """Check for non-adjacent tool pairing (SL107) with parallel-exemption for concurrent tools.
 
@@ -545,7 +552,9 @@ def check_adjacency(
     - evidence: {correlation_id, intervening_count, intervening_kinds, result_index, use_index}.
     """
     ctx = context if context is not None else CheckContext()
-    indexer = _ToolPairing2Indexer(events, source_path=source_path)
+    indexer = (
+        indexer if indexer is not None else _ToolPairing2Indexer(events, source_path=source_path)
+    )
     findings: list[Finding] = []
     target_severity = severity or _resolve_rule_severity(SL107, profile, Severity.WARNING)
 
@@ -615,6 +624,7 @@ def check_compaction_split(
     profile: Any = None,
     severity: Severity | None = None,
     context: CheckContext | None = None,
+    indexer: _ToolPairing2Indexer | None = None,
 ) -> list[Finding]:
     """Check for compaction boundaries splitting a tool pair (SL108).
 
@@ -625,7 +635,9 @@ def check_compaction_split(
     - evidence: {boundary_index, correlation_id, result_index, use_index}.
     """
     ctx = context if context is not None else CheckContext()
-    indexer = _ToolPairing2Indexer(events, source_path=source_path)
+    indexer = (
+        indexer if indexer is not None else _ToolPairing2Indexer(events, source_path=source_path)
+    )
     findings: list[Finding] = []
     target_severity = severity or _resolve_rule_severity(SL108, profile, Severity.WARNING)
 
@@ -703,6 +715,7 @@ def check_tool_pairing_2(
     - Capped at max_findings_per_family per code family with overflow summary finding.
     """
     all_findings: list[Finding] = []
+    indexer = _ToolPairing2Indexer(events, source_path=source_path)
 
     all_findings.extend(
         check_reversed_order(
@@ -710,6 +723,7 @@ def check_tool_pairing_2(
             source_path=source_path,
             max_findings=max_findings_per_family,
             context=context,
+            indexer=indexer,
         )
     )
     all_findings.extend(
@@ -718,6 +732,7 @@ def check_tool_pairing_2(
             source_path=source_path,
             max_findings=max_findings_per_family,
             context=context,
+            indexer=indexer,
         )
     )
     all_findings.extend(
@@ -727,6 +742,7 @@ def check_tool_pairing_2(
             max_findings=max_findings_per_family,
             profile=profile,
             context=context,
+            indexer=indexer,
         )
     )
     all_findings.extend(
@@ -736,6 +752,7 @@ def check_tool_pairing_2(
             max_findings=max_findings_per_family,
             profile=profile,
             context=context,
+            indexer=indexer,
         )
     )
 
