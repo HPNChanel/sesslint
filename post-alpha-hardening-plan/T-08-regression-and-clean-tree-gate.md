@@ -1,6 +1,6 @@
 # T-08: Full regression and clean-tree release gate
 
-- Status: in-progress
+- Status: done — all release gates pass at candidate `3fdad5d`; multi-OS CI green (run 34960103501)
 - Phase: 4
 - Priority: P0 release
 - Type: gate / release evidence
