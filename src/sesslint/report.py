@@ -1840,15 +1840,24 @@ class ReproMetadata:
 
 def build_repro_metadata(
     *,
-    adapter_name: str = "canonical",
-    adapter_version: str = "1.0",
-    profile_name: str = "neutral",
-    profile_version: str = "1.0",
-    detection_method: str = "auto",
-    detection_confidence: float | None = 1.0,
+    adapter_name: str = "unknown",
+    adapter_version: str = "unknown",
+    profile_name: str = "unknown",
+    profile_version: str = "unknown",
+    detection_method: str = "unknown",
+    detection_confidence: float | None = None,
 ) -> ReproMetadata:
-    """Build reproduction metadata without host, user, or machine identifiers."""
+    """Build reproduction metadata without host, user, or machine identifiers.
+
+    Defaults are honest sentinels: omitted arguments produce ``"unknown"`` or
+    ``null`` — never fabricated concrete identities, versions, or confidence.
+    """
+    import platform as _platform
+
     from sesslint import __version__
+
+    machine = _platform.machine()
+    architecture = machine.strip() if machine and machine.strip() else "unknown"
 
     return ReproMetadata(
         cli_version=__version__,
@@ -1861,6 +1870,7 @@ def build_repro_metadata(
         profile={"name": profile_name, "version": profile_version},
         detection={"confidence": detection_confidence, "method": detection_method},
         platform={
+            "architecture": architecture,
             "os": sys.platform,
             "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         },

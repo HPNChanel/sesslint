@@ -18,10 +18,49 @@ def test_repro_metadata_structure() -> None:
 
     assert "cli_version" in d
     assert "schema_versions" in d
-    assert d["adapter"] == {"name": "claude-code-jsonl", "version": "1.0"}
-    assert d["profile"] == {"name": "claude-strict", "version": "1.0"}
+    assert d["adapter"] == {"name": "claude-code-jsonl", "version": "unknown"}
+    assert d["profile"] == {"name": "claude-strict", "version": "unknown"}
     assert "detection" in d
-    assert set(d["platform"].keys()) == {"os", "python"}
+    assert set(d["platform"].keys()) == {"architecture", "os", "python"}
+
+
+def test_repro_metadata_defaults_are_honest_sentinels() -> None:
+    """Omitted helper arguments produce unknown/null sentinels, never fabrications."""
+    repro = build_repro_metadata()
+    d = repro.to_dict()
+
+    assert d["adapter"] == {"name": "unknown", "version": "unknown"}
+    assert d["profile"] == {"name": "unknown", "version": "unknown"}
+    assert d["detection"] == {"confidence": None, "method": "unknown"}
+
+
+def test_repro_metadata_explicit_bound_values() -> None:
+    """Explicitly bound adapter/profile versions and a legitimately bound score
+    pass through verbatim."""
+    repro = build_repro_metadata(
+        adapter_name="canonical",
+        adapter_version="1.0.0",
+        profile_name="openai-strict",
+        profile_version="1.0.0",
+        detection_method="auto",
+        detection_confidence=0.87,
+    )
+    d = repro.to_dict()
+
+    assert d["adapter"] == {"name": "canonical", "version": "1.0.0"}
+    assert d["profile"] == {"name": "openai-strict", "version": "1.0.0"}
+    assert d["detection"] == {"confidence": 0.87, "method": "auto"}
+
+
+def test_repro_metadata_architecture_field() -> None:
+    """platform.architecture is always present and non-identifying."""
+    import platform as _platform
+
+    d = build_repro_metadata().to_dict()
+    arch = d["platform"]["architecture"]
+    expected = _platform.machine().strip() or "unknown"
+    assert arch == expected
+    assert isinstance(arch, str) and arch
 
 
 def test_repro_metadata_contains_zero_machine_identity() -> None:

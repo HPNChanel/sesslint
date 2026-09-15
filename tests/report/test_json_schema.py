@@ -54,6 +54,11 @@ def _validate_report_dict_strictly(data: dict[str, Any], *, include_content: boo
         assert "profile" in repro
         assert "detection" in repro
         assert "platform" in repro
+        platform = repro["platform"]
+        assert isinstance(platform.get("architecture"), str) and platform["architecture"]
+        assert isinstance(platform.get("os"), str) and platform["os"]
+        assert isinstance(platform.get("python"), str) and platform["python"]
+        assert set(platform.keys()) == {"architecture", "os", "python"}
 
     # Coverage validation (FR-047)
     assert "coverage" in data

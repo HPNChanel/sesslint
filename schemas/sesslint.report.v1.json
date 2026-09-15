@@ -309,8 +309,9 @@
         },
         "platform": {
           "type": "object",
-          "required": ["os", "python"],
+          "required": ["architecture", "os", "python"],
           "properties": {
+            "architecture": { "type": "string" },
             "os": { "type": "string" },
             "python": { "type": "string" }
           },
