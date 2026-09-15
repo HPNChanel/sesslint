@@ -1,6 +1,6 @@
 # T-05: Performance contract and disclosure repair
 
-- Status: planned
+- Status: done
 - Phase: 2
 - Priority: P0 evidence integrity
 - Type: code + documentation / benchmark contract
@@ -73,6 +73,14 @@ The benchmark command may legitimately exit non-zero until T-06 closes the gap; 
 - Benchmark, task log, `PERF_NOTES.md`, and release notes describe the same dated reference result and the same pass/fail semantics.
 - Docstrings and exit semantics agree.
 - Full gates green (validation tests; the reference benchmark itself may still breach and is recorded honestly).
+
+## Execution Evidence (recorded 2026-09-15)
+
+- Reference run captured: `python bench/perf_250k.py --records 250000 --time-budget 15.0 --mem-budget 512.0` → exit 1. Run context `date=2026-09-15 host=AMD64/win32 python=3.11.9`; generated 250,000 records (99.45 MB) in 0.52s; streaming parse 5.647s (44,269 items/s); integrity check 16.782s (assurance A3); total 22.429s > 15.0s; peak RSS 785.90MB > 512.0MB; breach classes: time, memory.
+- `run_benchmark` (`bench/perf_250k.py`) now always prints run context and derived breach classes before returning; docstring corrected — returns 0 only when functionally correct AND within all budgets; disclosure is never a waiver. `verify_disclosure_recorded` replaced by `verify_reference_disclosure_recorded()` validating the `REFERENCE-BASELINE` block: required fields, ISO date, non-empty host, numeric values/budgets, declared breach classes equal to classes derived from recorded values, and status consistent (BREACH iff classes non-empty). Never compares a current run's values to the static notes.
+- `bench/PERF_NOTES.md` rewritten: §3 holds the single dated `2026-09-15-perf-250k-win32-amd64` baseline (`Status: BREACH — DISCLOSED`); the 2026-09-08 "PASS" table and disclosure statement demoted to §4 Historical (SUPERSEDED). `EVIDENCE_LEDGER.md` L-03 already reconciled; no other docs quote the stale numbers.
+- Tests added to `tests/test_bench_smoke.py` (+9): committed-block acceptance, missing fields, status-vs-values mismatch (PASS on breaching values), partial breach classes, missing date/host, missing markers, consistent PASS run, current-run self-disclosure on breach (context + classes + budgets in output, exit 1), and breach-still-nonzero with a valid reference block.
+- Gates: `pytest -q tests/test_bench_smoke.py` = 11 green; `ruff check` clean; `ruff format --check` clean; `mypy --strict src/` clean (52 files); `pytest -q` = 1660 tests, 0 failures, 0 errors, 2 skipped. The live 250k benchmark still breaches (exit 1) — recorded honestly, investigation owned by T-06.
 
 ## Evidence To Record
 
