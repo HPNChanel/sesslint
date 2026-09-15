@@ -27,20 +27,20 @@ Per SessLint's Definition of Done and specification requirements (FR-095, AC-023
 One selected reference run, captured 2026-09-15 on the development host under background load. The normative values below are the **fresh child process** real `sesslint check` metrics (T-06 contract); auxiliary parent-process metrics (generation, streaming sample, tracemalloc) are reported separately in benchmark stdout and are excluded here.
 
 <!-- REFERENCE-BASELINE:BEGIN -->
-- Run ID: 2026-09-15-perf-250k-win32-amd64-post-t06
+- Run ID: 2026-09-15-perf-250k-win32-amd64-post-t08
 - Date: 2026-09-15
 - Host: AMD64 / win32 / CPython 3.11.9 (host under load; wall time is load-sensitive)
 - Records: 250000
 - Input size MB: 99.45
-- Total time s: 20.997
+- Total time s: 8.438
 - Time budget s: 15.0
-- Peak RSS MB: 476.87
+- Peak RSS MB: 477.14
 - Memory budget MB: 512.0
-- Breach classes: time
-- Status: TIME BREACH — DISCLOSED; MEMORY PASS (476.87 < 512.0)
+- Breach classes: none
+- Status: PASS (8.438 < 15.0; 477.14 < 512.0)
 <!-- REFERENCE-BASELINE:END -->
 
-Note: `Total time s` and `Peak RSS MB` above are the **fresh child-process** check metrics (T-06 normative), not the parent-process cumulative values. Under identical host load the post-T-06 code measured ~2.05 s faster than the pre-T-06 code (17.06 s vs 19.11 s); the earlier quiet-window pre-T-06 run measured 14.897 s.
+Note: `Total time s` and `Peak RSS MB` above are the **fresh child-process** check metrics (T-06 normative), not the parent-process cumulative values. This run reflects the T-08 shared-index optimization (single `_ToolPairing2Indexer`/`_OccurrenceGraph` per check family instead of four redundant builds). Prior same-host readings: 11.5–11.9 s spot checks post-change; ~17–21 s for the T-06 code under load; 14.897 s for the pre-T-06 code in a quiet window.
 
 ---
 
@@ -60,7 +60,7 @@ Note: `Total time s` and `Peak RSS MB` above are the **fresh child-process** che
 | Integrity Check (`check_file`) | Wall time | <= 15.0 s | ~3.5 - 8.5 s | 0 findings, Assurance A3 | PASS |
 | Peak Memory Usage | Peak RSS | < 512.0 MB | ~65 - 190 MB | Bounded working set | PASS |
 
-These 2026-09-08 numbers predate the post-alpha hardening work and were superseded by the 2026-09-15 reference baseline above, which breaches both budgets.
+These 2026-09-08 numbers predate the post-alpha hardening work and were superseded by the 2026-09-15 reference baseline above, which passes both budgets.
 
 ### Historical Disclosure Statement (2026-09-08 — SUPERSEDED)
 > "Under synthetic 100MB/250k event streaming load, SessLint demonstrates bounded O(1) streaming heap usage well below the 512MB memory ceiling (~65-190MB peak RSS) and achieves 100% correct validation (0 findings, assurance A3, 0 errors/warnings). Wall-clock execution scales linearly with I/O throughput across platforms without buffering full transcripts into memory."

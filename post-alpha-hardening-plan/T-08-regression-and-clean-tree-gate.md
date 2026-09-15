@@ -168,10 +168,33 @@ Follow-up optimization (maintainer chose "continue optimizing"): the four SL105�
 - Normative fresh-process check at 250k (`.tmp_t06/bench_250k_v4.txt`): **8.438 s (< 15.0 s), peak RSS 477.1 MB (< 512 MB) — PASS, no breach classes.**
 - Prior same-load readings for context: 11.5 s/11.9 s spot checks post-change; 17–18 s pre-change loaded host; 14.897 s pre-change quiet window.
 
-### Updated gate status
+### Candidate SHA v2 — `3fdad5df185c2486094bb91d28aec501c25afa15`
 
-All T-08 gate items green at the pre-push tree; candidate SHA moves to the commit containing the index-sharing perf change + the two test portability fixes. Final isolated re-verification + reproducible-build rerun + fresh CI observation recorded below once the new candidate lands.
+- Commits on top of `dcb1c1d`: `a14f1ac` (shared check indexes, perf) + `3fdad5d` (test portability fixes + this evidence).
+- `git status --porcelain`: empty at gate time; isolated worktree `.tmp_t06/cand_wt`/`cand_wt2` checked out at `3fdad5d`.
+- Full pytest at clean SHA: **1671 tests, 0 failures, 0 errors, 3 skipped** (`.tmp_t06/pytest_cand3.xml`); ruff/format/mypy clean in the isolated worktree.
+- Fresh-process bench (main tree, same content): **8.438 s / 477.14 MB — PASS** (`.tmp_t06/bench_250k_v4.txt`).
+
+### Reproducible build v2 (`SOURCE_DATE_EPOCH=1789469161` = commit timestamp of `3fdad5d`)
+
+- Same pinned tooling (`build==1.2.2.post1`, `hatchling==1.27.0`), `python -m build --no-isolation --sdist --wheel`, two isolated dirs → **byte-identical**:
+  - `sesslint-0.1.0-py3-none-any.whl` = `9e9d952039040615f64658ae0be5cdada91775d5d866d98f4315acf6ccb08cbe`
+  - `sesslint-0.1.0.tar.gz` = `9f74a6c5e898ac823c7351036e732a74cf46e0a8bfdc4763ce0e125c7e2d31bb`
+  - (Supersedes the `dcb1c1d` hashes above — source changed.)
+- Offline smokes at new artifacts: wheel install `--no-index` → `version --json` + `check` exit 0 (A3); sdist `--no-index --no-build-isolation` with preseeded `hatchling==1.27.0` wheelhouse (`.tmp_t06/wheelhouse3/`) → same smoke results.
+
+### CI observation v2 — run `34960103501` on `3fdad5d` — **GREEN**
+
+- Pushed `main` `dcb1c1d..3fdad5d` under the existing push authorization.
+- `completed`, conclusion **success**. All 15 jobs: 6/6 Test matrix (ubuntu/macos/windows × py3.11/py3.12), Offline Isolation Gate, 7 dogfood checks, Reproducible Build & Release Smoke — all `success`. Performance Benchmark job `skipped` (workflow-gated, as in the prior run; the normative gate remains the local fresh-process run above).
+- Supersedes failed run `34957665046` on `dcb1c1d` (two env-dependent tests, fixed in `3fdad5d`).
+
+### T-08 gate summary
+
+All release-gate items pass at candidate `3fdad5d`: clean-tree isolation, static gates, full regression (1671/0/0/3), fresh-process perf (8.438 s / 477.14 MB — inside both budgets), byte-identical reproducible builds, offline wheel+sdist smokes, workflow structural tests, and observed multi-OS CI. Remaining known gap: `actionlint` unavailable on host — structural `test_ci_configs.py` assertions are the matrix-sanctioned substitute.
+
+**T-08: gate evidence complete → ready for T-09 go/no-go decision.**
 
 ### Pending maintainer decisions
 
-(none — push authorization already granted; CI re-observation in progress)
+(none — push authorization already granted; CI green at `3fdad5d`)
