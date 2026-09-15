@@ -419,6 +419,7 @@ def check_missing_parent(
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
     context: CheckContext | None = None,
+    occurrence_graph: _OccurrenceGraph | None = None,
 ) -> list[Finding]:
     """SL004: Detect events referencing a non-existent parent event.
 
@@ -431,7 +432,7 @@ def check_missing_parent(
     - Sorts output by primary ID, capped at max_findings with overflow summary.
     """
     ctx = context if context is not None else CheckContext()
-    g = _OccurrenceGraph(events, source_path)
+    g = occurrence_graph if occurrence_graph is not None else _OccurrenceGraph(events, source_path)
     findings: list[Finding] = []
 
     for id_str in g.id_order:
@@ -506,6 +507,7 @@ def check_cycles(
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
     context: CheckContext | None = None,
+    occurrence_graph: _OccurrenceGraph | None = None,
 ) -> list[Finding]:
     """SL005: Detect all elementary directed cycles in the child-to-parent graph.
 
@@ -518,7 +520,7 @@ def check_cycles(
     - Output sorted by primary ID (cycle_path[0]), capped at max_findings.
     """
     ctx = context if context is not None else CheckContext()
-    g = _OccurrenceGraph(events, source_path)
+    g = occurrence_graph if occurrence_graph is not None else _OccurrenceGraph(events, source_path)
     color: dict[str, int] = {}
     cycles: list[list[str]] = []
     seen_cycles: set[frozenset[str]] = set()
@@ -619,6 +621,7 @@ def check_components(
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
     context: CheckContext | None = None,
+    occurrence_graph: _OccurrenceGraph | None = None,
 ) -> list[Finding]:
     """SL006: Detect extra disconnected weakly-connected components over present parent edges.
 
@@ -634,7 +637,7 @@ def check_components(
     - Output sorted by primary ID, capped at max_findings with overflow summary.
     """
     ctx = context if context is not None else CheckContext()
-    g = _OccurrenceGraph(events, source_path)
+    g = occurrence_graph if occurrence_graph is not None else _OccurrenceGraph(events, source_path)
     if not g.id_set:
         return []
 
@@ -753,6 +756,7 @@ def check_heads(
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
     context: CheckContext | None = None,
+    occurrence_graph: _OccurrenceGraph | None = None,
 ) -> list[Finding]:
     """SL007: Detect ambiguous session heads (multiple terminal leaf tips).
 
@@ -764,7 +768,7 @@ def check_heads(
     - Primary ID is the lexicographically smallest head ID.
     """
     ctx = context if context is not None else CheckContext()
-    g = _OccurrenceGraph(events, source_path)
+    g = occurrence_graph if occurrence_graph is not None else _OccurrenceGraph(events, source_path)
     if not g.id_set:
         return []
 
@@ -837,29 +841,35 @@ def check_graph(
     - Each detector family is capped at max_findings_per_family + overflow summary.
     - Total output is deterministically sorted by (code, primary_id, fingerprint).
     """
+    occurrence_graph = _OccurrenceGraph(events, source_path)
+
     sl004_findings = check_missing_parent(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
         context=context,
+        occurrence_graph=occurrence_graph,
     )
     sl005_findings = check_cycles(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
         context=context,
+        occurrence_graph=occurrence_graph,
     )
     sl006_findings = check_components(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
         context=context,
+        occurrence_graph=occurrence_graph,
     )
     sl007_findings = check_heads(
         events,
         source_path=source_path,
         max_findings=max_findings_per_family,
         context=context,
+        occurrence_graph=occurrence_graph,
     )
 
     all_findings = sl004_findings + sl005_findings + sl006_findings + sl007_findings
