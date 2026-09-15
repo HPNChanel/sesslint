@@ -11,11 +11,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import platform
 import random
+import re
 import sys
 import tempfile
 import time
 import tracemalloc
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Ensure sesslint from src/ is importable even when not installed in editable mode
@@ -109,24 +112,106 @@ def get_rss_mb() -> float | None:
     return None
 
 
-def verify_disclosure_recorded(reasons: list[str]) -> bool:
-    """Verify that bench/PERF_NOTES.md exists and documents performance shortfalls."""
+def verify_reference_disclosure_recorded() -> bool:
+    """Validate the latest reference baseline block in bench/PERF_NOTES.md.
+
+    The block (delimited by REFERENCE-BASELINE markers) must be complete and
+    internally consistent: run ID, ISO date, host status (an honest
+    "unknown/not captured" is allowed), record count, input size, measured
+    values, budgets, breach classes that match the classes derived from those
+    values, and a status consistent with them ("BREACH" iff classes non-empty,
+    "PASS" iff empty).
+
+    This validator never compares a current run's fluctuating values against
+    the static notes, and never claims the notes describe a future run.
+    """
     perf_notes = _REPO_ROOT / "bench" / "PERF_NOTES.md"
     if not perf_notes.is_file():
         return False
     content = perf_notes.read_text(encoding="utf-8")
-    return "Mandatory Disclosure Rule" in content and "Disclosure Statement" in content
+    begin = "<!-- REFERENCE-BASELINE:BEGIN -->"
+    end = "<!-- REFERENCE-BASELINE:END -->"
+    if content.count(begin) != 1 or content.count(end) != 1:
+        return False
+    block = content.split(begin, 1)[1].split(end, 1)[0]
+
+    fields: dict[str, str] = {}
+    for raw_line in block.splitlines():
+        line = raw_line.strip()
+        if line.startswith("-") and ":" in line:
+            key, _, val = line[1:].partition(":")
+            fields[key.strip().lower().strip("*")] = val.strip()
+
+    required = (
+        "run id",
+        "date",
+        "host",
+        "records",
+        "input size mb",
+        "total time s",
+        "time budget s",
+        "peak rss mb",
+        "memory budget mb",
+        "breach classes",
+        "status",
+    )
+    if any(not fields.get(k) for k in required):
+        return False
+    if not re.match(r"^\d{4}-\d{2}-\d{2}\b", fields["date"]):
+        return False
+    try:
+        records = int(fields["records"].replace(",", ""))
+        float(fields["input size mb"])
+        total_s = float(fields["total time s"])
+        time_budget = float(fields["time budget s"])
+        rss_mb = float(fields["peak rss mb"])
+        mem_budget = float(fields["memory budget mb"])
+    except ValueError:
+        return False
+    if records <= 0:
+        return False
+
+    declared = {
+        c.strip().lower()
+        for c in fields["breach classes"].split(",")
+        if c.strip() and c.strip().lower() != "none"
+    }
+    if not declared.issubset({"time", "memory"}):
+        return False
+    derived: set[str] = set()
+    if total_s > time_budget:
+        derived.add("time")
+    if rss_mb > mem_budget:
+        derived.add("memory")
+    if declared != derived:
+        return False
+
+    status = fields["status"].lower()
+    if derived and "breach" not in status:
+        return False
+    if not derived and "pass" not in status:
+        return False
+    return True
 
 
 def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
     """Execute 100MB / 250k streaming and validation benchmark.
 
-    Returns 0 for PASS or successfully disclosed shortfall; 1 for undisclosed failure.
+    The run discloses itself: measured values, budgets, derived breach
+    classes, and run context are always printed. Returns 0 only when the run
+    is functionally correct AND within all budgets; returns 1 on any
+    functional failure or budget breach — disclosure is mandatory context,
+    never a waiver.
     """
     print("=== SessLint 100MB / 250k Performance Benchmark (TASK-026) ===")
     print(
         f"Records: {records:,} | Time budget: {time_budget:.1f}s | "
         f"Memory budget: {mem_budget:.1f}MB"
+    )
+    print(
+        f"Run context: date={datetime.now(UTC).date().isoformat()} "
+        f"host={platform.machine() or 'unknown'}/{sys.platform} "
+        f"python={platform.python_version()}"
     )
 
     with tempfile.TemporaryDirectory(prefix="sesslint_bench_") as tmp_dir:
@@ -221,18 +306,27 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
                 f"Memory exceeded budget: {reported_mem_mb:.2f}MB > {mem_budget:.1f}MB"
             )
 
+        breach_classes: list[str] = []
+        if total_eval_time > time_budget:
+            breach_classes.append("time")
+        if reported_mem_mb > mem_budget:
+            breach_classes.append("memory")
+        breach_str = ", ".join(breach_classes) if breach_classes else "none"
+        print(f"Breach classes: {breach_str}")
+
         if perf_shortfalls:
-            disclosed = verify_disclosure_recorded(perf_shortfalls)
+            reference_ok = verify_reference_disclosure_recorded()
             disclosure_info = (
-                "Documented disclosure statement present in bench/PERF_NOTES.md."
-                if disclosed
-                else "No disclosure found in bench/PERF_NOTES.md."
+                "Latest reference baseline recorded in bench/PERF_NOTES.md."
+                if reference_ok
+                else "No valid reference baseline in bench/PERF_NOTES.md."
             )
             print(
                 f"PERFORMANCE BUDGET BREACH (FAIL):\n"
                 f"  {'; '.join(perf_shortfalls)}\n"
                 f"  Total time: {total_eval_time:.3f}s (budget: {time_budget:.1f}s)\n"
                 f"  Peak memory: {reported_mem_mb:.2f}MB (budget: {mem_budget:.1f}MB)\n"
+                f"  Breach classes: {breach_str}\n"
                 f"  {disclosure_info}",
                 file=sys.stderr,
             )
