@@ -63,6 +63,7 @@ from sesslint.repair.errors import (
     PlanTampered,
     PolicyMismatch,
     RepairRefused,
+    VendorRepairRefused,
 )
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
@@ -643,7 +644,7 @@ def execute(
 
     # RVW-019: Direct repair of vendor formats is rejected (canonical only)
     if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-        raise RepairRefused(
+        raise VendorRepairRefused(
             f"Direct repair of vendor format '{format}' is not supported. "
             "Repair operates exclusively on canonical session streams (JSONL)."
         )

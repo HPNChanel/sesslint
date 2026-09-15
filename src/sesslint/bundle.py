@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -39,6 +38,7 @@ from sesslint.adapters.detect import (
     FORMAT_OPENAI_AGENTS,
     resolve_format,
     to_source_block,
+    validate_detection_thresholds,
 )
 from sesslint.adapters.safe_value import safe_discriminator
 from sesslint.errors import FileTooLargeError, SourceChangedError
@@ -230,29 +230,7 @@ def build_bundle(
         FileNotFoundError: If the target session file does not exist.
         IsADirectoryError: If the path points to a directory.
     """
-    if confidence_min is not None:
-        if (
-            isinstance(confidence_min, bool)
-            or not isinstance(confidence_min, (int, float))
-            or math.isnan(confidence_min)
-            or math.isinf(confidence_min)
-            or not (0.0 < confidence_min < 1.0)
-        ):
-            raise ValueError(
-                "confidence_min must be strictly between 0.0 and 1.0 exclusive, "
-                f"got {confidence_min}"
-            )
-    if margin_min is not None:
-        if (
-            isinstance(margin_min, bool)
-            or not isinstance(margin_min, (int, float))
-            or math.isnan(margin_min)
-            or math.isinf(margin_min)
-            or not (0.0 < margin_min < 1.0)
-        ):
-            raise ValueError(
-                f"margin_min must be strictly between 0.0 and 1.0 exclusive, got {margin_min}"
-            )
+    validate_detection_thresholds(confidence_min, margin_min)
 
     target_path = Path(path)
     if not target_path.exists():
@@ -292,8 +270,22 @@ def build_bundle(
     # 2. Version and tool identity block
     created_by_block = _build_created_by()
 
-    # 3. Format detection block
-    resolved_fmt, detection_res, _det_findings = resolve_format(format, target_path)
+    # 3. Format detection block — outer detection and the embedded check report
+    # below must use identical effective thresholds (single resolution here).
+    from sesslint.profiles import resolve_effective_config
+
+    effective_cfg = resolve_effective_config(
+        profile,
+        format=format if format != "auto" else None,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+    )
+    resolved_fmt, detection_res, _det_findings = resolve_format(
+        format,
+        target_path,
+        confidence_min=effective_cfg.confidence_min,
+        margin_min=effective_cfg.margin_min,
+    )
     det_block = to_source_block(detection_res, requested=format)
     detection_dict: dict[str, Any] = dict(det_block)
 

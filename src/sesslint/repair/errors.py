@@ -46,6 +46,16 @@ class RepairRefused(RepairError):
     code: str = "REPAIR_REFUSED"
 
 
+class VendorRepairRefused(RepairRefused):
+    """Raised when repair targets a vendor (non-canonical) format, explicitly or detected.
+
+    Repair operates exclusively on canonical session streams; callers map this refusal
+    to the usage-error exit path (CLI exit 2), distinct from generic repair refusals.
+    """
+
+    code: str = "VENDOR_FORMAT_REFUSED"
+
+
 class ManifestCollision(RepairRefused):
     """Raised when destination repair manifest already exists (refusing to overwrite receipt)."""
 
@@ -67,4 +77,5 @@ __all__ = [
     "PolicyMismatch",
     "RepairError",
     "RepairRefused",
+    "VendorRepairRefused",
 ]

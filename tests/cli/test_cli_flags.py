@@ -226,3 +226,80 @@ def test_cli_main_exit_code_on_range_error(tmp_path: Path) -> None:
     assert _run_cli(["check", "--max-bytes", "-10", str(sample)]) == 2
     assert _run_cli(["check", "--confidence-min", "2.0", str(sample)]) == 2
     assert _run_cli(["check", "--margin-min", "0.0", str(sample)]) == 2
+
+
+# ---------------------------------------------------------------------------
+# T-02: standalone scan threshold flags
+# ---------------------------------------------------------------------------
+
+
+def test_scan_parser_accepts_threshold_flags() -> None:
+    """The standalone scan parser accepts --confidence-min/--margin-min (T-02)."""
+    parser = create_parser()
+    args = parser.parse_args(["scan", "some_dir", "--confidence-min", "0.7", "--margin-min", "0.2"])
+    assert args.confidence_min == 0.7
+    assert args.margin_min == 0.2
+
+
+def test_scan_threshold_flags_reject_out_of_range(capsys: pytest.CaptureFixture[str]) -> None:
+    """scan --confidence-min/--margin-min reject values outside (0.0, 1.0) with exit 2."""
+    parser = create_parser()
+    for flag in ["--confidence-min", "--margin-min"]:
+        for bad_val in ["0", "0.0", "1", "1.0", "-0.1", "1.1", "nan", "inf"]:
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(["scan", flag, bad_val, "dummy_dir"])
+            assert exc_info.value.code == 2
+            err = capsys.readouterr().err
+            assert "strictly between 0.0 and 1.0" in err
+
+
+def test_scan_threshold_flags_reach_detection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """scan <dir> --confidence-min applies the effective threshold to per-file detection."""
+    from unittest.mock import patch
+
+    fixture = (
+        Path(__file__).resolve().parent.parent.parent
+        / "fixtures"
+        / "cli"
+        / "check_basic"
+        / "healthy.jsonl"
+    )
+    (tmp_path / "a.jsonl").write_bytes(fixture.read_bytes())
+
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.10),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        # Default thresholds: 0.60 wins -> file is healthy -> exit 0.
+        assert main(["scan", str(tmp_path)]) == 0
+        capsys.readouterr()
+        # Raised confidence_min=0.70: detection fails -> file invalid -> exit 1.
+        assert main(["scan", str(tmp_path), "--confidence-min", "0.7"]) == 1
+
+
+def test_check_dir_branch_threshold_flags_reach_detection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check <dir> -r forwards --confidence-min/--margin-min to check_dir (T-02)."""
+    from unittest.mock import patch
+
+    fixture = (
+        Path(__file__).resolve().parent.parent.parent
+        / "fixtures"
+        / "cli"
+        / "check_basic"
+        / "healthy.jsonl"
+    )
+    (tmp_path / "a.jsonl").write_bytes(fixture.read_bytes())
+
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.10),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        assert main(["check", str(tmp_path), "-r"]) == 0
+        capsys.readouterr()
+        assert main(["check", str(tmp_path), "-r", "--confidence-min", "0.7"]) == 1

@@ -24,6 +24,7 @@ from sesslint.repair.errors import (
     PolicyMismatch,
     RepairError,
     RepairRefused,
+    VendorRepairRefused,
 )
 from sesslint.repair.executor import (
     SQLITE_MAGIC,
@@ -158,6 +159,7 @@ __all__ = [
     "RepairError",
     "RepairRefused",
     "SALVAGE_RECIPES",
+    "VendorRepairRefused",
     "SQLITE_MAGIC",
     "Blocked",
     "Loss",

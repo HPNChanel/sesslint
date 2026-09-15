@@ -23,7 +23,7 @@ from typing import Any, Literal, cast
 from sesslint.codes import SL001, SL301, SL302, Repairability, Severity
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding
-from sesslint.profiles import resolve_effective_config
+from sesslint.profiles import EffectiveConfig, resolve_effective_config
 from sesslint.report import minimize_path
 
 Verdict = Literal["healthy", "invalid", "unsupported", "unreadable", "skipped"]
@@ -139,7 +139,7 @@ def _scan_single_file(
     file_path: Path,
     *,
     format: str | None = None,
-    profile: str = "neutral",
+    effective_cfg: EffectiveConfig,
 ) -> FileResult:
     """Evaluate a single regular file artifact, mapping to one of 4 active buckets."""
     display_path = minimize_path(file_path)
@@ -229,7 +229,12 @@ def _scan_single_file(
             resolve_format,
         )
 
-        resolved_fmt, detection_res, det_findings = resolve_format(format, file_path)
+        resolved_fmt, detection_res, det_findings = resolve_format(
+            format,
+            file_path,
+            confidence_min=effective_cfg.confidence_min,
+            margin_min=effective_cfg.margin_min,
+        )
         if resolved_fmt is None:
             rep_findings = list(det_findings)
             if not rep_findings:
@@ -253,10 +258,6 @@ def _scan_single_file(
                 warning_count=warn_c,
             )
 
-        effective_cfg = resolve_effective_config(
-            profile,
-            format=format if format != "auto" else None,
-        )
         fmt_key = (
             "claude"
             if resolved_fmt == FORMAT_CLAUDE_CODE
@@ -397,6 +398,8 @@ def scan_path(
     max_bytes: int = DEFAULT_MAX_BYTES,
     format: str | None = None,
     profile: str = "neutral",
+    confidence_min: float | None = None,
+    margin_min: float | None = None,
 ) -> ScanReport:
     """Scan a target path or directory tree, returning a ScanReport with 5-bucket totals."""
     if isinstance(max_files, bool) or not isinstance(max_files, int) or max_files <= 0:
@@ -409,6 +412,18 @@ def scan_path(
 
     if not target.exists() and not target.is_symlink():
         raise FileNotFoundError(f"Path not found: {target}")
+
+    # Resolve exactly one effective configuration for the whole scan; every per-file
+    # detection below uses these thresholds rather than re-resolving per file.
+    from sesslint.adapters.detect import validate_detection_thresholds
+
+    validate_detection_thresholds(confidence_min, margin_min)
+    effective_cfg = resolve_effective_config(
+        profile,
+        format=format if format != "auto" else None,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+    )
 
     # Single-file mode
     if not target.is_dir() or target.is_symlink():
@@ -449,7 +464,7 @@ def scan_path(
             return ScanReport(root_path=root_str, totals=ScanTotals(skipped=1), files=(res,))
 
         try:
-            file_res = _scan_single_file(target, format=format, profile=profile)
+            file_res = _scan_single_file(target, format=format, effective_cfg=effective_cfg)
         except Exception as err:
             err_finding = make_finding(
                 code=SL001,
@@ -669,7 +684,7 @@ def scan_path(
 
             cumulative_bytes += st.st_size
             try:
-                res = _scan_single_file(entry_p, format=format, profile=profile)
+                res = _scan_single_file(entry_p, format=format, effective_cfg=effective_cfg)
             except Exception as err:
                 err_finding = make_finding(
                     code=SL001,

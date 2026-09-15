@@ -1,6 +1,6 @@
 # T-02: Detection threshold plumbing
 
-- Status: planned
+- Status: done
 - Phase: 2
 - Priority: P0 correctness
 - Type: code / behavioral correctness
@@ -98,6 +98,14 @@ pytest -q
 - Bundle outer detection and embedded report provably use identical effective thresholds.
 - Default and explicit-format behavior unchanged; export retains documented defaults.
 - Full gates green.
+
+## Execution Evidence (recorded 2026-09-15)
+
+- Shared helper: `validate_detection_thresholds` added to `src/sesslint/adapters/detect.py`; replaces the duplicated inline blocks in `api.check_file` and `bundle.build_bundle`; `resolve_effective_config` retains its resolved-pair validation (messages pinned by `tests/test_profiles.py`).
+- Propagation sites: `detect_format`/`resolve_format` accept keyword-only `confidence_min`/`margin_min` (defaults = module constants); SL302 evidence now emits effective values. `api.check_file` passes `effective_cfg` values into `resolve_format`; `api.check_dir`/`api.check`/`scan.scan_path` accept and forward thresholds; `scan_path` resolves exactly one `EffectiveConfig` per scan consumed by `_scan_single_file` (asserted by call-count test); standalone `scan` parser gained `--confidence-min`/`--margin-min`; both CLI directory paths forward them; `build_bundle` resolves one config used by outer `resolve_format` while the embedded `check_file` re-resolves identical values (equality proven by call-kwarg capture test).
+- Repair single-pass: CLI `detect_format` pre-sniff removed; `api.repair` resolves the selected profile and calls `detect_format` exactly once. New `VendorRepairRefused(RepairRefused)` (code `VENDOR_FORMAT_REFUSED`) raised by `api.repair`/`executor` for vendor formats; CLI maps it to exit 2 preserving the prior pre-sniff contract.
+- Tests added: `tests/adapters/test_detect.py` (+8 functions), `tests/test_api_surface.py` (+7), `tests/test_bundle.py` (+2), `tests/cli/test_cli_flags.py` (+4) — covering 0.60@0.55-vs-0.70 decision change, margin 0.10@0.15-vs-0.05, claude-strict 0.20 margin tie, SL302 evidence values, single-config-per-scan, single-sniff repair, bundle kwarg equality, explicit-format bypass, default byte-identical outcome, identical rejection on every path.
+- Gates: focused suite green; `ruff check` clean; `ruff format --check` clean; `mypy --strict src/` clean (52 files); `pytest -q` = 1634 tests, 0 failures, 0 errors, 2 skipped (62.6s).
 
 ## Evidence To Record
 

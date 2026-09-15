@@ -260,3 +260,178 @@ def test_api_numeric_range_validation(tmp_path: Path) -> None:
             api.build_bundle(HEALTHY_FIXTURE, confidence_min=bad_float)
         with pytest.raises(ValueError, match="margin_min must be strictly between"):
             api.build_bundle(HEALTHY_FIXTURE, margin_min=bad_float)
+
+
+# ---------------------------------------------------------------------------
+# T-02: Effective detection threshold plumbing (post-alpha hardening)
+# ---------------------------------------------------------------------------
+
+
+def _patch_detector_scores(claude: float, openai: float, canonical: float):
+    """Return patch triple pinning all three adapter detector scores."""
+    from unittest.mock import patch
+
+    return (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=claude),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=openai),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=canonical),
+    )
+
+
+def _copy_healthy(dst_dir: Path, name: str) -> Path:
+    """Copy the real healthy claude-code fixture into dst_dir/name."""
+    dst = dst_dir / name
+    dst.write_bytes(HEALTHY_FIXTURE.read_bytes())
+    return dst
+
+
+def test_check_file_threshold_override_alters_detection(tmp_path: Path) -> None:
+    """check_file applies effective thresholds: 0.60 passes at 0.55, fails at 0.70."""
+    p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
+    with p1, p2, p3:
+        report_ok = api.check_file(HEALTHY_FIXTURE)
+        assert not any(f.code == "SL302" for f in report_ok.findings)
+
+        report_strict = api.check_file(HEALTHY_FIXTURE, confidence_min=0.70)
+        sl302 = [f for f in report_strict.findings if f.code == "SL302"]
+        assert sl302, "expected SL302 ambiguous-format finding under raised threshold"
+        assert sl302[0].evidence is not None
+        assert sl302[0].evidence["confidence_min"] == 0.70
+
+
+def test_check_dir_threshold_override_applies_once(tmp_path: Path) -> None:
+    """check_dir applies effective thresholds to per-file detection."""
+    _copy_healthy(tmp_path, "a.jsonl")
+    _copy_healthy(tmp_path, "b.jsonl")
+
+    p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
+    with p1, p2, p3:
+        rep_ok = api.check_dir(tmp_path)
+        assert rep_ok.totals.healthy == 2
+        assert rep_ok.totals.invalid == 0
+
+        rep_strict = api.check_dir(tmp_path, confidence_min=0.70)
+        assert rep_strict.totals.invalid == 2
+        for fr in rep_strict.files:
+            sl302 = [f for f in fr.findings if f.code == "SL302"]
+            assert sl302 and sl302[0].evidence["confidence_min"] == 0.70
+
+
+def test_scan_path_resolves_effective_config_once(tmp_path: Path) -> None:
+    """scan_path resolves exactly one EffectiveConfig for a whole directory scan."""
+    import sesslint.scan as scan_mod
+
+    for name in ("a.jsonl", "b.jsonl", "c.jsonl"):
+        _copy_healthy(tmp_path, name)
+
+    calls = 0
+    real_resolve = scan_mod.resolve_effective_config
+
+    def counting_resolve(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return real_resolve(*args, **kwargs)
+
+    from unittest.mock import patch
+
+    with patch.object(scan_mod, "resolve_effective_config", side_effect=counting_resolve):
+        rep = scan_mod.scan_path(tmp_path, recursive=True)
+    assert rep.totals.healthy == 3
+    assert calls == 1
+
+
+def test_check_unified_forwards_thresholds_to_dir(tmp_path: Path) -> None:
+    """api.check on a directory forwards effective thresholds to the scan path."""
+    _copy_healthy(tmp_path, "a.jsonl")
+    p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
+    with p1, p2, p3:
+        rep = api.check(tmp_path, confidence_min=0.70)
+        assert isinstance(rep, ScanReport)
+        assert rep.totals.invalid == 1
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [True, "0.7", float("nan"), float("inf"), 0.0, 1.0, -0.1, 1.1],
+)
+def test_threshold_validation_identical_across_paths(tmp_path: Path, bad: object) -> None:
+    """Every threshold-accepting public path rejects invalid values identically."""
+    from sesslint.scan import scan_path
+
+    target = _copy_healthy(tmp_path, "candidate.jsonl")
+
+    with pytest.raises(ValueError, match="confidence_min must be strictly between"):
+        api.check_file(target, confidence_min=bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="confidence_min must be strictly between"):
+        api.check_dir(tmp_path, confidence_min=bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="confidence_min must be strictly between"):
+        scan_path(tmp_path, confidence_min=bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="confidence_min must be strictly between"):
+        api.build_bundle(target, confidence_min=bad)  # type: ignore[arg-type]
+
+
+def test_repair_performs_single_detection_with_profile_thresholds(tmp_path: Path) -> None:
+    """api.repair runs exactly one detection pass using the selected profile's thresholds."""
+    import sesslint.adapters.detect as detect_mod
+    from sesslint.repair.errors import VendorRepairRefused
+
+    target = _copy_healthy(tmp_path, "candidate.jsonl")
+
+    calls: list[dict[str, float]] = []
+    real_detect = detect_mod.detect_format
+
+    def spy_detect(path, *, confidence_min, margin_min):  # type: ignore[no-untyped-def]
+        calls.append({"confidence_min": confidence_min, "margin_min": margin_min})
+        return real_detect(path, confidence_min=confidence_min, margin_min=margin_min)
+
+    # claude-strict profile pins margin_min=0.20; neutral pins 0.15.
+    p1, p2, p3 = _patch_detector_scores(0.60, 0.45, 0.10)
+    with p1, p2, p3, pytest.MonkeyPatch.context() as mp:
+        mp.setattr(detect_mod, "detect_format", spy_detect)
+        # Under neutral (margin 0.15): claude wins (0.60 vs 0.45 -> margin 0.15)
+        # -> vendor refusal proves a single detection pass ran under thresholds.
+        with pytest.raises(VendorRepairRefused, match="Direct repair of vendor format"):
+            api.repair(target, tmp_path / "out.jsonl")
+        assert len(calls) == 1
+        assert calls[0]["confidence_min"] == 0.55
+        assert calls[0]["margin_min"] == 0.15
+
+        calls.clear()
+        # Under claude-strict (margin 0.20): 0.60-0.45=0.15 < 0.20 -> ambiguous,
+        # so no vendor refusal may fire from the detection pass.
+        try:
+            api.repair(
+                target,
+                tmp_path / "out.jsonl",
+                profile="claude-strict",
+                dry_run=True,
+            )
+        except VendorRepairRefused:
+            raise AssertionError("vendor refusal must not fire under strict margin tie") from None
+        except Exception:
+            pass  # downstream failure acceptable; assertion target is detection
+        assert len(calls) == 1
+        assert calls[0]["margin_min"] == 0.20
+
+
+def test_repair_detection_call_count_exactly_once(tmp_path: Path) -> None:
+    """Vendor-detected repair performs exactly one detect_format call (no double sniff)."""
+    import sesslint.adapters.detect as detect_mod
+    from sesslint.repair.errors import VendorRepairRefused
+
+    target = _copy_healthy(tmp_path, "candidate.jsonl")
+
+    calls = 0
+    real_detect = detect_mod.detect_format
+
+    def counting_detect(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return real_detect(*args, **kwargs)
+
+    p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
+    with p1, p2, p3, pytest.MonkeyPatch.context() as mp:
+        mp.setattr(detect_mod, "detect_format", counting_detect)
+        with pytest.raises(VendorRepairRefused):
+            api.repair(target, tmp_path / "out.jsonl")
+    assert calls == 1
