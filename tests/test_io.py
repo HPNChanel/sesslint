@@ -581,11 +581,16 @@ class TestIterEventsEdgeCases:
         assert isinstance(items2[1], SessionEvent)
 
     def test_read_header_adversarial_deep_nesting_recursion_error(self, tmp_path: Path) -> None:
-        """2000 levels of nesting in read_header raises SchemaError with recursion limit."""
+        """2000 levels of nesting in read_header fails closed with SchemaError.
+
+        CPython <=3.11 hits RecursionError inside the decoder ("recursion limit");
+        CPython 3.12+ uses a non-recursive C scanner, so the deep object decodes
+        and is rejected by header-shape validation. Both paths raise SchemaError.
+        """
         deep_obj = '{"a":' * 2000 + "1" + "}" * 2000
         file_path = tmp_path / "deep_hdr_rec.jsonl"
         file_path.write_text(deep_obj + "\n", encoding="utf-8")
-        with pytest.raises(SchemaError, match="recursion limit"):
+        with pytest.raises(SchemaError, match="recursion limit|not a session header"):
             read_header(file_path)
 
     def test_extract_record_id_whitespace_only(self, tmp_path: Path) -> None:
