@@ -1,0 +1,161 @@
+name: Release
+
+# Tag-gated release pipeline for SessLint (post-alpha-hardening-plan/T-07a).
+#
+# Contract:
+#   - Triggers ONLY on pushing a v* tag; the tag must equal "v" + the package
+#     version declared in src/sesslint/_version.py.
+#   - Exactly one immutable artifact set is built once, then flows:
+#       build -> github-draft -> pypi-publish -> github-promote
+#   - A draft GitHub Release (with all assets) is staged BEFORE PyPI publish;
+#     it is promoted to public only after PyPI publish succeeds.
+#   - SOURCE_DATE_EPOCH is derived from the tagged commit timestamp so builds
+#     are reproducible (T-08 reuses the same rule for byte-parity checks).
+#   - Permissions are minimal: contents:write only on draft/promote jobs;
+#     id-token:write only on pypi-publish (Trusted Publisher / OIDC — no
+#     PyPI API token exists anywhere in this workflow).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACT_NAME: release-dist
+
+jobs:
+  build:
+    name: Build immutable artifact set
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Validate tag matches package version
+        run: |
+          set -euo pipefail
+          pkg_version="$(python -c "import re, pathlib; m = re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('src/sesslint/_version.py').read_text()); print(m.group(1))")"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "Tag/version mismatch: tag '${GITHUB_REF_NAME}' implies '${tag_version}' but _version.py declares '${pkg_version}'"
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package version ${pkg_version}"
+
+      - name: Install pinned build tooling
+        run: python -m pip install "build==1.2.2.post1" "hatchling==1.27.0"
+
+      - name: Build sdist and wheel (reproducible, no build isolation)
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
+          python -m build --no-isolation --sdist --wheel
+
+      - name: Generate sha256sums and artifact manifest
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -- *.whl *.tar.gz > sha256sums.txt
+          sha256sum -c sha256sums.txt
+          python - <<'PY'
+          import hashlib, json, os, pathlib
+          files = sorted(p for p in pathlib.Path('.').iterdir() if p.suffix in {'.whl', '.gz'} or p.name.endswith('.tar.gz'))
+          manifest = {
+              "tag": os.environ["GITHUB_REF_NAME"],
+              "commit": os.environ["GITHUB_SHA"],
+              "source_date_epoch": int(os.environ["SOURCE_DATE_EPOCH"]),
+              "artifacts": {
+                  p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files
+              },
+          }
+          pathlib.Path("artifact-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          print(pathlib.Path("artifact-manifest.json").read_text())
+          PY
+
+      - name: Upload release artifact set
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist/
+          if-no-files-found: error
+
+  github-draft:
+    name: Stage draft GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifact set
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist/
+
+      - name: Create draft release with all assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd dist && sha256sum -c sha256sums.txt && cd ..
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "SessLint ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/*.whl dist/*.tar.gz dist/sha256sums.txt dist/artifact-manifest.json
+
+  pypi-publish:
+    name: Publish to PyPI (Trusted Publisher / OIDC)
+    runs-on: ubuntu-latest
+    needs: github-draft
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download release artifact set
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist/
+
+      - name: Verify artifact hashes
+        run: |
+          set -euo pipefail
+          cd dist && sha256sum -c sha256sums.txt && cd ..
+
+      - name: Stage packages-only directory for PyPI
+        run: |
+          set -euo pipefail
+          mkdir -p pypi_dist
+          cp dist/*.whl dist/*.tar.gz pypi_dist/
+          ls -la pypi_dist/
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: pypi_dist/
+
+  github-promote:
+    name: Promote draft release to public
+    runs-on: ubuntu-latest
+    needs: pypi-publish
+    permissions:
+      contents: write
+    steps:
+      - name: Promote existing draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

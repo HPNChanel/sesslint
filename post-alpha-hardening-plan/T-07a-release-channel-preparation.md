@@ -1,6 +1,6 @@
 # T-07a: Release channel preparation
 
-- Status: planned
+- Status: done
 - Phase: 3
 - Priority: P0 release infrastructure
 - Type: infrastructure / security-hardened release plumbing
@@ -106,3 +106,40 @@ pytest -q
 - PyPI Trusted Publishers: <https://docs.pypi.org/trusted-publishers/>
 - PyPA publishing via GitHub Actions CI/CD: <https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/>
 - Hatch reproducible builds / `SOURCE_DATE_EPOCH`: <https://hatch.pypa.io/latest/config/build/#reproducible-builds>
+
+---
+
+## Execution Evidence — 2026-09-15
+
+### Deliverables
+
+- `.github/workflows/release.yml` — tag-gated (`push: tags: ["v*"]`), non-reusable; exactly four jobs `build → github-draft → pypi-publish → github-promote` with the `needs` chain enforced. Tag↔version validation (`v${__version__}` vs `src/sesslint/_version.py`) aborts before building. `SOURCE_DATE_EPOCH` = `git show -s --format=%ct "$GITHUB_SHA"`, exported and recorded in `artifact-manifest.json`. Permissions: workflow-level `contents: read`; `contents: write` only on `github-draft`/`github-promote`; `id-token: write` only on `pypi-publish`; `environment: pypi` on `pypi-publish`; no API-token/password anywhere. PyPI step publishes only `pypi_dist/` containing `*.whl`/`*.tar.gz`.
+- `RELEASING.md` — extended with the two-channel procedure, maintainer setup (protected `pypi` environment + pending Trusted Publisher for `HPNChanel/sesslint`/`release.yml`/`pypi`), the commit-derived `SOURCE_DATE_EPOCH` rule, the pre-publish PyPI name recheck, and the identical-bytes retry protocol.
+- `tests/test_ci_configs.py` — 10 new structural tests covering every Test Matrix row (trigger gating, four-job DAG order + needs chain, tag/version validation, per-job minimal permissions, `environment: pypi` + no-token scan, draft-before-PyPI + promote-only-mutates-draft, commit-derived epoch + manifest recording, packages-only PyPI dir, full-SHA action pinning, optional PyYAML parse, metadata consistency).
+- `pyproject.toml` — metadata audit fix: added `readme = "README.md"` (PyPI rendering) and `[project.urls]` (Homepage/Repository/Issues → `HPNChanel/sesslint`).
+
+### Pinned inputs (resolved via GitHub API, dereferenced annotated tags)
+
+| Action | Tag | Commit SHA |
+|---|---|---|
+| actions/checkout | v4.2.2 | `11bd71901bbe5b1630ceea73d27597364c9af683` |
+| actions/setup-python | v5.6.0 | `a26af69be951a213d495a4c3e4e4022e16d87065` |
+| actions/upload-artifact | v4.6.2 | `ea165f8d65b6e75b540449e92b4886f43607fa02` |
+| actions/download-artifact | v4.3.0 | `d3f86a106a0bac45b974a628896c90dbdf5c8093` |
+| pypa/gh-action-pypi-publish | v1.14.2 (published 2026-07-29) | `dc37677b2e1c63e2034f94d8a5b11f265b73ba33` |
+
+Build tooling pinned: `build==1.2.2.post1`, `hatchling==1.27.0`, `python -m build --no-isolation`.
+
+### Metadata audit
+
+- `name = "sesslint"`; `dynamic = ["version"]` → `src/sesslint/_version.py` = `0.1.0`; `license = "Apache-2.0"` consistent with `License :: OSI Approved :: Apache Software License` classifier and `LICENSE`/`NOTICE` present; `requires-python = ">=3.11"` matches classifiers (3.11, 3.12); readme + project URLs added (previously absent — audit finding fixed); `dependencies = []` preserved (zero-runtime-dependency guarantee).
+
+### Side-effect confirmation
+
+No tag, push, workflow run, GitHub Release, or PyPI upload was performed. The workflow is prepared but deliberately unexecuted; publication remains gated behind T-09 + T-09a authorization.
+
+### Validation
+
+- `pytest -q tests/test_ci_configs.py` — 14 passed, 2 skipped (PyYAML absent).
+- `ruff check .`, `ruff format --check .`, `mypy --strict src/` — clean.
+- `pytest -q` — **1671 tests, 0 failures, 0 errors, 3 skipped**.
