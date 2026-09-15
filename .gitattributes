@@ -1,0 +1,9 @@
+# Enforce LF endings on checkout so byte-exact fixtures, golden outputs,
+# and hash-bound verify artifacts are identical on Windows (autocrlf) hosts.
+# Discovered by the T-08 clean-SHA gate: a fresh worktree checkout with
+# core.autocrlf=true produced CRLF bytes and broke hash/golden assertions.
+* text=auto eol=lf
+
+# Binary fixtures must never receive EOL conversion.
+*.bin binary
+*.sqlite binary
