@@ -1,6 +1,6 @@
 # T-09: Public-alpha release gate
 
-- Status: planned
+- Status: done — `GO-READY-TO-PUBLISH` recorded 2026-09-15 (see decision memo below)
 - Phase: 5
 - Priority: P0 release decision
 - Type: decision / release provenance
@@ -72,3 +72,31 @@ None beyond re-verifying the T-08 evidence pointers resolve and are dated to the
 - Tag creation, pushing, GitHub Release, PyPI upload (T-09a).
 - Final demand validation and market-fit claims (T-10).
 - Rebranding internal dogfood as external adoption.
+
+---
+
+## Decision Memo — 2026-09-15
+
+**Outcome: `GO-READY-TO-PUBLISH`**
+
+- **Decider**: maintainer (explicit selection via decision prompt)
+- **Version**: `v0.1.0` — targets both GitHub Release and PyPI
+- **Commit SHA bound to this decision**: `3fdad5df185c2486094bb91d28aec501c25afa15`
+  (the T-08 clean-tree candidate; HEAD `ea283e2` adds docs-only evidence commits on top)
+- **Artifact hashes** (byte-identical across two isolated builds, `SOURCE_DATE_EPOCH=1789469161`):
+  - `sesslint-0.1.0-py3-none-any.whl` = `9e9d952039040615f64658ae0be5cdada91775d5d866d98f4315acf6ccb08cbe`
+  - `sesslint-0.1.0.tar.gz` = `9f74a6c5e898ac823c7351036e732a74cf46e0a8bfdc4763ce0e125c7e2d31bb`
+
+### Evidence audit (all pointers resolve, dated to clean SHA)
+
+- Clean-tree isolation at `3fdad5d`; `git status --porcelain` empty at gate time.
+- Full regression: 1671 tests / 0 failures / 0 errors / 3 skipped (`.tmp_t06/pytest_cand3.xml`).
+- Fresh-process 250k benchmark: 8.438 s < 15.0 s; 477.14 MB < 512 MB — PASS (`.tmp_t06/bench_250k_v4.txt`).
+- Offline wheel + sdist install smokes: pass.
+- Multi-OS CI observed green: run `34960103501`, 15/15 jobs success.
+- Zero unresolved P0/P1 integrity defects; zero open T-08x blockers.
+- Known limitations: actionlint unavailable on host (structural `test_ci_configs.py` is the matrix-sanctioned substitute); CI perf-benchmark job skipped by workflow design; Windows wall-time is load-sensitive.
+
+### Boundary
+
+This GO **neither publishes nor starts the campaign clock**. Publication (tag `v0.1.0` at `3fdad5d`, GitHub Release, PyPI upload) requires T-09a's separate fresh explicit maintainer approval. Campaign transitions occur only after T-09a verifies both channels.
