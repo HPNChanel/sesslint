@@ -185,3 +185,54 @@ def test_e2e_vendor_format_boundary_rejection(
     assert "Direct repair of vendor format" in captured.err
     assert "Repair operates exclusively on canonical session streams" in captured.err
     assert not out_file.exists()
+
+
+def test_e2e_cycle_non_neutral_profile_binding(tmp_path: Path) -> None:
+    """E2E cycle under a non-neutral profile: the emitted manifest binds
+    revalidation.profile_id/profile_version and verifies without a plan file
+    under that bound identity — never reconstructed as neutral."""
+    src_file = tmp_path / "strict_src.jsonl"
+    repaired_file = tmp_path / "strict_repaired.jsonl"
+
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_e2e_strict"}',
+        '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-08T12:00:00Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"ack"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"ack"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+    ]
+    src_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    plan_obj, manifest = api.repair(src_file, repaired_file, profile="claude-strict")
+    assert plan_obj is not None
+    assert plan_obj.profile == "claude-strict"
+    assert manifest is not None
+    manifest_path = Path(f"{repaired_file}.manifest.json")
+    assert manifest_path.is_file()
+
+    manifest_dict = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest_dict["revalidation"]["profile_id"] == "claude-strict"
+    assert manifest_dict["revalidation"]["profile_version"] == "1.0.0"
+
+    # Verify without a plan file: reconstruction must use the bound identity.
+    verdict = api.verify(
+        source_path=src_file,
+        output_path=repaired_file,
+        manifest_path=manifest_path,
+    )
+    assert verdict.ok is True
+    assert all(c.ok for c in verdict.checks)
+
+    # Verify with the original plan file under the same binding also passes.
+    plan_path = tmp_path / "strict_plan.json"
+    plan_path.write_text(
+        json.dumps(plan_obj.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    verdict_with_plan = api.verify(
+        source_path=src_file,
+        plan_path=plan_path,
+        output_path=repaired_file,
+        manifest_path=manifest_path,
+    )
+    assert verdict_with_plan.ok is True
+    assert all(c.ok for c in verdict_with_plan.checks)

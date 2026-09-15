@@ -1,6 +1,6 @@
 # T-03: Manifest profile binding and no-plan verification
 
-- Status: planned
+- Status: done
 - Phase: 2
 - Priority: P0 integrity
 - Type: code / audit correctness
@@ -74,6 +74,14 @@ pytest -q
 - No-plan reconstruction, assurance audit, and idempotence all consume the one resolver.
 - Manifest v1 compatibility preserved; no new root profile field; no legacy fallback path.
 - Full gates green.
+
+## Execution Evidence (recorded 2026-09-15)
+
+- Single resolver: `_resolve_manifest_profile(manifest_dict, plan_profile=None) -> tuple[str, str] | str` added to `src/sesslint/verify.py` (after `_load_plan_from_dict`). It reads only `revalidation.profile_id`/`revalidation.profile_version`, verifies the ID against `get_profile()` and the version against the registered `Profile.version`, rejects root `profile_version` conflicts, and cross-checks a supplied plan's `profile`. Returns `(profile_id, profile_version)` on success or a closed failure-detail string otherwise; hostile values are never echoed — only a content-free `len=` discriminator.
+- Binding resolved once per `verify()` call into `bound_profile`/`binding_failure` immediately after plan loading; all three consumers converted: no-plan reconstruction (`plan_path is None` branch), `assurance_audit` revalidation cross-check (new `elif binding_failure` arm plus `bound_profile` target), and `idempotence` re-plan (early binding gate plus `bound_profile` target). `plan_fingerprint` and `plan-missing` details surface the binding failure verbatim. `grep` confirms no `manifest_dict["profile"]`/`get("profile")` reads remain; the surviving `data.get("profile", "neutral")` inside `_load_plan_from_dict` is the plan document's own v1 field, not a manifest read.
+- Deterministic failure details: `profile-binding-unavailable` (unparseable manifest — actually reported via `manifest-invalid-json`/`manifest-schema` detail), `profile-binding-missing`, `profile-binding-unknown:len=N`, `profile-version-unavailable:len=N`, `profile-version-conflict`, `plan-profile-conflict`. Each yields `ok=False` checks — never an exception escape.
+- Tests added: `tests/test_verify.py` (+11: bound neutral/claude-strict/openai-strict no-plan reconstruction with detector-profile spy, tampered profile_id deterministic fingerprint mismatch, unknown ID / unavailable version / root-version conflict / plan conflict / missing revalidation / hostile overlong ID and version with privacy-safe assertions), `tests/test_e2e_cycle.py` (+1: non-neutral repair → manifest binding → verify both with and without plan). Finding fingerprints embed `profile_id`/`profile_version` (`finding.py` preimage), so any profile substitution changes reconstructed plan fingerprints — the tamper failure is structural, not heuristic.
+- Gates: focused suite (`test_verify.py` + `test_verify_challenger.py` + `test_e2e_cycle.py` + `test_manifest.py`) green; `ruff check` clean; `ruff format --check` clean; `mypy --strict src/` clean (52 files); `pytest -q` = 1646 tests, 0 failures, 0 errors, 2 skipped.
 
 ## Evidence To Record
 
