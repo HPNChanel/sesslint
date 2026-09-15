@@ -22,8 +22,11 @@ import io
 import json
 import os
 import re
+import sys
+from array import array
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, BinaryIO, Final, Literal, cast
 
 from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
@@ -61,6 +64,10 @@ from sesslint.io import (
 
 # CanonicalEvent alias for specification conformance
 CanonicalEvent = SessionEvent
+
+# Shared immutable empty mapping for events without unknown fields.
+# Reduces per-event allocation; consumers treat extra_fields as read-only Mapping.
+_EMPTY_EXTRA_FIELDS: Final[Mapping[str, Any]] = MappingProxyType({})
 
 # Supported canonical session format versions
 SUPPORTED_CANONICAL_VERSIONS: Final[frozenset[str]] = frozenset({"1", "1.0", "1.0.0"})
@@ -622,7 +629,7 @@ def _parse_canonical_event_record(
     if "actor" not in ev_raw:
         actor: ActorLiteral = "user"
     elif raw_actor in VALID_ACTORS:
-        actor = cast(ActorLiteral, raw_actor)
+        actor = cast(ActorLiteral, sys.intern(raw_actor))
     else:
         actor = "system"
         add_finding(
@@ -639,13 +646,13 @@ def _parse_canonical_event_record(
     # Validate kind
     raw_kind = ev_raw.get("kind")
     if raw_kind in VALID_KINDS:
-        kind = cast(KindLiteral, raw_kind)
+        kind = cast(KindLiteral, sys.intern(raw_kind))
     else:
         kind = "unknown"
 
     # Validate timestamp format
     raw_ts = ev_raw.get("ts")
-    ts = raw_ts if isinstance(raw_ts, str) else "1970-01-01T00:00:00Z"
+    ts = sys.intern(raw_ts) if isinstance(raw_ts, str) else "1970-01-01T00:00:00Z"
 
     # Check unknown critical fields on event (SL302)
     has_emitted_event_sl302 = False
@@ -682,6 +689,8 @@ def _parse_canonical_event_record(
                     has_emitted_event_sl302 = True
             extra_fields[k] = v
 
+    event_extra_fields: Mapping[str, Any] = extra_fields if extra_fields else _EMPTY_EXTRA_FIELDS
+
     # Validate payload
     if "payload" in ev_raw and not isinstance(ev_raw["payload"], Mapping):
         add_finding(
@@ -702,7 +711,15 @@ def _parse_canonical_event_record(
             )
         )
     raw_payload = ev_raw.get("payload")
-    payload: dict[str, Any] = dict(raw_payload) if isinstance(raw_payload, Mapping) else {}
+    # Reuse the parsed dict when it is already an exact dict — ev_raw is dropped
+    # after this call, so no aliasing hazard; avoids a per-event dict copy.
+    payload: dict[str, Any] = (
+        raw_payload
+        if type(raw_payload) is dict
+        else dict(raw_payload)
+        if isinstance(raw_payload, Mapping)
+        else {}
+    )
     content_hash = str(ev_raw["content_hash"]) if ev_raw.get("content_hash") is not None else None
 
     # Extract parent_id and correlation_id
@@ -754,7 +771,7 @@ def _parse_canonical_event_record(
     raw_se = ev_raw.get("side_effects")
     side_effects: str | None = None
     if isinstance(raw_se, str) and raw_se in VALID_SIDE_EFFECTS:
-        side_effects = raw_se
+        side_effects = sys.intern(raw_se)
     elif isinstance(payload, Mapping) and payload.get("side_effects") in VALID_SIDE_EFFECTS:
         side_effects = str(payload["side_effects"])
     elif kind == "tool_result":
@@ -792,7 +809,7 @@ def _parse_canonical_event_record(
         source_adapter=ev_raw.get("source_adapter"),
         source_location=ev_raw.get("source_location"),
         side_effects=side_effects,
-        extra_fields=extra_fields,
+        extra_fields=event_extra_fields,
     )
 
 
@@ -901,8 +918,7 @@ def load_canonical(
         if data.startswith(b"\xef\xbb\xbf"):
             data = data[3:]
 
-        stripped_data = data.strip()
-        if not stripped_data:
+        if not data or data.isspace():
             finding = make_finding(
                 code=SL001,
                 severity=Severity.ERROR,
@@ -917,7 +933,7 @@ def load_canonical(
         is_single_doc = False
         doc: Any = None
         try:
-            decoded_text = stripped_data.decode("utf-8", errors="strict")
+            decoded_text = data.decode("utf-8", errors="strict")
             doc = _STRICT_JSON_DECODER.decode(decoded_text)
             if isinstance(doc, dict) and "events" in doc:
                 is_single_doc = True
@@ -1147,7 +1163,11 @@ def load_canonical(
         # ---------------------------------------------------------------------
         # JSONL Stream Parsing (Line 1: Header, Lines 2+: Events)
         # ---------------------------------------------------------------------
-        lines_info: list[tuple[int, bytes, int, int]] = []
+        # Compact parallel arrays of (line_no, byte_start, byte_end) per non-blank
+        # line; avoids retaining a bytes copy + tuple/int objects per line.
+        line_nos: array[int] = array("i")
+        line_starts: array[int] = array("q")
+        line_ends: array[int] = array("q")
         curr_offset = 0
         raw_len = len(raw_data)
         line_no = 0
@@ -1156,21 +1176,21 @@ def load_canonical(
             line_no += 1
             nl_pos = raw_data.find(b"\n", curr_offset)
             if nl_pos == -1:
-                chunk = raw_data[curr_offset:]
                 end_pos = raw_len
             else:
                 end_pos = nl_pos + 1
-                chunk = raw_data[curr_offset:end_pos]
 
             start_pos = curr_offset
             curr_offset = end_pos
 
-            if not chunk.strip():
+            if not raw_data[start_pos:end_pos].strip():
                 continue
 
-            lines_info.append((line_no, chunk, start_pos, end_pos))
+            line_nos.append(line_no)
+            line_starts.append(start_pos)
+            line_ends.append(end_pos)
 
-        if not lines_info:
+        if not line_nos:
             finding = make_finding(
                 code=SL001,
                 severity=Severity.ERROR,
@@ -1182,7 +1202,10 @@ def load_canonical(
             return EventList([], source=source_metadata), [finding]
 
         # Line 1: Header
-        hdr_line_no, hdr_chunk, hdr_byte_offset, hdr_byte_end = lines_info[0]
+        hdr_line_no = line_nos[0]
+        hdr_byte_offset = line_starts[0]
+        hdr_byte_end = line_ends[0]
+        hdr_chunk = raw_data[hdr_byte_offset:hdr_byte_end]
         hdr_ordinal = 1
         _validate_stream_coordinates(hdr_byte_offset, hdr_byte_end, hdr_ordinal)
         hdr_coord_ev: dict[str, Any] = {
@@ -1358,18 +1381,19 @@ def load_canonical(
                         has_emitted_hdr_sl302 = True
 
         # Lines 2+: Events
-        event_lines = lines_info[1:]
-        if (
-            effective_limits.max_records is not None
-            and len(event_lines) > effective_limits.max_records
-        ):
+        event_count = len(line_nos) - 1
+        if effective_limits.max_records is not None and event_count > effective_limits.max_records:
             raise MaxRecordsExceededError(
-                f"Record count {len(event_lines)} exceeds limit of {effective_limits.max_records}"
+                f"Record count {event_count} exceeds limit of {effective_limits.max_records}"
             )
 
         events_stream: list[SessionEvent] = []
-        for ev_idx, (line_no, ev_chunk, ev_byte_offset, ev_byte_end) in enumerate(event_lines):
-            is_terminal = ev_idx == len(event_lines) - 1
+        for ev_idx in range(event_count):
+            line_no = line_nos[ev_idx + 1]
+            ev_byte_offset = line_starts[ev_idx + 1]
+            ev_byte_end = line_ends[ev_idx + 1]
+            ev_chunk = raw_data[ev_byte_offset:ev_byte_end]
+            is_terminal = ev_idx == event_count - 1
             ev_ordinal = ev_idx + 2
             _validate_stream_coordinates(ev_byte_offset, ev_byte_end, ev_ordinal)
             ev_coord_ev: dict[str, Any] = {

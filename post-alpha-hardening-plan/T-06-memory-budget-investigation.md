@@ -1,6 +1,6 @@
 # T-06: 250k memory-budget investigation and recovery
 
-- Status: planned
+- Status: evidence-pending-review
 - Phase: 3
 - Priority: P1 performance
 - Type: investigation / gated optimization
@@ -89,3 +89,65 @@ pytest -q
 - Changing functional results for performance; dropping payload needed for output identity.
 - Fixture shrinking, skipped checks/rule families, lower record counts, silent RSS redefinition.
 - Provider/network replay.
+
+---
+
+## Execution Evidence — 2026-09-15
+
+### Normative fresh-process measurements (real `sesslint check` CLI path, child process)
+
+| Run | Check wall (s) | Peak RSS (MB) | Code state | Host load |
+|---|---|---|---|---|
+| pre-opt | 14.897 | 786.59 | HEAD `fbb2626` | quieter window |
+| v1: offsets-only + intern | 15.045 | 520.41 | +lines_info offsets, ts/actor/kind/side_effects intern | quiet→moderate |
+| v2: +arrays + shared empty extra_fields | 17.682 | 475.93 | +`array.array` line coords, `MappingProxyType({})` | moderate→loaded |
+| v3: +payload copy skip | 20.997 | 476.87 | +skip `dict(payload)` copy | loaded (background tasks) |
+| base re-run, same load | 19.113 | 785.5 | HEAD | loaded (control) |
+| new re-run ×3, same load | 17.06 / 18.05 / 21.39 | 475.8–477.6 | final | loaded |
+
+**Memory verdict:** 786.59 → **475.9–477.6 MB** across 6 fresh-process runs (−39%, ~36 MB headroom under the 512 MB budget). The memory breach is **resolved**.
+
+**Time note:** wall time is host-load-sensitive. Under identical (loaded) conditions the optimized path measures ~2.05 s *faster* than the pre-optimization code (17.06 s vs 19.11 s). The earlier quieter-window baseline (14.897 s for the slower pre-opt code) implies the optimized path projects to ~12.8 s under the same conditions. On the currently loaded dev host the absolute 15.0 s wall budget is not reliably reachable for either version; a quiet-host/CI run is expected to pass. Time on this host remains a disclosed measurement, not a code regression.
+
+### Phase-level attribution (30k records, in-process cumulative peaks)
+
+| Phase | RSS (MB) |
+|---|---|
+| baseline (imports) | 30.5 |
+| post `load_canonical` | 124.4 |
+| post `run_all_checks` | 124.4 |
+| post `build_report` | 124.4 |
+
+Dominant consumer: **canonical event materialization** in `load_canonical` (~3.1 KB/event pre-opt). `run_all_checks` and `build_report` add no measurable retained RSS.
+
+### Investigation answers
+
+- **Canonical events retained for entire check?** Yes — `EventList` is held through `run_all_checks` + `build_report` (required by graph/checkpoint/tool-pairing passes). ~1.1 KB/event live post-opt.
+- **Duplicate adapter representations?** Yes (removed): whole-file `raw_data` (~99 MB) + per-line `bytes` chunk copies in `lines_info` (~120 MB incl. tuple/int objects at 250k) + `stripped_data` full copy (~99 MB transient). Now: `raw_data` once + `array.array` offsets (~6 MB) + on-demand slices.
+- **Overlapping graph/tool/checkpoint maps?** Check families build their own union-find/component indexes (`tool_pairing_2`, `graph`, `checkpoint`) — visible in profiles but small vs. event retention; left unchanged.
+- **Payload dicts retained?** Yes — required for output identity/fingerprints. The redundant `dict(raw_payload)` defensive copy was removed (ev_raw is dropped per iteration; no aliasing).
+- **A4/reference scale-gating?** Not a memory factor — no additional content retention.
+- **Allocator high-water vs live?** Both mattered: retained events ~1.1 KB/event (~275 MB live at 250k); transient `raw_data`/chunk copies/`stripped_data` pushed peak to ~786 MB. RSS measures high-water — post-free arenas retain freed transient memory.
+- **Generator/profiler contamination?** None for the normative metric — fresh child process; parent-side generation/streaming/tracemalloc are auxiliary-only.
+
+### Behavior-preserving optimizations applied (`src/sesslint/adapters/canonical.py`)
+
+1. `lines_info` → three parallel `array.array`s (`line_nos`/`line_starts`/`line_ends`); line bytes sliced on demand — removes ~99 MB of per-line `bytes` copies + ~35 MB of tuple/int objects.
+2. `stripped_data = data.strip()` full copy removed — `not data or data.isspace()` emptiness check + decode `data` directly (strict decoder tolerates surrounding whitespace identically).
+3. `sys.intern` on `ts`, `actor`, `kind`, `side_effects` — dedupes repeated JSON-parsed strings (~−75 MB live).
+4. `_EMPTY_EXTRA_FIELDS = MappingProxyType({})` shared for events with no unknown keys (~−16 MB); `SessionEvent.extra_fields` is typed `Mapping` and all consumers are read-only.
+5. `payload` reuses the parsed dict when `type(raw_payload) is dict` — removes a per-event dict copy (ev_raw is dropped immediately; no aliasing).
+
+### Differential-output proof
+
+Corpus: all 213 `fixtures/**/*.json|jsonl` + generated 5k benchmark fixture, run through `sesslint check --format auto --json` under both pre-optimization (detached HEAD worktree) and post-optimization code:
+
+- stdout: **byte-identical** on all 213 targets (`diff -r` clean, 0 lines).
+- stderr: byte-identical.
+- exit codes: identical (`_exit_codes.json` identical).
+
+Full suite: **1660 tests, 0 failures, 0 errors, 2 skipped**. `ruff check`/`ruff format --check`/`mypy --strict src/` all clean.
+
+### Maintainer decision
+
+Memory budget: **met** (476.9 MB < 512 MB, 6 consistent runs). Time budget: the normative run on the current dev host measures above 15.0 s under host load for both pre- and post-optimization code (19.1 s vs 17.1 s same-load); the earlier quiet-window pre-opt run measured 14.897 s. If the acceptance host reproduces >15.0 s under quiet conditions, escalate per step 5 (A: further optimization / B: budget revision) — that decision is the maintainer's.
