@@ -117,3 +117,40 @@ rm -rf .smoke_env
 - [ ] All 9 repair recipes have synced documentation in `docs/recipes/*.md` (`tests/test_registry_docs.py` passes).
 - [ ] Every fixture directory contains a valid `PROVENANCE.json` with `contains_real_data: false` (`tests/test_fixture_provenance.py` passes).
 - [ ] Multi-platform CI workflow succeeds across Ubuntu, Windows, and macOS on Python 3.11 and 3.12.
+
+---
+
+## Two-Channel Release Procedure (`v*`) — T-07a
+
+`.github/workflows/release.yml` implements a tag-gated, non-reusable pipeline with exactly four jobs:
+
+```
+build → github-draft → pypi-publish → github-promote
+```
+
+- **`build`**: validates the pushed tag equals `v` + the version in `src/sesslint/_version.py`; computes `SOURCE_DATE_EPOCH` from the tagged commit (`git show -s --format=%ct "$GITHUB_SHA"`); builds sdist+wheel once with pinned tooling (`build==1.2.2.post1`, `hatchling==1.27.0`, `--no-isolation`); generates `sha256sums.txt` + `artifact-manifest.json`; uploads the `release-dist` artifact set.
+- **`github-draft`**: downloads the artifact set, verifies checksums, creates a **draft** GitHub Release attaching wheel, sdist, `sha256sums.txt`, and the manifest — staged before any PyPI publish.
+- **`pypi-publish`**: runs inside the protected **`pypi`** environment (required reviewer approval); re-verifies hashes; publishes **only** `.whl`/`.tar.gz` from `pypi_dist/` via `pypa/gh-action-pypi-publish` using Trusted Publisher/OIDC. **No PyPI API token exists in this repository or workflow.**
+- **`github-promote`**: only after PyPI success — promotes the existing draft to public. It never creates a second release or re-uploads assets.
+
+### Maintainer setup (one-time, outside this repo's code)
+
+1. On `HPNChanel/sesslint`: create protected environment **`pypi`** with required reviewers (Settings → Environments).
+2. On PyPI (project does not exist yet): create a **pending Trusted Publisher** for owner `HPNChanel`, repo `sesslint`, workflow `release.yml`, environment `pypi`.
+3. **PyPI name recheck**: a pending Trusted Publisher does *not* reserve the name `sesslint`. Immediately before the first authorized publish, confirm `https://pypi.org/project/sesslint/` still 404s and the name is unclaimed. If claimed, stop — do not publish under a different name silently.
+
+### `SOURCE_DATE_EPOCH` rule
+
+The reproducibility epoch is **the tagged commit's committer timestamp** (`git show -s --format=%ct <sha>`), never the wall clock. T-08's byte-parity verification must use the identical rule so locally rebuilt artifacts predict the released bytes.
+
+### Partial-failure protocol (identical bytes only)
+
+If exactly one channel fails after artifacts are built:
+
+- GitHub Release failure → fix and re-run `github-draft` (or `github-promote`) — the same `release-dist` artifact bytes are re-attached.
+- PyPI failure → re-run only `pypi-publish` against the retained artifact set.
+- **Never** rebuild and upload different bytes under an already-published tag. If the bytes must change, the tag must move to a new version.
+
+### Execution gate
+
+This workflow is prepared but deliberately not executed by this task. Tagging `v0.1.0`, pushing, and the resulting publications require the explicit authorization recorded in `post-alpha-hardening-plan/T-09a`.
