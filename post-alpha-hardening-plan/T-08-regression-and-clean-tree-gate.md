@@ -1,6 +1,6 @@
 # T-08: Full regression and clean-tree release gate
 
-- Status: planned
+- Status: in-progress
 - Phase: 4
 - Priority: P0 release
 - Type: gate / release evidence
@@ -111,3 +111,67 @@ python -m build --sdist --wheel
 - Creating the tag, the GitHub Release, or the PyPI upload (T-09a only).
 - The go/no-go decision itself (T-09).
 - Campaign transitions (T-07/T-09a/T-10 own those).
+
+---
+
+## Execution Evidence — 2026-09-15 (partial; pending maintainer decisions)
+
+### Candidate SHA
+
+- **Candidate SHA: `dcb1c1d6242f62fd50b0b3d659aa652662565a81`** (`main`, includes all hardening tasks + the `.gitattributes` fix below)
+- `git status --porcelain`: empty at gate time
+- `git tag --points-at HEAD`: (none — no tags exist)
+- Python: CPython 3.11.9 (AMD64/win32)
+
+### Clean-SHA defect found and fixed
+
+The first clean-SHA rerun (isolated worktree at `34f2e99`) failed **14 byte-exact tests** (`verify` source_hash, golden bundle, canonical dump): `core.autocrlf=true` rewrote checked-out fixture bytes to CRLF. Root cause: no `.gitattributes`. Fixed-forward as commit `dcb1c1d` (`* text=auto eol=lf`; binary fixtures marked `binary`). Rerun at `dcb1c1d`: all green — the gate caught a real reproducibility defect.
+
+### Gate matrix at candidate SHA `dcb1c1d` (isolated worktree, `.tmp_t06/cand_wt`)
+
+| Gate | Result |
+|---|---|
+| `ruff check .` | clean |
+| `ruff format --check .` | clean (279 files) |
+| `mypy --strict src/` | 52 files, no issues |
+| `pytest -q` (full) | **1671 tests, 0 failures, 0 errors, 3 skipped** |
+| Acceptance `test_offline`+`test_kill` | 4 passed |
+| Focused regression set (12 files) | 289 passed, 2 skipped |
+| Workflow validation | `test_ci_configs.py` structural assertions green (actionlint unavailable on host — stdlib structural checks are the equivalent mechanism per the matrix) |
+
+### Reproducible build (commit-derived epoch, pinned tooling)
+
+- `SOURCE_DATE_EPOCH=1789466264` = `git show -s --format=%ct dcb1c1d` (candidate commit timestamp — same rule as `release.yml`)
+- Tooling: `build==1.2.2.post1`, `hatchling==1.27.0`; `python -m build --no-isolation --sdist --wheel`
+- Two isolated dirs (`.tmp_t06/cand_wt`, `.tmp_t06/cand_wt2`) → **byte-identical**:
+  - `sesslint-0.1.0-py3-none-any.whl` = `b0aa261f7d11a5326626364f370926f3f6249a71bbefa11dea19f11d3c9ed2cc`
+  - `sesslint-0.1.0.tar.gz` = `c0237a2266c0e3ed6293b7e820122f5af73f4e93e378d053bdb6ca4f33760124`
+
+### Offline install smokes
+
+- **Wheel**: `uv venv --seed` clean env → `pip install --no-index --find-links=dist sesslint` → `sesslint version --json` structured output ✓, `sesslint check fixtures/cli/check_basic/healthy.jsonl --json` exit 0, assurance A3.
+- **Sdist**: clean env + preseeded pinned backend `hatchling==1.27.0` → `pip install --no-index --no-build-isolation sesslint-0.1.0.tar.gz` → same smoke results, exit 0.
+
+### CI observation — run `34957665046` on `dcb1c1d` (push authorized by maintainer)
+
+- Workflow `CI`, `completed`, conclusion **failure**.
+- 5/6 `Test` matrix jobs failed; dogfood + offline-isolation jobs passed; perf-benchmark job skipped (gate on test jobs).
+- Two environment-dependent test defects surfaced (pre-existing, latent on the local 3.11/Windows host):
+  1. `test_cli_scan_command_color_alignment` — POSIX only. Asserted `line.find("fixtures") == 23`, which is incidental: locally the displayed `r.path` is redacted (`.._hash/name`) so `find` returned −1 and the assert was skipped; on CI the path displays home-relative (`~/work/.../fixtures/...`) so the assert actually ran against a non-fixed column. Fixed to assert the true invariant — path column starts at 23 (tag field padded to 20).
+  2. `test_read_header_adversarial_deep_nesting_recursion_error` — py3.12 on all OSes. CPython 3.12's C JSON scanner is non-recursive, so the 2000-deep object decodes and fails closed later as `HeaderMissingError` ("not a session header") instead of `RecursionError → "recursion limit"`. Both paths raise `SchemaError`; regex broadened to `recursion limit|not a session header`. Product behavior unchanged — still fail-closed.
+
+### Perf gate resolution — shared same-family structural indexes
+
+Follow-up optimization (maintainer chose "continue optimizing"): the four SL105–SL108 sub-checks each built an identical `_ToolPairing2Indexer` (3-pass build over all events), and the four SL004–SL007 graph checks each built an identical `_OccurrenceGraph`. Added optional `indexer=`/`occurrence_graph=` parameters so `check_tool_pairing_2`/`check_graph` build each index once and share it; direct sub-check callers still build their own (behavior identical — indexers are read-only after construction; union-find `find` path compression is idempotent).
+
+- **Differential proof**: 213-target corpus (`fixtures/**` + 5k bench file), stdout/stderr/exit codes byte-identical vs pre-change — 0 mismatches.
+- Normative fresh-process check at 250k (`.tmp_t06/bench_250k_v4.txt`): **8.438 s (< 15.0 s), peak RSS 477.1 MB (< 512 MB) — PASS, no breach classes.**
+- Prior same-load readings for context: 11.5 s/11.9 s spot checks post-change; 17–18 s pre-change loaded host; 14.897 s pre-change quiet window.
+
+### Updated gate status
+
+All T-08 gate items green at the pre-push tree; candidate SHA moves to the commit containing the index-sharing perf change + the two test portability fixes. Final isolated re-verification + reproducible-build rerun + fresh CI observation recorded below once the new candidate lands.
+
+### Pending maintainer decisions
+
+(none — push authorization already granted; CI re-observation in progress)

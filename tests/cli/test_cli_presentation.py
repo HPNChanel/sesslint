@@ -94,10 +94,10 @@ def test_cli_scan_command_color_alignment(
     stripped_always = ANSI_ESCAPE.sub("", always_out)
     assert stripped_always == never_out
 
-    # Check table alignment across all file entries
+    # Check table alignment across all file entries: the status tag occupies
+    # columns 2-21 (padded to 20 chars), so every displayed path starts at column 23.
     file_lines = [line for line in never_out.splitlines() if line.startswith("  [")]
     assert len(file_lines) > 0
     for line in file_lines:
-        idx = line.find("fixtures")
-        if idx >= 0:
-            assert idx == 23, f"Misaligned fixture path start at column {idx}: {line}"
+        assert len(line) > 23, f"Missing path column: {line}"
+        assert line[22] == " " and line[23] != " ", f"Misaligned path start: {line}"
