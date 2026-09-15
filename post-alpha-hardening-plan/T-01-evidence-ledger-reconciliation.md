@@ -1,6 +1,6 @@
 # T-01: Evidence ledger reconciliation
 
-- Status: planned
+- Status: done
 - Phase: 1
 - Priority: P0 — evidence correctness
 - Type: documentation / evidence correctness (no production-code behavior change)
@@ -78,6 +78,16 @@ gh release list
 - Internal fixtures/dogfood are explicitly labeled internal and excluded from DV counters.
 - `README.md` no longer implies a previous `0.1.0` release.
 - No historical log line was edited, deleted, or reordered.
+
+## Execution Evidence (recorded 2026-09-15)
+
+- Created `post-alpha-hardening-plan/EVIDENCE_LEDGER.md`: 12 reconciliation rows (L-01–L-12) + 3 confirmed-accurate rows (C-01–C-03) + verification log.
+- Append-only supersession notes appended to: `next-phase-plan/T-03-ac-triage.md` (rule-family labels → verified `CODE_REGISTRY` categories), `T-08-dogfood.md` (8→7 verify checks), `T-09-demand-campaign.md` (premature done; campaign `not-started`; internal evidence excluded from DV), `T-10-kill-pivot-review.md` (interim memo; stale 1,587→1596 test count). No original line edited, deleted, or reordered.
+- `README.md` wording corrected: "initial 0.1.0 releases" → "pre-NDP-001 implementation state"; "0.1.0 baselines" → "pre-NDP-001 baselines".
+- `bench/PERF_NOTES.md`: dated status-correction banner added at top marking §3 table/disclosure stale and recording the 15.430 s / 785.52 MB dual breach; deep repair deferred to T-05 as specified.
+- `DEMAND.md`: campaign-status annotation added under Demand acceptance — state `not-started`, internal evidence never increments DV counters.
+- Re-verified: `git tag --list` empty; `gh release list` empty; PyPI `sesslint` JSON → 404; verify checks = 7; test count 1596/2-skipped (T-00 JUnit); focused re-run `tests/test_codes.py tests/test_coverage_matrix.py tests/test_verify.py` → 49 tests, 0 failures.
+- `ruff format --check` clean on all touched docs (40 files).
 
 ## Evidence To Record
 

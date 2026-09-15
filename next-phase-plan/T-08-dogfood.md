@@ -40,3 +40,9 @@
 ## Acceptance
 
 Log complete. Zero invented-result incidents. Immutability preserved across all check and dry-run operations. Completed.
+
+---
+
+## Supersession Note (2026-09-15, post-alpha T-01)
+
+The §1 verify verdict line reads "all 8 manifest checks matched". The verifier in `src/sesslint/verify.py` evaluates exactly **7** audit checks in fixed sequence (`checks = (c1..c7)`). The "8" figure is corrected to 7; original text retained unedited for provenance. See `post-alpha-hardening-plan/EVIDENCE_LEDGER.md` row `L-02`. Current operational authority: `post-alpha-hardening-plan/00-plan.md`.

@@ -20,3 +20,15 @@
 ## Acceptance
 
 Dated campaign log initialized with concrete metrics, provenance verification, and target milestones. Completed.
+
+---
+
+## Supersession Note (2026-09-15, post-alpha T-01)
+
+This task's `done` status and campaign table are superseded:
+
+- No `v0.1.0` (or any) release has ever been published — `git tag --list` empty, `gh release list` empty, PyPI `sesslint` endpoint 404 (re-verified 2026-09-15). The campaign clock therefore never started; campaign state is `not-started`.
+- DV-002 "PASS" counted internal hostile/challenger fixtures; DV-005 counted internal dogfood repairs; DV-006 is an engineered property, not external demand; DV-004/DV-007 cited prepared capabilities (CI workflow, scan schema), not external adoption or inquiries. Per `DEMAND.md` DV definitions all external counters are **0**; the items above are relabeled internal engineering evidence.
+- Campaign state, DV definitions, and admissible evidence are now governed by `post-alpha-hardening-plan/T-07-demand-campaign-state-machine.md` and `CAMPAIGN_LEDGER.md` (created by T-07). See `EVIDENCE_LEDGER.md` rows `L-04`, `L-06`, `L-12`.
+
+Original content retained unedited for provenance. Current operational authority: `post-alpha-hardening-plan/00-plan.md`.

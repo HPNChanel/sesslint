@@ -22,3 +22,11 @@
 ## Acceptance
 
 Recorded decision and rationale against all kill criteria citing T-09 evidence. Completed.
+
+---
+
+## Supersession Note (2026-09-15, post-alpha T-01)
+
+This task's `done` status is superseded: the memo above is an **interim** recommendation, not a closeout decision. Its cited T-09 campaign evidence is invalid (no release exists; campaign `not-started`), the six-week/30-outreach bound never started, and the test count "1,587" is stale — the T-00 gate measured **1596 tests, 0 failures, 2 skipped** on 2026-09-15. "PROCEED TO PUBLIC ALPHA" is advisory only; release gating is owned by `post-alpha-hardening-plan/T-09` and final closeout by `post-alpha-hardening-plan/T-10` after the bound actually closes. See `EVIDENCE_LEDGER.md` rows `L-05`, `L-07`.
+
+Original content retained unedited for provenance. Current operational authority: `post-alpha-hardening-plan/00-plan.md`.

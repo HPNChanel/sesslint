@@ -1,5 +1,7 @@
 # SessLint 100MB / 250k Performance Benchmark Notes (TASK-026 / FR-095 / AC-023)
 
+> **Status correction (2026-09-15, post-alpha T-01):** The "Target Performance & Correctness Summary" and "Disclosure Statement" below are a **stale historical reference** (Updated 2026-09-08). The latest recorded 250k run measured ~15.430 s total wall time and **785.52 MB peak RSS** against the 15.0 s / 512 MB budgets — a **dual breach, not a PASS**. That figure may include fixture-generation and streaming-sample contamination; a fresh-process, phase-level measurement of the `check` path is owned by `post-alpha-hardening-plan/T-06`, and full disclosure-contract repair by `T-05`. Until then the honest status is: **budget breach recorded; measurement under investigation.** See `post-alpha-hardening-plan/EVIDENCE_LEDGER.md` row `L-03`.
+
 ## 1. Benchmark Specification & Target Budgets
 
 SessLint enforces strict performance limits on hostile and production-scale session transcripts:

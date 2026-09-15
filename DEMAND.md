@@ -717,6 +717,8 @@ The “SessLint” screen is preliminary. Before public launch:
 
 ### Demand acceptance
 
+> **Campaign status annotation (2026-09-15, post-alpha T-01):** Campaign state is `not-started` — no public release has been published or verified, so the six-week/30-outreach bound has not begun. Internal fixtures, challenger fixtures, internal dogfood repair cycles, prepared CI workflows, and published schemas are **internal engineering evidence** and never increment the DV counters below; only anonymized external evidence is admissible. State machine and counters are governed by `post-alpha-hardening-plan/CAMPAIGN_LEDGER.md` (T-07 deliverable) and `EVIDENCE_LEDGER.md` rows `L-04`/`L-06`/`L-12`.
+
 The MVP is demand-validated only when all of the following occur:
 
 | ID | Criterion | Why it matters |

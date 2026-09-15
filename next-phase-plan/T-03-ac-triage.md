@@ -43,3 +43,14 @@
 ## Acceptance
 
 All 30 product acceptance criteria mapped to automated test evidence. All 30 are PASS. Zero unmapped rows.
+
+---
+
+## Supersession Note (2026-09-15, post-alpha T-01)
+
+The rule-family labels in the triage table above are incorrect. Verified against `src/sesslint/codes.py` `CODE_REGISTRY` categories:
+
+- `SL001`–`SL002` = syntax; `SL003` = identity; `SL004`–`SL007` = graph; `SL101`–`SL108` = tool pairing; `SL201`–`SL203` = checkpoint/continuation safety; `SL301`–`SL302` = compatibility.
+- Therefore AC-005 covers **graph** errors `SL004`–`SL007` (not `SL101`–`SL108`), and AC-006 covers **tool-pairing** errors `SL101`–`SL108` (not `SL201`–`SL203`/`SL003`–`SL007`).
+
+Original table retained unedited for provenance. Current operational authority: `post-alpha-hardening-plan/00-plan.md`; reconciliation row `L-01` in `post-alpha-hardening-plan/EVIDENCE_LEDGER.md`.
