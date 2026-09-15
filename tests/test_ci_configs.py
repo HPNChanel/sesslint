@@ -228,6 +228,20 @@ def test_release_workflow_draft_before_pypi_promote_only() -> None:
     assert "gh release create" not in promote, "promote must never create a second release"
 
 
+def test_release_workflow_gh_commands_have_repo_context() -> None:
+    """gh release calls run in jobs without checkout, so each must pass explicit repo.
+
+    Regression guard for the v0.1.0 first-run failure: `gh release create` without
+    `-R/--repo` in a job lacking actions/checkout fails with 'not a git repository'.
+    """
+    for job_name, block in _job_blocks(_release_content()).items():
+        for m in re.finditer(r"gh release \w+", block):
+            seg = block[m.start() : m.start() + 300]
+            assert re.search(r"--repo|-R\s", seg), (
+                f"{job_name}: gh release command missing explicit repo context"
+            )
+
+
 def test_release_workflow_source_date_epoch_commit_derived() -> None:
     """SOURCE_DATE_EPOCH derives from the tagged commit timestamp and lands in the manifest."""
     build = _job_blocks(_release_content())["build"]

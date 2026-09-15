@@ -111,6 +111,7 @@ jobs:
           set -euo pipefail
           cd dist && sha256sum -c sha256sums.txt && cd ..
           gh release create "$GITHUB_REF_NAME" \
+            --repo "${{ github.repository }}" \
             --draft \
             --title "SessLint ${GITHUB_REF_NAME}" \
             --generate-notes \
@@ -158,4 +159,4 @@ jobs:
       - name: Promote existing draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        run: gh release edit "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --draft=false
