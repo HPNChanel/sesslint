@@ -1,6 +1,6 @@
 # T-07: Demand campaign state machine and evidence rules
 
-- Status: planned
+- Status: done
 - Phase: 2
 - Priority: P0 governance
 - Type: governance / documentation + state machinery
@@ -72,6 +72,13 @@ Plus manual evidence audit: every ledger row traced to an external, anonymized s
 - Outreach counters exist separately from DV numerators.
 - The transition to `active-campaign` is defined exclusively via T-09a dual-channel verification.
 - Historical statuses are superseded, not rewritten.
+
+## Execution Evidence (recorded 2026-09-15)
+
+- Created `post-alpha-hardening-plan/CAMPAIGN_LEDGER.md`: state `not-started`; empty start/close dates and publication-record field; explicit state machine (`not-started → active-campaign → bound-complete → closed-proceed|closed-narrow|closed-pivot|closed-stop`) with the sole activation transition gated on the T-09a dual-channel verification record; precise DV-001..DV-007 numerator/denominator table (all counters 0); empty anonymized external-evidence log; separate outreach activity log (0/30, target bound 30); not-admissible-evidence list; reclassification audit trail.
+- Reclassified internal items previously counted as external: 19 hostile/challenger fixtures (DV-002→engineering), internal dogfood repair (DV-005→product validation), prepared GitHub Action (DV-004→capability), reference-loader gating (DV-006→engineered property), outreach list (DV-003/DV-007→activity). All DV counters = 0.
+- Supersession notes already appended by T-01 to `next-phase-plan/T-09-demand-campaign.md` and `next-phase-plan/T-10-kill-pivot-review.md` (campaign `not-started`; T-10 memo interim only). `DEMAND.md` campaign-status annotation at line ~720 already recorded by T-01 and remains accurate — no duplicate annotation added.
+- Validation: `pytest -q tests/test_fixture_provenance.py tests/accept/test_offline.py` = 5 tests, 0 failures. Manual evidence audit: zero external-evidence rows (none admissible yet); every prior claim traced in the reclassification table.
 
 ## Evidence To Record
 
