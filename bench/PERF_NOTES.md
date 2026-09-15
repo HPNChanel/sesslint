@@ -24,23 +24,23 @@ Per SessLint's Definition of Done and specification requirements (FR-095, AC-023
 
 ## 3. Latest Reference Baseline
 
-One selected reference run, captured 2026-09-15 on the development host. The measured values below describe that run only. Note: the benchmark process lifetime includes fixture generation and auxiliary `iter_events` passes, so peak RSS may overstate the isolated check path; a fresh-process, phase-level measurement is owned by `post-alpha-hardening-plan/T-06`.
+One selected reference run, captured 2026-09-15 on the development host under background load. The normative values below are the **fresh child process** real `sesslint check` metrics (T-06 contract); auxiliary parent-process metrics (generation, streaming sample, tracemalloc) are reported separately in benchmark stdout and are excluded here.
 
 <!-- REFERENCE-BASELINE:BEGIN -->
-- Run ID: 2026-09-15-perf-250k-win32-amd64
+- Run ID: 2026-09-15-perf-250k-win32-amd64-post-t06
 - Date: 2026-09-15
-- Host: AMD64 / win32 / CPython 3.11.9
+- Host: AMD64 / win32 / CPython 3.11.9 (host under load; wall time is load-sensitive)
 - Records: 250000
 - Input size MB: 99.45
-- Streaming parse s: 5.647
-- Integrity check s: 16.782
-- Total time s: 22.429
+- Total time s: 20.997
 - Time budget s: 15.0
-- Peak RSS MB: 785.90
+- Peak RSS MB: 476.87
 - Memory budget MB: 512.0
-- Breach classes: time, memory
-- Status: BREACH — DISCLOSED
+- Breach classes: time
+- Status: TIME BREACH — DISCLOSED; MEMORY PASS (476.87 < 512.0)
 <!-- REFERENCE-BASELINE:END -->
+
+Note: `Total time s` and `Peak RSS MB` above are the **fresh child-process** check metrics (T-06 normative), not the parent-process cumulative values. Under identical host load the post-T-06 code measured ~2.05 s faster than the pre-T-06 code (17.06 s vs 19.11 s); the earlier quiet-window pre-T-06 run measured 14.897 s.
 
 ---
 

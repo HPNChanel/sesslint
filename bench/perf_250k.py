@@ -11,15 +11,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import platform
 import random
 import re
+import subprocess
 import sys
 import tempfile
 import time
 import tracemalloc
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 # Ensure sesslint from src/ is importable even when not installed in editable mode
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -194,6 +197,65 @@ def verify_reference_disclosure_recorded() -> bool:
     return True
 
 
+_CHILD_RUNNER = """\
+import json
+import sys
+import time
+
+sys.path.insert(0, {src!r})
+sys.path.insert(0, {repo!r})
+
+from bench.perf_250k import get_rss_mb  # noqa: E402
+from sesslint.cli import main  # noqa: E402
+
+t0 = time.perf_counter()
+code = main(["check", sys.argv[1], "--json"])
+elapsed = time.perf_counter() - t0
+sys.stderr.write(
+    "CHILD-STATS "
+    + json.dumps(
+        {{"check_s": elapsed, "peak_rss_mb": get_rss_mb(), "exit_code": code}}
+    )
+    + "\\n"
+)
+sys.exit(code)
+"""
+
+
+def run_fresh_process_check(bench_file: Path) -> dict[str, Any] | None:
+    """Run the real `sesslint check` CLI path in a fresh child process.
+
+    The child executes the CLI `main()` and self-reports its elapsed wall time
+    and process-lifetime peak RSS on a `CHILD-STATS` stderr line. The parent's
+    RSS never includes the child's memory, so these are the normative FR-095
+    measurements — isolated from fixture-generation and streaming-pass
+    contamination.
+    """
+    runner = _CHILD_RUNNER.format(src=str(_SRC_PATH), repo=str(_REPO_ROOT))
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", runner, str(bench_file)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except Exception:
+        return None
+    stats: dict[str, Any] | None = None
+    for line in proc.stderr.splitlines():
+        if line.startswith("CHILD-STATS "):
+            try:
+                stats = json.loads(line[len("CHILD-STATS ") :])
+            except json.JSONDecodeError:
+                stats = None
+    return {
+        "exit_code": proc.returncode,
+        "stats": stats,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+    }
+
+
 def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
     """Execute 100MB / 250k streaming and validation benchmark.
 
@@ -222,7 +284,12 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
         file_size_mb = bench_file.stat().st_size / (1024 * 1024)
         print(f"Generated {records:,} records ({file_size_mb:.2f} MB) in {gen_elapsed:.2f}s")
 
-        # Step 1: Measure tracemalloc heap peak on a sample batch (5k records)
+        # Auxiliary phase-level in-process RSS readings (cumulative peaks; used
+        # for contamination evidence, never summed into the normative result).
+        phase_rss: dict[str, float | None] = {"baseline": get_rss_mb()}
+        phase_rss["post-generation"] = get_rss_mb()
+
+        # Auxiliary metric: tracemalloc heap peak on a streaming sample (5k records)
         sample_records = min(5000, records)
         tracemalloc.start()
         sample_count = 0
@@ -233,29 +300,70 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
         _curr, tracemalloc_peak_bytes = tracemalloc.get_traced_memory()
         tracemalloc.stop()
         tracemalloc_mb = tracemalloc_peak_bytes / (1024 * 1024)
+        phase_rss["post-streaming-sample"] = get_rss_mb()
 
-        # Step 2: Measure full throughput wall-clock time for streaming iteration
+        # Auxiliary metric: full streaming throughput pass (no retention)
         stream_start = time.perf_counter()
         count = 0
         for _ in iter_events(bench_file):
             count += 1
         stream_elapsed = time.perf_counter() - stream_start
+        phase_rss["post-iter-events"] = get_rss_mb()
 
-        # Step 3: Run check_file
+        # Auxiliary metric: in-process check under tracemalloc — also the
+        # functional-correctness gate for this run.
+        tracemalloc.start()
         check_start = time.perf_counter()
         report = api.check_file(bench_file)
         check_elapsed = time.perf_counter() - check_start
+        _curr2, check_heap_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        check_heap_mb = check_heap_bytes / (1024 * 1024)
+        phase_rss["post-check"] = get_rss_mb()
 
-        # Step 4: Measure process peak RSS
+        # Normative FR-095 metric: the real `sesslint check` CLI path executed
+        # in a fresh child process — its own wall time and peak RSS.
+        child = run_fresh_process_check(bench_file)
+        child_stats = child["stats"] if child is not None else None
+        child_check_s = float(child_stats["check_s"]) if isinstance(child_stats, dict) else None
+        child_peak_mb = (
+            float(child_stats["peak_rss_mb"])
+            if isinstance(child_stats, dict)
+            and isinstance(child_stats.get("peak_rss_mb"), (int, float))
+            else None
+        )
+        child_report: dict[str, Any] | None = None
+        if child is not None and child.get("stdout"):
+            try:
+                parsed_report = json.loads(child["stdout"])
+                if isinstance(parsed_report, dict):
+                    child_report = parsed_report
+            except json.JSONDecodeError:
+                child_report = None
+
         rss_mb = get_rss_mb()
-        reported_mem_mb = rss_mb if rss_mb is not None else tracemalloc_mb
         rss_str = f"{rss_mb:.1f} MB" if rss_mb is not None else "N/A"
         throughput = count / stream_elapsed if stream_elapsed > 0 else 0.0
         t_msg = f"{throughput:,.0f} items/sec"
-        print(f"Streaming parse: {count:,} items in {stream_elapsed:.3f}s ({t_msg})")
-        print(f"Integrity check: {check_elapsed:.3f}s (verdict: assurance={report.assurance})")
-        print(f"Tracemalloc heap peak (sample): {tracemalloc_mb:.3f} MB")
-        print(f"Process peak RSS: {rss_str} (Budget: {mem_budget:.1f} MB)")
+        print(f"Streaming parse (auxiliary): {count:,} items in {stream_elapsed:.3f}s ({t_msg})")
+        print(
+            f"In-process check (auxiliary): {check_elapsed:.3f}s "
+            f"(verdict: assurance={report.assurance})"
+        )
+        print(f"Tracemalloc heap peak, 5k sample (auxiliary): {tracemalloc_mb:.3f} MB")
+        print(f"Tracemalloc heap peak, full check path (auxiliary): {check_heap_mb:.3f} MB")
+        phase_str = " | ".join(
+            f"{k}={v:.1f}MB" if v is not None else f"{k}=N/A" for k, v in phase_rss.items()
+        )
+        print(f"Phase RSS, in-process cumulative (auxiliary): {phase_str}")
+        print(f"Parent process peak RSS (auxiliary): {rss_str}")
+        if child_stats is not None and child_check_s is not None:
+            print(
+                f"Fresh-process check (normative): {child_check_s:.3f}s, "
+                f"peak RSS {child_peak_mb:.1f} MB, exit={child['exit_code']}"
+            )
+        else:
+            print("Fresh-process check (normative): UNAVAILABLE")
 
         # 1. Functional correctness: MUST ALWAYS PASS (RVW-037).
         # Disclosure rule applies ONLY to performance budget shortfalls, never functional bugs.
@@ -284,6 +392,19 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
         if warn_cnt != 0:
             functional_failures.append(f"Expected 0 warnings on clean session, got {warn_cnt}")
 
+        # The fresh child must also produce a valid clean report.
+        if child is None or child["exit_code"] != 0 or child_report is None:
+            child_exit = child["exit_code"] if child is not None else "spawn-error"
+            functional_failures.append(
+                f"Fresh-process check did not produce a clean report (exit={child_exit})"
+            )
+        else:
+            c_findings = child_report.get("counts", {}).get("total")
+            if c_findings != 0:
+                functional_failures.append(
+                    f"Fresh-process check reported {c_findings} findings on clean session"
+                )
+
         if functional_failures:
             print(
                 f"FATAL FUNCTIONAL CORRECTNESS FAILURE (RVW-037):\n"
@@ -293,23 +414,29 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
             )
             return 1
 
-        # 2. Performance budget evaluation
+        # 2. Normative performance budget evaluation — fresh-child metrics only.
+        if child_check_s is None or child_peak_mb is None:
+            print(
+                "FATAL: normative fresh-process measurement unavailable (child stats missing)",
+                file=sys.stderr,
+            )
+            return 1
+
         perf_shortfalls: list[str] = []
-        total_eval_time = stream_elapsed + check_elapsed
-        if total_eval_time > time_budget:
+        if child_check_s > time_budget:
             perf_shortfalls.append(
-                f"Time exceeded budget: {total_eval_time:.3f}s > {time_budget:.1f}s"
+                f"Check time exceeded budget: {child_check_s:.3f}s > {time_budget:.1f}s"
             )
 
-        if reported_mem_mb > mem_budget:
+        if child_peak_mb > mem_budget:
             perf_shortfalls.append(
-                f"Memory exceeded budget: {reported_mem_mb:.2f}MB > {mem_budget:.1f}MB"
+                f"Check peak RSS exceeded budget: {child_peak_mb:.2f}MB > {mem_budget:.1f}MB"
             )
 
         breach_classes: list[str] = []
-        if total_eval_time > time_budget:
+        if child_check_s > time_budget:
             breach_classes.append("time")
-        if reported_mem_mb > mem_budget:
+        if child_peak_mb > mem_budget:
             breach_classes.append("memory")
         breach_str = ", ".join(breach_classes) if breach_classes else "none"
         print(f"Breach classes: {breach_str}")
@@ -324,8 +451,8 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
             print(
                 f"PERFORMANCE BUDGET BREACH (FAIL):\n"
                 f"  {'; '.join(perf_shortfalls)}\n"
-                f"  Total time: {total_eval_time:.3f}s (budget: {time_budget:.1f}s)\n"
-                f"  Peak memory: {reported_mem_mb:.2f}MB (budget: {mem_budget:.1f}MB)\n"
+                f"  Fresh-process check time: {child_check_s:.3f}s (budget: {time_budget:.1f}s)\n"
+                f"  Fresh-process peak RSS: {child_peak_mb:.2f}MB (budget: {mem_budget:.1f}MB)\n"
                 f"  Breach classes: {breach_str}\n"
                 f"  {disclosure_info}",
                 file=sys.stderr,
@@ -333,9 +460,9 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
             return 1
 
         print(
-            f"PASS: {count:,} records ({file_size_mb:.1f} MB) evaluated in "
-            f"{total_eval_time:.3f}s (budget: {time_budget:.1f}s), "
-            f"peak memory {reported_mem_mb:.2f}MB (budget: {mem_budget:.1f}MB)"
+            f"PASS: {count:,} records ({file_size_mb:.1f} MB); fresh-process check "
+            f"{child_check_s:.3f}s (budget: {time_budget:.1f}s), "
+            f"peak RSS {child_peak_mb:.2f}MB (budget: {mem_budget:.1f}MB)"
         )
         return 0
 
