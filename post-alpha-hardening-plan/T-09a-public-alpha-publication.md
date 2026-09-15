@@ -1,6 +1,6 @@
 # T-09a: Public-alpha publication
 
-- Status: planned
+- Status: done — v0.1.0 published + verified on both channels (2026-09-15T12:20:45Z)
 - Phase: 6
 - Priority: P0 release execution
 - Type: authorized side effects / publication
@@ -140,3 +140,45 @@ job with the retained identical bytes — no rebuild, no new artifacts.
 
 State held: tag `v0.1.0` = `d41150e`; draft Release exists (private); PyPI untouched;
 campaign remains `not-started`.
+
+---
+
+## Publication Record — 2026-09-15 (COMPLETE)
+
+### Maintainer action completed
+
+Trusted publisher configured on PyPI (pending publisher → live on first upload). Identical-bytes retry executed: `gh run rerun 34964225586 --failed` — `pypi-publish` re-downloaded the retained artifact set (no rebuild), then `github-promote` ran.
+
+### Workflow run `34964225586` — final: 4/4 jobs success
+
+- `build` success; `github-draft` success; `pypi-publish` success (identical bytes — retained artifact set); `github-promote` success.
+
+### Hash parity verification (fresh temp dirs)
+
+- GitHub Release assets (downloaded via `gh release download` → `.tmp_t09a/gh/`): wheel `034b569fd13e41f42678ccd060256a3ba0dcc42ddcceefa3ecd316d586c5f3cf`, sdist `2750ed06b3ba2226e5b429a96f06965bda0276f577dbf0b97db2bf21977ec037`.
+- PyPI `0.1.0` files (JSON API digests): wheel `034b569f…5f3cf`, sdist `2750ed06…e037`.
+- **Channel parity: identical across GitHub and PyPI** — one immutable artifact set served both.
+- **Divergence vs the Windows-local T-08 record**: published wheel hash differs from the locally recorded `157190b0…408b`. Diagnosed precisely: all 63 zip entries are content-identical (CRC/size/timestamps/external attrs equal); the only difference is the `create_system` central-directory byte — `0x03` (Unix) in the CI build vs `0x00` (Windows) locally. sdist (tar.gz) matched across OSes. Conclusion: wheels are not cross-OS byte-reproducible with `build==1.2.2.post1`/`hatchling==1.27.0`; the workflow-produced artifact set is the canonical published set. Same-OS reproducibility (the T-08 gate) held — two isolated builds byte-identical.
+- `artifact-manifest.json` and `sha256sums.txt` shipped as release assets record the CI-produced hashes.
+
+### Clean-environment verification
+
+- Fresh venv; `pip install --no-cache-dir --no-deps sesslint==0.1.0` from PyPI — success (transient files.pythonhosted.org read timeouts retried automatically).
+- `sesslint version --json` → `"cli": "0.1.0"`; `sesslint check fixtures/cli/check_basic/healthy.jsonl --json` → exit 0, assurance A3.
+
+### Immutable identifiers
+
+- Tag: `v0.1.0` → `d41150ef18f4aac6eb3513057961a9ca53bbf0f8` (`git rev-list -n1` verified)
+- GitHub Release: https://github.com/HPNChanel/sesslint/releases/tag/v0.1.0 (public, `isDraft=false`)
+- PyPI: https://pypi.org/project/sesslint/0.1.0/ (files uploaded 2026-09-15T12:20:33Z/12:20:35Z)
+- Release workflow run: `34964225586`; CI gate run on candidate: `34963632632` (green)
+- `SOURCE_DATE_EPOCH`: `1789471632` (commit timestamp of `d41150e`)
+- Published SHA-256: wheel `034b569f…5f3cf`, sdist `2750ed06…e037`
+- Verified publication timestamp: **2026-09-15T12:20:45Z**
+
+### Campaign transition
+
+- `CAMPAIGN_LEDGER.md`: `not-started` → `active-campaign`; start = 2026-09-15T12:20:45Z; bound closes later of ~2026-10-27 or 30 outreach attempts.
+- Partial-failure note: `pypi-publish` failed once (`invalid-publisher`, maintainer-side config) and was retried with retained identical bytes — recorded per contract.
+
+**T-09a: publication complete — both channels live and verified.**

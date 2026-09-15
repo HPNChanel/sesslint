@@ -5,10 +5,10 @@ Governed by `post-alpha-hardening-plan/T-07-demand-campaign-state-machine.md`; c
 
 ## Campaign State
 
-- **State:** `not-started`
-- **Start date (verified publication):** _empty — set only by T-09a publication record_
-- **Close date (bound end):** _empty — later of six elapsed weeks from start or 30 completed targeted outreach attempts_
-- **Publication record (required before activation):** _empty — must cite tag + GitHub Release URL + PyPI URL + artifact hashes verified identical across both channels_
+- **State:** `active-campaign`
+- **Start date (verified publication):** 2026-09-15T12:20:45Z (both channels confirmed live; workflow run `34964225586` completed)
+- **Close date (bound end):** _empty — later of six elapsed weeks from start (≈ 2026-10-27) or 30 completed targeted outreach attempts_
+- **Publication record:** tag `v0.1.0` @ `d41150e`; GitHub Release https://github.com/HPNChanel/sesslint/releases/tag/v0.1.0 (public); PyPI https://pypi.org/project/sesslint/0.1.0/; artifact hashes identical across both channels — wheel `034b569fd13e41f42678ccd060256a3ba0dcc42ddcceefa3ecd316d586c5f3cf`, sdist `2750ed06b3ba2226e5b429a96f06965bda0276f577dbf0b97db2bf21977ec037` (see `T-09a` publication record for the cross-OS wheel-hash divergence note vs the Windows-local T-08 set)
 
 ## State Machine
 
