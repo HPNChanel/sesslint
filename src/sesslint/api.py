@@ -7,7 +7,6 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 from __future__ import annotations
 
 import hashlib
-import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -18,6 +17,7 @@ from sesslint.adapters.detect import (
     FORMAT_CLAUDE_CODE,
     FORMAT_OPENAI_AGENTS,
     resolve_format,
+    validate_detection_thresholds,
 )
 from sesslint.bundle import Bundle, build_bundle
 from sesslint.canonical import Session, load_session_file
@@ -75,29 +75,7 @@ def check_file(
     Returns:
         A frozen Report dataclass with findings, counts, assurance, and limitation.
     """
-    if confidence_min is not None:
-        if (
-            isinstance(confidence_min, bool)
-            or not isinstance(confidence_min, (int, float))
-            or math.isnan(confidence_min)
-            or math.isinf(confidence_min)
-            or not (0.0 < confidence_min < 1.0)
-        ):
-            raise ValueError(
-                "confidence_min must be strictly between 0.0 and 1.0 exclusive, "
-                f"got {confidence_min}"
-            )
-    if margin_min is not None:
-        if (
-            isinstance(margin_min, bool)
-            or not isinstance(margin_min, (int, float))
-            or math.isnan(margin_min)
-            or math.isinf(margin_min)
-            or not (0.0 < margin_min < 1.0)
-        ):
-            raise ValueError(
-                f"margin_min must be strictly between 0.0 and 1.0 exclusive, got {margin_min}"
-            )
+    validate_detection_thresholds(confidence_min, margin_min)
 
     target_path = Path(path)
     if not target_path.exists():
@@ -110,7 +88,12 @@ def check_file(
         margin_min=margin_min,
     )
 
-    resolved_fmt, detection_res, det_findings = resolve_format(format, target_path)
+    resolved_fmt, detection_res, det_findings = resolve_format(
+        format,
+        target_path,
+        confidence_min=effective_cfg.confidence_min,
+        margin_min=effective_cfg.margin_min,
+    )
 
     if resolved_fmt is None:
         rep_findings = (
@@ -271,6 +254,8 @@ def check_dir(
     max_bytes: int = DEFAULT_MAX_BYTES,
     format: str | None = None,
     profile: str = "neutral",
+    confidence_min: float | None = None,
+    margin_min: float | None = None,
 ) -> ScanReport:
     """Scan a directory tree and return a ScanReport with aggregate 5-bucket totals.
 
@@ -282,6 +267,8 @@ def check_dir(
         max_bytes: Maximum cumulative bytes to process.
         format: Format override ('auto', None, or known format name).
         profile: Validation profile name (default 'neutral').
+        confidence_min: Format auto-detection minimum confidence threshold.
+        margin_min: Format auto-detection minimum margin threshold.
 
     Returns:
         A frozen ScanReport dataclass.
@@ -290,6 +277,7 @@ def check_dir(
         raise ValueError(f"max_files must be a positive integer (> 0), got {max_files}")
     if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
         raise ValueError(f"max_bytes must be a positive integer (> 0), got {max_bytes}")
+    validate_detection_thresholds(confidence_min, margin_min)
     return scan_path(
         path=path,
         recursive=recursive,
@@ -298,6 +286,8 @@ def check_dir(
         max_bytes=max_bytes,
         format=format,
         profile=profile,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
     )
 
 
@@ -333,20 +323,23 @@ def repair(
 
     # RVW-019: Vendor formats are rejected in repair (canonical only)
     from sesslint.adapters.detect import detect_format
+    from sesslint.repair.errors import VendorRepairRefused
 
     if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-        from sesslint.repair.errors import RepairRefused
-
-        raise RepairRefused(
+        raise VendorRepairRefused(
             f"Direct repair of vendor format '{format}' is not supported. "
             "Repair operates exclusively on canonical session streams (JSONL)."
         )
     if format in (None, "auto"):
-        det = detect_format(src)
+        # Exactly one detection pass under the selected profile's effective thresholds.
+        effective_cfg = resolve_effective_config(profile)
+        det = detect_format(
+            src,
+            confidence_min=effective_cfg.confidence_min,
+            margin_min=effective_cfg.margin_min,
+        )
         if det.format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-            from sesslint.repair.errors import RepairRefused
-
-            raise RepairRefused(
+            raise VendorRepairRefused(
                 f"Direct repair of vendor format '{det.format}' is not supported. "
                 "Repair operates exclusively on canonical session streams (JSONL)."
             )
@@ -526,6 +519,8 @@ def check(
             max_bytes=max_bytes,
             format=format,
             profile=profile,
+            confidence_min=confidence_min,
+            margin_min=margin_min,
         )
     return check_file(
         target_path,

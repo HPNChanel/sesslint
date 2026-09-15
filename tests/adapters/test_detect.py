@@ -576,3 +576,142 @@ def test_defensive_detector_nan_and_out_of_bounds(tmp_path: Path) -> None:
     ):
         res = detect_format(test_file)
         assert res.confidences[FORMAT_CANONICAL] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# T-02: Effective detection threshold plumbing (post-alpha hardening)
+# ---------------------------------------------------------------------------
+
+
+def _write_sniffable(tmp_path: Path) -> Path:
+    """Write a minimal non-empty file that passes the empty/magic gates."""
+    f = tmp_path / "candidate.jsonl"
+    f.write_text('{"kind":"message","id":"e1"}\n', encoding="utf-8")
+    return f
+
+
+def test_effective_confidence_threshold_changes_outcome(tmp_path: Path) -> None:
+    """Score 0.60 passes under default 0.55 but fails closed under confidence_min=0.70."""
+    target = _write_sniffable(tmp_path)
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.10),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        res_default = detect_format(target)
+        assert res_default.format == FORMAT_CLAUDE_CODE
+        assert res_default.reason == REASON_CLEAR_WINNER
+
+        res_strict = detect_format(target, confidence_min=0.70)
+        assert res_strict.format is None
+        assert res_strict.reason == REASON_LOW_CONFIDENCE
+
+
+def test_effective_thresholds_reported_in_sl302_evidence(tmp_path: Path) -> None:
+    """SL302 ambiguous-format evidence carries the effective thresholds, not constants."""
+    target = _write_sniffable(tmp_path)
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.10),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        _resolved, _det, findings = resolve_format(None, target, confidence_min=0.70)
+        assert findings
+        finding = findings[0]
+        assert finding.code == SL302
+        assert finding.evidence is not None
+        assert finding.evidence["confidence_min"] == 0.70
+        assert finding.evidence["margin_min"] == MARGIN_MIN
+
+
+def test_effective_margin_threshold_changes_outcome(tmp_path: Path) -> None:
+    """Winner 0.60 vs runner-up 0.50: margin 0.10 fails at margin_min=0.15, passes at 0.05."""
+    target = _write_sniffable(tmp_path)
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.50),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        res_default = detect_format(target)
+        assert res_default.format is None
+        assert res_default.reason == REASON_TIE
+
+        res_loose = detect_format(target, margin_min=0.05)
+        assert res_loose.format == FORMAT_CLAUDE_CODE
+        assert res_loose.reason == REASON_CLEAR_WINNER
+
+
+def test_resolve_format_margin_override_reaches_arbitration(tmp_path: Path) -> None:
+    """resolve_format forwards margin_min into arbitration (0.60 vs 0.45 margin boundary)."""
+    target = _write_sniffable(tmp_path)
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.45),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        fmt_neutral, det_neutral, f_neutral = resolve_format(None, target)
+        assert fmt_neutral == FORMAT_CLAUDE_CODE
+        assert not f_neutral
+        assert det_neutral is not None and det_neutral.reason == REASON_CLEAR_WINNER
+
+        fmt_strict, det_strict, f_strict = resolve_format(None, target, margin_min=0.20)
+        assert fmt_strict is None
+        assert det_strict is not None and det_strict.reason == REASON_TIE
+        assert f_strict and f_strict[0].code == SL302
+        assert f_strict[0].evidence["margin_min"] == 0.20
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"confidence_min": True}, "strictly between"),
+        ({"confidence_min": "0.7"}, "strictly between"),
+        ({"confidence_min": float("nan")}, "strictly between"),
+        ({"confidence_min": float("inf")}, "strictly between"),
+        ({"confidence_min": 0.0}, "strictly between"),
+        ({"confidence_min": 1.0}, "strictly between"),
+        ({"confidence_min": -0.1}, "strictly between"),
+        ({"confidence_min": 1.1}, "strictly between"),
+        ({"margin_min": 0.0}, "strictly between"),
+        ({"margin_min": 1.0}, "strictly between"),
+        ({"confidence_min": 0.5, "margin_min": 0.9}, "cannot exceed confidence_min"),
+    ],
+)
+def test_detect_format_rejects_invalid_thresholds(
+    tmp_path: Path, kwargs: dict[str, object], match: str
+) -> None:
+    """detect_format validates effective thresholds via the shared helper."""
+    target = _write_sniffable(tmp_path)
+    with pytest.raises(ValueError, match=match):
+        detect_format(target, **kwargs)  # type: ignore[arg-type]
+
+
+def test_resolve_format_rejects_invalid_thresholds_even_with_explicit(
+    tmp_path: Path,
+) -> None:
+    """resolve_format validates thresholds before honoring explicit-format bypass."""
+    target = _write_sniffable(tmp_path)
+    with pytest.raises(ValueError, match="strictly between"):
+        resolve_format(FORMAT_CANONICAL, target, confidence_min=2.0)
+
+
+def test_explicit_format_bypasses_arbitration_unchanged(tmp_path: Path) -> None:
+    """Explicit non-auto format still bypasses detection regardless of thresholds."""
+    target = _write_sniffable(tmp_path)
+    resolved, det, findings = resolve_format(
+        FORMAT_CLAUDE_CODE,
+        target,
+        confidence_min=0.99,
+        margin_min=0.99,
+    )
+    assert resolved == FORMAT_CLAUDE_CODE
+    assert det is not None and det.reason == REASON_EXPLICIT_OVERRIDE
+    assert not findings
+
+
+def test_default_thresholds_produce_identical_outcome(tmp_path: Path) -> None:
+    """Omitted overrides are byte-identical to explicit module defaults."""
+    target = _write_sniffable(tmp_path)
+    res_default = detect_format(target)
+    res_explicit = detect_format(target, confidence_min=CONFIDENCE_MIN, margin_min=MARGIN_MIN)
+    assert res_default == res_explicit

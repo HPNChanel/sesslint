@@ -384,6 +384,18 @@ def create_parser() -> argparse.ArgumentParser:
         help="Replay validation profile (default: neutral)",
     )
     scan_parser.add_argument(
+        "--confidence-min",
+        type=_validate_unit_interval_float,
+        default=None,
+        help="Format auto-detection minimum confidence threshold",
+    )
+    scan_parser.add_argument(
+        "--margin-min",
+        type=_validate_unit_interval_float,
+        default=None,
+        help="Format auto-detection minimum margin threshold",
+    )
+    scan_parser.add_argument(
         "--json",
         action="store_true",
         help="Output scan report as JSON",
@@ -751,15 +763,22 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
         from sesslint.api import check_dir
 
-        scan_rep = check_dir(
-            target_scan_path,
-            recursive=getattr(args, "recursive", True),
-            follow_symlinks=getattr(args, "follow_symlinks", False),
-            max_files=getattr(args, "max_files", 10000),
-            max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
-            format=getattr(args, "format", "auto"),
-            profile=getattr(args, "profile", "neutral"),
-        )
+        try:
+            scan_rep = check_dir(
+                target_scan_path,
+                recursive=getattr(args, "recursive", True),
+                follow_symlinks=getattr(args, "follow_symlinks", False),
+                max_files=getattr(args, "max_files", 10000),
+                max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
+                format=getattr(args, "format", "auto"),
+                profile=getattr(args, "profile", "neutral"),
+                confidence_min=getattr(args, "confidence_min", None),
+                margin_min=getattr(args, "margin_min", None),
+            )
+        except (ValueError, KeyError) as err:
+            err_msg = err.args[0] if err.args else str(err)
+            print(f"Error: {err_msg}", file=sys.stderr)
+            return 2
 
         if getattr(args, "json", False):
             print(scan_rep.to_json())
@@ -810,15 +829,22 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
             from sesslint.api import check_dir
 
-            scan_rep = check_dir(
-                target_path,
-                recursive=True,
-                follow_symlinks=getattr(args, "follow_symlinks", False),
-                max_files=getattr(args, "max_files", 10000),
-                max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
-                format=getattr(args, "format", "auto"),
-                profile=getattr(args, "profile", "neutral"),
-            )
+            try:
+                scan_rep = check_dir(
+                    target_path,
+                    recursive=True,
+                    follow_symlinks=getattr(args, "follow_symlinks", False),
+                    max_files=getattr(args, "max_files", 10000),
+                    max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
+                    format=getattr(args, "format", "auto"),
+                    profile=getattr(args, "profile", "neutral"),
+                    confidence_min=getattr(args, "confidence_min", None),
+                    margin_min=getattr(args, "margin_min", None),
+                )
+            except (ValueError, KeyError) as err:
+                err_msg = err.args[0] if err.args else str(err)
+                print(f"Error: {err_msg}", file=sys.stderr)
+                return 2
 
             if getattr(args, "json", False):
                 print(scan_rep.to_json())
@@ -969,7 +995,6 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             FORMAT_CLAUDE_CODE,
             FORMAT_OPENAI_AGENTS,
             VALID_FORMAT_OPTIONS,
-            detect_format,
         )
         from sesslint.profiles.profile import get_profile
 
@@ -977,7 +1002,10 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             print(f"Error: Unsupported format option: {format_opt}", file=sys.stderr)
             return 2
 
-        # RVW-019: Direct repair of vendor formats is rejected (canonical only)
+        # RVW-019: Direct repair of vendor formats is rejected (canonical only).
+        # The explicit-format refusal below is a pure string check (no I/O); for
+        # "auto", api.repair performs the single detection pass under the selected
+        # profile's thresholds and raises VendorRepairRefused, mapped to exit 2 below.
         vendor_err_msg = (
             "Repair operates exclusively on canonical session streams (JSONL). "
             "Convert the session to canonical format first, or run 'check' to view findings."
@@ -989,16 +1017,6 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 file=sys.stderr,
             )
             return 2
-
-        if format_opt == "auto":
-            det = detect_format(args.path)
-            if det.format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-                print(
-                    f"Error: Direct repair of vendor format '{det.format}' is not supported. "
-                    f"{vendor_err_msg}",
-                    file=sys.stderr,
-                )
-                return 2
 
         try:
             get_profile(profile_opt)
@@ -1015,6 +1033,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             PlanTampered,
             PolicyMismatch,
             RepairRefused,
+            VendorRepairRefused,
         )
         from sesslint.report import dump_manifest
 
@@ -1049,6 +1068,12 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     print(f"Output fingerprint: {manifest.output_fingerprint}")
                     print(f"Idempotency key: {manifest.idempotency_key}")
             return 0
+        except VendorRepairRefused as err:
+            # Vendor-format refusal (auto-detected inside api.repair) is a usage
+            # error, preserving the exit-2 contract previously produced by the
+            # removed CLI pre-sniff.
+            print(f"Error: {err}", file=sys.stderr)
+            return 2
         except (
             PlanTampered,
             Abstained,

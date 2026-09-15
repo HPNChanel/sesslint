@@ -55,6 +55,36 @@ REASON_REFUSED_LIVE_DB: Final[str] = "refused-live-db"
 REASON_EXPLICIT_OVERRIDE: Final[str] = "explicit-override"
 
 
+def validate_detection_thresholds(
+    confidence_min: float | None,
+    margin_min: float | None,
+) -> None:
+    """Validate detection threshold values — the single authority for threshold rules.
+
+    Each value may be None (meaning "use the caller's default"). A non-None value must be
+    a finite int/float (not bool, not str) strictly inside (0.0, 1.0). When both values are
+    provided, margin_min may not exceed confidence_min.
+
+    Raises:
+        ValueError: On any invalid threshold value or pair.
+    """
+    for name, value in (("confidence_min", confidence_min), ("margin_min", margin_min)):
+        if value is None:
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or math.isnan(value)
+            or math.isinf(value)
+            or not (0.0 < value < 1.0)
+        ):
+            raise ValueError(f"{name} must be strictly between 0.0 and 1.0 exclusive, got {value}")
+    if confidence_min is not None and margin_min is not None and margin_min > confidence_min:
+        raise ValueError(
+            f"margin_min ({margin_min}) cannot exceed confidence_min ({confidence_min})"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class DetectionResult:
     """Outcome of format auto-detection with confidence scores and decision rationale."""
@@ -89,7 +119,12 @@ def to_source_block(
     }
 
 
-def detect_format(path: Path | str) -> DetectionResult:
+def detect_format(
+    path: Path | str,
+    *,
+    confidence_min: float = CONFIDENCE_MIN,
+    margin_min: float = MARGIN_MIN,
+) -> DetectionResult:
     """Sniff session file header to detect format with confidence threshold and margin arbitration.
 
     Steps:
@@ -98,11 +133,18 @@ def detect_format(path: Path | str) -> DetectionResult:
     2. Check for SQLite database magic header (refused-live-db short-circuit).
     3. Check for empty or whitespace/BOM-only input (empty refusal).
     4. Call vendor-specific detector heuristics without duplicating pattern matching here.
-    5. Evaluate CONFIDENCE_MIN and MARGIN_MIN rules, treating ties within EPSILON as ambiguity.
+    5. Evaluate the effective confidence_min and margin_min rules (defaulting to
+       CONFIDENCE_MIN / MARGIN_MIN), treating ties within EPSILON as ambiguity.
+
+    Args:
+        path: Session file path to sniff.
+        confidence_min: Effective minimum winner confidence (default CONFIDENCE_MIN).
+        margin_min: Effective minimum winner margin (default MARGIN_MIN).
 
     Returns:
         DetectionResult with detected format (or None if ambiguous/refused) and audit confidences.
     """
+    validate_detection_thresholds(confidence_min, margin_min)
     path_obj = Path(path)
     if not path_obj.exists():
         raise FileNotFoundError(f"Session file not found: {path_obj}")
@@ -165,7 +207,7 @@ def detect_format(path: Path | str) -> DetectionResult:
     second_score = sorted_candidates[1][1] if len(sorted_candidates) > 1 else 0.0
 
     # Rule A: Minimum confidence threshold
-    if winner_score < CONFIDENCE_MIN:
+    if winner_score < confidence_min:
         return DetectionResult(
             format=None,
             confidences=confidences,
@@ -174,7 +216,7 @@ def detect_format(path: Path | str) -> DetectionResult:
 
     # Rule B: Margin threshold & epsilon tie check
     score_diff = winner_score - second_score
-    if (score_diff + EPSILON) < MARGIN_MIN or abs(score_diff) <= EPSILON:
+    if (score_diff + EPSILON) < margin_min or abs(score_diff) <= EPSILON:
         return DetectionResult(
             format=None,
             confidences=confidences,
@@ -192,12 +234,19 @@ def detect_format(path: Path | str) -> DetectionResult:
 def resolve_format(
     explicit: str | None,
     path: Path | str,
+    *,
+    confidence_min: float = CONFIDENCE_MIN,
+    margin_min: float = MARGIN_MIN,
 ) -> tuple[str | None, DetectionResult | None, list[Finding]]:
     """Resolve format either from explicit override or auto-detection, failing closed on ambiguity.
 
     Args:
         explicit: Format string passed via --format ('auto', None, or known format name).
         path: Path to the session artifact.
+        confidence_min: Effective minimum winner confidence for auto-detection
+            (default CONFIDENCE_MIN). Ignored for explicit (non-auto) overrides.
+        margin_min: Effective minimum winner margin for auto-detection
+            (default MARGIN_MIN). Ignored for explicit (non-auto) overrides.
 
     Returns:
         tuple of (resolved_format, detection_result, findings):
@@ -208,6 +257,7 @@ def resolve_format(
         ValueError: If explicit format string is unknown (caller maps to exit code 2).
         FileNotFoundError / IsADirectoryError: Propagated from filesystem inspection.
     """
+    validate_detection_thresholds(confidence_min, margin_min)
     path_obj = Path(path)
     path_str = str(path_obj).replace("\\", "/")
 
@@ -227,7 +277,7 @@ def resolve_format(
                 [],
             )
 
-    result = detect_format(path_obj)
+    result = detect_format(path_obj, confidence_min=confidence_min, margin_min=margin_min)
     if result.format is not None:
         return (result.format, result, [])
 
@@ -272,8 +322,8 @@ def resolve_format(
         evidence={
             "reason": result.reason,
             "confidences": result.confidences,
-            "confidence_min": CONFIDENCE_MIN,
-            "margin_min": MARGIN_MIN,
+            "confidence_min": confidence_min,
+            "margin_min": margin_min,
         },
     )
     return (None, result, [finding])

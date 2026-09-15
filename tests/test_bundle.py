@@ -374,3 +374,66 @@ class TestBundleIntegration:
 
         with pytest.raises(SourceChangedError, match="TOCTOU detected"):
             api.build_bundle(session_file)
+
+
+# ---------------------------------------------------------------------------
+# T-02: bundle outer detection and embedded report use identical thresholds
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_outer_and_embedded_share_effective_thresholds() -> None:
+    """Outer resolve_format and embedded check_file must use identical effective thresholds.
+
+    A detector score of 0.60 succeeds under the default 0.55 but fails under 0.70;
+    asserting both surfaces flip together proves they consumed the same values.
+    """
+    from unittest.mock import patch
+
+    bundle = build_bundle  # local alias for readability
+
+    with (
+        patch("sesslint.adapters.detect.detect_claude_code", return_value=0.60),
+        patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.10),
+        patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
+    ):
+        default_bundle = bundle(HEALTHY_CANONICAL)
+        assert default_bundle.detection["resolved"] == "claude-code-jsonl"
+        assert not any(f["code"] == "SL302" for f in default_bundle.report["findings"])
+
+        strict_bundle = bundle(HEALTHY_CANONICAL, confidence_min=0.70)
+        # Outer detection surface: resolution failed under the raised threshold.
+        assert strict_bundle.detection["resolved"] is None
+        # Embedded report surface: SL302 evidence records the same effective value.
+        sl302 = [f for f in strict_bundle.report["findings"] if f["code"] == "SL302"]
+        assert sl302, "embedded report must carry the SL302 detection-failure finding"
+        assert sl302[0]["evidence"]["confidence_min"] == 0.70
+        assert sl302[0]["evidence"]["margin_min"] == 0.15
+
+
+def test_bundle_resolve_format_call_kwargs_match_embedded() -> None:
+    """Capture kwargs reaching both resolve_format call sites and assert equality."""
+    from unittest.mock import patch
+
+    import sesslint.api as api_mod
+    import sesslint.bundle as bundle_mod
+
+    seen: list[dict[str, Any]] = []
+    real_bundle_rf = bundle_mod.resolve_format
+    real_api_rf = api_mod.resolve_format
+
+    def spy_bundle(*args: Any, **kwargs: Any) -> Any:
+        seen.append(dict(kwargs))
+        return real_bundle_rf(*args, **kwargs)
+
+    def spy_api(*args: Any, **kwargs: Any) -> Any:
+        seen.append(dict(kwargs))
+        return real_api_rf(*args, **kwargs)
+
+    with (
+        patch.object(bundle_mod, "resolve_format", spy_bundle),
+        patch.object(api_mod, "resolve_format", spy_api),
+    ):
+        build_bundle(HEALTHY_CANONICAL, confidence_min=0.70, margin_min=0.20)
+
+    assert len(seen) == 2
+    assert seen[0] == seen[1] == {"confidence_min": 0.70, "margin_min": 0.20}
