@@ -21,7 +21,7 @@ flowchart LR
 ### Core Invariants
 
 1. **Zero External Dependencies**: Adapters must execute exclusively using the Python 3.11+ standard library (`json`, `re`, `pathlib`, `hashlib`).
-2. **Zero In-Place Mutation (Immutability)**: Adapters are read-only. Reading a session must never modify the file on disk or touch access times.
+2. **Zero In-Place Mutation (Immutability)**: Adapters are read-only. Reading a session must never modify the file on disk or touch access times. Persisting adapter output is the job of `sesslint export` (repair-enablement, atomic write to a new file), never of the adapter itself.
 3. **Zero Dynamic Evaluation**: No use of `eval()`, `pickle`, `ctypes`, or dynamic code execution.
 4. **Zero Content Leaks in Diagnostics**: Discriminator failures and version errors must never leak user prompt content or session data into finding evidence.
 5. **Deterministic Event Generation**: Calling the adapter twice on identical source bytes must produce bit-for-bit identical event IDs, content hashes, and finding fingerprints.
@@ -92,7 +92,7 @@ def load_<adapter>(
             source=SourceRef(path=str(path), line=line_num),
             evidence={
                 "version_raw": raw_version,
-                "supported_set": sorted(SUPPORTED_<ADAPTER>_VERSIONS),
+                "supported_set": sorted(SUPPORTED_ < ADAPTER > _VERSIONS),
             },
         )
     )

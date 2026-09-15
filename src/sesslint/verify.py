@@ -764,7 +764,29 @@ def verify(
                 )
                 if output_stream_findings:
                     reval_findings = list(output_stream_findings) + reval_findings
-                actual_reval_assurance, _ = compute_assurance(output_events, reval_findings)
+                decl_reval_raw = manifest_dict.get("revalidation") if manifest_dict else None
+                decl_reval_ass = (
+                    str(decl_reval_raw.get("assurance", ""))
+                    if isinstance(decl_reval_raw, Mapping)
+                    else ""
+                )
+                has_a4_ceiling = (
+                    manifest_dict.get("assurance_ceiling") == "A4"
+                    if manifest_dict is not None
+                    else False
+                )
+                check_a4 = decl_reval_ass == "A4" or has_a4_ceiling
+                from sesslint.reference import reference_equivalent_if_clean
+
+                actual_reval_assurance, _ = compute_assurance(
+                    output_events,
+                    reval_findings,
+                    reference_equivalent=(
+                        reference_equivalent_if_clean(output_events, reval_findings)
+                        if check_a4
+                        else False
+                    ),
+                )
                 actual_err_count = len(
                     [f for f in reval_findings if f.severity in (Severity.ERROR, Severity.FATAL)]
                 )

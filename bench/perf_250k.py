@@ -184,9 +184,9 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
                 f"Expected 0 findings on clean session, got {len(report.findings)}: {finding_codes}"
             )
 
-        if report.assurance != "A3":
+        if report.assurance not in ("A3", "A4"):
             functional_failures.append(
-                f"Expected assurance A3 on clean session, got {report.assurance}"
+                f"Expected assurance A3 or A4 on clean session, got {report.assurance}"
             )
 
         error_cnt = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get(

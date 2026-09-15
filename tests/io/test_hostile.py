@@ -174,8 +174,8 @@ def test_canonical_torn_final_repairable(tmp_path: Path) -> None:
     assert repair_exit == 0
     assert repaired_file.is_file()
 
-    # 3. Post-repair check is clean with assurance A3
+    # 3. Post-repair check is clean with assurance A4
     post_report = check_file(repaired_file)
     assert len(post_report.findings) == 0
-    assert post_report.assurance == "A3"
+    assert post_report.assurance == "A4"
     assert post_report.counts.by_severity.get("error", 0) == 0

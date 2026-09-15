@@ -8,9 +8,9 @@
   <a href="#requirements"><img src="https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/runtime_deps-zero-brightgreen?style=flat-square" alt="Zero Runtime Dependencies"></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/tests-1400%2B_passed-success?style=flat-square" alt="Tests Passing"></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/tests-1590%2B_passed-success?style=flat-square" alt="Tests Passing"></a>
   <a href="#development"><img src="https://img.shields.io/badge/mypy-strict-purple?style=flat-square" alt="Strict Typing"></a>
-  <a href="#assurance-taxonomy-a0a4"><img src="https://img.shields.io/badge/assurance-A0--A4_certified-orange?style=flat-square" alt="Assurance A0-A4"></a>
+  <a href="#assurance-taxonomy-a0a4"><img src="https://img.shields.io/badge/assurance-A0--A4_taxonomy-orange?style=flat-square" alt="Assurance A0-A4"></a>
   <a href="#ci--pre-commit-integration"><img src="https://img.shields.io/badge/ci-linux%20%7C%20macos%20%7C%20windows-informational?style=flat-square" alt="Multi-OS CI"></a>
 </p>
 
@@ -331,6 +331,7 @@ SessLint exposes eight CLI commands designed for both interactive developer usag
 | **`sesslint repair`** | Plan and execute atomic surgical session repairs | **Yes** (to `--output`) | `auto` | `0`, `1`, `2` |
 | **`sesslint verify`** | 7-stage cryptographic audit of repair and manifest | **No** (read-only) | `auto` | `0`, `1`, `2` |
 | **`sesslint bundle`** | Emit zero-leak diagnostic support bundle for bug/adapter reports | **Optional** (`--out`) | `auto` | `0`, `1`, `2` |
+| **`sesslint export`** | Export a vendor artifact to a canonical file for repair | **Yes** (to `--output`) | `auto` | `0`, `1`, `2` |
 | **`sesslint validate-session`**| Validate canonical session against JSON Schema | **No** (read-only) | `canonical` | `0`, `1`, `2` |
 | **`sesslint formats`** | List supported adapters and format schemas | **No** | N/A | `0` |
 | **`sesslint version`** | Print diagnostic version environment struct | **No** | N/A | `0` |
@@ -411,7 +412,32 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 | `--json` | `flag` | `False` | Emit machine-readable JSON plan or repair manifest. |
 
 > [!NOTE]
-> **Alpha Format Boundary**: Repair currently supports Canonical Session stream format (`schema_version: sesslint.session/v1`). Repair attempts on vendor formats (Claude Code / OpenAI Agents) safely refuse with Exit Code 2 and actionable instructions.
+> **Alpha Format Boundary**: Repair currently supports Canonical Session stream format (`schema_version: sesslint.session/v1`). Repair attempts on vendor formats (Claude Code / OpenAI Agents) safely refuse with Exit Code 2 and actionable instructions. Use `sesslint export <vendor-file> --output <canonical-file>` to produce a repair-eligible canonical file first.
+
+---
+
+#### `sesslint export`
+Export a supported session artifact (Claude Code, OpenAI Agents, or Canonical) to a byte-deterministic canonical file that the repair pipeline accepts. This is repair-enablement, not migration: single artifact in, single file out, atomic write, refusals fail closed.
+
+```bash
+sesslint export <path> --output <canonical_path> [--format auto] [--json]
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `path` | `Path` | *required* | Source session file (`.json` or `.jsonl`). |
+| `--output`, `-o` | `Path` | *required* | Destination canonical file (must not exist). |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--json` | `flag` | `False` | Emit the content-free export summary as JSON. |
+
+---
+
+#### Shell completion
+`sesslint completion` prints a completion script generated from the live parser (bash, zsh, or fish). Install it with:
+
+```bash
+eval "$(sesslint completion bash)"   # or: zsh, fish
+```
 
 ---
 
@@ -540,15 +566,15 @@ Every diagnostic finding is assigned a deterministic 16-hex SHA-256 fingerprint 
 
 ```python
 preimage = [
-    code,                       # Diagnostic reason code (e.g., "SL001")
-    adapter_id,                 # Active adapter name (e.g., "canonical", "claude-code-jsonl")
-    adapter_version,            # Active adapter version (e.g., "1.0.0")
-    profile_id,                 # Active profile name (e.g., "neutral", "claude-strict")
-    profile_version,            # Active profile version (e.g., "1.0.0")
-    norm_path,                  # Forward-slash normalized source path
-    line,                       # 1-based source line (or None)
-    ordinal,                    # 0-based stream record counter (or None)
-    record_id,                  # Canonical or vendor record identifier (or None)
+    code,  # Diagnostic reason code (e.g., "SL001")
+    adapter_id,  # Active adapter name (e.g., "canonical", "claude-code-jsonl")
+    adapter_version,  # Active adapter version (e.g., "1.0.0")
+    profile_id,  # Active profile name (e.g., "neutral", "claude-strict")
+    profile_version,  # Active profile version (e.g., "1.0.0")
+    norm_path,  # Forward-slash normalized source path
+    line,  # 1-based source line (or None)
+    ordinal,  # 0-based stream record counter (or None)
+    record_id,  # Canonical or vendor record identifier (or None)
     canonical_evidence_subset,  # Stable sorted subset of structural finding evidence
 ]
 ```
@@ -743,7 +769,7 @@ Every SessLint report and manifest certifies an assurance score representing its
 | **`A1`** | `parseable` | Records decoded successfully; relational integrity unverified. | ⚠️ Unverified |
 | **`A2`** | `structurally-valid` | Graph DAG, event identities, and tool pairings verified. | ⚠️ Profile Dependent |
 | **`A3`** | `profile-replay-valid` | Fully compliant with target provider replay constraints. | ✅ Replay Ready |
-| **`A4`** | `reference-loader-equivalent` | Byte-for-byte or semantic round-trip equivalence verified. | ✅ High Assurance |
+| **`A4`** | `reference-loader-equivalent` | Reconstructed via reference loader on clean canonical sessions (<50k events). | ✅ High Assurance |
 
 ---
 
@@ -827,6 +853,7 @@ Add SessLint validation inside custom checkpoint savers or state graphs before r
 ```python
 from sesslint import precheck
 
+
 def restore_agent_state(session_file: str) -> None:
     res = precheck(session_file, profile="neutral")
     if not res.ok:
@@ -838,6 +865,7 @@ def restore_agent_state(session_file: str) -> None:
 Gate model invocation inside the agent loop:
 ```python
 from sesslint import precheck
+
 
 def run_agent_turn(ledger_path: str) -> None:
     res = precheck(ledger_path, profile="claude-strict")

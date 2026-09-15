@@ -9,6 +9,10 @@ This directory documents the 20 diagnostic reason codes recognized and reported 
 
 These core invariants ensure that users and automated pipelines do not mistake structural consistency for semantic truth or real-world execution state.
 
+## Assurance Ceiling Note (A4)
+
+`A4 reference-loader equivalent` is assigned only when the input is clean under the active profile (zero errors and warnings) *and* the independent reference reconstruction (`sesslint.reference`) agrees with the primary parse. Anything else caps at `A3`. A4 still proves nothing about model behavior, business correctness, or exactly-once effects.
+
 ## Coverage Skip Reasons (FR-047)
 
 Per FR-047, every report embeds a `coverage` block enumerating performed checks and skipped checks. Skip reasons belong to a strictly closed, content-free vocabulary. Any unknown skip reason triggers a fail-closed `SchemaError` during report parsing.

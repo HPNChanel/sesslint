@@ -9,7 +9,7 @@
   "crlf_mixed.jsonl": {
     "code": null,
     "description": "Mixed CRLF and LF lines normalized cleanly without error",
-    "expected_assurance": "A3",
+    "expected_assurance": "A4",
     "exit": 0,
     "repairable": false
   },

@@ -14,10 +14,11 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from sesslint.codes import SL001, SL301, SL302, Repairability, Severity
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
@@ -107,6 +108,31 @@ class ScanReport:
     def to_json(self) -> str:
         """Serialize scan report to formatted JSON string."""
         return json.dumps(self.to_dict(), indent=2, sort_keys=True)
+
+
+SCAN_SCHEMA_VERSION: str = "sesslint.scan-report/v1"
+
+
+def get_scan_schema_path() -> Path:
+    """Return the filesystem path to schemas/sesslint.scan-report.v1.json."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    dev_path = repo_root / "schemas" / "sesslint.scan-report.v1.json"
+    if dev_path.is_file():
+        return dev_path
+    prefix_path = (
+        Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.scan-report.v1.json"
+    )
+    if prefix_path.is_file():
+        return prefix_path
+    return dev_path
+
+
+def load_scan_schema() -> dict[str, Any]:
+    """Load the committed JSON Schema for sesslint.scan-report/v1 as a dict."""
+    schema_path = get_scan_schema_path()
+    if not schema_path.is_file():
+        raise FileNotFoundError(f"Scan report schema not found at {schema_path}")
+    return cast(dict[str, Any], json.loads(schema_path.read_text(encoding="utf-8")))
 
 
 def _scan_single_file(

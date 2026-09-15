@@ -70,6 +70,7 @@ def compute_assurance(
     findings: Sequence[Finding],
     *,
     has_profile_replay: bool = True,
+    reference_equivalent: bool = False,
 ) -> tuple[Assurance, str]:
     """Compute staged assurance level and limitation based on pipeline outcomes (RVW-015).
 
@@ -80,7 +81,8 @@ def compute_assurance(
     - A2: structurally valid (zero errors, but warnings found or replay not independently
           exercised).
     - A3: profile-replay valid (zero errors and zero warnings under active replay profile).
-    - A4: reference-replay valid (reserved/reference equivalent).
+    - A4: reference-replay valid (clean input whose independent reference
+          reconstruction agrees; see sesslint.reference).
     """
     from sesslint.codes import SL001, SL002, Severity
 
@@ -103,6 +105,10 @@ def compute_assurance(
     if has_warning or not has_profile_replay:
         assurance = "A2"
         return assurance, ASSURANCE_LIMITATIONS["A2"]
+
+    if reference_equivalent:
+        assurance = "A4"
+        return assurance, ASSURANCE_LIMITATIONS["A4"]
 
     assurance = "A3"
     return assurance, ASSURANCE_LIMITATIONS["A3"]

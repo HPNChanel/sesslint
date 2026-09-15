@@ -12,10 +12,10 @@ Guarantees:
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from typing import Any
 
+from sesslint._canonical_codec import plan_fingerprint as _seam_plan_fingerprint
 from sesslint.determinism import canonical_json_bytes
 
 
@@ -31,11 +31,7 @@ def compute_plan_fingerprint(
     Uses the unified canonical JSON primitive in the hash domain
     (newline=False, ensure_ascii=False).
     """
-    cleaned: dict[str, Any] = {k: v for k, v in plan_data.items() if k != "fingerprint"}
-    if policy is not None and "policy" not in cleaned:
-        cleaned["policy"] = policy
-    encoded = canonical_json_bytes(cleaned, newline=False)
-    return hashlib.sha256(encoded).hexdigest()
+    return _seam_plan_fingerprint(plan_data, policy=policy)
 
 
 __all__ = [

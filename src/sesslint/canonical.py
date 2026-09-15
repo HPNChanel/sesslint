@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import re
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, cast
@@ -277,14 +276,15 @@ class SessionEvent:
 
     def content_identity_bytes(self) -> bytes:
         """Return canonical UTF-8 bytes for this event excluding provenance fields."""
-        d = dict(self.to_canonical_dict())
-        for f_name in PROVENANCE_FIELDS:
-            d.pop(f_name, None)
-        return to_canonical_json(d).encode("utf-8")
+        from sesslint._canonical_codec import content_identity_bytes as _seam_cib
+
+        return _seam_cib(self)
 
     def content_identity_hash(self) -> str:
         """Compute SHA-256 hex digest of this event's content, excluding provenance fields."""
-        return hashlib.sha256(self.content_identity_bytes()).hexdigest()
+        from sesslint._canonical_codec import content_identity_hash as _seam_cih
+
+        return _seam_cih(self)
 
     def payload_hash(self) -> str:
         """Return content_hash or compute SHA-256 of payload canonical bytes."""
@@ -305,79 +305,16 @@ class Session:
 
 def compute_content_hash(payload: Mapping[str, Any]) -> str:
     """Compute deterministic SHA-256 hash of payload canonical bytes."""
-    digest = hashlib.sha256(canonical_bytes(payload)).hexdigest()
-    return f"sha256:{digest}"
+    from sesslint._canonical_codec import payload_content_hash as _seam_pch
+
+    return _seam_pch(payload)
 
 
 def _normalize_for_canonical_json(obj: Any, seen: set[int] | None = None) -> Any:
     """Normalize objects to plain JSON types with sorted keys and minimal representation."""
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            raise SchemaError(f"Float value {obj!r} is not valid in canonical JSON (RFC 8785)")
-        return obj
+    from sesslint._canonical_codec import normalize_canonical
 
-    if seen is None:
-        seen = set()
-
-    if is_dataclass(obj) and not isinstance(obj, type):
-        obj_id = id(obj)
-        if obj_id in seen:
-            raise SchemaError("Cyclic reference detected during canonical serialization")
-        seen.add(obj_id)
-        try:
-            result: dict[str, Any] = {}
-            for f in fields(obj):
-                val = getattr(obj, f.name)
-                if f.name == "extra_fields":
-                    if isinstance(val, Mapping):
-                        for k, v in val.items():
-                            if not isinstance(k, str):
-                                raise SchemaError(
-                                    f"Non-string dictionary key rejected under RFC 8785: {k!r}"
-                                )
-                            if k not in result:
-                                result[k] = _normalize_for_canonical_json(v, seen)
-                    continue
-                # parent_id is required and must be present even when null
-                if val is None and f.name != "parent_id":
-                    continue
-                # Omit optional metadata in header when empty
-                if f.name == "metadata" and isinstance(val, Mapping) and not val:
-                    continue
-                result[f.name] = _normalize_for_canonical_json(val, seen)
-            return result
-        finally:
-            seen.remove(obj_id)
-
-    if isinstance(obj, Mapping):
-        obj_id = id(obj)
-        if obj_id in seen:
-            raise SchemaError("Cyclic reference detected during canonical serialization")
-        seen.add(obj_id)
-        try:
-            norm_map: dict[str, Any] = {}
-            for k, v in obj.items():
-                if not isinstance(k, str):
-                    raise SchemaError(f"Non-string dictionary key rejected under RFC 8785: {k!r}")
-                norm_map[k] = _normalize_for_canonical_json(v, seen)
-            return norm_map
-        finally:
-            seen.remove(obj_id)
-
-    if isinstance(obj, (list, tuple)):
-        obj_id = id(obj)
-        if obj_id in seen:
-            raise SchemaError("Cyclic reference detected during canonical serialization")
-        seen.add(obj_id)
-        try:
-            return [_normalize_for_canonical_json(item, seen) for item in obj]
-        finally:
-            seen.remove(obj_id)
-
-    if isinstance(obj, (str, int, bool)) or obj is None:
-        return obj
-
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    return normalize_canonical(obj, seen=seen)
 
 
 def to_canonical_json(obj: Any) -> str:
@@ -390,19 +327,9 @@ def to_canonical_json(obj: Any) -> str:
     - Dataclass extra fields (experimental_*) hoisted to top level.
     - Strict RFC 8785 compliance (rejects out-of-range floats like NaN/Inf and cyclic structures).
     """
-    try:
-        normalized = _normalize_for_canonical_json(obj)
-        return json.dumps(
-            normalized,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-    except RecursionError as err:
-        raise SchemaError("Object nesting depth exceeded during canonical serialization") from err
-    except (TypeError, ValueError) as err:
-        raise SchemaError(f"Canonical serialization error: {err}") from err
+    from sesslint._canonical_codec import canonical_json_bytes as _seam_cjb
+
+    return _seam_cjb(obj, newline=False).decode("utf-8")
 
 
 def canonical_bytes(obj: Any) -> bytes:
@@ -410,9 +337,9 @@ def canonical_bytes(obj: Any) -> bytes:
 
     Delegates to the unified determinism.canonical_json_bytes primitive in the hash domain.
     """
-    from sesslint.determinism import canonical_json_bytes
+    from sesslint._canonical_codec import canonical_json_bytes as _seam_cjb
 
-    return canonical_json_bytes(obj, newline=False)
+    return _seam_cjb(obj, newline=False)
 
 
 def to_canonical_dict(obj: Any) -> dict[str, Any]:

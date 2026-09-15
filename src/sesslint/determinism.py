@@ -10,7 +10,7 @@ import hashlib
 from collections.abc import Iterable
 from typing import Any
 
-from sesslint.canonical import to_canonical_json
+from sesslint._canonical_codec import canonical_json_bytes as _seam_canonical_json_bytes
 from sesslint.finding import Finding, finding_sort_key
 
 
@@ -30,12 +30,7 @@ def canonical_json_bytes(obj: Any, *, newline: bool = True) -> bytes:
     2. Hash domain (newline=False): produces compact bytes without trailing newline
        for cryptographic fingerprinting and hashing (findings, plans).
     """
-    target = obj.to_dict() if hasattr(obj, "to_dict") and callable(obj.to_dict) else obj
-    raw_str = to_canonical_json(target)
-    raw_bytes = raw_str.encode("utf-8")
-    if newline:
-        return raw_bytes + b"\n"
-    return raw_bytes
+    return _seam_canonical_json_bytes(obj, newline=newline)
 
 
 def stable_sort_findings(findings: Iterable[Finding]) -> list[Finding]:

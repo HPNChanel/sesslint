@@ -18,7 +18,7 @@ def test_bench_smoke_assertions() -> None:
 
         report = api.check_file(bench_file)
         assert len(report.findings) == 0
-        assert report.assurance == "A3"
+        assert report.assurance == "A4"
         assert report.counts.by_severity.get("error", 0) == 0
         assert report.counts.by_severity.get("warning", 0) == 0
 
