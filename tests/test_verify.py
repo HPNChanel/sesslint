@@ -1004,3 +1004,249 @@ def test_verify_detects_tampered_output_with_real_manifest(tmp_path: Path) -> No
         manifest_path=manifest_p,
     )
     assert verdict.ok is False
+
+
+# ---------------------------------------------------------------------------
+# N. Manifest profile binding (FR-072 authoritative revalidation coordinates)
+# ---------------------------------------------------------------------------
+
+
+def _repair_canonical_dup_bundle(
+    dest_dir: Path,
+    *,
+    profile: str = "neutral",
+) -> tuple[Path, Path, Path]:
+    """Repair a duplicate-bearing canonical session under `profile` via executor.
+
+    Returns (source, output, manifest) paths. The manifest binds the supplied
+    profile through revalidation.profile_id/profile_version.
+    """
+    from sesslint.api import repair
+
+    src = dest_dir / f"bind_src_{profile}.jsonl"
+    out = dest_dir / f"bind_out_{profile}.jsonl"
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_bind"}',
+        '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"hello"},"seq":0,"ts":"2026-09-08T12:00:00Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"hi"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+    ]
+    src.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    plan_obj, manifest = repair(src, out, profile=profile)
+    assert plan_obj is not None
+    assert manifest is not None
+    manifest_path = Path(f"{out}.manifest.json")
+    assert manifest_path.is_file()
+    return src, out, manifest_path
+
+
+def _spy_detector_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[str]:
+    """Record every profile_name passed to verify's detector-check runner."""
+    import importlib
+
+    verify_mod = importlib.import_module("sesslint.verify")
+
+    seen: list[str] = []
+    orig = verify_mod._run_detector_checks
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("profile_name", args[1] if len(args) > 1 else None))
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(verify_mod, "_run_detector_checks", _spy)
+    return seen
+
+
+def test_no_plan_binds_neutral_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No-plan verify under a neutral-bound manifest reconstructs with neutral."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path, profile="neutral")
+    seen = _spy_detector_profiles(monkeypatch)
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is True
+    assert seen and all(p == "neutral" for p in seen)
+
+
+def test_no_plan_binds_claude_strict_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No-plan verify under a claude-strict-bound manifest reconstructs under
+    claude-strict — never silently under neutral."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path, profile="claude-strict")
+    seen = _spy_detector_profiles(monkeypatch)
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is True
+    assert "claude-strict" in seen
+    assert "neutral" not in seen
+
+
+def test_no_plan_binds_openai_strict_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No-plan verify under an openai-strict-bound manifest reconstructs under
+    openai-strict — never silently under neutral."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path, profile="openai-strict")
+    seen = _spy_detector_profiles(monkeypatch)
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is True
+    assert "openai-strict" in seen
+    assert "neutral" not in seen
+
+
+def test_tampered_profile_id_fails_deterministically(tmp_path: Path) -> None:
+    """Manifest bound to claude-strict but tampered to neutral fails: the plan
+    reconstructed under the tampered identity carries different finding
+    fingerprints and no longer matches plan_fingerprint."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path, profile="claude-strict")
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["revalidation"]["profile_id"] = "neutral"
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    c2 = verdict.checks[1]
+    assert c2.name == "plan_fingerprint"
+    assert c2.ok is False
+
+
+def test_unknown_profile_id_fails_closed(tmp_path: Path) -> None:
+    """An unknown revalidation.profile_id fails closed on every consumer."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["revalidation"]["profile_id"] = "vendor-x-99"
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    c_map = {c.name: c for c in verdict.checks}
+    for name in ("plan_fingerprint", "assurance_audit", "idempotence"):
+        assert c_map[name].ok is False
+        assert c_map[name].detail.startswith("profile-binding-unknown")
+
+
+def test_unavailable_profile_version_fails_closed(tmp_path: Path) -> None:
+    """A bound profile_version absent from the registry fails closed."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["revalidation"]["profile_version"] = "9.9.9"
+    manifest_data["profile_version"] = "9.9.9"
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    c_map = {c.name: c for c in verdict.checks}
+    for name in ("plan_fingerprint", "assurance_audit", "idempotence"):
+        assert c_map[name].ok is False
+        assert c_map[name].detail.startswith("profile-version-unavailable")
+
+
+def test_root_profile_version_conflict_fails(tmp_path: Path) -> None:
+    """Root profile_version conflicting with revalidation.profile_version fails."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    assert manifest_data.get("profile_version") == "1.0.0"
+    manifest_data["profile_version"] = "2.0.0"
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    c_map = {c.name: c for c in verdict.checks}
+    for name in ("plan_fingerprint", "assurance_audit", "idempotence"):
+        assert c_map[name].ok is False
+        assert c_map[name].detail == "profile-version-conflict"
+
+
+def test_plan_profile_conflict_fails(tmp_path: Path) -> None:
+    """A supplied plan whose profile conflicts with the manifest binding fails
+    the audit even though the plan itself parses cleanly."""
+    from sesslint.api import repair
+
+    src, out, man = _repair_canonical_dup_bundle(tmp_path, profile="claude-strict")
+    # Build a syntactically valid plan under a conflicting profile identity.
+    plan_obj, _ = repair(src, out.parent / "other_out.jsonl", profile="neutral")
+    assert plan_obj is not None
+    plan_p = tmp_path / "conflict_plan.json"
+    plan_p.write_text(
+        json.dumps(plan_obj.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    verdict = verify(
+        source_path=src,
+        plan_path=plan_p,
+        output_path=out,
+        manifest_path=man,
+    )
+
+    assert verdict.ok is False
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["assurance_audit"].ok is False
+    assert c_map["assurance_audit"].detail == "plan-profile-conflict"
+    assert c_map["idempotence"].ok is False
+    assert c_map["idempotence"].detail == "plan-profile-conflict"
+
+
+def test_missing_revalidation_rejected_no_fallback(tmp_path: Path) -> None:
+    """A manifest missing the revalidation block is rejected by schema; no
+    profile fallback is silently invented."""
+    src, out, man = _repair_canonical_dup_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    del manifest_data["revalidation"]
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["source_hash"].ok is False
+    assert c_map["source_hash"].detail == "manifest-schema"
+    assert c_map["plan_fingerprint"].ok is False
+    assert c_map["plan_fingerprint"].detail == "manifest-schema"
+
+
+def test_hostile_profile_id_fails_privacy_safe(tmp_path: Path) -> None:
+    """A hostile/overlong profile_id fails closed without echoing the
+    attacker-controlled value into content-free output."""
+    hostile_id = "evil<" + "x" * 5000 + ">"
+    src, out, man = _repair_canonical_dup_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["revalidation"]["profile_id"] = hostile_id
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    for check in verdict.checks:
+        assert hostile_id not in check.detail
+        assert "evil<" not in check.detail
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["plan_fingerprint"].detail.startswith("profile-binding-unknown")
+
+
+def test_hostile_profile_version_fails_privacy_safe(tmp_path: Path) -> None:
+    """A hostile/overlong profile_version fails closed without echoing it."""
+    hostile_ver = "9.9.9;drop-" + "y" * 4000
+    src, out, man = _repair_canonical_dup_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["revalidation"]["profile_version"] = hostile_ver
+    man.write_text(json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8")
+
+    verdict = verify(source_path=src, output_path=out, manifest_path=man)
+
+    assert verdict.ok is False
+    for check in verdict.checks:
+        assert hostile_ver not in check.detail
+        assert "9.9.9;drop" not in check.detail
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["plan_fingerprint"].detail.startswith("profile-version-unavailable")

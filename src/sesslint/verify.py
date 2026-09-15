@@ -152,6 +152,52 @@ def _load_plan_from_dict(data: Mapping[str, Any]) -> RepairPlan:
     )
 
 
+def _resolve_manifest_profile(
+    manifest_dict: Mapping[str, Any] | None,
+    plan_profile: str | None = None,
+) -> tuple[str, str] | str:
+    """Resolve the authoritative (profile_id, profile_version) bound by a manifest.
+
+    ``revalidation.profile_id`` and ``revalidation.profile_version`` are the only
+    authoritative profile coordinates (FR-072); the v1 manifest has no root
+    ``profile`` field and none is consulted. When a plan is supplied, its profile
+    must agree with the manifest binding.
+
+    Returns ``(profile_id, profile_version)`` on success, or a closed
+    failure-detail string on any binding failure. Failure details never echo
+    attacker-controlled values; at most a content-free length discriminator is
+    included.
+    """
+    if manifest_dict is None:
+        return "profile-binding-unavailable"
+    reval = manifest_dict.get("revalidation")
+    if not isinstance(reval, Mapping):
+        return "profile-binding-missing"
+    pid_raw = reval.get("profile_id")
+    pver_raw = reval.get("profile_version")
+    if (
+        not isinstance(pid_raw, str)
+        or not pid_raw.strip()
+        or not isinstance(pver_raw, str)
+        or not pver_raw.strip()
+    ):
+        return "profile-binding-missing"
+    pid = pid_raw.strip()
+    pver = pver_raw.strip()
+    try:
+        profile = get_profile(pid)
+    except (KeyError, ValueError):
+        return f"profile-binding-unknown:len={len(pid_raw)}"
+    if profile.version != pver:
+        return f"profile-version-unavailable:len={len(pver_raw)}"
+    root_pver = manifest_dict.get("profile_version")
+    if root_pver is not None and str(root_pver) != pver:
+        return "profile-version-conflict"
+    if plan_profile is not None and plan_profile != pid:
+        return "plan-profile-conflict"
+    return (pid, pver)
+
+
 def _parse_session_events(
     raw_bytes: bytes,
 ) -> tuple[SessionHeader | None, list[SessionEvent]]:
@@ -389,18 +435,32 @@ def verify(
         except Exception:
             plan_dict = None
             plan_obj = None
+
+    # Resolve the authoritative profile binding once for every consumer:
+    # revalidation.profile_id/profile_version are the only authoritative
+    # coordinates; a supplied plan's profile must agree with the binding.
+    bound_profile: tuple[str, str] | None = None
+    binding_failure: str | None = None
+    if manifest_dict is not None:
+        resolved_binding = _resolve_manifest_profile(
+            manifest_dict,
+            plan_obj.profile if plan_obj is not None else None,
+        )
+        if isinstance(resolved_binding, str):
+            binding_failure = resolved_binding
+        else:
+            bound_profile = resolved_binding
     else:
+        binding_failure = manifest_err_detail
+
+    if plan_path is None and bound_profile is not None:
         # Reconstruct plan from source events and manifest policy/profile (RVW-024)
         target_policy = (
             str(manifest_dict.get("policy", "conservative"))
             if manifest_dict is not None and "policy" in manifest_dict
             else "conservative"
         )
-        target_profile = (
-            str(manifest_dict.get("profile", "neutral"))
-            if manifest_dict is not None and "profile" in manifest_dict
-            else "neutral"
-        )
+        target_profile = bound_profile[0]
         try:
             try:
                 _, src_events, stream_findings = _load_source_with_stream_findings(source_path)
@@ -464,7 +524,11 @@ def verify(
         c2 = Check(
             name="plan_fingerprint",
             ok=False,
-            detail="invalid-plan-json" if plan_path is not None else "plan-missing",
+            detail=(
+                "invalid-plan-json"
+                if plan_path is not None
+                else (binding_failure or "plan-missing")
+            ),
         )
     else:
         declared_fp = plan_dict.get("fingerprint")
@@ -732,7 +796,13 @@ def verify(
     if manifest_dict is None:
         c6 = Check(name="assurance_audit", ok=False, detail=manifest_err_detail)
     elif plan_obj is None:
-        c6 = Check(name="assurance_audit", ok=False, detail="plan-missing")
+        c6 = Check(
+            name="assurance_audit",
+            ok=False,
+            detail=binding_failure or "plan-missing",
+        )
+    elif binding_failure is not None:
+        c6 = Check(name="assurance_audit", ok=False, detail=binding_failure)
     elif "assurance" in manifest_dict and manifest_dict.get("assurance") is not None:
         declared_assurance = str(manifest_dict["assurance"])
         if declared_assurance != recomputed_assurance:
@@ -746,11 +816,7 @@ def verify(
             decl_reval = manifest_dict.get("revalidation")
             decl_ceiling = manifest_dict.get("assurance_ceiling")
 
-            target_profile = (
-                str(manifest_dict.get("profile", "neutral"))
-                if "profile" in manifest_dict
-                else (plan_obj.profile if plan_obj is not None else "neutral")
-            )
+            target_profile = bound_profile[0] if bound_profile is not None else "neutral"
             out_name = (
                 Path(output_path).name
                 if output_path and not str(output_path).startswith("<")
@@ -866,40 +932,42 @@ def verify(
         if not fresh_output_events and output_bytes.strip():
             c7 = Check(name="idempotence", ok=False, detail="replan-failed: output-events-empty")
         else:
-            target_policy = "conservative"
-            target_profile = "neutral"
-            if plan_obj is not None:
-                target_policy = plan_obj.policy
-                target_profile = plan_obj.profile
-            elif manifest_dict is not None and "policy" in manifest_dict:
-                target_policy = str(manifest_dict["policy"])
-
-            out_name = (
-                Path(output_path).name
-                if output_path and not str(output_path).startswith("<")
-                else str(output_path)
-            )
-            findings = _run_detector_checks(
-                fresh_output_events,
-                source_path=out_name,
-                profile_name=target_profile,
-            )
-            fresh_plan = plan(
-                findings=findings,
-                events=fresh_output_events,
-                profile=target_profile,
-                policy=target_policy,
-                source_hash=hashlib.sha256(output_bytes).hexdigest(),
-                acknowledge_side_effects=acknowledge_side_effects,
-            )
-            if len(fresh_plan.steps) == 0:
-                c7 = Check(name="idempotence", ok=True, detail="0-steps (converged)")
+            if binding_failure is not None:
+                c7 = Check(name="idempotence", ok=False, detail=binding_failure)
             else:
-                c7 = Check(
-                    name="idempotence",
-                    ok=False,
-                    detail=f"non-idempotent: {len(fresh_plan.steps)} steps remaining",
+                target_policy = "conservative"
+                target_profile = bound_profile[0] if bound_profile is not None else "neutral"
+                if plan_obj is not None:
+                    target_policy = plan_obj.policy
+                elif manifest_dict is not None and "policy" in manifest_dict:
+                    target_policy = str(manifest_dict["policy"])
+
+                out_name = (
+                    Path(output_path).name
+                    if output_path and not str(output_path).startswith("<")
+                    else str(output_path)
                 )
+                findings = _run_detector_checks(
+                    fresh_output_events,
+                    source_path=out_name,
+                    profile_name=target_profile,
+                )
+                fresh_plan = plan(
+                    findings=findings,
+                    events=fresh_output_events,
+                    profile=target_profile,
+                    policy=target_policy,
+                    source_hash=hashlib.sha256(output_bytes).hexdigest(),
+                    acknowledge_side_effects=acknowledge_side_effects,
+                )
+                if len(fresh_plan.steps) == 0:
+                    c7 = Check(name="idempotence", ok=True, detail="0-steps (converged)")
+                else:
+                    c7 = Check(
+                        name="idempotence",
+                        ok=False,
+                        detail=f"non-idempotent: {len(fresh_plan.steps)} steps remaining",
+                    )
     except Exception as err:
         c7 = Check(name="idempotence", ok=False, detail=f"replan-failed: {type(err).__name__}")
 
