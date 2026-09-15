@@ -929,11 +929,15 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             if getattr(args, "json", False):
                 from sesslint.report import build_repro_metadata, render_json
 
+                adapter_cov = report.coverage.adapter
+                profile_cov = report.coverage.profile
                 repro_meta = build_repro_metadata(
-                    adapter_name=format_display,
-                    profile_name=report.coverage.profile.get("id", profile_opt),
+                    adapter_name=str(adapter_cov.get("id", "unknown")),
+                    adapter_version=str(adapter_cov.get("version", "unknown")),
+                    profile_name=str(profile_cov.get("id", "unknown")),
+                    profile_version=str(profile_cov.get("version", "unknown")),
                     detection_method="manual" if format_opt != "auto" else "auto",
-                    detection_confidence=1.0,
+                    detection_confidence=None,
                 )
                 print(
                     render_json(

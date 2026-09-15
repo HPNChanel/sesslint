@@ -1,6 +1,6 @@
 # T-04: Reproduction metadata fidelity
 
-- Status: planned
+- Status: done
 - Phase: 2
 - Priority: P1 audit correctness
 - Type: code + schema / audit correctness
@@ -77,6 +77,15 @@ pytest -q
 - No second detection read is introduced.
 - Schema/version note: the v1 correction is recorded as a deliberate pre-release contract change.
 - Full gates green.
+
+## Execution Evidence (recorded 2026-09-15)
+
+- `build_repro_metadata` (`src/sesslint/report.py`): defaults are now honest sentinels — adapter/profile `name`/`version` = `"unknown"`, `detection_method` = `"unknown"`, `detection_confidence` = `None`. `platform` now emits `architecture` via `platform.machine()` with `"unknown"` fallback.
+- CLI check `--json` (`src/sesslint/cli.py`): repro binds `report.coverage.adapter["id"]/["version"]` and `report.coverage.profile["id"]/["version"]` verbatim; `detection.method` = `"manual"` when `--format` is explicit else `"auto"`; `detection.confidence` = `null` — the bound detection score is not carried on the `Report` check result, so per the task's recorded rollback the honest `null` is emitted rather than a fabricated `1.0` or a forbidden second sniff. Gap recorded: repro `detection.confidence` stays `null` until the check result carries the bound score.
+- Schema correction: `schemas/sesslint.report.v1.json` `repro.platform` now requires `architecture` (added to both `required` and `properties`; `additionalProperties` still false) — deliberate pre-release contract fix; no release exists yet.
+- Sample after-state repro block: `adapter={"name":"claude-code-jsonl","version":"1.0.0"}`, `profile={"name":"neutral","version":"1.0.0"}`, `detection={"confidence":null,"method":"auto"}`, `platform={"architecture":"AMD64","os":"win32","python":"3.11.x"}`.
+- Tests: `tests/report/test_repro.py` (+3: sentinel defaults, explicit bound values, architecture field; structure test updated for `architecture` key and `"unknown"` version defaults), `tests/report/test_json_schema.py` (repro `platform` asserts required `architecture` + closed `additionalProperties`), `tests/cli/test_check.py` (+2: repro binds coverage id/version, `method`/`confidence` per auto vs manual).
+- Gates: focused suite (`test_repro.py`, `test_json_schema.py`, `test_report.py`, `test_check.py`, `test_cli_presentation.py`, `tests/privacy/`) green; `ruff check` clean; `ruff format --check` clean; `mypy --strict src/` clean (52 files); `pytest -q` = 1651 tests, 0 failures, 0 errors, 2 skipped.
 
 ## Evidence To Record
 

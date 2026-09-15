@@ -113,3 +113,33 @@ def test_check_binary_non_utf8_file(capsys: pytest.CaptureFixture[str], tmp_path
     if code == 1 and captured.out.strip():
         data = json.loads(captured.out)
         assert data["schema_version"] == "sesslint.report/v1"
+
+
+def test_check_json_repro_binds_coverage_values(capsys: pytest.CaptureFixture[str]) -> None:
+    """--json repro block binds the check's own coverage adapter/profile ID+version,
+    emits a non-identifying architecture, and never fabricates a detection score."""
+    fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
+    code = main(["check", str(fixture), "--json"])
+    assert code == 0
+    data = json.loads(capsys.readouterr().out)
+
+    repro = data["repro"]
+    cov_adapter = data["coverage"]["adapter"]
+    cov_profile = data["coverage"]["profile"]
+    assert repro["adapter"] == {"name": cov_adapter["id"], "version": cov_adapter["version"]}
+    assert repro["profile"] == {"name": cov_profile["id"], "version": cov_profile["version"]}
+    assert repro["detection"]["method"] == "auto"
+    assert repro["detection"]["confidence"] is None
+    assert isinstance(repro["platform"]["architecture"], str)
+    assert repro["platform"]["architecture"]
+
+
+def test_check_json_repro_manual_format(capsys: pytest.CaptureFixture[str]) -> None:
+    """Explicit --format reports detection method=manual with null confidence."""
+    fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
+    code = main(["check", str(fixture), "--format", "claude-code-jsonl", "--json"])
+    assert code == 0
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["repro"]["detection"]["method"] == "manual"
+    assert data["repro"]["detection"]["confidence"] is None
