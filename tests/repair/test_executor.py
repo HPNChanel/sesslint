@@ -1054,21 +1054,23 @@ def test_refuse_crafted_conservative_plan_with_salvage_step(tmp_path: Path) -> N
     assert not output_file.exists()
 
 
-@pytest.mark.parametrize("vendor_fmt", ["claude-code-jsonl", "openai-agents"])
-def test_executor_refuses_direct_vendor_format_repair(tmp_path: Path, vendor_fmt: str) -> None:
-    """Direct repair invocation on vendor formats is rejected with RepairRefused (RVW-019)."""
+@pytest.mark.parametrize("emit_fmt", ["vendor", "claude-code-jsonl", "openai-agents"])
+def test_executor_refuses_vendor_emit_on_canonical_source(tmp_path: Path, emit_fmt: str) -> None:
+    """Vendor emit on a canonical source refuses: no vendor provenance to project."""
     source_file = tmp_path / "source.jsonl"
     shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
     plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
     output_file = tmp_path / "out_vendor.jsonl"
 
-    with pytest.raises(RepairRefused, match="Direct repair of vendor format"):
+    # 'vendor' literal: usage refusal (no provenance); specific vendor format:
+    # projection refusal R1 (canonical events carry no source_line).
+    with pytest.raises(RepairRefused):
         execute(
             source_path=source_file,
             plan=plan,
             output_path=output_file,
             policy="conservative",
-            format=vendor_fmt,
+            emit_format=emit_fmt,
         )
     assert not output_file.exists()
 

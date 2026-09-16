@@ -50,10 +50,10 @@
   },
   "huge_line.jsonl": {
     "code": "SL002",
-    "description": "Line exceeding 1MB max_line_bytes triggers bounded limit error",
+    "description": "Line exceeding 1MB max_line_bytes triggers bounded limit error; check still fails (exit 1, A0), but repair succeeds via torn-terminal-record-discard write-back since vendor emit landed in v0.2.0",
     "expected_assurance": "A0",
     "exit": 1,
-    "repairable": false
+    "repairable": true
   },
   "interleaved_branches.jsonl": {
     "code": "SL106",
@@ -71,10 +71,10 @@
   },
   "null_bytes.jsonl": {
     "code": "SL002",
-    "description": "Forbidden NUL byte in JSONL stream triggers fail-closed error",
+    "description": "Forbidden NUL byte in JSONL stream triggers fail-closed check error; the unparseable terminal record is discarded by torn-terminal-record-discard under vendor write-back",
     "expected_assurance": "A0",
     "exit": 1,
-    "repairable": false
+    "repairable": true
   },
   "self_parent.jsonl": {
     "code": "SL005",
@@ -85,10 +85,10 @@
   },
   "torn_final.jsonl": {
     "code": "SL002",
-    "description": "Torn record on final line detected as SL002; direct vendor repair refused under format boundary",
+    "description": "Torn record on final line detected as SL002; repaired via torn-terminal-record-discard vendor write-back since v0.2.0",
     "expected_assurance": "A0",
     "exit": 1,
-    "repairable": false
+    "repairable": true
   },
   "truncated_utf8.bin": {
     "code": "SL302",

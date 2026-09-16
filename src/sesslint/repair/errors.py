@@ -62,6 +62,20 @@ class ManifestCollision(RepairRefused):
     code: str = "MANIFEST_COLLISION"
 
 
+class VendorProjectionRefused(RepairRefused):
+    """Raised when a vendor write-back projection cannot be proven safe.
+
+    Carries a machine-readable ``reason`` tag (R1-R6) identifying which
+    fail-closed condition fired. See ``sesslint.repair.writeback``.
+    """
+
+    code: str = "VENDOR_PROJECTION_REFUSED"
+
+    def __init__(self, message: str, *, reason: str = "") -> None:
+        super().__init__(message, code="VENDOR_PROJECTION_REFUSED")
+        self.reason = reason
+
+
 class PlanSourceMismatch(RepairError):
     """Raised when plan.source_hash does not match the source file bytes SHA-256."""
 
@@ -77,5 +91,6 @@ __all__ = [
     "PolicyMismatch",
     "RepairError",
     "RepairRefused",
+    "VendorProjectionRefused",
     "VendorRepairRefused",
 ]

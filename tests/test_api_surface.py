@@ -8,7 +8,6 @@ import pytest
 
 from sesslint import api
 from sesslint.repair import RepairPlan
-from sesslint.repair.errors import RepairRefused
 from sesslint.report import Report
 from sesslint.scan import ScanReport
 from sesslint.verify import Verdict
@@ -147,10 +146,19 @@ def test_repair_and_plan_contract(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         api.repair("non_existent_repair_src.jsonl", output_path=out_file)
 
-    # Vendor formats are refused
+    # Vendor input repairs via drop-only write-back (emit=auto)
     claude_fixture = FIXTURES_ROOT / "claude_code" / "basic.jsonl"
-    with pytest.raises(RepairRefused, match="Direct repair of vendor format"):
-        api.repair(claude_fixture, output_path=out_file)
+    vendor_out = tmp_path / "repaired_vendor.jsonl"
+    _, v_manifest = api.repair(claude_fixture, output_path=vendor_out)
+    assert v_manifest is not None
+    assert v_manifest.adapter_id == "claude-code-jsonl"
+    assert vendor_out.exists()
+
+    # emit='vendor' on a canonical source refuses (no vendor provenance)
+    from sesslint.repair.errors import VendorRepairRefused
+
+    with pytest.raises(VendorRepairRefused, match="no vendor provenance"):
+        api.repair(torn_src, output_path=tmp_path / "vendor_emit.jsonl", emit="vendor")
 
 
 def test_verify_contract() -> None:
@@ -389,16 +397,21 @@ def test_repair_performs_single_detection_with_profile_thresholds(tmp_path: Path
     with p1, p2, p3, pytest.MonkeyPatch.context() as mp:
         mp.setattr(detect_mod, "detect_format", spy_detect)
         # Under neutral (margin 0.15): claude wins (0.60 vs 0.45 -> margin 0.15)
-        # -> vendor refusal proves a single detection pass ran under thresholds.
-        with pytest.raises(VendorRepairRefused, match="Direct repair of vendor format"):
+        # -> vendor write-back engages, proving a single detection pass ran
+        # under the profile's thresholds.
+        try:
             api.repair(target, tmp_path / "out.jsonl")
+        except VendorRepairRefused:
+            raise AssertionError("emit='auto' must not refuse detected vendor input") from None
+        except Exception:
+            pass  # downstream gates may fail; assertion target is detection
         assert len(calls) == 1
         assert calls[0]["confidence_min"] == 0.55
         assert calls[0]["margin_min"] == 0.15
 
         calls.clear()
         # Under claude-strict (margin 0.20): 0.60-0.45=0.15 < 0.20 -> ambiguous,
-        # so no vendor refusal may fire from the detection pass.
+        # so the vendor path must not engage from the detection pass.
         try:
             api.repair(
                 target,
@@ -432,6 +445,10 @@ def test_repair_detection_call_count_exactly_once(tmp_path: Path) -> None:
     p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
     with p1, p2, p3, pytest.MonkeyPatch.context() as mp:
         mp.setattr(detect_mod, "detect_format", counting_detect)
-        with pytest.raises(VendorRepairRefused):
+        try:
             api.repair(target, tmp_path / "out.jsonl")
+        except VendorRepairRefused:
+            raise AssertionError("emit='auto' must not refuse detected vendor input") from None
+        except Exception:
+            pass  # downstream gates may fail; assertion target is call count
     assert calls == 1
