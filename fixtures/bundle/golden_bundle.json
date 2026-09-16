@@ -6,7 +6,7 @@
       "claude-code-jsonl": "1.0.0",
       "openai-agents": "1.0.0"
     },
-    "cli": "0.1.0",
+    "cli": "0.2.0",
     "profiles": {
       "claude-strict": "1.0.0",
       "neutral": "1.0.0",
@@ -16,14 +16,14 @@
     "schema_report": "sesslint.report/v1",
     "schema_session": "sesslint.session/v1",
     "tool": "sesslint",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "versions": {
       "adapters": {
         "canonical": "1.0.0",
         "claude-code-jsonl": "1.0.0",
         "openai-agents": "1.0.0"
       },
-      "cli": "0.1.0",
+      "cli": "0.2.0",
       "profiles": {
         "claude-strict": "1.0.0",
         "neutral": "1.0.0",
@@ -107,7 +107,7 @@
     "schema_version": "sesslint.report/v1",
     "session_id": "healthy",
     "source_fingerprint": "5e7b7cdc7ea6d7783e03eabee84ed86ba8810ad2cb2bdd0162a412b262d55065",
-    "tool_version": "0.1.0"
+    "tool_version": "0.2.0"
   },
   "source": {
     "path": "healthy.jsonl",
