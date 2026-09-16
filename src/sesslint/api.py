@@ -20,7 +20,7 @@ from sesslint.adapters.detect import (
     validate_detection_thresholds,
 )
 from sesslint.bundle import Bundle, build_bundle
-from sesslint.canonical import Session, load_session_file
+from sesslint.canonical import Session, SessionEvent, load_session_file
 from sesslint.codes import SL302, Repairability, Severity
 from sesslint.context import CheckContext
 from sesslint.exporter import ExportSummary
@@ -301,6 +301,7 @@ def repair(
     plan_path: Path | str | None = None,
     dry_run: bool = False,
     acknowledge_side_effects: bool = False,
+    emit: Literal["auto", "canonical", "vendor"] = "auto",
 ) -> tuple[RepairPlan, RepairManifest | None]:
     """Safely plan and execute session repair.
 
@@ -313,6 +314,11 @@ def repair(
         plan_path: Optional path to pre-computed plan JSON.
         dry_run: If True, computes plan without writing files.
         acknowledge_side_effects: Explicit acknowledgment for salvage policy.
+        emit: Output artifact format. 'auto' (default) emits the input's own
+            format — canonical in → canonical out; vendor in → vendor write-back
+            (drop-only line-verbatim projection). 'canonical' always emits a
+            canonical session stream. 'vendor' forces vendor write-back and is
+            refused for canonical input.
 
     Returns:
         Tuple of (RepairPlan, RepairManifest or None if dry_run).
@@ -321,61 +327,89 @@ def repair(
     if not src.is_file():
         raise FileNotFoundError(f"Source file not found: {src}")
 
-    # RVW-019: Vendor formats are rejected in repair (canonical only)
-    from sesslint.adapters.detect import detect_format
+    if emit not in ("auto", "canonical", "vendor"):
+        raise ValueError(f"emit must be 'auto', 'canonical', or 'vendor', got {emit!r}")
+
+    # Resolve the input format exactly once (explicit override or a single
+    # detection pass under the selected profile's effective thresholds).
+    from sesslint.adapters.detect import FORMAT_CANONICAL, detect_format
     from sesslint.repair.errors import VendorRepairRefused
 
-    if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-        raise VendorRepairRefused(
-            f"Direct repair of vendor format '{format}' is not supported. "
-            "Repair operates exclusively on canonical session streams (JSONL)."
-        )
+    resolved_format: str
     if format in (None, "auto"):
-        # Exactly one detection pass under the selected profile's effective thresholds.
         effective_cfg = resolve_effective_config(profile)
         det = detect_format(
             src,
             confidence_min=effective_cfg.confidence_min,
             margin_min=effective_cfg.margin_min,
         )
-        if det.format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+        # Ambiguous/refused detection (format=None) falls back to the canonical
+        # path, which fails honestly if the file is not a canonical stream.
+        resolved_format = det.format or FORMAT_CANONICAL
+    else:
+        resolved_format = str(format)
+
+    input_is_vendor = resolved_format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
+
+    # Resolve the emit target.
+    if emit == "vendor":
+        if not input_is_vendor:
             raise VendorRepairRefused(
-                f"Direct repair of vendor format '{det.format}' is not supported. "
-                "Repair operates exclusively on canonical session streams (JSONL)."
+                "Cannot emit vendor output for a canonical source: canonical "
+                "events carry no vendor provenance. Omit --emit or use "
+                "'--emit canonical'."
             )
+        emit_format = resolved_format
+    elif emit == "canonical":
+        emit_format = FORMAT_CANONICAL
+    else:  # auto
+        emit_format = resolved_format if input_is_vendor else FORMAT_CANONICAL
 
     plan_obj: RepairPlan
+    loaded_events: list[SessionEvent] = []
+    all_findings: list[Finding] = []
+    source_events: list[SessionEvent] | None = None
+    source_findings: list[Finding] | None = None
+    if plan_path is None or input_is_vendor:
+        # Load for planning. For vendor input these events/findings are also
+        # passed to execute(): vendor events carry write-back provenance, and
+        # findings locate event-less source lines the plan explicitly discards
+        # (e.g. torn terminal record). For canonical input the executor
+        # re-loads the source itself (preserving the session header).
+        from sesslint.repair.executor import load_source_for_format, run_all_checks
+
+        _source_header, loaded_events, stream_findings = load_source_for_format(
+            src, resolved_format
+        )
+        check_findings = run_all_checks(
+            loaded_events,
+            profile=profile,
+            source_path=src.name,
+            adapter=resolved_format,
+        )
+        all_findings = list(stream_findings) + list(check_findings)
+        if input_is_vendor:
+            source_events = list(loaded_events)
+            source_findings = all_findings
+
     if plan_path is not None:
         plan_obj = load_plan(plan_path, policy=policy)
     else:
-        from sesslint.repair.executor import (
-            load_session_source_with_findings,
-            run_all_checks,
-        )
-
-        _source_header, source_events, stream_findings = load_session_source_with_findings(src)
-        check_findings = run_all_checks(
-            source_events,
-            profile=profile,
-            source_path=src.name,
-            adapter="canonical",
-        )
-        source_findings = list(stream_findings) + list(check_findings)
         source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
         import sys
 
         p_mod = sys.modules.get("sesslint.repair.planner")
         planner_fn = getattr(p_mod, "plan", planner_plan) if p_mod else planner_plan
         plan_obj = planner_fn(
-            findings=source_findings,
-            events=source_events,
+            findings=all_findings,
+            events=loaded_events,
             profile=profile,
             policy=policy,
             source_hash=source_hash,
             acknowledge_side_effects=acknowledge_side_effects,
         )
         has_error_findings = any(
-            f.severity in (Severity.ERROR, Severity.FATAL) for f in source_findings
+            f.severity in (Severity.ERROR, Severity.FATAL) for f in all_findings
         )
         if has_error_findings and len(plan_obj.steps) == 0:
             from sesslint.repair.errors import RepairRefused
@@ -384,6 +418,7 @@ def repair(
                 "Findings exist on source session, but no authorized safe repair plan completes."
             )
 
+    exec_format = resolved_format if input_is_vendor else None
     if dry_run:
         execute(
             source_path=src,
@@ -392,8 +427,11 @@ def repair(
             policy=policy,
             dry_run=True,
             profile=profile,
-            format=format if format != "auto" else None,
+            format=exec_format,
+            emit_format=emit_format,
             acknowledge_side_effects=acknowledge_side_effects,
+            source_events=source_events,
+            source_findings=source_findings,
         )
         return plan_obj, None
 
@@ -408,8 +446,11 @@ def repair(
         policy=policy,
         dry_run=False,
         profile=profile,
-        format=format if format != "auto" else None,
+        format=exec_format,
+        emit_format=emit_format,
         acknowledge_side_effects=acknowledge_side_effects,
+        source_events=source_events,
+        source_findings=source_findings,
     )
     return plan_obj, manifest
 

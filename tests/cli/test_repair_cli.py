@@ -115,47 +115,69 @@ def test_repair_cli_invalid_policy_shorthand_exits_2(tmp_path: Path) -> None:
     assert exc_info.value.code == 2
 
 
-def test_repair_cli_rejects_vendor_format_flag_exits_2(
+def test_repair_cli_rejects_vendor_emit_on_canonical_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Repair with explicit vendor --format option exits 2 with instructive message (RVW-019)."""
+    """--emit vendor on a canonical source exits 2 (no vendor provenance)."""
     src = FIXTURES_DIR / "basic" / "source.jsonl"
     out = tmp_path / "out.jsonl"
 
-    code = main(["repair", str(src), "--out", str(out), "--format", "claude-code-jsonl"])
+    code = main(["repair", str(src), "--out", str(out), "--emit", "vendor"])
     assert code == 2
     captured = capsys.readouterr()
-    assert "Direct repair of vendor format 'claude-code-jsonl' is not supported" in captured.err
+    assert "no vendor provenance" in captured.err
     assert not out.exists()
 
 
-def test_repair_cli_rejects_detected_vendor_format_exits_2(
+def test_repair_cli_vendor_writeback_detected_format(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Repair on auto-detected vendor format file exits 2 with instructive message (RVW-019)."""
+    """Repair on auto-detected vendor file performs drop-only write-back (emit=auto)."""
     fixtures_root = Path(__file__).resolve().parent.parent.parent / "fixtures"
-    claude_fixture = fixtures_root / "detect" / "claude_sample.jsonl"
+    claude_fixture = fixtures_root / "claude_code" / "basic.jsonl"
     out = tmp_path / "out.jsonl"
 
     code = main(["repair", str(claude_fixture), "--out", str(out)])
-    assert code == 2
-    captured = capsys.readouterr()
-    assert "Direct repair of vendor format" in captured.err
-    assert "canonical session streams" in captured.err
-    assert not out.exists()
+    assert code == 0
+    capsys.readouterr()
+    assert out.exists()
+    # Emitted artifact is a vendor-format file: check() re-detects it as such.
+    check_code = main(["check", str(out)])
+    check_out = capsys.readouterr()
+    assert check_code == 0
+    assert "Claude Code" in check_out.out
 
 
-def test_repair_api_rejects_vendor_format(tmp_path: Path) -> None:
-    """Programmatic api.repair rejects vendor format with RepairRefused (RVW-019)."""
+def test_repair_api_vendor_writeback_and_canonical_emit(tmp_path: Path) -> None:
+    """api.repair repairs vendor input via write-back; emit='canonical' exports canonical."""
     from sesslint import api
-    from sesslint.repair.errors import RepairRefused
 
     fixtures_root = Path(__file__).resolve().parent.parent.parent / "fixtures"
-    claude_fixture = fixtures_root / "detect" / "claude_sample.jsonl"
+    claude_fixture = fixtures_root / "claude_code" / "basic.jsonl"
     out = tmp_path / "out.jsonl"
 
-    with pytest.raises(RepairRefused, match="Direct repair of vendor format"):
-        api.repair(claude_fixture, out)
+    plan_obj, manifest = api.repair(claude_fixture, out)
+    assert out.exists()
+    assert manifest is not None
+    assert manifest.adapter_id == "claude-code-jsonl"
+
+    out_canon = tmp_path / "out_canonical.jsonl"
+    _, canon_manifest = api.repair(claude_fixture, out_canon, emit="canonical")
+    assert out_canon.exists()
+    assert canon_manifest is not None
+    assert canon_manifest.adapter_id == "canonical"
+
+
+def test_repair_api_vendor_emit_on_canonical_refused(tmp_path: Path) -> None:
+    """emit='vendor' on a canonical source refuses (no vendor provenance)."""
+    from sesslint import api
+    from sesslint.repair.errors import VendorRepairRefused
+
+    src = FIXTURES_DIR / "basic" / "source.jsonl"
+    out = tmp_path / "out.jsonl"
+
+    with pytest.raises(VendorRepairRefused, match="no vendor provenance"):
+        api.repair(src, out, emit="vendor")
     assert not out.exists()
 
 

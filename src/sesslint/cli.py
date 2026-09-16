@@ -458,6 +458,16 @@ def create_parser() -> argparse.ArgumentParser:
         help="Session format adapter (default: auto)",
     )
     repair_parser.add_argument(
+        "--emit",
+        choices=["auto", "canonical", "vendor"],
+        default="auto",
+        help=(
+            "Output artifact format. 'auto' (default) emits the input's own "
+            "format — vendor input produces a drop-only line-verbatim "
+            "write-back; 'canonical' always emits the canonical session stream."
+        ),
+    )
+    repair_parser.add_argument(
         "--profile",
         default=argparse.SUPPRESS,
         help="Replay validation profile (default: neutral)",
@@ -995,32 +1005,16 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         ack_side_effects = getattr(args, "acknowledge_side_effects", False)
         format_opt = getattr(args, "format", "auto")
 
-        from sesslint.adapters.detect import (
-            FORMAT_CLAUDE_CODE,
-            FORMAT_OPENAI_AGENTS,
-            VALID_FORMAT_OPTIONS,
-        )
+        from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
         from sesslint.profiles.profile import get_profile
 
         if format_opt not in VALID_FORMAT_OPTIONS:
             print(f"Error: Unsupported format option: {format_opt}", file=sys.stderr)
             return 2
 
-        # RVW-019: Direct repair of vendor formats is rejected (canonical only).
-        # The explicit-format refusal below is a pure string check (no I/O); for
-        # "auto", api.repair performs the single detection pass under the selected
-        # profile's thresholds and raises VendorRepairRefused, mapped to exit 2 below.
-        vendor_err_msg = (
-            "Repair operates exclusively on canonical session streams (JSONL). "
-            "Convert the session to canonical format first, or run 'check' to view findings."
-        )
-        if format_opt in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-            print(
-                f"Error: Direct repair of vendor format '{format_opt}' is not supported. "
-                f"{vendor_err_msg}",
-                file=sys.stderr,
-            )
-            return 2
+        # Vendor formats are supported via drop-only line-verbatim write-back
+        # (emit='auto'|'vendor'); emit='canonical' exports a canonical repaired
+        # stream. Unsafe projections refuse via VendorProjectionRefused (R1-R6).
 
         try:
             get_profile(profile_opt)
@@ -1051,6 +1045,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 plan_path=getattr(args, "plan", None),
                 dry_run=args.dry_run,
                 acknowledge_side_effects=ack_side_effects,
+                emit=getattr(args, "emit", "auto"),
             )
 
             if args.dry_run:

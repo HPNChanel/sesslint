@@ -285,6 +285,47 @@ def _parse_session_events(
     return header, events
 
 
+def _load_artifact_events(
+    path: StrPath,
+    raw_bytes: bytes,
+) -> tuple[SessionHeader | None, list[SessionEvent], list[Finding], str]:
+    """Load events via the artifact's detected format; canonical fallback.
+
+    Returns (header, events, stream/adapter findings, format_id). Vendor
+    artifacts produce no header; their events carry write-back provenance.
+    """
+    from sesslint.adapters.detect import (
+        FORMAT_CLAUDE_CODE,
+        FORMAT_OPENAI_AGENTS,
+        detect_format,
+    )
+
+    path_obj = Path(path)
+    fmt: str | None = None
+    try:
+        fmt = detect_format(path_obj).format
+    except Exception:
+        fmt = None
+
+    if fmt == FORMAT_CLAUDE_CODE:
+        from sesslint.adapters.claude_code import load_claude_code
+
+        events, findings = load_claude_code(path_obj)
+        return None, list(events), list(findings), fmt
+    if fmt == FORMAT_OPENAI_AGENTS:
+        from sesslint.adapters.openai_agents import load_openai_agents
+
+        events, findings = load_openai_agents(path_obj)
+        return None, list(events), list(findings), fmt
+
+    try:
+        hdr, events, stream_findings = _load_source_with_stream_findings(path)
+        return hdr, events, stream_findings, "canonical"
+    except Exception:
+        hdr, events = _parse_session_events(raw_bytes)
+        return hdr, events, [], "canonical"
+
+
 def _load_source_with_stream_findings(
     path: StrPath,
 ) -> tuple[SessionHeader | None, list[SessionEvent], list[Finding]]:
@@ -462,11 +503,9 @@ def verify(
         )
         target_profile = bound_profile[0]
         try:
-            try:
-                _, src_events, stream_findings = _load_source_with_stream_findings(source_path)
-            except Exception:
-                _, src_events = _parse_session_events(source_bytes)
-                stream_findings = []
+            _, src_events, stream_findings, _src_fmt = _load_artifact_events(
+                source_path, source_bytes
+            )
 
             src_name = (
                 Path(source_path).name
@@ -587,21 +626,19 @@ def verify(
     output_events: list[SessionEvent] = []
     output_stream_findings: list[Finding] = []
 
+    source_fmt = "canonical"
+    output_fmt = "canonical"
     try:
-        try:
-            source_header, source_events, _ = _load_source_with_stream_findings(source_path)
-        except Exception:
-            source_header, source_events = _parse_session_events(source_bytes)
+        source_header, source_events, _src_sf, source_fmt = _load_artifact_events(
+            source_path, source_bytes
+        )
     except Exception as err:
         c4 = Check(name="transformation_audit", ok=False, detail=f"source-parse-failed: {err}")
     else:
         try:
-            try:
-                output_header, output_events, output_stream_findings = (
-                    _load_source_with_stream_findings(output_path)
-                )
-            except Exception:
-                output_header, output_events = _parse_session_events(output_bytes)
+            output_header, output_events, output_stream_findings, output_fmt = (
+                _load_artifact_events(output_path, output_bytes)
+            )
         except Exception as err:
             c4 = Check(name="transformation_audit", ok=False, detail=f"output-parse-failed: {err}")
         else:
@@ -678,14 +715,22 @@ def verify(
                         if schema_err is not None:
                             c4 = Check(name="transformation_audit", ok=False, detail=schema_err)
                         else:
-                            replayed_canon = "\n".join(
-                                to_canonical_json(to_canonical_dict(e)) for e in replayed_events
-                            )
-                            output_canon = "\n".join(
-                                to_canonical_json(to_canonical_dict(e)) for e in output_events
-                            )
+                            # Vendor artifacts legitimately renumber source_line
+                            # provenance when lines are dropped, so compare
+                            # content identity (provenance-excluded) there.
+                            # Canonical artifacts keep the strict full-dict check.
+                            if source_fmt != "canonical" or output_fmt != "canonical":
+                                replayed_cmp = [e.content_identity_hash() for e in replayed_events]
+                                output_cmp = [e.content_identity_hash() for e in output_events]
+                            else:
+                                replayed_cmp = [
+                                    to_canonical_json(to_canonical_dict(e)) for e in replayed_events
+                                ]
+                                output_cmp = [
+                                    to_canonical_json(to_canonical_dict(e)) for e in output_events
+                                ]
 
-                            if replayed_canon.encode("utf-8") != output_canon.encode("utf-8"):
+                            if replayed_cmp != output_cmp:
                                 c4 = Check(
                                     name="transformation_audit",
                                     ok=False,
@@ -928,7 +973,7 @@ def verify(
 
     # Check 7: idempotence
     try:
-        _, fresh_output_events = _parse_session_events(output_bytes)
+        _, fresh_output_events, _out_sf, _out_fmt = _load_artifact_events(output_path, output_bytes)
         if not fresh_output_events and output_bytes.strip():
             c7 = Check(name="idempotence", ok=False, detail="replan-failed: output-events-empty")
         else:

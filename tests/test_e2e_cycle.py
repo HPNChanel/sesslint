@@ -5,7 +5,8 @@ Verifies the complete round-trip lifecycle of session artifacts:
 2. Canonical sessions with torn terminal records (SL002) -> repair -> verify -> re-check.
 3. Full CLI invocation parity across check, repair, verify subcommands.
 4. Idempotency guarantees: repairing an already-repaired session produces identical content.
-5. Vendor format boundary: direct repair attempts on vendor sessions safely refuse with exit code 2.
+5. Vendor write-back: torn vendor sessions repair via drop-only line-verbatim
+   projection and verify end-to-end; '--emit vendor' on canonical input refuses.
 """
 
 from __future__ import annotations
@@ -150,10 +151,8 @@ def test_e2e_cli_full_cycle(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert "warnings: 0" in captured2.out
 
 
-def test_e2e_vendor_format_boundary_rejection(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """E2E format boundary: vendor sessions checkable, but repair refused with exit 2."""
+def test_e2e_vendor_format_writeback(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """E2E vendor loop: torn Claude Code session repairs via drop-only write-back."""
     claude_file = tmp_path / "vendor_session.jsonl"
     out_file = tmp_path / "vendor_repaired.jsonl"
 
@@ -170,21 +169,44 @@ def test_e2e_vendor_format_boundary_rejection(
         "message": "world",
         "timestamp": "2026-09-08T12:00:01Z",
     }
+    # Third record is torn (crash mid-write) -> SL002.
     claude_file.write_text(
-        json.dumps(record1) + "\n" + json.dumps(record2) + "\n", encoding="utf-8"
+        json.dumps(record1)
+        + "\n"
+        + json.dumps(record2)
+        + '\n{"id":"msg_03","parentId":"msg_02","type":"assistant_messa',
+        encoding="utf-8",
     )
 
-    # Check works seamlessly on vendor format
+    # Check detects the torn terminal record on the vendor format
     rep = api.check_file(claude_file)
-    assert rep.assurance in ("A2", "A3")
+    assert any(f.code == "SL002" for f in rep.findings)
 
-    # Repair is refused per Alpha format boundary contract
+    # Repair emits a vendor-format artifact (emit=auto -> write-back)
     exit_code = main(["repair", str(claude_file), "--out", str(out_file)])
-    assert exit_code == 2
-    captured = capsys.readouterr()
-    assert "Direct repair of vendor format" in captured.err
-    assert "Repair operates exclusively on canonical session streams" in captured.err
-    assert not out_file.exists()
+    assert exit_code == 0
+    capsys.readouterr()
+    assert out_file.exists()
+
+    # Emitted artifact is valid vendor format: byte-identical surviving lines.
+    emitted = out_file.read_text(encoding="utf-8")
+    assert emitted == json.dumps(record1) + "\n" + json.dumps(record2) + "\n"
+
+    # The repaired vendor file re-checks clean under its own adapter.
+    rep2 = api.check_file(out_file)
+    assert not any(f.severity.name in ("ERROR", "FATAL") for f in rep2.findings)
+
+    # Independent audit passes on the vendor pair.
+    verify_code = main(
+        [
+            "verify",
+            str(claude_file),
+            str(out_file),
+            "--manifest",
+            str(out_file) + ".manifest.json",
+        ]
+    )
+    assert verify_code == 0
 
 
 def test_e2e_cycle_non_neutral_profile_binding(tmp_path: Path) -> None:

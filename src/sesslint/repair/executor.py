@@ -85,6 +85,7 @@ from sesslint.repair.recipes_sl002 import (
     register_all as register_all_sl002_recipes,
 )
 from sesslint.repair.registry import get_recipe
+from sesslint.repair.writeback import emit_vendor_bytes
 from sesslint.report import (
     Coverage,
     CoverageSkip,
@@ -318,6 +319,25 @@ def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent
     """Load session header and events using the TASK-005 canonical streaming loader."""
     hdr, events, _ = load_session_source_with_findings(path)
     return hdr, events
+
+
+def load_source_for_format(
+    path: StrPath,
+    format: str | None,
+) -> tuple[SessionHeader | None, list[SessionEvent], list[Finding]]:
+    """Load events (and stream findings) via the adapter matching ``format``.
+
+    Vendor adapters return no session header and produce canonical events that
+    carry provenance (``source_line``/``source_record_hash``) required for
+    vendor write-back projection.
+    """
+    if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
+        from sesslint.adapters.load import load_vendor_events
+
+        events, findings = load_vendor_events(Path(path), format)
+        return None, events, findings
+    hdr, events, findings = load_session_source_with_findings(Path(path))
+    return hdr, events, findings
 
 
 def _copy_events_as_dicts(events: Sequence[Any]) -> list[dict[str, Any]]:
@@ -571,8 +591,10 @@ def execute(
     dry_run: bool = False,
     profile: Profile | str | None = None,
     format: str | None = None,
+    emit_format: str | None = None,
     acknowledge_side_effects: bool = False,
     source_events: Sequence[SessionEvent] | None = None,
+    source_findings: Sequence[Finding] | None = None,
     pre_rename_hook: Callable[[Path], None] | None = None,
     pre_write_hook: Callable[[], None] | None = None,
     post_apply_hook: Callable[[], None] | None = None,
@@ -599,9 +621,17 @@ def execute(
         policy: Expected repair policy ('conservative' or 'salvage').
         dry_run: If True, executes purely in memory without creating any files.
         profile: Profile name or instance for revalidation (defaults to plan's profile).
-        format: Session format override or hint.
+        format: Input session format id ('canonical' or a vendor format id,
+            or None for canonical).
+        emit_format: Output artifact format id. 'canonical' (or None on canonical
+            input) emits a canonical session stream; a vendor format id performs
+            drop-only line-verbatim write-back and revalidates the emitted
+            artifact through its adapter.
         acknowledge_side_effects: Operator acknowledgement of tool side-effects.
-        source_events: Optional pre-loaded session events from canonical reader.
+        source_events: Optional pre-loaded session events (must carry vendor
+            provenance fields when emit_format is a vendor format).
+        source_findings: Optional findings computed for the source (used to
+            resolve which event-less source lines the plan explicitly discards).
         pre_rename_hook: Testing hook invoked after temp fsync before os.replace.
         pre_write_hook: Testing hook invoked before writing temp file.
         post_apply_hook: Testing hook invoked after memory apply before write.
@@ -642,12 +672,27 @@ def execute(
             f"recomputed '{recomputed_fp}'"
         )
 
-    # RVW-019: Direct repair of vendor formats is rejected (canonical only)
-    if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-        raise VendorRepairRefused(
-            f"Direct repair of vendor format '{format}' is not supported. "
-            "Repair operates exclusively on canonical session streams (JSONL)."
-        )
+    # RVW-019: Emit resolution. Adapter input defaults to same-format
+    # write-back (drop-only line-verbatim projection); 'canonical' emit
+    # produces a canonical stream. Emitting adapter output from a canonical
+    # source is a usage error: canonical events carry no source provenance.
+    input_is_vendor = format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
+    resolved_emit: str
+    if emit_format in (None, "auto"):
+        resolved_emit = "canonical"
+        if input_is_vendor and format is not None:
+            resolved_emit = format
+    elif emit_format == "vendor":
+        if not input_is_vendor or format is None:
+            raise VendorRepairRefused(
+                "Cannot emit vendor output for a canonical source: canonical "
+                "events carry no vendor provenance. Omit --emit or use "
+                "'--emit canonical'."
+            )
+        resolved_emit = format
+    else:
+        resolved_emit = str(emit_format)
+    emit_is_vendor = resolved_emit in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
 
     # Step 1c: Policy match & minimum policy gate (P0-03)
     if plan.policy != policy:
@@ -670,10 +715,13 @@ def execute(
 
     source_header: SessionHeader | None = None
     loaded_events: list[SessionEvent]
+    loaded_stream_findings: list[Finding] = []
     if source_events is not None:
         loaded_events = list(source_events)
     else:
-        source_header, loaded_events = load_session_source(source_p)
+        source_header, loaded_events, loaded_stream_findings = load_source_for_format(
+            source_p, format
+        )
 
     events_hash = compute_events_source_hash(loaded_events)
     if plan.source_hash != source_pre_hash and plan.source_hash != events_hash:
@@ -692,6 +740,24 @@ def execute(
     )
     if abst.abstain:
         raise Abstained(f"Repair abstained: {', '.join(abst.reasons)}")
+
+    # Vendor write-back: physical lines the plan explicitly discards even though
+    # they produced no canonical events (e.g. the torn terminal record that
+    # produced only an SL002 finding). A no-event line NOT covered by an applied
+    # step is kept verbatim — uninterpreted content is never silently dropped.
+    drop_lines: frozenset[int] = frozenset()
+    if emit_is_vendor:
+        targeted_fps = {s.target_finding_fp for s in plan.steps if s.target_finding_fp}
+        all_src_findings = list(source_findings or ()) + list(loaded_stream_findings)
+        drop_lines = frozenset(
+            f.source.line
+            for f in all_src_findings
+            if f.fingerprint in targeted_fps
+            and f.source is not None
+            and isinstance(f.source.line, int)
+            and not isinstance(f.source.line, bool)
+            and f.source.line >= 1
+        )
 
     # -------------------------------------------------------------------------
     # STEP 2: Pre-flight destination path checks
@@ -881,9 +947,51 @@ def execute(
             created_at="2026-09-05T12:00:00Z",
         )
     )
-    repaired_session = Session(header=repaired_header, events=tuple(parsed_output_events))
-    output_text = dump_session(repaired_session)
-    output_bytes = output_text.encode("utf-8")
+    projection_summary: Any = None
+    if emit_is_vendor:
+        # Vendor write-back: emit byte-identical surviving source lines only.
+        # Refuses (VendorProjectionRefused, R1-R6) on any provenance, drift,
+        # rewrite, or ordering condition it cannot prove safe.
+        output_bytes, projection_summary = emit_vendor_bytes(
+            source_bytes,
+            loaded_events,
+            parsed_output_events,
+            resolved_emit,
+            drop_lines=drop_lines,
+        )
+        # Reload gate: the emitted artifact must re-parse through its own
+        # adapter to exactly the repaired event set (by content identity) and
+        # produce no error findings under the profile. Fail closed otherwise.
+        from sesslint.adapters.load import reload_vendor_bytes
+
+        emit_events, emit_adapter_findings = reload_vendor_bytes(resolved_emit, output_bytes)
+        emit_check_findings = run_all_checks(
+            emit_events,
+            profile=reval_profile_name,
+            adapter=resolved_emit,
+        )
+        emit_errors = [
+            f
+            for f in list(emit_adapter_findings) + list(emit_check_findings)
+            if f.severity in (Severity.ERROR, Severity.FATAL)
+        ]
+        if emit_errors:
+            raise OutputInvalid(
+                f"Emitted {resolved_emit} artifact failed reload revalidation "
+                f"with {len(emit_errors)} error finding(s): "
+                f"{[f.code for f in emit_errors]}"
+            )
+        if [e.content_identity_hash() for e in emit_events] != [
+            e.content_identity_hash() for e in parsed_output_events
+        ]:
+            raise OutputInvalid(
+                "Emitted vendor artifact does not round-trip to the repaired "
+                "event set (content identity mismatch after adapter reload)"
+            )
+    else:
+        repaired_session = Session(header=repaired_header, events=tuple(parsed_output_events))
+        output_text = dump_session(repaired_session)
+        output_bytes = output_text.encode("utf-8")
     output_hash = hashlib.sha256(output_bytes).hexdigest()
 
     # Final Step-6 revalidation report object
@@ -912,9 +1020,10 @@ def execute(
     )
     assurance_ceiling = compute_assurance_ceiling(reval_assurance, manifest_policy)
 
-    adapter_id = "canonical"
-    if format in ADAPTER_VERSIONS:
-        adapter_id = format
+    # adapter_id describes the format of the EMITTED artifact (the output that
+    # output_fingerprint binds): 'canonical' for canonical emit, the vendor
+    # format id for write-back emit.
+    adapter_id = resolved_emit if resolved_emit in ADAPTER_VERSIONS else "canonical"
     adp_version = ADAPTER_VERSIONS.get(adapter_id, "unknown")
 
     actions = tuple(
@@ -947,6 +1056,12 @@ def execute(
         "output": len(parsed_output_events),
         "source": len(loaded_events),
     }
+    if projection_summary is not None:
+        record_counts["source_lines"] = (
+            projection_summary.retained_lines + projection_summary.dropped_lines
+        )
+        record_counts["output_lines"] = projection_summary.retained_lines
+        record_counts["dropped_lines"] = projection_summary.dropped_lines
     capped_assurance = cap_assurance("clean", plan)
 
     manifest = build_manifest(
