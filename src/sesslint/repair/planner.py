@@ -34,6 +34,7 @@ from sesslint.repair.preconditions import (
     check_preconditions,
 )
 from sesslint.repair.recipes_sl002 import register_all as register_all_sl002_recipes
+from sesslint.repair.refusals import RefusalRationale, refusal_rationale_for
 from sesslint.repair.registry import recipes_for
 
 MAX_STEPS: Final[int] = 256
@@ -45,6 +46,7 @@ ALLOWED_LOSS_CLASSES: Final[frozenset[str]] = frozenset(
         "amputated-branch",
         "discarded-suffix",
         "none",
+        "orphan-result",
         "projected-orphans",
         "truncated-projection",
         "truncated-side-effects",
@@ -91,11 +93,33 @@ class PlanStep:
 
 @dataclass(frozen=True, slots=True)
 class Blocked:
-    """Record of a finding that could not be automatically planned."""
+    """Record of a finding that could not be automatically planned.
+
+    'reason' is the stable machine token serialized into plans and fingerprints.
+    'describe()' adds the documented, content-free refusal rationale for human
+    surfaces without changing any serialized or fingerprinted field.
+    """
 
     finding_fp: str
     code: str
     reason: str
+
+    @property
+    def refusal(self) -> RefusalRationale | None:
+        """Documented refusal rationale for this code, if one is registered."""
+        return refusal_rationale_for(self.code)
+
+    def describe(self) -> str:
+        """Human-readable detail: stable reason plus documented refusal rationale.
+
+        Content-free: never embeds session data, only policy-level rationale and
+        DEMAND citations. Falls back to the bare machine reason when the code has
+        no registered refusal rationale.
+        """
+        entry = self.refusal
+        if entry is None:
+            return self.reason
+        return f"{self.reason}: {entry.render()}"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize blocked finding record to dictionary."""
@@ -559,6 +583,8 @@ def plan(
                 cut_idx = step_params.get("first_unsafe_index") or step_params.get("cut_index")
             eff_idx = cut_idx if cut_idx is not None else 0
             step_loss = {"truncated-side-effects": max(0, len(events) - eff_idx)}
+        elif matched_recipe.name == "orphan-result-drop":
+            step_loss = {"orphan-result": 1}
         elif matched_recipe.lossy:
             step_loss = {"none": 0}
 

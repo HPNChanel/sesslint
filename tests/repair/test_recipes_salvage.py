@@ -25,7 +25,7 @@ import pytest
 
 from sesslint.canonical import SessionEvent
 from sesslint.cli import create_parser
-from sesslint.codes import SL006, SL203
+from sesslint.codes import SL006, SL101, SL203
 from sesslint.finding import Repairability, Severity, SourceRef, make_finding
 from sesslint.repair.assurance import cap_assurance
 from sesslint.repair.planner import (
@@ -40,6 +40,8 @@ from sesslint.repair.recipes_conservative import (
 )
 from sesslint.repair.recipes_salvage import (
     MAX_COMPONENT_SIZE,
+    apply_orphan_result_drop,
+    apply_orphan_result_drop_with_loss,
     apply_side_effect_unknown_truncate,
     apply_side_effect_unknown_truncate_with_loss,
     apply_torn_compaction_project,
@@ -53,6 +55,7 @@ from sesslint.repair.recipes_salvage import (
 from sesslint.repair.registry import clear_registry
 
 FIXTURES_REPAIR_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures" / "repair"
+FIXTURES_CHECKS_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures" / "checks"
 
 
 @pytest.fixture(autouse=True)
@@ -890,3 +893,176 @@ def test_interacting_multi_fault_session() -> None:
     assert len(p_salv_ack.blocked) == 0
     recipes = {s.recipe for s in p_salv_ack.steps}
     assert recipes == {"unresolvable-branch-amputate", "side-effect-unknown-truncate"}
+
+
+# ---------------------------------------------------------------------------
+# 5. Orphan Result Drop (SL101, salvage-only lossy recipe)
+# ---------------------------------------------------------------------------
+
+
+def _orphan_session_events() -> list[SessionEvent]:
+    """Healthy tool_call/tool_result pair plus one orphan tool_result (SL101)."""
+    ts = "2026-09-05T12:00:00Z"
+    return [
+        SessionEvent(id="m0", parent_id=None, seq=0, ts=ts, actor="user", kind="message"),
+        SessionEvent(
+            id="tc1",
+            parent_id="m0",
+            seq=1,
+            ts=ts,
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-ok",
+        ),
+        SessionEvent(
+            id="tr1",
+            parent_id="tc1",
+            seq=2,
+            ts=ts,
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-ok",
+        ),
+        SessionEvent(
+            id="tr_orph",
+            parent_id="m0",
+            seq=3,
+            ts=ts,
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-orphan",
+        ),
+    ]
+
+
+def _sl101_orphan_finding(
+    index: int = 3, record_id: str = "tr_orph", corr: str = "corr-orphan"
+) -> Any:
+    return make_finding(
+        code=SL101,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Orphan tool result detected for record {record_id}",
+        source=SourceRef(path="session.json", line=index + 1, record_id=record_id),
+        evidence={"correlation_id": corr, "index": index, "result_id": record_id},
+    )
+
+
+def test_orphan_result_drop_plans_and_applies() -> None:
+    """Salvage policy + acknowledgement plans one drop step; apply drops only the orphan."""
+    events = _orphan_session_events()
+    f = _sl101_orphan_finding()
+
+    p = plan([f], events, policy="salvage", acknowledge_side_effects=True)
+    assert len(p.steps) == 1
+    step = p.steps[0]
+    assert step.recipe == "orphan-result-drop"
+    assert step.lossy is True
+    assert step.loss == {"orphan-result": 1}
+    assert p.total_lost == 1
+    assert p.total_kept == 3
+
+    out = apply_orphan_result_drop(events, step)
+    assert [e["id"] for e in out] == ["m0", "tc1", "tr1"]
+
+    out2, loss = apply_orphan_result_drop_with_loss(events, step)
+    assert loss == {"orphan-result": 1}
+    assert [e["id"] for e in out2] == ["m0", "tc1", "tr1"]
+
+
+def test_orphan_result_drop_conservative_blocks() -> None:
+    """Conservative policy and missing acknowledgement both refuse (fail-closed)."""
+    events = _orphan_session_events()
+    f = _sl101_orphan_finding()
+
+    p_cons = plan([f], events)
+    assert len(p_cons.steps) == 0
+    assert p_cons.blocked[0].reason == "needs-salvage-policy"
+
+    p_noack = plan([f], events, policy="salvage", acknowledge_side_effects=False)
+    assert len(p_noack.steps) == 0
+    assert p_noack.blocked[0].reason == "needs-acknowledgement"
+
+
+def test_orphan_result_drop_resolves_by_params() -> None:
+    """Identity-first resolution: result_id/correlation_id params resolve without index."""
+    events = _orphan_session_events()
+
+    step_by_corr = PlanStep(
+        seq=0,
+        recipe="orphan-result-drop",
+        target_finding_fp="fp",
+        target_index=None,
+        params={"correlation_id": "corr-orphan"},
+        lossy=True,
+    )
+    out = apply_orphan_result_drop(events, step_by_corr)
+    assert [e["id"] for e in out] == ["m0", "tc1", "tr1"]
+
+    step_by_id = PlanStep(
+        seq=0,
+        recipe="orphan-result-drop",
+        target_finding_fp="fp",
+        target_index=None,
+        params={"result_id": "tr_orph"},
+        lossy=True,
+    )
+    out2 = apply_orphan_result_drop(events, step_by_id)
+    assert [e["id"] for e in out2] == ["m0", "tc1", "tr1"]
+
+    # Ambiguous correlation (two orphan results sharing one corr) refuses
+    events_amb = _orphan_session_events() + [
+        SessionEvent(
+            id="tr_orph2",
+            parent_id="m0",
+            seq=4,
+            ts="2026-09-05T12:00:04Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-orphan",
+        )
+    ]
+    with pytest.raises(PreconditionFailed, match="no unambiguous orphan"):
+        apply_orphan_result_drop(events_amb, step_by_corr)
+
+
+def test_orphan_result_drop_direct_apply_refusals() -> None:
+    """apply_orphan_result_drop raises PreconditionFailed on every unsafe target."""
+    events = _orphan_session_events()
+
+    def mkstep(**kw: Any) -> PlanStep:
+        base: dict[str, Any] = {
+            "seq": 0,
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp",
+            "target_index": 3,
+            "lossy": True,
+        }
+        base.update(kw)
+        return PlanStep(**base)
+
+    with pytest.raises(PreconditionFailed, match="empty session"):
+        apply_orphan_result_drop([], mkstep(target_index=None))
+
+    with pytest.raises(PreconditionFailed, match="invalid target index"):
+        apply_orphan_result_drop(events, mkstep(target_index=99))
+
+    # Target is not a tool_result
+    with pytest.raises(PreconditionFailed, match="not a tool_result"):
+        apply_orphan_result_drop(events, mkstep(target_index=0))
+
+    # Target has a matching tool call (not an orphan)
+    with pytest.raises(PreconditionFailed, match="not an orphan"):
+        apply_orphan_result_drop(events, mkstep(target_index=2))
+
+    # Orphan with dependent children refuses
+    child = SessionEvent(
+        id="ch1",
+        parent_id="tr_orph",
+        seq=4,
+        ts="2026-09-05T12:00:04Z",
+        actor="assistant",
+        kind="message",
+    )
+    with pytest.raises(PreconditionFailed, match="dependent child"):
+        apply_orphan_result_drop(events + [child], mkstep(target_index=3))

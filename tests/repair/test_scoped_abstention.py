@@ -33,6 +33,7 @@ import dataclasses
 import hashlib
 import json
 import random
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -74,13 +75,17 @@ from sesslint.repair.recipes_sl002 import (
 from sesslint.repair.recipes_sl002 import (
     register_all as register_all_sl002,
 )
-from sesslint.repair.registry import Recipe, register_recipe
+from sesslint.repair.registry import Recipe, clear_registry, register_recipe
 
 
 @pytest.fixture(autouse=True)
-def _ensure_recipes_registered() -> None:
+def _ensure_recipes_registered() -> Generator[None, None, None]:
+    """Register needed packs per test and restore a clean registry afterwards."""
+    clear_registry()
     register_all_conservative()
     register_all_sl002()
+    yield
+    clear_registry()
 
 
 def _write_session_file(tmp_path: Path, filename: str, events: list[SessionEvent]) -> Path:

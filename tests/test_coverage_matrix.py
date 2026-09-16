@@ -199,6 +199,12 @@ RECIPE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_empty_events_salvage_policy",
         "malformed": "test_truncate_direct_apply_validation",
     },
+    "orphan-result-drop": {
+        "positive": "test_orphan_result_drop_plans_and_applies",
+        "negative": "test_orphan_result_drop_conservative_blocks",
+        "boundary": "test_orphan_result_drop_resolves_by_params",
+        "malformed": "test_orphan_result_drop_direct_apply_refusals",
+    },
 }
 
 
