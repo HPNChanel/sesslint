@@ -407,7 +407,7 @@ sesslint scan --show-limits
 ---
 
 #### `sesslint repair`
-Plan and execute verified, atomic session repairs (Alpha scope: Canonical Session format).
+Plan and execute verified, atomic session repairs.
 
 ```bash
 sesslint repair <path> --output <out_path> [OPTIONS]
@@ -415,11 +415,12 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `path` | `Path` | *required* | Source session file to repair (Canonical format). |
+| `path` | `Path` | *required* | Source session file to repair. |
 | `--output`, `-o` | `Path` | *required* | Distinct destination path (required unless `--dry-run`). |
 | `--dry-run` | `flag` | `False` | Computes and displays plan; creates zero files on disk. |
 | `--policy` | `choice` | `conservative` | `conservative` (zero data loss) or `salvage` (explicit lossy pruning). |
-| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--format` | `choice` | `auto` | Force input adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--emit` | `choice` | `auto` | Output format: `auto` (input's own format), `canonical`, or `vendor`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--plan` | `Path` | `None` | Path to a pre-computed plan JSON file to execute. |
 | `--acknowledge-side-effects`| `flag` | `False` | Acknowledge tool side-effects for salvage policy. |
@@ -428,7 +429,7 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 | `--json` | `flag` | `False` | Emit machine-readable JSON plan or repair manifest. |
 
 > [!NOTE]
-> **Alpha Format Boundary**: Repair currently supports Canonical Session stream format (`schema_version: sesslint.session/v1`). Repair attempts on vendor formats (Claude Code / OpenAI Agents) safely refuse with Exit Code 2 and actionable instructions. Use `sesslint export <vendor-file> --output <canonical-file>` to produce a repair-eligible canonical file first.
+> **Vendor Write-Back**: Vendor inputs (Claude Code JSONL, OpenAI Agents JSONL) are repaired in canonical form and projected back onto the source file's physical lines — every surviving record stays byte-identical and only lines explicitly discarded by the plan are removed. Projection refuses (exit 2, reasons R1-R6) whenever a safe verbatim projection cannot be proven: synthesized or field-rewritten events, partial-line survival, reordered lines, source drift, or non-line formats (single-document JSON exports emit `--emit canonical` instead). Emitted output is re-loaded through the original adapter and fully revalidated before the manifest is written.
 
 ---
 
