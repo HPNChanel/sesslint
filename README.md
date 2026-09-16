@@ -222,11 +222,27 @@ SessLint partitions session validity into four orthogonal tiers:
 # Direct install with pip
 pip install sesslint
 
-# Or isolated installation with pipx (recommended for global CLI)
+# Isolated installation with pipx (recommended for global CLI)
 pipx install sesslint
+
+# Or with uv
+uv tool install sesslint
 
 # Verify installation
 sesslint --version
+```
+
+No Python? Each release also ships **standalone binaries** (`sesslint-<version>-<os>-<arch>[.exe]`)
+on [GitHub Releases](https://github.com/HPNChanel/sesslint/releases) — no interpreter required:
+
+```bash
+# Download the archive for your OS, then verify the published checksum
+curl -LO https://github.com/HPNChanel/sesslint/releases/download/v0.1.0/sesslint-0.1.0-linux-x86_64
+curl -LO https://github.com/HPNChanel/sesslint/releases/download/v0.1.0/SHA256SUMS-ubuntu-latest
+sha256sum -c SHA256SUMS-ubuntu-latest          # Windows: Get-FileHash -Algorithm SHA256 .\sesslint-*.exe
+
+chmod +x sesslint-0.1.0-linux-x86_64
+./sesslint-0.1.0-linux-x86_64 version --json
 ```
 
 ### 30-Second Workflow
@@ -841,6 +857,21 @@ Claude Code serializes user conversations and tool invocations to local project 
 ```bash
 sesslint check ~/.claude/projects/my-app/ --profile claude-strict --recursive
 ```
+
+Real-world quickstart — lint the transcripts Claude Code recorded for one of your projects (directories are named after the working path, e.g. `-Users-me-my-app`):
+
+```bash
+# 1. Lint every *.jsonl transcript under the project dir (read-only)
+sesslint check ~/.claude/projects/-Users-me-my-app/ --profile claude-strict --recursive
+
+# 2. Emit a machine-readable report for scripting or CI
+sesslint check ~/.claude/projects/-Users-me-my-app/ --profile claude-strict --recursive --json > report.json
+
+# 3. Preview the repair plan for a corrupted transcript without touching disk
+sesslint repair ~/.claude/projects/-Users-me-my-app/deadbeef.jsonl --profile claude-strict --dry-run
+```
+
+Everything stays local: `check` never writes to `~/.claude/` and SessLint never contacts the network.
 
 ### OpenAI Agents SDK
 When using the OpenAI Agents SDK, sessions export durable item lists. Validate exported artifacts:

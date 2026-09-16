@@ -7,13 +7,17 @@ name: Release
 #     version declared in src/sesslint/_version.py.
 #   - Exactly one immutable artifact set is built once, then flows:
 #       build -> github-draft -> pypi-publish -> github-promote
+#     The `binaries` job fans out after github-draft (3-OS matrix) and attaches
+#     PyInstaller executables to the draft release; it never gates
+#     pypi-publish (PyPI ships only wheel+sdist) — github-promote waits for it
+#     so the public release is complete.
 #   - A draft GitHub Release (with all assets) is staged BEFORE PyPI publish;
 #     it is promoted to public only after PyPI publish succeeds.
 #   - SOURCE_DATE_EPOCH is derived from the tagged commit timestamp so builds
 #     are reproducible (T-08 reuses the same rule for byte-parity checks).
-#   - Permissions are minimal: contents:write only on draft/promote jobs;
-#     id-token:write only on pypi-publish (Trusted Publisher / OIDC — no
-#     PyPI API token exists anywhere in this workflow).
+#   - Permissions are minimal: contents:write only on github-draft, binaries
+#     (asset upload), and github-promote; id-token:write only on pypi-publish
+#     (Trusted Publisher / OIDC — no PyPI API token exists anywhere).
 
 on:
   push:
@@ -117,6 +121,52 @@ jobs:
             --generate-notes \
             dist/*.whl dist/*.tar.gz dist/sha256sums.txt dist/artifact-manifest.json
 
+  binaries:
+    name: Build native binary (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: github-draft
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Install packaging toolchain (build-time only)
+        run: python -m pip install -e ".[packaging]"
+
+      - name: Build binary + SHA256SUMS (signing hooks are opt-in via env)
+        run: python scripts/package.py --platforms auto --outdir dist/bin
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$(find dist/bin -maxdepth 1 -type f -name 'sesslint-*' \
+            ! -name '*.asc' ! -name 'SHA256SUMS' | sort | head -n 1)"
+          test -n "$bin" || { echo "no binary produced"; exit 1; }
+          chmod +x "$bin" 2>/dev/null || true
+          "$bin" version --json
+          "$bin" check fixtures/cli/check_basic/healthy.jsonl --json
+
+      - name: Rename SHA256SUMS to a per-OS unique asset name
+        shell: bash
+        run: mv dist/bin/SHA256SUMS "dist/bin/SHA256SUMS-${{ matrix.os }}"
+
+      - name: Attach binaries to draft GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/bin/* --repo "${{ github.repository }}"
+
   pypi-publish:
     name: Publish to PyPI (Trusted Publisher / OIDC)
     runs-on: ubuntu-latest
@@ -152,7 +202,7 @@ jobs:
   github-promote:
     name: Promote draft release to public
     runs-on: ubuntu-latest
-    needs: pypi-publish
+    needs: [pypi-publish, binaries]
     permissions:
       contents: write
     steps:

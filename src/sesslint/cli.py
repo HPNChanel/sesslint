@@ -463,7 +463,7 @@ def create_parser() -> argparse.ArgumentParser:
         default="auto",
         help=(
             "Output artifact format. 'auto' (default) emits the input's own "
-            "format — vendor input produces a drop-only line-verbatim "
+            "format: vendor input produces a drop-only line-verbatim "
             "write-back; 'canonical' always emits the canonical session stream."
         ),
     )
