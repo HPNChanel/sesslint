@@ -114,7 +114,7 @@ rm -rf .smoke_env
 - [ ] `LICENSE` contains full Apache-2.0 text and `NOTICE` details zero runtime dependencies.
 - [ ] `docs/MATRIX.md` matches generator output from `tests/conformance/test_matrix.py`.
 - [ ] All 20 reason codes have synced documentation in `docs/codes/SL*.md` (`tests/test_rule_docs.py` passes).
-- [ ] All 9 repair recipes have synced documentation in `docs/recipes/*.md` (`tests/test_registry_docs.py` passes).
+- [ ] All 10 repair recipes have synced documentation in `docs/recipes/*.md` (`tests/test_registry_docs.py` passes).
 - [ ] Every fixture directory contains a valid `PROVENANCE.json` with `contains_real_data: false` (`tests/test_fixture_provenance.py` passes).
 - [ ] Multi-platform CI workflow succeeds across Ubuntu, Windows, and macOS on Python 3.11 and 3.12.
 

@@ -1,6 +1,6 @@
 # SessLint Repair Recipe Catalog
 
-This directory documents the 9 deterministic repair recipes provided by SessLint.
+This directory documents the 10 deterministic repair recipes provided by SessLint.
 
 ## Classification
 
@@ -19,6 +19,7 @@ Recipes are strictly partitioned into two categories:
    - `unresolvable-branch-amputate`
    - `torn-compaction-project`
    - `side-effect-unknown-truncate`
+   - `orphan-result-drop`
    - Invariant: Salvage recipes perform bounded, operator-acknowledged truncation or projection on otherwise unresolvable transcripts.
 
 ## Core Non-Proof Disclaimer

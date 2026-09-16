@@ -1878,16 +1878,33 @@ def build_repro_metadata(
 
 
 def get_finding_remediation(f: Finding, *, home: Path | None = None) -> str:
-    """Return concise content-free remediation instructions for a finding."""
+    """Return concise content-free remediation instructions for a finding.
+
+    For findings whose codes have no repair recipe, the message is enriched
+    with the documented refusal rationale and DEMAND citation from
+    sesslint.repair.refusals (plus an optional content-free salvage path).
+    """
     from sesslint.codes import Repairability
+    from sesslint.repair.refusals import refusal_rationale_for
 
     min_path = minimize_path(f.source.path, home=home)
     if f.repairability == Repairability.DETERMINISTIC:
         return f"deterministic recipe available: run 'sesslint repair {min_path}'"
     if f.repairability == Repairability.LOSSY_EXPLICIT:
         return f"lossy-explicit recipe available: run 'sesslint repair {min_path} --policy salvage'"
+    refusal = refusal_rationale_for(f.code)
     if f.repairability == Repairability.MANUAL:
+        if refusal is not None:
+            return (
+                "manual inspection required; automated repair refused: "
+                f"{refusal.render(path=min_path)}"
+            )
         return "manual inspection required; automated repair refused"
+    if refusal is not None:
+        return (
+            "unsupported defect or structure; automated repair refused: "
+            f"{refusal.render(path=min_path)}"
+        )
     return "unsupported defect or structure; automated repair refused"
 
 
@@ -2109,6 +2126,14 @@ def render_human(
                 next_action = f"Run 'sesslint repair {p} --output <out> --policy salvage'"
             else:
                 next_action = "Manual inspection required; automated repair refused."
+                from sesslint.repair.refusals import refusal_rationale_for
+
+                for f in sorted(report.findings, key=finding_report_sort_key):
+                    entry = refusal_rationale_for(f.code)
+                    if entry is not None and entry.salvage_path is not None:
+                        p = minimize_path(f.source.path, home=home)
+                        next_action += f" Possible path: {entry.salvage_path.replace('{path}', p)}."
+                        break
         elif has_warning:
             next_action = "Review warnings; session is structurally replayable."
         else:

@@ -699,7 +699,7 @@ SessLint enforces side-effect safety through two distinct, mathematically sound 
 
 ### Recipe Catalog
 
-SessLint registers **9 deterministic repair recipes** partitioned into conservative and salvage policies:
+SessLint registers **10 deterministic repair recipes** partitioned into conservative and salvage policies:
 
 #### Conservative Recipes (Default)
 - **`torn-terminal-record-discard`** (`SL002`): Discards incomplete or unparseable trailing bytes at the end of a session stream while preserving all validated preceding records.
@@ -713,6 +713,7 @@ SessLint registers **9 deterministic repair recipes** partitioned into conservat
 - **`unresolvable-branch-amputate`** (`SL005`, `SL006`): Prunes dead-end cyclic or unreachable branches lacking checkpoints.
 - **`torn-compaction-project`** (`SL108`): Resolves asymmetric compaction splits by dropping orphaned half-turns.
 - **`side-effect-unknown-truncate`** (`SL102`): Truncates session immediately before an unresolvable tool call (requires `--acknowledge-side-effects`).
+- **`orphan-result-drop`** (`SL101`): Drops a single orphan tool result when the operator explicitly accepts that the record may be the sole evidence of a completed external action (requires `--acknowledge-side-effects`).
 
 ---
 

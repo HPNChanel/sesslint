@@ -1056,6 +1056,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     print(f"Policy: {plan_obj.policy}")
                     print(f"Proposed steps: {len(plan_obj.steps)}")
                     print(f"Blocked findings: {len(plan_obj.blocked)}")
+                    for blocked in plan_obj.blocked:
+                        print(f"  [{blocked.code}] {blocked.describe()}")
                 return 0
 
             if manifest is not None:
