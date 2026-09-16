@@ -122,16 +122,18 @@ rm -rf .smoke_env
 
 ## Two-Channel Release Procedure (`v*`) — T-07a
 
-`.github/workflows/release.yml` implements a tag-gated, non-reusable pipeline with exactly four jobs:
+`.github/workflows/release.yml` implements a tag-gated, non-reusable pipeline with five jobs:
 
 ```
-build → github-draft → pypi-publish → github-promote
+build → github-draft ─┬→ pypi-publish ──┐
+                      └→ binaries ──────┴→ github-promote
 ```
 
 - **`build`**: validates the pushed tag equals `v` + the version in `src/sesslint/_version.py`; computes `SOURCE_DATE_EPOCH` from the tagged commit (`git show -s --format=%ct "$GITHUB_SHA"`); builds sdist+wheel once with pinned tooling (`build==1.2.2.post1`, `hatchling==1.27.0`, `--no-isolation`); generates `sha256sums.txt` + `artifact-manifest.json`; uploads the `release-dist` artifact set.
 - **`github-draft`**: downloads the artifact set, verifies checksums, creates a **draft** GitHub Release attaching wheel, sdist, `sha256sums.txt`, and the manifest — staged before any PyPI publish.
+- **`binaries`**: 3-OS matrix (ubuntu/windows/macos-latest) that runs `scripts/package.py` to produce PyInstaller onefile executables, smoke-tests each binary, and attaches the binaries + per-OS `SHA256SUMS` to the draft release. It fans out after `github-draft` and **never gates `pypi-publish`** — PyPI ships only wheel+sdist. See [Native Binary Distribution](#native-binary-distribution).
 - **`pypi-publish`**: runs inside the protected **`pypi`** environment (required reviewer approval); re-verifies hashes; publishes **only** `.whl`/`.tar.gz` from `pypi_dist/` via `pypa/gh-action-pypi-publish` using Trusted Publisher/OIDC. **No PyPI API token exists in this repository or workflow.**
-- **`github-promote`**: only after PyPI success — promotes the existing draft to public. It never creates a second release or re-uploads assets.
+- **`github-promote`**: only after PyPI success *and* all three binary legs — promotes the existing draft to public. It never creates a second release or re-uploads assets.
 
 ### Maintainer setup (one-time, outside this repo's code)
 
@@ -154,3 +156,62 @@ If exactly one channel fails after artifacts are built:
 ### Execution gate
 
 This workflow is prepared but deliberately not executed by this task. Tagging `v0.1.0`, pushing, and the resulting publications require the explicit authorization recorded in `post-alpha-hardening-plan/T-09a`.
+
+---
+
+## Native Binary Distribution
+
+SessLint additionally ships standalone executables so users without Python can
+run the CLI. They are produced by PyInstaller via `packaging/sesslint.spec`
+(onefile, console) driven by `scripts/package.py`. Both files are **build
+tooling**: they live outside `src/sesslint`, are never shipped in the wheel or
+sdist, and PyInstaller is declared only in the `packaging` optional-dependency
+group — `dependencies` stays empty (guarantee #1).
+
+### Local build
+
+```bash
+# Install the build-time-only toolchain
+pip install -e ".[packaging]"          # or: uv pip install "pyinstaller>=6"
+
+# Build for the host OS (PyInstaller cannot cross-compile)
+python scripts/package.py              # --platforms auto --outdir dist/bin
+```
+
+Output in `dist/bin/`:
+
+- `sesslint-<version>-<os>-<arch>[.exe]` — e.g. `sesslint-0.1.0-linux-x86_64`,
+  `sesslint-0.1.0-windows-x86_64.exe`, `sesslint-0.1.0-macos-arm64`. The version
+  comes from `src/sesslint/_version.py` (single source of truth).
+- `SHA256SUMS` — `"<sha256>  <name>"` per artifact, same format as
+  `sha256sum` output; verify with `sha256sum -c SHA256SUMS` inside the dir.
+- `<binary>.asc` — GPG detached signature, present only when `GPG_KEY_ID` is set.
+
+The bundled executable embeds `schemas/` at `share/sesslint/schemas` so the
+runtime schema lookup (`<sys.prefix>/share/sesslint/schemas`, the wheel's
+shared-data location) resolves identically inside the frozen bundle.
+
+### Signing (all OPT-IN — skipped cleanly when env vars are absent)
+
+| Env var(s) | Platform | Action |
+|---|---|---|
+| `CODESIGN_PFX` (+ optional `CODESIGN_PFX_PASSWORD`) or `CERT_THUMBPRINT` | Windows | `signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256` |
+| `APPLE_SIGNING_IDENTITY` | macOS | `codesign --force --options runtime --timestamp --sign <id>` |
+| `APPLE_NOTARY_PROFILE` | macOS | zip + `xcrun notarytool submit --keychain-profile <profile> --wait` |
+| `GPG_KEY_ID` | all | `gpg --detach-sign --armor` → `<binary>.asc` |
+
+Missing credentials or missing tools produce a warning and exit 0 — unsigned
+binaries are still emitted. The script itself performs no network access;
+only explicitly enabled signing tools may reach the network (Authenticode
+timestamping, Apple notarization).
+
+### Where the artifacts go
+
+- **GitHub Release**: the `binaries` matrix job in `release.yml` builds each
+  per-OS binary, smoke-tests it (`version --json` + `check` against
+  `fixtures/cli/check_basic/healthy.jsonl`), and attaches
+  `sesslint-*` + `SHA256SUMS-<os>` (+ optional `.asc`) to the draft release
+  via `gh release upload`. `github-promote` waits for all three legs so the
+  public release is complete.
+- **PyPI**: nothing — `pypi-publish` still ships only the wheel + sdist and
+  does not depend on `binaries`.

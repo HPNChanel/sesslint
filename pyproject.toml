@@ -35,6 +35,12 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
+# Build-time ONLY: used by scripts/package.py + packaging/sesslint.spec to
+# produce native binaries. Never imported by src/sesslint — `dependencies`
+# above MUST stay empty (zero runtime deps is a hard project invariant).
+packaging = [
+    "pyinstaller>=6",
+]
 
 [project.scripts]
 sesslint = "sesslint.cli:main"

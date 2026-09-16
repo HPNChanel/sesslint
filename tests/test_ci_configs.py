@@ -165,16 +165,32 @@ def test_release_workflow_trigger_tag_gated() -> None:
         assert token not in on_block, f"release.yml must not trigger on {token!r}"
 
 
-def test_release_workflow_four_job_dag_order() -> None:
-    """Exactly four jobs ordered build -> github-draft -> pypi-publish -> github-promote."""
+def test_release_workflow_five_job_dag_order() -> None:
+    """Five jobs: build -> github-draft -> {binaries, pypi-publish} -> github-promote.
+
+    The ``binaries`` matrix job fans out after github-draft and attaches native
+    executables to the draft release. It must never gate ``pypi-publish``
+    (PyPI ships only wheel+sdist); ``github-promote`` waits on both so the
+    public release is complete.
+    """
     content = _release_content()
     blocks = _job_blocks(content)
-    assert list(blocks) == ["build", "github-draft", "pypi-publish", "github-promote"], (
-        f"job order/set mismatch: {list(blocks)}"
-    )
+    assert list(blocks) == [
+        "build",
+        "github-draft",
+        "binaries",
+        "pypi-publish",
+        "github-promote",
+    ], f"job order/set mismatch: {list(blocks)}"
     assert "needs: build" in blocks["github-draft"]
+    assert "needs: github-draft" in blocks["binaries"]
     assert "needs: github-draft" in blocks["pypi-publish"]
-    assert "needs: pypi-publish" in blocks["github-promote"]
+    promote_needs = re.search(r"needs:\s*\[([^\]]+)\]", blocks["github-promote"])
+    assert promote_needs, "github-promote must declare a multi-job needs list"
+    needed = {n.strip() for n in promote_needs.group(1).split(",")}
+    assert needed == {"pypi-publish", "binaries"}, (
+        f"github-promote must wait on pypi-publish AND binaries, got {needed}"
+    )
 
 
 def test_release_workflow_tag_version_validation() -> None:
@@ -187,7 +203,7 @@ def test_release_workflow_tag_version_validation() -> None:
 
 
 def test_release_workflow_minimal_permissions() -> None:
-    """contents:write only on draft/promote; id-token:write only on pypi-publish; read elsewhere."""
+    """contents:write only on draft/promote/binaries; id-token:write only on pypi-publish."""
     content = _release_content()
     top = content[: content.find("\njobs:")]
     assert "contents: write" not in top, "no workflow-level write permission allowed"
@@ -197,7 +213,8 @@ def test_release_workflow_minimal_permissions() -> None:
     for name, block in blocks.items():
         writes_contents = "contents: write" in block
         writes_idtoken = "id-token: write" in block
-        if name in ("github-draft", "github-promote"):
+        if name in ("github-draft", "github-promote", "binaries"):
+            # binaries needs contents: write to attach assets via gh release upload
             assert writes_contents, f"{name} must hold contents: write"
         else:
             assert not writes_contents, f"{name} must not hold contents: write"
@@ -272,7 +289,7 @@ def test_release_workflow_actions_pinned_to_full_sha() -> None:
 
 
 def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
-    """If PyYAML is available, release.yml must parse and expose the four-job DAG."""
+    """If PyYAML is available, release.yml must parse and expose the five-job DAG."""
     try:
         import yaml
     except ImportError:
@@ -281,7 +298,13 @@ def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
     with open(RELEASE_WORKFLOW, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     assert data is not None
-    assert list(data["jobs"]) == ["build", "github-draft", "pypi-publish", "github-promote"]
+    assert list(data["jobs"]) == [
+        "build",
+        "github-draft",
+        "binaries",
+        "pypi-publish",
+        "github-promote",
+    ]
 
 
 def test_package_metadata_consistency() -> None:
