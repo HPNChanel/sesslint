@@ -83,5 +83,5 @@ If you are adding a new session format adapter or updating an existing one (e.g.
 1. Keep PRs focused, single-purpose, and well-tested.
 2. Include comprehensive docstrings and inline explanation for complex invariants.
 3. Update relevant reason-code documentation in `docs/codes/` if adding or modifying detection logic.
-4. Update `docs/implementation/REQUIREMENTS_TRACEABILITY.md` if addressing a tracked functional requirement.
+4. Update the `Unreleased` section of `CHANGELOG.md` for any user-visible change.
 

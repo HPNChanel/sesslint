@@ -36,7 +36,7 @@ Describe the general layout and structure of this format:
 - Parent linkage or sequence ordering mechanism:
 
 ### Synthetic Fixture (Optional but Recommended)
-Provide a minimal synthetic snippet (using placeholder text and fake identifiers per [FIXTURES.md](https://github.com/sesslint/sesslint/blob/main/FIXTURES.md)):
+Provide a minimal synthetic snippet (using placeholder text and fake identifiers per [FIXTURES.md](https://github.com/HPNChanel/sesslint/blob/main/FIXTURES.md)):
 ```jsonl
 // Paste synthetic records here
 ```

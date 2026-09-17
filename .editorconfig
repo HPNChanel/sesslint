@@ -1,0 +1,25 @@
+# EditorConfig — https://editorconfig.org
+# Keeps line endings, indentation, and trailing whitespace consistent across
+# editors. .gitattributes already forces LF at checkout for byte-exact fixtures.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{json,jsonl,toml,cfg,ini}]
+indent_size = 4
+
+[*.md]
+# Markdown allows meaningful trailing double-spaces for hard line breaks.
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

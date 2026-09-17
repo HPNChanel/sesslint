@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- PEP 561 `py.typed` marker — downstream consumers now get the strict inline
+  types; `Typing :: Typed` classifier added.
+- `SECURITY.md` (private-advisory reporting + security model),
+  `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `CITATION.cff`,
+  `AGENTS.md`, `docs/README.md` index, `.editorconfig`.
+- GitHub: `PULL_REQUEST_TEMPLATE.md`, `feature_request` issue template,
+  `dependabot.yml` (actions + dev/packaging pip extras), `CODEOWNERS`.
+- CI: CodeQL analysis workflow; `ci.yml` gains least-privilege
+  `permissions`, `concurrency` cancellation, and Python 3.13/3.14 matrix legs.
+- Repo-level `.pre-commit-config.yaml` mirroring the lint/format/mypy gates
+  (consumer hook spec `.pre-commit-hooks.yaml` unchanged).
+- Dev extra gains `pytest-cov` with `[tool.coverage]` branch-coverage config.
+
+### Fixed
+
+- Issue-template contact links pointed at a non-existent `sesslint/sesslint`
+  org instead of `HPNChanel/sesslint`.
+- `[tool.mypy] files` included `tests/`, so bare `mypy` failed with hundreds
+  of errors; it now matches the enforced gate (`src/sesslint` only).
+- Changelog link refs: added missing `[0.2.0]` link and corrected the
+  `[Unreleased]` compare base to `v0.2.0`.
+- `CONTRIBUTING.md` no longer points contributors at the git-ignored
+  `docs/implementation/` path.
+
 ## [0.2.0] - 2026-09-16
 
 ### Added
@@ -89,5 +115,6 @@ hash-verified identical artifacts on both channels.
 - GitHub Release: https://github.com/HPNChanel/sesslint/releases/tag/v0.1.0
 - PyPI: https://pypi.org/project/sesslint/0.1.0/
 
-[Unreleased]: https://github.com/HPNChanel/sesslint/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/HPNChanel/sesslint/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.2.0
 [0.1.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.1.0

@@ -1,0 +1,25 @@
+# Dependabot keeps workflow actions and dev/build dependencies current.
+# release.yml pins actions by full-length SHA — dependabot updates those pins.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    # Runtime dependencies are a hard-empty invariant; only the dev and
+    # packaging extras carry pins/ranges.
+    allow:
+      - dependency-type: "development"
+    groups:
+      dev-tools:
+        patterns:
+          - "*"

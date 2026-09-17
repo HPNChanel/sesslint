@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "SessLint"
+abstract: >-
+  Offline, vendor-neutral session-integrity checker and conservative repair
+  engine for tool-using AI agents. Detects and deterministically repairs
+  structural corruption in agent execution ledgers (JSON/JSONL) before replay.
+authors:
+  - name: "SessLint Maintainers"
+repository-code: "https://github.com/HPNChanel/sesslint"
+url: "https://pypi.org/project/sesslint/"
+license: Apache-2.0
+version: "0.2.0"
+date-released: "2026-09-16"
+keywords:
+  - ai-agents
+  - session-integrity
+  - linting
+  - deterministic-repair
+  - jsonl
