@@ -25,14 +25,18 @@ Automated session repair enforces side-effect safety at two distinct layers:
 
 from __future__ import annotations
 
-import hashlib
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from sesslint._events import (
+    _event_content_fingerprint,
+    _event_corr_id,
+    _event_id,
+    _event_kind,
+)
 from sesslint.canonical import READ_ONLY_TOOL_NAMES
-from sesslint.determinism import canonical_json_bytes
 from sesslint.finding import Finding
 
 TOOL_KINDS: Final[frozenset[str]] = frozenset({"tool_call", "tool_use", "tool_result"})
@@ -100,27 +104,6 @@ class AmbiguousEvents:
     reasons: tuple[str, ...] = ()
 
 
-def _event_kind(ev: Any) -> str | None:
-    k = getattr(ev, "kind", None)
-    if k is None and isinstance(ev, Mapping):
-        k = ev.get("kind")
-    return str(k) if k is not None else None
-
-
-def _event_id(ev: Any) -> str | None:
-    i = getattr(ev, "id", None)
-    if i is None and isinstance(ev, Mapping):
-        i = ev.get("id")
-    return str(i) if i is not None else None
-
-
-def _event_corr_id(ev: Any) -> str | None:
-    c = getattr(ev, "correlation_id", None)
-    if c is None and isinstance(ev, Mapping):
-        c = ev.get("correlation_id")
-    return str(c) if c is not None else None
-
-
 def _extract_side_effects(ev: Any, raw_kind: str | None = None) -> str:
     if raw_kind is None:
         raw_kind = _event_kind(ev)
@@ -157,26 +140,6 @@ def _extract_side_effects(ev: Any, raw_kind: str | None = None) -> str:
             raw_se = SAFE_SIDE_EFFECT
 
     return str(raw_se) if raw_se is not None else "unknown"
-
-
-def _event_content_fingerprint(ev: Any) -> str:
-    ch = getattr(ev, "content_hash", None)
-    if ch is None and isinstance(ev, Mapping):
-        ch = ev.get("content_hash")
-    if isinstance(ch, str) and ch:
-        return ch
-    if hasattr(ev, "payload_hash"):
-        return str(ev.payload_hash())
-    payload = getattr(ev, "payload", None)
-    if payload is None and isinstance(ev, Mapping):
-        payload = ev.get("payload")
-    if isinstance(payload, Mapping):
-        return hashlib.sha256(canonical_json_bytes(payload, newline=False)).hexdigest()
-    if hasattr(ev, "to_canonical_bytes"):
-        return hashlib.sha256(ev.to_canonical_bytes()).hexdigest()
-    if isinstance(ev, Mapping):
-        return hashlib.sha256(canonical_json_bytes(ev, newline=False)).hexdigest()
-    return hashlib.sha256(str(ev).encode("utf-8")).hexdigest()
 
 
 def find_ambiguous_events(

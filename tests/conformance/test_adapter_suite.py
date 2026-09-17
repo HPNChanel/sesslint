@@ -43,10 +43,15 @@ from sesslint.adapters.claude_code import (
     detect_claude_code,
     load_claude_code,
 )
+from sesslint.adapters.codex_rollout import (
+    detect_codex_rollout,
+    load_codex_rollout,
+)
 from sesslint.adapters.detect import (
     CONFIDENCE_MIN,
     FORMAT_CANONICAL,
     FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
     FORMAT_OPENAI_AGENTS,
     MARGIN_MIN,
     SNIFF_BYTES,
@@ -145,6 +150,13 @@ ADAPTERS: Final[dict[str, AdapterSpec]] = {
         load_fn=load_openai_agents,
         fixture_dir=CONFORMANCE_FIXTURES / "openai_agents",
     ),
+    FORMAT_CODEX_ROLLOUT: AdapterSpec(
+        adapter_id=FORMAT_CODEX_ROLLOUT,
+        format_name=FORMAT_CODEX_ROLLOUT,
+        detect_fn=detect_codex_rollout,
+        load_fn=load_codex_rollout,
+        fixture_dir=CONFORMANCE_FIXTURES / "codex_rollout",
+    ),
 }
 
 # The 8 Universal Conformance Case Families Defined as Pure Data
@@ -169,6 +181,11 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_OPENAI_AGENTS: CaseExpectation(
                 fixture_relpath="openai_agents/healthy.json",
+                expected_codes=(),
+                expected_exit_code=0,
+            ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/healthy.jsonl",
                 expected_codes=(),
                 expected_exit_code=0,
             ),
@@ -200,6 +217,12 @@ CASES: Final[list[ConformanceCase]] = [
                 expected_exit_code=1,
                 extra={"version_raw": "99.0.0"},
             ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/version_unsupported.jsonl",
+                expected_codes=(SL301,),
+                expected_exit_code=1,
+                extra={"version_raw": "99.0.0"},
+            ),
         },
     ),
     # 3. Parallel Tool-Call Pairing
@@ -225,6 +248,12 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_OPENAI_AGENTS: CaseExpectation(
                 fixture_relpath="openai_agents/parallel_tool.json",
+                expected_codes=(),
+                expected_exit_code=0,
+                extra={"min_calls": 2, "min_returns": 2},
+            ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/parallel_tool.jsonl",
                 expected_codes=(),
                 expected_exit_code=0,
                 extra={"min_calls": 2, "min_returns": 2},
@@ -273,6 +302,17 @@ CASES: Final[list[ConformanceCase]] = [
                     )
                 },
             ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="secret_seed/codex_secret.jsonl",
+                expected_codes=(),
+                expected_exit_code=0,
+                extra={
+                    "secret_tokens": (
+                        "sk-ant-api03-SECRET-CANARY-TOKEN-XYZ123",
+                        "sk-live-OPENAI-SECRET-TOKEN-51Nz888",
+                    )
+                },
+            ),
         },
     ),
     # 5. Canonical Round-Trip Determinism
@@ -299,6 +339,11 @@ CASES: Final[list[ConformanceCase]] = [
                 expected_codes=(),
                 expected_exit_code=0,
             ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/healthy.jsonl",
+                expected_codes=(),
+                expected_exit_code=0,
+            ),
         },
     ),
     # 6. Detection Confidence Sanity
@@ -322,6 +367,11 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_OPENAI_AGENTS: CaseExpectation(
                 fixture_relpath="openai_agents/healthy.json",
+                expected_codes=(),
+                expected_exit_code=0,
+            ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/healthy.jsonl",
                 expected_codes=(),
                 expected_exit_code=0,
             ),
@@ -354,6 +404,12 @@ CASES: Final[list[ConformanceCase]] = [
                 expected_exit_code=0,
                 extra={"uses_native_ids": False},
             ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/synthetic_ids.jsonl",
+                expected_codes=(),
+                expected_exit_code=0,
+                extra={"uses_native_ids": False},
+            ),
         },
     ),
     # 8a. Discriminator Shapes: Safe Verbatim Echo
@@ -378,6 +434,12 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_OPENAI_AGENTS: CaseExpectation(
                 fixture_relpath="openai_agents/discriminator_safe.json",
+                expected_codes=(SL302,),
+                expected_exit_code=1,
+                extra={"expected_discriminator": "custom_op", "truncated": False},
+            ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/discriminator_safe.jsonl",
                 expected_codes=(SL302,),
                 expected_exit_code=1,
                 extra={"expected_discriminator": "custom_op", "truncated": False},
@@ -407,6 +469,12 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_OPENAI_AGENTS: CaseExpectation(
                 fixture_relpath="openai_agents/discriminator_hostile.json",
+                expected_codes=(SL302,),
+                expected_exit_code=1,
+                extra={"expected_shape": "<str:len=90>", "truncated": True},
+            ),
+            FORMAT_CODEX_ROLLOUT: CaseExpectation(
+                fixture_relpath="codex_rollout/discriminator_hostile.jsonl",
                 expected_codes=(SL302,),
                 expected_exit_code=1,
                 extra={"expected_shape": "<str:len=90>", "truncated": True},

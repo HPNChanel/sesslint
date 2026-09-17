@@ -15,10 +15,14 @@ Guarantees:
 from __future__ import annotations
 
 import hashlib
+import json
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Final
+from pathlib import Path
+from typing import Any, Final, cast
 
+from sesslint._events import _event_id, _event_kind
 from sesslint.finding import Finding, Repairability
 from sesslint.policy.abstention import (
     check_step_scope,
@@ -79,8 +83,10 @@ class PlanStep:
     def to_dict(self) -> dict[str, Any]:
         """Serialize plan step to dictionary."""
         d: dict[str, Any] = {
+            "min_policy": self.min_policy,
             "params": dict(self.params),
             "recipe": self.recipe,
+            "recipe_version": self.recipe_version,
             "seq": self.seq,
             "target_finding_fp": self.target_finding_fp,
             "target_index": self.target_index,
@@ -89,6 +95,29 @@ class PlanStep:
             d["lossy"] = self.lossy
             d["loss"] = dict(self.loss)
         return d
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PlanStep:
+        """Deserialize a plan step, requiring execution-safety fields (DW-T-08).
+
+        ``seq``, ``recipe``, ``min_policy``, and ``recipe_version`` are required:
+        silently defaulting ``min_policy`` would let a salvage-gated step pass a
+        conservative policy check, so plans missing them fail closed.
+        """
+        for field_name in ("seq", "recipe", "min_policy", "recipe_version"):
+            if field_name not in data:
+                raise ValueError(f"Plan step missing required field {field_name!r}")
+        return cls(
+            seq=int(data["seq"]),
+            recipe=str(data["recipe"]),
+            target_finding_fp=str(data.get("target_finding_fp", "")),
+            target_index=data.get("target_index"),
+            params=dict(data.get("params", {})),
+            lossy=bool(data.get("lossy", False)),
+            loss=dict(data.get("loss", {})),
+            min_policy=str(data["min_policy"]),
+            recipe_version=str(data["recipe_version"]),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +158,15 @@ class Blocked:
             "reason": self.reason,
         }
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Blocked:
+        """Deserialize a blocked-finding record."""
+        return cls(
+            finding_fp=str(data.get("finding_fp", "")),
+            code=str(data.get("code", "")),
+            reason=str(data.get("reason", "")),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Loss:
@@ -149,6 +187,16 @@ class Loss:
         return {
             "preview": dict(self.preview),
         }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Loss:
+        """Deserialize loss accounting, tolerating absent totals."""
+        loss_preview = data.get("preview", {})
+        return cls(
+            preview=dict(loss_preview),
+            total_lost=int(data.get("total_lost", 0)),
+            total_kept=int(data.get("total_kept", 0)),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +238,37 @@ class RepairPlan:
             d["loss_accounting"]["total_lost"] = self.loss_accounting.total_lost
             d["loss_accounting"]["total_kept"] = self.loss_accounting.total_kept
         return d
+
+    @classmethod
+    def from_dict(cls, raw_data: Mapping[str, Any]) -> RepairPlan:
+        """Deserialize a RepairPlan from a dictionary (single authoritative path, DW-T-08).
+
+        Accepts an optional ``{"expected_plan": {...}}`` wrapper. A missing or
+        non-string ``fingerprint`` is recomputed over the (unwrapped) plan
+        dictionary. Required fields are enforced per :meth:`PlanStep.from_dict`.
+        """
+        data = dict(raw_data)
+        if "expected_plan" in data and isinstance(data["expected_plan"], Mapping):
+            data = dict(data["expected_plan"])
+
+        steps_list = [PlanStep.from_dict(s) for s in data.get("steps", [])]
+        blocked_list = [Blocked.from_dict(b) for b in data.get("blocked", [])]
+        loss = Loss.from_dict(data.get("loss_accounting", {}))
+
+        fingerprint = data.get("fingerprint")
+        if not fingerprint or not isinstance(fingerprint, str):
+            fingerprint = compute_plan_fingerprint(data)
+
+        return cls(
+            source_hash=str(data.get("source_hash", "")),
+            profile=str(data.get("profile", "neutral")),
+            steps=tuple(steps_list),
+            blocked=tuple(blocked_list),
+            loss_accounting=loss,
+            fingerprint=str(fingerprint),
+            version=str(data.get("version", PLAN_VERSION)),
+            policy=str(data.get("policy", "conservative")),
+        )
 
 
 def compute_events_source_hash(events: Sequence[Any]) -> str:
@@ -244,27 +323,6 @@ def _resolve_target_index(f: Finding, events: Sequence[Any] | None = None) -> in
                     return i
 
     return None
-
-
-def _event_kind(ev: Any) -> str | None:
-    k = getattr(ev, "kind", None)
-    if k is None and isinstance(ev, Mapping):
-        k = ev.get("kind")
-    return str(k) if k is not None else None
-
-
-def _event_id(ev: Any) -> str | None:
-    i = getattr(ev, "id", None)
-    if i is None and isinstance(ev, Mapping):
-        i = ev.get("id")
-    return str(i) if i is not None else None
-
-
-def _event_corr_id(ev: Any) -> str | None:
-    c = getattr(ev, "correlation_id", None)
-    if c is None and isinstance(ev, Mapping):
-        c = ev.get("correlation_id")
-    return str(c) if c is not None else None
 
 
 def _compute_torn_compaction_loss(events: Sequence[Any], boundary_idx: int) -> int:
@@ -785,6 +843,26 @@ def plan(
     )
 
 
+def get_plan_schema_path() -> Path:
+    """Return the filesystem path to schemas/sesslint.plan.v1.json."""
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    dev_path = repo_root / "schemas" / "sesslint.plan.v1.json"
+    if dev_path.is_file():
+        return dev_path
+    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.plan.v1.json"
+    if prefix_path.is_file():
+        return prefix_path
+    return dev_path
+
+
+def load_plan_schema() -> dict[str, Any]:
+    """Load the committed JSON Schema for sesslint.plan/v1 as a dict."""
+    schema_path = get_plan_schema_path()
+    if not schema_path.is_file():
+        raise FileNotFoundError(f"Repair plan schema not found at {schema_path}")
+    return cast(dict[str, Any], json.loads(schema_path.read_text(encoding="utf-8")))
+
+
 __all__ = [
     "ALLOWED_LOSS_CLASSES",
     "EMPTY_EVENTS_HASH",
@@ -795,5 +873,7 @@ __all__ = [
     "PlanStep",
     "RepairPlan",
     "compute_events_source_hash",
+    "get_plan_schema_path",
+    "load_plan_schema",
     "plan",
 ]

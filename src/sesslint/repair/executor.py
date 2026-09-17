@@ -15,7 +15,6 @@ in SessLint. It enforces a strict, pinned 8-step protocol:
 
 from __future__ import annotations
 
-import copy
 import errno
 import hashlib
 import json
@@ -27,6 +26,7 @@ from pathlib import Path
 from typing import Any, Final, Literal
 
 import sesslint.report
+from sesslint._events import _copy_events_as_dicts_strict as _copy_events_as_dicts
 from sesslint._version import ADAPTER_VERSIONS, CLI_VERSION
 from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
 from sesslint.atomic import atomic_write_bytes
@@ -36,15 +36,10 @@ from sesslint.canonical import (
     SessionHeader,
     dump_session,
     parse_session_event,
-    to_canonical_dict,
 )
 from sesslint.checks.checkpoint import check_checkpoint
-from sesslint.checks.graph import check_graph
-from sesslint.checks.identity import check_identities
-from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
-from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
+from sesslint.checks.runner import run_all_checks
 from sesslint.codes import Severity
-from sesslint.context import CheckContext
 from sesslint.errors import AtomicWriteError
 from sesslint.finding import Finding
 from sesslint.policy.abstention import (
@@ -52,8 +47,14 @@ from sesslint.policy.abstention import (
     must_abstain,
     should_abstain_from_repair,
 )
-from sesslint.profiles.builtin import NEUTRAL_PROFILE
 from sesslint.profiles.profile import Profile, get_profile
+from sesslint.progress import (
+    CancellationToken,
+    ProgressCallback,
+    ProgressEvent,
+    check_token,
+    emit,
+)
 from sesslint.repair.assurance import cap_assurance, compute_assurance_ceiling
 from sesslint.repair.errors import (
     Abstained,
@@ -68,10 +69,6 @@ from sesslint.repair.errors import (
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
     MAX_STEPS,
-    PLAN_VERSION,
-    Blocked,
-    Loss,
-    PlanStep,
     RepairPlan,
     compute_events_source_hash,
 )
@@ -87,8 +84,6 @@ from sesslint.repair.recipes_sl002 import (
 from sesslint.repair.registry import get_recipe
 from sesslint.repair.writeback import emit_vendor_bytes
 from sesslint.report import (
-    Coverage,
-    CoverageSkip,
     RepairAction,
     RepairManifest,
     RevalidationSummary,
@@ -208,56 +203,7 @@ def load_plan(
     else:
         raise TypeError(f"Expected path or Mapping, got {type(source).__name__}")
 
-    data = dict(raw_data)
-    if "expected_plan" in data and isinstance(data["expected_plan"], Mapping):
-        data = dict(data["expected_plan"])
-
-    steps_list: list[PlanStep] = []
-    for s in data.get("steps", []):
-        steps_list.append(
-            PlanStep(
-                seq=int(s["seq"]),
-                recipe=str(s["recipe"]),
-                target_finding_fp=str(s.get("target_finding_fp", "")),
-                target_index=s.get("target_index"),
-                params=dict(s.get("params", {})),
-                lossy=bool(s.get("lossy", False)),
-                loss=dict(s.get("loss", {})),
-            )
-        )
-
-    blocked_list: list[Blocked] = []
-    for b in data.get("blocked", []):
-        blocked_list.append(
-            Blocked(
-                finding_fp=str(b.get("finding_fp", "")),
-                code=str(b.get("code", "")),
-                reason=str(b.get("reason", "")),
-            )
-        )
-
-    loss_raw = data.get("loss_accounting", {})
-    loss_preview = loss_raw.get("preview", {})
-    loss = Loss(
-        preview=dict(loss_preview),
-        total_lost=int(loss_raw.get("total_lost", 0)),
-        total_kept=int(loss_raw.get("total_kept", 0)),
-    )
-
-    fingerprint = data.get("fingerprint")
-    if not fingerprint or not isinstance(fingerprint, str):
-        fingerprint = compute_plan_fingerprint(data)
-
-    plan = RepairPlan(
-        source_hash=str(data.get("source_hash", "")),
-        profile=str(data.get("profile", "neutral")),
-        steps=tuple(steps_list),
-        blocked=tuple(blocked_list),
-        loss_accounting=loss,
-        fingerprint=str(fingerprint),
-        version=str(data.get("version", PLAN_VERSION)),
-        policy=str(data.get("policy", "conservative")),
-    )
+    plan = RepairPlan.from_dict(raw_data)
 
     if policy is not None:
         if policy == "conservative" and _plan_requires_salvage(plan):
@@ -340,248 +286,6 @@ def load_source_for_format(
     return hdr, events, findings
 
 
-def _copy_events_as_dicts(events: Sequence[Any]) -> list[dict[str, Any]]:
-    """Deep copy sequence of events into canonical dictionary format."""
-    result: list[dict[str, Any]] = []
-    for ev in events:
-        if hasattr(ev, "to_canonical_dict"):
-            result.append(copy.deepcopy(ev.to_canonical_dict()))
-        elif isinstance(ev, Mapping):
-            result.append(copy.deepcopy(dict(ev)))
-        else:
-            result.append(copy.deepcopy(to_canonical_dict(ev)))
-    return result
-
-
-def run_all_checks(
-    events: Sequence[SessionEvent],
-    *,
-    profile: Profile | str | None = None,
-    source_path: str = "<repaired>",
-    context: CheckContext | None = None,
-    adapter: str | None = None,
-    adapter_skips: Sequence[CoverageSkip] = (),
-    adapter_performed: Sequence[str] = (),
-    return_coverage: bool = False,
-) -> Any:
-    """Run all active rule checks enabled by the profile over canonical events.
-
-    When return_coverage is True, returns (findings, Coverage) collecting executed
-    check families and rules alongside gated or skipped rules with closed reasons (FR-047).
-    """
-    resolved_profile: Profile
-    if profile is None:
-        resolved_profile = NEUTRAL_PROFILE
-    elif isinstance(profile, str):
-        resolved_profile = get_profile(profile)
-    else:
-        resolved_profile = profile
-
-    if context is None:
-        source_meta = getattr(events, "source", None)
-        context = CheckContext.from_profile_and_adapter(
-            profile=resolved_profile,
-            adapter=adapter,
-            source_metadata=source_meta if isinstance(source_meta, Mapping) else None,
-        )
-    elif context.source_metadata is None:
-        source_meta = getattr(events, "source", None)
-        if isinstance(source_meta, Mapping):
-            context = context.with_overrides(source_metadata=source_meta)
-
-    enabled = set(resolved_profile.enabled_rules)
-    findings: list[Finding] = []
-
-    performed_checks: set[str] = set()
-    skipped_checks: list[CoverageSkip] = list(adapter_skips)
-    already_skipped_checks: set[str] = {s.check for s in skipped_checks}
-
-    # Ingest adapter checks
-    if adapter_performed:
-        for ap in adapter_performed:
-            if ap in enabled and ap not in already_skipped_checks:
-                performed_checks.add(ap)
-            elif ap not in enabled and ap not in already_skipped_checks:
-                skipped_checks.append(
-                    CoverageSkip(
-                        check=ap, reason="profile-gated", detail="rule disabled by profile"
-                    )
-                )
-                already_skipped_checks.add(ap)
-    else:
-        adapter_rules = ("SL001", "SL002", "SL301", "SL302")
-        for ar in adapter_rules:
-            if ar not in already_skipped_checks:
-                if ar in enabled:
-                    performed_checks.add(ar)
-                else:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=ar, reason="profile-gated", detail="rule disabled by profile"
-                        )
-                    )
-                    already_skipped_checks.add(ar)
-
-    is_empty_input = len(events) == 0
-    has_version_abort = any(s.reason == "version-gated" for s in adapter_skips)
-    has_cap_abort = any(s.reason == "cap-exceeded" for s in adapter_skips)
-
-    families: list[tuple[str, tuple[str, ...]]] = [
-        ("identity", ("SL003",)),
-        ("graph", ("SL004", "SL005", "SL006", "SL007")),
-        ("tool_pairing_1", ("SL101", "SL102", "SL103", "SL104")),
-        ("tool_pairing_2", ("SL105", "SL106", "SL107", "SL108")),
-        ("checkpoint", ("SL201", "SL202", "SL203")),
-    ]
-
-    for fam_name, fam_rules in families:
-        fam_enabled_rules = [r for r in fam_rules if r in enabled]
-        if not fam_enabled_rules:
-            if fam_name not in already_skipped_checks:
-                skipped_checks.append(
-                    CoverageSkip(
-                        check=fam_name,
-                        reason="profile-gated",
-                        detail="family disabled by profile",
-                    )
-                )
-                already_skipped_checks.add(fam_name)
-            for r in fam_rules:
-                if r not in already_skipped_checks:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=r, reason="profile-gated", detail="rule disabled by profile"
-                        )
-                    )
-                    already_skipped_checks.add(r)
-        elif is_empty_input:
-            if fam_name not in already_skipped_checks:
-                skipped_checks.append(
-                    CoverageSkip(
-                        check=fam_name,
-                        reason="empty-input",
-                        detail="zero records in event stream",
-                    )
-                )
-                already_skipped_checks.add(fam_name)
-            for r in fam_rules:
-                if r not in already_skipped_checks:
-                    if r in enabled:
-                        skipped_checks.append(
-                            CoverageSkip(
-                                check=r,
-                                reason="empty-input",
-                                detail="zero records in event stream",
-                            )
-                        )
-                    else:
-                        skipped_checks.append(
-                            CoverageSkip(
-                                check=r,
-                                reason="profile-gated",
-                                detail="rule disabled by profile",
-                            )
-                        )
-                    already_skipped_checks.add(r)
-        elif has_version_abort:
-            if fam_name not in already_skipped_checks:
-                skipped_checks.append(
-                    CoverageSkip(
-                        check=fam_name,
-                        reason="version-gated",
-                        detail="unsupported format version (SL301)",
-                    )
-                )
-                already_skipped_checks.add(fam_name)
-            for r in fam_rules:
-                if r not in already_skipped_checks:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=r,
-                            reason="version-gated",
-                            detail="unsupported format version (SL301)",
-                        )
-                    )
-                    already_skipped_checks.add(r)
-        elif has_cap_abort:
-            if fam_name not in already_skipped_checks:
-                skipped_checks.append(
-                    CoverageSkip(
-                        check=fam_name,
-                        reason="cap-exceeded",
-                        detail="stream limit cap exceeded",
-                    )
-                )
-                already_skipped_checks.add(fam_name)
-            for r in fam_rules:
-                if r not in already_skipped_checks:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=r,
-                            reason="cap-exceeded",
-                            detail="stream limit cap exceeded",
-                        )
-                    )
-                    already_skipped_checks.add(r)
-        else:
-            performed_checks.add(fam_name)
-            for r in fam_rules:
-                if r in enabled:
-                    performed_checks.add(r)
-                elif r not in already_skipped_checks:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=r, reason="profile-gated", detail="rule disabled by profile"
-                        )
-                    )
-                    already_skipped_checks.add(r)
-
-    if not is_empty_input and not has_version_abort and not has_cap_abort:
-        if "SL003" in enabled:
-            findings.extend(check_identities(events, source_path=source_path, context=context))
-
-        graph_rules = {"SL004", "SL005", "SL006", "SL007"}
-        if graph_rules & enabled:
-            findings.extend(check_graph(events, source_path=source_path, context=context))
-
-        tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
-        if tp1_rules & enabled:
-            findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
-
-        tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
-        if tp2_rules & enabled:
-            findings.extend(
-                check_tool_pairing_2(
-                    events,
-                    source_path=source_path,
-                    profile=resolved_profile,
-                    context=context,
-                )
-            )
-
-        cp_rules = {"SL201", "SL202", "SL203"}
-        if cp_rules & enabled:
-            findings.extend(
-                check_checkpoint(
-                    events,
-                    source_path=source_path,
-                    checkpoint_sensitivity=resolved_profile.checkpoint_sensitivity,
-                    context=context,
-                )
-            )
-
-    filtered_findings = [f for f in findings if f.code in enabled]
-    if return_coverage:
-        cov = Coverage(
-            performed=tuple(sorted(performed_checks)),
-            skipped=tuple(sorted(skipped_checks)),
-            adapter={"id": context.adapter_id, "version": context.adapter_version},
-            profile={"id": context.profile_id, "version": context.profile_version},
-        )
-        return filtered_findings, cov
-    return filtered_findings
-
-
 def execute(
     *,
     source_path: StrPath,
@@ -600,6 +304,8 @@ def execute(
     post_apply_hook: Callable[[], None] | None = None,
     mid_publish_hook: Callable[[], None] | None = None,
     post_publish_hook: Callable[[], None] | None = None,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
 ) -> RepairManifest:
     """Execute a fingerprinted repair plan atomically against a session source.
 
@@ -637,6 +343,12 @@ def execute(
         post_apply_hook: Testing hook invoked after memory apply before write.
         mid_publish_hook: Testing hook invoked after manifest link before output rename.
         post_publish_hook: Testing hook invoked after publish and directory fsync.
+        progress_cb: Optional callback receiving ``ProgressEvent`` records
+            (``repair:step`` per applied recipe step) — DW-T-13.
+        cancel_token: Optional cooperative cancellation token checked at each
+            step boundary and once before publish. ``OperationCancelled``
+            propagates through the same failure-cleanup path as any other
+            error: no partial output or manifest is left behind.
 
     Returns:
         A validated RepairManifest instance.
@@ -802,7 +514,8 @@ def execute(
     working_events = _copy_events_as_dicts(loaded_events)
     sorted_steps = sorted(plan.steps, key=lambda s: s.seq)
 
-    for step in sorted_steps:
+    for step_idx, step in enumerate(sorted_steps):
+        check_token(cancel_token)
         recipe = get_recipe(step.recipe)
         if recipe is None or recipe.apply is None:
             raise OutputInvalid(f"Recipe '{step.recipe}' not found or has no apply handler")
@@ -854,6 +567,15 @@ def execute(
             working_events = recipe.apply(working_events, step)
         except Exception as err:
             raise OutputInvalid(f"Recipe '{step.recipe}' failed at step {step.seq}: {err}") from err
+        emit(
+            progress_cb,
+            ProgressEvent(
+                phase="repair:step",
+                completed=step_idx + 1,
+                total=len(sorted_steps),
+                item=step.recipe,
+            ),
+        )
 
     # -------------------------------------------------------------------------
     # STEP 4: Output validation
@@ -1090,6 +812,9 @@ def execute(
     # STEP 6 & 7: Verify source integrity, publish exclusive pair & fsync
     # -------------------------------------------------------------------------
     assert output_p is not None
+    # Cooperative cancellation boundary: raising here — before any write —
+    # leaves nothing to clean up (DW-T-13).
+    check_token(cancel_token)
     # Re-read source bytes to verify source was never concurrently modified
     source_post_bytes = source_p.read_bytes()
     source_post_hash = hashlib.sha256(source_post_bytes).hexdigest()

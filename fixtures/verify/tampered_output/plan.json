@@ -1,6 +1,6 @@
 {
   "blocked": [],
-  "fingerprint": "e6e050f8c07ab36595c97f2e77638a617451a10bb0d2202495006a832623bcbb",
+  "fingerprint": "d3b78d45336e128a8e06b2d696a39926f32c4e1fbed93aecddc920c2b5f5a56c",
   "loss_accounting": {
     "preview": {
       "discarded-suffix": 0,
@@ -12,8 +12,10 @@
   "source_hash": "1f29d80685dd355b2bbf0f74febc5031bd1b774bbdd29d8bc576a99353cc6c7a",
   "steps": [
     {
+      "min_policy": "conservative",
       "params": {},
       "recipe": "identical-duplicate-collapse",
+      "recipe_version": "1.0.0",
       "seq": 0,
       "target_finding_fp": "070ceee4b3954eb0",
       "target_index": 1

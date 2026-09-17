@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.bundle/v1",
+  "title": "SessLint Support Bundle Format v1",
+  "description": "Privacy-safe diagnostic bundle emitted by sesslint bundle: content-free report, detection confidences, and a synthetic fixture skeleton. Nested evidence objects are intentionally permissive; no raw session content is permitted anywhere (DW-T-09).",
+  "type": "object",
+  "required": [
+    "bundle_version",
+    "created_by",
+    "detection",
+    "fixture_skeleton",
+    "report",
+    "source"
+  ],
+  "properties": {
+    "bundle_version": {
+      "const": "sesslint.bundle/v1"
+    },
+    "created_by": {
+      "type": "object",
+      "required": [
+        "adapters",
+        "cli",
+        "profiles",
+        "schema_manifest",
+        "schema_report",
+        "schema_session",
+        "tool",
+        "version",
+        "versions"
+      ],
+      "properties": {
+        "tool": {
+          "const": "sesslint"
+        },
+        "version": {
+          "type": "string"
+        },
+        "cli": {
+          "type": "string"
+        },
+        "schema_session": {
+          "type": "string"
+        },
+        "schema_report": {
+          "type": "string"
+        },
+        "schema_manifest": {
+          "type": "string"
+        },
+        "adapters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "versions": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "detection": {
+      "type": "object",
+      "required": [
+        "confidences",
+        "reason",
+        "requested",
+        "resolved"
+      ],
+      "properties": {
+        "requested": {
+          "type": "string"
+        },
+        "resolved": {
+          "type": ["string", "null"]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidences": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "required": [
+        "assurance",
+        "counts",
+        "coverage",
+        "findings",
+        "limitation",
+        "schema_version",
+        "session_id",
+        "source_fingerprint",
+        "tool_version"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "source_fingerprint": {
+          "type": "string"
+        },
+        "assurance": {
+          "type": "string"
+        },
+        "limitation": {
+          "type": "string"
+        },
+        "counts": {
+          "type": "object",
+          "required": [
+            "by_code",
+            "by_severity",
+            "total"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "by_code": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "by_severity": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "coverage": {
+          "type": "object"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "code",
+              "fingerprint",
+              "repairability",
+              "severity",
+              "span"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "repairability": {
+                "type": "string"
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "remediation": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "object"
+              },
+              "span": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": ["integer", "null"]
+                  },
+                  "byte": {
+                    "type": ["integer", "null"]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "fixture_skeleton": {
+      "type": "object",
+      "required": [
+        "codes",
+        "kinds",
+        "record_count",
+        "template"
+      ],
+      "properties": {
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kinds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "record_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "template": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

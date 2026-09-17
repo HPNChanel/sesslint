@@ -1024,6 +1024,8 @@ def test_refuse_crafted_conservative_plan_with_salvage_step(tmp_path: Path) -> N
             {
                 "seq": 0,
                 "recipe": "unresolvable-branch-amputate",
+                "min_policy": "salvage",
+                "recipe_version": "1.0.0",
                 "target_finding_fp": "f000",
                 "target_index": 0,
                 "params": {},
@@ -1271,6 +1273,8 @@ def test_executor_policy_gate_minimum_policy(tmp_path: Path) -> None:
             {
                 "seq": 0,
                 "recipe": "unresolvable-branch-amputate",
+                "min_policy": "salvage",
+                "recipe_version": "1.0.0",
                 "target_finding_fp": "f001",
                 "target_index": 0,
                 "params": {},

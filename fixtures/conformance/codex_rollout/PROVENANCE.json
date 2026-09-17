@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "sesslint.conformance",
+  "seed": 20260917,
+  "created": "2026-09-17",
+  "contains_real_data": false,
+  "description": "Synthetic conformance test fixtures for Codex rollout-*.jsonl adapter"
+}

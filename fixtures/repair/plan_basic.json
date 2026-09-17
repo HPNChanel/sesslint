@@ -26,7 +26,7 @@
   ],
   "expected_plan": {
     "blocked": [],
-    "fingerprint": "0081f62c60bb47215697e2f602479d351aaa9340744e6e61d4ec0a68c31975e6",
+    "fingerprint": "dafe357ad82a48a1d10c0b005ca84308ed8585a2c780ec867626efbecf3c291d",
     "loss_accounting": {
       "preview": {
         "discarded-suffix": 0,
@@ -38,8 +38,10 @@
     "source_hash": "32acbe9b7f31d4300466f6d56ac39f6cf10bfa826f30f58e6be701757f100088",
     "steps": [
       {
+        "min_policy": "conservative",
         "params": {},
         "recipe": "stub-strip-call",
+        "recipe_version": "1.0.0",
         "seq": 0,
         "target_finding_fp": "9b95bb6a036cde92",
         "target_index": 1

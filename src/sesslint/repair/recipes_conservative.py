@@ -23,16 +23,20 @@ Guarantees:
 
 from __future__ import annotations
 
-import copy
-import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from sesslint.canonical import to_canonical_dict
+from sesslint._events import (
+    _copy_events_as_dicts,
+    _event_content_fingerprint,
+    _event_corr_id,
+    _event_id,
+    _event_kind,
+    _event_parent_id,
+)
 from sesslint.checks.graph import find_qualifying_parent_candidates
 from sesslint.codes import SL003, SL004, SL005, SL104, SL108
 from sesslint.policy.abstention import AffectedRegion
-from sesslint.repair.fingerprint import canonical_json_bytes
 from sesslint.repair.planner import PlanStep
 from sesslint.repair.recipes_sl002 import affected_region_torn_terminal_record_discard
 from sesslint.repair.registry import Recipe, get_recipe, register_recipe
@@ -40,79 +44,6 @@ from sesslint.repair.registry import Recipe, get_recipe, register_recipe
 
 class PreconditionFailed(ValueError):
     """Raised when a repair recipe is applied directly to invalid events."""
-
-
-def _event_kind(ev: Any) -> str | None:
-    k = getattr(ev, "kind", None)
-    if k is None and isinstance(ev, Mapping):
-        k = ev.get("kind")
-    return str(k) if k is not None else None
-
-
-def _event_id(ev: Any) -> str | None:
-    i = getattr(ev, "id", None)
-    if i is None and isinstance(ev, Mapping):
-        i = ev.get("id")
-    return str(i) if i is not None else None
-
-
-def _event_parent_id(ev: Any) -> str | None:
-    p = getattr(ev, "parent_id", None)
-    if p is None and isinstance(ev, Mapping):
-        p = ev.get("parent_id")
-    return str(p) if p is not None else None
-
-
-def _event_corr_id(ev: Any) -> str | None:
-    c = getattr(ev, "correlation_id", None)
-    if c is None and isinstance(ev, Mapping):
-        c = ev.get("correlation_id")
-    return str(c) if c is not None else None
-
-
-def _event_content_fingerprint(ev: Any) -> str:
-    ch = getattr(ev, "content_hash", None)
-    if ch is None and isinstance(ev, Mapping):
-        ch = ev.get("content_hash")
-    if isinstance(ch, str) and ch:
-        return ch
-    if hasattr(ev, "payload_hash"):
-        return str(ev.payload_hash())
-    payload = getattr(ev, "payload", None)
-    if payload is None and isinstance(ev, Mapping):
-        payload = ev.get("payload")
-    if isinstance(payload, Mapping):
-        return hashlib.sha256(canonical_json_bytes(payload, newline=False)).hexdigest()
-    if hasattr(ev, "to_canonical_bytes"):
-        return hashlib.sha256(ev.to_canonical_bytes()).hexdigest()
-    if isinstance(ev, Mapping):
-        return hashlib.sha256(canonical_json_bytes(ev, newline=False)).hexdigest()
-    return hashlib.sha256(str(ev).encode("utf-8")).hexdigest()
-
-
-def _event_canonical_hash(ev: Any) -> str:
-    if hasattr(ev, "canonical_hash"):
-        return str(ev.canonical_hash())
-    if hasattr(ev, "to_canonical_bytes"):
-        return hashlib.sha256(ev.to_canonical_bytes()).hexdigest()
-    if isinstance(ev, Mapping):
-        return hashlib.sha256(canonical_json_bytes(ev, newline=False)).hexdigest()
-    return hashlib.sha256(str(ev).encode("utf-8")).hexdigest()
-
-
-def _to_event_dict(ev: Any) -> dict[str, Any]:
-    if hasattr(ev, "to_canonical_dict"):
-        return copy.deepcopy(ev.to_canonical_dict())
-    if isinstance(ev, Mapping):
-        return copy.deepcopy(dict(ev))
-    try:
-        return copy.deepcopy(to_canonical_dict(ev))
-    except Exception:
-        return copy.deepcopy(dict(ev))
-
-
-def _copy_events_as_dicts(events: Sequence[Any]) -> list[dict[str, Any]]:
-    return [_to_event_dict(e) for e in events]
 
 
 # ---------------------------------------------------------------------------

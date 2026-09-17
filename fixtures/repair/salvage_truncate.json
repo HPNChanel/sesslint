@@ -1,128 +1,52 @@
 {
   "events": [
     {
-      "id": "m0",
-      "parent_id": null,
-      "seq": 0,
-      "ts": "2026-09-05T12:00:00Z",
       "actor": "user",
+      "id": "m0",
       "kind": "message",
+      "parent_id": null,
       "payload": {
         "text": "start"
-      }
+      },
+      "seq": 0,
+      "ts": "2026-09-05T12:00:00Z"
     },
     {
-      "id": "m1",
-      "parent_id": "m0",
-      "seq": 1,
-      "ts": "2026-09-05T12:00:01Z",
       "actor": "assistant",
+      "id": "m1",
       "kind": "message",
+      "parent_id": "m0",
       "payload": {
         "text": "step 1"
-      }
+      },
+      "seq": 1,
+      "ts": "2026-09-05T12:00:01Z"
     },
     {
-      "id": "tc_unsafe",
-      "correlation_id": "c_unsafe",
-      "parent_id": "m1",
-      "seq": 2,
-      "ts": "2026-09-05T12:00:02Z",
       "actor": "assistant",
+      "correlation_id": "c_unsafe",
+      "id": "tc_unsafe",
       "kind": "tool_call",
+      "parent_id": "m1",
       "payload": {
         "name": "external_api",
         "side_effects": "unknown"
-      }
+      },
+      "seq": 2,
+      "ts": "2026-09-05T12:00:02Z"
     },
     {
-      "id": "m2",
-      "parent_id": "tc_unsafe",
-      "seq": 3,
-      "ts": "2026-09-05T12:00:03Z",
       "actor": "assistant",
+      "id": "m2",
       "kind": "message",
+      "parent_id": "tc_unsafe",
       "payload": {
         "text": "post"
-      }
+      },
+      "seq": 3,
+      "ts": "2026-09-05T12:00:03Z"
     }
   ],
-  "findings": [
-    {
-      "schema_version": "sesslint.finding/v1",
-      "code": "SL102",
-      "severity": "error",
-      "repairability": "lossy-explicit",
-      "message": "Dangling tool call with unknown side effects",
-      "source": {
-        "path": "session.json",
-        "line": 3,
-        "record_id": "tc_unsafe"
-      },
-      "related_ids": [],
-      "fingerprint": "4d0ac9a58962bf3d",
-      "message_template": "Tool call missing paired result (side-effects unknown)",
-      "evidence": {
-        "at_index": 2,
-        "first_unsafe_index": 2
-      }
-    }
-  ],
-  "expected_plan": {
-    "blocked": [],
-    "fingerprint": "5bcf81c027a260496dbb965cb7c811d4f98d3b593c4a8b2ab65929916fe42157",
-    "loss_accounting": {
-      "preview": {
-        "discarded-suffix": 0,
-        "none": 0,
-        "truncated-projection": 0,
-        "truncated-side-effects": 2
-      },
-      "total_lost": 2,
-      "total_kept": 2
-    },
-    "profile": "neutral",
-    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
-    "steps": [
-      {
-        "params": {},
-        "recipe": "side-effect-unknown-truncate",
-        "seq": 0,
-        "target_finding_fp": "4d0ac9a58962bf3d",
-        "target_index": 2,
-        "lossy": true,
-        "loss": {
-          "truncated-side-effects": 2
-        }
-      }
-    ],
-    "version": "sesslint.plan/v1",
-    "policy": "salvage"
-  },
-  "expected_plan_without_acknowledgement": {
-    "blocked": [
-      {
-        "code": "SL102",
-        "finding_fp": "4d0ac9a58962bf3d",
-        "reason": "needs-acknowledgement"
-      }
-    ],
-    "fingerprint": "2d14b3b40d2187fc4f6f197b685ff5bc63de925617ddb62b429e44efe6226149",
-    "loss_accounting": {
-      "preview": {
-        "discarded-suffix": 0,
-        "none": 0,
-        "truncated-projection": 0
-      },
-      "total_lost": 0,
-      "total_kept": 4
-    },
-    "profile": "neutral",
-    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
-    "steps": [],
-    "version": "sesslint.plan/v1",
-    "policy": "salvage"
-  },
   "expected_conservative_plan": {
     "blocked": [
       {
@@ -143,5 +67,83 @@
     "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
     "steps": [],
     "version": "sesslint.plan/v1"
-  }
+  },
+  "expected_plan": {
+    "blocked": [],
+    "fingerprint": "b692a1ee7969da511452b5cf2fe867564932fab208c3cfb8faba374a680c2d17",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0,
+        "truncated-side-effects": 2
+      },
+      "total_kept": 2,
+      "total_lost": 2
+    },
+    "policy": "salvage",
+    "profile": "neutral",
+    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
+    "steps": [
+      {
+        "loss": {
+          "truncated-side-effects": 2
+        },
+        "lossy": true,
+        "min_policy": "salvage",
+        "params": {},
+        "recipe": "side-effect-unknown-truncate",
+        "recipe_version": "1.0.0",
+        "seq": 0,
+        "target_finding_fp": "4d0ac9a58962bf3d",
+        "target_index": 2
+      }
+    ],
+    "version": "sesslint.plan/v1"
+  },
+  "expected_plan_without_acknowledgement": {
+    "blocked": [
+      {
+        "code": "SL102",
+        "finding_fp": "4d0ac9a58962bf3d",
+        "reason": "needs-acknowledgement"
+      }
+    ],
+    "fingerprint": "2d14b3b40d2187fc4f6f197b685ff5bc63de925617ddb62b429e44efe6226149",
+    "loss_accounting": {
+      "preview": {
+        "discarded-suffix": 0,
+        "none": 0,
+        "truncated-projection": 0
+      },
+      "total_kept": 4,
+      "total_lost": 0
+    },
+    "policy": "salvage",
+    "profile": "neutral",
+    "source_hash": "713b8eb1affd982e7cf86a623b97d5d8f64f6b5b6cb9fdc7985f265d378d8775",
+    "steps": [],
+    "version": "sesslint.plan/v1"
+  },
+  "findings": [
+    {
+      "code": "SL102",
+      "evidence": {
+        "at_index": 2,
+        "first_unsafe_index": 2
+      },
+      "fingerprint": "4d0ac9a58962bf3d",
+      "message": "Dangling tool call with unknown side effects",
+      "message_template": "Tool call missing paired result (side-effects unknown)",
+      "related_ids": [],
+      "repairability": "lossy-explicit",
+      "schema_version": "sesslint.finding/v1",
+      "severity": "error",
+      "source": {
+        "line": 3,
+        "path": "session.json",
+        "record_id": "tc_unsafe"
+      }
+    }
+  ]
 }

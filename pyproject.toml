@@ -95,6 +95,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
+# sesslint._accel is an optional native accelerator that is absent on a clean
+# checkout; the codec probes for it inside a fail-closed try/except.
+[[tool.mypy.overrides]]
+module = "sesslint._accel"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["src/sesslint"]
 branch = true

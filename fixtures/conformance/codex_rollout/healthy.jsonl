@@ -1,0 +1,11 @@
+{"ordinal": 0, "payload": {"cli_version": "0.42.0", "id": "sess-syn-001", "model_provider": "openai", "originator": "codex_cli", "session_id": "sess-syn-001", "timestamp": "2026-09-17T10:00:00Z"}, "timestamp": "2026-09-17T10:00:00Z", "type": "session_meta"}
+{"ordinal": 1, "payload": {"content": [{"text": "list the files", "type": "input_text"}], "id": "msg_syn_01", "role": "user", "type": "message"}, "timestamp": "2026-09-17T10:01:00Z", "type": "response_item"}
+{"ordinal": 2, "payload": {"encrypted_content": "", "id": "rs_syn_01", "summary": [], "type": "reasoning"}, "timestamp": "2026-09-17T10:02:00Z", "type": "response_item"}
+{"ordinal": 3, "payload": {"arguments": "{\"command\": \"ls\"}", "call_id": "call_syn_01", "id": "fc_syn_01", "name": "exec", "type": "function_call"}, "timestamp": "2026-09-17T10:03:00Z", "type": "response_item"}
+{"ordinal": 4, "payload": {"call_id": "call_syn_01", "id": "fco_syn_01", "output": "file_a file_b", "type": "function_call_output"}, "timestamp": "2026-09-17T10:04:00Z", "type": "response_item"}
+{"ordinal": 5, "payload": {"call_id": "call_syn_02", "id": "ctc_syn_01", "input": "{}", "name": "wait_agent", "status": "completed", "type": "custom_tool_call"}, "timestamp": "2026-09-17T10:05:00Z", "type": "response_item"}
+{"ordinal": 6, "payload": {"call_id": "call_syn_02", "id": "ctc_syn_02", "output": "done", "type": "custom_tool_call_output"}, "timestamp": "2026-09-17T10:06:00Z", "type": "response_item"}
+{"ordinal": 7, "payload": {"content": [{"text": "listed", "type": "output_text"}], "id": "msg_syn_02", "phase": "final_answer", "role": "assistant", "type": "message"}, "timestamp": "2026-09-17T10:07:00Z", "type": "response_item"}
+{"ordinal": 8, "payload": {"model": "gpt-5.2", "turn_id": "turn_syn_01"}, "timestamp": "2026-09-17T10:08:00Z", "type": "turn_context"}
+{"ordinal": 9, "payload": {"duration_ms": 9000, "turn_id": "turn_syn_01", "type": "task_complete"}, "timestamp": "2026-09-17T10:09:00Z", "type": "event_msg"}
+{"ordinal": 10, "payload": {"first_window_id": "win_0", "message": "window compacted", "previous_window_id": null, "replacement_history": [], "window_id": "win_0", "window_number": 0}, "timestamp": "2026-09-17T10:10:00Z", "type": "compacted"}

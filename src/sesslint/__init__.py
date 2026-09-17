@@ -8,16 +8,22 @@ from sesslint._version import (
 )
 from sesslint.api import (
     Bundle,
+    DiscoveredRoot,
     PrecheckReason,
     PrecheckResult,
     build_bundle,
     check_dir,
     check_file,
+    discover_session_roots,
     precheck,
 )
 from sesslint.atomic import (
     atomic_write_bytes,
     atomic_write_text,
+)
+from sesslint.bundle import (
+    get_bundle_schema_path,
+    load_bundle_schema,
 )
 from sesslint.canonical import (
     CanonicalEvent,
@@ -91,6 +97,10 @@ from sesslint.io import (
     iter_events,
     read_header,
 )
+from sesslint.repair.planner import (
+    get_plan_schema_path,
+    load_plan_schema,
+)
 from sesslint.report import (
     Assurance,
     Counts,
@@ -152,6 +162,7 @@ __all__ = [
     "CodeInfo",
     "ContentLeakError",
     "Counts",
+    "DiscoveredRoot",
     "FileResult",
     "FileTooLargeError",
     "Finding",
@@ -200,6 +211,7 @@ __all__ = [
     "compute_finding_fingerprint",
     "compute_fingerprint",
     "compute_manifest_idempotency_key",
+    "discover_session_roots",
     "dump_manifest",
     "dump_report",
     "dump_session",
@@ -208,9 +220,11 @@ __all__ = [
     "extract_record_id",
     "fingerprint_file",
     "fingerprint_finding",
+    "get_bundle_schema_path",
     "get_code_info",
     "get_finding_schema_path",
     "get_manifest_schema_path",
+    "get_plan_schema_path",
     "get_report_schema_path",
     "get_session_schema_path",
     "guard",
@@ -218,8 +232,10 @@ __all__ = [
     "guarded_iter_events",
     "is_valid_code",
     "iter_events",
+    "load_bundle_schema",
     "load_finding_schema",
     "load_manifest_schema",
+    "load_plan_schema",
     "load_report_schema",
     "load_session_file",
     "load_session_schema",

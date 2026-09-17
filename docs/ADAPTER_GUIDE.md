@@ -11,7 +11,7 @@ In SessLint's architecture, an **Adapter** is a pure, side-effect-free translati
 ```mermaid
 flowchart LR
     A["Vendor Session File (.json / .jsonl)"] --> B["Adapter: detect_*()"]
-    B -->|Score >= 0.60| C["Adapter: load_*()"]
+    B -->|Score >= CONFIDENCE_MIN| C["Adapter: load_*()"]
     C --> D["Sequence[CanonicalEvent]"]
     C --> E["list[Finding] (SL301 / SL302)"]
     D --> F["Core Checks (SL001 - SL203)"]
@@ -39,7 +39,7 @@ def detect_<adapter>(first_bytes: bytes, filename: str) -> float:
     """Evaluate format confidence score for a candidate session artifact.
 
     Args:
-        first_bytes: The initial byte prefix of the file (up to SNIFF_BYTES = 4096).
+        first_bytes: The initial byte prefix of the file (up to SNIFF_BYTES = 65536).
         filename: Base filename of the target artifact.
 
     Returns:
@@ -48,7 +48,7 @@ def detect_<adapter>(first_bytes: bytes, filename: str) -> float:
 ```
 
 - **Threshold Rules**:
-  - A matching session must score $\ge \text{CONFIDENCE\_MIN}$ (`0.60`).
+  - A matching session must score $\ge \text{CONFIDENCE\_MIN}$ (`0.55`).
   - Competing adapters must score lower by at least $\text{MARGIN\_MIN}$ (`0.15`) to achieve a `clear-winner` verdict in `detect_format`.
 - **Heuristics**:
   - Prefer inspecting structural signatures in `first_bytes` (e.g. characteristic JSON keys, schema declarations, or JSONL record tags).
@@ -251,6 +251,43 @@ The table below tracks known open questions regarding upstream vendor formats. T
 | `claude-code-jsonl` | Summary / Compaction records | `SECONDARY_UNVERIFIED` | Monitored | Confirming whether Claude Code emits explicit checkpoint markers or relies on implicit turn drops. |
 | `openai-agents` | Compaction items in run items | `SECONDARY_UNVERIFIED` | Monitored | Schema verification for OpenAI Agents SDK memory condensation records. |
 | `openai-agents` | Multi-agent handoff delegation | `SECONDARY_UNVERIFIED` | Monitored | Conformance traces for `agent_handoff` items between distinct agent definitions. |
+| `codex-rollout` | Envelope `type` vocabulary expansion | `SECONDARY_UNVERIFIED` | Monitored | New envelope types beyond `session_meta`, `response_item`, `event_msg`, `turn_context`, `world_state`, `inter_agent_communication_metadata`, `compacted` route to SL302 by design. |
+| `codex-rollout` | `response_item` payload-type expansion | `SECONDARY_UNVERIFIED` | Monitored | New payload types beyond the observed set route to SL302 by design. |
+| `codex-rollout` | Explicit format-version marker | `SECONDARY_UNVERIFIED` | Monitored | Wild rollouts carry no `rollout_version`/`format_version`; if upstream adds one, the SL301 supported-set must be revisited. `cli_version` is never version-gated. |
+| `codex-rollout` | Subagent history interleave (`subagent_history_start_ordinal`) | `SECONDARY_UNVERIFIED` | Pending Research | Evidence whether forked-agent records interleave in one stream or arrive as separate rollouts; linear-by-ordinal parentage is the current honest model. |
+
+---
+
+## 6. Codex Rollout Adapter Notes (DW-T-12)
+
+`codex-rollout` ingests Codex CLI/Desktop `rollout-*.jsonl` session files.
+
+- **Envelope**: every record is `{type, timestamp, ordinal, payload}`.
+  `response_item` payloads carry their own `type`.
+- **Kind mapping**: `function_call`/`custom_tool_call` → `tool_call`
+  (actor `assistant`); `function_call_output`/`custom_tool_call_output` →
+  `tool_result` (actor `tool`, `correlation_id` = `call_id`); `message` →
+  `message` with role disambiguation (`developer` → `system`);
+  `agent_message` → `assistant` `message`; `reasoning` → `assistant` `opaque`
+  (encrypted content never projected); `compacted` → `compaction_boundary`;
+  `session_meta`/`event_msg`/`turn_context`/`world_state`/
+  `inter_agent_communication_metadata` → `system` `opaque` with identifier
+  fields only.
+- **Parentage**: rollout records have no explicit parent linkage. The adapter
+  maps `parent_id` linearly — an event's parent is the previous emitted event
+  when continuity is provable (no dropped line between them, and envelope
+  `ordinal` values consecutive when present). Torn/lost records surface as
+  honest new roots (`SL006`/`SL007`) rather than fabricated links.
+- **Version negotiation**: the wild format is versionless. Explicit markers
+  (`rollout_version`, `format_version`, `schema_version`, `export_version`)
+  are honored when present against `SUPPORTED_CODEX_ROLLOUT_VERSIONS`;
+  `cli_version` in `session_meta` is evidence-only and never gated.
+- **Async pairing**: Codex interleaves asynchronous tool activity by design;
+  `SL107` adjacency findings are expected on real sessions (see
+  `docs/MATRIX.md` — Codex Rollout Notes).
+- **Detection**: `detect_codex_rollout` scores the rollout envelope
+  signature; `detect_openai_agents` contains a matching disambiguation guard
+  so rollouts never tie with the Agents SDK export format.
 
 ---
 

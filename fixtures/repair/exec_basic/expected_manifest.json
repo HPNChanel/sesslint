@@ -6,14 +6,14 @@
       "record_id": "070ceee4b3954eb0"
     }
   ],
+  "assurance_ceiling": "A3",
   "declared_loss": [],
   "idempotency_key": "d74db087f9461f8565b339e59f0d24ded18aa5c99a7b8478926d6cfdf5808987",
   "input_fingerprint": "ad96f2a760a8054b95027fb1771b6158d8edc313aad98e8323a8ddfc8c53d4a6",
   "output_fingerprint": "2c6da187e0203f22d155f9262e909c6244a3ad3975c8c54d61117a69b6587dba",
+  "plan_fingerprint": "d6e4585c7c09df3b53faaf14ee5fdef615b7a89fc43b60ba43ff14b9f9b271d4",
   "policy": "conservative",
   "revalidate_report": null,
-  "schema_version": "sesslint.repair-manifest/v1",
-  "assurance_ceiling": "A3",
   "revalidation": {
     "assurance": "A3",
     "error_count": 0,
@@ -21,5 +21,6 @@
     "profile_version": "1.0.0",
     "report_fingerprint": null,
     "warning_count": 0
-  }
+  },
+  "schema_version": "sesslint.repair-manifest/v1"
 }

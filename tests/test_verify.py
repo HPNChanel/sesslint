@@ -78,8 +78,10 @@ def _write_ok_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         "source_hash": src_hash,
         "steps": [
             {
+                "min_policy": "conservative",
                 "params": {},
                 "recipe": "identical-duplicate-collapse",
+                "recipe_version": "1.0.0",
                 "seq": 0,
                 "target_finding_fp": "070ceee4b3954eb0",
                 "target_index": 1,
@@ -513,8 +515,10 @@ def test_50_step_plan_replay_perf(tmp_path: Path) -> None:
         repaired_events.append(ev)
         steps.append(
             {
+                "min_policy": "conservative",
                 "params": {},
                 "recipe": "identical-duplicate-collapse",
+                "recipe_version": "1.0.0",
                 "seq": i,
                 "target_finding_fp": f"fp-{i}",
                 "target_index": len(repaired_events) - 1,

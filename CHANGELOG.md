@@ -21,6 +21,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repo-level `.pre-commit-config.yaml` mirroring the lint/format/mypy gates
   (consumer hook spec `.pre-commit-hooks.yaml` unchanged).
 - Dev extra gains `pytest-cov` with `[tool.coverage]` branch-coverage config.
+- `sesslint scan --agent claude|codex|all` (DW-T-05): auto-discovers
+  well-known session roots (`$CLAUDE_CONFIG_DIR/projects` else
+  `~/.claude/projects`; `$CODEX_HOME/sessions` else `~/.codex/sessions`),
+  read-only, missing/non-directory roots classified `skipped`. New public
+  API `sesslint.discover_session_roots()` returning frozen `DiscoveredRoot`s.
+- `docs/INTEGRATIONS.md` (DW-T-06): Claude Code `SessionStart`/`PreCompact`
+  hook recipes with the exit-code contract, latency notes, and the
+  content-free guarantee for hook output.
+- `docs/REPORTING_CORRUPTION.md` (DW-T-02): the check → bundle → attach
+  flow for filing privacy-safe upstream corruption reports; new
+  `session_corruption` issue template plus a contact link to the guide.
+- `schemas/sesslint.plan.v1.json` and `schemas/sesslint.bundle.v1.json`
+  (DW-T-09): shipped JSON Schemas describing the actual emitted documents,
+  with `get_plan_schema_path`/`load_plan_schema` and
+  `get_bundle_schema_path`/`load_bundle_schema` accessors.
+- `codex-rollout` adapter (DW-T-12): fourth production format — detects,
+  parses, and validates Codex CLI/Desktop `rollout-*.jsonl` session files.
+  Envelope records (`type`/`timestamp`/`ordinal`/`payload`) canonicalize via
+  a per-payload-type map: `function_call`/`custom_tool_call` → `tool_call`,
+  `function_call_output`/`custom_tool_call_output` → `tool_result` (paired on
+  `call_id` via `correlation_id`), `message` → role-disambiguated `message`,
+  `agent_message` → assistant `message`, `reasoning` → `opaque` (encrypted
+  content never projected), `compacted` → `compaction_boundary`, and
+  telemetry envelopes (`session_meta`, `event_msg`, `turn_context`,
+  `world_state`, `inter_agent_communication_metadata`) → `system` `opaque`.
+  Parentage is mapped linearly from envelope `ordinal` continuity — dropped
+  or spliced records surface as honest new roots (`SL006`/`SL007`) rather
+  than fabricated links. Explicit format-version markers fail closed with
+  `SL301` (`cli_version` is evidence-only); unknown envelope/payload types
+  and unknown critical fields route to `SL302` with bounded discriminators.
+  Synthetic IDs namespace as `sesslint:synthetic:codex_rollout:*`.
+  `detect_openai_agents` carries an envelope-shape disambiguation guard so
+  rollouts never tie with the Agents SDK export format. Profile interplay:
+  `codex` is allowed under `neutral` and `openai-strict` (strict adjacency
+  applies by design — async pairings flag `SL107`), refused under
+  `claude-strict`. New conformance fixtures under
+  `fixtures/conformance/codex_rollout/` and corruption-family fixtures under
+  `fixtures/adapters/codex/` (all synthetic, `PROVENANCE.json` present).
+- Progress/cancellation contract (DW-T-13): `sesslint.progress` exports
+  frozen `ProgressEvent`, `CancellationToken`, and `OperationCancelled`.
+  `api.check_file`, `api.check_dir`, `api.check`, and `api.repair` accept an
+  optional `progress_cb` (phase-scoped events carrying counters and
+  basename/step coordinates only — never record content) and an optional
+  `cancel_token` checked at existing loop boundaries. Cancellation raises
+  `OperationCancelled` through the same cleanup paths as `KeyboardInterrupt`
+  (no partial outputs); CLI exit semantics unchanged (130). New
+  `--progress-json` flag on `check`/`scan`/`repair` emits NDJSON progress
+  events to stderr for supervising processes — stdout stays the result
+  channel.
+### Changed
+
+- `sesslint.plan/v1` steps now always serialize `min_policy` and
+  `recipe_version` (DW-T-08). Plan fingerprints therefore differ from
+  pre-change emissions for the same logical plan; plans written by older
+  builds that lack these fields fail closed on load. Unified
+  deserialization behind `RepairPlan.from_dict` (single authoritative path
+  for `load_plan` and verify), which also accepts `{"expected_plan": …}`
+  wrappers and recomputes a missing fingerprint.
+- `verify` session fallback parsing now enforces strict-reader parity
+  (DW-T-08): file/line size caps, NUL rejection, strict JSON constants (no
+  `NaN`/`Infinity`/out-of-range floats), and bounded nesting — matching
+  what `check` rejects.
+- Detector execution is unified in `sesslint.checks.runner.run_all_checks`
+  (DW-T-07); `sesslint.repair.executor.run_all_checks` remains as a
+  transitional re-export, and `verify` delegates to the same runner.
+- Shared `_event_*` helpers consolidated into `sesslint._events` (DW-T-10);
+  the executor keeps its stricter no-fallback copy semantics as
+  `_copy_events_as_dicts_strict`.
+- `sesslint scan`'s binary/UTF-8 probe now streams bounded 1 MiB chunks
+  with an incremental decoder (DW-T-11) instead of reading whole files —
+  same verdicts, O(chunk) memory.
+- Detection-failed coverage in `check` reports now derives from the
+  authoritative `ALL_RULES` registry (DW-T-04) instead of a duplicated
+  hardcoded list.
+- `DEMAND.md`: added the 2026-09-17 evidence refresh (new corruption classes
+  across Claude Code, Codex, OpenCode; adoption-signal qualification) plus
+  dated annotations under "Demand hypothesis" and "Future opportunities";
+  header status updated to reflect the published MVP. No FR/AC/DV clause was
+  modified.
 
 ### Fixed
 
@@ -32,6 +111,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[Unreleased]` compare base to `v0.2.0`.
 - `CONTRIBUTING.md` no longer points contributors at the git-ignored
   `docs/implementation/` path.
+- `mypy --strict` now passes on a clean checkout without the optional
+  `sesslint._accel` native extension: the module is declared
+  `ignore_missing_imports` in `[tool.mypy.overrides]` and the plain import
+  stays inside the existing fail-closed try/except, so no
+  environment-dependent `type: ignore` codes remain.
 
 ## [0.2.0] - 2026-09-16
 

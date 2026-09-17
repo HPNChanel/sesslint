@@ -26,6 +26,7 @@ from sesslint.adapters.detect import (
     FORMAT_AUTO,
     FORMAT_CANONICAL,
     FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
     FORMAT_OPENAI_AGENTS,
     MARGIN_MIN,
     REASON_CLEAR_WINNER,
@@ -60,12 +61,14 @@ def test_threshold_constants_pinned() -> None:
     assert EPSILON == 1e-9, "EPSILON must be 1e-9 for floating-point tie checks"
     assert FORMAT_CLAUDE_CODE == "claude-code-jsonl"
     assert FORMAT_OPENAI_AGENTS == "openai-agents"
+    assert FORMAT_CODEX_ROLLOUT == "codex-rollout"
     assert FORMAT_CANONICAL == "canonical"
     assert FORMAT_AUTO == "auto"
     assert SUPPORTED_FORMATS == frozenset(
         {
             "claude-code-jsonl",
             "openai-agents",
+            "codex-rollout",
             "canonical",
         }
     )
@@ -73,13 +76,15 @@ def test_threshold_constants_pinned() -> None:
 
 
 def test_each_vendor_clear_winner() -> None:
-    """3 vendor samples -> correct format, reason clear-winner, confidences recorded."""
+    """4 vendor samples -> correct format, reason clear-winner, confidences recorded."""
     claude_fixture = FIXTURES_DIR / "claude_sample.jsonl"
     openai_fixture = FIXTURES_DIR / "openai_sample.json"
+    codex_fixture = FIXTURES_DIR / "codex_sample.jsonl"
     canonical_fixture = FIXTURES_DIR / "canonical_sample.json"
 
     assert claude_fixture.is_file(), f"Missing fixture {claude_fixture}"
     assert openai_fixture.is_file(), f"Missing fixture {openai_fixture}"
+    assert codex_fixture.is_file(), f"Missing fixture {codex_fixture}"
     assert canonical_fixture.is_file(), f"Missing fixture {canonical_fixture}"
 
     # Claude Code sample
@@ -103,6 +108,18 @@ def test_each_vendor_clear_winner() -> None:
         res_openai.confidences[FORMAT_CANONICAL],
     )
     assert margin_openai >= MARGIN_MIN
+
+    # Codex rollout sample
+    res_codex = detect_format(codex_fixture)
+    assert res_codex.format == FORMAT_CODEX_ROLLOUT
+    assert res_codex.reason == REASON_CLEAR_WINNER
+    assert res_codex.confidences[FORMAT_CODEX_ROLLOUT] >= CONFIDENCE_MIN
+    margin_codex = res_codex.confidences[FORMAT_CODEX_ROLLOUT] - max(
+        res_codex.confidences[FORMAT_CLAUDE_CODE],
+        res_codex.confidences[FORMAT_OPENAI_AGENTS],
+        res_codex.confidences[FORMAT_CANONICAL],
+    )
+    assert margin_codex >= MARGIN_MIN
 
     # Canonical sample
     res_canonical = detect_format(canonical_fixture)

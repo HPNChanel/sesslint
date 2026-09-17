@@ -11,6 +11,7 @@ Implements directory scanning for session artifacts with:
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import stat
@@ -24,12 +25,24 @@ from sesslint.codes import SL001, SL301, SL302, Repairability, Severity
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.profiles import EffectiveConfig, resolve_effective_config
+from sesslint.progress import (
+    CancellationToken,
+    ProgressCallback,
+    ProgressEvent,
+    check_token,
+    emit,
+)
 from sesslint.report import minimize_path
 
 Verdict = Literal["healthy", "invalid", "unsupported", "unreadable", "skipped"]
 
 DEFAULT_MAX_FILES: int = 10000
 DEFAULT_MAX_BYTES: int = 1024 * 1024 * 1024  # 1GB
+
+# Bounded probe window for the binary/UTF-8 gate in _scan_single_file (DW-T-11):
+# the file is streamed in fixed-size chunks so per-file RSS stays O(chunk)
+# rather than O(file size).
+_PROBE_CHUNK_BYTES: int = 1024 * 1024  # 1 MiB
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,8 +178,31 @@ def _scan_single_file(
     except OSError:
         pass
 
+    # Binary check: NUL byte or invalid UTF-8 anywhere in the file, probed in
+    # bounded chunks (DW-T-11). Semantics are identical to the previous
+    # whole-file read: any NUL byte or undecodable sequence — head or tail —
+    # classifies the file unreadable before JSON decoding is attempted.
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    probe: str | None = None
     try:
-        raw_bytes = file_path.read_bytes()
+        with file_path.open("rb") as fh:
+            while True:
+                chunk = fh.read(_PROBE_CHUNK_BYTES)
+                if not chunk:
+                    break
+                if b"\x00" in chunk:
+                    probe = "nul"
+                    break
+                try:
+                    decoder.decode(chunk)
+                except UnicodeDecodeError:
+                    probe = "utf8"
+                    break
+        if probe is None:
+            try:
+                decoder.decode(b"", final=True)
+            except UnicodeDecodeError:
+                probe = "utf8"
     except OSError:
         finding = make_finding(
             code=SL001,
@@ -184,8 +220,7 @@ def _scan_single_file(
             warning_count=0,
         )
 
-    # Binary check: null byte or invalid utf-8 before JSON decoding
-    if b"\x00" in raw_bytes:
+    if probe == "nul":
         finding = make_finding(
             code=SL001,
             severity=Severity.ERROR,
@@ -201,9 +236,7 @@ def _scan_single_file(
             warning_count=0,
         )
 
-    try:
-        raw_bytes.decode("utf-8")
-    except UnicodeDecodeError:
+    if probe == "utf8":
         finding = make_finding(
             code=SL001,
             severity=Severity.ERROR,
@@ -400,8 +433,16 @@ def scan_path(
     profile: str = "neutral",
     confidence_min: float | None = None,
     margin_min: float | None = None,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
 ) -> ScanReport:
-    """Scan a target path or directory tree, returning a ScanReport with 5-bucket totals."""
+    """Scan a target path or directory tree, returning a ScanReport with 5-bucket totals.
+
+    When ``progress_cb`` is attached, one ``ProgressEvent(phase="scan")`` is
+    emitted per file actually inspected (skipped/special files do not emit);
+    ``total`` is ``None`` because the file count is not pre-walked (DW-T-13).
+    ``cancel_token`` is checked at each directory-entry boundary.
+    """
     if isinstance(max_files, bool) or not isinstance(max_files, int) or max_files <= 0:
         raise ValueError(f"max_files must be a positive integer (> 0), got {max_files}")
     if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
@@ -463,6 +504,7 @@ def scan_path(
             )
             return ScanReport(root_path=root_str, totals=ScanTotals(skipped=1), files=(res,))
 
+        check_token(cancel_token)
         try:
             file_res = _scan_single_file(target, format=format, effective_cfg=effective_cfg)
         except Exception as err:
@@ -480,6 +522,10 @@ def scan_path(
                 findings=(err_finding,),
                 error_count=1,
             )
+        emit(
+            progress_cb,
+            ProgressEvent(phase="scan", completed=1, total=1, item=target.name),
+        )
         totals = ScanTotals(
             healthy=1 if file_res.verdict == "healthy" else 0,
             invalid=1 if file_res.verdict == "invalid" else 0,
@@ -499,6 +545,7 @@ def scan_path(
     seen_files: set[tuple[int, int]] = set()
     file_results: list[FileResult] = []
     cumulative_bytes = 0
+    scanned_count = 0
 
     # Record root dir
     root_st = target.stat()
@@ -532,6 +579,7 @@ def scan_path(
             continue
 
         for entry in entries:
+            check_token(cancel_token)
             entry_p = Path(entry.path)
             disp_path = minimize_path(entry_p)
 
@@ -701,6 +749,16 @@ def scan_path(
                     error_count=1,
                 )
             file_results.append(res)
+            scanned_count += 1
+            emit(
+                progress_cb,
+                ProgressEvent(
+                    phase="scan",
+                    completed=scanned_count,
+                    total=None,
+                    item=entry_p.name,
+                ),
+            )
 
     # Sort results deterministically by path
     file_results.sort(key=lambda r: r.path)

@@ -359,6 +359,21 @@ def detect_openai_agents(first_bytes: bytes, filename: str) -> float:
     # Text content analysis
     decoded = data[:4096].decode("utf-8", errors="replace")
 
+    # DW-T-12 disambiguation: Codex rollout files share token vocabulary with
+    # this adapter (call_id, function_call) but carry a distinct envelope
+    # (type:"session_meta" / type:"response_item" records). Match the envelope
+    # shape, not the bare token, so quoted content can't trip the guard.
+    _rollout_envelope = (
+        '"type":"session_meta"' in decoded
+        or '"type": "session_meta"' in decoded
+        or '"type":"response_item"' in decoded
+        or '"type": "response_item"' in decoded
+        or '"type":"turn_context"' in decoded
+        or '"type": "turn_context"' in decoded
+    )
+    if _rollout_envelope:
+        return 0.3
+
     signals = 0
     if '"items"' in decoded:
         signals += 2

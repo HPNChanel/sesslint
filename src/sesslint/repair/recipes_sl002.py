@@ -6,39 +6,16 @@ discarding an incomplete or malformed terminal record suffix.
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Final
 
-from sesslint.canonical import to_canonical_dict
+from sesslint._events import _copy_events_as_dicts, _event_id
 from sesslint.codes import SL002
 from sesslint.policy.abstention import AffectedRegion
 from sesslint.repair.registry import Recipe, get_recipe, register_recipe
 
 if TYPE_CHECKING:
     from sesslint.repair.planner import PlanStep
-
-
-def _event_id(ev: Any) -> str | None:
-    i = getattr(ev, "id", None)
-    if i is None and isinstance(ev, Mapping):
-        i = ev.get("id")
-    return str(i) if i is not None else None
-
-
-def _copy_events_as_dicts(events: Sequence[Any]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    for ev in events:
-        if hasattr(ev, "to_canonical_dict"):
-            result.append(copy.deepcopy(ev.to_canonical_dict()))
-        elif isinstance(ev, Mapping):
-            result.append(copy.deepcopy(dict(ev)))
-        else:
-            try:
-                result.append(copy.deepcopy(to_canonical_dict(ev)))
-            except Exception:
-                result.append(copy.deepcopy(dict(ev)))
-    return result
 
 
 def apply_torn_terminal_record_discard(

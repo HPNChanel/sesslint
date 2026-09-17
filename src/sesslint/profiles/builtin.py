@@ -64,7 +64,7 @@ NEUTRAL_PROFILE: Final[Profile] = Profile(
     description=(
         "Vendor-neutral baseline profile using standard generic rules and default thresholds."
     ),
-    allowed_adapters=("canonical", "claude", "openai", "auto"),
+    allowed_adapters=("canonical", "claude", "openai", "codex", "auto"),
     enabled_rules=ALL_RULES,
     thresholds={"confidence_min": 0.55, "margin_min": 0.15},
     strict_unknown_critical=False,
@@ -91,7 +91,7 @@ OPENAI_STRICT_PROFILE: Final[Profile] = Profile(
     name="openai-strict",
     version="1.0.0",
     description="Strict profile for OpenAI Agents SDK sessions with high checkpoint sensitivity.",
-    allowed_adapters=("openai", "canonical", "auto"),
+    allowed_adapters=("openai", "codex", "canonical", "auto"),
     enabled_rules=ALL_RULES,
     thresholds={"confidence_min": 0.55, "margin_min": 0.15},
     strict_unknown_critical=True,

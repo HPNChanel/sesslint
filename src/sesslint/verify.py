@@ -29,22 +29,13 @@ from sesslint.canonical import (
     to_canonical_dict,
     to_canonical_json,
 )
-from sesslint.checks.checkpoint import check_checkpoint
-from sesslint.checks.graph import check_graph
-from sesslint.checks.identity import check_identities
-from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
-from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
+from sesslint.checks.runner import run_all_checks
 from sesslint.codes import Severity
-from sesslint.context import CheckContext
 from sesslint.finding import Finding
 from sesslint.profiles import get_profile
 from sesslint.repair.assurance import cap_assurance, compute_assurance_ceiling
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
-    PLAN_VERSION,
-    Blocked,
-    Loss,
-    PlanStep,
     RepairPlan,
     plan,
 )
@@ -103,53 +94,8 @@ class Verdict:
 
 
 def _load_plan_from_dict(data: Mapping[str, Any]) -> RepairPlan:
-    """Construct RepairPlan dataclass from dictionary without mutator module."""
-    steps_list: list[PlanStep] = []
-    for s in data.get("steps", []):
-        steps_list.append(
-            PlanStep(
-                seq=int(s.get("seq", 0)),
-                recipe=str(s.get("recipe", "")),
-                target_finding_fp=str(s.get("target_finding_fp", "")),
-                target_index=s.get("target_index"),
-                params=dict(s.get("params", {})),
-                lossy=bool(s.get("lossy", False)),
-                loss=dict(s.get("loss", {})),
-            )
-        )
-
-    blocked_list: list[Blocked] = []
-    for b in data.get("blocked", []):
-        blocked_list.append(
-            Blocked(
-                finding_fp=str(b.get("finding_fp", "")),
-                code=str(b.get("code", "")),
-                reason=str(b.get("reason", "")),
-            )
-        )
-
-    loss_raw = data.get("loss_accounting", {})
-    loss_preview = loss_raw.get("preview", {})
-    loss = Loss(
-        preview=dict(loss_preview),
-        total_lost=int(loss_raw.get("total_lost", 0)),
-        total_kept=int(loss_raw.get("total_kept", 0)),
-    )
-
-    fingerprint = data.get("fingerprint")
-    if not fingerprint or not isinstance(fingerprint, str):
-        fingerprint = compute_plan_fingerprint(data)
-
-    return RepairPlan(
-        source_hash=str(data.get("source_hash", "")),
-        profile=str(data.get("profile", "neutral")),
-        steps=tuple(steps_list),
-        blocked=tuple(blocked_list),
-        loss_accounting=loss,
-        fingerprint=str(fingerprint),
-        version=str(data.get("version", PLAN_VERSION)),
-        policy=str(data.get("policy", "conservative")),
-    )
+    """Construct RepairPlan via the single authoritative model deserializer (DW-T-08)."""
+    return RepairPlan.from_dict(data)
 
 
 def _resolve_manifest_profile(
@@ -201,7 +147,32 @@ def _resolve_manifest_profile(
 def _parse_session_events(
     raw_bytes: bytes,
 ) -> tuple[SessionHeader | None, list[SessionEvent]]:
-    """Parse session header and events from raw bytes in memory."""
+    """Parse session header and events from raw bytes with strict-reader parity.
+
+    Enforces the same hostile-input semantics as ``sesslint.io`` (DW-T-08):
+    bounded total size, bounded line size, NUL rejection, strict JSON constants
+    (no NaN/Infinity/out-of-range floats), and bounded nesting depth — while
+    still tolerating a missing session header, which is this fallback's purpose.
+    """
+    from sesslint.io import (
+        _STRICT_JSON_DECODER,
+        DEFAULT_READER_LIMITS,
+        check_nesting_depth,
+    )
+
+    limits = DEFAULT_READER_LIMITS
+    if len(raw_bytes) > limits.max_file_bytes:
+        raise ValueError(
+            f"File size {len(raw_bytes)} bytes exceeds maximum limit "
+            f"({limits.max_file_bytes} bytes)"
+        )
+
+    def _strict_obj(raw_text: str) -> Any:
+        obj = _STRICT_JSON_DECODER.decode(raw_text)
+        if not check_nesting_depth(obj, limits.max_depth):
+            raise ValueError("Nesting depth exceeds maximum limit")
+        return obj
+
     text = raw_bytes.decode("utf-8-sig").strip()
     if not text:
         return None, []
@@ -209,7 +180,7 @@ def _parse_session_events(
     # Single-document JSON format check (supports both compact and indented JSON)
     if text.startswith("{") and "events" in text:
         try:
-            data = json.loads(text)
+            data = _strict_obj(text)
             if isinstance(data, Mapping) and "events" in data and isinstance(data["events"], list):
                 from sesslint.adapters.canonical import load_canonical
 
@@ -255,7 +226,11 @@ def _parse_session_events(
     start_idx = 0
 
     try:
-        first_obj = json.loads(lines[0])
+        if "\x00" in lines[0]:
+            raise ValueError("Forbidden NUL byte on line 1")
+        if len(lines[0].encode("utf-8")) > limits.max_line_bytes:
+            raise ValueError("Line 1 exceeds maximum line byte limit")
+        first_obj = _strict_obj(lines[0])
         if (
             isinstance(first_obj, Mapping)
             and "schema_version" in first_obj
@@ -276,7 +251,11 @@ def _parse_session_events(
         pass
 
     for line in lines[start_idx:]:
-        obj = json.loads(line)
+        if "\x00" in line:
+            raise ValueError("Forbidden NUL byte in event record line")
+        if len(line.encode("utf-8")) > limits.max_line_bytes:
+            raise ValueError("Event record line exceeds maximum line byte limit")
+        obj = _strict_obj(line)
         if isinstance(obj, Mapping):
             events.append(parse_session_event(obj, seen_ids=None))
         else:
@@ -365,46 +344,15 @@ def _run_detector_checks(
     source_path: str = "<canonical>",
     profile_name: str = "neutral",
 ) -> list[Finding]:
-    """Run detector checks directly from checks modules without importing mutator."""
-    profile = get_profile(profile_name)
-    context = CheckContext.from_profile_and_adapter(profile, "canonical")
-    enabled = set(profile.enabled_rules)
-    findings: list[Finding] = []
-
-    if "SL003" in enabled:
-        findings.extend(check_identities(events, source_path=source_path, context=context))
-
-    graph_rules = {"SL004", "SL005", "SL006", "SL007"}
-    if graph_rules & enabled:
-        findings.extend(check_graph(events, source_path=source_path, context=context))
-
-    tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
-    if tp1_rules & enabled:
-        findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
-
-    tp2_rules = {"SL105", "SL106", "SL107", "SL108"}
-    if tp2_rules & enabled:
-        findings.extend(
-            check_tool_pairing_2(
-                events,
-                source_path=source_path,
-                profile=profile,
-                context=context,
-            )
+    """Run detector checks via the shared checks runner (no mutator import)."""
+    return list(
+        run_all_checks(
+            events,
+            profile=profile_name,
+            source_path=source_path,
+            adapter="canonical",
         )
-
-    cp_rules = {"SL201", "SL202", "SL203"}
-    if cp_rules & enabled:
-        findings.extend(
-            check_checkpoint(
-                events,
-                source_path=source_path,
-                checkpoint_sensitivity=profile.checkpoint_sensitivity,
-                context=context,
-            )
-        )
-
-    return [f for f in findings if f.code in enabled]
+    )
 
 
 def verify(

@@ -331,5 +331,26 @@ def test_cli_check_detection_failure_records_coverage(
     assert all(s["reason"] == "adapter-not-applicable" for s in cov["skipped"])
 
 
+def test_detection_failure_coverage_tracks_registry(tmp_path: Path) -> None:
+    """Detection-failure coverage must enumerate exactly the rule registry (DW-T-04).
+
+    Guards the fallback list against going stale when a new detector code is
+    registered: the emitted 'not checked' set must equal ALL_RULES.
+    """
+    from sesslint.api import check_file
+    from sesslint.profiles import ALL_RULES
+
+    session_file = tmp_path / "ambiguous.jsonl"
+    session_file.write_text('{"random": "payload"}\n', encoding="utf-8")
+
+    report = check_file(session_file)
+    skipped_checks = {s.check for s in report.coverage.skipped}
+    assert skipped_checks == set(ALL_RULES), (
+        f"Detection-failure coverage diverged from registry: "
+        f"missing={set(ALL_RULES) - skipped_checks}, "
+        f"extra={skipped_checks - set(ALL_RULES)}"
+    )
+
+
 def cast_any(value: Any) -> Any:
     return value

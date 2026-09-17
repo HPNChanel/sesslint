@@ -72,8 +72,10 @@ def _make_base_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
             {
                 "loss": {},
                 "lossy": False,
+                "min_policy": "conservative",
                 "params": {},
                 "recipe": "identical-duplicate-collapse",
+                "recipe_version": "1.0.0",
                 "seq": 0,
                 "target_finding_fp": "adv_fp_0",
                 "target_index": 1,

@@ -366,7 +366,7 @@ sesslint check <path> [OPTIONS]
 | :--- | :--- | :--- | :--- |
 | `path` | `Path` | *required* | Session file path (`.json` or `.jsonl`) or directory (with `--recursive`). |
 | `--recursive`, `-r` | `flag` | `False` | Recursively scan directories and report 5-bucket totals. |
-| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--json` | `flag` | `False` | Emit machine-readable JSON report. |
 | `--confidence-min` | `float` | `0.55` | Minimum auto-detection confidence threshold. |
@@ -388,17 +388,19 @@ Scan directory trees for session artifacts or display reader resource limits.
 
 ```bash
 sesslint scan [path] [OPTIONS]
+sesslint scan --agent claude|codex|all
 sesslint scan --show-limits
 ```
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `path` | `Path` | *optional* | Directory path to scan recursively (required unless `--show-limits`). |
+| `path` | `Path` | *optional* | Directory path to scan recursively (required unless `--agent` or `--show-limits`). |
+| `--agent` | `choice` | — | Auto-discover well-known session roots: `claude` (`$CLAUDE_CONFIG_DIR/projects` else `~/.claude/projects`), `codex` (`$CODEX_HOME/sessions` else `~/.codex/sessions`), or `all`. Read-only; an explicit `path` overrides it. |
 | `--show-limits` | `flag` | `False` | Display configured reader resource limits (max line length, max bytes) and exit 0. |
 | `--recursive`, `-r` | `flag` | `True` | Recursively scan directory trees (default: `True`). |
 | `--max-files` | `int` | `10000` | Maximum number of files to process before aborting. |
 | `--max-bytes` | `int` | `1GB` | Maximum cumulative bytes to process before aborting. |
-| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--json` | `flag` | `False` | Emit machine-readable JSON scan report with 5-bucket totals. |
 | `--follow-symlinks` | `flag` | `False` | Follow symbolic links during directory traversal. |
@@ -420,7 +422,7 @@ sesslint repair <path> --output <out_path> [OPTIONS]
 | `--output`, `-o` | `Path` | *required* | Distinct destination path (required unless `--dry-run`). |
 | `--dry-run` | `flag` | `False` | Computes and displays plan; creates zero files on disk. |
 | `--policy` | `choice` | `conservative` | `conservative` (zero data loss) or `salvage` (explicit lossy pruning). |
-| `--format` | `choice` | `auto` | Force input adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--format` | `choice` | `auto` | Force input adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
 | `--emit` | `choice` | `auto` | Output format: `auto` (input's own format), `canonical`, or `vendor`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 | `--plan` | `Path` | `None` | Path to a pre-computed plan JSON file to execute. |
@@ -445,7 +447,7 @@ sesslint export <path> --output <canonical_path> [--format auto] [--json]
 | :--- | :--- | :--- | :--- |
 | `path` | `Path` | *required* | Source session file (`.json` or `.jsonl`). |
 | `--output`, `-o` | `Path` | *required* | Destination canonical file (must not exist). |
-| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
 | `--json` | `flag` | `False` | Emit the content-free export summary as JSON. |
 
 ---
@@ -481,7 +483,7 @@ sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
 ---
 
 #### `sesslint bundle`
-Generate a privacy-safe diagnostic support bundle and fixture skeleton for troubleshooting or requesting adapter support.
+Generate a privacy-safe diagnostic support bundle and fixture skeleton for troubleshooting or requesting adapter support. Reporting a corrupted session to the agent vendor? See [Reporting a Corrupted Session](docs/REPORTING_CORRUPTION.md) for the check → bundle → attach flow.
 
 ```bash
 sesslint bundle <path> [OPTIONS]
@@ -492,7 +494,7 @@ sesslint bundle <path> [OPTIONS]
 | `path` | `Path` | *required* | Path to session file (`.json` or `.jsonl`). |
 | `--output`, `--out`, `-o` | `Path` | `None` | Path to output bundle JSON file (prints to stdout if omitted). |
 | `--json` | `flag` | `False` | Output bundle as JSON to stdout. |
-| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `canonical`. |
+| `--format` | `choice` | `auto` | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
 | `--profile` | `string` | `neutral` | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`). |
 
 ---
@@ -511,12 +513,13 @@ SessLint implements predictable, POSIX-compliant exit code semantics:
 
 ## Supported Formats
 
-SessLint includes three production adapters with fail-closed auto-detection:
+SessLint includes four production adapters with fail-closed auto-detection:
 
 | Format Identifier | Source Description | Typical File Pattern | Live Store Policy |
 | :--- | :--- | :--- | :--- |
 | `claude-code-jsonl` | Anthropic Claude Code session logs | `*.jsonl` | Read-only |
 | `openai-agents` | OpenAI Agents SDK export artifacts | `*.json` | SQLite live DB refused (`SQLITE_MAGIC`) |
+| `codex-rollout` | Codex CLI/Desktop `rollout-*.jsonl` session streams | `*.jsonl` | Read-only |
 | `canonical` | SessLint Canonical v1 standard | `*.json`, `*.jsonl` | Round-trip preserved |
 
 > [!CAUTION]
@@ -917,7 +920,7 @@ SessLint is engineered as both a standalone CLI and a high-performance, strictly
 
 ### One-Call Prevention API (`precheck`)
 
-The `sesslint.precheck` function provides a zero-exception, one-call gate for agent runtime systems. It returns a frozen `PrecheckResult` with exit codes (`0`, `1`, `2`) and normalized reason codes (`clean`, `findings-error`, `findings-warning`, `detection-failed`, `io-error`, `usage-error`).
+The `sesslint.precheck` function provides a zero-exception, one-call gate for agent runtime systems. It returns a frozen `PrecheckResult` with exit codes (`0`, `1`, `2`) and normalized reason codes (`clean`, `findings-error`, `findings-warning`, `detection-failed`, `io-error`, `usage-error`). For hook-level wiring into agent runtimes (Claude Code `SessionStart`/`PreCompact`), see [Agent Runtime Integrations](docs/INTEGRATIONS.md).
 
 #### 1. Pre-Resume Gate (Prevent corrupt session reload)
 ```python
@@ -986,6 +989,41 @@ verdict = api.verify(
 )
 assert verdict.ok, "Verification audit failed!"
 ```
+
+#### Progress and cancellation
+
+Long-running calls accept an optional `progress_cb` callback and a
+cooperative `CancellationToken` — the contract a UI, IDE extension, or CI
+wrapper needs to stay responsive. Events carry counters and coordinates only
+(phase, completed/total, basename) — never record content, and they never
+change output bytes or finding order.
+
+```python
+from sesslint import api
+from sesslint.progress import CancellationToken, OperationCancelled
+
+events = []
+scan_report = api.check_dir("logs/", recursive=True, progress_cb=events.append)
+# events: ProgressEvent(phase="scan", completed=N, total=None, item="<basename>")
+
+token = CancellationToken()
+token.cancel()  # e.g. from a UI Cancel button on another thread
+try:
+    api.check_file("session.jsonl", cancel_token=token)
+except OperationCancelled:
+    pass  # same cleanup guarantees as Ctrl+C: no partial outputs
+
+plan, manifest = api.repair(
+    "corrupted.jsonl", "repaired.jsonl",
+    progress_cb=events.append,   # repair:load → repair:plan → repair:step → done
+    cancel_token=token,
+)
+```
+
+The CLI exposes the same contract to supervising processes via
+`--progress-json` on `check`, `scan`, and `repair`: NDJSON progress events on
+**stderr** (stdout stays the result channel). Cancellation in the CLI keeps
+the existing semantics — exit code 130.
 
 ---
 

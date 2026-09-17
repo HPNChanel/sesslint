@@ -13,6 +13,7 @@ MANIFEST_SCHEMA_VERSION: Final[str] = "sesslint.repair-manifest/v1"
 ADAPTER_VERSIONS: Final[dict[str, str]] = {
     "canonical": "1.0.0",
     "claude-code-jsonl": "1.0.0",
+    "codex-rollout": "1.0.0",
     "openai-agents": "1.0.0",
 }
 

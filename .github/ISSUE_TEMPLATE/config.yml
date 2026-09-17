@@ -3,6 +3,9 @@ contact_links:
   - name: Security Vulnerabilities
     url: https://github.com/HPNChanel/sesslint/security/advisories/new
     about: Please report security issues confidentially via GitHub Security Advisories.
+  - name: Report Corruption Upstream
+    url: https://github.com/HPNChanel/sesslint/blob/main/docs/REPORTING_CORRUPTION.md
+    about: Filing a bug with the agent vendor? Package a privacy-safe bundle first — see the reporting guide.
   - name: Request Adapter Support
     url: https://github.com/HPNChanel/sesslint/issues/new?template=adapter_request.md
     about: Request support for a new AI agent session format or unsupported schema version using sesslint bundle.

@@ -1,6 +1,7 @@
 {
   "allowed_adapters": [
     "openai",
+    "codex",
     "canonical",
     "auto"
   ],

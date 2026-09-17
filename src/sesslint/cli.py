@@ -16,15 +16,18 @@ from sesslint import __version__
 from sesslint._version import get_version_info
 from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
 from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
+from sesslint.adapters.codex_rollout import SUPPORTED_CODEX_ROLLOUT_VERSIONS
 from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
 from sesslint.api import build_internal_error_envelope, validate_session
 from sesslint.errors import SesslintError
+from sesslint.progress import OperationCancelled
 
 load_session_file = validate_session
 
 FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "canonical": "canonical",
     "claude-code-jsonl": "Claude Code",
+    "codex-rollout": "Codex rollout",
     "openai-agents": "OpenAI Agents",
 }
 
@@ -138,6 +141,22 @@ def _validate_unit_interval_float(val_str: str) -> float:
     return val
 
 
+def _ndjson_progress_cb(args: argparse.Namespace) -> Any:
+    """Return an NDJSON progress callback writing to stderr, or None (DW-T-13).
+
+    stdout remains the result channel (FR-091); progress events are flushed
+    per line so a supervising process can consume them incrementally.
+    """
+    if not getattr(args, "progress_json", False):
+        return None
+    from sesslint.progress import ProgressEvent
+
+    def _cb(event: ProgressEvent) -> None:
+        print(json.dumps(event.to_dict(), sort_keys=True), file=sys.stderr, flush=True)
+
+    return _cb
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for sesslint CLI."""
     parser = argparse.ArgumentParser(
@@ -170,7 +189,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
         default="auto",
         help=argparse.SUPPRESS,
     )
@@ -227,7 +246,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -271,6 +290,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Output check report as a single canonical JSON document to stdout",
+    )
+    check_parser.add_argument(
+        "--progress-json",
+        action="store_true",
+        help="Emit NDJSON progress events to stderr (stdout stays the result channel)",
     )
     check_parser.add_argument(
         "--color",
@@ -340,7 +364,15 @@ def create_parser() -> argparse.ArgumentParser:
         type=Path,
         nargs="?",
         default=None,
-        help="Directory path to scan (or omit when using --show-limits)",
+        help="Directory path to scan (or omit when using --agent or --show-limits)",
+    )
+    scan_parser.add_argument(
+        "--agent",
+        choices=["claude", "codex", "all"],
+        default=None,
+        help="Scan well-known session roots for an agent runtime "
+        "($CLAUDE_CONFIG_DIR/projects or ~/.claude/projects; "
+        "$CODEX_HOME/sessions or ~/.codex/sessions). Explicit PATH overrides.",
     )
     scan_parser.add_argument(
         "--show-limits",
@@ -374,7 +406,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -399,6 +431,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Output scan report as JSON",
+    )
+    scan_parser.add_argument(
+        "--progress-json",
+        action="store_true",
+        help="Emit NDJSON progress events to stderr (stdout stays the result channel)",
     )
     scan_parser.add_argument(
         "--color",
@@ -453,7 +490,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     repair_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -477,6 +514,12 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Output manifest or plan in JSON format",
+    )
+    repair_parser.add_argument(
+        "--progress-json",
+        action="store_true",
+        default=False,
+        help="Emit NDJSON progress events to stderr (stdout stays the result channel)",
     )
     repair_parser.add_argument(
         "--plan",
@@ -613,7 +656,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     bundle_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -660,7 +703,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "canonical"],
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -717,6 +760,12 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 "name": "openai-agents",
                 "versions_supported": sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS),
             },
+            {
+                "default_profile": "openai-strict",
+                "description": "Codex CLI/Desktop rollout-*.jsonl adapter",
+                "name": "codex-rollout",
+                "versions_supported": sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS),
+            },
         ]
         if getattr(args, "json", False):
             print(json.dumps(adapter_data, indent=2, sort_keys=True))
@@ -762,33 +811,92 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             )
             return 0
 
-        if getattr(args, "path", None) is None:
-            parser.print_help(sys.stderr)
-            return 2
+        agent = getattr(args, "agent", None)
+        explicit_scan_path = getattr(args, "path", None)
+        if agent is not None and explicit_scan_path is not None:
+            print(
+                "Warning: explicit PATH overrides --agent; scanning PATH only.",
+                file=sys.stderr,
+            )
+            agent = None
 
-        target_scan_path: Path = args.path
-        if not target_scan_path.exists():
-            print(f"Error: Path not found: {target_scan_path}", file=sys.stderr)
+        if agent is None and explicit_scan_path is None:
+            parser.print_help(sys.stderr)
             return 2
 
         from sesslint.api import check_dir
 
-        try:
-            scan_rep = check_dir(
-                target_scan_path,
-                recursive=getattr(args, "recursive", True),
-                follow_symlinks=getattr(args, "follow_symlinks", False),
-                max_files=getattr(args, "max_files", 10000),
-                max_bytes=getattr(args, "max_bytes", 1024 * 1024 * 1024),
-                format=getattr(args, "format", "auto"),
-                profile=getattr(args, "profile", "neutral"),
-                confidence_min=getattr(args, "confidence_min", None),
-                margin_min=getattr(args, "margin_min", None),
-            )
-        except (ValueError, KeyError) as err:
-            err_msg = err.args[0] if err.args else str(err)
-            print(f"Error: {err_msg}", file=sys.stderr)
-            return 2
+        scan_kwargs: dict[str, Any] = {
+            "recursive": getattr(args, "recursive", True),
+            "follow_symlinks": getattr(args, "follow_symlinks", False),
+            "max_files": getattr(args, "max_files", 10000),
+            "max_bytes": getattr(args, "max_bytes", 1024 * 1024 * 1024),
+            "format": getattr(args, "format", "auto"),
+            "profile": getattr(args, "profile", "neutral"),
+            "confidence_min": getattr(args, "confidence_min", None),
+            "margin_min": getattr(args, "margin_min", None),
+            "progress_cb": _ndjson_progress_cb(args),
+        }
+
+        if agent is not None:
+            from sesslint.api import discover_session_roots
+            from sesslint.report import minimize_path
+            from sesslint.scan import FileResult, ScanReport, ScanTotals
+
+            requested = ("claude", "codex") if agent == "all" else (agent,)
+            roots = discover_session_roots(requested)
+
+            merged_files: list[FileResult] = []
+            totals = ScanTotals()
+
+            def _acc_totals(t: ScanTotals, r: ScanTotals) -> ScanTotals:
+                return ScanTotals(
+                    healthy=t.healthy + r.healthy,
+                    invalid=t.invalid + r.invalid,
+                    unsupported=t.unsupported + r.unsupported,
+                    unreadable=t.unreadable + r.unreadable,
+                    skipped=t.skipped + r.skipped,
+                )
+
+            try:
+                for root in roots:
+                    if root.exists:
+                        rep = check_dir(root.path, **scan_kwargs)
+                        merged_files.extend(rep.files)
+                        totals = _acc_totals(totals, rep.totals)
+                    else:
+                        skip_reason = (
+                            "agent-root-missing"
+                            if not root.path.exists()
+                            else "agent-root-not-directory"
+                        )
+                        merged_files.append(
+                            FileResult(
+                                path=minimize_path(root.path),
+                                verdict="skipped",
+                                skipped_reason=skip_reason,
+                            )
+                        )
+                        totals = _acc_totals(totals, ScanTotals(skipped=1))
+            except (ValueError, KeyError) as err:
+                err_msg = err.args[0] if err.args else str(err)
+                print(f"Error: {err_msg}", file=sys.stderr)
+                return 2
+
+            root_str = ";".join(minimize_path(r.path) for r in roots)
+            scan_rep = ScanReport(root_path=root_str, totals=totals, files=tuple(merged_files))
+        else:
+            target_scan_path: Path = args.path
+            if not target_scan_path.exists():
+                print(f"Error: Path not found: {target_scan_path}", file=sys.stderr)
+                return 2
+
+            try:
+                scan_rep = check_dir(target_scan_path, **scan_kwargs)
+            except (ValueError, KeyError) as err:
+                err_msg = err.args[0] if err.args else str(err)
+                print(f"Error: {err_msg}", file=sys.stderr)
+                return 2
 
         if getattr(args, "json", False):
             print(scan_rep.to_json())
@@ -850,6 +958,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     profile=getattr(args, "profile", "neutral"),
                     confidence_min=getattr(args, "confidence_min", None),
                     margin_min=getattr(args, "margin_min", None),
+                    progress_cb=_ndjson_progress_cb(args),
                 )
             except (ValueError, KeyError) as err:
                 err_msg = err.args[0] if err.args else str(err)
@@ -887,6 +996,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     profile=profile_opt,
                     confidence_min=getattr(args, "confidence_min", None),
                     margin_min=getattr(args, "margin_min", None),
+                    progress_cb=_ndjson_progress_cb(args),
                 )
             except (ValueError, KeyError) as err:
                 if "not permitted by profile" in str(err):
@@ -1046,6 +1156,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 dry_run=args.dry_run,
                 acknowledge_side_effects=ack_side_effects,
                 emit=getattr(args, "emit", "auto"),
+                progress_cb=_ndjson_progress_cb(args),
             )
 
             if args.dry_run:
@@ -1242,6 +1353,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _dispatch_command(args, parser)
     except KeyboardInterrupt:
         print("Operation cancelled by user", file=sys.stderr)
+        return 130
+    except OperationCancelled:
+        # Cooperative cancellation keeps the same CLI exit semantics as
+        # Ctrl+C (DW-T-13): cleanup already ran inside the callee.
+        print("Operation cancelled", file=sys.stderr)
         return 130
     except FileNotFoundError as err:
         print(f"Error: {err}", file=sys.stderr)

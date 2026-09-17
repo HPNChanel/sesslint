@@ -32,10 +32,10 @@ def test_formats_json(capsys: pytest.CaptureFixture[str]) -> None:
 
     items = json.loads(captured.out)
     assert isinstance(items, list)
-    assert len(items) == 3
+    assert len(items) == 4
 
     names = {item["name"] for item in items}
-    assert names == {"canonical", "claude-code-jsonl", "openai-agents"}
+    assert names == {"canonical", "claude-code-jsonl", "codex-rollout", "openai-agents"}
 
     for item in items:
         assert "default_profile" in item

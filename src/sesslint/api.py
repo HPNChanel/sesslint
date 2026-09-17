@@ -7,7 +7,9 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+import os
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +17,7 @@ from sesslint._version import CLI_VERSION
 from sesslint.adapters.detect import (
     FORMAT_CANONICAL,
     FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
     FORMAT_OPENAI_AGENTS,
     resolve_format,
     validate_detection_thresholds,
@@ -26,7 +29,15 @@ from sesslint.context import CheckContext
 from sesslint.exporter import ExportSummary
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
-from sesslint.profiles import resolve_effective_config
+from sesslint.profiles import ALL_RULES, resolve_effective_config
+from sesslint.progress import (
+    CancellationToken,
+    OperationCancelled,
+    ProgressCallback,
+    ProgressEvent,
+    check_token,
+)
+from sesslint.progress import emit as emit_progress
 from sesslint.repair import (
     RepairPlan,
     execute,
@@ -62,6 +73,8 @@ def check_file(
     profile: str = "neutral",
     confidence_min: float | None = None,
     margin_min: float | None = None,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
 ) -> Report:
     """Evaluate a single session file artifact and return a frozen Report.
 
@@ -71,6 +84,11 @@ def check_file(
         profile: Validation profile name (default 'neutral').
         confidence_min: Format auto-detection minimum confidence threshold.
         margin_min: Format auto-detection minimum margin threshold.
+        progress_cb: Optional callback receiving ``ProgressEvent`` records at
+            phase boundaries (``check:detect``, ``check:load``,
+            ``check:analyze``, ``check:report``) — DW-T-13.
+        cancel_token: Optional cooperative cancellation token checked at
+            phase boundaries.
 
     Returns:
         A frozen Report dataclass with findings, counts, assurance, and limitation.
@@ -94,6 +112,11 @@ def check_file(
         confidence_min=effective_cfg.confidence_min,
         margin_min=effective_cfg.margin_min,
     )
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="check:detect", completed=1, total=4, item=target_path.name),
+    )
+    check_token(cancel_token)
 
     if resolved_fmt is None:
         rep_findings = (
@@ -117,31 +140,14 @@ def check_file(
                 CoverageSkip(
                     check=r, reason="adapter-not-applicable", detail="format detection failed"
                 )
-                for r in (
-                    "SL001",
-                    "SL002",
-                    "SL003",
-                    "SL004",
-                    "SL005",
-                    "SL006",
-                    "SL007",
-                    "SL101",
-                    "SL102",
-                    "SL103",
-                    "SL104",
-                    "SL105",
-                    "SL106",
-                    "SL107",
-                    "SL108",
-                    "SL201",
-                    "SL202",
-                    "SL203",
-                    "SL301",
-                    "SL302",
-                )
+                for r in ALL_RULES
             ),
             adapter={"id": "unknown", "version": "unknown"},
             profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+        )
+        emit_progress(
+            progress_cb,
+            ProgressEvent(phase="check:report", completed=4, total=4, item=target_path.name),
         )
         return build_report(
             session_id=target_path.stem,
@@ -159,7 +165,11 @@ def check_file(
         else (
             "openai"
             if resolved_fmt == FORMAT_OPENAI_AGENTS
-            else ("canonical" if resolved_fmt == FORMAT_CANONICAL else resolved_fmt)
+            else (
+                "codex"
+                if resolved_fmt == FORMAT_CODEX_ROLLOUT
+                else ("canonical" if resolved_fmt == FORMAT_CANONICAL else resolved_fmt)
+            )
         )
     )
     if (
@@ -188,6 +198,17 @@ def check_file(
 
         events, o_findings = load_openai_agents(target_path)
         adapter_findings.extend(o_findings)
+    elif resolved_fmt == FORMAT_CODEX_ROLLOUT:
+        from sesslint.adapters.codex_rollout import load_codex_rollout
+
+        events, cx_findings = load_codex_rollout(target_path)
+        adapter_findings.extend(cx_findings)
+
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="check:load", completed=2, total=4, item=target_path.name),
+    )
+    check_token(cancel_token)
 
     adapter_skips: list[CoverageSkip] = []
     if any(f.code == "SL301" for f in adapter_findings):
@@ -216,6 +237,11 @@ def check_file(
         return_coverage=True,
     )
     all_findings = list(adapter_findings) + list(check_findings)
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="check:analyze", completed=3, total=4, item=target_path.name),
+    )
+    check_token(cancel_token)
 
     session_id: str = target_path.stem
     if events and hasattr(events[0], "session_id") and events[0].session_id:
@@ -234,6 +260,10 @@ def check_file(
     )
 
     fp = fingerprint_file(target_path)
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="check:report", completed=4, total=4, item=target_path.name),
+    )
     return build_report(
         session_id=session_id,
         source_fingerprint=fp,
@@ -256,6 +286,8 @@ def check_dir(
     profile: str = "neutral",
     confidence_min: float | None = None,
     margin_min: float | None = None,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
 ) -> ScanReport:
     """Scan a directory tree and return a ScanReport with aggregate 5-bucket totals.
 
@@ -269,6 +301,10 @@ def check_dir(
         profile: Validation profile name (default 'neutral').
         confidence_min: Format auto-detection minimum confidence threshold.
         margin_min: Format auto-detection minimum margin threshold.
+        progress_cb: Optional callback receiving ``ProgressEvent`` records per
+            inspected file (DW-T-13).
+        cancel_token: Optional cooperative cancellation token checked at each
+            directory-entry boundary.
 
     Returns:
         A frozen ScanReport dataclass.
@@ -288,6 +324,8 @@ def check_dir(
         profile=profile,
         confidence_min=confidence_min,
         margin_min=margin_min,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
     )
 
 
@@ -302,6 +340,8 @@ def repair(
     dry_run: bool = False,
     acknowledge_side_effects: bool = False,
     emit: Literal["auto", "canonical", "vendor"] = "auto",
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
 ) -> tuple[RepairPlan, RepairManifest | None]:
     """Safely plan and execute session repair.
 
@@ -319,6 +359,14 @@ def repair(
             (drop-only line-verbatim projection). 'canonical' always emits a
             canonical session stream. 'vendor' forces vendor write-back and is
             refused for canonical input.
+        progress_cb: Optional callback receiving ``ProgressEvent`` records at
+            stage boundaries (``repair:load``, ``repair:plan``,
+            ``repair:execute``, ``repair:done``) plus per-step
+            ``repair:step`` events during execution — DW-T-13.
+        cancel_token: Optional cooperative cancellation token. On cancel,
+            ``OperationCancelled`` propagates through the executor's existing
+            failure-cleanup path — no partial output or manifest is left
+            behind, same as ``KeyboardInterrupt``.
 
     Returns:
         Tuple of (RepairPlan, RepairManifest or None if dry_run).
@@ -349,7 +397,11 @@ def repair(
     else:
         resolved_format = str(format)
 
-    input_is_vendor = resolved_format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
+    input_is_vendor = resolved_format in (
+        FORMAT_CLAUDE_CODE,
+        FORMAT_OPENAI_AGENTS,
+        FORMAT_CODEX_ROLLOUT,
+    )
 
     # Resolve the emit target.
     if emit == "vendor":
@@ -378,6 +430,7 @@ def repair(
         # re-loads the source itself (preserving the session header).
         from sesslint.repair.executor import load_source_for_format, run_all_checks
 
+        check_token(cancel_token)
         _source_header, loaded_events, stream_findings = load_source_for_format(
             src, resolved_format
         )
@@ -391,6 +444,11 @@ def repair(
         if input_is_vendor:
             source_events = list(loaded_events)
             source_findings = all_findings
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="repair:load", completed=1, total=4, item=src.name),
+    )
+    check_token(cancel_token)
 
     if plan_path is not None:
         plan_obj = load_plan(plan_path, policy=policy)
@@ -417,6 +475,11 @@ def repair(
             raise RepairRefused(
                 "Findings exist on source session, but no authorized safe repair plan completes."
             )
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="repair:plan", completed=2, total=4, item=src.name),
+    )
+    check_token(cancel_token)
 
     exec_format = resolved_format if input_is_vendor else None
     if dry_run:
@@ -432,6 +495,16 @@ def repair(
             acknowledge_side_effects=acknowledge_side_effects,
             source_events=source_events,
             source_findings=source_findings,
+            progress_cb=progress_cb,
+            cancel_token=cancel_token,
+        )
+        emit_progress(
+            progress_cb,
+            ProgressEvent(phase="repair:execute", completed=3, total=4, item=src.name),
+        )
+        emit_progress(
+            progress_cb,
+            ProgressEvent(phase="repair:done", completed=4, total=4, item=src.name),
         )
         return plan_obj, None
 
@@ -451,6 +524,16 @@ def repair(
         acknowledge_side_effects=acknowledge_side_effects,
         source_events=source_events,
         source_findings=source_findings,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+    )
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="repair:execute", completed=3, total=4, item=src.name),
+    )
+    emit_progress(
+        progress_cb,
+        ProgressEvent(phase="repair:done", completed=4, total=4, item=src.name),
     )
     return plan_obj, manifest
 
@@ -527,6 +610,8 @@ def check(
     max_bytes: int = DEFAULT_MAX_BYTES,
     confidence_min: float | None = None,
     margin_min: float | None = None,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
 ) -> Report | ScanReport:
     """Unified check dispatcher: evaluates a single session file or scans a directory tree.
 
@@ -540,6 +625,9 @@ def check(
         max_bytes: Maximum cumulative bytes in directory mode.
         confidence_min: Format detection minimum confidence threshold.
         margin_min: Format detection minimum margin threshold.
+        progress_cb: Optional callback receiving ``ProgressEvent`` records
+            (DW-T-13).
+        cancel_token: Optional cooperative cancellation token.
 
     Returns:
         Report instance for single file, or ScanReport instance for directory.
@@ -562,6 +650,8 @@ def check(
             profile=profile,
             confidence_min=confidence_min,
             margin_min=margin_min,
+            progress_cb=progress_cb,
+            cancel_token=cancel_token,
         )
     return check_file(
         target_path,
@@ -569,6 +659,8 @@ def check(
         profile=profile,
         confidence_min=confidence_min,
         margin_min=margin_min,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
     )
 
 
@@ -628,11 +720,89 @@ def export_file(
     return export_to_canonical(source_path, output_path, format=format)
 
 
+@dataclass(frozen=True, slots=True)
+class DiscoveredRoot:
+    """A candidate well-known agent session root for scan auto-discovery (DW-T-05).
+
+    ``exists`` is True only when the candidate is a real directory at the root
+    level (a symlinked root resolves False so callers never traverse a link
+    they did not explicitly opt into).
+    """
+
+    agent: str
+    path: Path
+    exists: bool
+    source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize with path minimized (content-free, privacy-safe)."""
+        from sesslint.report import minimize_path
+
+        return {
+            "agent": self.agent,
+            "exists": self.exists,
+            "path": minimize_path(self.path),
+            "source": self.source,
+        }
+
+
+def discover_session_roots(
+    agents: Sequence[str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> tuple[DiscoveredRoot, ...]:
+    """Enumerate well-known agent session roots in deterministic order (DW-T-05).
+
+    Read-only: performs no writes and creates no directories. Candidates, in
+    order: ``claude`` → ``$CLAUDE_CONFIG_DIR/projects/`` else
+    ``~/.claude/projects/``; ``codex`` → ``$CODEX_HOME/sessions/`` else
+    ``~/.codex/sessions/``. ``env`` and ``home`` are injectable for testing.
+    """
+    environ = os.environ if env is None else env
+    home_dir = Path.home() if home is None else home
+    selected = tuple(agents) if agents is not None else ("claude", "codex")
+
+    roots: list[DiscoveredRoot] = []
+    for agent in selected:
+        if agent == "claude":
+            override = environ.get("CLAUDE_CONFIG_DIR", "").strip()
+            if override:
+                candidate = Path(override) / "projects"
+                source = "env"
+            else:
+                candidate = home_dir / ".claude" / "projects"
+                source = "default"
+        elif agent == "codex":
+            override = environ.get("CODEX_HOME", "").strip()
+            if override:
+                candidate = Path(override) / "sessions"
+                source = "env"
+            else:
+                candidate = home_dir / ".codex" / "sessions"
+                source = "default"
+        else:
+            raise ValueError(f"Unknown agent {agent!r}: expected 'claude' or 'codex'")
+        roots.append(
+            DiscoveredRoot(
+                agent=agent,
+                path=candidate,
+                exists=candidate.is_dir() and not candidate.is_symlink(),
+                source=source,
+            )
+        )
+    return tuple(roots)
+
+
 __all__ = [
     "Bundle",
+    "CancellationToken",
+    "DiscoveredRoot",
     "ExportSummary",
+    "OperationCancelled",
     "PrecheckReason",
     "PrecheckResult",
+    "ProgressEvent",
     "ScanReport",
     "VerifyVerdict",
     "build_bundle",
@@ -640,6 +810,7 @@ __all__ = [
     "check",
     "check_dir",
     "check_file",
+    "discover_session_roots",
     "export_file",
     "plan",
     "precheck",

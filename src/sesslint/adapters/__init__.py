@@ -18,11 +18,17 @@ from sesslint.adapters.claude_code import (
     load_claude_code,
     load_claude_code_session,
 )
+from sesslint.adapters.codex_rollout import (
+    detect_codex_rollout,
+    load_codex_rollout,
+    load_codex_rollout_session,
+)
 from sesslint.adapters.detect import (
     CONFIDENCE_MIN,
     FORMAT_AUTO,
     FORMAT_CANONICAL,
     FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
     FORMAT_OPENAI_AGENTS,
     MARGIN_MIN,
     SNIFF_BYTES,
@@ -62,6 +68,7 @@ __all__ = [
     "FORMAT_AUTO",
     "FORMAT_CANONICAL",
     "FORMAT_CLAUDE_CODE",
+    "FORMAT_CODEX_ROLLOUT",
     "FORMAT_OPENAI_AGENTS",
     "MARGIN_MIN",
     "MAX_PROJECTED_CHECKPOINTS",
@@ -74,6 +81,7 @@ __all__ = [
     "VALID_FORMAT_OPTIONS",
     "detect_canonical",
     "detect_claude_code",
+    "detect_codex_rollout",
     "detect_format",
     "detect_openai_agents",
     "dump_canonical",
@@ -82,6 +90,8 @@ __all__ = [
     "load_canonical_session",
     "load_claude_code",
     "load_claude_code_session",
+    "load_codex_rollout",
+    "load_codex_rollout_session",
     "load_openai_agents",
     "load_openai_agents_session",
     "project_run_state",

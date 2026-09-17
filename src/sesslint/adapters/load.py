@@ -10,14 +10,18 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
+from sesslint.adapters.detect import (
+    FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
+    FORMAT_OPENAI_AGENTS,
+)
 from sesslint.canonical import SessionEvent
 from sesslint.finding import Finding
 
 
 def is_vendor_format(format: str | None) -> bool:
     """Return True when ``format`` names a vendor (non-canonical) adapter."""
-    return format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
+    return format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS, FORMAT_CODEX_ROLLOUT)
 
 
 def load_vendor_events(
@@ -38,6 +42,11 @@ def load_vendor_events(
         from sesslint.adapters.openai_agents import load_openai_agents
 
         events, findings = load_openai_agents(path)
+        return list(events), list(findings)
+    if format == FORMAT_CODEX_ROLLOUT:
+        from sesslint.adapters.codex_rollout import load_codex_rollout
+
+        events, findings = load_codex_rollout(path)
         return list(events), list(findings)
     raise ValueError(f"Not a vendor format: {format!r}")
 

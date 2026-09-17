@@ -4,6 +4,7 @@
     "adapters": {
       "canonical": "1.0.0",
       "claude-code-jsonl": "1.0.0",
+      "codex-rollout": "1.0.0",
       "openai-agents": "1.0.0"
     },
     "cli": "0.2.0",
@@ -21,6 +22,7 @@
       "adapters": {
         "canonical": "1.0.0",
         "claude-code-jsonl": "1.0.0",
+        "codex-rollout": "1.0.0",
         "openai-agents": "1.0.0"
       },
       "cli": "0.2.0",
@@ -38,6 +40,7 @@
     "confidences": {
       "canonical": 0.0,
       "claude-code-jsonl": 1.0,
+      "codex-rollout": 0.0,
       "openai-agents": 0.2
     },
     "reason": "clear-winner",

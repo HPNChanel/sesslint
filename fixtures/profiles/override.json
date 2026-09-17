@@ -4,6 +4,7 @@
       "canonical",
       "claude",
       "openai",
+      "codex",
       "auto"
     ],
     "checkpoint_sensitivity": "default",

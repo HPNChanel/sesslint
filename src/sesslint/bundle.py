@@ -20,10 +20,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from sesslint._version import (
     CLI_VERSION,
@@ -411,3 +412,23 @@ def build_bundle(
         report=report_dict,
         fixture_skeleton=skeleton_dict,
     )
+
+
+def get_bundle_schema_path() -> Path:
+    """Return the filesystem path to schemas/sesslint.bundle.v1.json."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    dev_path = repo_root / "schemas" / "sesslint.bundle.v1.json"
+    if dev_path.is_file():
+        return dev_path
+    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.bundle.v1.json"
+    if prefix_path.is_file():
+        return prefix_path
+    return dev_path
+
+
+def load_bundle_schema() -> dict[str, Any]:
+    """Load the committed JSON Schema for sesslint.bundle/v1 as a dict."""
+    schema_path = get_bundle_schema_path()
+    if not schema_path.is_file():
+        raise FileNotFoundError(f"Bundle schema not found at {schema_path}")
+    return cast(dict[str, Any], json.loads(schema_path.read_text(encoding="utf-8")))

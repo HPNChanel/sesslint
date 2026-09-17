@@ -1,0 +1,6 @@
+{"ordinal": 0, "payload": {"cli_version": "0.42.0", "session_id": "sess-syn-003"}, "timestamp": "2026-09-17T10:00:00Z", "type": "session_meta"}
+{"ordinal": 1, "payload": {"content": [{"text": "read two files", "type": "input_text"}], "id": "msg_syn_20", "role": "user", "type": "message"}, "timestamp": "2026-09-17T10:01:00Z", "type": "response_item"}
+{"ordinal": 2, "payload": {"arguments": "{\"command\": \"cat a\"}", "call_id": "call_syn_20", "id": "fc_syn_20", "name": "exec", "type": "function_call"}, "timestamp": "2026-09-17T10:02:00Z", "type": "response_item"}
+{"ordinal": 3, "payload": {"arguments": "{\"command\": \"cat b\"}", "call_id": "call_syn_21", "id": "fc_syn_21", "name": "exec", "type": "function_call"}, "timestamp": "2026-09-17T10:03:00Z", "type": "response_item"}
+{"ordinal": 4, "payload": {"call_id": "call_syn_20", "id": "fco_syn_20", "output": "contents_a", "type": "function_call_output"}, "timestamp": "2026-09-17T10:04:00Z", "type": "response_item"}
+{"ordinal": 5, "payload": {"call_id": "call_syn_21", "id": "fco_syn_21", "output": "contents_b", "type": "function_call_output"}, "timestamp": "2026-09-17T10:05:00Z", "type": "response_item"}

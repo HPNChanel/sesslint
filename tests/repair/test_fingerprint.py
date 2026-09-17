@@ -87,6 +87,8 @@ def test_load_plan_refuses_salvage_under_conservative_policy() -> None:
             {
                 "seq": 0,
                 "recipe": "unresolvable-branch-amputate",
+                "min_policy": "salvage",
+                "recipe_version": "1.0.0",
                 "target_finding_fp": "f001",
                 "target_index": 0,
                 "params": {},
@@ -136,6 +138,8 @@ def test_execute_refuses_salvage_plan_under_conservative_policy(tmp_path: Path) 
             {
                 "seq": 0,
                 "recipe": "unresolvable-branch-amputate",
+                "min_policy": "salvage",
+                "recipe_version": "1.0.0",
                 "target_finding_fp": "f001",
                 "target_index": 0,
                 "params": {},

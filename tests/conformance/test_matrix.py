@@ -17,6 +17,7 @@ FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures"
 CANONICAL_FIXTURE = FIXTURES_DIR / "determinism" / "repeat" / "repeat_session.json"
 CLAUDE_FIXTURE = FIXTURES_DIR / "claude_code" / "basic.jsonl"
 OPENAI_FIXTURE = FIXTURES_DIR / "openai_agents" / "items_basic.json"
+CODEX_FIXTURE = FIXTURES_DIR / "conformance" / "codex_rollout" / "healthy.jsonl"
 
 
 def test_matrix_registry_profiles() -> None:
@@ -62,6 +63,24 @@ def test_openai_adapter_profile_matrix() -> None:
     assert code_refused == 2
 
 
+def test_codex_adapter_profile_matrix() -> None:
+    """Codex rollout adapter is accepted under neutral and openai-strict,
+    refused under claude-strict.
+
+    openai-strict covers rollout semantics: codex is an OpenAI-ecosystem
+    format and inherits strict adjacency (SL107=ERROR on async pairings) and
+    strict unknown-critical handling by design.
+    """
+    # Accepted under neutral and openai-strict
+    for prof in ("neutral", "openai-strict"):
+        code = main(["check", str(CODEX_FIXTURE), "--profile", prof])
+        assert code == 0, f"Codex fixture should succeed under {prof}"
+
+    # Refused under claude-strict (disallowed adapter exits 2)
+    code_refused = main(["check", str(CODEX_FIXTURE), "--profile", "claude-strict"])
+    assert code_refused == 2
+
+
 def test_matrix_doc_exists_and_matches() -> None:
     """docs/MATRIX.md must exist and document the 3 standard profiles."""
     matrix_file = Path(__file__).resolve().parent.parent.parent / "docs" / "MATRIX.md"
@@ -70,6 +89,7 @@ def test_matrix_doc_exists_and_matches() -> None:
     assert "canonical" in content
     assert "claude-code-jsonl" in content
     assert "openai-agents" in content
+    assert "codex-rollout" in content
     assert "neutral" in content
     assert "claude-strict" in content
     assert "openai-strict" in content

@@ -1,0 +1,5 @@
+{"ordinal": 0, "payload": {"cli_version": "0.42.0", "session_id": "sess-syn-111"}, "timestamp": "2026-09-17T10:00:00Z", "type": "session_meta"}
+{"ordinal": 1, "payload": {"call_id": "call_async_01", "id": "ctc_p01", "input": "{}", "name": "exec", "type": "custom_tool_call"}, "timestamp": "2026-09-17T10:01:00Z", "type": "response_item"}
+{"ordinal": 2, "payload": {"content": [{"text": "working", "type": "output_text"}], "id": "msg_p01", "role": "assistant", "type": "message"}, "timestamp": "2026-09-17T10:02:00Z", "type": "response_item"}
+{"ordinal": 3, "payload": {"encrypted_content": "", "id": "rs_p01", "summary": [], "type": "reasoning"}, "timestamp": "2026-09-17T10:03:00Z", "type": "response_item"}
+{"ordinal": 4, "payload": {"call_id": "call_async_01", "id": "ctc_p02", "output": "async done", "type": "custom_tool_call_output"}, "timestamp": "2026-09-17T10:04:00Z", "type": "response_item"}

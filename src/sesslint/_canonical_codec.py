@@ -313,7 +313,7 @@ def _resolve_active_codec() -> CanonicalCodec:
         return PurePythonCanonicalCodec()
 
     try:
-        import sesslint._accel as _accel  # type: ignore[import-untyped]
+        import sesslint._accel as _accel
 
         if getattr(_accel, "CODEC_INTERFACE_VERSION", None) == CODEC_INTERFACE_VERSION:
             native_factory = getattr(_accel, "NativeCanonicalCodec", None)

@@ -23,6 +23,7 @@ from typing import Any, Final
 
 from sesslint.adapters.canonical import detect_canonical
 from sesslint.adapters.claude_code import detect_claude_code
+from sesslint.adapters.codex_rollout import detect_codex_rollout
 from sesslint.adapters.openai_agents import SQLITE_MAGIC, detect_openai_agents
 from sesslint.codes import SL001, SL302, Repairability, Severity
 from sesslint.finding import Finding, SourceRef, make_finding
@@ -34,6 +35,7 @@ EPSILON: Final[float] = 1e-9
 
 FORMAT_CLAUDE_CODE: Final[str] = "claude-code-jsonl"
 FORMAT_OPENAI_AGENTS: Final[str] = "openai-agents"
+FORMAT_CODEX_ROLLOUT: Final[str] = "codex-rollout"
 FORMAT_CANONICAL: Final[str] = "canonical"
 FORMAT_AUTO: Final[str] = "auto"
 
@@ -41,6 +43,7 @@ SUPPORTED_FORMATS: Final[frozenset[str]] = frozenset(
     {
         FORMAT_CLAUDE_CODE,
         FORMAT_OPENAI_AGENTS,
+        FORMAT_CODEX_ROLLOUT,
         FORMAT_CANONICAL,
     }
 )
@@ -161,6 +164,7 @@ def detect_format(
             confidences={
                 FORMAT_CLAUDE_CODE: 0.0,
                 FORMAT_OPENAI_AGENTS: 0.0,
+                FORMAT_CODEX_ROLLOUT: 0.0,
                 FORMAT_CANONICAL: 0.0,
             },
             reason=REASON_REFUSED_LIVE_DB,
@@ -174,6 +178,7 @@ def detect_format(
             confidences={
                 FORMAT_CLAUDE_CODE: 0.0,
                 FORMAT_OPENAI_AGENTS: 0.0,
+                FORMAT_CODEX_ROLLOUT: 0.0,
                 FORMAT_CANONICAL: 0.0,
             },
             reason=REASON_EMPTY,
@@ -184,6 +189,7 @@ def detect_format(
     raw_scores: dict[str, float] = {
         FORMAT_CLAUDE_CODE: detect_claude_code(head_bytes, filename),
         FORMAT_OPENAI_AGENTS: detect_openai_agents(head_bytes, filename),
+        FORMAT_CODEX_ROLLOUT: detect_codex_rollout(head_bytes, filename),
         FORMAT_CANONICAL: detect_canonical(head_bytes, filename),
     }
 

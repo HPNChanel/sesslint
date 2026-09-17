@@ -1,0 +1,2 @@
+{"ordinal": 0, "payload": {"cli_version": "0.42.0", "id": "sess-syn-002", "rollout_version": "99.0.0", "session_id": "sess-syn-002"}, "timestamp": "2026-09-17T10:00:00Z", "type": "session_meta"}
+{"ordinal": 1, "payload": {"content": [{"text": "hi", "type": "input_text"}], "id": "msg_syn_10", "role": "user", "type": "message"}, "timestamp": "2026-09-17T10:01:00Z", "type": "response_item"}

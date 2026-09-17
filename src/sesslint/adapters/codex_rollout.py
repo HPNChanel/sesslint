@@ -1,0 +1,1219 @@
+"""Codex CLI/Desktop ``rollout-*.jsonl`` session adapter (DW-T-12).
+
+This module ingests Codex rollout session files — newline-delimited JSON
+records written by the Codex CLI/Desktop agent runtime — into the canonical
+session event graph (sesslint.session/v1).
+
+Observed rollout envelope (every record):
+
+    {"timestamp": <RFC3339>, "type": <envelope_type>, "ordinal": <int>,
+     "payload": {...}}
+
+Envelope ``type`` values seen in the wild: ``session_meta`` (header-like
+metadata), ``response_item`` (conversation items), ``event_msg`` (lifecycle
+signals), ``turn_context`` (per-turn run context), ``world_state``,
+``inter_agent_communication_metadata``, and ``compacted`` (window compaction).
+
+``response_item`` payloads carry their own ``type``: ``message``,
+``agent_message``, ``reasoning``, ``function_call``, ``custom_tool_call``,
+``function_call_output``, ``custom_tool_call_output``.
+
+Guarantees:
+- Zero live-store mutation: JSONL read-only ingestion; refuses SQLite magic
+  via the shared detection gate.
+- call_id pairing preserved in ``correlation_id`` for tool calls and results.
+- ``compacted`` records map to canonical ``compaction_boundary`` events so
+  post-compaction corruption analysis sees the same boundary structure other
+  adapters expose.
+- Run-metadata records (``event_msg``, ``turn_context``, ``world_state``,
+  ``session_meta``, ``inter_agent_communication_metadata``) are kept as
+  ``system``/``opaque`` events — preserved in DAG position without pretending
+  to be conversational content (unknown noncritical records may be kept
+  opaque, FR-021).
+- Unknown envelope types and unknown ``response_item`` payload types route to
+  SL302 with bounded discriminator evidence; missing/unsupported explicit
+  format-version markers (``rollout_version``/``format_version``/
+  ``schema_version``/``export_version``) fail closed with SL301. The rollout
+  format carries no version field in the wild — ``cli_version`` in
+  ``session_meta`` is an application version and is recorded as evidence only,
+  never version-gated.
+- Enforces strict hostile-input bounds (max_file_bytes, max_line_bytes,
+  max_depth, max_records) with SL001/SL002 terminal-torn distinction.
+- Deterministic: identical bytes produce identical event IDs, hashes, and
+  finding fingerprints.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+import re
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any, BinaryIO, Final
+
+from sesslint.adapters.openai_agents import (
+    EventList,
+    SourceMetadata,
+    normalize_version,
+)
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.synthetic import (
+    SyntheticIdCollisionGuard,
+    synthetic_event_id,
+)
+from sesslint.canonical import (
+    MUTATING_TOOL_NAMES,
+    READ_ONLY_TOOL_NAMES,
+    ActorLiteral,
+    KindLiteral,
+    Session,
+    SessionEvent,
+    SessionHeader,
+    canonical_bytes,
+    compute_content_hash,
+)
+from sesslint.codes import SL001, SL002, SL301, SL302, Repairability, Severity
+from sesslint.errors import MaxRecordsExceededError
+from sesslint.finding import Finding, SourceRef, make_finding, sort_findings
+from sesslint.io import (
+    _STRICT_JSON_DECODER,
+    DEFAULT_READER_LIMITS,
+    ReaderLimits,
+    _RawLine,
+    check_nesting_depth,
+    extract_record_id,
+)
+
+CanonicalEvent = SessionEvent
+
+SQLITE_MAGIC: Final[bytes] = b"SQLite format 3\x00"
+
+# Explicit rollout format-version markers. The format carries no version field
+# in the wild; these are honored when present so a future versioned rollout
+# fails closed instead of being silently misinterpreted.
+SUPPORTED_CODEX_ROLLOUT_VERSIONS: Final[frozenset[str]] = frozenset(
+    {
+        "1",
+        "1.0",
+        "1.0.0",
+        "codex-rollout-v1",
+    }
+)
+
+# Envelope-level types that carry run/telemetry metadata rather than
+# conversational content. Mapped to system/opaque so they keep DAG position
+# without participating in identity/parentage/pairing semantics (FR-021).
+ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "session_meta",
+        "event_msg",
+        "turn_context",
+        "world_state",
+        "inter_agent_communication_metadata",
+    }
+)
+
+# response_item payload types → canonical (actor, kind). "message" is
+# role-disambiguated below (developer→system like openai adapter semantics).
+RESPONSE_ITEM_TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
+    "message": ("assistant", "message"),
+    "agent_message": ("assistant", "message"),
+    "reasoning": ("assistant", "opaque"),
+    "function_call": ("assistant", "tool_call"),
+    "custom_tool_call": ("assistant", "tool_call"),
+    "function_call_output": ("tool", "tool_result"),
+    "custom_tool_call_output": ("tool", "tool_result"),
+}
+
+# Envelope keys observed in rollout records.
+KNOWN_ENVELOPE_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "timestamp",
+        "ts",
+        "created_at",
+        "type",
+        "ordinal",
+        "payload",
+        "rollout_version",
+        "format_version",
+        "schema_version",
+        "export_version",
+        "version",
+    }
+)
+
+# Payload keys observed across known payload types. Additional keys on the
+# critical path that are absent here route to SL302.
+KNOWN_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "type",
+        "id",
+        "role",
+        "phase",
+        "content",
+        "author",
+        "recipient",
+        "name",
+        "namespace",
+        "arguments",
+        "args",
+        "input",
+        "output",
+        "call_id",
+        "tool_call_id",
+        "status",
+        "summary",
+        "encrypted_content",
+        "internal_chat_message_metadata_passthrough",
+        # session_meta
+        "session_id",
+        "cli_version",
+        "model_provider",
+        "originator",
+        "source",
+        "thread_source",
+        "history_mode",
+        "context_window",
+        "base_instructions",
+        "cwd",
+        "timestamp",
+        "git",
+        "agent_nickname",
+        "agent_path",
+        "agent_role",
+        "forked_from_id",
+        "multi_agent_version",
+        "parent_thread_id",
+        "subagent_history_start_ordinal",
+        # turn_context / world_state
+        "turn_id",
+        "approval_policy",
+        "approvals_reviewer",
+        "collaboration_mode",
+        "comp_hash",
+        "current_date",
+        "effort",
+        "model",
+        "permission_profile",
+        "personality",
+        "realtime_active",
+        "sandbox_policy",
+        "timezone",
+        "workspace_roots",
+        "full",
+        "state",
+        # event_msg payloads
+        "started_at",
+        "started_at_ms",
+        "completed_at",
+        "completed_at_ms",
+        "duration_ms",
+        "reason",
+        "last_agent_message",
+        "time_to_first_token_ms",
+        "collaboration_mode_kind",
+        "model_context_window",
+        "thread_id",
+        "item",
+        "info",
+        "rate_limits",
+        "thread_settings",
+        # compacted
+        "message",
+        "first_window_id",
+        "previous_window_id",
+        "window_id",
+        "window_number",
+        "replacement_history",
+        # inter_agent_communication_metadata
+        "trigger_turn",
+        # version markers honored when present
+        "rollout_version",
+        "format_version",
+        "schema_version",
+        "export_version",
+        "version",
+        "is_error",
+        "error",
+        "result",
+        "metadata",
+    }
+)
+
+# Critical keys participating in identity, pairing, or continuation.
+CRITICAL_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "type",
+        "parent_id",
+        "prev_id",
+        "call_id",
+        "tool_call_id",
+        "unknown_critical_field",
+    }
+)
+
+_TIMESTAMP_ISO_REGEX: Final[re.Pattern[str]] = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$"
+)
+
+
+def _safe_type_value(val: Any) -> str:
+    """Return safe type and size descriptor without leaking field content (FR-081, FR-082)."""
+    return safe_type_value(val)
+
+
+def detect_codex_rollout(first_bytes: bytes, filename: str) -> float:
+    """Return heuristic confidence in [0.0, 1.0] that input is a Codex rollout JSONL.
+
+    Inspects the file extension plus early bytes for the rollout envelope
+    signature: ``"type": "session_meta"`` / ``"response_item"`` records with
+    ``"payload"`` + ``"ordinal"`` fields, and Codex-specific payload types such
+    as ``custom_tool_call`` / ``function_call_output``. A ``rollout-*.jsonl``
+    filename is a strong supporting signal.
+    """
+    fn_lower = filename.lower()
+    if not (fn_lower.endswith(".jsonl") or fn_lower.endswith(".json")):
+        return 0.0
+
+    if not first_bytes:
+        return 0.0
+
+    if first_bytes.startswith(SQLITE_MAGIC):
+        return 0.0
+
+    data = first_bytes
+    if data.startswith(b"\xef\xbb\xbf"):
+        data = data[3:]
+
+    decoded = data[:4096].decode("utf-8", errors="replace")
+
+    signals = 0
+    if '"session_meta"' in decoded:
+        signals += 4
+    if '"response_item"' in decoded:
+        signals += 4
+    if '"ordinal"' in decoded and '"payload"' in decoded:
+        signals += 2
+    if '"turn_context"' in decoded or '"world_state"' in decoded:
+        signals += 2
+    if '"event_msg"' in decoded:
+        signals += 1
+    if '"custom_tool_call"' in decoded or '"function_call_output"' in decoded:
+        signals += 2
+    if '"compacted"' in decoded:
+        signals += 1
+    if fn_lower.startswith("rollout-"):
+        signals += 2
+
+    if signals >= 6:
+        return 1.0
+    if signals >= 3:
+        return 0.8
+    if signals >= 1:
+        return 0.3
+    return 0.0
+
+
+def _normalize_timestamp(raw_ts: Any) -> str:
+    """Ensure timestamp conforms to RFC3339, else a fixed epoch (deterministic)."""
+    if isinstance(raw_ts, str) and raw_ts.strip():
+        val = raw_ts.strip()
+        if _TIMESTAMP_ISO_REGEX.match(val):
+            return val
+    return "1970-01-01T00:00:00Z"
+
+
+def _check_version(
+    version_candidate: Any,
+    *,
+    path_str: str,
+    line_number: int,
+    rec_id: str | None,
+    findings: list[Finding],
+    source_metadata: SourceMetadata,
+    seen_version_sl301: bool,
+    byte_offset: int | None = None,
+    byte_end: int | None = None,
+    record_ordinal: int | None = None,
+    guard: SyntheticIdCollisionGuard | None = None,
+) -> bool:
+    """Evaluate an explicit rollout format-version marker, emitting SL301 if unsupported."""
+    if version_candidate is None:
+        return seen_version_sl301
+
+    if rec_id is not None:
+        rec_id_str = rec_id
+    else:
+        ord_val = record_ordinal if record_ordinal is not None else 0
+        p_len = (
+            (byte_end - byte_offset) if (byte_offset is not None and byte_end is not None) else 0
+        )
+        rec_id_str = synthetic_event_id(
+            adapter="codex_rollout",
+            ordinal=ord_val,
+            source_hint=path_str,
+            payload_len=p_len,
+        )
+        if guard is not None:
+            guard.register_synthetic(rec_id_str)
+
+    coord_ev: dict[str, Any] = {}
+    if byte_offset is not None:
+        coord_ev["byte_offset"] = byte_offset
+    if byte_end is not None:
+        coord_ev["byte_end"] = byte_end
+    if record_ordinal is not None:
+        coord_ev["record_ordinal"] = record_ordinal
+
+    if isinstance(version_candidate, (str, int, float)):
+        version_raw = str(version_candidate).strip()
+        source_metadata.version_raw = version_raw
+        version_norm = normalize_version(version_raw)
+        if version_norm not in SUPPORTED_CODEX_ROLLOUT_VERSIONS and not seen_version_sl301:
+            source = SourceRef(path=path_str, line=line_number, record_id=rec_id_str)
+            safe_v, _ = safe_discriminator(version_raw)
+            findings.append(
+                make_finding(
+                    code=SL301,
+                    severity=Severity.ERROR,
+                    repairability=Repairability.UNSUPPORTED,
+                    message_template=(
+                        "Unsupported format version on line {line} for record {record_id}"
+                    ),
+                    source=source,
+                    evidence={
+                        "version_raw": safe_v,
+                        "supported_set": tuple(sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS)),
+                        **coord_ev,
+                    },
+                )
+            )
+            return True
+    elif not seen_version_sl301:
+        source = SourceRef(path=path_str, line=line_number, record_id=rec_id_str)
+        findings.append(
+            make_finding(
+                code=SL301,
+                severity=Severity.ERROR,
+                repairability=Repairability.UNSUPPORTED,
+                message_template=(
+                    "Unsupported format version on line {line} for record {record_id}"
+                ),
+                source=source,
+                evidence={
+                    "version_raw": "<invalid_version_type>",
+                    "supported_set": tuple(sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS)),
+                    **coord_ev,
+                },
+            )
+        )
+        return True
+    return seen_version_sl301
+
+
+def _emit_sl302(
+    *,
+    path_str: str,
+    line_number: int,
+    rec_id: str,
+    field_path: str,
+    type_value: Any,
+    coord_ev: dict[str, Any],
+    findings: list[Finding],
+) -> None:
+    """Emit a bounded SL302 unknown-critical-record finding."""
+    safe_val, truncated = safe_discriminator(type_value)
+    evidence: dict[str, Any] = {
+        "field_path": field_path,
+        "type_value": safe_val,
+        "record_id": rec_id,
+        **coord_ev,
+    }
+    if truncated:
+        evidence["type_truncated"] = True
+    findings.append(
+        make_finding(
+            code=SL302,
+            severity=Severity.ERROR,
+            repairability=Repairability.MANUAL,
+            message_template="Unknown critical record on line {line} for record {record_id}",
+            source=SourceRef(path=path_str, line=line_number, record_id=rec_id),
+            evidence=evidence,
+        )
+    )
+
+
+def _tool_input_payload(raw_input: Any) -> Any:
+    """Normalize a tool input/arguments field to a canonical input payload."""
+    if raw_input is None:
+        return {}
+    if isinstance(raw_input, str):
+        try:
+            parsed = _STRICT_JSON_DECODER.decode(raw_input)
+            if isinstance(parsed, Mapping):
+                return dict(parsed)
+            return {"value": parsed}
+        except Exception:
+            return {"value": raw_input}
+    if isinstance(raw_input, Mapping):
+        return dict(raw_input)
+    return {"value": raw_input}
+
+
+def _process_rollout_record(
+    envelope: dict[str, Any],
+    *,
+    line_number: int,
+    path_str: str,
+    events: list[SessionEvent],
+    findings: list[Finding],
+    source_metadata: SourceMetadata,
+    seen_version_sl301: bool,
+    byte_offset: int | None = None,
+    byte_end: int | None = None,
+    record_ordinal: int | None = None,
+    guard: SyntheticIdCollisionGuard | None = None,
+    last_event_id: str | None = None,
+    last_envelope_ordinal: int | None = None,
+    gap_after_drop: bool = False,
+) -> tuple[bool, int | None]:
+    """Canonicalize one rollout envelope record into a SessionEvent.
+
+    Rollout records carry no explicit parent linkage; the envelope ``ordinal``
+    is the stream sequence. Parentage is mapped linearly: an event's parent is
+    the previously emitted event only when continuity is provable (no dropped
+    line in between, and envelope ordinals are consecutive when present). A
+    torn/lost record therefore surfaces as an honest new root (SL006/SL007)
+    instead of a fabricated link.
+
+    Returns ``(seen_version_sl301, envelope_ordinal)``.
+    """
+    seq_index = len(events)
+    try:
+        p_len = len(canonical_bytes(envelope))
+    except Exception:
+        p_len = 0
+
+    coord_ev: dict[str, Any] = {}
+    if byte_offset is not None:
+        coord_ev["byte_offset"] = byte_offset
+    if byte_end is not None:
+        coord_ev["byte_end"] = byte_end
+    if record_ordinal is not None:
+        coord_ev["record_ordinal"] = record_ordinal
+
+    env_type = envelope.get("type")
+    payload = envelope.get("payload")
+
+    # Resolve event identity: payload.id when present, else synthetic.
+    payload_id: Any = payload.get("id") if isinstance(payload, Mapping) else None
+    if payload_id is not None and str(payload_id).strip():
+        rec_id_str = str(payload_id).strip()
+        original_id: str | None = rec_id_str
+        if guard is not None:
+            guard.register_real(rec_id_str)
+    else:
+        rec_id_str = synthetic_event_id(
+            adapter="codex_rollout",
+            ordinal=record_ordinal if record_ordinal is not None else seq_index,
+            source_hint=path_str,
+            payload_len=p_len,
+        )
+        original_id = None
+        if guard is not None:
+            guard.register_synthetic(rec_id_str)
+
+    # Explicit format-version markers (envelope or payload level).
+    version_candidate = (
+        envelope.get("rollout_version")
+        or envelope.get("format_version")
+        or envelope.get("schema_version")
+        or envelope.get("export_version")
+        or envelope.get("version")
+    )
+    if version_candidate is None and isinstance(payload, Mapping):
+        version_candidate = (
+            payload.get("rollout_version")
+            or payload.get("format_version")
+            or payload.get("schema_version")
+            or payload.get("export_version")
+        )
+    seen_version_sl301 = _check_version(
+        version_candidate,
+        path_str=path_str,
+        line_number=line_number,
+        rec_id=rec_id_str,
+        findings=findings,
+        source_metadata=source_metadata,
+        seen_version_sl301=seen_version_sl301,
+        byte_offset=byte_offset,
+        byte_end=byte_end,
+        record_ordinal=record_ordinal,
+        guard=guard,
+    )
+
+    actor: ActorLiteral = "system"
+    kind: KindLiteral = "unknown"
+    correlation_id: str | None = None
+    execution_state: Any = None
+    side_effects: str | None = None
+    out_payload: dict[str, Any] = {}
+
+    if env_type == "response_item":
+        if not isinstance(payload, Mapping):
+            _emit_sl302(
+                path_str=path_str,
+                line_number=line_number,
+                rec_id=rec_id_str,
+                field_path="payload",
+                type_value=payload,
+                coord_ev=coord_ev,
+                findings=findings,
+            )
+            out_payload = {"type": "<invalid>"}
+        else:
+            item_type = payload.get("type")
+            if isinstance(item_type, str) and item_type in RESPONSE_ITEM_TYPE_MAP:
+                actor, kind = RESPONSE_ITEM_TYPE_MAP[item_type]
+            else:
+                _emit_sl302(
+                    path_str=path_str,
+                    line_number=line_number,
+                    rec_id=rec_id_str,
+                    field_path="type",
+                    type_value=item_type,
+                    coord_ev=coord_ev,
+                    findings=findings,
+                )
+                out_payload = {"type": str(item_type) if item_type is not None else "<missing>"}
+
+            if kind == "message":
+                role = payload.get("role")
+                if item_type == "agent_message":
+                    actor = "assistant"
+                elif role == "user":
+                    actor = "user"
+                elif role == "assistant":
+                    actor = "assistant"
+                elif role == "developer":
+                    actor = "system"
+                elif role is not None:
+                    actor = "system"
+                out_payload = {"content": payload.get("content"), "role": actor}
+                if payload.get("phase") is not None:
+                    out_payload["phase"] = payload.get("phase")
+                if item_type == "agent_message":
+                    if payload.get("author") is not None:
+                        out_payload["author"] = str(payload.get("author"))
+                    if payload.get("recipient") is not None:
+                        out_payload["recipient"] = str(payload.get("recipient"))
+            elif kind == "tool_call":
+                raw_call_id = (
+                    payload.get("call_id")
+                    if payload.get("call_id") is not None
+                    else payload.get("tool_call_id")
+                )
+                call_id = str(raw_call_id) if raw_call_id is not None else rec_id_str
+                correlation_id = call_id
+                tool_name = str(payload.get("name") or "")
+                raw_input = (
+                    payload.get("arguments")
+                    if payload.get("arguments") is not None
+                    else (
+                        payload.get("args")
+                        if payload.get("args") is not None
+                        else payload.get("input")
+                    )
+                )
+                out_payload = {
+                    "call_id": call_id,
+                    "input": _tool_input_payload(raw_input),
+                    "name": tool_name,
+                    "tool_name": tool_name,
+                    "tool_use_id": call_id,
+                }
+                if payload.get("status") is not None:
+                    status = str(payload.get("status"))
+                    execution_state = (
+                        "success"
+                        if status == "completed"
+                        else ("failure" if status == "failed" else "unknown")
+                    )
+                t_name = tool_name.lower()
+                if t_name in READ_ONLY_TOOL_NAMES:
+                    side_effects = "none"
+                elif t_name in MUTATING_TOOL_NAMES:
+                    side_effects = "possible"
+                else:
+                    side_effects = "unknown"
+            elif kind == "tool_result":
+                raw_call_id = (
+                    payload.get("call_id")
+                    if payload.get("call_id") is not None
+                    else payload.get("tool_call_id")
+                )
+                call_id = str(raw_call_id) if raw_call_id is not None else ""
+                correlation_id = call_id or None
+                raw_output = (
+                    payload.get("output")
+                    if payload.get("output") is not None
+                    else (
+                        payload.get("content")
+                        if payload.get("content") is not None
+                        else payload.get("result")
+                    )
+                )
+                is_err = bool(
+                    payload.get("is_error")
+                    if payload.get("is_error") is not None
+                    else (payload.get("error") if payload.get("error") is not None else False)
+                )
+                out_payload = {
+                    "call_id": call_id,
+                    "content": raw_output if raw_output is not None else "",
+                    "is_error": is_err,
+                    "tool_use_id": call_id,
+                }
+                execution_state = "failure" if is_err else "success"
+                side_effects = "none"
+            elif kind == "opaque":
+                # e.g. reasoning — preserve position, no content projection.
+                out_payload = {"type": str(item_type)}
+    elif env_type == "compacted":
+        actor, kind = "system", "compaction_boundary"
+        if isinstance(payload, Mapping):
+            raw_summary = (
+                payload.get("message")
+                if payload.get("message") is not None
+                else payload.get("summary")
+            )
+            out_payload = {
+                "summary": str(raw_summary) if raw_summary is not None else "",
+            }
+            for key in ("window_id", "window_number", "first_window_id", "previous_window_id"):
+                if payload.get(key) is not None:
+                    out_payload[key] = payload.get(key)
+        else:
+            out_payload = {"summary": ""}
+    elif isinstance(env_type, str) and env_type in ENVELOPE_OPAQUE_TYPES:
+        actor, kind = "system", "opaque"
+        out_payload = {"type": env_type}
+        if env_type == "session_meta":
+            # Record minimized metadata for the session envelope — identifiers
+            # and versions only, never content fields like cwd/instructions.
+            if isinstance(payload, Mapping):
+                meta: dict[str, Any] = {}
+                for key in ("session_id", "cli_version", "model_provider", "originator"):
+                    if payload.get(key) is not None:
+                        meta[key] = payload.get(key)
+                source_metadata.session_meta = meta
+                if payload.get("session_id") is not None:
+                    out_payload["session_id"] = str(payload.get("session_id"))
+        elif env_type == "turn_context" and isinstance(payload, Mapping):
+            if payload.get("turn_id") is not None:
+                out_payload["turn_id"] = str(payload.get("turn_id"))
+        elif env_type == "event_msg" and isinstance(payload, Mapping):
+            if payload.get("type") is not None:
+                out_payload["subtype"] = str(payload.get("type"))
+            if payload.get("turn_id") is not None:
+                out_payload["turn_id"] = str(payload.get("turn_id"))
+    else:
+        # Unknown or missing envelope type -> SL302 unknown critical record.
+        _emit_sl302(
+            path_str=path_str,
+            line_number=line_number,
+            rec_id=rec_id_str,
+            field_path="type",
+            type_value=env_type,
+            coord_ev=coord_ev,
+            findings=findings,
+        )
+        actor, kind = "system", "unknown"
+        out_payload = {"type": str(env_type) if env_type is not None else "<missing>"}
+
+    # Check for unknown critical fields on critical paths (envelope + payload).
+    for key in sorted(envelope.keys()):
+        unknown_critical = (
+            key in CRITICAL_KEYS
+            or key.startswith("critical_")
+            or key.startswith("unknown_critical")
+        )
+        if key not in KNOWN_ENVELOPE_KEYS and unknown_critical:
+            _emit_sl302(
+                path_str=path_str,
+                line_number=line_number,
+                rec_id=rec_id_str,
+                field_path=key,
+                type_value=envelope[key],
+                coord_ev=coord_ev,
+                findings=findings,
+            )
+            break
+    if isinstance(payload, Mapping):
+        for key in sorted(payload.keys()):
+            unknown_critical = (
+                key in CRITICAL_KEYS
+                or key.startswith("critical_")
+                or key.startswith("unknown_critical")
+            )
+            if key not in KNOWN_PAYLOAD_KEYS and unknown_critical:
+                _emit_sl302(
+                    path_str=path_str,
+                    line_number=line_number,
+                    rec_id=rec_id_str,
+                    field_path=key,
+                    type_value=payload[key],
+                    coord_ev=coord_ev,
+                    findings=findings,
+                )
+                break
+
+    cur_envelope_ordinal = envelope.get("ordinal")
+    contiguous = (
+        last_event_id is not None
+        and not gap_after_drop
+        and (
+            last_envelope_ordinal is None
+            or not isinstance(cur_envelope_ordinal, int)
+            or isinstance(cur_envelope_ordinal, bool)
+            or cur_envelope_ordinal == last_envelope_ordinal + 1
+        )
+    )
+    parent_id = last_event_id if contiguous else None
+
+    ts = _normalize_timestamp(
+        envelope.get("timestamp")
+        if envelope.get("timestamp") is not None
+        else (envelope.get("ts") if envelope.get("ts") is not None else envelope.get("created_at"))
+    )
+    content_hash = compute_content_hash(out_payload)
+
+    event = SessionEvent(
+        id=rec_id_str,
+        parent_id=parent_id,
+        seq=seq_index,
+        ts=ts,
+        actor=actor,
+        kind=kind,
+        payload=out_payload,
+        content_hash=content_hash,
+        correlation_id=correlation_id,
+        source_line=line_number,
+        source_record_hash=f"sha256:{hashlib.sha256(canonical_bytes(envelope)).hexdigest()}",
+        original_id=original_id,
+        source_adapter="codex-rollout",
+        source_location=None,
+        execution_state=execution_state,
+        side_effects=side_effects,
+    )
+    events.append(event)
+    if guard is not None:
+        guard.check_event(event)
+    env_ord_out = envelope.get("ordinal")
+    if not isinstance(env_ord_out, int) or isinstance(env_ord_out, bool):
+        env_ord_out = None
+    return seen_version_sl301, env_ord_out
+
+
+def _process_jsonl_line(
+    raw: _RawLine,
+    *,
+    is_terminal: bool,
+    path_str: str,
+    limits: ReaderLimits,
+    events: list[SessionEvent],
+    findings: list[Finding],
+    source_metadata: SourceMetadata,
+    seen_version_sl301: bool,
+    guard: SyntheticIdCollisionGuard | None = None,
+    last_event_id: str | None = None,
+    last_envelope_ordinal: int | None = None,
+    gap_after_drop: bool = False,
+) -> tuple[bool, bool, int | None]:
+    """Process a single rollout JSONL line, emitting SessionEvent or SL001/SL002.
+
+    Returns ``(seen_version_sl301, emitted, envelope_ordinal)`` where
+    ``emitted`` is True when a canonical event was appended for this line and
+    ``envelope_ordinal`` is the record's envelope ``ordinal`` (or None).
+    """
+    code = SL002 if is_terminal else SL001
+    coord_evidence: dict[str, Any] = {
+        "byte_offset": raw.byte_offset,
+        "byte_end": raw.byte_end,
+        "record_ordinal": raw.record_ordinal,
+    }
+
+    if raw.truncated_limit:
+        rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=(
+                    "Line {line} exceeds maximum line byte limit [detail: LIMIT] "
+                    "for record {record_id}"
+                ),
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+
+    if b"\x00" in raw.raw_bytes:
+        rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template="Forbidden NUL byte on line {line} for record {record_id}",
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+
+    to_decode = raw.raw_bytes
+    if raw.line_number == 1 and to_decode.startswith(b"\xef\xbb\xbf"):
+        to_decode = to_decode[3:]
+
+    try:
+        decoded_text = to_decode.decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError:
+        rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=(
+                    "Invalid UTF-8 encoding on line {line} [detail: ENCODING] "
+                    "for record {record_id}"
+                ),
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+
+    try:
+        obj = _STRICT_JSON_DECODER.decode(decoded_text)
+    except RecursionError:
+        rec_id = extract_record_id(decoded_text)
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=(
+                    "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
+                    "for record {record_id}"
+                ),
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+    except (json.JSONDecodeError, ValueError):
+        rec_id = extract_record_id(decoded_text)
+        msg_template = (
+            "Torn terminal record on line {line} for record {record_id}"
+            if is_terminal
+            else "Malformed record on line {line} for record {record_id}"
+        )
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+
+    if not isinstance(obj, dict):
+        msg_template = (
+            "Torn terminal record on line {line} for record {record_id}"
+            if is_terminal
+            else "Malformed record on line {line} for record {record_id}"
+        )
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=msg_template,
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=None),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+
+    if not check_nesting_depth(obj, limits.max_depth):
+        rec_id = extract_record_id(decoded_text, obj)
+        findings.append(
+            make_finding(
+                code=code,
+                message_template=(
+                    "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
+                    "for record {record_id}"
+                ),
+                source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
+                evidence=coord_evidence,
+            )
+        )
+        return seen_version_sl301, False, None
+
+    latch, env_ord = _process_rollout_record(
+        obj,
+        line_number=raw.line_number,
+        path_str=path_str,
+        events=events,
+        findings=findings,
+        source_metadata=source_metadata,
+        seen_version_sl301=seen_version_sl301,
+        byte_offset=raw.byte_offset,
+        byte_end=raw.byte_end,
+        record_ordinal=raw.record_ordinal,
+        guard=guard,
+        last_event_id=last_event_id,
+        last_envelope_ordinal=last_envelope_ordinal,
+        gap_after_drop=gap_after_drop,
+    )
+    return latch, True, env_ord
+
+
+def load_codex_rollout(
+    path: Path | str | BinaryIO | bytes,
+    *,
+    limits: ReaderLimits | None = None,
+) -> tuple[EventList, list[Finding]]:
+    """Ingest a Codex rollout-*.jsonl session file.
+
+    Guarantees:
+    - Never mutates input files; refuses live SQLite databases (SL001 fatal).
+    - Preserves call_id pairing in correlation_id for tool calls and results.
+    - Maps ``compacted`` to compaction_boundary; keeps run-metadata records as opaque.
+    - Evaluates explicit format-version markers (SL301) and unknown records (SL302).
+    - Delivers deterministic canonical events for identical bytes.
+    """
+    effective_limits = limits if limits is not None else DEFAULT_READER_LIMITS
+
+    path_str: str
+    stream: BinaryIO
+    is_owned_file = False
+
+    if isinstance(path, bytes):
+        stream = io.BytesIO(path)
+        path_str = "<bytes>"
+    elif isinstance(path, (str, os.PathLike, Path)):
+        path_obj = Path(path)
+        path_str = str(path_obj).replace("\\", "/")
+        if not path_obj.exists():
+            raise FileNotFoundError(f"Session file not found: {path_obj}")
+        if path_obj.is_dir():
+            raise IsADirectoryError(f"Expected session file, got directory: {path_obj}")
+
+        try:
+            if path_obj.is_file():
+                file_size = path_obj.stat().st_size
+                if file_size > effective_limits.max_file_bytes:
+                    finding = make_finding(
+                        code=SL001,
+                        severity=Severity.ERROR,
+                        repairability=Repairability.MANUAL,
+                        message_template="File size exceeds maximum limit [detail: LIMIT]",
+                        source=SourceRef(path=path_str, line=1, record_id=None),
+                        evidence={
+                            "reason": "size_limit_exceeded",
+                            "limit": effective_limits.max_file_bytes,
+                        },
+                    )
+                    return EventList([], source=SourceMetadata()), [finding]
+        except OSError:
+            pass
+
+        stream = open(path_obj, "rb")
+        is_owned_file = True
+    else:
+        stream = path
+        path_str = getattr(path, "name", "<stream>")
+        path_str = str(path_str).replace("\\", "/")
+
+    try:
+        first_16 = stream.read(16)
+        if first_16.startswith(SQLITE_MAGIC):
+            finding = make_finding(
+                code=SL001,
+                severity=Severity.FATAL,
+                repairability=Repairability.UNSUPPORTED,
+                message_template=(
+                    "Refused live SQLite database; SessLint requires exported items or "
+                    "checkpoints [detail: refused_live_db]"
+                ),
+                source=SourceRef(path=path_str, line=1, record_id=None),
+                evidence={"reason": "refused_live_db"},
+            )
+            return EventList([], source=SourceMetadata(format="refused_live_db")), [finding]
+
+        max_bytes = effective_limits.max_file_bytes
+        to_read = max(0, max_bytes - len(first_16) + 1)
+        stream_remainder = stream.read(to_read)
+        full_bytes = first_16 + stream_remainder
+
+        if len(full_bytes) > max_bytes:
+            finding = make_finding(
+                code=SL001,
+                severity=Severity.ERROR,
+                repairability=Repairability.MANUAL,
+                message_template="File size exceeds maximum limit [detail: LIMIT]",
+                source=SourceRef(path=path_str, line=1, record_id=None),
+                evidence={"reason": "size_limit_exceeded", "limit": max_bytes},
+            )
+            return EventList([], source=SourceMetadata()), [finding]
+
+        events: list[SessionEvent] = []
+        findings: list[Finding] = []
+        source_metadata = SourceMetadata(format="codex-rollout", checkpoints=[])
+        guard = SyntheticIdCollisionGuard()
+        seen_version_sl301 = False
+        last_event_id: str | None = None
+        last_envelope_ordinal: int | None = None
+        gap_after_drop = False
+
+        data = full_bytes
+        current_offset = 0
+        line_number = 0
+        record_count = 0
+        total_len = len(data)
+        pending_raw: _RawLine | None = None
+
+        while current_offset < total_len:
+            line_number += 1
+            nl_pos = data.find(b"\n", current_offset)
+            if nl_pos == -1:
+                line_chunk = data[current_offset:]
+                line_end = total_len
+            else:
+                line_end = nl_pos + 1
+                line_chunk = data[current_offset:line_end]
+
+            line_start = current_offset
+            current_offset = line_end
+
+            truncated = len(line_chunk) > effective_limits.max_line_bytes
+            if not line_chunk.strip() and not truncated:
+                continue
+
+            record_count += 1
+            record_bytes = line_chunk
+            rec_byte_end = line_end
+            if truncated:
+                record_bytes = line_chunk[: effective_limits.max_line_bytes + 1]
+                rec_byte_end = line_start + len(record_bytes)
+
+            current_raw = _RawLine(
+                line_number=line_number,
+                raw_bytes=record_bytes,
+                truncated_limit=truncated,
+                byte_offset=line_start,
+                byte_end=rec_byte_end,
+                record_ordinal=record_count,
+            )
+
+            if pending_raw is not None:
+                if (
+                    effective_limits.max_records is not None
+                    and pending_raw.record_ordinal > effective_limits.max_records
+                ):
+                    raise MaxRecordsExceededError(
+                        f"Record count {pending_raw.record_ordinal} exceeds limit of "
+                        f"{effective_limits.max_records}"
+                    )
+                prev_len = len(events)
+                seen_version_sl301, emitted, env_ord = _process_jsonl_line(
+                    pending_raw,
+                    is_terminal=False,
+                    path_str=path_str,
+                    limits=effective_limits,
+                    events=events,
+                    findings=findings,
+                    source_metadata=source_metadata,
+                    seen_version_sl301=seen_version_sl301,
+                    guard=guard,
+                    last_event_id=last_event_id,
+                    last_envelope_ordinal=last_envelope_ordinal,
+                    gap_after_drop=gap_after_drop,
+                )
+                if emitted and len(events) > prev_len:
+                    last_event_id = events[-1].id
+                    last_envelope_ordinal = env_ord
+                    gap_after_drop = False
+                else:
+                    gap_after_drop = True
+
+            pending_raw = current_raw
+
+        if pending_raw is not None:
+            if (
+                effective_limits.max_records is not None
+                and pending_raw.record_ordinal > effective_limits.max_records
+            ):
+                raise MaxRecordsExceededError(
+                    f"Record count {pending_raw.record_ordinal} exceeds limit of "
+                    f"{effective_limits.max_records}"
+                )
+            prev_len = len(events)
+            seen_version_sl301, _emitted, _ord = _process_jsonl_line(
+                pending_raw,
+                is_terminal=True,
+                path_str=path_str,
+                limits=effective_limits,
+                events=events,
+                findings=findings,
+                source_metadata=source_metadata,
+                seen_version_sl301=seen_version_sl301,
+                guard=guard,
+                last_event_id=last_event_id,
+                last_envelope_ordinal=last_envelope_ordinal,
+                gap_after_drop=gap_after_drop,
+            )
+            _ = prev_len  # terminal line ends the stream; lineage state unused
+
+        guard.assert_no_collision()
+        return EventList(events, source=source_metadata), sort_findings(findings)
+    finally:
+        if is_owned_file:
+            stream.close()
+
+
+def load_codex_rollout_session(
+    path: Path | str | BinaryIO | bytes,
+    *,
+    limits: ReaderLimits | None = None,
+) -> tuple[Session, list[Finding]]:
+    """Stream a Codex rollout file and wrap canonical events in a Session envelope."""
+    events, findings = load_codex_rollout(path, limits=limits)
+    first_ts = events[0].ts if events else "1970-01-01T00:00:00Z"
+    meta = getattr(events, "source", None)
+    session_id = "codex-rollout-session"
+    if isinstance(meta, Mapping):
+        sm = meta.get("session_meta")
+        if isinstance(sm, Mapping) and sm.get("session_id"):
+            session_id = str(sm["session_id"])
+    header = SessionHeader(
+        schema_version="sesslint.session/v1",
+        session_id=session_id,
+        created_at=first_ts,
+        source=events.source,
+    )
+    return Session(header=header, events=tuple(events)), findings
+
+
+__all__ = [
+    "CRITICAL_KEYS",
+    "CanonicalEvent",
+    "ENVELOPE_OPAQUE_TYPES",
+    "KNOWN_ENVELOPE_KEYS",
+    "KNOWN_PAYLOAD_KEYS",
+    "RESPONSE_ITEM_TYPE_MAP",
+    "SQLITE_MAGIC",
+    "SUPPORTED_CODEX_ROLLOUT_VERSIONS",
+    "detect_codex_rollout",
+    "load_codex_rollout",
+    "load_codex_rollout_session",
+]

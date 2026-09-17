@@ -12,7 +12,7 @@
   "idempotency_key": "d74db087f9461f8565b339e59f0d24ded18aa5c99a7b8478926d6cfdf5808987",
   "input_fingerprint": "1f29d80685dd355b2bbf0f74febc5031bd1b774bbdd29d8bc576a99353cc6c7a",
   "output_fingerprint": "aa888552b24013404127919660bda5ce78a8ef48cd0d27a26631f4730d847d03",
-  "plan_fingerprint": "1e7a055cfac026ceb293d777f321b84056dc7006109ab1df4c9e557dc7fd8d2f",
+  "plan_fingerprint": "12f7ada696329be491abc7c679136f8060603a713afbd27bf1e97ccd74506124",
   "policy": "conservative",
   "revalidate_report": null,
   "revalidation": {

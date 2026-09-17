@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.plan/v1",
+  "title": "SessLint Repair Plan Format v1",
+  "description": "Fingerprinted dry-run repair plan emitted by sesslint repair --plan-out (DW-T-09). Steps carry min_policy and recipe_version so policy gating survives serialization.",
+  "type": "object",
+  "required": [
+    "blocked",
+    "fingerprint",
+    "loss_accounting",
+    "profile",
+    "source_hash",
+    "steps",
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": "sesslint.plan/v1"
+    },
+    "source_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy": {
+      "type": "string",
+      "enum": ["conservative", "salvage"]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "min_policy",
+          "params",
+          "recipe",
+          "recipe_version",
+          "seq",
+          "target_finding_fp",
+          "target_index"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recipe": {
+            "type": "string",
+            "minLength": 1
+          },
+          "min_policy": {
+            "type": "string",
+            "enum": ["conservative", "salvage"]
+          },
+          "recipe_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target_finding_fp": {
+            "type": "string"
+          },
+          "target_index": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "params": {
+            "type": "object"
+          },
+          "lossy": {
+            "type": "boolean"
+          },
+          "loss": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "blocked": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "finding_fp",
+          "reason"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "finding_fp": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "loss_accounting": {
+      "type": "object",
+      "required": [
+        "preview"
+      ],
+      "properties": {
+        "preview": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "total_lost": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_kept": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

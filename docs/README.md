@@ -10,6 +10,8 @@ reference material.
 | ---- | ----------- |
 | [ADAPTER_GUIDE.md](ADAPTER_GUIDE.md) | Authoring and conformance requirements for session-format adapters (`detect_*` / `load_*` contracts, `ReaderLimits`, SL301 fail-closed versioning, SL302 bounded discriminators, synthetic ID namespacing). |
 | [MATRIX.md](MATRIX.md) | Adapter × check conformance matrix (generated; kept in sync by `tests/conformance/test_matrix.py`). |
+| [REPORTING_CORRUPTION.md](REPORTING_CORRUPTION.md) | The check → bundle → attach flow for filing privacy-safe upstream corruption reports. |
+| [INTEGRATIONS.md](INTEGRATIONS.md) | Agent runtime hook recipes (Claude Code `SessionStart`/`PreCompact`) and the precheck gate contract. |
 | [codes/](codes/README.md) | Per-code documentation for all 20 diagnostic reason codes (SL001–SL302), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
 | [recipes/](recipes/README.md) | Per-recipe documentation for the 10 deterministic repair recipes (6 conservative, 4 salvage). |
 | [reviews/](reviews/) | Historical review artifacts: audit findings, release verdicts, and remediation plans. |
@@ -24,4 +26,4 @@ reference material.
 - [SECURITY.md](../SECURITY.md) — vulnerability reporting and security model.
 - [DEMAND.md](../DEMAND.md) — original product requirements document.
 - [schemas/](../schemas/) — JSON Schemas for sessions, reports, findings, scan
-  reports, and repair manifests.
+  reports, repair manifests, repair plans, and support bundles.

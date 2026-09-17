@@ -99,8 +99,10 @@ VALID_FORMATS: Final[frozenset[str]] = frozenset(
         "canonical",
         "claude",
         "openai",
+        "codex",
         "claude-code-jsonl",
         "openai-agents",
+        "codex-rollout",
     }
 )
 
