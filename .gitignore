@@ -12,7 +12,10 @@ build/
 .pytest_cache/
 .pytest_temp/
 .tmp_*/
+.hypothesis/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
 # Type checking / linting
@@ -24,6 +27,8 @@ htmlcov/
 venv/
 env/
 ENV/
+.smoke_env/
+test_env/
 
 # IDE / editor
 .vscode/

@@ -1,0 +1,46 @@
+# Repo-level pre-commit configuration for SessLint contributors.
+# (`.pre-commit-hooks.yaml` is the *consumer-facing* hook spec — it exposes
+# `sesslint check` to other repos; this file lints SessLint itself.)
+#
+# Setup:  uv sync --extra dev && uv run pre-commit install
+# Run:    uv run pre-commit run --all-files
+#
+# Mirrors the CI gates in .github/workflows/ci.yml. Generic hooks run in
+# isolated environments; mypy runs against the project venv via `uv run`
+# because it needs the project's own modules resolvable.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      - id: ruff
+      - id: ruff-format
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.8
+    hooks:
+      # actionlint-py ships prebuilt binaries in a wheel — no Docker/Go needed.
+      - id: actionlint-py
+
+  - repo: local
+    hooks:
+      - id: mypy-strict
+        name: mypy --strict (project venv)
+        entry: uv run mypy --strict src/sesslint
+        language: system
+        pass_filenames: false
+        always_run: true

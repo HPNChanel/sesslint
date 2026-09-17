@@ -1,0 +1,9 @@
+# Default owner for the repository. Adjust as maintainership grows.
+* @HPNChanel
+
+# Release-critical paths always require owner review.
+/.github/workflows/ @HPNChanel
+/.github/actions/ @HPNChanel
+/packaging/ @HPNChanel
+/scripts/ @HPNChanel
+/pyproject.toml @HPNChanel
