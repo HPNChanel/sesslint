@@ -61,7 +61,17 @@ uv run pytest tests/fuzz/
 
 # 5. Performance benchmark smoke test
 uv run python bench/perf_250k.py
+
+# 6. Coverage ratchet (must stay at/above the committed floor)
+uv run pytest --cov=sesslint --cov-branch --cov-report=term
 ```
+
+**Coverage floor (ratchet)**: `[tool.coverage.report] fail_under` in
+`pyproject.toml` is a one-way ratchet — PRs may raise it (encouraged when
+coverage improves) but must never lower it. The CI `coverage` job fails
+below the floor and uploads HTML/XML reports as artifacts. It is a
+tripwire, not a quality target; the number is never quoted as a coverage
+claim.
 
 ---
 
@@ -69,7 +79,7 @@ uv run python bench/perf_250k.py
 
 If you are adding a new session format adapter or updating an existing one (e.g. Claude Code, OpenAI Agents SDK, or custom orchestrators):
 
-- Read and follow the [Adapter Authoring & Conformance Guide](docs/ADAPTER_GUIDE.md).
+- Read and follow the [Adapter Authoring & Conformance Guide](docs/ADAPTER_GUIDE.md) and the [Adapter SDK contract](docs/ADAPTER_SDK.md) (Adapter SDK v1 — the normative contributor contract with cited enforcement points).
 - Ensure your adapter implements `detect_<adapter>` and `load_<adapter>` contracts, adheres to `ReaderLimits`, fail-closed `SL301` versions, bounded `SL302` discriminators, and synthetic ID namespacing (`DEV-007`).
 - All adapters must pass the unified cross-adapter conformance test suite:
   ```bash
@@ -79,6 +89,8 @@ If you are adding a new session format adapter or updating an existing one (e.g.
 ---
 
 ## Submitting Pull Requests
+
+Record architecture decisions in [docs/adr/](docs/adr/README.md) *(next release)*: any change touching a pinned invariant — dependencies, fail-closed semantics, identity/ordering, privacy defaults, determinism, fixture provenance — needs an ADR before merge. Regenerate man pages when the CLI surface changes: `python scripts/gen_man.py --out man` *(next release)*.
 
 1. Keep PRs focused, single-purpose, and well-tested.
 2. Include comprehensive docstrings and inline explanation for complex invariants.

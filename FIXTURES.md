@@ -40,3 +40,16 @@ Every fixture directory containing test artifacts must include a `PROVENANCE.jso
 ## 3. Binary Artifacts
 
 Any non-text binary fixture (such as `.bin` files testing multibyte splits or encoding anomalies) must be accompanied by an ASCII description in `PROVENANCE.json` explaining the byte layout.
+
+---
+
+## 4. Real-Shape Regression Rule (qa-infra T-05)
+
+Every corruption shape observed on real data becomes a **synthetic fixture
+family** under `fixtures/corpus/<family>/` *before* the fix lands — the
+field-test protocol codified. Shapes are re-authored from observed
+*structure* (record types, key names, corruption classes), never copied
+content. Each family ships `EXPECTATIONS.json` rows pinned by exact
+finding-code set + assurance, consumed by `tests/test_corpus_families.py`.
+The vendor-drift watch (`docs/VENDOR_DRIFT.md`) feeds newly observed
+additive shapes here continuously.

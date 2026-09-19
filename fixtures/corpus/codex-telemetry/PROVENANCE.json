@@ -1,0 +1,8 @@
+{
+  "contains_real_data": false,
+  "created": "2026-09-19",
+  "description": "Codex rollout records exercising the observed telemetry/envelope drift shapes (token_count, task_started/complete, item_completed, turn_aborted, thread_settings_applied, metadata envelope key, world_state, token_usage_record, inter_agent_communication_metadata) \u2014 re-authored synthetically from structure, never copied content.",
+  "generator": "sesslint.test_harness",
+  "origin": "synthetic",
+  "seed": 42
+}

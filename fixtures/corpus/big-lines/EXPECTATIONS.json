@@ -1,0 +1,18 @@
+{
+  "corrupted_torn_tail.jsonl": {
+    "codes": [
+      "SL002"
+    ],
+    "description": "Same big-line file with a torn final record \u2014 stream integrity fails closed.",
+    "exit": 1,
+    "expected_assurance": "A0",
+    "repairable": false
+  },
+  "happy_1p5mb.jsonl": {
+    "codes": [],
+    "description": "Legitimate ~1.5 MiB single-line custom_tool_call_output \u2014 the >1MiB line class from the field test \u2014 parses clean.",
+    "exit": 0,
+    "expected_assurance": "A3",
+    "repairable": false
+  }
+}

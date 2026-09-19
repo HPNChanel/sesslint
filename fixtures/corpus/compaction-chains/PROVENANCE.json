@@ -1,0 +1,8 @@
+{
+  "contains_real_data": false,
+  "created": "2026-09-19",
+  "description": "Canonical sessions with compaction_boundary + post-boundary tool calls: clean boundary, cross-boundary continuation (SL203 shape), coverage-pointer gap.",
+  "generator": "sesslint.test_harness",
+  "origin": "synthetic",
+  "seed": 42
+}

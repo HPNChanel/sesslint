@@ -1,0 +1,5 @@
+{"id": "msg_01", "sessionId": "sess_c2x", "type": "user_message", "message": "hi", "timestamp": "2026-09-18T00:00:00Z", "version": "2.0.30"}
+{"id": "msg_02", "parentId": "msg_01", "sessionId": "sess_c2x", "type": "assistant_message", "message": "hello", "timestamp": "2026-09-18T00:00:01Z", "agentVersion": "2.0.30"}
+{"id": "msg_03", "parentId": "msg_02", "sessionId": "sess_c2x", "type": "assistant_message", "message": "side-note", "timestamp": "2026-09-18T00:00:02Z", "isSidechain": true}
+{"id": "msg_04", "parentId": "msg_03", "sessionId": "sess_c2x", "type": "user_message", "message": "next", "timestamp": "2026-09-18T00:00:04Z"}
+{"id": "qop_01", "sessionId": "sess_c2x", "type": "queue-operation", "operation": "enqueue", "timestamp": "2026-09-18T00:00:05Z"}

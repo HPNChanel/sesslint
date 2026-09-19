@@ -1,0 +1,36 @@
+{
+  "happy.jsonl": {
+    "codes": [],
+    "description": "Claude Code 2.x session: semver app versions (version/agentVersion 2.0.30) + isSidechain records parse cleanly.",
+    "exit": 0,
+    "expected_assurance": "A3",
+    "repairable": false
+  },
+  "hostile.jsonl": {
+    "codes": [
+      "SL001"
+    ],
+    "description": "Invalid UTF-8 / NUL bytes fail closed as parse error.",
+    "exit": 1,
+    "expected_assurance": "A0",
+    "repairable": false
+  },
+  "queue_operation.jsonl": {
+    "codes": [
+      "SL006",
+      "SL007",
+      "SL302"
+    ],
+    "description": "queue-operation record type is unknown on the critical path -> SL302, plus graph-side warnings for the unlinked record.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  },
+  "summary_isSidechain.jsonl": {
+    "codes": [],
+    "description": "summary compaction-boundary records + isSidechain subtree: linked cleanly (no disconnected-component findings).",
+    "exit": 0,
+    "expected_assurance": "A3",
+    "repairable": false
+  }
+}

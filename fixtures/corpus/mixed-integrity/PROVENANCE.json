@@ -1,0 +1,8 @@
+{
+  "contains_real_data": false,
+  "created": "2026-09-19",
+  "description": "Canonical sessions combining 2+ corruption classes in one file (duplicate ids, dangling parents, timestamp disorder, orphan results) \u2014 real-world compound corruption.",
+  "generator": "sesslint.test_harness",
+  "origin": "synthetic",
+  "seed": 42
+}

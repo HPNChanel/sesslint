@@ -1,0 +1,27 @@
+{
+  "corrupted.jsonl": {
+    "codes": [
+      "SL302"
+    ],
+    "description": "Unknown response_item payload type fails closed with SL302 while the rest of the drift shapes parse.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  },
+  "happy.jsonl": {
+    "codes": [],
+    "description": "All observed additive drift shapes (token_count, task_started/complete, item_completed, turn_aborted, thread_settings_applied, metadata envelope key, world_state, token_usage_record, inter_agent_communication_metadata) absorbed cleanly \u2014 regression guard for the real baseline drift.",
+    "exit": 0,
+    "expected_assurance": "A3",
+    "repairable": false
+  },
+  "hostile.jsonl": {
+    "codes": [
+      "SL002"
+    ],
+    "description": "Torn tail mid-token fails closed as stream integrity error.",
+    "exit": 1,
+    "expected_assurance": "A0",
+    "repairable": false
+  }
+}

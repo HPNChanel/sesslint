@@ -25,6 +25,12 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          # One ARM leg at the highest py version (qa-infra T-04): catches
+          # arch-specific assumptions (mmap, file locking, path semantics)
+          # without multiplying job count.
+          - os: ubuntu-24.04-arm
+            python-version: "3.14"
 
     steps:
       - name: Checkout repository
@@ -89,6 +95,56 @@ jobs:
           PIP_NO_INDEX: "1"
         run: |
           pytest -q tests/accept/test_offline.py tests/accept/test_kill.py
+
+  release-refs:
+    name: Release Reference Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check docs pins resolve against released tags
+        run: python scripts/check_release_refs.py
+
+  coverage:
+    name: Coverage ratchet (floor in pyproject [tool.coverage])
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Measure coverage (fails below fail_under ratchet)
+        run: >-
+          pytest -q --cov=sesslint --cov-branch
+          --cov-report=term --cov-report=html:coverage-html
+          --cov-report=xml:coverage.xml
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            coverage-html/
+            coverage.xml
+          retention-days: 30
 
   action-dogfood:
     name: Dogfood sesslint-check (${{ matrix.fixture }}, ${{ matrix.expected }})
@@ -176,7 +232,10 @@ jobs:
   perf-benchmark:
     name: Performance Benchmark (250k events / 100MB)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -192,5 +251,19 @@ jobs:
           python -m pip install -e ".[dev]"
 
       - name: Execute 250k Performance Benchmark
-        run: python bench/perf_250k.py --records 250000 --time-budget 15.0 --mem-budget 512.0
+        run: >-
+          python bench/perf_250k.py --records 250000 --time-budget 15.0
+          --mem-budget 512.0 --record --host-tag ci-${{ runner.os }}
+          --source ci
+
+      - name: Perf regression gate (advisory until calibrated)
+        continue-on-error: true
+        run: python scripts/bench_gate.py --tolerance 1.25 --mem-budget 512
+
+      - name: Upload bench ledger artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-ledger-${{ github.run_id }}
+          path: bench/LEDGER.jsonl
+          retention-days: 30
 

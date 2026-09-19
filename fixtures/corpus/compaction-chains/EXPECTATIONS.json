@@ -1,0 +1,33 @@
+{
+  "coverage_pointer_gap.json": {
+    "codes": [
+      "SL102"
+    ],
+    "description": "Coverage-pointer boundary whose covered_event_ids omit the pre-boundary tool call \u2014 dangling call surfaced.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  },
+  "cross_boundary_continuation.json": {
+    "codes": [
+      "SL101",
+      "SL102",
+      "SL203"
+    ],
+    "description": "tool_result after the boundary answering a pre-boundary call \u2014 the classic unsafe cross-boundary continuation.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  },
+  "post_boundary_pair.json": {
+    "codes": [
+      "SL101",
+      "SL102",
+      "SL203"
+    ],
+    "description": "Compaction boundary + post-boundary tool_call/tool_result pair \u2014 SL203 unsafe-continuation shape plus orphan/dangling companions.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  }
+}

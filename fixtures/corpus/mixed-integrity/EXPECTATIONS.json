@@ -1,0 +1,25 @@
+{
+  "dup_dangling_ts.json": {
+    "codes": [
+      "SL003",
+      "SL004",
+      "SL006",
+      "SL007"
+    ],
+    "description": "Compound corruption: identical duplicate + dangling parent + timestamp disorder + graph warnings \u2014 4 classes in one file.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  },
+  "dupid_orphan_dangling.json": {
+    "codes": [
+      "SL003",
+      "SL101",
+      "SL102"
+    ],
+    "description": "Compound corruption: duplicate id + orphan tool result + dangling tool call \u2014 3 classes in one file.",
+    "exit": 1,
+    "expected_assurance": "A1",
+    "repairable": false
+  }
+}

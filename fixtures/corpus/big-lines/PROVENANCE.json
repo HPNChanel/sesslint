@@ -1,0 +1,8 @@
+{
+  "contains_real_data": false,
+  "created": "2026-09-19",
+  "description": "Legitimate ~1.5 MiB single-line custom_tool_call_output payloads (clean + torn-tail variants) \u2014 the >1MiB line class the field test surfaced.",
+  "generator": "sesslint.test_harness",
+  "origin": "synthetic",
+  "seed": 42
+}

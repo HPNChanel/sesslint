@@ -40,12 +40,26 @@ dev = [
     "hypothesis>=6",
     "ruff>=0.4",
     "mypy>=1.10",
+    "jsonschema>=4.17,<5",
+    "pyyaml>=6",  # workflow/docs-site validation tests
 ]
 # Build-time ONLY: used by scripts/package.py + packaging/sesslint.spec to
 # produce native binaries. Never imported by src/sesslint — `dependencies`
 # above MUST stay empty (zero runtime deps is a hard project invariant).
 packaging = [
     "pyinstaller>=6",
+]
+# Dev-time ONLY: scoped mutation testing (qa-infra T-02). POSIX-only tool
+# (mutmut 3 needs os.fork — run under WSL/Linux/macOS/CI, never native
+# Windows). Never imported by src/sesslint.
+mutation = [
+    "mutmut>=3.8,<4",
+]
+# Docs-site ONLY: GitHub Pages build (docs-spec T-04). mkdocs + theme are
+# dev/publish tooling — never imported by src/sesslint; docs/ markdown stays
+# the source of truth and renders fine on GitHub without the site.
+docs = [
+    "mkdocs-material>=9.5,<10",
 ]
 
 [project.scripts]
@@ -106,6 +120,9 @@ source = ["src/sesslint"]
 branch = true
 
 [tool.coverage.report]
+# Ratchet floor (qa-infra T-03): baseline measured 87% on 2026-09-19; may only
+# tighten — bump this in the PR that improved coverage, never lower it.
+fail_under = 86
 show_missing = true
 skip_covered = true
 exclude_also = [
@@ -118,3 +135,18 @@ exclude_also = [
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q --basetemp=.pytest_temp"
+
+# Scoped mutation testing (qa-infra T-02). source_paths copies the whole
+# package so `import sesslint` stays intact inside the mutants/ tree;
+# only_mutate restricts actual mutations to the highest-risk modules.
+[tool.mutmut]
+source_paths = ["src/"]
+only_mutate = [
+    "sesslint/checks/*",
+    "sesslint/repair/planner.py",
+    "sesslint/repair/executor.py",
+    "sesslint/io.py",
+]
+pytest_add_cli_args_test_selection = ["tests/"]
+# mutmut only runs tests that actually reach the mutated function, so the
+# full tests/ selection stays cheap; do not hand-narrow it.

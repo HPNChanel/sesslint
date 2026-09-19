@@ -1,0 +1,8 @@
+{
+  "contains_real_data": false,
+  "created": "2026-09-19",
+  "description": "Claude Code 2.x session records: semver app versions, summary compaction records, isSidechain subtrees, queue-operation records.",
+  "generator": "sesslint.test_harness",
+  "origin": "synthetic",
+  "seed": 42
+}

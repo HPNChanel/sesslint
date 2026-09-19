@@ -1,0 +1,13 @@
+{"ordinal": 0, "timestamp": "2026-09-17T10:00:00Z", "type": "session_meta", "payload": {"cli_version": "0.42.0", "id": "sess-syn-tel", "model_provider": "openai", "originator": "codex_cli", "session_id": "sess-syn-tel", "timestamp": "2026-09-17T10:00:00Z"}}
+{"ordinal": 1, "timestamp": "2026-09-17T10:00:10Z", "type": "turn_context", "payload": {"active_permission_profile": "default", "approval_policy": "on-request", "model": "gpt-5", "retained_context": 42, "turn_id": "turn-1"}}
+{"ordinal": 2, "timestamp": "2026-09-17T10:01:00Z", "type": "event_msg", "payload": {"type": "task_started", "turn_id": "turn-1"}}
+{"ordinal": 3, "timestamp": "2026-09-17T10:01:05Z", "type": "event_msg", "payload": {"type": "token_count", "latest_token_usage_record": {"input": 100, "output": 20}}}
+{"ordinal": 4, "timestamp": "2026-09-17T10:02:00Z", "type": "response_item", "payload": {"type": "message", "id": "m1", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}}
+{"ordinal": 5, "timestamp": "2026-09-17T10:03:00Z", "type": "event_msg", "payload": {"type": "item_completed", "item": {"id": "m2"}}}
+{"ordinal": 6, "timestamp": "2026-09-17T10:03:30Z", "type": "event_msg", "payload": {"type": "task_complete", "last_agent_message": "done"}}
+{"ordinal": 7, "timestamp": "2026-09-17T10:03:35Z", "type": "event_msg", "payload": {"type": "turn_aborted", "reason": "user"}}
+{"ordinal": 8, "timestamp": "2026-09-17T10:03:40Z", "type": "event_msg", "payload": {"type": "thread_settings_applied"}}
+{"ordinal": 9, "timestamp": "2026-09-17T10:04:00Z", "type": "response_item", "payload": {"type": "message", "id": "m3", "role": "assistant", "content": [{"type": "output_text", "text": "ok"}]}, "metadata": {"source": "desktop"}}
+{"ordinal": 10, "timestamp": "2026-09-17T10:05:00Z", "type": "token_usage_record", "payload": {"input": 500, "output": 120}}
+{"ordinal": 11, "timestamp": "2026-09-17T10:05:10Z", "type": "world_state", "payload": {"guardian_history": [], "state": "idle"}}
+{"ordinal": 12, "timestamp": "2026-09-17T10:05:20Z", "type": "inter_agent_communication_metadata", "payload"
