@@ -18,6 +18,42 @@ inputs:
     description: "Failure threshold: 'error' (default) or 'warning'"
     required: false
     default: "error"
+  select:
+    description: "Comma-separated rule codes to run exclusively (e.g. SL101,SL102)"
+    required: false
+    default: ""
+  ignore:
+    description: "Comma-separated rule codes to skip (mutually exclusive with select)"
+    required: false
+    default: ""
+  baseline:
+    description: "Path to a sesslint baseline file suppressing known fingerprints"
+    required: false
+    default: ""
+  write-baseline:
+    description: "Write current findings as a baseline file at this path"
+    required: false
+    default: ""
+  exclude:
+    description: "Comma-separated glob patterns to exclude from directory walks"
+    required: false
+    default: ""
+  ext:
+    description: "Comma-separated file extensions to allowlist in directory walks"
+    required: false
+    default: ""
+  skip-undetected:
+    description: "Classify format-undetected files as skipped instead of invalid ('true'/'false')"
+    required: false
+    default: "false"
+  config:
+    description: "Explicit sesslint config file path"
+    required: false
+    default: ""
+  output-format:
+    description: "Report output format: 'json' (default) or 'sarif'"
+    required: false
+    default: "json"
   package:
     description: "PyPI package specifier"
     required: false
@@ -68,10 +104,50 @@ runs:
         PROFILE: ${{ inputs.profile }}
         FORMAT: ${{ inputs.format }}
         FAIL_ON: ${{ inputs.fail-on }}
+        SELECT: ${{ inputs.select }}
+        IGNORE: ${{ inputs.ignore }}
+        BASELINE: ${{ inputs.baseline }}
+        WRITE_BASELINE: ${{ inputs.write-baseline }}
+        EXCLUDE: ${{ inputs.exclude }}
+        EXT: ${{ inputs.ext }}
+        SKIP_UNDETECTED: ${{ inputs.skip-undetected }}
+        CONFIG: ${{ inputs.config }}
+        OUTPUT_FORMAT: ${{ inputs.output-format }}
       run: |
-        CMD=(python -m sesslint.cli check "$TARGET_PATH" --profile "$PROFILE" --json)
+        CMD=(python -m sesslint.cli check "$TARGET_PATH" --profile "$PROFILE")
+        if [ "$OUTPUT_FORMAT" = "sarif" ]; then
+          CMD+=(--output-format sarif)
+        else
+          CMD+=(--json)
+        fi
         if [ -n "$FORMAT" ] && [ "$FORMAT" != "auto" ]; then
           CMD+=(--format "$FORMAT")
+        fi
+        if [ -n "$SELECT" ]; then
+          CMD+=(--select "$SELECT")
+        fi
+        if [ -n "$IGNORE" ]; then
+          CMD+=(--ignore "$IGNORE")
+        fi
+        if [ -n "$BASELINE" ]; then
+          CMD+=(--baseline "$BASELINE")
+        fi
+        if [ -n "$WRITE_BASELINE" ]; then
+          CMD+=(--write-baseline "$WRITE_BASELINE")
+        fi
+        if [ -n "$EXCLUDE" ]; then
+          IFS=',' read -ra _excl <<< "$EXCLUDE"
+          for _g in "${_excl[@]}"; do CMD+=(--exclude "$_g"); done
+        fi
+        if [ -n "$EXT" ]; then
+          IFS=',' read -ra _exts <<< "$EXT"
+          for _e in "${_exts[@]}"; do CMD+=(--ext "$_e"); done
+        fi
+        if [ "$SKIP_UNDETECTED" = "true" ]; then
+          CMD+=(--skip-undetected)
+        fi
+        if [ -n "$CONFIG" ]; then
+          CMD+=(--config "$CONFIG")
         fi
         if [ -d "$TARGET_PATH" ]; then
           CMD+=(--recursive)
@@ -123,6 +199,16 @@ runs:
                     files = data.get("files", [])
                     error_count = sum(f.get("error_count", 0) for f in files)
                     warning_count = sum(f.get("warning_count", 0) for f in files)
+                    assurance = "N/A"
+                elif data.get("version") == "2.1.0" and "runs" in data:
+                    # SARIF document: count results by level
+                    results = [
+                        r
+                        for run in data.get("runs", [])
+                        for r in run.get("results", [])
+                    ]
+                    error_count = sum(1 for r in results if r.get("level") == "error")
+                    warning_count = sum(1 for r in results if r.get("level") == "warning")
                     assurance = "N/A"
         except Exception:
             if cli_exit != 0:

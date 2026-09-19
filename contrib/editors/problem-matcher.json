@@ -1,0 +1,20 @@
+{
+  "problemMatcher": {
+    "owner": "sesslint",
+    "source": "sesslint",
+    "fileLocation": ["relative", "${workspaceFolder}"],
+    "pattern": [
+      {
+        "regexp": "^\\s*\\[(SL[0-9A-Z]+)\\]\\s+(.+?)\\s*\\((ERROR|FATAL|WARNING|INFO),\\s*[^)]+\\)\\s*$",
+        "code": 1,
+        "message": 2,
+        "severity": 3
+      },
+      {
+        "regexp": "^\\s*Span:\\s+(.+?):(\\d+)(?:\\s+\\(bytes\\s+\\d+-\\d+\\))?\\s*$",
+        "file": 1,
+        "line": 2
+      }
+    ]
+  }
+}
