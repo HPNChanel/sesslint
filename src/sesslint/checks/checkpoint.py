@@ -37,6 +37,7 @@ from sesslint.codes import (
     SL201,
     SL202,
     SL203,
+    SL205,
     Repairability,
     Severity,
 )
@@ -58,6 +59,7 @@ _TOOL_KINDS: Final[frozenset[str]] = frozenset({"tool_call", "tool_use", "tool_r
 _MSG_SL201: Final[str] = "Checkpoint gap detected for record {record_id}"
 _MSG_SL202: Final[str] = "Checkpoint divergence detected for record {record_id}"
 _MSG_SL203: Final[str] = "Unsafe continuation across loss detected for record {record_id}"
+_MSG_SL205: Final[str] = "Compaction coverage gap detected for record {record_id}"
 _MSG_OVERFLOW: Final[str] = "Checkpoint check finding cap reached; remaining records truncated"
 
 
@@ -933,6 +935,138 @@ def check_unsafe_continuation(
     return [finding]
 
 
+def _coverage_pointer(event: Any) -> str | None:
+    """Extract a normalized coverage pointer from ``extra_fields['coverage']``."""
+    extra = getattr(event, "extra_fields", None)
+    if extra is None and isinstance(event, Mapping):
+        extra = event.get("extra_fields")
+    if not isinstance(extra, Mapping):
+        return None
+    coverage = extra.get("coverage")
+    if not isinstance(coverage, Mapping):
+        return None
+    ptr = coverage.get("covered_through_id")
+    return str(ptr) if isinstance(ptr, str) and ptr.strip() else None
+
+
+def check_compaction_coverage(
+    events: Sequence[SessionEvent],
+    *,
+    source_path: str = "<canonical>",
+    max_findings: int = MAX_CHECKPOINT_FINDINGS,
+    context: CheckContext | None = None,
+) -> list[Finding]:
+    """SL205: flag compaction boundaries whose coverage claim is unverifiable.
+
+    For each ``compaction_boundary`` carrying a normalized coverage pointer
+    (``extra_fields["coverage"]["covered_through_id"]``, populated by
+    adapters from bounded vendor leaf-reference fields):
+
+    - ``missing``: the referenced leaf id does not exist in the stream.
+    - ``non_contiguous``: the leaf exists but does not precede the
+      boundary, or its ancestor chain has an unresolvable/post-boundary
+      link (the claimed covered span is not contiguous).
+
+    Pointerless boundaries and ambiguous (duplicated) leaf ids are skipped
+    silently — this rule never guesses coverage semantics.
+    """
+    ctx = context if context is not None else CheckContext()
+
+    id_to_indices: dict[str, list[int]] = {}
+    for idx, ev in enumerate(events):
+        raw_id = getattr(ev, "id", None)
+        if raw_id is None and isinstance(ev, Mapping):
+            raw_id = ev.get("id")
+        if raw_id is not None:
+            id_to_indices.setdefault(str(raw_id), []).append(idx)
+
+    findings: list[Finding] = []
+    for b_idx, boundary in enumerate(events):
+        if _get_event_kind(boundary) != _KIND_COMPACTION:
+            continue
+        covered_id = _coverage_pointer(boundary)
+        if covered_id is None:
+            continue  # pointerless boundary — nothing to verify
+
+        missing = False
+        non_contiguous = False
+
+        leaf_indices = id_to_indices.get(covered_id)
+        if leaf_indices is None:
+            missing = True
+        elif len(leaf_indices) != 1:
+            continue  # duplicated leaf id — SL003 territory, fail silent
+        else:
+            leaf_idx = leaf_indices[0]
+            if leaf_idx >= b_idx:
+                non_contiguous = True  # claimed span is not strictly prior
+            else:
+                # Walk the leaf's ancestor chain: every link must resolve
+                # to an event strictly before the boundary.
+                visited: set[int] = {leaf_idx}
+                cur = events[leaf_idx]
+                while True:
+                    raw_parent = getattr(cur, "parent_id", None)
+                    if raw_parent is None and isinstance(cur, Mapping):
+                        raw_parent = cur.get("parent_id")
+                    if raw_parent is None:
+                        break  # reached a root — chain is contiguous
+                    parent_indices = id_to_indices.get(str(raw_parent))
+                    if not parent_indices or len(parent_indices) != 1:
+                        non_contiguous = True  # unresolvable or ambiguous link
+                        break
+                    p_idx = parent_indices[0]
+                    if p_idx >= b_idx:
+                        non_contiguous = True  # chain crosses the boundary
+                        break
+                    if p_idx in visited:
+                        break  # cycle — SL005 territory, stop quietly
+                    visited.add(p_idx)
+                    cur = events[p_idx]
+
+        if not (missing or non_contiguous):
+            continue
+
+        resolved_path, line_num = _resolve_source_coords(boundary, source_path)
+        raw_bid = getattr(boundary, "id", None)
+        if raw_bid is None and isinstance(boundary, Mapping):
+            raw_bid = boundary.get("id")
+        clean_boundary_id = _safe_id(str(raw_bid) if raw_bid is not None else None)
+        clean_covered_id = _safe_id(covered_id)
+
+        findings.append(
+            make_finding(
+                code=SL205,
+                severity=Severity.WARNING,
+                repairability=Repairability.MANUAL,
+                message_template=_MSG_SL205,
+                source=SourceRef(path=resolved_path, line=line_num, record_id=clean_boundary_id),
+                related_ids=(clean_boundary_id, clean_covered_id),
+                evidence={
+                    "record_id": clean_boundary_id,
+                    "boundary_id": clean_boundary_id,
+                    "covered_through_id": clean_covered_id,
+                    "missing": missing,
+                    "non_contiguous": non_contiguous,
+                    "boundary_index": b_idx,
+                    "record_ordinal": b_idx,
+                },
+                adapter_id=ctx.adapter_id,
+                adapter_version=ctx.adapter_version,
+                profile_id=ctx.profile_id,
+                profile_version=ctx.profile_version,
+            )
+        )
+
+    return cap_checkpoint_findings(
+        findings,
+        code=SL205,
+        max_findings=max_findings,
+        source_path=source_path,
+        context=ctx,
+    )
+
+
 def check_checkpoint(
     events: Sequence[SessionEvent],
     *,
@@ -979,6 +1113,14 @@ def check_checkpoint(
     )
     all_findings.extend(f203)
 
+    f205 = check_compaction_coverage(
+        events,
+        source_path=source_path,
+        max_findings=max_findings_per_family,
+        context=ctx,
+    )
+    all_findings.extend(f205)
+
     return sorted(all_findings, key=_cap_finding_sort_key)
 
 
@@ -986,6 +1128,7 @@ def check_checkpoint(
 check_sl201 = check_checkpoint_gap
 check_sl202 = check_checkpoint_divergence
 check_sl203 = check_unsafe_continuation
+check_sl205 = check_compaction_coverage
 
 __all__ = [
     "MAX_CHECKPOINT_FINDINGS",
@@ -993,9 +1136,11 @@ __all__ = [
     "check_checkpoint",
     "check_checkpoint_divergence",
     "check_checkpoint_gap",
+    "check_compaction_coverage",
     "check_sl201",
     "check_sl202",
     "check_sl203",
+    "check_sl205",
     "check_unsafe_continuation",
     "compute_checkpoint_fingerprint",
 ]

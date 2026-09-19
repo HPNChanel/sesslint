@@ -1,0 +1,2 @@
+{"type": "user", "uuid": "x1", "sessionId": "sess-x", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "resume_from": "../elsewhere/sess-q.jsonl"}
+{"type": "user", "uuid": "x2", "sessionId": "sess-x", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parentUuid": "x1"}

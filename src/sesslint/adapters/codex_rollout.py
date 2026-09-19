@@ -12,11 +12,13 @@ Observed rollout envelope (every record):
 Envelope ``type`` values seen in the wild: ``session_meta`` (header-like
 metadata), ``response_item`` (conversation items), ``event_msg`` (lifecycle
 signals), ``turn_context`` (per-turn run context), ``world_state``,
-``inter_agent_communication_metadata``, and ``compacted`` (window compaction).
+``inter_agent_communication_metadata``, ``token_usage_record`` (token usage
+metadata), and ``compacted`` (window compaction).
 
 ``response_item`` payloads carry their own ``type``: ``message``,
 ``agent_message``, ``reasoning``, ``function_call``, ``custom_tool_call``,
-``function_call_output``, ``custom_tool_call_output``.
+``tool_search_call``, ``function_call_output``, ``custom_tool_call_output``,
+``tool_search_output``.
 
 Guarantees:
 - Zero live-store mutation: JSONL read-only ingestion; refuses SQLite magic
@@ -26,10 +28,10 @@ Guarantees:
   post-compaction corruption analysis sees the same boundary structure other
   adapters expose.
 - Run-metadata records (``event_msg``, ``turn_context``, ``world_state``,
-  ``session_meta``, ``inter_agent_communication_metadata``) are kept as
-  ``system``/``opaque`` events — preserved in DAG position without pretending
-  to be conversational content (unknown noncritical records may be kept
-  opaque, FR-021).
+  ``session_meta``, ``inter_agent_communication_metadata``,
+  ``token_usage_record``) are kept as ``system``/``opaque`` events — preserved
+  in DAG position without pretending to be conversational content (unknown
+  noncritical records may be kept opaque, FR-021).
 - Unknown envelope types and unknown ``response_item`` payload types route to
   SL302 with bounded discriminator evidence; missing/unsupported explicit
   format-version markers (``rollout_version``/``format_version``/
@@ -54,6 +56,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.drift import DriftTracker
+from sesslint.adapters.links import extract_links
 from sesslint.adapters.openai_agents import (
     EventList,
     SourceMetadata,
@@ -84,6 +88,8 @@ from sesslint.io import (
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
+    decode_json_dupaware,
+    dup_key_findings,
     extract_record_id,
 )
 
@@ -113,6 +119,7 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
         "turn_context",
         "world_state",
         "inter_agent_communication_metadata",
+        "token_usage_record",
     }
 )
 
@@ -124,8 +131,10 @@ RESPONSE_ITEM_TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
     "reasoning": ("assistant", "opaque"),
     "function_call": ("assistant", "tool_call"),
     "custom_tool_call": ("assistant", "tool_call"),
+    "tool_search_call": ("assistant", "tool_call"),
     "function_call_output": ("tool", "tool_result"),
     "custom_tool_call_output": ("tool", "tool_result"),
+    "tool_search_output": ("tool", "tool_result"),
 }
 
 # Envelope keys observed in rollout records.
@@ -240,6 +249,15 @@ KNOWN_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
         "error",
         "result",
         "metadata",
+        # token_usage_record
+        "response_id",
+        "root_turn_id",
+        "thread_token_usage",
+        "turn_token_usage",
+        "usage",
+        # tool_search_call / tool_search_output
+        "execution",
+        "tools",
     }
 )
 
@@ -463,6 +481,33 @@ def _tool_input_payload(raw_input: Any) -> Any:
     return {"value": raw_input}
 
 
+def _version_field_name(envelope: Any, payload: Any) -> str:
+    """Return the bounded key path that supplied the version candidate.
+
+    Mirrors the ``or``-chain in ``_process_rollout_record``: envelope keys
+    first (including ``version``), then payload keys.
+    """
+    for _k in (
+        "rollout_version",
+        "format_version",
+        "schema_version",
+        "export_version",
+        "version",
+    ):
+        if envelope.get(_k):
+            return _k
+    if isinstance(payload, Mapping):
+        for _k in (
+            "rollout_version",
+            "format_version",
+            "schema_version",
+            "export_version",
+        ):
+            if payload.get(_k):
+                return f"payload.{_k}"
+    return "version"
+
+
 def _process_rollout_record(
     envelope: dict[str, Any],
     *,
@@ -479,6 +524,7 @@ def _process_rollout_record(
     last_event_id: str | None = None,
     last_envelope_ordinal: int | None = None,
     gap_after_drop: bool = False,
+    drift: DriftTracker | None = None,
 ) -> tuple[bool, int | None]:
     """Canonicalize one rollout envelope record into a SessionEvent.
 
@@ -526,6 +572,17 @@ def _process_rollout_record(
         if guard is not None:
             guard.register_synthetic(rec_id_str)
 
+    # Schema-drift tracking (SL304): foreign envelope ``type`` signatures.
+    if drift is not None:
+        drift.observe_signature(
+            env_type,
+            line=line_number,
+            record_id=rec_id_str,
+            record_ordinal=record_ordinal,
+            byte_offset=byte_offset,
+            byte_end=byte_end,
+        )
+
     # Explicit format-version markers (envelope or payload level).
     version_candidate = (
         envelope.get("rollout_version")
@@ -555,12 +612,42 @@ def _process_rollout_record(
         guard=guard,
     )
 
+    if drift is not None:
+        if seen_version_sl301:
+            drift.note_unsupported_version()
+        elif isinstance(version_candidate, (str, int, float)):
+            _ver_norm = normalize_version(str(version_candidate).strip())
+            drift.observe_version(
+                _ver_norm,
+                supported=_ver_norm in SUPPORTED_CODEX_ROLLOUT_VERSIONS,
+                field=_version_field_name(envelope, payload),
+                line=line_number,
+                record_id=rec_id_str,
+                record_ordinal=record_ordinal,
+                byte_offset=byte_offset,
+                byte_end=byte_end,
+            )
+
     actor: ActorLiteral = "system"
     kind: KindLiteral = "unknown"
     correlation_id: str | None = None
     execution_state: Any = None
     side_effects: str | None = None
     out_payload: dict[str, Any] = {}
+    event_extra: dict[str, Any] = {}
+
+    # Declared cross-file resume pointers (bounded structural ids only —
+    # scan-layer SL401 resolves them; per-file processing never does).
+    if isinstance(payload, Mapping):
+        links_meta = source_metadata.get("links")
+        if isinstance(links_meta, list):
+            extract_links(payload, links=links_meta, record_id=rec_id_str, line=line_number)
+
+    # Bounded per-record byte size for the SL011 distribution check.
+    if byte_offset is not None and byte_end is not None and byte_end >= byte_offset:
+        sizes_meta = source_metadata.get("record_sizes")
+        if isinstance(sizes_meta, list):
+            sizes_meta.append(byte_end - byte_offset)
 
     if env_type == "response_item":
         if not isinstance(payload, Mapping):
@@ -663,7 +750,11 @@ def _process_rollout_record(
                     else (
                         payload.get("content")
                         if payload.get("content") is not None
-                        else payload.get("result")
+                        else (
+                            payload.get("result")
+                            if payload.get("result") is not None
+                            else payload.get("tools")
+                        )
                     )
                 )
                 is_err = bool(
@@ -701,6 +792,29 @@ def _process_rollout_record(
     elif isinstance(env_type, str) and env_type in ENVELOPE_OPAQUE_TYPES:
         actor, kind = "system", "opaque"
         out_payload = {"type": env_type}
+        if env_type == "token_usage_record" and isinstance(payload, Mapping):
+            # SL204 canonical slot (adapter-neutral): numeric counters only —
+            # ``turn_token_usage``/``usage`` is this record's contribution,
+            # ``thread_token_usage`` is the cumulative running-total marker.
+            usage_slot: dict[str, Any] = {}
+            contribution_raw = payload.get("turn_token_usage")
+            if contribution_raw is None:
+                contribution_raw = payload.get("usage")
+            cumulative_raw = payload.get("thread_token_usage")
+            if isinstance(contribution_raw, Mapping):
+                usage_slot["contribution"] = {
+                    str(k): v
+                    for k, v in contribution_raw.items()
+                    if isinstance(v, int) and not isinstance(v, bool)
+                }
+            if isinstance(cumulative_raw, Mapping):
+                usage_slot["cumulative"] = {
+                    str(k): v
+                    for k, v in cumulative_raw.items()
+                    if isinstance(v, int) and not isinstance(v, bool)
+                }
+            if usage_slot:
+                event_extra["usage"] = usage_slot
         if env_type == "session_meta":
             # Record minimized metadata for the session envelope — identifiers
             # and versions only, never content fields like cwd/instructions.
@@ -808,6 +922,7 @@ def _process_rollout_record(
         source_location=None,
         execution_state=execution_state,
         side_effects=side_effects,
+        extra_fields=event_extra,
     )
     events.append(event)
     if guard is not None:
@@ -832,6 +947,7 @@ def _process_jsonl_line(
     last_event_id: str | None = None,
     last_envelope_ordinal: int | None = None,
     gap_after_drop: bool = False,
+    drift: DriftTracker | None = None,
 ) -> tuple[bool, bool, int | None]:
     """Process a single rollout JSONL line, emitting SessionEvent or SL001/SL002.
 
@@ -895,7 +1011,9 @@ def _process_jsonl_line(
         return seen_version_sl301, False, None
 
     try:
-        obj = _STRICT_JSON_DECODER.decode(decoded_text)
+        obj, dup_keys, dups_truncated = decode_json_dupaware(
+            decoded_text, critical_keys=CRITICAL_KEYS
+        )
     except RecursionError:
         rec_id = extract_record_id(decoded_text)
         findings.append(
@@ -926,6 +1044,18 @@ def _process_jsonl_line(
             )
         )
         return seen_version_sl301, False, None
+
+    if dup_keys:
+        findings.extend(
+            dup_key_findings(
+                dup_keys,
+                truncated=dups_truncated,
+                path_str=path_str,
+                line=raw.line_number,
+                record_id=extract_record_id(decoded_text, obj),
+                record_ordinal=raw.record_ordinal,
+            )
+        )
 
     if not isinstance(obj, dict):
         msg_template = (
@@ -973,6 +1103,7 @@ def _process_jsonl_line(
         last_event_id=last_event_id,
         last_envelope_ordinal=last_envelope_ordinal,
         gap_after_drop=gap_after_drop,
+        drift=drift,
     )
     return latch, True, env_ord
 
@@ -1069,8 +1200,11 @@ def load_codex_rollout(
         events: list[SessionEvent] = []
         findings: list[Finding] = []
         source_metadata = SourceMetadata(format="codex-rollout", checkpoints=[])
+        source_metadata["links"] = []
+        source_metadata["record_sizes"] = []
         guard = SyntheticIdCollisionGuard()
         seen_version_sl301 = False
+        drift = DriftTracker("codex-rollout")
         last_event_id: str | None = None
         last_envelope_ordinal: int | None = None
         gap_after_drop = False
@@ -1138,6 +1272,7 @@ def load_codex_rollout(
                     last_event_id=last_event_id,
                     last_envelope_ordinal=last_envelope_ordinal,
                     gap_after_drop=gap_after_drop,
+                    drift=drift,
                 )
                 if emitted and len(events) > prev_len:
                     last_event_id = events[-1].id
@@ -1171,10 +1306,12 @@ def load_codex_rollout(
                 last_event_id=last_event_id,
                 last_envelope_ordinal=last_envelope_ordinal,
                 gap_after_drop=gap_after_drop,
+                drift=drift,
             )
             _ = prev_len  # terminal line ends the stream; lineage state unused
 
         guard.assert_no_collision()
+        findings.extend(drift.into_findings(path_str=path_str))
         return EventList(events, source=source_metadata), sort_findings(findings)
     finally:
         if is_owned_file:

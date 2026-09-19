@@ -1,0 +1,10 @@
+{"type":"user","uuid":"v0","timestamp":"2024-01-01T10:00:00Z","schemaVersion":"1","message":{"role":"user","content":[{"type":"text","text":"m0"}]}}
+{"type":"assistant","uuid":"v1","timestamp":"2024-01-01T10:01:00Z","schemaVersion":"0.1","message":{"role":"assistant","content":[{"type":"text","text":"m1"}]}}
+{"type":"user","uuid":"v2","timestamp":"2024-01-01T10:02:00Z","schemaVersion":"1.0","message":{"role":"user","content":[{"type":"text","text":"m2"}]}}
+{"type":"assistant","uuid":"v3","timestamp":"2024-01-01T10:03:00Z","schemaVersion":"1.0.0","message":{"role":"assistant","content":[{"type":"text","text":"m3"}]}}
+{"type":"user","uuid":"v4","timestamp":"2024-01-01T10:04:00Z","schemaVersion":"0.1.0","message":{"role":"user","content":[{"type":"text","text":"m4"}]}}
+{"type":"assistant","uuid":"v5","timestamp":"2024-01-01T10:05:00Z","schemaVersion":"claude-code-v1","message":{"role":"assistant","content":[{"type":"text","text":"m5"}]}}
+{"type":"turn_context","timestamp":"2024-01-01T10:10:00Z","payload":{"ref":"f0"}}
+{"type":"function_call","timestamp":"2024-01-01T10:11:00Z","payload":{"ref":"f1"}}
+{"type":"response_item","timestamp":"2024-01-01T10:12:00Z","payload":{"ref":"f2"}}
+{"type":"compacted","timestamp":"2024-01-01T10:13:00Z","payload":{"ref":"f3"}}

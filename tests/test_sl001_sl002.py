@@ -305,7 +305,9 @@ def test_sl002_repair_round_trip(tmp_path: Path) -> None:
     output_file = tmp_path / "repaired_sl002.jsonl"
     res_plan, manifest = api.repair(source_file, output_file)
     assert output_file.is_file()
-    assert len(res_plan.steps) == 1
+    # Canonical input appends the seq-renumber normalizing tail step (T-04)
+    assert len(res_plan.steps) == 2
+    assert res_plan.steps[-1].recipe == "seq-renumber"
     assert res_plan.steps[0].recipe == "torn-terminal-record-discard"
     assert manifest is not None
 

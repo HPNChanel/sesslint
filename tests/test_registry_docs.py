@@ -15,7 +15,7 @@ Invariants verified:
 5. Declared metadata (handles, lossy, salvage_only) in markdown docs matches the live registry.
 6. The recipe catalog in README.md matches the live registry (names, partition, count).
 7. The recipe catalog in docs/recipes/README.md matches the live registry.
-8. RELEASING.md checklist verifies the exact count of 10 recipes.
+8. RELEASING.md checklist verifies the exact count of 12 recipes.
 9. Negative unit tests prove that the catalog-lock assertions catch drift.
 """
 
@@ -68,10 +68,10 @@ def test_recipes_directory_exists() -> None:
 def test_all_registered_recipes_have_docs() -> None:
     """Assert every registered recipe has a corresponding markdown doc."""
     recipes = repair_mod.list_recipes()
-    assert len(recipes) == 10, f"Expected exactly 10 registered recipes, got {len(recipes)}"
+    assert len(recipes) == 12, f"Expected exactly 12 registered recipes, got {len(recipes)}"
     cons_count = sum(1 for r in recipes if not r.salvage_only)
     salv_count = sum(1 for r in recipes if r.salvage_only)
-    assert cons_count == 5, f"Expected 5 conservative recipes, got {cons_count}"
+    assert cons_count == 7, f"Expected 7 conservative recipes, got {cons_count}"
     assert salv_count == 5, f"Expected 5 salvage recipes, got {salv_count}"
     for recipe in recipes:
         doc_path = RECIPES_DIR / f"{recipe.name}.md"
@@ -283,8 +283,8 @@ def assert_catalog_sync(
 def test_readme_recipe_catalog_matches_registry() -> None:
     """Assert README.md's Recipe Catalog matches live registry exactly."""
     text = README_PATH.read_text(encoding="utf-8")
-    assert "10 deterministic repair recipes" in text, (
-        "README.md must mention exactly '10 deterministic repair recipes'"
+    assert "12 deterministic repair recipes" in text, (
+        "README.md must mention exactly '12 deterministic repair recipes'"
     )
     partition = parse_readme_catalog(text)
     recipes = repair_mod.list_recipes()
@@ -294,8 +294,8 @@ def test_readme_recipe_catalog_matches_registry() -> None:
 def test_recipes_readme_catalog_matches_registry() -> None:
     """Assert docs/recipes/README.md's catalog matches live registry exactly."""
     text = RECIPES_README_PATH.read_text(encoding="utf-8")
-    assert "10 deterministic repair recipes" in text, (
-        "docs/recipes/README.md must mention '10 deterministic repair recipes'"
+    assert "12 deterministic repair recipes" in text, (
+        "docs/recipes/README.md must mention '12 deterministic repair recipes'"
     )
     partition = parse_recipes_readme_catalog(text)
     recipes = repair_mod.list_recipes()
@@ -303,10 +303,10 @@ def test_recipes_readme_catalog_matches_registry() -> None:
 
 
 def test_releasing_checklist_recipe_count() -> None:
-    """Assert RELEASING.md checklist has the correct 10 recipes count."""
+    """Assert RELEASING.md checklist has the correct 12 recipes count."""
     text = RELEASING_PATH.read_text(encoding="utf-8")
-    assert "- [ ] All 10 repair recipes have synced documentation" in text, (
-        "RELEASING.md checklist must mention 'All 10 repair recipes'"
+    assert "- [ ] All 12 repair recipes have synced documentation" in text, (
+        "RELEASING.md checklist must mention 'All 12 repair recipes'"
     )
 
 

@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -308,6 +308,51 @@ def compute_content_hash(payload: Mapping[str, Any]) -> str:
     from sesslint._canonical_codec import payload_content_hash as _seam_pch
 
     return _seam_pch(payload)
+
+
+def reparse_identity_hashes(events: Sequence[SessionEvent]) -> list[str]:
+    """Content-identity hashes normalized against re-parse positional drift.
+
+    Vendor adapters assign ``seq`` as the compacted stream ordinal and
+    synthesize ids for id-less records from ``{source_hint}:{ordinal}:
+    {payload_len}``. Re-parsing an emitted artifact drifts both: lines dropped
+    mid-stream shift every later ``seq``, and synthetic ids re-hash under a
+    different source hint. Normalizing ``seq`` to list position and mapping
+    synthetic ``id``/``parent_id`` references to positions preserves graph
+    structure while making the comparison reflect content equality rather
+    than positional derivation. Real (vendor-supplied) ids compare raw —
+    surviving events are already proven field-identical upstream.
+    """
+    from sesslint.adapters.synthetic import is_synthetic_id
+
+    id_to_pos: dict[str, int] = {}
+    for i, ev in enumerate(events):
+        if is_synthetic_id(ev.id) and ev.id not in id_to_pos:
+            id_to_pos[ev.id] = i
+
+    hashes: list[str] = []
+    for i, ev in enumerate(events):
+        d = ev.to_canonical_dict()
+        for prov_field in PROVENANCE_FIELDS:
+            d.pop(prov_field, None)
+        d["seq"] = i
+        if is_synthetic_id(ev.id):
+            d["id"] = id_to_pos.get(ev.id, i)
+        pid = d.get("parent_id")
+        if isinstance(pid, str) and is_synthetic_id(pid) and pid in id_to_pos:
+            d["parent_id"] = id_to_pos[pid]
+        try:
+            encoded = json.dumps(
+                d,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError) as err:
+            raise SchemaError(f"Canonical serialization error: {err}") from err
+        hashes.append(hashlib.sha256(encoded).hexdigest())
+    return hashes
 
 
 def _normalize_for_canonical_json(obj: Any, seen: set[int] | None = None) -> Any:

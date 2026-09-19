@@ -1,8 +1,10 @@
 """Registry of detector reason codes and severity/repairability taxonomies.
 
-This module defines the 20 reason codes (SL001–SL007, SL101–SL108, SL201–SL203,
-SL301–SL302) established in DEMAND.md, along with their verbatim names, summaries,
-categories, and default (severity, repairability) assignments.
+This module defines the 27 reason codes (SL001–SL011, SL101–SL108, SL201–SL205,
+SL301–SL304, SL401) established in DEMAND.md plus the checks-rules pack (SL008,
+SL011, SL204, SL205, SL303, SL304, SL401), along with their verbatim names,
+summaries, categories, and default
+(severity, repairability) assignments.
 """
 
 from __future__ import annotations
@@ -55,7 +57,7 @@ class Repairability(StrEnum):
 
 
 class Code(StrEnum):
-    """The 20 stable detector reason codes defined in DEMAND.md."""
+    """The 21 stable detector reason codes (DEMAND.md plus checks-rules additions)."""
 
     SL001 = "SL001"
     SL002 = "SL002"
@@ -64,6 +66,8 @@ class Code(StrEnum):
     SL005 = "SL005"
     SL006 = "SL006"
     SL007 = "SL007"
+    SL008 = "SL008"
+    SL011 = "SL011"
     SL101 = "SL101"
     SL102 = "SL102"
     SL103 = "SL103"
@@ -75,8 +79,13 @@ class Code(StrEnum):
     SL201 = "SL201"
     SL202 = "SL202"
     SL203 = "SL203"
+    SL204 = "SL204"
+    SL205 = "SL205"
     SL301 = "SL301"
     SL302 = "SL302"
+    SL303 = "SL303"
+    SL304 = "SL304"
+    SL401 = "SL401"
 
 
 SL001: Final[str] = "SL001"
@@ -86,6 +95,8 @@ SL004: Final[str] = "SL004"
 SL005: Final[str] = "SL005"
 SL006: Final[str] = "SL006"
 SL007: Final[str] = "SL007"
+SL008: Final[str] = "SL008"
+SL011: Final[str] = "SL011"
 SL101: Final[str] = "SL101"
 SL102: Final[str] = "SL102"
 SL103: Final[str] = "SL103"
@@ -97,8 +108,13 @@ SL108: Final[str] = "SL108"
 SL201: Final[str] = "SL201"
 SL202: Final[str] = "SL202"
 SL203: Final[str] = "SL203"
+SL204: Final[str] = "SL204"
+SL205: Final[str] = "SL205"
 SL301: Final[str] = "SL301"
 SL302: Final[str] = "SL302"
+SL303: Final[str] = "SL303"
+SL304: Final[str] = "SL304"
+SL401: Final[str] = "SL401"
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +207,30 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
         default_repairability=Repairability.MANUAL,
         category="graph",
         override_policy="Multiple terminal leaf events require operator choice of replay branch.",
+    ),
+    SL008: CodeInfo(
+        code=SL008,
+        name="Non-monotonic timestamp",
+        summary="Child event timestamp precedes its resolved parent's timestamp.",
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="graph",
+        override_policy=(
+            "Clock skew and vendor timestamp semantics are legitimate; "
+            "reordering or rewriting timestamps is never auto-justified."
+        ),
+    ),
+    SL011: CodeInfo(
+        code=SL011,
+        name="Record size anomaly",
+        summary="Largest record is an extreme byte-size outlier in the file's own distribution.",
+        default_severity=Severity.INFO,
+        default_repairability=Repairability.MANUAL,
+        category="structure",
+        override_policy=(
+            "Informational tripwire only; records are never dropped, truncated, "
+            "or rewritten on size evidence alone."
+        ),
     ),
     SL101: CodeInfo(
         code=SL101,
@@ -314,6 +354,27 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
             "when side effects are unknown."
         ),
     ),
+    SL204: CodeInfo(
+        code=SL204,
+        name="Token usage arithmetic inconsistency",
+        summary="Cumulative token-usage marker contradicts the window's usage sum.",
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="accounting",
+        override_policy="Accounting evidence only; usage counters are never auto-edited.",
+    ),
+    SL205: CodeInfo(
+        code=SL205,
+        name="Compaction coverage gap",
+        summary="Boundary claims a covered span that is missing or non-contiguous.",
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="checkpoint",
+        override_policy=(
+            "Coverage claims are advisory evidence; the boundary record is never "
+            "rewritten and the gap is never auto-filled."
+        ),
+    ),
     SL301: CodeInfo(
         code=SL301,
         name="Unsupported format version",
@@ -334,13 +395,49 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
         category="compatibility",
         override_policy="Unknown records participating in core semantics block automated repair.",
     ),
+    SL303: CodeInfo(
+        code=SL303,
+        name="Duplicate JSON key",
+        summary=("Record contains a duplicated object key; parsers disagree on which value wins."),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="compatibility",
+        override_policy=(
+            "Conservative policy MUST refuse: choosing a winner silently invents "
+            "data; deduplication is a human decision."
+        ),
+    ),
+    SL304: CodeInfo(
+        code=SL304,
+        name="Mid-file schema drift",
+        summary="Record-level schema version or format signature changes mid-file.",
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="compatibility",
+        override_policy=(
+            "Drift may indicate a spliced file; records are never migrated or "
+            "normalized across a drift boundary automatically."
+        ),
+    ),
+    SL401: CodeInfo(
+        code=SL401,
+        name="Unresolved cross-file link",
+        summary="Session references a file or head that is missing, ambiguous, or out of scope.",
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="linkage",
+        override_policy=(
+            "Link targets are never fabricated or guessed; unresolved references "
+            "are reported, not repaired."
+        ),
+    ),
 }
 
 ALL_CODES: Final[frozenset[str]] = frozenset(CODE_REGISTRY.keys())
 
 
 def is_valid_code(code: str) -> bool:
-    """Return True if code is one of the 20 registered detector codes."""
+    """Return True if code is one of the 27 registered detector codes."""
     return code in ALL_CODES
 
 

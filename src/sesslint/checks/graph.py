@@ -13,11 +13,15 @@ This module implements four vendor-neutral parent-graph rules over canonical eve
   Severity: warning, Repairability: manual.
   Rationale: Unreachable or parallel branches may be intentional subtrees;
   components are computed over present edges only. Ghost-rooted nodes form their
-  own component and co-fire SL006 alongside SL004.
-- SL007 (Ambiguous session head): Multiple chain tips / leaf events.
+  own component and co-fire SL006 alongside SL004. Components that are
+  uniformly one named branch (e.g. vendor sidechains) or contain only
+  non-conversational markers (opaque run metadata, compaction boundaries) are
+  intentional structure, not disconnections, and are exempt.
+- SL007 (Ambiguous session head): Multiple chain tips on the same branch.
   Severity: warning, Repairability: manual.
-  Rationale: Multiple terminal events require operator choice of replay branch;
-  suppressed when the session is empty or entirely composed of cycles (0 heads).
+  Rationale: Multiple terminal events on one branch require operator choice of
+  replay branch; named-branch (sidechain) tips head their own branches and
+  non-conversational tail markers are never head candidates.
 
 Occurrence Policy:
 On duplicate event IDs (handled by SL003), graph rules operate best-effort on the
@@ -52,6 +56,13 @@ from sesslint.finding import (
 
 MAX_GRAPH_FINDINGS: Final[int] = 500
 MAX_MEMBER_SAMPLE_SIZE: Final[int] = 8
+
+# Kinds that carry no conversational content: opaque run-metadata/telemetry and
+# compaction-boundary markers. A component made only of these cannot be a
+# "disconnected conversation" and an opaque/boundary leaf is never a candidate
+# session head — vendor formats emit such records freely (summary markers,
+# lifecycle signals, token telemetry).
+_NON_CONVERSATIONAL_KINDS: Final[frozenset[str]] = frozenset({"opaque", "compaction_boundary"})
 
 _MSG_SL004: Final[str] = "Missing parent reference for record {record_id}"
 _MSG_SL005: Final[str] = "Parent cycle detected for record {record_id}"
@@ -702,6 +713,19 @@ def check_components(
     findings: list[Finding] = []
 
     for size, root_id, members in extra_components:
+        # Named-branch components are intentional vendor branches, not
+        # disconnections: every member carries the same non-null branch_id
+        # (e.g. a vendor sidechain/subagent chain whose fork parent is not in
+        # this file — SL004 already reports any missing parent).
+        member_branches = {_event_branch_safe(g.id_to_event[m]) for m in members}
+        if len(member_branches) == 1 and None not in member_branches:
+            continue
+        # Components containing only non-conversational markers (opaque
+        # telemetry, compaction boundaries) have no conversation to disconnect.
+        member_kinds = {_event_get(g.id_to_event[m], "kind") for m in members}
+        if member_kinds <= _NON_CONVERSATIONAL_KINDS:
+            continue
+
         event = g.id_to_event[root_id]
         resolved_path, line_num = _resolve_source_coords(event, source_path)
 
@@ -762,10 +786,13 @@ def check_heads(
 
     Guarantees:
     - Pure function: no I/O, does not mutate input events.
-    - Heads are nodes in the ID set never referenced as a parent_id by any present event.
-    - Clean if 0 or 1 heads (empty input and all-cycle graphs produce 0 heads and 0 findings).
-    - Emits exactly one SL007 finding when count > 1 with sorted head IDs in evidence.
-    - Primary ID is the lexicographically smallest head ID.
+    - Heads are conversational nodes in the ID set never referenced as a
+      parent_id by any present event (opaque/compaction-boundary kinds excluded).
+    - Ambiguity is per branch: only >1 heads sharing the same branch_id fire;
+      named sidechain tips are legitimate heads of their own branches.
+    - Emits exactly one SL007 finding when ambiguous heads exist, with sorted
+      head IDs in evidence.
+    - Primary ID is the lexicographically smallest ambiguous head ID.
     """
     ctx = context if context is not None else CheckContext()
     g = occurrence_graph if occurrence_graph is not None else _OccurrenceGraph(events, source_path)
@@ -778,10 +805,31 @@ def check_heads(
         if p is not None and p in g.id_set:
             referenced_as_parent.add(p)
 
-    heads = sorted([u for u in g.id_set if u not in referenced_as_parent])
+    # Head candidates are conversational leaves only: opaque telemetry and
+    # compaction-boundary markers at stream tail are position markers, never
+    # candidate session heads. Heads are then grouped by branch_id — ambiguity
+    # means more than one tip on the SAME branch; a named sidechain tip is the
+    # legitimate head of its own branch (vendor subagent structure), not an
+    # alternative session head.
+    heads_by_branch: dict[str | None, list[str]] = defaultdict(list)
+    for u in g.id_set:
+        if u in referenced_as_parent:
+            continue
+        ev = g.id_to_event[u]
+        if _event_get(ev, "kind") in _NON_CONVERSATIONAL_KINDS:
+            continue
+        heads_by_branch[_event_branch_safe(ev)].append(u)
 
-    # 0 heads (empty / all-cycle) or 1 head is clean
-    if len(heads) <= 1:
+    heads = sorted(
+        u
+        for branch_heads in heads_by_branch.values()
+        if len(branch_heads) > 1
+        for u in branch_heads
+    )
+
+    # No ambiguous branch (0 or 1 head per branch) is clean; an entirely
+    # empty/all-cycle/non-conversational graph also produces no findings.
+    if not heads:
         return []
 
     primary_id = heads[0]

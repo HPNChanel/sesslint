@@ -64,6 +64,12 @@ CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_sl007_all_cycle_suppressed",
         "malformed": "test_adversarial_two_identical_cycles_dup_ids",
     },
+    "SL008": {
+        "positive": "test_ts_ordering.py::test_equal_timestamps_allowed",
+        "negative": "test_ts_ordering.py::test_sl008_fixture_single_regression",
+        "boundary": "test_ts_ordering.py::test_epoch_sentinel_edges_skipped",
+        "malformed": "test_ts_ordering.py::test_unparseable_and_naive_ts_skipped",
+    },
     "SL101": {
         "positive": "test_tool_pairing_1.py::test_healthy_clean",
         "negative": "test_sl101_orphan_fixture",
@@ -142,6 +148,42 @@ CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_regression_sl302_long_type_truncated",
         "malformed": "test_critical_field_sl302",
     },
+    "SL303": {
+        "positive": "test_dup_keys.py::test_decode_clean_no_dups",
+        "negative": "test_dup_keys.py::test_fixture_critical_dup",
+        "boundary": "test_dup_keys.py::test_dup_cap_truncated",
+        "malformed": "test_dup_keys.py::test_strictness_preserved",
+    },
+    "SL204": {
+        "positive": "test_accounting.py::test_fixture_consistent_clean",
+        "negative": "test_accounting.py::test_fixture_divergent_fires",
+        "boundary": "test_accounting.py::test_zero_baseline_first_marker_checked",
+        "malformed": "test_accounting.py::test_non_int_counters_ignored",
+    },
+    "SL205": {
+        "positive": "test_compaction_coverage.py::test_fixture_valid_clean",
+        "negative": "test_compaction_coverage.py::test_fixture_missing_leaf",
+        "boundary": "test_compaction_coverage.py::test_pointerless_boundary_silent",
+        "malformed": "test_compaction_coverage.py::test_broken_ancestor_chain_fires",
+    },
+    "SL304": {
+        "positive": "test_schema_drift.py::test_fixture_compatible_bump_clean",
+        "negative": "test_schema_drift.py::test_fixture_version_drift",
+        "boundary": "test_schema_drift.py::test_fixture_multi_transition_cap",
+        "malformed": "test_schema_drift.py::test_fixture_foreign_splice",
+    },
+    "SL401": {
+        "positive": "test_cross_file_links.py::test_intact_chain_emits_nothing",
+        "negative": "test_cross_file_links.py::test_missing_middle_warns_on_child",
+        "boundary": "test_cross_file_links.py::test_ambiguous_target_warns",
+        "malformed": "test_cross_file_links.py::test_outside_scan_root_is_info_unresolved",
+    },
+    "SL011": {
+        "positive": "test_size_anomaly.py::test_uniform_file_stays_clean",
+        "negative": "test_size_anomaly.py::test_outlier_fires_once_with_numbers_only_evidence",
+        "boundary": "test_size_anomaly.py::test_threshold_boundary_exact",
+        "malformed": "test_size_anomaly.py::test_missing_size_metadata_yields_nothing",
+    },
 }
 
 RECIPE_MATRIX: Final[dict[str, dict[str, str]]] = {
@@ -174,6 +216,18 @@ RECIPE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "negative": "test_duplicate_projection_removal_differing_fingerprints",
         "boundary": "test_purity_and_immutability",
         "malformed": "test_no_synthetic_success_multiset_proof",
+    },
+    "identical-duplicate-drop": {
+        "positive": "test_nonadjacent_dup_plans_drop_plus_renumber",
+        "negative": "test_conflicting_dup_blocked_manual",
+        "boundary": "test_drop_fails_closed_on_content_drift",
+        "malformed": "test_drop_fails_closed_on_conflicting_variant",
+    },
+    "seq-renumber": {
+        "positive": "test_renumbered_seq_contiguous",
+        "negative": "test_no_renumber_without_drops",
+        "boundary": "test_seq_renumber_step_idempotent",
+        "malformed": "test_no_renumber_on_vendor_input",
     },
     "torn-terminal-record-discard": {
         "positive": "test_canonical_torn_final_repairable",

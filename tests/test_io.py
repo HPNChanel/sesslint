@@ -61,7 +61,7 @@ class TestReaderLimits:
 
     def test_default_limits(self) -> None:
         limits = ReaderLimits()
-        assert limits.max_line_bytes == 1_000_000
+        assert limits.max_line_bytes == 8 * 1024 * 1024
         assert limits.max_depth == 100
         assert limits.max_file_bytes == 100 * 1024 * 1024
         assert limits.max_records is None
@@ -734,7 +734,7 @@ class TestCliScanLimits:
         assert exit_code == 0
         captured = capsys.readouterr()
         assert "ReaderLimits" in captured.out
-        assert "max_line_bytes=1000000" in captured.out
+        assert "max_line_bytes=8388608" in captured.out
 
     def test_cli_scan_no_flags_prints_help(self, capsys: pytest.CaptureFixture[str]) -> None:
         from sesslint.cli import main as cli_main

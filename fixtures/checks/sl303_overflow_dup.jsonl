@@ -1,0 +1,3 @@
+{"schema_version":"sesslint.session/v1","session_id":"sl303-overflow","created_at":"2026-09-05T12:00:00Z"}
+{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"first"},"seq":0,"ts":"2026-09-05T12:00:01Z","f0":0,"f0":1,"f1":0,"f1":1,"f2":0,"f2":1,"f3":0,"f3":1,"f4":0,"f4":1,"f5":0,"f5":1,"f6":0,"f6":1,"f7":0,"f7":1,"f8":0,"f8":1,"f9":0,"f9":1,"f10":0,"f10":1,"f11":0,"f11":1,"f12":0,"f12":1,"f13":0,"f13":1,"f14":0,"f14":1,"f15":0,"f15":1,"f16":0,"f16":1}
+{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"second"},"seq":1,"ts":"2026-09-05T12:00:02Z"}

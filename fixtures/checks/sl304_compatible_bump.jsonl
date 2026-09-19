@@ -1,0 +1,4 @@
+{"type":"user","uuid":"u1","timestamp":"2024-01-01T10:00:00Z","version":"2.0.30","message":{"role":"user","content":[{"type":"text","text":"hola"}]}}
+{"type":"assistant","uuid":"u2","parentUuid":"u1","timestamp":"2024-01-01T10:01:00Z","version":"2.0.30","message":{"role":"assistant","content":[{"type":"text","text":"hola"}]}}
+{"type":"user","uuid":"u3","parentUuid":"u2","timestamp":"2024-01-01T10:02:00Z","version":"2.1.0","message":{"role":"user","content":[{"type":"text","text":"sigo"}]}}
+{"type":"assistant","uuid":"u4","parentUuid":"u3","timestamp":"2024-01-01T10:03:00Z","version":"2.1.0","message":{"role":"assistant","content":[{"type":"text","text":"dale"}]}}

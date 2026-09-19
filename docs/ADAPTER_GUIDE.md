@@ -2,11 +2,15 @@
 
 This document is the authoritative specification and implementation guide for contributing format adapters to **SessLint**. It establishes the technical contracts, privacy invariants, synthetic namespacing rules, and verification requirements for transforming vendor-specific session streams into normalized, audit-ready canonical sessions.
 
+External contributors should start with the normative contract in
+[ADAPTER_SDK.md](ADAPTER_SDK.md) (Adapter SDK v1); this guide is the deeper
+internal reference.
+
 ---
 
 ## 1. Architectural Role of Adapters
 
-In SessLint's architecture, an **Adapter** is a pure, side-effect-free translation layer. Its sole responsibility is parsing external agent session artifacts (e.g. Claude Code JSONL, OpenAI Agents SDK JSON, or custom orchestrator traces) into a normalized sequence of [`CanonicalEvent`](file:///d:/FOR_WORK/WORK_PROJECT/sesslint/src/sesslint/canonical.py) objects.
+In SessLint's architecture, an **Adapter** is a pure, side-effect-free translation layer. Its sole responsibility is parsing external agent session artifacts (e.g. Claude Code JSONL, OpenAI Agents SDK JSON, or custom orchestrator traces) into a normalized sequence of [`CanonicalEvent`](../src/sesslint/canonical.py) objects.
 
 ```mermaid
 flowchart LR
@@ -75,7 +79,7 @@ def load_<adapter>(
 ```
 
 - **Limits Enforcement**:
-  - Wrap stream iteration with [`ReaderLimits`](file:///d:/FOR_WORK/WORK_PROJECT/sesslint/src/sesslint/io.py) to prevent line-length or record-count resource exhaustion.
+  - Wrap stream iteration with [`ReaderLimits`](../src/sesslint/io.py) to prevent line-length or record-count resource exhaustion.
 - **Fail-Closed on Unknown Version (`SL301`)**:
   - Define an immutable version allowlist:
     ```python
@@ -102,7 +106,7 @@ def load_<adapter>(
 
 When an unknown record type or turn kind is encountered:
 1. Do not crash or discard the record silently.
-2. Filter the discriminator through [`safe_discriminator`](file:///d:/FOR_WORK/WORK_PROJECT/sesslint/src/sesslint/adapters/detect.py) before embedding in evidence:
+2. Filter the discriminator through [`safe_discriminator`](../src/sesslint/adapters/detect.py) before embedding in evidence:
    - Allowlisted safe alphanumeric identifiers ($\le 32$ chars, matching `^[a-zA-Z0-9_.-]+$`) are echoed verbatim.
    - Overlong or hostile strings containing punctuation, control characters, or secrets are bounded to `<type:len=N>` with `type_truncated=True`.
 
@@ -114,7 +118,7 @@ If external session records do not provide persistent, globally-unique IDs:
    sesslint:synthetic:<adapter_id>:<seq>:<hash8>
    ```
 2. **Helper API**:
-   Use [`synthetic_event_id`](file:///d:/FOR_WORK/WORK_PROJECT/sesslint/src/sesslint/adapters/synthetic.py):
+   Use [`synthetic_event_id`](../src/sesslint/adapters/synthetic.py):
    ```python
    from sesslint.adapters.synthetic import synthetic_event_id
 
@@ -126,7 +130,7 @@ If external session records do not provide persistent, globally-unique IDs:
    )
    ```
 3. **Collision Guard**:
-   Maintain a [`SyntheticIdCollisionGuard`](file:///d:/FOR_WORK/WORK_PROJECT/sesslint/src/sesslint/adapters/synthetic.py) instance during ingest to prevent duplicate IDs or collisions with native IDs.
+   Maintain a [`SyntheticIdCollisionGuard`](../src/sesslint/adapters/synthetic.py) instance during ingest to prevent duplicate IDs or collisions with native IDs.
 4. **Never Leak Legacy Prefixes**:
    Do **not** use prefixes like `rec_` or `evt_` for synthetic IDs. Native IDs must set `original_id=event_id`, while synthetic IDs must set `original_id=None`.
 
@@ -197,7 +201,7 @@ Every directory containing fixtures must have a `PROVENANCE.json` defining licen
 
 ## 3. Running the Conformance Suite
 
-SessLint provides a unified, data-driven cross-adapter conformance test suite in [`tests/conformance/test_adapter_suite.py`](file:///d:/FOR_WORK/WORK_PROJECT/sesslint/tests/conformance/test_adapter_suite.py).
+SessLint provides a unified, data-driven cross-adapter conformance test suite in [`tests/conformance/test_adapter_suite.py`](../tests/conformance/test_adapter_suite.py).
 
 To execute the suite locally:
 
@@ -291,4 +295,37 @@ The table below tracks known open questions regarding upstream vendor formats. T
 
 ---
 
-*For questions or guidance on contributing adapters, open an issue using the [Adapter Request Template](file:///.github/ISSUE_TEMPLATE/adapter_request.md) or join repository discussions.*
+## Shape Inventory (dev tool) *(next release)*
+
+`scripts/shape_inventory.py` walks a local session directory and reports
+which record `type` values, payload types, and key names exist — the
+early-warning system for vendor format drift, run against real data
+without committing any of it:
+
+```bash
+python scripts/shape_inventory.py ~/.codex/sessions --json
+python scripts/shape_inventory.py DIR --unknown-only   # just the drift diff
+python scripts/shape_inventory.py DIR --known-only     # histograms, no diff
+```
+
+- **Content-free by construction**: emits type names, key names, and
+  counts only — never string values, payloads, or file paths beyond the
+  root argument. Output is safe to paste into issues.
+- **Live known-sets**: the diff imports the adapter tables directly
+  (`TYPE_MAP`, `KNOWN_RECORD_KEYS`, `ENVELOPE_OPAQUE_TYPES`,
+  `RESPONSE_ITEM_TYPE_MAP`, `KNOWN_ENVELOPE_KEYS`, `KNOWN_PAYLOAD_KEYS`,
+  canonical `VALID_KINDS`/`KNOWN_EVENT_FIELDS`), so "unknown" always means
+  "absent from the adapter the repo actually ships".
+- **Bounded**: caps distinct types at 512 per set and keys at 4096,
+  honoring the same file-size limits as `io.py`; marks `truncated` when
+  caps are hit. Read-only, stdlib-only, no network — a maintainer-side
+  script, not part of the wheel.
+
+Workflow: run it over a real local tree after an adapter update — every
+name in the `unknown` diff is either a format change to map, an
+`SL302`-class unknown the adapter already flags honestly, or a new
+opaque envelope to classify.
+
+---
+
+*For questions or guidance on contributing adapters, open an issue using the [Adapter Request Template](../.github/ISSUE_TEMPLATE/adapter_request.md) or join repository discussions.*

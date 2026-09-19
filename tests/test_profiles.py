@@ -129,23 +129,20 @@ def test_override_validation_errors() -> None:
 
 
 def test_enabled_rules_pinned() -> None:
-    """Each profile's rule list contains all 20 SL codes; flags reflect specialization."""
-    assert len(ALL_RULES) == 20
+    """Each profile's rule list contains all 24 SL codes; flags reflect specialization."""
+    assert len(ALL_RULES) == 27
     assert ALL_RULES == tuple(sorted(ALL_RULES))
 
     for p in (NEUTRAL_PROFILE, CLAUDE_STRICT_PROFILE, OPENAI_STRICT_PROFILE):
         assert p.enabled_rules == ALL_RULES
 
     # Differences in flags
-    assert NEUTRAL_PROFILE.strict_unknown_critical is False
     assert NEUTRAL_PROFILE.checkpoint_sensitivity == "default"
     assert NEUTRAL_PROFILE.thresholds["margin_min"] == 0.15
 
-    assert CLAUDE_STRICT_PROFILE.strict_unknown_critical is True
     assert CLAUDE_STRICT_PROFILE.checkpoint_sensitivity == "default"
     assert CLAUDE_STRICT_PROFILE.thresholds["margin_min"] == 0.20
 
-    assert OPENAI_STRICT_PROFILE.strict_unknown_critical is True
     assert OPENAI_STRICT_PROFILE.checkpoint_sensitivity == "high"
     assert OPENAI_STRICT_PROFILE.thresholds["margin_min"] == 0.15
 

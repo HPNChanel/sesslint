@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.drift import DriftTracker
 from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
@@ -51,6 +52,8 @@ from sesslint.io import (
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
+    decode_json_dupaware,
+    dup_key_findings,
     extract_record_id,
 )
 
@@ -664,6 +667,7 @@ def _load_openai_agents_json(
     """
     findings: list[Finding] = []
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
+    source_metadata["record_sizes"] = []
     guard = SyntheticIdCollisionGuard()
 
     # Check for forbidden NUL bytes
@@ -699,7 +703,9 @@ def _load_openai_agents_json(
 
     # JSON parsing
     try:
-        doc = _STRICT_JSON_DECODER.decode(decoded_text.strip())
+        doc, dup_keys, dups_truncated = decode_json_dupaware(
+            decoded_text.strip(), critical_keys=CRITICAL_KEYS
+        )
     except (json.JSONDecodeError, ValueError):
         finding = make_finding(
             code=SL001,
@@ -710,6 +716,16 @@ def _load_openai_agents_json(
             evidence={"reason": "malformed_json"},
         )
         return EventList([], source=source_metadata), [finding]
+
+    if dup_keys:
+        findings.extend(
+            dup_key_findings(
+                dup_keys,
+                truncated=dups_truncated,
+                path_str=path_str,
+                line=1,
+            )
+        )
 
     # Nesting depth check
     if not check_nesting_depth(doc, limits.max_depth):
@@ -728,6 +744,7 @@ def _load_openai_agents_json(
 
     raw_items: list[Any] = []
     seen_version_sl301 = False
+    drift = DriftTracker("openai-agents")
 
     if isinstance(doc, dict):
         # Extract version evidence
@@ -755,6 +772,17 @@ def _load_openai_agents_json(
             seen_version_sl301=seen_version_sl301,
             guard=guard,
         )
+        if seen_version_sl301:
+            drift.note_unsupported_version()
+        elif isinstance(version_candidate, (str, int, float)):
+            _ver_norm = normalize_version(str(version_candidate).strip())
+            drift.observe_version(
+                _ver_norm,
+                supported=_ver_norm in SUPPORTED_OPENAI_AGENTS_VERSIONS,
+                field=_openai_version_field(doc, version_candidate),
+                line=1,
+                record_id=None,
+            )
 
         # Ingest checkpoints
         raw_checkpoints = doc.get("checkpoints")
@@ -843,10 +871,12 @@ def _load_openai_agents_json(
             seen_version_sl301=seen_version_sl301,
             record_ordinal=idx + 1,
             guard=guard,
+            drift=drift,
         )
 
     guard.assert_no_collision()
     source_metadata.run_state_projection = project_run_state(source_metadata)
+    findings.extend(drift.into_findings(path_str=path_str))
     return EventList(events, source=source_metadata), sort_findings(findings)
 
 
@@ -860,8 +890,10 @@ def _load_openai_agents_jsonl(
     events: list[SessionEvent] = []
     findings: list[Finding] = []
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
+    source_metadata["record_sizes"] = []
     guard = SyntheticIdCollisionGuard()
     seen_version_sl301 = False
+    drift = DriftTracker("openai-agents")
 
     current_offset = 0
     line_number = 0
@@ -918,6 +950,7 @@ def _load_openai_agents_jsonl(
                 source_metadata=source_metadata,
                 seen_version_sl301=seen_version_sl301,
                 guard=guard,
+                drift=drift,
             )
 
         pending_raw = current_raw
@@ -937,10 +970,12 @@ def _load_openai_agents_jsonl(
             source_metadata=source_metadata,
             seen_version_sl301=seen_version_sl301,
             guard=guard,
+            drift=drift,
         )
 
     guard.assert_no_collision()
     source_metadata.run_state_projection = project_run_state(source_metadata)
+    findings.extend(drift.into_findings(path_str=path_str))
     return EventList(events, source=source_metadata), sort_findings(findings)
 
 
@@ -955,6 +990,7 @@ def _process_jsonl_line(
     source_metadata: SourceMetadata,
     seen_version_sl301: bool,
     guard: SyntheticIdCollisionGuard | None = None,
+    drift: DriftTracker | None = None,
 ) -> None:
     """Process a single JSONL line, emitting SessionEvent or SL001/SL002."""
     code = SL002 if is_terminal else SL001
@@ -963,6 +999,11 @@ def _process_jsonl_line(
         "byte_end": raw.byte_end,
         "record_ordinal": raw.record_ordinal,
     }
+
+    # Bounded per-record byte size for the SL011 distribution check.
+    sizes_meta = source_metadata.get("record_sizes")
+    if isinstance(sizes_meta, list) and raw.byte_end is not None and raw.byte_offset is not None:
+        sizes_meta.append(raw.byte_end - raw.byte_offset)
 
     if raw.truncated_limit:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
@@ -1018,7 +1059,9 @@ def _process_jsonl_line(
         return
 
     try:
-        obj = _STRICT_JSON_DECODER.decode(decoded_text)
+        obj, dup_keys, dups_truncated = decode_json_dupaware(
+            decoded_text, critical_keys=CRITICAL_KEYS
+        )
     except RecursionError:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
@@ -1052,6 +1095,18 @@ def _process_jsonl_line(
             )
         )
         return
+
+    if dup_keys:
+        findings.extend(
+            dup_key_findings(
+                dup_keys,
+                truncated=dups_truncated,
+                path_str=path_str,
+                line=raw.line_number,
+                record_id=extract_record_id(decoded_text, obj),
+                record_ordinal=raw.record_ordinal,
+            )
+        )
 
     if not isinstance(obj, dict):
         source = SourceRef(path=path_str, line=raw.line_number, record_id=None)
@@ -1099,6 +1154,7 @@ def _process_jsonl_line(
         byte_end=raw.byte_end,
         record_ordinal=raw.record_ordinal,
         guard=guard,
+        drift=drift,
     )
 
 
@@ -1185,6 +1241,22 @@ def _check_version(
     return seen_version_sl301
 
 
+_OPENAI_VERSION_KEYS: Final[tuple[str, ...]] = (
+    "sdk_version",
+    "export_version",
+    "agent_sdk_version",
+    "version",
+)
+
+
+def _openai_version_field(obj: dict[str, Any], version_candidate: Any) -> str:
+    """Return the bounded key name that supplied ``version_candidate``."""
+    for _k in _OPENAI_VERSION_KEYS:
+        if obj.get(_k) == version_candidate:
+            return _k
+    return "version"
+
+
 def _process_openai_item(
     obj: dict[str, Any],
     *,
@@ -1198,6 +1270,7 @@ def _process_openai_item(
     byte_end: int | None = None,
     record_ordinal: int | None = None,
     guard: SyntheticIdCollisionGuard | None = None,
+    drift: DriftTracker | None = None,
 ) -> None:
     """Canonicalize a single item dict into a SessionEvent, emitting findings as needed."""
     seq_index = len(events)
@@ -1247,7 +1320,7 @@ def _process_openai_item(
         or obj.get("version")
     )
     if version_candidate is not None:
-        _check_version(
+        _item_sl301 = _check_version(
             version_candidate,
             path_str=path_str,
             line_number=line_number,
@@ -1260,11 +1333,36 @@ def _process_openai_item(
             record_ordinal=record_ordinal,
             guard=guard,
         )
+        if drift is not None:
+            if _item_sl301:
+                drift.note_unsupported_version()
+            elif isinstance(version_candidate, (str, int, float)):
+                _ver_norm = normalize_version(str(version_candidate).strip())
+                drift.observe_version(
+                    _ver_norm,
+                    supported=_ver_norm in SUPPORTED_OPENAI_AGENTS_VERSIONS,
+                    field=_openai_version_field(obj, version_candidate),
+                    line=line_number,
+                    record_id=rec_id_str,
+                    record_ordinal=record_ordinal,
+                    byte_offset=byte_offset,
+                    byte_end=byte_end,
+                )
 
     # Type resolution and role disambiguation
     raw_type = obj.get("type")
     raw_role = obj.get("role")
     has_emitted_sl302 = False
+
+    if drift is not None:
+        drift.observe_signature(
+            raw_type,
+            line=line_number,
+            record_id=rec_id_str,
+            record_ordinal=record_ordinal,
+            byte_offset=byte_offset,
+            byte_end=byte_end,
+        )
 
     actor: ActorLiteral
     kind: KindLiteral

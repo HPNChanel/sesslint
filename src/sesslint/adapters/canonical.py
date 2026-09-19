@@ -29,6 +29,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, BinaryIO, Final, Literal, cast
 
+from sesslint.adapters.drift import DriftTracker
 from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
 from sesslint.canonical import (
     KNOWN_HEADER_FIELDS,
@@ -55,11 +56,14 @@ from sesslint.finding import (
     sort_findings,
 )
 from sesslint.io import (
-    _STRICT_JSON_DECODER,
     DEFAULT_READER_LIMITS,
+    DuplicateKey,
     ReaderLimits,
     _validate_stream_coordinates,
     check_nesting_depth,
+    decode_json_dupaware,
+    dup_key_findings,
+    extract_record_id,
 )
 
 # CanonicalEvent alias for specification conformance
@@ -254,6 +258,12 @@ def _safe_type_value(val: Any) -> str:
     return safe_type_value(val)
 
 
+# Internal analysis metadata keys carried on SourceMetadata but never part of the
+# canonical wire schema — stripped on load-merge and on dump to keep round-trips
+# byte-exact and the serialized schema clean.
+_INTERNAL_SOURCE_KEYS: Final = frozenset({"links", "record_sizes"})
+
+
 def dump_canonical(
     events: Sequence[CanonicalEvent] | Session,
     source: Mapping[str, Any] | str | None = None,
@@ -334,6 +344,9 @@ def dump_canonical(
             version = source_dict.pop("version")
         if "metadata" in source_dict and isinstance(source_dict["metadata"], Mapping):
             metadata = dict(source_dict.pop("metadata"))
+
+    for _k in _INTERNAL_SOURCE_KEYS:
+        source_dict.pop(_k, None)
 
     if format == "json":
         doc: dict[str, Any] = {
@@ -429,6 +442,7 @@ def _parse_canonical_event_record(
     byte_offset: int | None = None,
     byte_end: int | None = None,
     record_ordinal: int | None = None,
+    drift: DriftTracker | None = None,
 ) -> SessionEvent:
     """Parse and validate a single canonical event record, emitting findings as needed."""
 
@@ -448,6 +462,19 @@ def _parse_canonical_event_record(
     rec_id_str: str | None = _safe_rec_id(raw_id)
     is_valid_id = isinstance(raw_id, str) and rec_id_str is not None and raw_id == rec_id_str
     rec_id: str = rec_id_str if rec_id_str is not None else f"<missing:{idx}>"
+
+    # Schema-drift tracking (SL304): canonical events carry ``kind``, never a
+    # vendor envelope ``type`` — a discriminative foreign ``type`` here means
+    # the record came from another format.
+    if drift is not None:
+        drift.observe_signature(
+            ev_raw.get("type"),
+            line=line_num,
+            record_id=rec_id_str,
+            record_ordinal=record_ordinal,
+            byte_offset=byte_offset,
+            byte_end=byte_end,
+        )
 
     if not has_id_key:
         add_finding(
@@ -886,6 +913,8 @@ def load_canonical(
                 findings.append(f)
 
     source_metadata = SourceMetadata(format="canonical")
+    source_metadata["record_sizes"] = []
+    drift = DriftTracker("canonical")
 
     try:
         data = stream.read(effective_limits.max_file_bytes + 1)
@@ -932,9 +961,13 @@ def load_canonical(
         # Check if single-document JSON
         is_single_doc = False
         doc: Any = None
+        doc_dup_keys: tuple[DuplicateKey, ...] = ()
+        doc_dups_truncated = False
         try:
             decoded_text = data.decode("utf-8", errors="strict")
-            doc = _STRICT_JSON_DECODER.decode(decoded_text)
+            doc, doc_dup_keys, doc_dups_truncated = decode_json_dupaware(
+                decoded_text, critical_keys=CRITICAL_KEYS
+            )
             if isinstance(doc, dict) and "events" in doc:
                 is_single_doc = True
             elif (
@@ -962,6 +995,11 @@ def load_canonical(
                     evidence={"reason": "invalid_document_type"},
                 )
                 return EventList([], source=source_metadata), [finding]
+
+            for dup_finding in dup_key_findings(
+                doc_dup_keys, truncated=doc_dups_truncated, path_str=path_str, line=1
+            ):
+                add_finding(dup_finding)
 
             # Nesting depth check
             if not check_nesting_depth(doc, effective_limits.max_depth):
@@ -1040,6 +1078,7 @@ def load_canonical(
                         },
                     )
                 )
+                drift.note_unsupported_version()
 
             # Ingest document identity and metadata
             if "session_id" in doc and isinstance(doc["session_id"], str):
@@ -1054,7 +1093,9 @@ def load_canonical(
             # Ingest source metadata and checkpoints
             raw_source = doc.get("source")
             if isinstance(raw_source, dict):
-                source_metadata.update(raw_source)
+                source_metadata.update(
+                    {k: v for k, v in raw_source.items() if k not in _INTERNAL_SOURCE_KEYS}
+                )
                 if "checkpoints" in raw_source and isinstance(raw_source["checkpoints"], list):
                     source_metadata["checkpoints"] = list(raw_source["checkpoints"])
             elif isinstance(raw_source, str):
@@ -1155,9 +1196,12 @@ def load_canonical(
                     line_num=line_num,
                     path_str=path_str,
                     add_finding=add_finding,
+                    drift=drift,
                 )
                 events.append(event)
 
+            for _df in drift.into_findings(path_str=path_str):
+                add_finding(_df)
             return EventList(events, source=source_metadata), sort_findings(findings)
 
         # ---------------------------------------------------------------------
@@ -1208,6 +1252,7 @@ def load_canonical(
         hdr_chunk = raw_data[hdr_byte_offset:hdr_byte_end]
         hdr_ordinal = 1
         _validate_stream_coordinates(hdr_byte_offset, hdr_byte_end, hdr_ordinal)
+        source_metadata["record_sizes"].append(hdr_byte_end - hdr_byte_offset)
         hdr_coord_ev: dict[str, Any] = {
             "byte_offset": hdr_byte_offset,
             "byte_end": hdr_byte_end,
@@ -1220,7 +1265,9 @@ def load_canonical(
 
         try:
             hdr_str = hdr_decode.decode("utf-8", errors="strict").strip()
-            hdr_doc = _STRICT_JSON_DECODER.decode(hdr_str)
+            hdr_doc, hdr_dup_keys, hdr_dups_truncated = decode_json_dupaware(
+                hdr_str, critical_keys=CRITICAL_KEYS
+            )
         except UnicodeDecodeError as err:
             finding = make_finding(
                 code=SL001,
@@ -1241,6 +1288,14 @@ def load_canonical(
                 evidence={**hdr_coord_ev, "reason": "malformed_json", "detail": str(err)},
             )
             return EventList([], source=source_metadata), [finding]
+
+        for dup_finding in dup_key_findings(
+            hdr_dup_keys,
+            truncated=hdr_dups_truncated,
+            path_str=path_str,
+            line=hdr_line_no,
+        ):
+            add_finding(dup_finding)
 
         if not isinstance(hdr_doc, dict):
             finding = make_finding(
@@ -1324,6 +1379,7 @@ def load_canonical(
                     },
                 )
             )
+            drift.note_unsupported_version()
 
         # Ingest header metadata
         if "session_id" in hdr_doc and isinstance(hdr_doc["session_id"], str):
@@ -1338,7 +1394,9 @@ def load_canonical(
 
         raw_source = hdr_doc.get("source")
         if isinstance(raw_source, dict):
-            source_metadata.update(raw_source)
+            source_metadata.update(
+                {k: v for k, v in raw_source.items() if k not in _INTERNAL_SOURCE_KEYS}
+            )
             if "checkpoints" in raw_source and isinstance(raw_source["checkpoints"], list):
                 source_metadata["checkpoints"] = list(raw_source["checkpoints"])
         elif isinstance(raw_source, str):
@@ -1396,6 +1454,7 @@ def load_canonical(
             is_terminal = ev_idx == event_count - 1
             ev_ordinal = ev_idx + 2
             _validate_stream_coordinates(ev_byte_offset, ev_byte_end, ev_ordinal)
+            source_metadata["record_sizes"].append(ev_byte_end - ev_byte_offset)
             ev_coord_ev: dict[str, Any] = {
                 "byte_offset": ev_byte_offset,
                 "byte_end": ev_byte_end,
@@ -1403,7 +1462,9 @@ def load_canonical(
             }
             try:
                 ev_str = ev_chunk.decode("utf-8", errors="strict").strip()
-                ev_raw = _STRICT_JSON_DECODER.decode(ev_str)
+                ev_raw, ev_dup_keys, ev_dups_truncated = decode_json_dupaware(
+                    ev_str, critical_keys=CRITICAL_KEYS
+                )
             except UnicodeDecodeError as err:
                 code = SL002 if is_terminal else SL001
                 rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
@@ -1450,6 +1511,16 @@ def load_canonical(
                     )
                 )
                 continue
+
+            for dup_finding in dup_key_findings(
+                ev_dup_keys,
+                truncated=ev_dups_truncated,
+                path_str=path_str,
+                line=line_no,
+                record_id=extract_record_id(ev_str, ev_raw),
+                record_ordinal=ev_ordinal,
+            ):
+                add_finding(dup_finding)
 
             if not isinstance(ev_raw, dict):
                 code = SL002 if is_terminal else SL001
@@ -1502,9 +1573,12 @@ def load_canonical(
                 byte_offset=ev_byte_offset,
                 byte_end=ev_byte_end,
                 record_ordinal=ev_ordinal,
+                drift=drift,
             )
             events_stream.append(event)
 
+        for _df in drift.into_findings(path_str=path_str):
+            add_finding(_df)
         return EventList(events_stream, source=source_metadata), sort_findings(findings)
 
     finally:

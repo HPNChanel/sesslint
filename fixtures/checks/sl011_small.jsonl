@@ -1,0 +1,5 @@
+{"type": "user", "uuid": "s0", "sessionId": "sess-s", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}}
+{"type": "user", "uuid": "s1", "sessionId": "sess-s", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parentUuid": "s0"}
+{"type": "user", "uuid": "s2", "sessionId": "sess-s", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parentUuid": "s1"}
+{"type": "user", "uuid": "s3", "sessionId": "sess-s", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parentUuid": "s2"}
+{"type": "user", "uuid": "s4", "sessionId": "sess-s", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parentUuid": "s3"}

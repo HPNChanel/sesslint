@@ -10,7 +10,7 @@ from __future__ import annotations
 import difflib
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
 from sesslint.canonical import SCHEMA_VERSION, SessionEvent
@@ -26,7 +26,6 @@ class Profile:
     allowed_adapters: tuple[str, ...]
     enabled_rules: tuple[str, ...]
     thresholds: Mapping[str, float]
-    strict_unknown_critical: bool
     checkpoint_sensitivity: str
     version: str = "1.0.0"
     rule_severities: Mapping[str, Severity] = field(default_factory=dict)
@@ -39,7 +38,6 @@ class Profile:
             "description": self.description,
             "enabled_rules": list(self.enabled_rules),
             "name": self.name,
-            "strict_unknown_critical": self.strict_unknown_critical,
             "thresholds": dict(self.thresholds),
             "version": self.version,
         }
@@ -61,7 +59,6 @@ class EffectiveConfig:
     enabled_rules: tuple[str, ...]
     confidence_min: float
     margin_min: float
-    strict_unknown_critical: bool
     checkpoint_sensitivity: str
     format_override: str | None
     thresholds_source: str  # "profile" | "cli"
@@ -78,7 +75,6 @@ class EffectiveConfig:
             "format_override": self.format_override,
             "margin_min": round(self.margin_min, 4),
             "profile": self.profile,
-            "strict_unknown_critical": self.strict_unknown_critical,
             "thresholds_source": self.thresholds_source,
         }
 
@@ -190,12 +186,72 @@ def resolve_effective_config(
         enabled_rules=prof.enabled_rules,
         confidence_min=conf,
         margin_min=marg,
-        strict_unknown_critical=prof.strict_unknown_critical,
         checkpoint_sensitivity=prof.checkpoint_sensitivity,
         format_override=fmt_override,
         thresholds_source=thresholds_source,
         version=prof.version,
     )
+
+
+def apply_rule_selection(
+    profile: Profile | str,
+    *,
+    select: Sequence[str] | None = None,
+    ignore: Sequence[str] | None = None,
+) -> Profile:
+    """Return ``profile`` with ``enabled_rules`` filtered by select/ignore lists.
+
+    ``select`` restricts the run to exactly the listed codes; ``ignore``
+    removes the listed codes. They are mutually exclusive. Unknown code ids
+    raise ``ValueError``. Deselected rules surface as ``profile-gated``
+    coverage skips in the check runner — selection is honest configuration,
+    not output filtering.
+    """
+    prof = get_profile(profile) if isinstance(profile, str) else profile
+    if select and ignore:
+        raise ValueError("select and ignore are mutually exclusive")
+    if not select and not ignore:
+        return prof
+
+    from sesslint.profiles.builtin import ALL_RULES
+
+    known = set(ALL_RULES)
+
+    def _norm(items: Sequence[str]) -> frozenset[str]:
+        out: set[str] = set()
+        for item in items:
+            code = str(item).strip().upper()
+            if code not in known:
+                raise ValueError(f"Unknown rule code {item!r}. Valid codes: {sorted(known)}")
+            out.add(code)
+        return frozenset(out)
+
+    if select:
+        chosen = _norm(select)
+        enabled = tuple(r for r in prof.enabled_rules if r in chosen)
+    else:
+        ignored = _norm(ignore or ())
+        enabled = tuple(r for r in prof.enabled_rules if r not in ignored)
+    return replace(prof, enabled_rules=enabled)
+
+
+def deselected_rules(
+    profile: Profile | str,
+    *,
+    select: Sequence[str] | None = None,
+    ignore: Sequence[str] | None = None,
+) -> frozenset[str]:
+    """Return the profile rules removed by a select/ignore selection.
+
+    Empty when no selection was supplied. Coverage uses this to report
+    ``deselected`` skips separately from ``profile-gated`` ones — the former
+    is an explicit user choice, the latter the profile's own rule set.
+    """
+    prof = get_profile(profile) if isinstance(profile, str) else profile
+    if not select and not ignore:
+        return frozenset()
+    selected = apply_rule_selection(prof, select=select, ignore=ignore)
+    return frozenset(prof.enabled_rules) - frozenset(selected.enabled_rules)
 
 
 def require_canonical(session_or_events: Any) -> None:
@@ -251,6 +307,7 @@ __all__ = [
     "EffectiveConfig",
     "Profile",
     "VALID_FORMATS",
+    "apply_rule_selection",
     "get_profile",
     "list_profiles",
     "require_canonical",

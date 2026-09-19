@@ -7,14 +7,18 @@ FR-015, FR-016, FR-017).
 
 from __future__ import annotations
 
+import codecs
+import hashlib
+import io
 import json
 import math
+import mmap
 import os
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Final
+from typing import Any, BinaryIO, Final, Literal
 
 from sesslint.canonical import (
     SessionEvent,
@@ -22,7 +26,7 @@ from sesslint.canonical import (
     parse_session_event,
     parse_session_header,
 )
-from sesslint.codes import SL001, SL002
+from sesslint.codes import SL001, SL002, SL303, Repairability, Severity
 from sesslint.errors import (
     FileTooLargeError,
     FindingError,
@@ -33,7 +37,11 @@ from sesslint.errors import (
 )
 from sesslint.finding import Finding, SourceRef, enforce_content_free_text, make_finding
 
-DEFAULT_MAX_LINE_BYTES: Final[int] = 1_000_000
+# 8 MiB per-line bound: real vendor records (e.g. Codex custom_tool_call_output
+# carrying tool output) legitimately reach ~1.5 MB, so the hostile-input line
+# cap must clear that while still bounding giant-line DoS well under the
+# 100 MB whole-file cap.
+DEFAULT_MAX_LINE_BYTES: Final[int] = 8 * 1024 * 1024
 DEFAULT_MAX_DEPTH: Final[int] = 100
 DEFAULT_MAX_FILE_BYTES: Final[int] = 100 * 1024 * 1024  # 100 MB
 _RECORD_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'"id"\s*:\s*"([^"]{1,200})"')
@@ -91,6 +99,164 @@ class ReaderLimits:
 
 
 DEFAULT_READER_LIMITS: Final[ReaderLimits] = ReaderLimits()
+
+_PROBE_CHUNK_BYTES: Final[int] = 1024 * 1024  # 1 MiB
+
+EncodingProbe = Literal["nul", "utf8"]
+
+
+def probe_stream_encoding(stream: BinaryIO) -> EncodingProbe | None:
+    """Probe a byte stream for NUL bytes or non-UTF-8 content in bounded chunks.
+
+    Same semantics as ``probe_text_encoding``: ``None`` when the stream decodes
+    cleanly as UTF-8 with no NUL bytes, ``"nul"`` on a NUL byte, ``"utf8"`` on
+    an undecodable sequence. Reads the stream once, front to back — callers
+    pass a fresh or rewound stream.
+    """
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    while True:
+        chunk = stream.read(_PROBE_CHUNK_BYTES)
+        if not chunk:
+            break
+        if b"\x00" in chunk:
+            return "nul"
+        try:
+            decoder.decode(chunk)
+        except UnicodeDecodeError:
+            return "utf8"
+    try:
+        decoder.decode(b"", final=True)
+    except UnicodeDecodeError:
+        return "utf8"
+    return None
+
+
+def probe_text_encoding(path: Path) -> EncodingProbe | None:
+    """Probe a file for NUL bytes or non-UTF-8 content in bounded chunks (DW-T-11).
+
+    Returns ``None`` when the file decodes cleanly as UTF-8 with no NUL bytes,
+    ``"nul"`` when a NUL byte is found, or ``"utf8"`` when an undecodable
+    sequence is found. Semantics match a whole-file read: any violation —
+    head or tail — is reported. OSError propagates to the caller so it can be
+    mapped into the standard I/O finding path.
+    """
+    with path.open("rb") as fh:
+        return probe_stream_encoding(fh)
+
+
+def probe_bytes_encoding(data: bytes) -> EncodingProbe | None:
+    """Probe an in-memory byte buffer with the same semantics as
+    ``probe_text_encoding`` — the stdin/virtual-source path (ux T-06)."""
+    return probe_stream_encoding(io.BytesIO(data))
+
+
+def sha256_file_bytes(path: Path, *, chunk_bytes: int = _PROBE_CHUNK_BYTES) -> str:
+    """Return the SHA-256 hex digest of a file's bytes, read in bounded chunks.
+
+    Content-hash is the correctness floor for the incremental scan cache
+    (perf-scale T-02): never relies on mtime. OSError propagates so callers
+    can map it into the standard I/O finding path or a cache miss.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        while True:
+            chunk = fh.read(chunk_bytes)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+_MMAP_MIN_BYTES: Final[int] = 4 * 1024 * 1024  # 4 MiB (perf-scale T-03)
+_MMAP_MIN_LINE_BYTES: Final[int] = 65536  # 64 KiB avg line to engage mmap
+_MMAP_SNIFF_BYTES: Final[int] = 65536  # head sample for the line-size gate
+
+
+class _MMapLineSource:
+    """``readline()``-compatible byte source backed by a read-only mmap view.
+
+    ``mmap.readline`` is unbounded in stdlib, so line iteration is
+    re-implemented with ``find`` + slice: the scan happens inside the mapped
+    pages without intermediate copies, and the returned bytes are sliced at
+    the caller's size cap — identical bounded semantics to
+    ``BufferedReader.readline(limit)``. Lifecycle is tied to the owning file
+    object; nothing outside ``io.py`` sees the mapping.
+    """
+
+    __slots__ = ("_fh", "_mm", "_pos")
+
+    def __init__(self, fh: BinaryIO, mm: mmap.mmap) -> None:
+        self._fh = fh
+        self._mm = mm
+        self._pos = 0
+
+    def readline(self, size: int = -1) -> bytes:
+        """Return bytes up to and including the next newline, capped at ``size``.
+
+        Mirrors ``io.BufferedReader.readline``: at EOF returns ``b""``; a
+        positive cap may split a long line across consecutive calls.
+        """
+        if self._pos >= len(self._mm):
+            return b""
+        try:
+            nl = self._mm.find(b"\n", self._pos)
+        except (ValueError, OSError):
+            return b""
+        end = len(self._mm) if nl < 0 else nl + 1
+        if size is not None and size >= 0:
+            end = min(end, self._pos + size)
+        try:
+            chunk = self._mm[self._pos : end]
+        except (ValueError, IndexError, OSError):
+            # Mutating/shrinking source: treat as EOF; the source-mutation
+            # fingerprint check reports it, matching buffered semantics.
+            self._pos = len(self._mm)
+            return b""
+        self._pos = end
+        return chunk
+
+    def close(self) -> None:
+        """Close the mapping then the backing file object."""
+        try:
+            self._mm.close()
+        finally:
+            self._fh.close()
+
+    def __enter__(self) -> _MMapLineSource:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+def _open_byte_source(path: Path) -> BinaryIO | _MMapLineSource:
+    """Open a line-iterating byte source — mmap only where it wins.
+
+    mmap pays off when lines are large enough that per-line copy overhead
+    dominates the buffered reader's C-level dispatch (perf-scale T-03):
+    multi-MB Codex rollout records read ~30% faster through the mapping,
+    while ~1 KiB lines are ~18% slower (Python-level ``find``+slice per
+    line). Gate: file size ≥ ``_MMAP_MIN_BYTES`` AND average line length
+    in a ``_MMAP_SNIFF_BYTES`` head sample ≥ ``_MMAP_MIN_LINE_BYTES``.
+    Anything else — small files, pipes, empty files, platforms where
+    mapping fails — falls back to the buffered reader. Both paths expose
+    ``readline(limit)`` and ``close()`` with identical bounded semantics.
+    """
+    fh = open(path, "rb")
+    try:
+        if path.stat().st_size >= _MMAP_MIN_BYTES:
+            try:
+                head = fh.read(_MMAP_SNIFF_BYTES)
+                fh.seek(0)
+                avg_line = len(head) // (head.count(b"\n") + 1) if head else 0
+                if avg_line >= _MMAP_MIN_LINE_BYTES:
+                    mm = mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ)
+                    return _MMapLineSource(fh, mm)
+            except (OSError, ValueError, BufferError):
+                fh.seek(0)
+    except OSError:
+        pass
+    return fh
 
 
 def _reject_constant(val: str) -> None:
@@ -173,6 +339,140 @@ def extract_record_id(raw_text: str | None, obj: Any | None = None) -> str | Non
     return None
 
 
+_MAX_DUP_KEYS_PER_RECORD: Final[int] = 16
+
+
+@dataclass(frozen=True, slots=True)
+class DuplicateKey:
+    """One duplicated JSON object key found while decoding a record (SL303).
+
+    ``key_path`` is a schema position (``$.a.b[0].id``), never a value — safe
+    for content-free evidence. ``occurrence_count`` totals the appearances of
+    the key at that position; ``critical`` marks membership in the decoding
+    adapter's CRITICAL_KEYS set.
+    """
+
+    key_path: str
+    occurrence_count: int
+    critical: bool
+
+
+def decode_json_dupaware(
+    text: str,
+    *,
+    critical_keys: frozenset[str] | None = None,
+    max_dup_keys: int = _MAX_DUP_KEYS_PER_RECORD,
+) -> tuple[Any, tuple[DuplicateKey, ...], bool]:
+    """Strict-decode ``text`` while collecting duplicated object-key positions.
+
+    Parses with the same strictness as ``_STRICT_JSON_DECODER`` (rejects NaN,
+    Infinity, out-of-range floats, recursion-depth overflow) plus an
+    ``object_pairs_hook`` that records keys appearing more than once inside a
+    single object — RFC 8259 permits duplicates but parsers disagree on the
+    winning value, which is a first-class integrity signal (SL303).
+
+    Returns ``(obj, dups, truncated)``: ``dups`` holds up to ``max_dup_keys``
+    entries in document order; ``truncated`` is True when further duplicates
+    existed beyond the cap. When no duplicates exist the post-parse path walk
+    is skipped entirely, so clean records only pay for the pairs hook.
+    """
+    # id(decoded dict) -> duplicated (key, count) entries for that object.
+    # Every hooked object remains reachable from the decoded root for the
+    # duration of the post-parse walk, so ids cannot be recycled meanwhile.
+    marked: dict[int, tuple[tuple[str, int], ...]] = {}
+
+    def _hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        obj = dict(pairs)
+        if len(obj) != len(pairs):
+            counts: dict[str, int] = {}
+            for key, _val in pairs:
+                counts[key] = counts.get(key, 0) + 1
+            marked[id(obj)] = tuple((k, n) for k, n in counts.items() if n > 1)
+        return obj
+
+    obj = json.loads(
+        text,
+        parse_constant=_reject_constant,
+        parse_float=_strict_parse_float,
+        object_pairs_hook=_hook,
+    )
+    if not marked:
+        return obj, (), False
+
+    crit = critical_keys if critical_keys is not None else frozenset()
+    dups: list[DuplicateKey] = []
+    truncated = False
+    stack: list[tuple[Any, str]] = [(obj, "$")]
+    remaining = len(marked)
+    while stack and remaining:
+        node, path = stack.pop()
+        if isinstance(node, dict):
+            node_dups = marked.get(id(node))
+            if node_dups is not None:
+                remaining -= 1
+                for key, count in node_dups:
+                    if len(dups) >= max_dup_keys:
+                        truncated = True
+                        break
+                    dups.append(
+                        DuplicateKey(
+                            key_path=f"{path}.{key}",
+                            occurrence_count=count,
+                            critical=key in crit,
+                        )
+                    )
+                if truncated:
+                    break
+            for key in reversed(list(node.keys())):
+                stack.append((node[key], f"{path}.{key}"))
+        elif isinstance(node, list):
+            for idx in range(len(node) - 1, -1, -1):
+                stack.append((node[idx], f"{path}[{idx}]"))
+    if remaining:
+        truncated = True
+    return obj, tuple(dups), truncated
+
+
+def dup_key_findings(
+    dups: tuple[DuplicateKey, ...],
+    *,
+    truncated: bool = False,
+    path_str: str,
+    line: int | None = None,
+    record_id: str | None = None,
+    record_ordinal: int | None = None,
+) -> list[Finding]:
+    """Build SL303 findings for decoded duplicate-key positions.
+
+    One finding per duplicated key path: ``error`` when the key participates
+    in identity/parentage/pairing (the adapter's CRITICAL_KEYS), ``warning``
+    otherwise. Evidence stays content-free — key paths and counts only, never
+    the duplicated values.
+    """
+    findings: list[Finding] = []
+    for dup in dups:
+        evidence: dict[str, Any] = {
+            "key_path": dup.key_path,
+            "occurrence_count": dup.occurrence_count,
+            "critical": dup.critical,
+        }
+        if record_ordinal is not None:
+            evidence["record_index"] = record_ordinal
+        if truncated:
+            evidence["truncated"] = True
+        findings.append(
+            make_finding(
+                code=SL303,
+                severity=Severity.ERROR if dup.critical else Severity.WARNING,
+                repairability=Repairability.MANUAL,
+                message_template=("Duplicate JSON key on line {line} for record {record_id}"),
+                source=SourceRef(path=path_str, line=line, record_id=record_id),
+                evidence=evidence,
+            )
+        )
+    return findings
+
+
 def _validate_stream_coordinates(byte_offset: int, byte_end: int, record_ordinal: int) -> None:
     """Validate physical stream coordinate invariants (fail-closed, DEV-006)."""
     if isinstance(byte_offset, bool) or not isinstance(byte_offset, int) or byte_offset < 0:
@@ -211,6 +511,8 @@ def _process_line(
     path_str: str,
     limits: ReaderLimits,
     is_first_record: bool,
+    dup_sink: list[Finding] | None = None,
+    critical_keys: frozenset[str] | None = None,
 ) -> SessionEvent | Finding | None:
     """Process a single non-empty physical line, enforcing hostile-input validation.
 
@@ -275,7 +577,9 @@ def _process_line(
 
     # 4. Strict JSON decoding (rejects NaN, Infinity, 1e999, and maps recursion depth overflow)
     try:
-        obj = _STRICT_JSON_DECODER.decode(decoded_text)
+        obj, dup_keys, dups_truncated = decode_json_dupaware(
+            decoded_text, critical_keys=critical_keys
+        )
     except RecursionError:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
@@ -302,6 +606,19 @@ def _process_line(
             message_template=msg_template,
             source=source,
             evidence=coord_evidence,
+        )
+
+    if dup_sink is not None and dup_keys:
+        rec_id = extract_record_id(decoded_text, obj)
+        dup_sink.extend(
+            dup_key_findings(
+                dup_keys,
+                truncated=dups_truncated,
+                path_str=path_str,
+                line=raw.line_number,
+                record_id=rec_id,
+                record_ordinal=raw.record_ordinal,
+            )
         )
 
     # 5. Check mapping structure
@@ -379,6 +696,8 @@ def read_header(
     path: str | os.PathLike[str] | Path | BinaryIO,
     *,
     limits: ReaderLimits = DEFAULT_READER_LIMITS,
+    dup_sink: list[Finding] | None = None,
+    critical_keys: frozenset[str] | None = None,
 ) -> SessionHeader:
     """Read and validate session header from the first non-empty line of a stream or file.
 
@@ -392,7 +711,7 @@ def read_header(
         FileNotFoundError: If path does not exist.
     """
     path_str: str
-    stream: BinaryIO
+    stream: BinaryIO | _MMapLineSource
     is_owned_file = False
 
     if isinstance(path, (str, os.PathLike)):
@@ -412,7 +731,7 @@ def read_header(
                     )
         except OSError:
             pass
-        stream = open(path_obj, "rb")
+        stream = _open_byte_source(path_obj)
         is_owned_file = True
     else:
         stream = path
@@ -459,7 +778,9 @@ def read_header(
                 raise SchemaError(f"Invalid UTF-8 encoding in header line {line_number}") from err
 
             try:
-                obj = _STRICT_JSON_DECODER.decode(decoded)
+                obj, dup_keys, dups_truncated = decode_json_dupaware(
+                    decoded, critical_keys=critical_keys
+                )
             except RecursionError as err:
                 raise SchemaError(
                     f"Header nesting depth exceeds recursion limit on line {line_number}"
@@ -468,6 +789,17 @@ def read_header(
                 raise SchemaError(
                     f"Malformed JSON on header line (line {line_number}): {err}"
                 ) from err
+
+            if dup_sink is not None and dup_keys:
+                dup_sink.extend(
+                    dup_key_findings(
+                        dup_keys,
+                        truncated=dups_truncated,
+                        path_str=path_str,
+                        line=line_number,
+                        record_id=extract_record_id(decoded, obj),
+                    )
+                )
 
             if not isinstance(obj, dict):
                 raise SchemaError(
@@ -499,13 +831,21 @@ def iter_events(
     path: str | os.PathLike[str] | Path | BinaryIO,
     *,
     limits: ReaderLimits | None = None,
+    critical_keys: frozenset[str] | None = None,
 ) -> Iterator[SessionEvent | Finding]:
     """Stream a canonical session JSONL file line-by-line with hostile-input limits.
+
+    Args:
+        path: Session file path or binary stream.
+        limits: Optional reader limits for bounded streaming.
+        critical_keys: Optional adapter field-name set; duplicated keys in this
+            set escalate their SL303 finding from warning to error.
 
     Yields:
     - SessionEvent: Valid session events in document order.
     - Finding(SL001): Malformed nonterminal records (skip-and-continue).
     - Finding(SL002): Torn terminal record on the last non-empty line (deterministic suffix drop).
+    - Finding(SL303): Duplicated JSON object keys within a decoded record.
 
     Invariants:
     - Bounded RSS: At most two lines in memory at any time (1-record lookahead).
@@ -523,7 +863,7 @@ def iter_events(
     """
     effective_limits = limits if limits is not None else DEFAULT_READER_LIMITS
     path_str: str
-    stream: BinaryIO
+    stream: BinaryIO | _MMapLineSource
     is_owned_file = False
 
     if isinstance(path, (str, os.PathLike)):
@@ -544,7 +884,7 @@ def iter_events(
                     )
         except OSError:
             pass
-        stream = open(path_obj, "rb")
+        stream = _open_byte_source(path_obj)
         is_owned_file = True
     else:
         stream = path
@@ -621,15 +961,19 @@ def iter_events(
                         f"{effective_limits.max_records}"
                     )
 
+                dup_sink: list[Finding] = []
                 item = _process_line(
                     pending_raw,
                     is_terminal=False,
                     path_str=path_str,
                     limits=effective_limits,
                     is_first_record=is_first,
+                    dup_sink=dup_sink,
+                    critical_keys=critical_keys,
                 )
                 if item is not None:
                     yield item
+                yield from dup_sink
 
             pending_raw = current_raw
 
@@ -646,15 +990,19 @@ def iter_events(
                     f"{effective_limits.max_records}"
                 )
 
+            dup_sink = []
             item = _process_line(
                 pending_raw,
                 is_terminal=True,
                 path_str=path_str,
                 limits=effective_limits,
                 is_first_record=is_first,
+                dup_sink=dup_sink,
+                critical_keys=critical_keys,
             )
             if item is not None:
                 yield item
+            yield from dup_sink
 
         if not has_any_records:
             raise HeaderMissingError(f"Session file contains no records: {path_str}")

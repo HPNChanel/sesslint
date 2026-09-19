@@ -13,13 +13,16 @@ Guarantees:
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from sesslint.canonical import SessionEvent
+from sesslint.checks.accounting import check_accounting
 from sesslint.checks.checkpoint import check_checkpoint
 from sesslint.checks.graph import check_graph
 from sesslint.checks.identity import check_identities
+from sesslint.checks.ordering import check_ordering
+from sesslint.checks.size import SIZE_MIN_RECORDS, check_size_anomaly
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
 from sesslint.context import CheckContext
@@ -38,6 +41,7 @@ def run_all_checks(
     adapter: str | None = None,
     adapter_skips: Sequence[CoverageSkip] = (),
     adapter_performed: Sequence[str] = (),
+    deselected_rules: Collection[str] = (),
     return_coverage: bool = False,
 ) -> Any:
     """Run all active rule checks enabled by the profile over canonical events.
@@ -66,11 +70,22 @@ def run_all_checks(
             context = context.with_overrides(source_metadata=source_meta)
 
     enabled = set(resolved_profile.enabled_rules)
+    deselected = set(deselected_rules)
     findings: list[Finding] = []
 
     performed_checks: set[str] = set()
     skipped_checks: list[CoverageSkip] = list(adapter_skips)
     already_skipped_checks: set[str] = {s.check for s in skipped_checks}
+
+    def _gate_skip(check: str, detail: str) -> CoverageSkip:
+        """Coverage skip for a gated rule, distinguishing user deselection."""
+        if check in deselected:
+            return CoverageSkip(
+                check=check,
+                reason="deselected",
+                detail="rule deselected via --select/--ignore",
+            )
+        return CoverageSkip(check=check, reason="profile-gated", detail=detail)
 
     # Ingest adapter checks
     if adapter_performed:
@@ -78,11 +93,7 @@ def run_all_checks(
             if ap in enabled and ap not in already_skipped_checks:
                 performed_checks.add(ap)
             elif ap not in enabled and ap not in already_skipped_checks:
-                skipped_checks.append(
-                    CoverageSkip(
-                        check=ap, reason="profile-gated", detail="rule disabled by profile"
-                    )
-                )
+                skipped_checks.append(_gate_skip(ap, "rule disabled by profile"))
                 already_skipped_checks.add(ap)
     else:
         adapter_rules = ("SL001", "SL002", "SL301", "SL302")
@@ -91,11 +102,7 @@ def run_all_checks(
                 if ar in enabled:
                     performed_checks.add(ar)
                 else:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=ar, reason="profile-gated", detail="rule disabled by profile"
-                        )
-                    )
+                    skipped_checks.append(_gate_skip(ar, "rule disabled by profile"))
                     already_skipped_checks.add(ar)
 
     is_empty_input = len(events) == 0
@@ -105,30 +112,36 @@ def run_all_checks(
     families: list[tuple[str, tuple[str, ...]]] = [
         ("identity", ("SL003",)),
         ("graph", ("SL004", "SL005", "SL006", "SL007")),
+        ("ordering", ("SL008",)),
         ("tool_pairing_1", ("SL101", "SL102", "SL103", "SL104")),
         ("tool_pairing_2", ("SL105", "SL106", "SL107", "SL108")),
-        ("checkpoint", ("SL201", "SL202", "SL203")),
+        ("checkpoint", ("SL201", "SL202", "SL203", "SL205")),
+        ("accounting", ("SL204",)),
+        ("size", ("SL011",)),
     ]
 
     for fam_name, fam_rules in families:
         fam_enabled_rules = [r for r in fam_rules if r in enabled]
         if not fam_enabled_rules:
             if fam_name not in already_skipped_checks:
-                skipped_checks.append(
+                fam_skip = (
                     CoverageSkip(
+                        check=fam_name,
+                        reason="deselected",
+                        detail="family deselected via --select/--ignore",
+                    )
+                    if all(r in deselected for r in fam_rules)
+                    else CoverageSkip(
                         check=fam_name,
                         reason="profile-gated",
                         detail="family disabled by profile",
                     )
                 )
+                skipped_checks.append(fam_skip)
                 already_skipped_checks.add(fam_name)
             for r in fam_rules:
                 if r not in already_skipped_checks:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=r, reason="profile-gated", detail="rule disabled by profile"
-                        )
-                    )
+                    skipped_checks.append(_gate_skip(r, "rule disabled by profile"))
                     already_skipped_checks.add(r)
         elif is_empty_input:
             if fam_name not in already_skipped_checks:
@@ -151,13 +164,7 @@ def run_all_checks(
                             )
                         )
                     else:
-                        skipped_checks.append(
-                            CoverageSkip(
-                                check=r,
-                                reason="profile-gated",
-                                detail="rule disabled by profile",
-                            )
-                        )
+                        skipped_checks.append(_gate_skip(r, "rule disabled by profile"))
                     already_skipped_checks.add(r)
         elif has_version_abort:
             if fam_name not in already_skipped_checks:
@@ -205,11 +212,7 @@ def run_all_checks(
                 if r in enabled:
                     performed_checks.add(r)
                 elif r not in already_skipped_checks:
-                    skipped_checks.append(
-                        CoverageSkip(
-                            check=r, reason="profile-gated", detail="rule disabled by profile"
-                        )
-                    )
+                    skipped_checks.append(_gate_skip(r, "rule disabled by profile"))
                     already_skipped_checks.add(r)
 
     if not is_empty_input and not has_version_abort and not has_cap_abort:
@@ -219,6 +222,9 @@ def run_all_checks(
         graph_rules = {"SL004", "SL005", "SL006", "SL007"}
         if graph_rules & enabled:
             findings.extend(check_graph(events, source_path=source_path, context=context))
+
+        if "SL008" in enabled:
+            findings.extend(check_ordering(events, source_path=source_path, context=context))
 
         tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
         if tp1_rules & enabled:
@@ -235,7 +241,7 @@ def run_all_checks(
                 )
             )
 
-        cp_rules = {"SL201", "SL202", "SL203"}
+        cp_rules = {"SL201", "SL202", "SL203", "SL205"}
         if cp_rules & enabled:
             findings.extend(
                 check_checkpoint(
@@ -245,6 +251,34 @@ def run_all_checks(
                     context=context,
                 )
             )
+
+        if "SL204" in enabled:
+            findings.extend(check_accounting(events, source_path=source_path, context=context))
+
+        if "SL011" in enabled:
+            if len(events) < SIZE_MIN_RECORDS:
+                # Size distribution is meaningless below the minimum —
+                # the family ran but could not evaluate (FR-047 honesty).
+                performed_checks.discard("size")
+                performed_checks.discard("SL011")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="size",
+                        reason="adapter-not-applicable",
+                        detail="fewer than 8 records — size distribution not meaningful",
+                    )
+                )
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL011",
+                        reason="adapter-not-applicable",
+                        detail="fewer than 8 records — size distribution not meaningful",
+                    )
+                )
+            else:
+                findings.extend(
+                    check_size_anomaly(events, source_path=source_path, context=context)
+                )
 
     filtered_findings = [f for f in findings if f.code in enabled]
     if return_coverage:

@@ -1,12 +1,15 @@
+from sesslint.checks.accounting import check_accounting
 from sesslint.checks.checkpoint import (
     MAX_CHECKPOINT_FINDINGS,
     cap_checkpoint_findings,
     check_checkpoint,
     check_checkpoint_divergence,
     check_checkpoint_gap,
+    check_compaction_coverage,
     check_sl201,
     check_sl202,
     check_sl203,
+    check_sl205,
     check_unsafe_continuation,
     compute_checkpoint_fingerprint,
 )
@@ -29,6 +32,8 @@ from sesslint.checks.identity import (
     compute_identity_fingerprint,
     diff_field_names,
 )
+from sesslint.checks.ordering import check_ordering
+from sesslint.checks.size import check_size_anomaly
 from sesslint.checks.tool_pairing_1 import (
     CALL_KINDS,
     MAX_PAIRING_FINDINGS,
@@ -83,6 +88,7 @@ __all__ = [
     "check_checkpoint",
     "check_checkpoint_divergence",
     "check_checkpoint_gap",
+    "check_compaction_coverage",
     "check_compaction_split",
     "check_components",
     "check_cross_branch",
@@ -93,6 +99,9 @@ __all__ = [
     "check_identities",
     "check_missing_parent",
     "check_multiple_results",
+    "check_accounting",
+    "check_ordering",
+    "check_size_anomaly",
     "check_orphan_results",
     "check_reused_ids",
     "check_reversed_order",
@@ -107,6 +116,7 @@ __all__ = [
     "check_sl201",
     "check_sl202",
     "check_sl203",
+    "check_sl205",
     "check_tool_pairing_1",
     "check_tool_pairing_2",
     "check_unsafe_continuation",

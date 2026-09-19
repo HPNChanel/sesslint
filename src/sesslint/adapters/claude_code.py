@@ -17,6 +17,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
+from sesslint.adapters.canonical import EventList, SourceMetadata
+from sesslint.adapters.drift import DriftTracker
+from sesslint.adapters.links import extract_links
 from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
@@ -38,21 +41,52 @@ from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding, sort_findings
 from sesslint.io import (
     _CHUNK_DRAIN_SIZE,
-    _STRICT_JSON_DECODER,
     DEFAULT_READER_LIMITS,
     ReaderLimits,
+    _MMapLineSource,
+    _open_byte_source,
     _RawLine,
     check_nesting_depth,
+    decode_json_dupaware,
+    dup_key_findings,
     extract_record_id,
 )
 
 # CanonicalEvent alias for compatibility with task specification
 CanonicalEvent = SessionEvent
 
-# Set of supported Claude Code versions (documented as explicit static data)
+# Set of supported Claude Code versions (documented as explicit static data).
+# These are exact-match legacy markers.
 SUPPORTED_CLAUDE_VERSIONS: Final[frozenset[str]] = frozenset(
     {"1", "1.0", "1.0.0", "0.1", "0.1.0", "claude-code-v1"}
 )
+
+# ``version``/``agentVersion``/``appVersion``/``claude_code_version`` fields
+# carry the Claude Code *application* release, not a ledger schema version.
+# Observed current releases (1.x–2.x, e.g. "2.0.30") share the same JSONL
+# record grammar, so semver-shaped values with major <= 2 are accepted.
+# Anything else — a larger major, a non-semver string, or an explicit
+# ``schemaVersion`` marker outside SUPPORTED_CLAUDE_VERSIONS — fails closed
+# with SL301.
+SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS: Final[frozenset[int]] = frozenset({1, 2})
+
+_CLAUDE_APP_SEMVER_REGEX: Final[re.Pattern[str]] = re.compile(r"^(\d+)(?:\.\d+){0,2}$")
+
+
+def is_supported_claude_version(version_norm: str, *, is_schema_marker: bool = False) -> bool:
+    """Return True iff a normalized version string is a supported Claude version.
+
+    Exact members of SUPPORTED_CLAUDE_VERSIONS are always accepted. For
+    application-version fields (not explicit schema markers), semver-shaped
+    strings with major in SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS are accepted.
+    """
+    if version_norm in SUPPORTED_CLAUDE_VERSIONS:
+        return True
+    if is_schema_marker:
+        return False
+    m = _CLAUDE_APP_SEMVER_REGEX.match(version_norm)
+    return m is not None and int(m.group(1)) in SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS
+
 
 # Critical fields that participate in causal DAG, pairing, or session identity
 CRITICAL_KEYS: Final[frozenset[str]] = frozenset(
@@ -78,7 +112,11 @@ TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
     "tool_use": ("assistant", "tool_call"),
     "tool_result": ("tool", "tool_result"),
     "system": ("system", "message"),
-    "summary": ("system", "message"),
+    # ``{"type":"summary","leafUuid":...}`` records mark where prior history was
+    # compacted into a summary — canonically a compaction boundary, not a
+    # conversational message (they also lack uuid linkage and must not form a
+    # disconnected message component).
+    "summary": ("system", "compaction_boundary"),
     "compaction": ("system", "compaction_boundary"),
     "compaction_boundary": ("system", "compaction_boundary"),
     "message": ("assistant", "message"),
@@ -338,15 +376,22 @@ def _load_claude_code_internal(
     path: Path | str | BinaryIO,
     *,
     limits: ReaderLimits | None = None,
-) -> tuple[list[SessionEvent], list[Finding], str | None]:
+) -> tuple[
+    list[SessionEvent],
+    list[Finding],
+    str | None,
+    list[dict[str, Any]],
+    list[int],
+]:
     """Stream and canonicalize a Claude Code JSONL session file.
 
-    Returns events, findings, and discovered session_id.
+    Returns events, findings, discovered session_id, bounded cross-file link
+    metadata (SL401), and per-record byte sizes (SL011).
     """
     effective_limits = limits if limits is not None else DEFAULT_READER_LIMITS
 
     path_str: str
-    stream: BinaryIO
+    stream: BinaryIO | _MMapLineSource
     is_owned_file = False
 
     if isinstance(path, bytes):
@@ -369,7 +414,7 @@ def _load_claude_code_internal(
                     )
         except OSError:
             pass
-        stream = open(path_obj, "rb")
+        stream = _open_byte_source(path_obj)
         is_owned_file = True
     else:
         stream = path
@@ -383,6 +428,9 @@ def _load_claude_code_internal(
         "session_id": None,
         "seen_version_sl301": False,
         "collision_guard": guard,
+        "links": [],
+        "record_sizes": [],
+        "drift": DriftTracker("claude-code-jsonl"),
     }
 
     try:
@@ -479,8 +527,17 @@ def _load_claude_code_internal(
                 context=context,
             )
 
+        drift_ctx = context.get("drift")
+        if isinstance(drift_ctx, DriftTracker):
+            findings.extend(drift_ctx.into_findings(path_str=path_str))
         guard.assert_no_collision()
-        return events, sort_findings(findings), context.get("session_id")
+        return (
+            events,
+            sort_findings(findings),
+            context.get("session_id"),
+            context["links"],
+            context["record_sizes"],
+        )
 
     finally:
         if is_owned_file:
@@ -491,7 +548,7 @@ def load_claude_code(
     path: Path | str | BinaryIO,
     *,
     limits: ReaderLimits | None = None,
-) -> tuple[list[SessionEvent], list[Finding]]:
+) -> tuple[EventList, list[Finding]]:
     """Stream and canonicalize a Claude Code JSONL session file.
 
     Guarantees:
@@ -501,14 +558,23 @@ def load_claude_code(
     - Unknown critical record type or field -> SL302 (with field evidence, kind="unknown").
     - Unknown non-critical fields -> silently ignored (no spurious findings).
     - Returns deterministically sorted findings and canonical events in source order.
+    - Returned events carry ``.source`` metadata: ``format``, ``session_id``,
+      bounded ``links`` (SL401), and per-record ``record_sizes`` (SL011).
 
     Raises:
         FileTooLargeError: If file exceeds limits.max_file_bytes.
         MaxRecordsExceededError: If record count exceeds limits.max_records.
         FileNotFoundError: If path does not exist.
     """
-    events, findings, _ = _load_claude_code_internal(path, limits=limits)
-    return events, findings
+    events, findings, session_id, links, record_sizes = _load_claude_code_internal(
+        path, limits=limits
+    )
+    source = SourceMetadata(format="claude-code-jsonl")
+    if session_id is not None:
+        source["session_id"] = session_id
+    source["links"] = links
+    source["record_sizes"] = record_sizes
+    return EventList(events, source=source), findings
 
 
 def _process_claude_line(
@@ -522,6 +588,11 @@ def _process_claude_line(
     context: dict[str, Any],
 ) -> None:
     """Process a single physical line, emitting either SessionEvent or syntax/integrity findings."""
+    # Bounded per-record byte size for the SL011 distribution check.
+    sizes_meta = context.get("record_sizes")
+    if isinstance(sizes_meta, list) and raw.byte_end >= raw.byte_offset:
+        sizes_meta.append(raw.byte_end - raw.byte_offset)
+
     code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
@@ -586,7 +657,9 @@ def _process_claude_line(
 
     # 4. Strict JSON decode
     try:
-        obj = _STRICT_JSON_DECODER.decode(decoded_text)
+        obj, dup_keys, dups_truncated = decode_json_dupaware(
+            decoded_text, critical_keys=CRITICAL_KEYS
+        )
     except RecursionError:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
@@ -620,6 +693,18 @@ def _process_claude_line(
             )
         )
         return
+
+    if dup_keys:
+        findings.extend(
+            dup_key_findings(
+                dup_keys,
+                truncated=dups_truncated,
+                path_str=path_str,
+                line=raw.line_number,
+                record_id=extract_record_id(decoded_text, obj),
+                record_ordinal=raw.record_ordinal,
+            )
+        )
 
     # 5. Check object is dictionary
     if not isinstance(obj, dict):
@@ -684,6 +769,28 @@ def _process_claude_line(
         original_id = None
         guard.register_synthetic(rec_id_str)
 
+    # Cross-file resume-link extraction (SL401) + drift signature (SL304) —
+    # bounded structural metadata; link resolution is scan-layer, drift
+    # findings materialize at end-of-file.
+    links_meta = context.get("links")
+    if isinstance(links_meta, list):
+        extract_links(
+            obj,
+            links=links_meta,
+            record_id=rec_id_str,
+            line=raw.line_number,
+        )
+    drift_meta = context.get("drift")
+    if isinstance(drift_meta, DriftTracker):
+        drift_meta.observe_signature(
+            obj.get("type"),
+            line=raw.line_number,
+            record_id=rec_id_str,
+            record_ordinal=raw.record_ordinal,
+            byte_offset=raw.byte_offset,
+            byte_end=raw.byte_end,
+        )
+
     raw_parent = (
         obj.get("parentUuid")
         or obj.get("parent_uuid")
@@ -710,20 +817,34 @@ def _process_claude_line(
         str(obj.get("interactionId") or obj.get("interaction_id") or "").strip() or None
     )
 
-    # 8. Version recognition and SL301 evaluation
-    version_candidate = (
-        obj.get("version")
-        or obj.get("agentVersion")
-        or obj.get("schemaVersion")
-        or obj.get("appVersion")
-        or obj.get("claude_code_version")
-    )
+    # 8. Version recognition and SL301 evaluation. ``version``/
+    # ``agentVersion``/``appVersion``/``claude_code_version`` are application
+    # releases (semver-gated); ``schemaVersion`` is an explicit format marker
+    # (exact-set only, fail-closed).
+    version_field: str | None = None
+    version_candidate: Any = None
+    for vf in (
+        "version",
+        "agentVersion",
+        "schemaVersion",
+        "appVersion",
+        "claude_code_version",
+    ):
+        if obj.get(vf) is not None:
+            version_field = vf
+            version_candidate = obj[vf]
+            break
     seen_version_sl301 = context.get("seen_version_sl301", False)
     if version_candidate is not None:
         if isinstance(version_candidate, (str, int, float)):
             version_raw = str(version_candidate).strip()
             version_norm = normalize_version(version_raw)
-            if version_norm not in SUPPORTED_CLAUDE_VERSIONS and not seen_version_sl301:
+            if (
+                not is_supported_claude_version(
+                    version_norm, is_schema_marker=(version_field == "schemaVersion")
+                )
+                and not seen_version_sl301
+            ):
                 source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id_str)
                 safe_v, _ = safe_discriminator(version_raw)
                 finding_sl301 = make_finding(
@@ -738,6 +859,9 @@ def _process_claude_line(
                         **coord_evidence,
                         "version_raw": safe_v,
                         "supported_set": tuple(sorted(SUPPORTED_CLAUDE_VERSIONS)),
+                        "supported_app_major_versions": tuple(
+                            sorted(SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS)
+                        ),
                     },
                 )
                 findings.append(finding_sl301)
@@ -758,10 +882,30 @@ def _process_claude_line(
                         **coord_evidence,
                         "version_raw": "<invalid_version_type>",
                         "supported_set": tuple(sorted(SUPPORTED_CLAUDE_VERSIONS)),
+                        "supported_app_major_versions": tuple(
+                            sorted(SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS)
+                        ),
                     },
                 )
                 findings.append(finding_sl301)
                 context["seen_version_sl301"] = True
+
+    # Schema-drift version markers (SL304): ``schemaVersion`` is the only
+    # claude format marker — application releases are never observed.
+    if isinstance(drift_meta, DriftTracker):
+        if context.get("seen_version_sl301"):
+            drift_meta.note_unsupported_version()
+        elif version_field == "schemaVersion" and isinstance(version_candidate, (str, int, float)):
+            drift_meta.observe_version(
+                normalize_version(str(version_candidate).strip()),
+                supported=True,
+                field="schemaVersion",
+                line=raw.line_number,
+                record_id=rec_id_str,
+                record_ordinal=raw.record_ordinal,
+                byte_offset=raw.byte_offset,
+                byte_end=raw.byte_end,
+            )
 
     # 9. Type canonicalization and SL302 evaluation
     raw_type = obj.get("type")
@@ -1031,6 +1175,20 @@ def _process_claude_line(
         else:
             side_effects = "unknown"
 
+    event_extra: dict[str, Any] = {}
+    if kind == "compaction_boundary":
+        # SL205 coverage pointer (bounded names only): the leaf event this
+        # summary claims to cover through. Normalized adapter-neutrally as
+        # extra_fields["coverage"]["covered_through_id"].
+        covered = None
+        for ptr_key in ("leafUuid", "leaf_uuid", "covered_through_id", "coveredThroughId", "leaf"):
+            raw_ptr = obj.get(ptr_key)
+            if isinstance(raw_ptr, str) and raw_ptr.strip():
+                covered = raw_ptr.strip()
+                break
+        if covered is not None:
+            event_extra["coverage"] = {"covered_through_id": covered}
+
     event = SessionEvent(
         id=rec_id_str,
         parent_id=parent_id,
@@ -1051,6 +1209,7 @@ def _process_claude_line(
         agent_id=agent_id,
         branch_id=branch_id,
         interaction_id=interaction_id,
+        extra_fields=event_extra,
     )
     events.append(event)
     guard.check_event(event)
@@ -1062,7 +1221,7 @@ def load_claude_code_session(
     limits: ReaderLimits | None = None,
 ) -> tuple[Session, list[Finding]]:
     """Stream a Claude Code JSONL file and wrap canonical events in a Session envelope."""
-    events, findings, session_id = _load_claude_code_internal(path, limits=limits)
+    events, findings, session_id, _, _ = _load_claude_code_internal(path, limits=limits)
     first_ts = events[0].ts if events else "1970-01-01T00:00:00Z"
     header = SessionHeader(
         schema_version="sesslint.session/v1",

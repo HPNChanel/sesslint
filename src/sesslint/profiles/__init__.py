@@ -10,6 +10,8 @@ from sesslint.profiles.builtin import (
 from sesslint.profiles.profile import (
     EffectiveConfig,
     Profile,
+    apply_rule_selection,
+    deselected_rules,
     get_profile,
     list_profiles,
     require_canonical,
@@ -25,6 +27,8 @@ __all__ = [
     "OPENAI_STRICT_PROFILE",
     "Profile",
     "REGISTRY",
+    "apply_rule_selection",
+    "deselected_rules",
     "get_profile",
     "list_profiles",
     "require_canonical",

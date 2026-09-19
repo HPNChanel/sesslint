@@ -1,0 +1,2 @@
+{"type": "user", "uuid": "c1", "sessionId": "sess-c", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parent_session_id": "sess-a"}
+{"type": "user", "uuid": "c2", "sessionId": "sess-c", "timestamp": "2025-01-01T00:00:01Z", "message": {"role": "user", "content": "x"}, "parentUuid": "c1"}

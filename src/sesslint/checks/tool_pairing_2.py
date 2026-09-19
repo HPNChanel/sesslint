@@ -61,6 +61,12 @@ RESULT_KINDS: Final[frozenset[str]] = frozenset({_KIND_TOOL_RESULT})
 TOOL_KINDS: Final[frozenset[str]] = CALL_KINDS | RESULT_KINDS
 COMPACTION_KINDS: Final[frozenset[str]] = frozenset({_KIND_COMPACTION})
 
+# Intervening-event kinds that never break tool-pair adjacency: other tool
+# events (parallel fan-out) plus opaque run-metadata/telemetry records that
+# vendor formats interleave freely between call and result (e.g. Codex
+# event_msg / token_usage_record / turn_context, reasoning items).
+_ADJACENCY_TRANSPARENT_KINDS: Final[frozenset[str]] = TOOL_KINDS | frozenset({"opaque"})
+
 _MSG_SL105: Final[str] = "Reversed tool-pairing order detected for record {record_id}"
 _MSG_SL106: Final[str] = "Cross-branch tool pairing detected for record {record_id}"
 _MSG_SL107: Final[str] = "Non-adjacent tool pairing detected for record {record_id}"
@@ -545,9 +551,10 @@ def check_adjacency(
     Guarantees:
     - Runs only on clean pairs (1 call, 1 result).
     - Trigger: abs(result_index - use_index) > 1 AND at least one intervening event
-      is NOT a tool event.
-    - Parallel-exemption: If ALL intervening events have kind in (tool_call, tool_use,
-      tool_result), SL107 is suppressed to allow concurrent tool fan-out.
+      is NOT a tool event or opaque run-metadata record.
+    - Parallel/metadata-exemption: If ALL intervening events have kind in
+      (tool_call, tool_use, tool_result, opaque), SL107 is suppressed to allow
+      concurrent tool fan-out and vendor run-metadata interleaving.
     - severity: profile-aware (error under strict profiles, warning under neutral).
     - evidence: {correlation_id, intervening_count, intervening_kinds, result_index, use_index}.
     """
@@ -571,9 +578,14 @@ def check_adjacency(
         intervening_kinds_slice = indexer.event_kinds[min_idx + 1 : max_idx]
         intervening_count = len(intervening_kinds_slice)
 
-        # Parallel-exemption: Suppress SL107 iff all intervening events are tool kinds
-        if all(k in TOOL_KINDS for k in intervening_kinds_slice):
+        # Parallel/metadata-exemption: suppress SL107 iff every intervening
+        # event is a tool event or an opaque run-metadata record.
+        if all(k in _ADJACENCY_TRANSPARENT_KINDS for k in intervening_kinds_slice):
             continue
+
+        intervening_count = sum(
+            1 for k in intervening_kinds_slice if k not in _ADJACENCY_TRANSPARENT_KINDS
+        )
 
         safe_corr = _safe_id(corr)
         raw_use_id = getattr(use_ev, "id", None)
@@ -583,7 +595,9 @@ def check_adjacency(
         rec_id = _source_record_id(use_id_str)
         path, line = _resolve_source_coords(use_ev, source_path)
 
-        unique_intervening_kinds = sorted(set(intervening_kinds_slice))
+        unique_intervening_kinds = sorted(
+            {k for k in intervening_kinds_slice if k not in _ADJACENCY_TRANSPARENT_KINDS}
+        )
 
         findings.append(
             make_finding(

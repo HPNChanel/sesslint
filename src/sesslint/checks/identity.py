@@ -195,20 +195,28 @@ def check_identities(
 
         canonical_hashes: list[str] = []
         for e in evs:
-            if hasattr(e, "content_identity_hash") and callable(e.content_identity_hash):
-                canonical_hashes.append(str(e.content_identity_hash()))
-            elif hasattr(e, "to_canonical_dict") and callable(e.to_canonical_dict):
+            # ``seq`` is a positional ordinal (adapter-assigned for vendor
+            # events, declared for canonical): two byte-identical records at
+            # different stream positions carry different seq values but the
+            # same event content. Excluding it keeps "identical" honest —
+            # records differing ONLY in position are duplicates, not
+            # conflicting variants.
+            if hasattr(e, "to_canonical_dict") and callable(e.to_canonical_dict):
                 d = dict(e.to_canonical_dict())
                 for field in PROVENANCE_FIELDS:
                     d.pop(field, None)
+                d.pop("seq", None)
                 canonical_hashes.append(
                     hashlib.sha256(to_canonical_json(d).encode("utf-8")).hexdigest()
                 )
             elif isinstance(e, Mapping):
                 d = {k: v for k, v in e.items() if str(k) not in PROVENANCE_FIELDS}
+                d.pop("seq", None)
                 canonical_hashes.append(
                     hashlib.sha256(to_canonical_json(d).encode("utf-8")).hexdigest()
                 )
+            elif hasattr(e, "content_identity_hash") and callable(e.content_identity_hash):
+                canonical_hashes.append(str(e.content_identity_hash()))
             else:
                 canonical_hashes.append(hashlib.sha256(canonical_bytes(e)).hexdigest())
 

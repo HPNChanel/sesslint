@@ -3,6 +3,7 @@
 Provides conservative, fail-closed format arbitration across supported session adapters:
 - Claude Code JSONL (claude-code-jsonl)
 - OpenAI Agents SDK export (openai-agents)
+- Codex CLI/Desktop rollout (codex-rollout)
 - SessLint Canonical Session Format (canonical)
 
 Architectural Note:
@@ -157,6 +158,43 @@ def detect_format(
     with open(path_obj, "rb") as stream:
         head_bytes = stream.read(SNIFF_BYTES)
 
+    return _detect_from_head(
+        head_bytes,
+        path_obj.name,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+    )
+
+
+def detect_format_bytes(
+    data: bytes,
+    *,
+    filename: str,
+    confidence_min: float = CONFIDENCE_MIN,
+    margin_min: float = MARGIN_MIN,
+) -> DetectionResult:
+    """Byte-buffer variant of ``detect_format`` for virtual sources (stdin).
+
+    Runs the identical sniff → heuristic → threshold pipeline on
+    ``data[:SNIFF_BYTES]``; ``filename`` feeds the adapter filename heuristics
+    exactly as ``Path.name`` does for file inputs.
+    """
+    validate_detection_thresholds(confidence_min, margin_min)
+    return _detect_from_head(
+        data[:SNIFF_BYTES],
+        filename,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+    )
+
+
+def _detect_from_head(
+    head_bytes: bytes,
+    filename: str,
+    *,
+    confidence_min: float,
+    margin_min: float,
+) -> DetectionResult:
     # 1. Live SQLite magic short-circuit
     if head_bytes.startswith(SQLITE_MAGIC):
         return DetectionResult(
@@ -185,7 +223,6 @@ def detect_format(
         )
 
     # 3. Call adapter detection heuristics
-    filename = path_obj.name
     raw_scores: dict[str, float] = {
         FORMAT_CLAUDE_CODE: detect_claude_code(head_bytes, filename),
         FORMAT_OPENAI_AGENTS: detect_openai_agents(head_bytes, filename),
@@ -287,6 +324,67 @@ def resolve_format(
     if result.format is not None:
         return (result.format, result, [])
 
+    return (
+        None,
+        result,
+        [_resolve_failure_finding(result, path_str, confidence_min, margin_min)],
+    )
+
+
+def resolve_format_bytes(
+    explicit: str | None,
+    data: bytes,
+    *,
+    filename: str,
+    display_path: str,
+    confidence_min: float = CONFIDENCE_MIN,
+    margin_min: float = MARGIN_MIN,
+) -> tuple[str | None, DetectionResult | None, list[Finding]]:
+    """Byte-buffer variant of ``resolve_format`` for virtual sources (stdin).
+
+    ``filename`` plays the role of ``Path.name`` in adapter heuristics;
+    ``display_path`` is the ``SourceRef.path`` string in failure findings.
+    """
+    validate_detection_thresholds(confidence_min, margin_min)
+
+    if explicit is not None:
+        normalized = explicit.strip().lower()
+        if normalized != FORMAT_AUTO:
+            if normalized not in SUPPORTED_FORMATS:
+                valid_sorted = sorted(VALID_FORMAT_OPTIONS)
+                raise ValueError(f"Unknown format {explicit!r}. Must be one of {valid_sorted}")
+            return (
+                normalized,
+                DetectionResult(
+                    format=normalized,
+                    confidences={},
+                    reason=REASON_EXPLICIT_OVERRIDE,
+                ),
+                [],
+            )
+
+    result = detect_format_bytes(
+        data,
+        filename=filename,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+    )
+    if result.format is not None:
+        return (result.format, result, [])
+
+    return (
+        None,
+        result,
+        [_resolve_failure_finding(result, display_path, confidence_min, margin_min)],
+    )
+
+
+def _resolve_failure_finding(
+    result: DetectionResult,
+    path_str: str,
+    confidence_min: float,
+    margin_min: float,
+) -> Finding:
     # Format could not be determined: fail closed with exactly one finding
     source_ref = SourceRef(path=path_str, line=1, record_id=None)
 
@@ -302,10 +400,10 @@ def resolve_format(
             source=source_ref,
             evidence={"reason": "refused_live_db"},
         )
-        return (None, result, [finding])
+        return finding
 
     if result.reason == REASON_EMPTY:
-        finding = make_finding(
+        return make_finding(
             code=SL001,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
@@ -313,10 +411,9 @@ def resolve_format(
             source=source_ref,
             evidence={"reason": "empty_input"},
         )
-        return (None, result, [finding])
 
     # Low-confidence or tie -> emit SL302 ambiguous_format finding
-    finding = make_finding(
+    return make_finding(
         code=SL302,
         severity=Severity.ERROR,
         repairability=Repairability.MANUAL,
@@ -332,4 +429,3 @@ def resolve_format(
             "margin_min": margin_min,
         },
     )
-    return (None, result, [finding])

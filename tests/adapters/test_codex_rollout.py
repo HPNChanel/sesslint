@@ -517,3 +517,47 @@ class TestIdsDeterminismAndWrap:
         for f in findings:
             assert "content" not in json.dumps(f.evidence)
             assert "arguments" not in json.dumps(f.evidence)
+
+
+class TestRepairEmit:
+    """Codex input repairs write back vendor bytes under 'auto'; an explicit
+    canonical emit produces a canonical session stream."""
+
+    def test_repair_auto_emits_vendor_writeback(self, tmp_path: Path) -> None:
+        from sesslint import api
+
+        out = tmp_path / "repaired.jsonl"
+        plan, manifest = api.repair(FIXTURES / "torn_tail.jsonl", out)
+        assert manifest is not None
+        assert manifest.adapter_id == "codex-rollout"
+        # Output is a codex rollout stream, not a canonical session stream
+        first = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+        assert first.get("type") == "session_meta"
+        assert [s.recipe for s in plan.steps] == ["torn-terminal-record-discard"]
+
+    def test_repair_vendor_emit_accepted(self, tmp_path: Path) -> None:
+        from sesslint import api
+
+        out = tmp_path / "v.jsonl"
+        _, manifest = api.repair(FIXTURES / "torn_tail.jsonl", out, emit="vendor")
+        assert manifest is not None
+        assert manifest.adapter_id == "codex-rollout"
+        assert out.exists()
+
+    def test_repair_canonical_emit(self, tmp_path: Path) -> None:
+        from sesslint import api
+
+        out = tmp_path / "c.jsonl"
+        _, manifest = api.repair(FIXTURES / "torn_tail.jsonl", out, emit="canonical")
+        assert manifest is not None
+        assert manifest.adapter_id == "canonical"
+        first = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+        assert first["schema_version"] == "sesslint.session/v1"
+
+    def test_repair_dry_run_no_writes(self, tmp_path: Path) -> None:
+        from sesslint import api
+
+        plan, manifest = api.repair(FIXTURES / "torn_tail.jsonl", None, dry_run=True)
+        assert manifest is None
+        assert len(plan.steps) == 1
+        assert list(tmp_path.iterdir()) == []

@@ -326,6 +326,34 @@ class Finding:
             d["evidence"] = dict(self.evidence)
         return d
 
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> Finding:
+        """Reconstruct a Finding from ``to_dict()`` output (full-fidelity round-trip).
+
+        Used to move findings across process boundaries as plain JSON payloads;
+        ``__post_init__`` re-validates every invariant, so malformed payloads
+        fail closed with ``FindingError``.
+        """
+        src = d.get("source")
+        if not isinstance(src, Mapping):
+            raise FindingError("Finding.from_dict requires a 'source' mapping")
+        return cls(
+            code=d["code"],
+            severity=Severity(d["severity"]),
+            repairability=Repairability(d["repairability"]),
+            message=d["message"],
+            source=SourceRef(
+                path=src["path"],
+                line=src.get("line"),
+                record_id=src.get("record_id"),
+            ),
+            related_ids=tuple(d.get("related_ids", ())),
+            fingerprint=d["fingerprint"],
+            schema_version=d.get("schema_version", "sesslint.finding/v1"),
+            message_template=d.get("message_template"),
+            evidence=d.get("evidence"),
+        )
+
 
 def _finding_sort_key(
     f: Finding,
@@ -405,16 +433,19 @@ CANONICAL_EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
         "confinement",
         "correlation_id",
         "count",
+        "critical",
         "cycle_events",
         "cycle_length",
         "cycle_nodes",
         "cycle_parent_edges",
         "detail",
         "differing_fields",
+        "drift_kind",
         "event_id",
         "event_ids",
         "expected_seq",
         "field",
+        "file_median_bytes",
         "first_unsafe_index",
         "format",
         "head_count",
@@ -423,13 +454,24 @@ CANONICAL_EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
         "index",
         "intervening_count",
         "intervening_kinds",
+        "key_path",
+        "link_index",
+        "link_kind",
         "match_rule",
+        "occurrence_count",
+        "observed_format",
+        "observed_marker",
         "overflow",
         "parent_id",
+        "previous_marker",
         "profile",
+        "ratio",
         "reason",
+        "record_bytes",
+        "record_index",
         "record_ordinal",
         "rejected_decoys",
+        "resolution",
         "result_agent_id",
         "result_branch_id",
         "result_id",
@@ -441,6 +483,7 @@ CANONICAL_EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
         "seq",
         "state_hash_a",
         "state_hash_b",
+        "target",
         "truncated",
         "type_truncated",
         "use_id",

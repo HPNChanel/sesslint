@@ -776,7 +776,7 @@ def test_regression_fallback_modes(tmp_path: Path) -> None:
     assert events[0].actor == "user" and events[0].kind == "message"
     assert events[1].actor == "assistant" and events[1].kind == "message"
     assert events[2].actor == "user" and events[2].kind == "message"
-    assert events[3].actor == "system" and events[3].kind == "message"
+    assert events[3].actor == "system" and events[3].kind == "compaction_boundary"
     assert events[4].actor == "system" and events[4].kind == "compaction_boundary"
 
 

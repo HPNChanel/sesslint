@@ -13,6 +13,7 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 | SL005 | test_graph healthy_clean | test_sl005_cycle_path | test_multiple_cycles_disjoint | test_adversarial_self_loop |
 | SL006 | test_graph healthy_clean | test_sl006_disconnected | test_adversarial_component_tie_breaking | test_converging_branches_into_cycle |
 | SL007 | test_graph healthy_clean | test_sl007_two_heads | test_sl007_all_cycle_suppressed | test_adversarial_two_identical_cycles_dup_ids |
+| SL008 | test_ts_ordering equal_timestamps_allowed | test_sl008_fixture_single_regression | test_epoch_sentinel_edges_skipped | test_unparseable_and_naive_ts_skipped |
 | SL101 | pairing_1 healthy_clean | test_sl101_orphan_fixture | test_multi_orphan_same_corr | test_null_correlation |
 | SL102 | pairing_1 healthy_clean | test_sl102_dangling_fixture | test_sl102_torn_tail_not_downgraded | test_empty_string_correlation |
 | SL103 | pairing_1 healthy_clean | test_sl103_reused_fixture | test_sl103_plus_sl104_interaction | test_corr_event_id_collision |
@@ -26,6 +27,12 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 | SL203 | test_checkpoint_clean | test_sl203_continuation_fixture | test_sl203_single_finding_cap | test_compaction_boundary_without_checkpoint_triggers_sl203 |
 | SL301 | detect each_vendor_clear_winner | test_version_old_emits_SL301 | test_confidence_boundary_exact_055 | test_lying_extension |
 | SL302 | detect each_vendor_clear_winner | test_unknown_type_emits_SL302 | test_regression_sl302_long_type_truncated | test_critical_field_sl302 |
+| SL303 | test_dup_keys decode_clean_no_dups | test_fixture_critical_dup | test_dup_cap_truncated | test_strictness_preserved |
+| SL204 | test_accounting fixture_consistent_clean | test_fixture_divergent_fires | test_zero_baseline_first_marker_checked | test_non_int_counters_ignored |
+| SL205 | test_compaction_coverage fixture_valid_clean | test_fixture_missing_leaf | test_pointerless_boundary_silent | test_broken_ancestor_chain_fires |
+| SL304 | test_schema_drift fixture_compatible_bump_clean | test_fixture_version_drift | test_fixture_multi_transition_cap | test_fixture_foreign_splice |
+| SL401 | test_cross_file_links intact_chain_emits_nothing | test_missing_middle_warns_on_child | test_ambiguous_target_warns | test_outside_scan_root_is_info_unresolved |
+| SL011 | test_size_anomaly uniform_file_stays_clean | test_outlier_fires_once_with_numbers_only_evidence | test_threshold_boundary_exact | test_missing_size_metadata_yields_nothing |
 
 ## Recipes
 
@@ -40,3 +47,4 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 | unresolvable-branch-amputate | salvage_recipe_applications | conservative_default_blocks_salvage | amputate_resolves_index_from_root_id | amputate_direct_apply_validation |
 | torn-compaction-project | salvage_recipe_applications | conservative_default_blocks_salvage | empty_events_salvage_policy | torn_compaction_direct_apply_validation |
 | side-effect-unknown-truncate | salvage_recipe_applications | sl203_refusal_beats_salvage | empty_events_salvage_policy | truncate_direct_apply_validation |
+| orphan-result-drop | test_orphan_result_drop_plans_and_applies | test_orphan_result_drop_conservative_blocks | test_orphan_result_drop_resolves_by_params | test_orphan_result_drop_direct_apply_refusals |

@@ -18,6 +18,8 @@ from sesslint.codes import (
     SL005,
     SL006,
     SL007,
+    SL008,
+    SL011,
     SL101,
     SL102,
     SL103,
@@ -29,8 +31,13 @@ from sesslint.codes import (
     SL201,
     SL202,
     SL203,
+    SL204,
+    SL205,
     SL301,
     SL302,
+    SL303,
+    SL304,
+    SL401,
     Severity,
 )
 from sesslint.profiles.profile import Profile
@@ -43,6 +50,8 @@ ALL_RULES: Final[tuple[str, ...]] = (
     SL005,
     SL006,
     SL007,
+    SL008,
+    SL011,
     SL101,
     SL102,
     SL103,
@@ -54,8 +63,13 @@ ALL_RULES: Final[tuple[str, ...]] = (
     SL201,
     SL202,
     SL203,
+    SL204,
+    SL205,
     SL301,
     SL302,
+    SL303,
+    SL304,
+    SL401,
 )
 
 NEUTRAL_PROFILE: Final[Profile] = Profile(
@@ -67,7 +81,6 @@ NEUTRAL_PROFILE: Final[Profile] = Profile(
     allowed_adapters=("canonical", "claude", "openai", "codex", "auto"),
     enabled_rules=ALL_RULES,
     thresholds={"confidence_min": 0.55, "margin_min": 0.15},
-    strict_unknown_critical=False,
     checkpoint_sensitivity="default",
     rule_severities={"SL107": Severity.WARNING, "SL108": Severity.WARNING},
 )
@@ -82,7 +95,6 @@ CLAUDE_STRICT_PROFILE: Final[Profile] = Profile(
     allowed_adapters=("claude", "canonical", "auto"),
     enabled_rules=ALL_RULES,
     thresholds={"confidence_min": 0.55, "margin_min": 0.20},
-    strict_unknown_critical=True,
     checkpoint_sensitivity="default",
     rule_severities={"SL107": Severity.ERROR, "SL108": Severity.ERROR},
 )
@@ -94,7 +106,6 @@ OPENAI_STRICT_PROFILE: Final[Profile] = Profile(
     allowed_adapters=("openai", "codex", "canonical", "auto"),
     enabled_rules=ALL_RULES,
     thresholds={"confidence_min": 0.55, "margin_min": 0.15},
-    strict_unknown_critical=True,
     checkpoint_sensitivity="high",
     rule_severities={"SL107": Severity.ERROR, "SL108": Severity.ERROR},
 )

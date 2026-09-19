@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","timestamp":"2024-01-01T10:00:00Z","schemaVersion":"1","message":{"role":"user","content":[{"type":"text","text":"hola"}]}}
+{"type":"assistant","uuid":"u2","parentUuid":"u1","timestamp":"2024-01-01T10:01:00Z","schemaVersion":"9.9","message":{"role":"assistant","content":[{"type":"text","text":"hola"}]}}
