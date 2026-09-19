@@ -18,6 +18,8 @@
       "SL005",
       "SL006",
       "SL007",
+    "SL008",
+    "SL011",
       "SL101",
       "SL102",
       "SL103",
@@ -29,13 +31,17 @@
       "SL201",
       "SL202",
       "SL203",
+      "SL204",
+      "SL205",
       "SL301",
-      "SL302"
+      "SL302",
+    "SL303",
+        "SL304",
+        "SL401"
     ],
     "format_override": "openai",
     "margin_min": 0.25,
     "profile": "neutral",
-    "strict_unknown_critical": false,
     "thresholds_source": "cli"
   },
   "input": {

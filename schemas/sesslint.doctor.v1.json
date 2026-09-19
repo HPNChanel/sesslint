@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.doctor/v1",
+  "title": "SessLint Doctor Diagnostics Format v1",
+  "description": "Content-free environment diagnostics: tool/adapter versions, resolved config file, and per-agent session-root counters and quick verdicts. Counts and timestamps only — never file names or payloads.",
+  "type": "object",
+  "required": [
+    "adapters",
+    "config_path",
+    "roots",
+    "schema_version",
+    "tool_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.doctor/v1"
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string"}
+      }
+    },
+    "config_path": {
+      "type": ["string", "null"]
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "agent",
+          "checked",
+          "exists",
+          "file_count",
+          "file_count_capped",
+          "newest_mtime",
+          "path",
+          "source",
+          "top_codes",
+          "verdicts"
+        ],
+        "properties": {
+          "agent": {"type": "string"},
+          "path": {"type": "string"},
+          "exists": {"type": "boolean"},
+          "source": {"type": "string"},
+          "file_count": {"type": "integer", "minimum": 0},
+          "file_count_capped": {"type": "boolean"},
+          "newest_mtime": {"type": ["string", "null"]},
+          "checked": {"type": "integer", "minimum": 0},
+          "verdicts": {
+            "type": "object",
+            "additionalProperties": {"type": "integer", "minimum": 0}
+          },
+          "top_codes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["code", "count"],
+              "properties": {
+                "code": {"type": "string"},
+                "count": {"type": "integer", "minimum": 0}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

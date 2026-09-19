@@ -26,6 +26,7 @@ from sesslint.canonical import (
     SessionHeader,
     parse_session_event,
     parse_session_header,
+    reparse_identity_hashes,
     to_canonical_dict,
     to_canonical_json,
 )
@@ -273,11 +274,8 @@ def _load_artifact_events(
     Returns (header, events, stream/adapter findings, format_id). Vendor
     artifacts produce no header; their events carry write-back provenance.
     """
-    from sesslint.adapters.detect import (
-        FORMAT_CLAUDE_CODE,
-        FORMAT_OPENAI_AGENTS,
-        detect_format,
-    )
+    from sesslint.adapters.detect import detect_format
+    from sesslint.adapters.load import is_vendor_format, load_vendor_events
 
     path_obj = Path(path)
     fmt: str | None = None
@@ -286,15 +284,8 @@ def _load_artifact_events(
     except Exception:
         fmt = None
 
-    if fmt == FORMAT_CLAUDE_CODE:
-        from sesslint.adapters.claude_code import load_claude_code
-
-        events, findings = load_claude_code(path_obj)
-        return None, list(events), list(findings), fmt
-    if fmt == FORMAT_OPENAI_AGENTS:
-        from sesslint.adapters.openai_agents import load_openai_agents
-
-        events, findings = load_openai_agents(path_obj)
+    if fmt is not None and is_vendor_format(fmt):
+        events, findings = load_vendor_events(path_obj, fmt)
         return None, list(events), list(findings), fmt
 
     try:
@@ -343,14 +334,20 @@ def _run_detector_checks(
     *,
     source_path: str = "<canonical>",
     profile_name: str = "neutral",
+    adapter: str = "canonical",
 ) -> list[Finding]:
-    """Run detector checks via the shared checks runner (no mutator import)."""
+    """Run detector checks via the shared checks runner (no mutator import).
+
+    ``adapter`` must match the format the findings were originally computed
+    under — finding fingerprints embed the adapter id, so plan reconstruction
+    only reproduces the manifest fingerprint when the adapter agrees.
+    """
     return list(
         run_all_checks(
             events,
             profile=profile_name,
             source_path=source_path,
-            adapter="canonical",
+            adapter=adapter,
         )
     )
 
@@ -442,6 +439,7 @@ def verify(
     else:
         binding_failure = manifest_err_detail
 
+    ack_effective = acknowledge_side_effects
     if plan_path is None and bound_profile is not None:
         # Reconstruct plan from source events and manifest policy/profile (RVW-024)
         target_policy = (
@@ -464,6 +462,7 @@ def verify(
                 src_events,
                 source_path=src_name,
                 profile_name=target_profile,
+                adapter=_src_fmt,
             )
             findings = list(stream_findings) + list(check_findings)
             plan_obj = plan(
@@ -472,9 +471,38 @@ def verify(
                 profile=target_profile,
                 policy=target_policy,
                 source_hash=actual_source_hash,
-                acknowledge_side_effects=acknowledge_side_effects,
+                acknowledge_side_effects=ack_effective,
+                input_format=_src_fmt,
             )
             plan_dict = plan_obj.to_dict()
+            # Acknowledgment is not recorded in the manifest; if the manifest
+            # binds a different fingerprint and the policy is salvage, the
+            # original repair may have run with side-effect acknowledgment.
+            # Retry once with acknowledgment enabled rather than requiring the
+            # caller to re-pass the flag.
+            manifest_fp = (
+                manifest_dict.get("plan_fingerprint") if manifest_dict is not None else None
+            )
+            if (
+                not ack_effective
+                and target_policy == "salvage"
+                and isinstance(manifest_fp, str)
+                and compute_plan_fingerprint(plan_dict) != manifest_fp
+            ):
+                alt_plan = plan(
+                    findings=findings,
+                    events=src_events,
+                    profile=target_profile,
+                    policy=target_policy,
+                    source_hash=actual_source_hash,
+                    acknowledge_side_effects=True,
+                    input_format=_src_fmt,
+                )
+                alt_dict = alt_plan.to_dict()
+                if compute_plan_fingerprint(alt_dict) == manifest_fp:
+                    plan_obj = alt_plan
+                    plan_dict = alt_dict
+                    ack_effective = True
         except Exception:
             plan_obj = None
             plan_dict = None
@@ -664,12 +692,13 @@ def verify(
                             c4 = Check(name="transformation_audit", ok=False, detail=schema_err)
                         else:
                             # Vendor artifacts legitimately renumber source_line
-                            # provenance when lines are dropped, so compare
-                            # content identity (provenance-excluded) there.
+                            # provenance and re-derive positional fields (seq,
+                            # synthetic ids) when lines are dropped, so compare
+                            # re-parse-normalized content identity there.
                             # Canonical artifacts keep the strict full-dict check.
                             if source_fmt != "canonical" or output_fmt != "canonical":
-                                replayed_cmp = [e.content_identity_hash() for e in replayed_events]
-                                output_cmp = [e.content_identity_hash() for e in output_events]
+                                replayed_cmp = reparse_identity_hashes(replayed_events)
+                                output_cmp = reparse_identity_hashes(output_events)
                             else:
                                 replayed_cmp = [
                                     to_canonical_json(to_canonical_dict(e)) for e in replayed_events
@@ -944,6 +973,7 @@ def verify(
                     fresh_output_events,
                     source_path=out_name,
                     profile_name=target_profile,
+                    adapter=_out_fmt,
                 )
                 fresh_plan = plan(
                     findings=findings,
@@ -951,7 +981,7 @@ def verify(
                     profile=target_profile,
                     policy=target_policy,
                     source_hash=hashlib.sha256(output_bytes).hexdigest(),
-                    acknowledge_side_effects=acknowledge_side_effects,
+                    acknowledge_side_effects=ack_effective,
                 )
                 if len(fresh_plan.steps) == 0:
                     c7 = Check(name="idempotence", ok=True, detail="0-steps (converged)")

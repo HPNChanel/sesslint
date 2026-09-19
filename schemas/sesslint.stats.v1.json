@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.stats/v1",
+  "title": "SessLint Aggregate Statistics Format v1",
+  "description": "Content-free aggregate statistics over a session corpus: file buckets, adapter/kind/actor counters, hashed tool-call volumes, compaction/checkpoint counts, and per-file distributions.",
+  "type": "object",
+  "required": [
+    "by_adapter",
+    "checkpoints",
+    "compaction_boundaries",
+    "events",
+    "events_per_file",
+    "file_bytes",
+    "files",
+    "root_path",
+    "schema_version",
+    "tool_calls",
+    "tool_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.stats/v1"
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "root_path": {
+      "type": "string"
+    },
+    "files": {
+      "type": "object",
+      "required": ["processed", "total", "undetected", "unreadable"],
+      "properties": {
+        "processed": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0},
+        "undetected": {"type": "integer", "minimum": 0},
+        "unreadable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "by_adapter": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "events": {
+      "type": "object",
+      "required": ["by_actor", "by_kind", "total"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "by_kind": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "by_actor": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        }
+      },
+      "additionalProperties": false
+    },
+    "tool_calls": {
+      "type": "object",
+      "required": ["by_tool_hash", "total"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "by_tool_hash": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        }
+      },
+      "additionalProperties": false
+    },
+    "compaction_boundaries": {"type": "integer", "minimum": 0},
+    "checkpoints": {"type": "integer", "minimum": 0},
+    "file_bytes": {
+      "type": "object",
+      "required": ["max", "p50", "p95", "total"],
+      "properties": {
+        "max": {"type": "integer", "minimum": 0},
+        "p50": {"type": "integer", "minimum": 0},
+        "p95": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "events_per_file": {
+      "type": "object",
+      "required": ["max", "p50", "p95", "total"],
+      "properties": {
+        "max": {"type": "integer", "minimum": 0},
+        "p50": {"type": "integer", "minimum": 0},
+        "p95": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

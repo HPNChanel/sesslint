@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.preview.v1.json",
+  "title": "SessLint Repair Preview",
+  "description": "Content-free structural preview of a repair plan (sesslint.preview/v1): would-be deltas and blocked findings \u2014 bounded identifiers, ordinals and rule codes only, never session payload content.",
+  "type": "object",
+  "required": [
+    "schema",
+    "source",
+    "plan_fingerprint",
+    "policy",
+    "counts",
+    "steps",
+    "blocked"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sesslint.preview/v1"
+    },
+    "source": {
+      "type": "string"
+    },
+    "plan_fingerprint": {
+      "type": "string"
+    },
+    "policy": {
+      "type": "string",
+      "enum": [
+        "conservative",
+        "salvage"
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "action",
+          "reason_code",
+          "recipe"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "drop",
+              "relink",
+              "discard-tail",
+              "dedupe",
+              "normalize"
+            ]
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "recipe": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "source_line": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "blocked": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "finding_fp",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "finding_fp": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

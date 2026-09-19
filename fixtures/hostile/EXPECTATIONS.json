@@ -1,7 +1,7 @@
 {
   "bom_mismatch.jsonl": {
-    "code": "SL302",
-    "description": "UTF-16 BOM on UTF-8 expectation fails closed with encoding/header error",
+    "code": "SL001",
+    "description": "UTF-16 BOM content contains NUL bytes; fails closed as binary/encoding error (consistent with scan unreadable classification)",
     "expected_assurance": "A0",
     "exit": 1,
     "repairable": false
@@ -70,8 +70,8 @@
     "repairable": false
   },
   "null_bytes.jsonl": {
-    "code": "SL002",
-    "description": "Forbidden NUL byte in JSONL stream triggers fail-closed check error; the unparseable terminal record is discarded by torn-terminal-record-discard under vendor write-back",
+    "code": "SL001",
+    "description": "Forbidden NUL byte in JSONL stream triggers fail-closed check error (consistent with scan unreadable classification); the unparseable terminal record is discarded by torn-terminal-record-discard under vendor write-back",
     "expected_assurance": "A0",
     "exit": 1,
     "repairable": true
@@ -91,8 +91,8 @@
     "repairable": true
   },
   "truncated_utf8.bin": {
-    "code": "SL302",
-    "description": "Split multibyte UTF-8 at EOF fails closed as encoding/detection defect",
+    "code": "SL001",
+    "description": "Split multibyte UTF-8 at EOF fails closed as encoding error (consistent with scan unreadable classification)",
     "expected_assurance": "A0",
     "exit": 1,
     "repairable": false

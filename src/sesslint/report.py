@@ -122,6 +122,7 @@ VALID_COVERAGE_SKIP_REASONS: Final[frozenset[str]] = frozenset(
         "empty-input",
         "cap-exceeded",
         "single-doc-fallback",
+        "deselected",
     }
 )
 
@@ -1778,6 +1779,35 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
     return p.name
 
 
+def hint_path(path: Path | str, *, home: Path | None = None) -> str:
+    """Render a path for an operator-facing command hint (must stay usable).
+
+    Unlike ``minimize_path`` (which renders privacy-preserving
+    ``.._<hash>/name`` forms for shareable report artifacts), a hint is
+    printed to the operator's own terminal and must be copy-paste runnable:
+    relative paths pass through verbatim (they resolve from the invocation
+    cwd), absolute paths under home render ``~/``-relative, and other
+    absolute paths are emitted verbatim — the local shell resolves them.
+    """
+    p_str = str(path).replace("\\", "/")
+    if p_str.startswith("~/") or p_str == "~" or p_str.startswith(".._"):
+        return p_str
+
+    p = Path(path)
+    if p.is_absolute() or p_str.startswith("/") or (len(p_str) > 1 and p_str[1] == ":"):
+        h = home if home is not None else Path.home()
+        try:
+            return f"~/{p.relative_to(h).as_posix()}"
+        except (ValueError, RuntimeError):
+            pass
+        try:
+            return f"~/{p.resolve().relative_to(h.resolve()).as_posix()}"
+        except (ValueError, RuntimeError):
+            pass
+        return p_str
+    return p_str
+
+
 def short_hash(identifier: str, length: int = 8) -> str:
     """Compute truncated sha256 hex digest of an identifier string."""
     return hashlib.sha256(identifier.encode("utf-8")).hexdigest()[:length]
@@ -1877,33 +1907,46 @@ def build_repro_metadata(
     )
 
 
-def get_finding_remediation(f: Finding, *, home: Path | None = None) -> str:
+def get_finding_remediation(
+    f: Finding,
+    *,
+    home: Path | None = None,
+    for_operator: bool = False,
+) -> str:
     """Return concise content-free remediation instructions for a finding.
 
     For findings whose codes have no repair recipe, the message is enriched
     with the documented refusal rationale and DEMAND citation from
     sesslint.repair.refusals (plus an optional content-free salvage path).
+
+    ``for_operator=True`` renders the hint path in copy-paste usable form
+    (``hint_path``) for terminal output; the default ``False`` keeps the
+    privacy-minimized form used inside shareable report artifacts.
     """
     from sesslint.codes import Repairability
     from sesslint.repair.refusals import refusal_rationale_for
 
-    min_path = minimize_path(f.source.path, home=home)
+    path_str = (
+        hint_path(f.source.path, home=home)
+        if for_operator
+        else minimize_path(f.source.path, home=home)
+    )
     if f.repairability == Repairability.DETERMINISTIC:
-        return f"deterministic recipe available: run 'sesslint repair {min_path}'"
+        return f"deterministic recipe available: run 'sesslint repair {path_str}'"
     if f.repairability == Repairability.LOSSY_EXPLICIT:
-        return f"lossy-explicit recipe available: run 'sesslint repair {min_path} --policy salvage'"
+        return f"lossy-explicit recipe available: run 'sesslint repair {path_str} --policy salvage'"
     refusal = refusal_rationale_for(f.code)
     if f.repairability == Repairability.MANUAL:
         if refusal is not None:
             return (
                 "manual inspection required; automated repair refused: "
-                f"{refusal.render(path=min_path)}"
+                f"{refusal.render(path=path_str)}"
             )
         return "manual inspection required; automated repair refused"
     if refusal is not None:
         return (
             "unsupported defect or structure; automated repair refused: "
-            f"{refusal.render(path=min_path)}"
+            f"{refusal.render(path=path_str)}"
         )
     return "unsupported defect or structure; automated repair refused"
 
@@ -2119,10 +2162,10 @@ def render_human(
     if next_action is None:
         if has_error:
             if any(f.repairability.value == "deterministic" for f in report.findings):
-                p = minimize_path(report.findings[0].source.path, home=home)
+                p = hint_path(report.findings[0].source.path, home=home)
                 next_action = f"Run 'sesslint repair {p} --output <out>'"
             elif any(f.repairability.value == "lossy-explicit" for f in report.findings):
-                p = minimize_path(report.findings[0].source.path, home=home)
+                p = hint_path(report.findings[0].source.path, home=home)
                 next_action = f"Run 'sesslint repair {p} --output <out> --policy salvage'"
             else:
                 next_action = "Manual inspection required; automated repair refused."
@@ -2131,7 +2174,7 @@ def render_human(
                 for f in sorted(report.findings, key=finding_report_sort_key):
                     entry = refusal_rationale_for(f.code)
                     if entry is not None and entry.salvage_path is not None:
-                        p = minimize_path(f.source.path, home=home)
+                        p = hint_path(f.source.path, home=home)
                         next_action += f" Possible path: {entry.salvage_path.replace('{path}', p)}."
                         break
         elif has_warning:
@@ -2186,7 +2229,7 @@ def render_human(
                     loc_str = f"{loc_str} (bytes {b_start}-{b_end})"
             sev_color = red if f.severity.value in ("error", "fatal") else yellow
             why_str = f.message
-            fix_str = get_finding_remediation(f, home=home)
+            fix_str = get_finding_remediation(f, home=home, for_operator=True)
 
             sev_rep = f"({f.severity.value.upper()}, {f.repairability.value})"
             lines.append(f"  [{f.code}] {sev_color}{title}{reset} {sev_rep}")
@@ -2238,6 +2281,7 @@ __all__ = [
     "finding_report_sort_key",
     "format_finding_content_free",
     "get_finding_remediation",
+    "hint_path",
     "get_manifest_schema_path",
     "get_report_schema_path",
     "load_manifest_schema",

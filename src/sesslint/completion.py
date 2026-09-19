@@ -1,18 +1,33 @@
 """Shell completion script generation (T-13).
 
-Generates bash/zsh/fish completion scripts at runtime from the live argparse
-parser, so completion can never drift from the CLI surface: there are no
-checked-in static scripts. Pure string building, deterministic output.
+Generates bash/zsh/fish/powershell completion scripts at runtime from the
+live argparse parser, so completion can never drift from the CLI surface:
+there are no checked-in static scripts. Pure string building, deterministic
+output.
 """
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
-COMPLETION_SHELLS: Final[tuple[str, ...]] = ("bash", "zsh", "fish")
+COMPLETION_SHELLS: Final[tuple[str, ...]] = ("bash", "zsh", "fish", "powershell")
 PROG: Final[str] = "sesslint"
+
+
+def _profile_choices() -> tuple[str, ...]:
+    """Live profile names from the registry (profiles are config-extensible,
+    so argparse deliberately leaves ``--profile`` choice-free)."""
+    from sesslint.profiles import list_profiles
+
+    return tuple(sorted(list_profiles()))
+
+
+_LIVE_CHOICES: Final[dict[str, Callable[[], tuple[str, ...]]]] = {
+    "--profile": _profile_choices,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +76,12 @@ def _harvest_parser(parser: argparse.ArgumentParser) -> tuple[_Command, ...]:
                     isinstance(c, str) for c in raw_choices
                 ):
                     fixed = tuple(sorted(str(c) for c in raw_choices))
+                if not fixed:
+                    for opt in option_strings:
+                        provider = _LIVE_CHOICES.get(opt)
+                        if provider is not None:
+                            fixed = provider()
+                            break
                 flags.append(
                     _Flag(
                         options=tuple(sorted(option_strings)),
@@ -194,10 +215,96 @@ def _fish_script(commands: tuple[_Command, ...]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _ps_quote(value: str) -> str:
+    """Single-quote a literal for PowerShell (embedded quotes doubled)."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _powershell_script(commands: tuple[_Command, ...]) -> str:
+    """Render a PowerShell completion script (Register-ArgumentCompleter -Native).
+
+    Data tables (command names, per-command flags, per-flag fixed choices,
+    tooltips) are emitted as literal hashtables; the scriptblock completes
+    subcommand names, flags, and choice values. Compatible with Windows
+    PowerShell 5.1 and pwsh 7 — the common ``-Native`` completer subset.
+    """
+    names = ", ".join(_ps_quote(c.name) for c in commands)
+    flag_rows: list[str] = []
+    choice_rows: list[str] = []
+    help_rows: list[str] = []
+    for cmd in commands:
+        opts = [o for f in cmd.flags for o in f.options]
+        flag_rows.append(f"    {_ps_quote(cmd.name)} = @({', '.join(_ps_quote(o) for o in opts)})")
+        for flag in cmd.flags:
+            for opt in flag.options:
+                if flag.choices:
+                    vals = ", ".join(_ps_quote(v) for v in flag.choices)
+                    choice_rows.append(f"    {_ps_quote(cmd.name + ' ' + opt)} = @({vals})")
+                if flag.help:
+                    help_rows.append(
+                        f"    {_ps_quote(cmd.name + ' ' + opt)} = {_ps_quote(flag.help)}"
+                    )
+    flags_table = "\n".join(flag_rows)
+    choices_table = "\n".join(choice_rows)
+    help_table = "\n".join(help_rows)
+    return f"""# {PROG} completion (powershell) - generated at runtime; do not edit.
+# Install: paste this script into your $PROFILE, or run:
+#   sesslint completion powershell >> $PROFILE
+${PROG}CommandNames = @({names})
+${PROG}FlagMap = @{{
+{flags_table}
+}}
+${PROG}ChoiceMap = @{{
+{choices_table}
+}}
+${PROG}HelpMap = @{{
+{help_table}
+}}
+${PROG}Core = {{
+    param($wordToComplete, $commandAst)
+    $elements = @($commandAst.CommandElements)
+    $prevIndex = $elements.Count - 1
+    if ($wordToComplete -ne '' -and $prevIndex -ge 1) {{ $prevIndex-- }}
+    $prev = if ($prevIndex -ge 1) {{ $elements[$prevIndex].Extent.Text }} else {{ $null }}
+    $cmd = $null
+    for ($i = 1; $i -le $prevIndex; $i++) {{
+        $t = $elements[$i].Extent.Text
+        if (-not $t.StartsWith('-')) {{ $cmd = $t; break }}
+    }}
+    $candidates = @()
+    if ($null -eq $cmd) {{
+        $candidates = ${PROG}CommandNames
+    }} elseif ($null -ne $prev -and ${PROG}ChoiceMap.ContainsKey("$cmd $prev")) {{
+        $candidates = ${PROG}ChoiceMap["$cmd $prev"]
+    }} elseif (${PROG}FlagMap.ContainsKey($cmd)) {{
+        $candidates = ${PROG}FlagMap[$cmd]
+    }}
+    $candidates | Where-Object {{ $_ -like "$wordToComplete*" }} | ForEach-Object {{
+        $tip = ${PROG}HelpMap["$cmd $_"]
+        if ($null -eq $tip) {{ $tip = $_ }}
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)
+    }}
+}}
+$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue
+if ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {{
+    Register-ArgumentCompleter -Native -CommandName {PROG} -ScriptBlock {{
+        param($wordToComplete, $commandAst, $cursorPosition)
+        & ${PROG}Core $wordToComplete $commandAst
+    }}.GetNewClosure()
+}} else {{
+    Register-ArgumentCompleter -CommandName {PROG} -ScriptBlock {{
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        & ${PROG}Core $wordToComplete $commandAst
+    }}.GetNewClosure()
+}}
+"""
+
+
 _GENERATORS = {
     "bash": _bash_script,
     "zsh": _zsh_script,
     "fish": _fish_script,
+    "powershell": _powershell_script,
 }
 
 
@@ -205,7 +312,7 @@ def generate_completion(shell: str, *, parser: argparse.ArgumentParser | None = 
     """Generate the completion script for a shell from the live parser.
 
     Args:
-        shell: One of 'bash', 'zsh', 'fish'.
+        shell: One of 'bash', 'zsh', 'fish', 'powershell'.
         parser: Parser to harvest (defaults to the real CLI parser).
 
     Raises:

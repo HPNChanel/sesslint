@@ -7,8 +7,9 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 from __future__ import annotations
 
 import hashlib
+import io
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -22,14 +23,23 @@ from sesslint.adapters.detect import (
     resolve_format,
     validate_detection_thresholds,
 )
+from sesslint.batch import BatchRepairReport
 from sesslint.bundle import Bundle, build_bundle
 from sesslint.canonical import Session, SessionEvent, load_session_file
-from sesslint.codes import SL302, Repairability, Severity
+from sesslint.codes import SL001, SL302, Repairability, Severity
 from sesslint.context import CheckContext
+from sesslint.diff import SessionDiff
+from sesslint.doctor import DoctorReport
 from sesslint.exporter import ExportSummary
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
-from sesslint.profiles import ALL_RULES, resolve_effective_config
+from sesslint.preview import PreviewDoc
+from sesslint.profiles import (
+    ALL_RULES,
+    apply_rule_selection,
+    deselected_rules,
+    resolve_effective_config,
+)
 from sesslint.progress import (
     CancellationToken,
     OperationCancelled,
@@ -57,9 +67,11 @@ from sesslint.scan import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_FILES,
     ScanReport,
+    scan_bytes,
     scan_path,
 )
-from sesslint.source import fingerprint_file
+from sesslint.source import fingerprint_bytes, fingerprint_file
+from sesslint.stats import SessionStats
 from sesslint.verify import Verdict
 from sesslint.verify import verify as verify_artifacts
 
@@ -75,6 +87,9 @@ def check_file(
     margin_min: float | None = None,
     progress_cb: ProgressCallback | None = None,
     cancel_token: CancellationToken | None = None,
+    select: Sequence[str] | None = None,
+    ignore: Sequence[str] | None = None,
+    baseline: Collection[str] | None = None,
 ) -> Report:
     """Evaluate a single session file artifact and return a frozen Report.
 
@@ -89,32 +104,234 @@ def check_file(
             ``check:analyze``, ``check:report``) — DW-T-13.
         cancel_token: Optional cooperative cancellation token checked at
             phase boundaries.
+        select: Optional rule codes to run exclusively (e.g. ``("SL101",)``).
+        ignore: Optional rule codes to skip (mutually exclusive with select).
+        baseline: Optional finding fingerprints to suppress (baseline mode:
+            the returned report describes only findings absent from the set).
 
     Returns:
         A frozen Report dataclass with findings, counts, assurance, and limitation.
     """
+    return _check_impl(
+        Path(path),
+        data=None,
+        virtual_path=None,
+        format=format,
+        profile=profile,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+        select=select,
+        ignore=ignore,
+        baseline=baseline,
+    )
+
+
+def check_bytes(
+    data: bytes,
+    *,
+    virtual_path: str = "<stdin>",
+    format: str | None = None,
+    profile: str = "neutral",
+    confidence_min: float | None = None,
+    margin_min: float | None = None,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
+    select: Sequence[str] | None = None,
+    ignore: Sequence[str] | None = None,
+    baseline: Collection[str] | None = None,
+    max_input_bytes: int | None = None,
+) -> Report:
+    """Evaluate a session artifact held in memory (e.g. piped stdin bytes).
+
+    Runs the identical probe → detect → load → check pipeline as
+    ``check_file``; the only differences are the byte source and the display
+    path (``virtual_path``, reported verbatim — never resolved against cwd).
+    Content detection relies on record signatures since a virtual source has
+    no meaningful filename; ``--format`` overrides as usual.
+    ``max_input_bytes`` bounds the slurped buffer: when exceeded the result is
+    a structured SL001 finding, never a traceback (ux T-06).
+    """
+    if max_input_bytes is not None and len(data) > max_input_bytes:
+        resolved_profile = apply_rule_selection(profile, select=select, ignore=ignore)
+        effective_cfg = resolve_effective_config(resolved_profile)
+        det_finding = make_finding(
+            code=SL001,
+            severity=Severity.ERROR,
+            repairability=Repairability.MANUAL,
+            message_template="Input exceeds maximum supported size",
+            source=SourceRef(path=virtual_path),
+            evidence={"reason": "limit_or_io_error", "detail": "stdin_too_large"},
+        )
+        rep_findings = [det_finding] if SL001 in set(resolved_profile.enabled_rules) else []
+        if baseline is not None:
+            from sesslint.baseline import filter_findings
+
+            rep_findings = filter_findings(rep_findings, frozenset(baseline))
+        cov = Coverage(
+            performed=(),
+            skipped=tuple(
+                CoverageSkip(
+                    check=r, reason="adapter-not-applicable", detail="input exceeds size limit"
+                )
+                for r in ALL_RULES
+            ),
+            adapter={"id": "unknown", "version": "unknown"},
+            profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+        )
+        return build_report(
+            session_id="stdin",
+            source_fingerprint="0" * 64,
+            tool_version=CLI_VERSION,
+            findings=rep_findings,
+            assurance="A0",
+            limitation="No structural conclusion.",
+            coverage=cov,
+        )
+    return _check_impl(
+        Path(virtual_path),
+        data=data,
+        virtual_path=virtual_path,
+        format=format,
+        profile=profile,
+        confidence_min=confidence_min,
+        margin_min=margin_min,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+        select=select,
+        ignore=ignore,
+        baseline=baseline,
+    )
+
+
+def _check_impl(
+    target_path: Path,
+    *,
+    data: bytes | None,
+    virtual_path: str | None,
+    format: str | None,
+    profile: str,
+    confidence_min: float | None,
+    margin_min: float | None,
+    progress_cb: ProgressCallback | None,
+    cancel_token: CancellationToken | None,
+    select: Sequence[str] | None,
+    ignore: Sequence[str] | None,
+    baseline: Collection[str] | None,
+) -> Report:
+    """Shared check pipeline for file and in-memory byte sources (ux T-06).
+
+    ``data is not None`` selects byte mode: ``virtual_path`` is the display
+    path and every filesystem touch is replaced by a buffer/stream equivalent.
+    """
     validate_detection_thresholds(confidence_min, margin_min)
 
-    target_path = Path(path)
-    if not target_path.exists():
+    # Narrowing note for mypy --strict: guards on `data`/`virtual_path` use the
+    # `is not None` form so Optional types narrow without a flag variable.
+    display_path = virtual_path if virtual_path is not None else str(target_path)
+    item_name = virtual_path if virtual_path is not None else target_path.name
+    item_stem = "stdin" if data is not None else target_path.stem
+
+    if data is None and not target_path.exists():
         raise FileNotFoundError(f"Path not found: {target_path}")
 
+    resolved_profile = apply_rule_selection(profile, select=select, ignore=ignore)
     effective_cfg = resolve_effective_config(
-        profile,
+        resolved_profile,
         format=format if format != "auto" else None,
         confidence_min=confidence_min,
         margin_min=margin_min,
     )
+    enabled_rules = set(resolved_profile.enabled_rules)
+    deselected = deselected_rules(profile, select=select, ignore=ignore)
 
-    resolved_fmt, detection_res, det_findings = resolve_format(
-        format,
-        target_path,
-        confidence_min=effective_cfg.confidence_min,
-        margin_min=effective_cfg.margin_min,
-    )
+    # Binary/encoding gate before format detection: a file that cannot decode
+    # as UTF-8 (or contains NUL bytes) is unreadable regardless of what its
+    # first 64 KiB sniff suggests. Keeps check verdicts consistent with scan,
+    # which runs the same probe before classification.
+    from sesslint.io import probe_bytes_encoding, probe_text_encoding
+
+    if data is not None:
+        enc_probe = probe_bytes_encoding(data)
+    else:
+        try:
+            enc_probe = probe_text_encoding(target_path)
+        except OSError:
+            enc_probe = None
+    if enc_probe is not None:
+        det_finding = make_finding(
+            code=SL001,
+            severity=Severity.ERROR,
+            repairability=Repairability.MANUAL,
+            message_template=(
+                "File contains forbidden NUL byte or binary data"
+                if enc_probe == "nul"
+                else "File encoding error non-UTF-8"
+            ),
+            source=SourceRef(path=display_path),
+            evidence=(
+                {"reason": "encoding_error", "detail": "invalid_utf8"}
+                if enc_probe == "utf8"
+                else {}
+            ),
+        )
+        rep_findings = [det_finding] if SL001 in enabled_rules else []
+        if baseline is not None:
+            from sesslint.baseline import filter_findings
+
+            rep_findings = filter_findings(rep_findings, frozenset(baseline))
+        if data is not None:
+            fp = fingerprint_bytes(data)
+        else:
+            fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
+        cov = Coverage(
+            performed=(),
+            skipped=tuple(
+                CoverageSkip(check=r, reason="adapter-not-applicable", detail="file not decodable")
+                for r in ALL_RULES
+            ),
+            adapter={"id": "unknown", "version": "unknown"},
+            profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+        )
+        emit_progress(
+            progress_cb,
+            ProgressEvent(phase="check:report", completed=4, total=4, item=item_name),
+        )
+        return build_report(
+            session_id=item_stem,
+            source_fingerprint=fp,
+            tool_version=CLI_VERSION,
+            findings=rep_findings,
+            assurance="A0",
+            limitation="No structural conclusion.",
+            coverage=cov,
+        )
+
+    if data is not None:
+        from sesslint.adapters.detect import resolve_format_bytes
+
+        # Content-only detection: a virtual source has no meaningful filename,
+        # so heuristics see a neutral .jsonl name that opens content sniffing
+        # without privileging any vendor's filename signature.
+        resolved_fmt, detection_res, det_findings = resolve_format_bytes(
+            format,
+            data,
+            filename="stdin.jsonl",
+            display_path=display_path,
+            confidence_min=effective_cfg.confidence_min,
+            margin_min=effective_cfg.margin_min,
+        )
+    else:
+        resolved_fmt, detection_res, det_findings = resolve_format(
+            format,
+            target_path,
+            confidence_min=effective_cfg.confidence_min,
+            margin_min=effective_cfg.margin_min,
+        )
     emit_progress(
         progress_cb,
-        ProgressEvent(phase="check:detect", completed=1, total=4, item=target_path.name),
+        ProgressEvent(phase="check:detect", completed=1, total=4, item=item_name),
     )
     check_token(cancel_token)
 
@@ -128,12 +345,20 @@ def check_file(
                     severity=Severity.ERROR,
                     repairability=Repairability.MANUAL,
                     message_template="Format detection failed",
-                    source=SourceRef(path=str(target_path)),
+                    source=SourceRef(path=display_path),
                     evidence={"detail": detection_res.reason if detection_res else "unknown"},
                 )
             ]
         )
-        fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
+        rep_findings = [f for f in rep_findings if f.code in enabled_rules]
+        if baseline is not None:
+            from sesslint.baseline import filter_findings
+
+            rep_findings = filter_findings(rep_findings, frozenset(baseline))
+        if data is not None:
+            fp = fingerprint_bytes(data)
+        else:
+            fp = fingerprint_file(target_path) if target_path.is_file() else "0" * 64
         cov = Coverage(
             performed=(),
             skipped=tuple(
@@ -147,10 +372,10 @@ def check_file(
         )
         emit_progress(
             progress_cb,
-            ProgressEvent(phase="check:report", completed=4, total=4, item=target_path.name),
+            ProgressEvent(phase="check:report", completed=4, total=4, item=item_name),
         )
         return build_report(
-            session_id=target_path.stem,
+            session_id=item_stem,
             source_fingerprint=fp,
             tool_version=CLI_VERSION,
             findings=rep_findings,
@@ -159,19 +384,9 @@ def check_file(
             coverage=cov,
         )
 
-    fmt_key = (
-        "claude"
-        if resolved_fmt == FORMAT_CLAUDE_CODE
-        else (
-            "openai"
-            if resolved_fmt == FORMAT_OPENAI_AGENTS
-            else (
-                "codex"
-                if resolved_fmt == FORMAT_CODEX_ROLLOUT
-                else ("canonical" if resolved_fmt == FORMAT_CANONICAL else resolved_fmt)
-            )
-        )
-    )
+    from sesslint.adapters.load import load_events_for_format, profile_key_for_format
+
+    fmt_key = profile_key_for_format(resolved_fmt)
     if (
         fmt_key not in effective_cfg.allowed_adapters
         and resolved_fmt not in effective_cfg.allowed_adapters
@@ -180,38 +395,45 @@ def check_file(
             f"Format {resolved_fmt} is not permitted by profile {effective_cfg.profile}"
         )
 
-    events: Any = ()
     adapter_findings: list[Finding] = list(det_findings)
-
-    if resolved_fmt == FORMAT_CANONICAL:
-        from sesslint.adapters.canonical import load_canonical
-
-        events, can_findings = load_canonical(target_path)
-        adapter_findings.extend(can_findings)
-    elif resolved_fmt == FORMAT_CLAUDE_CODE:
-        from sesslint.adapters.claude_code import load_claude_code
-
-        events, c_findings = load_claude_code(target_path)
-        adapter_findings.extend(c_findings)
-    elif resolved_fmt == FORMAT_OPENAI_AGENTS:
-        from sesslint.adapters.openai_agents import load_openai_agents
-
-        events, o_findings = load_openai_agents(target_path)
-        adapter_findings.extend(o_findings)
-    elif resolved_fmt == FORMAT_CODEX_ROLLOUT:
-        from sesslint.adapters.codex_rollout import load_codex_rollout
-
-        events, cx_findings = load_codex_rollout(target_path)
-        adapter_findings.extend(cx_findings)
+    load_source: Path | io.BytesIO = io.BytesIO(data) if data is not None else target_path
+    events, loaded_findings = load_events_for_format(load_source, resolved_fmt)
+    adapter_findings.extend(loaded_findings)
+    # An empty/whitespace-only file is not a valid session of any format —
+    # a forced --format must not let it report healthy. (Auto-detect already
+    # fails closed via SL302.)
+    if not events:
+        if data is not None:
+            _empty_input = not data.strip()
+        else:
+            _empty_input = target_path.stat().st_size == 0 or not target_path.read_bytes().strip()
+        if _empty_input:
+            adapter_findings.append(
+                make_finding(
+                    code=SL001,
+                    severity=Severity.ERROR,
+                    repairability=Repairability.MANUAL,
+                    message_template="Empty input: file contains no session records",
+                    source=SourceRef(path=display_path),
+                    evidence={"detail": "empty-or-whitespace-only input"},
+                )
+            )
+    # Version-gating is a fail-closed reliability mechanism, not a reportable
+    # finding — it must consult the unfiltered adapter findings so that
+    # --ignore SL301 suppresses the report without un-gating unsafe analysis.
+    has_version_abort = any(f.code == "SL301" for f in adapter_findings)
+    # Detection/reader-stage findings honor the same rule selection as
+    # detector-stage ones — --ignore SL302 must silence adapter noise too.
+    adapter_findings = [f for f in adapter_findings if f.code in enabled_rules]
 
     emit_progress(
         progress_cb,
-        ProgressEvent(phase="check:load", completed=2, total=4, item=target_path.name),
+        ProgressEvent(phase="check:load", completed=2, total=4, item=item_name),
     )
     check_token(cancel_token)
 
     adapter_skips: list[CoverageSkip] = []
-    if any(f.code == "SL301" for f in adapter_findings):
+    if has_version_abort:
         adapter_skips.append(
             CoverageSkip(
                 check="SL301",
@@ -222,28 +444,33 @@ def check_file(
 
     source_meta = getattr(events, "source", None)
     check_ctx = CheckContext.from_profile_and_adapter(
-        profile=effective_cfg.profile,
+        profile=resolved_profile,
         adapter=resolved_fmt,
         source_metadata=source_meta if isinstance(source_meta, Mapping) else None,
     )
 
     check_findings, coverage = repair_executor.run_all_checks(
         events,
-        profile=effective_cfg.profile,
-        source_path=str(target_path),
+        profile=resolved_profile,
+        source_path=display_path,
         context=check_ctx,
         adapter=resolved_fmt,
         adapter_skips=adapter_skips,
+        deselected_rules=deselected,
         return_coverage=True,
     )
     all_findings = list(adapter_findings) + list(check_findings)
+    if baseline is not None:
+        from sesslint.baseline import filter_findings
+
+        all_findings = filter_findings(all_findings, frozenset(baseline))
     emit_progress(
         progress_cb,
-        ProgressEvent(phase="check:analyze", completed=3, total=4, item=target_path.name),
+        ProgressEvent(phase="check:analyze", completed=3, total=4, item=item_name),
     )
     check_token(cancel_token)
 
-    session_id: str = target_path.stem
+    session_id: str = item_stem
     if events and hasattr(events[0], "session_id") and events[0].session_id:
         session_id = str(events[0].session_id)
 
@@ -259,10 +486,10 @@ def check_file(
         ),
     )
 
-    fp = fingerprint_file(target_path)
+    fp = fingerprint_bytes(data) if data is not None else fingerprint_file(target_path)
     emit_progress(
         progress_cb,
-        ProgressEvent(phase="check:report", completed=4, total=4, item=target_path.name),
+        ProgressEvent(phase="check:report", completed=4, total=4, item=item_name),
     )
     return build_report(
         session_id=session_id,
@@ -288,6 +515,15 @@ def check_dir(
     margin_min: float | None = None,
     progress_cb: ProgressCallback | None = None,
     cancel_token: CancellationToken | None = None,
+    skip_undetected: bool = False,
+    select: Sequence[str] | None = None,
+    ignore: Sequence[str] | None = None,
+    baseline: Collection[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    ext: Sequence[str] | None = None,
+    jobs: int = 1,
+    incremental: bool = False,
+    cache_dir: Path | str | None = None,
 ) -> ScanReport:
     """Scan a directory tree and return a ScanReport with aggregate 5-bucket totals.
 
@@ -305,6 +541,18 @@ def check_dir(
             inspected file (DW-T-13).
         cancel_token: Optional cooperative cancellation token checked at each
             directory-entry boundary.
+        skip_undetected: Classify format-undetected files as ``skipped`` instead
+            of ``invalid`` (useful for mixed-content trees and pre-commit hooks).
+        select: Optional rule codes to run exclusively.
+        ignore: Optional rule codes to skip (mutually exclusive with select).
+        baseline: Optional finding fingerprints to suppress per file.
+        exclude: Glob patterns for names/root-relative paths to skip entirely.
+        ext: File-extension allowlist for directory walks.
+        jobs: Worker processes for per-file analysis (default 1 = sequential);
+            report bytes are identical for any ``jobs`` value.
+        incremental: Reuse cached per-file results when content hash and
+            analysis fingerprint match (opt-in sqlite cache, perf-scale T-02).
+        cache_dir: Override the default platform cache directory.
 
     Returns:
         A frozen ScanReport dataclass.
@@ -326,6 +574,15 @@ def check_dir(
         margin_min=margin_min,
         progress_cb=progress_cb,
         cancel_token=cancel_token,
+        skip_undetected=skip_undetected,
+        select=select,
+        ignore=ignore,
+        baseline=frozenset(baseline) if baseline is not None else None,
+        exclude=exclude,
+        ext=ext,
+        jobs=jobs,
+        incremental=incremental,
+        cache_dir=cache_dir,
     )
 
 
@@ -337,6 +594,7 @@ def repair(
     format: str | None = None,
     profile: str = "neutral",
     plan_path: Path | str | None = None,
+    plan: RepairPlan | None = None,
     dry_run: bool = False,
     acknowledge_side_effects: bool = False,
     emit: Literal["auto", "canonical", "vendor"] = "auto",
@@ -352,6 +610,10 @@ def repair(
         format: Optional format adapter override.
         profile: Profile name (default 'neutral').
         plan_path: Optional path to pre-computed plan JSON.
+        plan: Optional in-memory RepairPlan to apply directly (mutually
+            exclusive with ``plan_path``); the plan is authoritative —
+            fingerprint, source binding, and policy are re-validated at
+            execution.
         dry_run: If True, computes plan without writing files.
         acknowledge_side_effects: Explicit acknowledgment for salvage policy.
         emit: Output artifact format. 'auto' (default) emits the input's own
@@ -377,6 +639,8 @@ def repair(
 
     if emit not in ("auto", "canonical", "vendor"):
         raise ValueError(f"emit must be 'auto', 'canonical', or 'vendor', got {emit!r}")
+    if plan is not None and plan_path is not None:
+        raise ValueError("plan and plan_path are mutually exclusive")
 
     # Resolve the input format exactly once (explicit override or a single
     # detection pass under the selected profile's effective thresholds).
@@ -403,26 +667,36 @@ def repair(
         FORMAT_CODEX_ROLLOUT,
     )
 
-    # Resolve the emit target.
+    # Resolve the emit target. Vendor write-back projection is supported only
+    # for formats in WRITEBACK_FORMATS; other vendor inputs (e.g. codex-rollout)
+    # emit canonical output under 'auto'.
+    from sesslint.repair.writeback import WRITEBACK_FORMATS
+
+    writeback_capable = resolved_format in WRITEBACK_FORMATS
     if emit == "vendor":
-        if not input_is_vendor:
+        if not writeback_capable:
+            supported = ", ".join(sorted(WRITEBACK_FORMATS))
+            if input_is_vendor:
+                reason = f"vendor write-back is not implemented for {resolved_format!r}"
+            else:
+                reason = f"{resolved_format!r} events carry no vendor provenance"
             raise VendorRepairRefused(
-                "Cannot emit vendor output for a canonical source: canonical "
-                "events carry no vendor provenance. Omit --emit or use "
+                f"Cannot emit vendor output: {reason}. Vendor write-back is "
+                f"supported for {supported} inputs. Omit --emit or use "
                 "'--emit canonical'."
             )
         emit_format = resolved_format
     elif emit == "canonical":
         emit_format = FORMAT_CANONICAL
     else:  # auto
-        emit_format = resolved_format if input_is_vendor else FORMAT_CANONICAL
+        emit_format = resolved_format if writeback_capable else FORMAT_CANONICAL
 
     plan_obj: RepairPlan
     loaded_events: list[SessionEvent] = []
     all_findings: list[Finding] = []
     source_events: list[SessionEvent] | None = None
     source_findings: list[Finding] | None = None
-    if plan_path is None or input_is_vendor:
+    if (plan_path is None and plan is None) or input_is_vendor:
         # Load for planning. For vendor input these events/findings are also
         # passed to execute(): vendor events carry write-back provenance, and
         # findings locate event-less source lines the plan explicitly discards
@@ -450,7 +724,9 @@ def repair(
     )
     check_token(cancel_token)
 
-    if plan_path is not None:
+    if plan is not None:
+        plan_obj = plan
+    elif plan_path is not None:
         plan_obj = load_plan(plan_path, policy=policy)
     else:
         source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
@@ -465,6 +741,7 @@ def repair(
             policy=policy,
             source_hash=source_hash,
             acknowledge_side_effects=acknowledge_side_effects,
+            input_format=resolved_format,
         )
         has_error_findings = any(
             f.severity in (Severity.ERROR, Severity.FATAL) for f in all_findings
@@ -472,8 +749,13 @@ def repair(
         if has_error_findings and len(plan_obj.steps) == 0:
             from sesslint.repair.errors import RepairRefused
 
+            blocked_detail = "; ".join(sorted({f"{b.code}:{b.reason}" for b in plan_obj.blocked}))
+            if not blocked_detail:
+                blocked_detail = "no repairable findings"
             raise RepairRefused(
-                "Findings exist on source session, but no authorized safe repair plan completes."
+                "Findings exist on source session, but no authorized safe "
+                f"repair plan completes (blocked: {blocked_detail}). "
+                "Run 'sesslint repair <file> --dry-run' for per-finding detail."
             )
     emit_progress(
         progress_cb,
@@ -557,6 +839,8 @@ def verify(
     Returns:
         VerifyVerdict with audit steps, pass/fail status, and diagnostic messages.
     """
+    # Resolve through the module (not the import-time alias) so tests can
+    # patch `sesslint.verify.verify` and fault-inject the engine.
     import sys
 
     v_mod = sys.modules.get("sesslint.verify")
@@ -599,6 +883,148 @@ def plan(
     return res
 
 
+def plan_repair(
+    source_path: Path | str,
+    *,
+    policy: Literal["conservative", "salvage"] = "conservative",
+    format: str | None = None,
+    profile: str = "neutral",
+) -> RepairPlan:
+    """Compute a repair plan without writing files (repair-engine T-01).
+
+    Identical to :func:`plan`; the exported plan is serializable via
+    ``RepairPlan.to_dict()`` as a ``sesslint.plan/v1`` document for later
+    :func:`apply_plan` execution.
+    """
+    return plan(source_path, policy=policy, format=format, profile=profile)
+
+
+def apply_plan(
+    source_path: Path | str,
+    plan_doc: RepairPlan | Path | str | Mapping[str, Any],
+    *,
+    output_path: Path | str | None = None,
+    format: str | None = None,
+    acknowledge_side_effects: bool = False,
+    emit: Literal["auto", "canonical", "vendor"] = "auto",
+    dry_run: bool = False,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
+) -> tuple[RepairPlan, RepairManifest | None]:
+    """Execute a previously exported repair plan — plan-authoritative apply.
+
+    The plan document is loaded through the strict deserializer and its own
+    ``policy``/``profile`` govern execution; no re-planning occurs. Every
+    executor-side validation still applies: plan fingerprint recomputation,
+    source-hash binding against the current source bytes/events, TOCTOU
+    abstention, and post-execution output audit. A source that drifted since
+    plan export is refused (``PlanSourceMismatch``, i.e. plan-stale).
+
+    Args:
+        source_path: Path to source session file (must equal the planned one).
+        plan_doc: ``RepairPlan``, path to a ``sesslint.plan/v1`` JSON, or a
+            plan mapping.
+        output_path: Path to output repaired session file (required unless
+            ``dry_run``).
+        format: Optional format adapter override (auto-detection otherwise).
+        acknowledge_side_effects: Explicit acknowledgment for salvage plans.
+        emit: Output artifact format ('auto'/'canonical'/'vendor').
+        dry_run: Validate plan bindings without writing files.
+        progress_cb: Optional progress callback.
+        cancel_token: Optional cooperative cancellation token.
+
+    Returns:
+        Tuple of (RepairPlan, RepairManifest or None if dry_run).
+    """
+    if isinstance(plan_doc, RepairPlan):
+        plan_obj = plan_doc
+    else:
+        plan_obj = load_plan(plan_doc)
+    derived_policy: Literal["conservative", "salvage"] = (
+        "salvage" if plan_obj.policy == "salvage" else "conservative"
+    )
+    return repair(
+        source_path,
+        output_path,
+        policy=derived_policy,
+        format=format,
+        profile=plan_obj.profile,
+        plan=plan_obj,
+        dry_run=dry_run,
+        acknowledge_side_effects=acknowledge_side_effects,
+        emit=emit,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+    )
+
+
+def repair_preview(
+    source_path: Path | str,
+    *,
+    format: str | None = None,
+    policy: Literal["conservative", "salvage"] = "conservative",
+    profile: str = "neutral",
+    acknowledge_side_effects: bool = False,
+) -> PreviewDoc:
+    """Structural repair preview — what a repair would do, without writes.
+
+    Returns a ``sesslint.preview/v1`` document: content-free delta rows
+    (drop/relink/discard-tail/dedupe with bounded identifiers and rule codes)
+    plus blocked findings with pinned reasons. Deterministic on identical
+    input. See :func:`sesslint.preview.repair_preview`.
+    """
+    from sesslint.preview import repair_preview as _repair_preview
+
+    return _repair_preview(
+        source_path,
+        format=format,
+        policy=policy,
+        profile=profile,
+        acknowledge_side_effects=acknowledge_side_effects,
+    )
+
+
+def repair_many(
+    files: Sequence[Path | str],
+    *,
+    output_dir: Path | str,
+    manifest_dir: Path | str | None = None,
+    common_root: Path | str | None = None,
+    policy: Literal["conservative", "salvage"] = "conservative",
+    format: str | None = None,
+    profile: str = "neutral",
+    acknowledge_side_effects: bool = False,
+    emit: Literal["auto", "canonical", "vendor"] = "auto",
+    dry_run: bool = False,
+    progress_cb: ProgressCallback | None = None,
+    cancel_token: CancellationToken | None = None,
+) -> BatchRepairReport:
+    """Repair every eligible file in ``files`` into ``output_dir`` (repair T-02).
+
+    Eligibility reuses the planner's classification verbatim: a file is
+    attempted only when its plan has steps and zero blocked findings.
+    Files are processed in sorted-path order; outputs mirror the input's
+    relative structure under ``output_dir``. See
+    :func:`sesslint.batch.repair_many` for full semantics.
+    """
+    from sesslint.batch import repair_many as _repair_many
+
+    return _repair_many(
+        files,
+        output_dir=output_dir,
+        manifest_dir=manifest_dir,
+        common_root=common_root,
+        policy=policy,
+        format=format,
+        profile=profile,
+        acknowledge_side_effects=acknowledge_side_effects,
+        emit=emit,
+        dry_run=dry_run,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+    )
+
+
 def check(
     path: Path | str,
     *,
@@ -612,6 +1038,11 @@ def check(
     margin_min: float | None = None,
     progress_cb: ProgressCallback | None = None,
     cancel_token: CancellationToken | None = None,
+    select: Sequence[str] | None = None,
+    ignore: Sequence[str] | None = None,
+    baseline: Collection[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    ext: Sequence[str] | None = None,
 ) -> Report | ScanReport:
     """Unified check dispatcher: evaluates a single session file or scans a directory tree.
 
@@ -628,6 +1059,11 @@ def check(
         progress_cb: Optional callback receiving ``ProgressEvent`` records
             (DW-T-13).
         cancel_token: Optional cooperative cancellation token.
+        select: Optional rule codes to run exclusively.
+        ignore: Optional rule codes to skip (mutually exclusive with select).
+        baseline: Optional finding fingerprints to suppress.
+        exclude: Glob patterns to skip in directory walks.
+        ext: File-extension allowlist for directory walks.
 
     Returns:
         Report instance for single file, or ScanReport instance for directory.
@@ -652,6 +1088,11 @@ def check(
             margin_min=margin_min,
             progress_cb=progress_cb,
             cancel_token=cancel_token,
+            select=select,
+            ignore=ignore,
+            baseline=baseline,
+            exclude=exclude,
+            ext=ext,
         )
     return check_file(
         target_path,
@@ -661,6 +1102,9 @@ def check(
         margin_min=margin_min,
         progress_cb=progress_cb,
         cancel_token=cancel_token,
+        select=select,
+        ignore=ignore,
+        baseline=baseline,
     )
 
 
@@ -697,6 +1141,64 @@ def build_internal_error_envelope(
         "message": str(err),
         "verdict": "error",
     }
+
+
+def doctor_report(
+    *,
+    agents: Sequence[str] | None = None,
+    quick_checks: bool = True,
+) -> DoctorReport:
+    """Collect read-only environment diagnostics (sesslint.doctor/v1).
+
+    Reports tool/adapter versions, the resolved config file, and per-agent
+    session-root diagnostics (existence, bounded file counts, newest mtime,
+    quick verdicts on the newest files). Counts and timestamps only —
+    never file names or payloads.
+    """
+    from sesslint.doctor import doctor_report as _doctor_report
+
+    return _doctor_report(agents=agents, quick_checks=quick_checks)
+
+
+def stats_paths(
+    paths: Sequence[Path | str],
+    *,
+    recursive: bool = False,
+    format: str | None = None,
+) -> SessionStats:
+    """Aggregate content-free statistics over session files or directories.
+
+    Counters only — never payload values, never raw tool names (truncated
+    sha256 hashes), paths minimized. Deterministic output.
+
+    Raises:
+        FileNotFoundError: If a path does not exist.
+        ValueError: If a directory is passed without ``recursive=True``.
+    """
+    from sesslint.stats import stats_paths as _stats_paths
+
+    return _stats_paths(paths, recursive=recursive, format=format)
+
+
+def diff_sessions(
+    a: Path | str,
+    b: Path | str,
+    *,
+    format_a: str | None = None,
+    format_b: str | None = None,
+) -> SessionDiff:
+    """Compare two session files structurally (event-identity alignment).
+
+    Both inputs go through normal detection + adapter parse; deltas are
+    content-free (bounded ids, kinds, indices, content hashes only).
+
+    Raises:
+        FileNotFoundError: If either path does not exist.
+        DiffInputError: If either input fails detection or load.
+    """
+    from sesslint.diff import diff_sessions as _diff_sessions
+
+    return _diff_sessions(a, b, format_a=format_a, format_b=format_b)
 
 
 def export_file(
@@ -795,26 +1297,40 @@ def discover_session_roots(
 
 
 __all__ = [
+    "BatchRepairReport",
     "Bundle",
     "CancellationToken",
     "DiscoveredRoot",
     "ExportSummary",
     "OperationCancelled",
     "PrecheckReason",
+    "PreviewDoc",
     "PrecheckResult",
     "ProgressEvent",
     "ScanReport",
+    "SessionDiff",
+    "DoctorReport",
+    "SessionStats",
     "VerifyVerdict",
     "build_bundle",
     "build_internal_error_envelope",
     "check",
+    "check_bytes",
     "check_dir",
     "check_file",
+    "diff_sessions",
+    "stats_paths",
     "discover_session_roots",
+    "doctor_report",
     "export_file",
     "plan",
+    "plan_repair",
+    "apply_plan",
+    "repair_many",
+    "repair_preview",
     "precheck",
     "repair",
+    "scan_bytes",
     "validate_session",
     "verify",
 ]

@@ -50,6 +50,13 @@ def fingerprint_file(path: StrPath, *, chunk_size: int = 65536) -> str:
     return hasher.hexdigest()
 
 
+def fingerprint_bytes(data: bytes) -> str:
+    """SHA-256 hex digest of an in-memory buffer — same algorithm as
+    ``fingerprint_file`` so identical bytes produce identical fingerprints
+    whether the source is a file or a virtual stream (ux T-06)."""
+    return hashlib.sha256(data).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class SourceGuard:
     """Snapshot of a source file's identity and state for concurrent-mutation detection."""

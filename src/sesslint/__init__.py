@@ -16,6 +16,7 @@ from sesslint.api import (
     check_file,
     discover_session_roots,
     precheck,
+    verify,
 )
 from sesslint.atomic import (
     atomic_write_bytes,
@@ -140,7 +141,9 @@ from sesslint.source import (
     guard,
     guarded,
     guarded_iter_events,
-    verify,
+)
+from sesslint.source import (
+    verify as verify_source_guard,
 )
 
 __version__ = CLI_VERSION
@@ -256,4 +259,5 @@ __all__ = [
     "to_canonical_dict",
     "to_canonical_json",
     "verify",
+    "verify_source_guard",
 ]

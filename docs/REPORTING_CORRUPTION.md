@@ -5,6 +5,7 @@ get: a structural diagnosis, a privacy-safe artifact, and a minimal
 reproduction. SessLint produces all three without exposing your transcript.
 
 ```text
+sesslint doctor                       → environment summary for the report *(next release)*
 sesslint check  <session-file>          → what is broken, in rule codes
 sesslint bundle <session-file>          → content-free evidence package
 attach bundle JSON to the issue         → maintainer gets repro structure
@@ -21,8 +22,8 @@ missing parent, …), severity, and affected record ordinals — not message
 content. Exit code `0` means structurally clean; `1` means findings; `2`
 means the file could not be read or detected.
 
-Don't know where your sessions live? `sesslint scan --agent claude` (or
-`codex`, `all`) auto-discovers the well-known roots and triages every file.
+Don't know where your sessions live? `sesslint scan --agent claude` *(next release)*
+(or `codex`, `all`) auto-discovers the well-known roots and triages every file.
 
 ## Step 2 — Build the bundle
 

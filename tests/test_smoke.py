@@ -55,9 +55,9 @@ def test_cli_version(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_cli_bare_invocation() -> None:
-    """Verify CLI with empty argv exits 0."""
+    """Verify CLI with empty argv prints usage and exits 2 (usage error)."""
     exit_code = main([])
-    assert exit_code == 0
+    assert exit_code == 2
 
 
 def test_cli_unknown_flag() -> None:

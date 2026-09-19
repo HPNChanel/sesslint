@@ -22,14 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from sesslint.adapters.canonical import dump_canonical, load_canonical
-from sesslint.adapters.claude_code import load_claude_code
-from sesslint.adapters.detect import (
-    FORMAT_CANONICAL,
-    FORMAT_CLAUDE_CODE,
-    FORMAT_OPENAI_AGENTS,
-    resolve_format,
-)
-from sesslint.adapters.openai_agents import load_openai_agents
+from sesslint.adapters.detect import FORMAT_CANONICAL, resolve_format
+from sesslint.adapters.load import is_vendor_format, load_vendor_events
 from sesslint.atomic import atomic_write_bytes
 from sesslint.canonical import SessionEvent
 from sesslint.codes import SL302, Severity
@@ -116,10 +110,8 @@ def export_to_canonical(
     adapter_findings: Sequence[Finding]
     if resolved_fmt == FORMAT_CANONICAL:
         events, adapter_findings = load_canonical(src)
-    elif resolved_fmt == FORMAT_CLAUDE_CODE:
-        events, adapter_findings = load_claude_code(src)
-    elif resolved_fmt == FORMAT_OPENAI_AGENTS:
-        events, adapter_findings = load_openai_agents(src)
+    elif is_vendor_format(resolved_fmt):
+        events, adapter_findings = load_vendor_events(src, resolved_fmt)
     else:
         raise ExportRefused(f"Unsupported format for export: {resolved_fmt}")
 

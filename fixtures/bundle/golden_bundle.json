@@ -80,6 +80,7 @@
         "SL005",
         "SL006",
         "SL007",
+        "SL008",
         "SL101",
         "SL102",
         "SL103",
@@ -91,11 +92,15 @@
         "SL201",
         "SL202",
         "SL203",
+        "SL204",
+        "SL205",
         "SL301",
         "SL302",
+        "accounting",
         "checkpoint",
         "graph",
         "identity",
+        "ordering",
         "tool_pairing_1",
         "tool_pairing_2"
       ],
@@ -103,7 +108,18 @@
         "id": "neutral",
         "version": "1.0.0"
       },
-      "skipped": []
+      "skipped": [
+        {
+          "check": "SL011",
+          "detail": "fewer than 8 records — size distribution not meaningful",
+          "reason": "adapter-not-applicable"
+        },
+        {
+          "check": "size",
+          "detail": "fewer than 8 records — size distribution not meaningful",
+          "reason": "adapter-not-applicable"
+        }
+      ]
     },
     "findings": [],
     "limitation": "Does not prove semantic equivalence or external side effects.",

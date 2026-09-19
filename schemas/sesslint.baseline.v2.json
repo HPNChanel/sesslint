@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.baseline/v2",
+  "title": "SessLint Baseline Format v2",
+  "description": "Path-normalized baseline of finding keys. A v2 key binds rule code, file role (parent-basename/basename), structural position, and allowlisted evidence — but not the literal path spelling. Unverified migrated entries carry legacy v1 fingerprints as their key and still match through the v1 leg.",
+  "type": "object",
+  "required": [
+    "entries",
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.baseline/v2"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{16}$"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^SL[0-9]{3}$"
+          },
+          "file_role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "migrated": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "unverified"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

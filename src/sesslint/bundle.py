@@ -34,9 +34,6 @@ from sesslint._version import (
     get_version_info,
 )
 from sesslint.adapters.detect import (
-    FORMAT_CANONICAL,
-    FORMAT_CLAUDE_CODE,
-    FORMAT_OPENAI_AGENTS,
     resolve_format,
     to_source_block,
     validate_detection_thresholds,
@@ -347,18 +344,9 @@ def build_bundle(
     # 5. Fixture skeleton block (record_count, kinds histogram, emitted codes, template)
     events: Any = ()
     try:
-        if resolved_fmt == FORMAT_CANONICAL:
-            from sesslint.adapters.canonical import load_canonical
+        from sesslint.adapters.load import load_events_for_format
 
-            events, _ = load_canonical(target_path)
-        elif resolved_fmt == FORMAT_CLAUDE_CODE:
-            from sesslint.adapters.claude_code import load_claude_code
-
-            events, _ = load_claude_code(target_path)
-        elif resolved_fmt == FORMAT_OPENAI_AGENTS:
-            from sesslint.adapters.openai_agents import load_openai_agents
-
-            events, _ = load_openai_agents(target_path)
+        events, _ = load_events_for_format(target_path, resolved_fmt)
     except Exception:
         events = ()
 

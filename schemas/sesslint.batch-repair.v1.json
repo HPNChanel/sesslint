@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.batch-repair.v1.json",
+  "title": "SessLint Batch Repair Report",
+  "description": "Deterministic summary of a batch repair run (sesslint.batch-repair/v1). Content-free: paths are minimized, outcomes carry rule codes and pinned reason literals only \u2014 never session payload content.",
+  "type": "object",
+  "required": [
+    "version",
+    "counts",
+    "rows"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "sesslint.batch-repair/v1"
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "attempted",
+        "repaired",
+        "refused",
+        "skipped"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repaired": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refused": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "outcome"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "repaired",
+              "refused",
+              "skipped",
+              "eligible"
+            ]
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "reason": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

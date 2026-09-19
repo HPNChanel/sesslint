@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.diff/v1",
+  "title": "SessLint Structural Diff Format v1",
+  "description": "Content-free structural diff between two session files: event-identity alignment deltas (added, removed, kind-changed, parent-relinked, seq-reordered, content-changed).",
+  "type": "object",
+  "required": [
+    "a",
+    "b",
+    "counts",
+    "deltas",
+    "identical",
+    "schema_version",
+    "tool_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.diff/v1"
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "a": {
+      "$ref": "#/$defs/side"
+    },
+    "b": {
+      "$ref": "#/$defs/side"
+    },
+    "identical": {
+      "type": "boolean"
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "added",
+        "content-changed",
+        "kind-changed",
+        "parent-relinked",
+        "removed",
+        "seq-reordered"
+      ],
+      "properties": {
+        "added": {"type": "integer", "minimum": 0},
+        "content-changed": {"type": "integer", "minimum": 0},
+        "kind-changed": {"type": "integer", "minimum": 0},
+        "parent-relinked": {"type": "integer", "minimum": 0},
+        "removed": {"type": "integer", "minimum": 0},
+        "seq-reordered": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "deltas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category"],
+        "properties": {
+          "category": {
+            "enum": [
+              "added",
+              "removed",
+              "kind-changed",
+              "parent-relinked",
+              "seq-reordered",
+              "content-changed"
+            ]
+          },
+          "event_id": {"type": "string"},
+          "a_index": {"type": "integer", "minimum": 0},
+          "b_index": {"type": "integer", "minimum": 0},
+          "detail": {
+            "type": "object",
+            "additionalProperties": {"type": "string"}
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "side": {
+      "type": "object",
+      "required": ["event_count", "format", "path"],
+      "properties": {
+        "path": {"type": "string"},
+        "format": {"type": "string"},
+        "event_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -10,7 +10,8 @@ from __future__ import annotations
 import tracemalloc
 from pathlib import Path
 
-from sesslint.scan import _PROBE_CHUNK_BYTES, scan_path
+from sesslint.io import _PROBE_CHUNK_BYTES
+from sesslint.scan import scan_path
 
 
 def _scan_verdict(path: Path) -> tuple[str, list[dict]]:

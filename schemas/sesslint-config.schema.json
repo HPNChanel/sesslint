@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/HPNChanel/sesslint/main/schemas/sesslint-config.schema.json",
+  "title": "sesslint-config/v1",
+  "description": "SessLint configuration: sesslint.toml, .sesslint.toml, or [tool.sesslint] in pyproject.toml. Mirrors the fail-closed key validation in sesslint.config — unknown keys are rejected.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "Severity/triad preset to apply.",
+      "enum": ["claude-strict", "neutral", "openai-strict"]
+    },
+    "format": {
+      "type": "string",
+      "description": "Input ledger format; 'auto' sniffs the first lines.",
+      "enum": [
+        "auto",
+        "canonical",
+        "claude",
+        "claude-code-jsonl",
+        "codex",
+        "codex-rollout",
+        "openai",
+        "openai-agents"
+      ]
+    },
+    "policy": {
+      "type": "string",
+      "description": "Repair policy: conservative refuses uncertain fixes; salvage additionally extracts a partial ledger when repair is refused.",
+      "enum": ["conservative", "salvage"]
+    },
+    "fail_on": {
+      "type": "string",
+      "description": "Lowest severity that produces a nonzero exit code.",
+      "enum": ["error", "warning"]
+    },
+    "select": {
+      "type": "array",
+      "description": "Rule codes to include (allow-list); when set, only these run.",
+      "items": {"type": "string", "pattern": "\\S"}
+    },
+    "ignore": {
+      "type": "array",
+      "description": "Rule codes to suppress from the report.",
+      "items": {"type": "string", "pattern": "\\S"}
+    },
+    "skip_undetected": {
+      "type": "boolean",
+      "description": "Exit 0 instead of 2 when format detection fails on every input."
+    },
+    "confidence_min": {
+      "type": "number",
+      "description": "Minimum detection confidence required to accept a format verdict."
+    },
+    "margin_min": {
+      "type": "number",
+      "description": "Minimum confidence margin between the top two format candidates."
+    },
+    "max_files": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Upper bound on files visited during a recursive scan."
+    },
+    "max_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Upper bound on bytes read per input file."
+    },
+    "exclude": {
+      "type": "array",
+      "description": "Glob patterns for paths excluded from scanning.",
+      "items": {"type": "string", "pattern": "\\S"}
+    },
+    "ext": {
+      "type": "array",
+      "description": "File extensions scanned in directory mode (e.g. ['.jsonl']).",
+      "items": {"type": "string", "pattern": "\\S"}
+    }
+  }
+}
