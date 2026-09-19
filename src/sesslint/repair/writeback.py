@@ -35,7 +35,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
+from sesslint.adapters.detect import (
+    FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
+    FORMAT_OPENAI_AGENTS,
+)
 from sesslint.canonical import canonical_bytes
 from sesslint.repair.errors import VendorProjectionRefused
 
@@ -44,7 +48,9 @@ if TYPE_CHECKING:
 
 
 # Formats for which line-verbatim write-back is provably expressible.
-WRITEBACK_FORMATS: Final[frozenset[str]] = frozenset({FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS})
+WRITEBACK_FORMATS: Final[frozenset[str]] = frozenset(
+    {FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS, FORMAT_CODEX_ROLLOUT}
+)
 
 
 @dataclass(frozen=True, slots=True)

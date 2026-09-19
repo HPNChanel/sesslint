@@ -27,6 +27,8 @@ from sesslint.codes import (
     CODE_REGISTRY,
     SL001,
     SL007,
+    SL008,
+    SL011,
     SL101,
     SL103,
     SL105,
@@ -35,8 +37,13 @@ from sesslint.codes import (
     SL201,
     SL202,
     SL203,
+    SL204,
+    SL205,
     SL301,
     SL302,
+    SL303,
+    SL304,
+    SL401,
 )
 from sesslint.finding import enforce_content_free_text
 
@@ -119,6 +126,23 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "inventing session lineage; choosing one would silently rewrite structure"
         ),
         demand_citation="Non-goal #13",
+    ),
+    SL008: RefusalRationale(
+        code=SL008,
+        rationale=(
+            "non-monotonic timestamps may reflect legitimate clock skew or "
+            "source ordering; rewriting timestamps or reordering records would "
+            "fabricate causal timing data"
+        ),
+        demand_citation="Non-goal #13",
+    ),
+    SL011: RefusalRationale(
+        code=SL011,
+        rationale=(
+            "a size outlier is evidence, not a defect; dropping or truncating "
+            "the oversized record would destroy data the tool cannot judge"
+        ),
+        demand_citation="Conservative policy MUST refuse",
     ),
     SL101: RefusalRationale(
         code=SL101,
@@ -211,6 +235,46 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "would require guessing"
         ),
         demand_citation="FR-021",
+    ),
+    SL204: RefusalRationale(
+        code=SL204,
+        rationale=(
+            "usage counters are accounting evidence; correcting a divergent "
+            "total would require knowing which side of the ledger is corrupt"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL205: RefusalRationale(
+        code=SL205,
+        rationale=(
+            "coverage claims cannot be repaired by guessing which span a "
+            "summary truly covers; fabricating a pointer would invent lineage"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL303: RefusalRationale(
+        code=SL303,
+        rationale=(
+            "duplicated keys admit multiple incompatible resolutions; choosing "
+            "the winning value would invent record semantics"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL304: RefusalRationale(
+        code=SL304,
+        rationale=(
+            "mid-file schema drift means two schema generations may coexist; "
+            "normalizing one record's schema would invent which generation it belongs to"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL401: RefusalRationale(
+        code=SL401,
+        rationale=(
+            "a missing or ambiguous resume target means the real predecessor "
+            "file is unknown; fabricating a link target would invent lineage"
+        ),
+        demand_citation="Conservative policy MUST refuse",
     ),
 }
 

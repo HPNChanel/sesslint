@@ -57,6 +57,27 @@ ALLOWED_LOSS_CLASSES: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Recipes that remove events from the emitted stream. After any such step on
+# canonical input, the planner appends a ``seq-renumber`` normalizing step so
+# the emitted ordinals stay contiguous (repair-engine T-04).
+EVENT_DROP_RECIPES: Final[frozenset[str]] = frozenset(
+    {
+        "duplicate-projection-removal",
+        "identical-duplicate-collapse",
+        "identical-duplicate-drop",
+        "orphan-result-drop",
+        "side-effect-unknown-truncate",
+        "terminal-suffix-discard",
+        "torn-compaction-project",
+        "torn-terminal-record-discard",
+        "unresolvable-branch-amputate",
+    }
+)
+
+# Sentinel ``target_finding_fp`` for planner-synthesized steps that do not
+# address a specific finding (currently only ``seq-renumber``).
+SYNTHETIC_STEP_FP: Final[str] = "-"
+
 
 @dataclass(frozen=True, slots=True)
 class PlanStep:
@@ -344,6 +365,7 @@ def plan(
     source_hash: str | None = None,
     policy: str = "conservative",
     acknowledge_side_effects: bool = False,
+    input_format: str | None = None,
 ) -> RepairPlan:
     """Generate a deterministic, fingerprinted dry-run repair plan.
 
@@ -364,6 +386,18 @@ def plan(
     )
     profile_name = getattr(profile, "name", str(profile))
 
+    # Ensure the full recipe registry before matching (repair-engine T-04):
+    # lazy imports avoid the planner<->recipes import cycle — recipes import
+    # PlanStep from this module. Registration is idempotent by name.
+    from sesslint.repair.recipes_conservative import (
+        register_all as register_all_conservative_recipes,
+    )
+    from sesslint.repair.recipes_salvage import (
+        register_all as register_all_salvage_recipes,
+    )
+
+    register_all_conservative_recipes()
+    register_all_salvage_recipes()
     # Register SL002 torn-terminal-record recipe
     register_all_sl002_recipes()
 
@@ -616,6 +650,18 @@ def plan(
                 "parent_id",
                 "cut_index",
                 "boundary_index",
+                # Identity anchors for identity-first target resolution in
+                # salvage recipes (e.g. orphan-result-drop): survives index
+                # shifts caused by earlier steps in the same plan.
+                "result_id",
+                "event_id",
+                "record_id",
+                # Identical-duplicate-drop anchors (repair-engine T-04): the
+                # full occurrence list and class marker let the recipe
+                # re-verify identity at apply time (fail-closed on drift).
+                "record_indexes",
+                "variant",
+                "first_index",
             ):
                 if p_key in f.evidence and f.evidence[p_key] is not None:
                     step_params[p_key] = f.evidence[p_key]
@@ -787,6 +833,26 @@ def plan(
                     reason="cap-overflow",
                 )
             )
+
+    # 6. Normalizing tail step (repair-engine T-04): on canonical input —
+    # whose emit is always canonical — append ``seq-renumber`` after any
+    # drop-class step so emitted ordinals stay contiguous. Vendor input is
+    # skipped: write-back keeps vendor lines verbatim and ``seq`` lives
+    # inside canonical events only.
+    if input_format == "canonical" and any(s.recipe in EVENT_DROP_RECIPES for s in final_steps):
+        final_steps.append(
+            PlanStep(
+                seq=len(final_steps),
+                recipe="seq-renumber",
+                target_finding_fp=SYNTHETIC_STEP_FP,
+                target_index=None,
+                params={},
+                lossy=False,
+                loss={},
+                min_policy="conservative",
+                recipe_version="1.0.0",
+            )
+        )
 
     loss_preview: dict[str, int] = {
         "discarded-suffix": 0,

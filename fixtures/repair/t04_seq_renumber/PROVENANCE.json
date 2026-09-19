@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "contains_real_data": false,
+  "generator": "hand-authored synthetic fixture (repair-engine T-04)",
+  "description": "canonical session with torn tail -> drop + seq-renumber",
+  "seed": 42,
+  "created": "2026-01-01"
+}

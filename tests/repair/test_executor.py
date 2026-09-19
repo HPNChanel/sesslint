@@ -336,6 +336,9 @@ def test_policy_mismatch(tmp_path: Path) -> None:
         )
     assert not output_file.exists()
 
+    # CLI layer (repair-engine T-01): an applied plan is authoritative, so an
+    # explicit --policy override is a usage error (exit 2) before execution;
+    # the executor's own PolicyMismatch above remains as defense-in-depth.
     code = main(
         [
             "repair",
@@ -348,7 +351,7 @@ def test_policy_mismatch(tmp_path: Path) -> None:
             str(FIXTURES_DIR / "exec_basic" / "plan.json"),
         ]
     )
-    assert code == 1
+    assert code == 2
     assert not output_file.exists()
 
 

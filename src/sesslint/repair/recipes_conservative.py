@@ -777,6 +777,139 @@ def affected_region_duplicate_projection_removal(
 # Recipe Registry Definitions
 # ---------------------------------------------------------------------------
 
+
+def apply_identical_duplicate_drop(
+    events: Sequence[Any],
+    step: PlanStep,
+) -> list[dict[str, Any]]:
+    """Drop all later occurrences of an identical-duplicate event id.
+
+    Keeps the earliest ``record_indexes`` position and removes every later
+    occurrence, re-verifying each dropped event shares the kept event's id,
+    kind, and content fingerprint (repair-engine T-04).
+
+    Raises:
+        PreconditionFailed: On any fail-closed guard violation — wrong
+            variant class, missing/out-of-bounds indexes, kind or content
+            drift, or a boundary-kind duplicate.
+    """
+    params = step.params if isinstance(step.params, Mapping) else {}
+    if params.get("variant") != "identical-duplicate":
+        raise PreconditionFailed(
+            "identical-duplicate-drop: finding variant is not identical-duplicate"
+        )
+    raw_idxs = params.get("record_indexes")
+    if not isinstance(raw_idxs, Sequence) or isinstance(raw_idxs, (str, bytes)):
+        raise PreconditionFailed("identical-duplicate-drop: record_indexes missing")
+    idxs = sorted({i for i in raw_idxs if isinstance(i, int) and not isinstance(i, bool)})
+    if len(idxs) < 2 or len(idxs) != len(raw_idxs):
+        raise PreconditionFailed("identical-duplicate-drop: fewer than 2 valid occurrence indexes")
+    if idxs[0] < 0 or idxs[-1] >= len(events):
+        raise PreconditionFailed("identical-duplicate-drop: occurrence index out of bounds")
+
+    keep_i = idxs[0]
+    kept = events[keep_i]
+    kept_kind = _event_kind(kept)
+    if kept_kind in ("checkpoint", "compaction_boundary"):
+        raise PreconditionFailed(
+            f"identical-duplicate-drop: cannot drop boundary kind '{kept_kind}'"
+        )
+    kept_id = _event_id(kept)
+    kept_fp = _event_content_fingerprint(kept)
+
+    dropped_ids: list[str | None] = []
+    for i in idxs[1:]:
+        e = events[i]
+        if _event_kind(e) != kept_kind:
+            raise PreconditionFailed(
+                "identical-duplicate-drop: kind mismatch at occurrence "
+                f"{i} ('{_event_kind(e)}' != '{kept_kind}')"
+            )
+        if _event_content_fingerprint(e) != kept_fp:
+            raise PreconditionFailed(f"identical-duplicate-drop: content drift at occurrence {i}")
+        d_id = _event_id(e)
+        if kept_id and d_id and d_id != kept_id:
+            raise PreconditionFailed(f"identical-duplicate-drop: event id drift at occurrence {i}")
+        dropped_ids.append(d_id)
+
+    out = _copy_events_as_dicts(events)
+    for i in sorted(idxs[1:], reverse=True):
+        out.pop(i)
+
+    # Relink children of dropped ids (identical-duplicate ids usually equal
+    # kept_id, making this a no-op — different-id duplicates still relink).
+    drop_id_set = {d for d in dropped_ids if d and d != kept_id}
+    if kept_id and drop_id_set:
+        for ev_dict in out:
+            if ev_dict.get("parent_id") in drop_id_set:
+                ev_dict["parent_id"] = kept_id
+    return out
+
+
+def affected_region_identical_duplicate_drop(
+    step: Any,
+    events: Sequence[Any],
+) -> AffectedRegion:
+    """Declare affected region for identical-duplicate-drop.
+
+    Region = kept index, every dropped occurrence index, and any children
+    relinked to the kept id. Unproven on any invalid input.
+    """
+    try:
+        params = getattr(step, "params", None)
+        if not isinstance(params, Mapping):
+            return AffectedRegion(unproven=True)
+        raw_idxs = params.get("record_indexes")
+        if not isinstance(raw_idxs, Sequence) or isinstance(raw_idxs, (str, bytes)):
+            return AffectedRegion(unproven=True)
+        idxs = sorted({i for i in raw_idxs if isinstance(i, int) and not isinstance(i, bool)})
+        if len(idxs) < 2 or idxs[0] < 0 or idxs[-1] >= len(events):
+            return AffectedRegion(unproven=True)
+
+        kept_id = _event_id(events[idxs[0]])
+        affected_indices: set[int] = set(idxs)
+        affected_ids: set[str] = set()
+        if kept_id:
+            affected_ids.add(kept_id)
+        dropped_ids: set[str] = set()
+        for i in idxs[1:]:
+            d_id = _event_id(events[i])
+            if d_id:
+                affected_ids.add(d_id)
+                if d_id != kept_id:
+                    dropped_ids.add(d_id)
+        if dropped_ids:
+            for j, ev in enumerate(events):
+                if _event_parent_id(ev) in dropped_ids:
+                    affected_indices.add(j)
+                    c_id = _event_id(ev)
+                    if c_id:
+                        affected_ids.add(c_id)
+        return AffectedRegion(
+            indices=frozenset(affected_indices),
+            ids=frozenset(affected_ids),
+            ranges=((idxs[0], idxs[-1]),),
+        )
+    except Exception:
+        return AffectedRegion(unproven=True)
+
+
+def apply_seq_renumber(
+    events: Sequence[Any],
+    step: PlanStep,
+) -> list[dict[str, Any]]:
+    """Renumber ``seq`` to ``0..n-1`` preserving event order (T-04).
+
+    Normalizing recipe appended by the planner after drop steps on
+    canonical input; lossless — ``seq`` is excluded from content identity.
+    """
+    del step
+    out = _copy_events_as_dicts(events)
+    for i, ev_dict in enumerate(out):
+        ev_dict["seq"] = i
+    return out
+
+
 RECIPE_TERMINAL_SUFFIX_DISCARD: Final[Recipe] = Recipe(
     name="terminal-suffix-discard",
     handles=(SL005,),
@@ -827,12 +960,33 @@ RECIPE_DUPLICATE_PROJECTION_REMOVAL: Final[Recipe] = Recipe(
     affected_region=affected_region_duplicate_projection_removal,
 )
 
+RECIPE_IDENTICAL_DUPLICATE_DROP: Final[Recipe] = Recipe(
+    name="identical-duplicate-drop",
+    handles=(SL003,),
+    preconditions=("no_sl203", "sl003_identical_duplicate"),
+    lossy=False,
+    salvage_only=False,
+    apply=apply_identical_duplicate_drop,
+    affected_region=affected_region_identical_duplicate_drop,
+)
+
+RECIPE_SEQ_RENUMBER: Final[Recipe] = Recipe(
+    name="seq-renumber",
+    handles=(),
+    preconditions=(),
+    lossy=False,
+    salvage_only=False,
+    apply=apply_seq_renumber,
+)
+
 RECIPES: Final[tuple[Recipe, ...]] = (
     RECIPE_TERMINAL_SUFFIX_DISCARD,
     RECIPE_IDENTICAL_DUPLICATE_COLLAPSE,
     RECIPE_PROVEN_UNIQUE_PARENT_RESTORE,
     RECIPE_COMPACTION_PROJECTION_REUNION,
     RECIPE_DUPLICATE_PROJECTION_REMOVAL,
+    RECIPE_IDENTICAL_DUPLICATE_DROP,
+    RECIPE_SEQ_RENUMBER,
 )
 CONSERVATIVE_RECIPES: Final[tuple[Recipe, ...]] = RECIPES
 
@@ -850,17 +1004,22 @@ __all__ = [
     "RECIPES",
     "RECIPE_COMPACTION_PROJECTION_REUNION",
     "RECIPE_DUPLICATE_PROJECTION_REMOVAL",
+    "RECIPE_IDENTICAL_DUPLICATE_DROP",
+    "RECIPE_SEQ_RENUMBER",
     "RECIPE_IDENTICAL_DUPLICATE_COLLAPSE",
     "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
     "RECIPE_TERMINAL_SUFFIX_DISCARD",
     "affected_region_compaction_projection_reunion",
     "affected_region_duplicate_projection_removal",
+    "affected_region_identical_duplicate_drop",
     "affected_region_identical_duplicate_collapse",
     "affected_region_proven_unique_parent_restore",
     "affected_region_torn_terminal_record_discard",
     "apply_compaction_projection_reunion",
     "apply_duplicate_projection_removal",
     "apply_identical_duplicate_collapse",
+    "apply_identical_duplicate_drop",
+    "apply_seq_renumber",
     "apply_proven_unique_parent_restore",
     "apply_terminal_suffix_discard",
     "compaction_projection_reunion",

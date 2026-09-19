@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from sesslint.canonical import SessionEvent
-from sesslint.codes import SL101, SL201, SL203, Repairability, Severity
+from sesslint.codes import SL101, SL201, SL203, SL302, Repairability, Severity
 from sesslint.finding import Finding, SourceRef, make_finding
 from sesslint.repair import (
     EMPTY_EVENTS_HASH,
@@ -140,14 +140,14 @@ def test_custom_precondition_registration() -> None:
 
     r = Recipe(
         name="custom-prec-stub",
-        handles=(SL101,),
+        handles=(SL302,),
         preconditions=("custom_test_flag",),
         lossy=False,
         salvage_only=False,
     )
     register_recipe(r)
 
-    f = _make_finding(code=SL101)
+    f = _make_finding(code=SL302)
     ev = SessionEvent(
         id="e1", parent_id=None, seq=0, ts="2026-09-05T12:00:00Z", actor="user", kind="message"
     )
@@ -494,7 +494,7 @@ def test_no_recipe_available_blocked() -> None:
     ev = SessionEvent(
         id="e1", parent_id=None, seq=0, ts="2026-09-05T12:00:00Z", actor="user", kind="message"
     )
-    f = _make_finding(code=SL101)
+    f = _make_finding(code=SL302)
 
     p = plan([f], [ev])
     assert len(p.steps) == 0

@@ -243,9 +243,9 @@ def test_no_shorthand() -> None:
     args = parser.parse_args(["--policy", "salvage"])
     assert args.policy == "salvage"
 
-    # Default is conservative
+    # Default is conservative (flag absent until config merge applies it)
     args_def = parser.parse_args([])
-    assert args_def.policy == "conservative"
+    assert getattr(args_def, "policy", "conservative") == "conservative"
 
     # Reject shorthand '-s'
     with pytest.raises(SystemExit) as exc_info:

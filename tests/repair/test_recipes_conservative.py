@@ -127,7 +127,7 @@ def _make_test_finding(
 def test_conservative_recipes_registration_and_handles() -> None:
     """All five conservative recipes are registered with exact handles, preconditions, and flags."""
     recipes = list_recipes()
-    assert len(recipes) == 5
+    assert len(recipes) == 7
 
     suffix_r = get_recipe("terminal-suffix-discard")
     assert suffix_r is not None
@@ -164,8 +164,22 @@ def test_conservative_recipes_registration_and_handles() -> None:
     assert removal_r.lossy is False
     assert removal_r.salvage_only is False
 
+    drop_r = get_recipe("identical-duplicate-drop")
+    assert drop_r is not None
+    assert drop_r.handles == (SL003,)
+    assert drop_r.preconditions == ("no_sl203", "sl003_identical_duplicate")
+    assert drop_r.lossy is False
+    assert drop_r.salvage_only is False
+
+    renum_r = get_recipe("seq-renumber")
+    assert renum_r is not None
+    assert renum_r.handles == ()
+    assert renum_r.preconditions == ()
+    assert renum_r.lossy is False
+    assert renum_r.salvage_only is False
+
     # Check recipes_for lookup mapping
-    assert recipes_for(SL003) == (collapse_r,)
+    assert recipes_for(SL003) == (collapse_r, drop_r)
     assert recipes_for(SL004) == (restore_r,)
     assert recipes_for(SL005) == (suffix_r,)
     assert recipes_for(SL104) == (removal_r,)
@@ -178,7 +192,7 @@ def test_register_all_idempotent() -> None:
     """Calling register_all multiple times does not raise or duplicate."""
     register_all_conservative()
     register_all_conservative()
-    assert len(list_recipes()) == 5
+    assert len(list_recipes()) == 7
 
 
 # ---------------------------------------------------------------------------

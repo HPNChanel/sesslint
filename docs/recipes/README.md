@@ -1,6 +1,6 @@
 # SessLint Repair Recipe Catalog
 
-This directory documents the 10 deterministic repair recipes provided by SessLint.
+This directory documents the 12 deterministic repair recipes provided by SessLint.
 
 ## Classification
 
@@ -9,9 +9,11 @@ Recipes are strictly partitioned into two categories:
 1. **Conservative Recipes**:
    - `torn-terminal-record-discard`
    - `identical-duplicate-collapse`
+   - `identical-duplicate-drop`
    - `proven-unique-parent-restore`
    - `compaction-projection-reunion`
    - `duplicate-projection-removal`
+   - `seq-renumber`
    - Invariant: Conservative repairs never perform lossy amputation of unconfirmed actions, never synthesize arbitrary results, and fail closed if side effects are unknown (`SL203`).
 
 2. **Salvage Recipes** (Explicit `--policy salvage` required):

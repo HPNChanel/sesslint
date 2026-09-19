@@ -28,7 +28,11 @@ from typing import Any, Final, Literal
 import sesslint.report
 from sesslint._events import _copy_events_as_dicts_strict as _copy_events_as_dicts
 from sesslint._version import ADAPTER_VERSIONS, CLI_VERSION
-from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS
+from sesslint.adapters.detect import (
+    FORMAT_CLAUDE_CODE,
+    FORMAT_CODEX_ROLLOUT,
+    FORMAT_OPENAI_AGENTS,
+)
 from sesslint.atomic import atomic_write_bytes
 from sesslint.canonical import (
     Session,
@@ -36,6 +40,7 @@ from sesslint.canonical import (
     SessionHeader,
     dump_session,
     parse_session_event,
+    reparse_identity_hashes,
 )
 from sesslint.checks.checkpoint import check_checkpoint
 from sesslint.checks.runner import run_all_checks
@@ -235,10 +240,13 @@ def load_session_source_with_findings(
     from sesslint.io import iter_events, read_header
 
     try:
-        hdr = read_header(p)
-        items = list(iter_events(p))
+        from sesslint.adapters.canonical import CRITICAL_KEYS
+
+        hdr_findings: list[Finding] = []
+        hdr = read_header(p, dup_sink=hdr_findings, critical_keys=CRITICAL_KEYS)
+        items = list(iter_events(p, critical_keys=CRITICAL_KEYS))
         events = [e for e in items if isinstance(e, SessionEvent)]
-        findings = [f for f in items if isinstance(f, Finding)]
+        findings = hdr_findings + [f for f in items if isinstance(f, Finding)]
         return hdr, events, findings
     except SchemaError:
         # Fall back to single-document canonical JSON if formatted as a single JSON object
@@ -277,9 +285,9 @@ def load_source_for_format(
     carry provenance (``source_line``/``source_record_hash``) required for
     vendor write-back projection.
     """
-    if format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS):
-        from sesslint.adapters.load import load_vendor_events
+    from sesslint.adapters.load import is_vendor_format, load_vendor_events
 
+    if is_vendor_format(format):
         events, findings = load_vendor_events(Path(path), format)
         return None, events, findings
     hdr, events, findings = load_session_source_with_findings(Path(path))
@@ -388,7 +396,11 @@ def execute(
     # write-back (drop-only line-verbatim projection); 'canonical' emit
     # produces a canonical stream. Emitting adapter output from a canonical
     # source is a usage error: canonical events carry no source provenance.
-    input_is_vendor = format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
+    input_is_vendor = format in (
+        FORMAT_CLAUDE_CODE,
+        FORMAT_OPENAI_AGENTS,
+        FORMAT_CODEX_ROLLOUT,
+    )
     resolved_emit: str
     if emit_format in (None, "auto"):
         resolved_emit = "canonical"
@@ -404,7 +416,11 @@ def execute(
         resolved_emit = format
     else:
         resolved_emit = str(emit_format)
-    emit_is_vendor = resolved_emit in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS)
+    emit_is_vendor = resolved_emit in (
+        FORMAT_CLAUDE_CODE,
+        FORMAT_OPENAI_AGENTS,
+        FORMAT_CODEX_ROLLOUT,
+    )
 
     # Step 1c: Policy match & minimum policy gate (P0-03)
     if plan.policy != policy:
@@ -703,9 +719,7 @@ def execute(
                 f"with {len(emit_errors)} error finding(s): "
                 f"{[f.code for f in emit_errors]}"
             )
-        if [e.content_identity_hash() for e in emit_events] != [
-            e.content_identity_hash() for e in parsed_output_events
-        ]:
+        if reparse_identity_hashes(emit_events) != reparse_identity_hashes(parsed_output_events):
             raise OutputInvalid(
                 "Emitted vendor artifact does not round-trip to the repaired "
                 "event set (content identity mismatch after adapter reload)"

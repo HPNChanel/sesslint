@@ -286,6 +286,28 @@ def duplicate_projection_identical(ctx: PreconditionContext) -> bool:
     return any(_event_content_fingerprint(r) == fp1 for r in results[1:])
 
 
+def sl003_identical_duplicate(ctx: PreconditionContext) -> bool:
+    """Precondition: SL003 finding is the identical-duplicate class with valid indexes.
+
+    Fail-closed on the conflicting-duplicate class: the finding evidence must
+    carry ``variant == "identical-duplicate"`` plus a ``record_indexes`` list
+    of at least two in-bounds integer positions (repair-engine T-04).
+    """
+    if ctx.finding is None:
+        return False
+    evidence = ctx.finding.evidence if isinstance(ctx.finding.evidence, Mapping) else {}
+    if evidence.get("variant") != "identical-duplicate":
+        return False
+    idxs = evidence.get("record_indexes")
+    if not isinstance(idxs, Sequence) or isinstance(idxs, (str, bytes)):
+        return False
+    idx_list = [i for i in idxs if isinstance(i, int) and not isinstance(i, bool)]
+    if len(idx_list) < 2 or len(idx_list) != len(idxs):
+        return False
+    n = len(ctx.events)
+    return all(0 <= i < n for i in idx_list)
+
+
 def salvage_policy(ctx: PreconditionContext) -> bool:
     """Precondition: planner is operating under explicit 'salvage' policy."""
     return ctx.policy == "salvage"
@@ -480,6 +502,7 @@ PRECONDITION_FUNCS: dict[str, Callable[[PreconditionContext], bool]] = {
     "salvage_policy": salvage_policy,
     "side_effects_known": side_effects_known,
     "single_boundary_split": single_boundary_split,
+    "sl003_identical_duplicate": sl003_identical_duplicate,
     "sl108_present": sl108_present,
     "source_hash_pinned": source_hash_pinned,
     "torn_terminal_record": torn_terminal_record,
@@ -531,6 +554,7 @@ __all__ = [
     "salvage_policy",
     "side_effects_known",
     "single_boundary_split",
+    "sl003_identical_duplicate",
     "sl108_present",
     "source_hash_pinned",
     "torn_terminal_record",
