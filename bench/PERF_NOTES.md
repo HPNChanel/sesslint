@@ -64,3 +64,64 @@ These 2026-09-08 numbers predate the post-alpha hardening work and were supersed
 
 ### Historical Disclosure Statement (2026-09-08 — SUPERSEDED)
 > "Under synthetic 100MB/250k event streaming load, SessLint demonstrates bounded O(1) streaming heap usage well below the 512MB memory ceiling (~65-190MB peak RSS) and achieves 100% correct validation (0 findings, assurance A3, 0 errors/warnings). Wall-clock execution scales linearly with I/O throughput across platforms without buffering full transcripts into memory."
+
+---
+
+## 5. Parallel Scan (`--jobs`) Observations (dev evidence, 2026-09-09)
+
+Non-contract measurements on the maintainer host (i7-11800H, 8C/16T, Windows
+spawn-mode pools). `--jobs` defaults to `1` — it is opt-in because spawn
+startup (~0.35–0.5 s/pool on Windows) outweighs gains on trivial per-file
+workloads.
+
+| Workload | jobs=1 | jobs=4 | jobs=6–8 | Note |
+| :--- | :--- | :--- | :--- | :--- |
+| 200 tiny files (~KB each) | 0.74 s | 0.82 s | 0.67–0.69 s (8) | spawn overhead dominates |
+| 16 files / 50 MB (SL302-fast) | 0.30–0.37 s | 0.53–0.55 s | 0.65–0.69 s (8) | detection exits early; pool cost masks |
+| 6 valid files / 269 MB (~45 MB each, 150k events) | 56.41 s | 32.10 s | 22.14 s (6) | **2.5× speedup** — per-file ~9 s of real analysis |
+
+**Crossover rule of thumb**: `--jobs N` pays off when average per-file
+analysis exceeds ~0.5 s (i.e. large valid sessions such as multi-hundred-MB
+vendor rollouts); below that, sequential is faster. Report bytes are
+identical for any `jobs` value (merge sorts by path before totals).
+
+## 6. mmap Byte Source (`_open_byte_source`, perf-scale T-03, dev evidence 2026-09)
+
+`io._open_byte_source` replaces `open(path,"rb")` at the `iter_events` /
+`load_session_header` / claude-adapter readline seams. mmap engages only
+when **both** gates pass: file ≥ 4 MiB (`_MMAP_MIN_BYTES`) and average line
+in a 64 KiB head sniff ≥ 64 KiB (`_MMAP_MIN_LINE_BYTES`). Anything else —
+and every mmap failure — silently falls back to the buffered reader.
+
+Measured via `bench/probe_large_file.py` on the maintainer host
+(i7-11800H, Windows):
+
+| Workload | buffered | mmap | verdict |
+| :--- | :--- | :--- | :--- |
+| 95 MiB, ~1.4 MiB lines (Codex rollout shape) | 0.66 s | 0.52 s | **mmap ~20% faster** — the motivating case |
+| 95 MiB, ~1 KiB lines | 11.24 s | 13.29 s | mmap ~18% slower — why the line-size gate exists |
+
+Working-set note: on Windows, mapped file pages count toward
+`PeakWorkingSetSize` (+~95 MB on the 95 MiB probe) — those are evictable
+page-cache pages, not heap. The perf_250k contract file (~400 B lines)
+never crosses the line-size gate, so the contract path stays buffered.
+
+## 7. Benchmark Ledger (`bench/LEDGER.jsonl`, perf-scale T-04)
+
+`perf_250k.py --record --host-tag <label>` appends one JSONL row with the
+normative fresh-process metrics (`wall_s`, `peak_rss_mb`, `input_bytes`,
+`git_sha`, `os`, `py_version`, `source`). Append-only committed history;
+`scripts/bench_report.py` renders the latest runs per host:
+
+| date | host | source | records | wall_s | peak_rss_mb | py | os | git_sha |
+| :--- | :--- | :--- | ---: | ---: | ---: | :--- | :--- | :--- |
+| 2026-09-08 | field-remediation | field-remediation | 250000 | 13.839 | 478.5 | 3.11.9 | win32 | unknown |
+| 2026-09-18 | i7-11800H-laptop | seed | 250000 | 13.994 | 478.38 | 3.11.9 | win32 | 328fcfae |
+| 2026-09-18 | i7-11800H-laptop | record | 250000 | 13.411 | 478.824 | 3.11.9 | win32 | 328fcfae |
+
+CI `perf-benchmark` runs on schedule, dispatch, and PRs: it records a
+`source: ci` row (workflow artifact, never committed), then
+`scripts/bench_gate.py` compares it against the latest same-OS baseline at
+1.25× wall tolerance / 512 MB RSS — advisory (`continue-on-error`) until
+runner-variance data justifies flipping it required. Rows for an OS with
+no baseline record only; malformed ledger lines are skipped by readers.

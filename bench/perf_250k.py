@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import random
 import re
@@ -113,6 +114,47 @@ def get_rss_mb() -> float | None:
         except Exception:
             return None
     return None
+
+
+LEDGER_SCHEMA = "sesslint.bench-ledger/v1"
+LEDGER_PATH = _REPO_ROOT / "bench" / "LEDGER.jsonl"
+
+
+def _git_sha() -> str:
+    """Best-effort current HEAD sha; "unknown" when git is unavailable."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO_ROOT),
+            timeout=10,
+        )
+        sha = proc.stdout.strip()
+        return sha if proc.returncode == 0 and sha else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def append_ledger_row(row: dict[str, Any], ledger: Path = LEDGER_PATH) -> bool:
+    """Append one canonical JSONL row to the bench ledger; never raises.
+
+    Append-only history — malformed writes are impossible here, and readers
+    (`scripts/bench_gate.py`) skip malformed lines, so a bad ledger never
+    blocks a bench run.
+    """
+    try:
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with open(ledger, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        return True
+    except OSError:
+        return False
 
 
 def verify_reference_disclosure_recorded() -> bool:
@@ -256,7 +298,15 @@ def run_fresh_process_check(bench_file: Path) -> dict[str, Any] | None:
     }
 
 
-def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
+def run_benchmark(
+    records: int,
+    time_budget: float,
+    mem_budget: float,
+    *,
+    record: bool = False,
+    host_tag: str = "dev",
+    source: str = "record",
+) -> int:
     """Execute 100MB / 250k streaming and validation benchmark.
 
     The run discloses itself: measured values, budgets, derived breach
@@ -441,6 +491,25 @@ def run_benchmark(records: int, time_budget: float, mem_budget: float) -> int:
         breach_str = ", ".join(breach_classes) if breach_classes else "none"
         print(f"Breach classes: {breach_str}")
 
+        if record:
+            row = {
+                "schema": LEDGER_SCHEMA,
+                "date": datetime.now(UTC).date().isoformat(),
+                "git_sha": _git_sha(),
+                "host_tag": host_tag,
+                "input_bytes": bench_file.stat().st_size,
+                "os": sys.platform,
+                "peak_rss_mb": round(child_peak_mb, 3),
+                "py_version": platform.python_version(),
+                "records": records,
+                "source": source,
+                "wall_s": round(child_check_s, 3),
+            }
+            if append_ledger_row(row):
+                print(f"Ledger: appended row to {LEDGER_PATH}")
+            else:
+                print("Ledger: append failed (non-fatal)", file=sys.stderr)
+
         if perf_shortfalls:
             reference_ok = verify_reference_disclosure_recorded()
             disclosure_info = (
@@ -476,12 +545,30 @@ def main() -> int:
     parser.add_argument(
         "--mem-budget", type=float, default=512.0, help="Memory budget in megabytes"
     )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="Append this run's normative metrics to bench/LEDGER.jsonl",
+    )
+    parser.add_argument(
+        "--host-tag",
+        default="dev",
+        help="Freeform host label recorded in the ledger row (e.g. i7-11800H-laptop)",
+    )
+    parser.add_argument(
+        "--source",
+        default="record",
+        help="Ledger row provenance tag (record|ci|field-remediation|seed)",
+    )
     args = parser.parse_args()
 
     return run_benchmark(
         records=args.records,
         time_budget=args.time_budget,
         mem_budget=args.mem_budget,
+        record=args.record,
+        host_tag=args.host_tag,
+        source=args.source,
     )
 
 

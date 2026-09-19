@@ -1,0 +1,3 @@
+{"date":"2026-09-08","git_sha":"unknown","host_tag":"field-remediation","input_mb":99.45,"os":"win32","peak_rss_mb":478.5,"py_version":"3.11.9","records":250000,"schema":"sesslint.bench-ledger/v1","source":"field-remediation","wall_s":13.839}
+{"date":"2026-09-18","git_sha":"328fcfae2f4069db038038d9ab4957785b5ff70e","host_tag":"i7-11800H-laptop","input_mb":99.45,"os":"win32","peak_rss_mb":478.38,"py_version":"3.11.9","records":250000,"schema":"sesslint.bench-ledger/v1","source":"seed","wall_s":13.994}
+{"date":"2026-09-18","git_sha":"328fcfae2f4069db038038d9ab4957785b5ff70e","host_tag":"i7-11800H-laptop","input_bytes":104277879,"os":"win32","peak_rss_mb":478.824,"py_version":"3.11.9","records":250000,"schema":"sesslint.bench-ledger/v1","source":"record","wall_s":13.411}
