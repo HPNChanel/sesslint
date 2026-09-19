@@ -676,6 +676,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detector execution is unified in `sesslint.checks.runner.run_all_checks`
   (DW-T-07); `sesslint.repair.executor.run_all_checks` remains as a
   transitional re-export, and `verify` delegates to the same runner.
+- SL008 `check_ordering` timestamp comparisons now use a lexicographic fast
+  path for equal-length RFC3339 UTC (`...Z`) strings — chronological order is
+  exact for fixed-width forms — and only parse `datetime`s on the rare
+  candidate-violation path (~500k parses skipped on the 250k bench).
+- `enforce_content_free_text` (FR-081) now runs one combined reject regex on
+  the dominant clean path instead of five sequential searches; on any hit the
+  ordered per-pattern checks still run, so error precedence and messages are
+  unchanged. `bench/perf_250k.py` fresh-process check recovered ~6–17 s on
+  the dev host (13.061 s PASS in a quiet window; 19.458 s BREACH under load —
+  both recorded; see `bench/PERF_NOTES.md` §3 and `bench/LEDGER.jsonl`).
 - Shared `_event_*` helpers consolidated into `sesslint._events` (DW-T-10);
   the executor keeps its stricter no-fallback copy semantics as
   `_copy_events_as_dicts_strict`.

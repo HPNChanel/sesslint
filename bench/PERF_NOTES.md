@@ -27,20 +27,22 @@ Per SessLint's Definition of Done and specification requirements (FR-095, AC-023
 One selected reference run, captured 2026-09-15 on the development host under background load. The normative values below are the **fresh child process** real `sesslint check` metrics (T-06 contract); auxiliary parent-process metrics (generation, streaming sample, tracemalloc) are reported separately in benchmark stdout and are excluded here.
 
 <!-- REFERENCE-BASELINE:BEGIN -->
-- Run ID: 2026-09-15-perf-250k-win32-amd64-post-t08
-- Date: 2026-09-15
+- Run ID: 2026-09-19-perf-250k-win32-amd64-post-perf-fix
+- Date: 2026-09-19
 - Host: AMD64 / win32 / CPython 3.11.9 (host under load; wall time is load-sensitive)
 - Records: 250000
 - Input size MB: 99.45
-- Total time s: 8.438
+- Total time s: 19.458
 - Time budget s: 15.0
-- Peak RSS MB: 477.14
+- Peak RSS MB: 486.27
 - Memory budget MB: 512.0
-- Breach classes: none
-- Status: PASS (8.438 < 15.0; 477.14 < 512.0)
+- Breach classes: time
+- Status: BREACH (19.458 > 15.0; 486.27 < 512.0)
 <!-- REFERENCE-BASELINE:END -->
 
-Note: `Total time s` and `Peak RSS MB` above are the **fresh child-process** check metrics (T-06 normative), not the parent-process cumulative values. This run reflects the T-08 shared-index optimization (single `_ToolPairing2Indexer`/`_OccurrenceGraph` per check family instead of four redundant builds). Prior same-host readings: 11.5–11.9 s spot checks post-change; ~17–21 s for the T-06 code under load; 14.897 s for the pre-T-06 code in a quiet window.
+Note: `Total time s` and `Peak RSS MB` above are the **fresh child-process** check metrics (T-06 normative), not the parent-process cumulative values. This run was captured at commit `f729fdf` via `--record` (ledger row appended) while the dev host was under load.
+
+**Regression investigation context (2026-09-19):** the 2026-09-15 baseline (8.438 s) predates the checks-rules/perf-scale work and was captured in a quieter window. Same-day A/B on this host: the pre-session code measures ~20–21 s (it would also breach today), the pre-fix session code measured 18.9–30.3 s, and this commit measures **13.061 s (PASS) in a quieter window** vs 19.458 s above — the two same-commit readings bracket the budget, so wall-time on this host is load-dominated. The code-level regression was real and is fixed: profiling showed `check_ordering` (SL008) parsing 500k `datetime`s (~5 s) and `enforce_content_free_text` running five regex searches per call (~4 s at 750k calls); the fixes (lexicographic fast path for equal-length `...Z` timestamps, single combined reject regex) removed ~6–17 s depending on host load. No budget, fixture, or check semantics were altered.
 
 ---
 
