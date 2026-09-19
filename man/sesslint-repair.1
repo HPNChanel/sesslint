@@ -1,0 +1,97 @@
+.TH SESSLINT-REPAIR 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-repair \- [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file.
+.SH SYNOPSIS
+.B sesslint repair [\-\-output | \-\-out | \-o OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-batch DIR] [\-\-from\-scan REPORT.json] [\-\-files FILE] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-salvage\-unsupported] [\-\-include\-content] [\-\-config PATH] [PATH]
+.SH DESCRIPTION
+[writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file with atomic execution.
+.SH ARGUMENTS
+.TP
+.B PATH
+Path to source session file. '\-' reads the source from stdin (max 100 MB; still requires \-\-output unless \-\-dry\-run). Omit when using \-\-batch/\-\-from\-scan/\-\-files
+.SH OPTIONS
+.TP
+.B \-\-output OUTPUT, \-\-out OUTPUT, \-o OUTPUT
+Path to output repaired session file
+.TP
+.B \-\-dry\-run
+Plan\-only mode; do not write any files
+.TP
+.B \-\-preview
+Render the structural repair preview (sesslint.preview/v1): content\-free delta rows per plan step, then exit without writing. Incompatible with \-\-output/\-\-plan\-out/\-\-apply\-plan/batch modes. *(next release)*
+.TP
+.B \-\-policy {conservative,salvage}
+Repair policy (choices: conservative, salvage; default: conservative) Choices: conservative, salvage.
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-emit {auto,canonical,vendor}
+Output artifact format. 'auto' (default) emits the input's own format: vendor input produces a drop\-only line\-verbatim write\-back; 'canonical' always emits the canonical session stream. Choices: auto, canonical, vendor. Default: auto.
+.TP
+.B \-\-profile PROFILE
+Replay validation profile (default: neutral)
+.TP
+.B \-\-json
+Output manifest or plan in JSON format
+.TP
+.B \-\-progress\-json
+Emit NDJSON progress events to stderr (stdout stays the result channel)
+.TP
+.B \-\-plan PLAN, \-\-apply\-plan PLAN
+Apply a previously exported plan JSON (sesslint.plan/v1) without re\-planning. The plan is authoritative: \-\-policy/\-\-profile/\-\-format overrides are refused, and execution still re\-validates the plan fingerprint and source binding. *(next release)*
+.TP
+.B \-\-plan\-out PLAN_OUT
+Export the computed repair plan (sesslint.plan/v1) to PATH for review or later \-\-apply\-plan. Plan\-only when \-\-output is absent; with \-\-output the exported plan is executed in the same run. *(next release)*
+.TP
+.B \-\-batch DIR
+Batch\-repair every eligible session file under DIR (eligibility = planner computes steps with zero blocked findings). Outputs mirror DIR's structure under \-\-output\-dir. *(next release)*
+.TP
+.B \-\-from\-scan REPORT.json
+Batch\-repair files listed in a sesslint scan JSON report; only '~/'\-minimized and absolute paths resolve — '.._<hash>' entries are reported skipped. *(next release)*
+.TP
+.B \-\-files FILE
+Batch\-repair an explicit file list into \-\-output\-dir. *(next release)*
+.TP
+.B \-\-output\-dir DIR
+Output root for batch repair modes (mirrors input structure). *(next release)*
+.TP
+.B \-\-manifest\-dir DIR
+Manifest root for batch modes; manifests are named <sha8\-of\-source\-path>.manifest.json. Default: adjacent to each output. *(next release)*
+.TP
+.B \-\-acknowledge\-side\-effects
+Acknowledge tool side\-effects for salvage policy
+.TP
+.B \-\-salvage\-unsupported
+[Deprecated] Use '\-\-policy salvage' instead
+.TP
+.B \-\-include\-content
+Embed raw transcript content in manifests (warning: emits raw sensitive data)
+.TP
+.B \-\-config PATH
+Explicit config file path (overrides [tool.sesslint] discovery)
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

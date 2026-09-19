@@ -1,0 +1,42 @@
+.TH SESSLINT-INIT-HOOKS 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-init-hooks \- [read\-only] Print ready\-to\-merge agent hook snippets (never writes config).
+.SH SYNOPSIS
+.B sesslint init\-hooks [\-\-agent {claude,codex,all}] [\-\-print] [\-\-json]
+.SH DESCRIPTION
+[read\-only] Print ready\-to\-merge settings.json hook blocks for the documented SessionStart/PreCompact recipes. Print\-only by permanent design — SessLint never writes agent configuration.
+.SH OPTIONS
+.TP
+.B \-\-agent {claude,codex,all}
+Agent to generate snippets for (default: all) Choices: claude, codex, all. Default: all.
+.TP
+.B \-\-print
+Print snippets (the only mode — nothing is ever written)
+.TP
+.B \-\-json
+Emit sesslint.init\-hooks/v1 JSON instead of human text
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

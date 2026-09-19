@@ -1,0 +1,46 @@
+.TH SESSLINT-EXPORT 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-export \- [writes: output file] Export a session artifact to canonical format for repair.
+.SH SYNOPSIS
+.B sesslint export [\-\-output | \-\-out | \-o OUTPUT] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-json] PATH
+.SH DESCRIPTION
+[writes: output file] Export a supported session artifact to a byte\-deterministic canonical file that the repair pipeline accepts.
+.SH ARGUMENTS
+.TP
+.B PATH
+Path to session file (.json or .jsonl)
+.SH OPTIONS
+.TP
+.B \-\-output OUTPUT, \-\-out OUTPUT, \-o OUTPUT
+Path to output canonical file (required)
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-json
+Output export summary as JSON
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

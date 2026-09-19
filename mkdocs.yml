@@ -1,0 +1,35 @@
+# SessLint docs site — GitHub Pages build (docs-spec/T-04).
+#
+# docs/ is the single source of truth: the site renders the SAME markdown
+# GitHub renders — no second copy, no duplication. No `nav:` key by design:
+# mkdocs auto-includes every file under docs_dir, so new rule/recipe/ADR
+# docs appear in the site automatically (nav drift is impossible).
+site_name: SessLint
+site_description: >-
+  Offline, zero-dependency session-integrity checker and conservative
+  repair engine for AI agent session ledgers.
+repo_url: https://github.com/HPNChanel/sesslint
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - content.action.view
+
+plugins:
+  - search
+
+# The docs/ tree contains legitimate repository-internal links that escape
+# docs_dir (../src/..., ../tests/..., ../.github/...) — correct on GitHub,
+# unresolvable inside the site. They stay warnings (not errors, not
+# silently ignored) so genuinely broken in-site links still surface.
+validation:
+  links:
+    absolute_links: warn
+    unrecognized_links: warn
+  nav:
+    omitted_files: warn

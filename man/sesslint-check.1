@@ -1,0 +1,109 @@
+.TH SESSLINT-CHECK 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-check \- [read\-only] Check a session file with auto\-detection.
+.SH SYNOPSIS
+.B sesslint check [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-profile PROFILE] [\-\-policy CHECK_POLICY] [\-\-recursive | \-r] [\-\-follow\-symlinks] [\-\-max\-files MAX_FILES] [\-\-max\-bytes MAX_BYTES] [\-\-json] [\-\-output\-format {human,json,sarif,html}] [\-\-progress\-json] [\-\-color {auto,always,never}] [\-\-no\-color] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-skip\-undetected] [\-\-fail\-on {error,warning}] [\-\-config PATH] [\-\-select CODES] [\-\-ignore CODES] [\-\-baseline PATH] [\-\-write\-baseline PATH] [\-\-exclude GLOB] [\-\-ext EXT] [\-\-include\-content] PATH...
+.SH DESCRIPTION
+[read\-only] Check a session file for structural defects, causal breaks, and schema violations.
+.SH ARGUMENTS
+.TP
+.B PATH
+Path(s) to session file(s) (.json or .jsonl) or directories. Multiple paths produce one aggregated scan report. '\-' reads one session artifact from stdin (max 100 MB).
+.SH OPTIONS
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-profile PROFILE
+Replay validation profile (default: neutral)
+.TP
+.B \-\-policy CHECK_POLICY
+[Invalid for check] Repair policy is only applicable to 'repair'
+.TP
+.B \-\-recursive, \-r
+Recursively scan directory trees for session artifacts
+.TP
+.B \-\-follow\-symlinks
+[lossy: follows links] Follow directory symlinks during recursive scanning
+.TP
+.B \-\-max\-files MAX_FILES
+Maximum number of files to inspect during recursive scan (default: 10000)
+.TP
+.B \-\-max\-bytes MAX_BYTES
+Maximum cumulative bytes to read during recursive scan (default: 1GB)
+.TP
+.B \-\-json
+Output check report as a single canonical JSON document to stdout
+.TP
+.B \-\-output\-format {human,json,sarif,html}
+Output format (default: human; \-\-json is equivalent to 'json') Choices: human, json, sarif, html.
+.TP
+.B \-\-progress\-json
+Emit NDJSON progress events to stderr (stdout stays the result channel)
+.TP
+.B \-\-color {auto,always,never}
+Control colored output in human report mode (default: auto) Choices: auto, always, never.
+.TP
+.B \-\-no\-color
+Disable ANSI color styling
+.TP
+.B \-\-confidence\-min CONFIDENCE_MIN
+Format auto\-detection minimum confidence threshold
+.TP
+.B \-\-margin\-min MARGIN_MIN
+Format auto\-detection minimum margin threshold
+.TP
+.B \-\-skip\-undetected
+Classify files whose format cannot be detected as skipped instead of invalid (useful for pre\-commit hooks and mixed\-content trees)
+.TP
+.B \-\-fail\-on {error,warning}
+Minimum finding severity that fails the command (default: error) Choices: error, warning.
+.TP
+.B \-\-config PATH
+Explicit config file path (overrides [tool.sesslint] discovery)
+.TP
+.B \-\-select CODES
+Comma\-separated rule codes to run exclusively (e.g. SL101,SL102)
+.TP
+.B \-\-ignore CODES
+Comma\-separated rule codes to skip (e.g. SL101,SL102)
+.TP
+.B \-\-baseline PATH
+Suppress findings whose fingerprints are recorded in baseline file
+.TP
+.B \-\-write\-baseline PATH
+Write the current finding fingerprints as a new baseline file
+.TP
+.B \-\-exclude GLOB
+Skip files/dirs whose name or root\-relative path matches GLOB (repeatable)
+.TP
+.B \-\-ext EXT
+Only inspect files with these extensions during directory walks (repeatable)
+.TP
+.B \-\-include\-content
+Embed raw transcript content in reports (warning: emits raw sensitive data)
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-completion(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

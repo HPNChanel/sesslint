@@ -1,0 +1,55 @@
+.TH SESSLINT-DIFF 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-diff \- [read\-only] Structurally diff two session files.
+.SH SYNOPSIS
+.B sesslint diff [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-format\-a {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-format\-b {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-output\-format {human,json}] [\-\-json] A B
+.SH DESCRIPTION
+[read\-only] Compare two session files by event identity (not text diff): added/removed events, kind changes, parent relinks, sequence reorders, content changes (hash only).
+.SH ARGUMENTS
+.TP
+.B A
+Path to the first session file
+.TP
+.B B
+Path to the second session file
+.SH OPTIONS
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter for both inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
+.TP
+.B \-\-format\-a {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Format override for input A only Choices: claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-format\-b {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Format override for input B only Choices: claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-output\-format {human,json}
+Output format (default: human) Choices: human, json.
+.TP
+.B \-\-json
+Emit sesslint.diff/v1 JSON (shortcut for \-\-output\-format json)
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

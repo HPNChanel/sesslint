@@ -4,7 +4,8 @@
 > **Canonical CLI command:** `sesslint`  
 > **One-line definition:** An offline, vendor-neutral integrity checker and conservative repair tool for persisted tool-using AI agent sessions.  
 > **Document date:** 2026-09-04  
-> **Status:** Demand specification; pre-implementation  
+> **Status:** Demand specification; MVP implemented (v0.1.0 published 2026-09-15, v0.2.0 published 2026-09-16); demand campaign active per `post-alpha-hardening-plan/CAMPAIGN_LEDGER.md`  
+> **Evidence refresh:** 2026-09-17 — see "Evidence refresh (2026-09-17)" under "Evidence of current demand" and the dated annotations under "Demand hypothesis" and "Future opportunities"
 > **Proposed license:** Apache-2.0 for the OSS core  
 > **Naming note:** “SessLint” is a contraction of “session” and “lint.” An exact-match public namespace screen performed on 2026-09-04 found no software repository named `sesslint` on GitHub and no indexed exact-match package on npm, PyPI, or crates.io. This is a preliminary collision screen, not legal trademark clearance. The GitHub organization/repository, package names, and relevant domains should be reserved before a public announcement.
 
@@ -96,6 +97,32 @@ Additional repositories show users already investing effort in narrow recovery t
 
 These examples establish a credible **usage demand hypothesis**: users encounter session corruption, lose valuable work, and are willing to inspect or modify local persistence manually. They do not establish market size or willingness to pay. Those must be validated separately.
 
+### Evidence refresh (2026-09-17)
+
+A follow-up sweep of public issue trackers and community tooling on 2026-09-17
+(method and raw log: `demand-wedge-plan/MARKET_EVIDENCE.md`) found the demand
+signal stronger and broader than at specification time, with one important
+qualification:
+
+|| Ecosystem | Public evidence | Observed user impact |
+||---|---|---|
+|| Claude Code | Meta-issue [#6836](https://github.com/anthropics/claude-code/issues/6836) aggregates **150+ reports** of `tool_use`/`tool_result` mismatches; ~900 issues match the pairing signature overall, ~260 filed since 2026-06 alone | Sessions permanently fail every subsequent turn with HTTP 400 until abandoned or hand-repaired |
+|| Claude Code | New corruption mechanisms filed in 2026: torn write on SIGKILL [#52387](https://github.com/anthropics/claude-code/issues/52387), silent truncation at first malformed line [#50347](https://github.com/anthropics/claude-code/issues/50347), blank resume after power loss [#53821](https://github.com/anthropics/claude-code/issues/53821), null-byte padding [#49876](https://github.com/anthropics/claude-code/issues/49876), phantom `parentUuid` after resume+compact [#61188](https://github.com/anthropics/claude-code/issues/61188), `file-history-snapshot` UUID collisions [#36583](https://github.com/anthropics/claude-code/issues/36583), resume-picker crash corrupting `sessions-index.json` [#24009](https://github.com/anthropics/claude-code/issues/24009), progress-elision silently dropping all context [#40319](https://github.com/anthropics/claude-code/issues/40319) | History loss ranging from silent partial truncation (user unaware) to total resume failure; vendors ship loader fixes continuously but each new mechanism bypasses them |
+|| Codex CLI/Desktop | Session disappears on unparseable history [#24425](https://github.com/openai/codex/issues/24425); rollout flush errors silently discarded [#35385](https://github.com/openai/codex/issues/35385); writer appends to unlinked inode [#38149](https://github.com/openai/codex/issues/38149); malformed `function_call_output` hangs CLI [#29066](https://github.com/openai/codex/issues/29066); missing tool-call result crashes Desktop [#32653](https://github.com/openai/codex/issues/32653) | Silent divergence between in-memory and durable state; sessions vanish or resume from stale data; `rollout-*.jsonl` is JSONL and inside the canonical model's reach |
+|| OpenCode | Interrupted tool calls permanently corrupt sessions [#21326](https://github.com/anomalyco/opencode/issues/21326); no startup recovery for orphaned parts [#19023](https://github.com/anomalyco/opencode/issues/19023); vendor merged a defensive pairing pass (PR [#31547](https://github.com/anomalyco/opencode/pull/31547)) | Confirms both the recurrent pain and that upstream fixes are whack-a-mole — each vendor fix covers only its own bug class and version |
+|| Cursor | Recurring forum reports of chats vanishing after updates; recovery requires manual `state.vscdb` surgery | Pain is loud but storage is SQLite — outside SessLint's file-based adapter model (FR-008); recorded as out-of-scope evidence, not a target |
+
+**Adoption-signal qualification.** Community repair/migration tools addressing
+this exact pain show near-zero traction (star counts on 2026-09-17:
+`cc_jsonl_fix` 2, `claude-session-repair` 0, `TurnMender` 8, `agenthop` 0,
+`agent-run-ledger` 0, `Claude-Session-Backup` 15; session viewers 0–1).
+Users report corruption to vendors and apply workarounds; they do not search
+for third-party repair tools. This strengthens hypotheses 2–3 (diagnosis and a
+vendor-neutral model are valuable) but weakens the implied distribution model:
+the tool must be **present at the moment of pain** (auto-discovery, agent
+hooks, maintainer-facing evidence workflows) rather than discovered afterward.
+See `STRATEGY.md` for the resulting positioning.
+
 ### Demand hypothesis
 
 SessLint is worth building only if the following hypotheses survive external validation:
@@ -105,6 +132,13 @@ SessLint is worth building only if the following hypotheses survive external val
 3. **A vendor-neutral model adds value.** Framework maintainers, support teams, and third-party tooling authors prefer a reusable integrity engine over separate ad hoc scripts.
 4. **Conservative abstention is acceptable.** Users will trust a tool that refuses ambiguous repairs rather than one that always produces an output.
 5. **There is a paying organizational user.** At least one team values CI checks, private adapters, support bundles, fleet scanning, or support/SLA enough to fund continued maintenance.
+
+> **Annotation (2026-09-17):** The evidence refresh strengthens hypotheses 1–3
+> (recurrence, value of diagnosis, vendor-neutral model) and adds a sixth
+> observable: *distribution is part of the demand hypothesis*. Users do not
+> seek repair tools after corruption; the campaign must therefore validate
+> presence-at-the-moment-of-pain delivery (hooks, auto-discovery, maintainer
+> issue flow) alongside the DV-001..DV-007 counters.
 
 ## Target users
 
@@ -313,6 +347,8 @@ The alpha must support at least:
    - enables maintainers to contribute failure fixtures without exposing private transcripts.
 
 Supporting two real ecosystems is necessary to test the vendor-neutral architecture. Adding more adapters before the demand gate is met is explicitly out of scope.
+
+> **Amendment (2026-09-17, maintainer decision):** the pre-gate adapter clause above is amended for **one** adapter: Codex `rollout-*.jsonl`. Rationale per `demand-wedge-plan/MARKET_EVIDENCE.md`: Codex's corruption stream is active *now* (~2,700 resume/session issues; rollout flush errors, malformed `function_call_output`, unlinked-inode writes — the same failure taxonomy SessLint already models), the format is plain JSONL inside the canonical model, and waiting for the demand gate risks missing the pain window. All other new adapters remain gated. Recorded in `post-alpha-hardening-plan/CAMPAIGN_LEDGER.md`.
 
 ### Detector set
 
@@ -823,6 +859,26 @@ Defensibility must come from trusted repair semantics, fixture depth, adapter ma
 ## Future opportunities
 
 Future work is conditional on the alpha demand gate. The order below is intentional.
+
+> **Priority annotation (2026-09-17):** The 2026-09-17 evidence refresh adjusts
+> emphasis, not the gate. Within Phase 1, Codex CLI `rollout-*.jsonl` is the
+> highest-evidence candidate (active, JSONL-native pain) but remains
+> conditional on the pre-gate adapter rule in "Supported input formats." Phase
+> 2 prevention gains a concrete early vehicle — agent-runtime hooks
+> (`SessionStart`/`PreCompact`) plus session-directory auto-discovery — because
+> the adoption signal shows users must encounter the tool at the moment of
+> pain. A local **desktop companion** is a permissible Phase-4-adjacent
+> exploration only if it is a separate project driving the published
+> binary + JSON contracts and no dashboard/account features; it does not
+> count as progress against the demand gate by itself. Execution order and
+> task detail live in `ROADMAP.md` and `demand-wedge-plan/`.
+>
+> **Amendment (2026-09-17, maintainer decision):** drafting the desktop
+> companion *specification* (`demand-wedge-plan/T-14`, spec document only) is
+> approved, which also unblocks the progress/cancellation API contract
+> (`demand-wedge-plan/T-13`) it consumes. **Building** the app still requires
+> the demand gate or a further explicit amendment. Recorded in
+> `post-alpha-hardening-plan/CAMPAIGN_LEDGER.md`.
 
 ### Phase 1 — Broader adapter coverage
 

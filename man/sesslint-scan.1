@@ -1,0 +1,124 @@
+.TH SESSLINT-SCAN 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-scan \- [read\-only] Scan directory trees for session artifacts or display limits.
+.SH SYNOPSIS
+.B sesslint scan [\-\-agent {claude,codex,all}] [\-\-show\-limits] [\-\-recursive | \-r] [\-\-follow\-symlinks] [\-\-max\-files MAX_FILES] [\-\-max\-bytes MAX_BYTES] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-skip\-undetected] [\-\-fail\-on {error,warning}] [\-\-config PATH] [\-\-select CODES] [\-\-ignore CODES] [\-\-baseline PATH] [\-\-write\-baseline PATH] [\-\-exclude GLOB] [\-\-ext EXT] [\-\-json] [\-\-output\-format {human,json,sarif,html}] [\-\-progress\-json] [\-\-top N] [\-\-group\-by {code,none}] [\-\-jobs N] [\-\-incremental] [\-\-cache\-dir DIR] [\-\-color {auto,always,never}] [\-\-no\-color] [PATH]
+.SH DESCRIPTION
+[read\-only] Scan directory trees for session artifacts or display limits.
+.SH ARGUMENTS
+.TP
+.B PATH
+Directory path to scan (or omit when using \-\-agent or \-\-show\-limits). '\-' scans one session artifact from stdin (max 100 MB)
+.SH OPTIONS
+.TP
+.B \-\-agent {claude,codex,all}
+Scan well\-known session roots for an agent runtime ($CLAUDE_CONFIG_DIR/projects or ~/.claude/projects; $CODEX_HOME/sessions or ~/.codex/sessions). Explicit PATH overrides. Choices: claude, codex, all.
+.TP
+.B \-\-show\-limits
+Display default hostile\-input reader limits.
+.TP
+.B \-\-recursive, \-r
+Recursively scan directory trees (default: True)
+.TP
+.B \-\-follow\-symlinks
+Follow directory symlinks during scan
+.TP
+.B \-\-max\-files MAX_FILES
+Maximum files to scan (default: 10000)
+.TP
+.B \-\-max\-bytes MAX_BYTES
+Maximum cumulative bytes to read during recursive scan (default: 1GB)
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-profile PROFILE
+Replay validation profile (default: neutral)
+.TP
+.B \-\-confidence\-min CONFIDENCE_MIN
+Format auto\-detection minimum confidence threshold
+.TP
+.B \-\-margin\-min MARGIN_MIN
+Format auto\-detection minimum margin threshold
+.TP
+.B \-\-skip\-undetected
+Classify files whose format cannot be detected as skipped instead of invalid (useful for hooks and mixed\-content trees)
+.TP
+.B \-\-fail\-on {error,warning}
+Minimum finding severity that fails the command (default: error) Choices: error, warning.
+.TP
+.B \-\-config PATH
+Explicit config file path (overrides [tool.sesslint] discovery)
+.TP
+.B \-\-select CODES
+Comma\-separated rule codes to run exclusively (e.g. SL101,SL102)
+.TP
+.B \-\-ignore CODES
+Comma\-separated rule codes to skip (e.g. SL101,SL102)
+.TP
+.B \-\-baseline PATH
+Suppress findings whose fingerprints are recorded in baseline file
+.TP
+.B \-\-write\-baseline PATH
+Write the current finding fingerprints as a new baseline file
+.TP
+.B \-\-exclude GLOB
+Skip files/dirs whose name or root\-relative path matches GLOB (repeatable)
+.TP
+.B \-\-ext EXT
+Only inspect files with these extensions during directory walks (repeatable)
+.TP
+.B \-\-json
+Output scan report as JSON
+.TP
+.B \-\-output\-format {human,json,sarif,html}
+Output format (default: human; \-\-json is equivalent to 'json') Choices: human, json, sarif, html.
+.TP
+.B \-\-progress\-json
+Emit NDJSON progress events to stderr (stdout stays the result channel)
+.TP
+.B \-\-top N
+Show up to N worst files in the report summary (default: 10; 0 disables the worst\-files view) Default: 10.
+.TP
+.B \-\-group\-by {code,none}
+Summary grouping: 'code' aggregates findings by rule code (default), 'none' disables Choices: code, none. Default: code.
+.TP
+.B \-\-jobs N
+Parallel worker processes for per\-file analysis (default: 1 = sequential; 'auto' or 0 = CPU count). Report output is identical for any N; only wall time changes. Ignored for single\-file input. Default: 1.
+.TP
+.B \-\-incremental
+Reuse cached per\-file results when content is provably unchanged (sqlite cache; findings/verdicts identical, hits marked 'cache: hit')
+.TP
+.B \-\-cache\-dir DIR
+Override the incremental cache directory (default: SESSLINT_CACHE_DIR or platform cache location)
+.TP
+.B \-\-color {auto,always,never}
+Control colored terminal output (default: auto) Choices: auto, always, never.
+.TP
+.B \-\-no\-color
+Disable ANSI color styling
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

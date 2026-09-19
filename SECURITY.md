@@ -54,6 +54,14 @@ Design-level guarantees enforced by the test suite:
   `artifact-manifest.json`; PyPI publishes use Trusted Publisher (OIDC) only —
   no API tokens exist in the repository or workflows.
 
+## Threat Model
+
+For a structured account of what hostile input can attempt, which bounds
+stop it, and which threats are declared out of scope, see
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) *(next release)* — assets,
+trust boundaries, per-boundary threats with enforcing-code citations, and
+the residual-risk register.
+
 ## Handling Sensitive Data
 
 Session files may contain secrets, credentials, and personal data. SessLint

@@ -1,0 +1,108 @@
+.TH SESSLINT 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint \- offline, vendor-neutral session integrity checker and conservative repair tool
+.SH SYNOPSIS
+.B sesslint
+[\-\-color auto|always|never] [\-\-profile PROFILE] <command> [<args>]
+.SH DESCRIPTION
+SessLint inspects AI agent session ledgers (Claude Code JSONL,
+OpenAI Agents exports, Codex rollout streams, and the canonical
+sesslint.session/v1 format) for structural and integrity defects,
+and can conservatively repair a bounded set of them. It runs fully
+offline with zero runtime dependencies, produces content-free
+findings by default, and fails closed whenever repair safety cannot
+be proven.
+.SH COMMANDS
+.TP
+.B baseline
+[read\-only] Upgrade a v1 baseline to the path\-normalized v2 format.
+.TP
+.B bundle
+[read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
+.TP
+.B check
+[read\-only] Check a session file with auto\-detection.
+.TP
+.B completion
+[read\-only] Print shell completion script.
+.TP
+.B diff
+[read\-only] Structurally diff two session files.
+.TP
+.B doctor
+[read\-only] Environment diagnostics for support reports.
+.TP
+.B export
+[writes: output file] Export a session artifact to canonical format for repair.
+.TP
+.B formats
+[read\-only] List supported session format adapters.
+.TP
+.B init\-hooks
+[read\-only] Print ready\-to\-merge agent hook snippets (never writes config).
+.TP
+.B mcp
+[read\-only] Run a Model Context Protocol server over stdio.
+.TP
+.B repair
+[writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file.
+.TP
+.B scan
+[read\-only] Scan directory trees for session artifacts or display limits.
+.TP
+.B stats
+[read\-only] Aggregate content\-free statistics over session files.
+.TP
+.B validate\-session
+[read\-only] Validate a canonical session file against schema.
+.TP
+.B verify
+[read\-only] Verify integrity, hash bindings, and idempotence of a repaired session.
+.TP
+.B version
+[read\-only] Display detailed component and schema version information.
+.TP
+.B watch
+[read\-only] Poll session directories and flag newly corrupted files.
+.SH GLOBAL OPTIONS
+.TP
+.B \-\-profile PROFILE
+Replay validation profile (default: neutral).
+.TP
+.B \-\-color auto|always|never
+Control colored terminal output (default: auto).
+.TP
+.B \-\-no\-color
+Disable ANSI color styling (equivalent to NO_COLOR=1).
+.TP
+.B \-\-version
+Print version and exit.
+.SH FILES
+.TP
+.B .sesslint.toml / pyproject.toml [tool.sesslint]
+Optional configuration file and section.
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1), sesslint\-diff(1), sesslint\-doctor(1), sesslint\-export(1), sesslint\-formats(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

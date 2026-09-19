@@ -1,0 +1,48 @@
+.TH SESSLINT-BASELINE 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-baseline \- [read\-only] Upgrade a v1 baseline to the path\-normalized v2 format.
+.SH SYNOPSIS
+.B sesslint baseline \-\-upgrade FILE [\-\-source PATH] [\-\-output | \-o PATH] [\-\-format {auto,canonical,claude\-code\-jsonl,openai\-agents,codex\-rollout}] [\-\-profile PROFILE]
+.SH DESCRIPTION
+[read\-only] Baseline maintenance: \-\-upgrade rewrites a sesslint.baseline/v1 file as v2 (path\-normalized keys). With \-\-source, findings are reproduced to verify entries; without it every entry migrates 'unverified' (still matchable via the v1 leg).
+.SH OPTIONS
+.TP
+.B \-\-upgrade FILE
+Baseline file to upgrade (must be sesslint.baseline/v1)
+.TP
+.B \-\-source PATH
+Session file or directory to re\-check for verified migration
+.TP
+.B \-\-output PATH, \-o PATH
+Write the upgraded baseline here (default: stdout)
+.TP
+.B \-\-format {auto,canonical,claude\-code\-jsonl,openai\-agents,codex\-rollout}
+Input format override for \-\-source (default: auto) Choices: auto, canonical, claude\-code\-jsonl, openai\-agents, codex\-rollout. Default: auto.
+.TP
+.B \-\-profile PROFILE
+Validation profile for \-\-source re\-check (default: neutral) Default: neutral.
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

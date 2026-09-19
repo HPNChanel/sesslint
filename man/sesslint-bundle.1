@@ -1,0 +1,55 @@
+.TH SESSLINT-BUNDLE 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-bundle \- [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
+.SH SYNOPSIS
+.B sesslint bundle [\-\-output | \-\-out | \-o OUTPUT] [\-\-json] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] PATH
+.SH DESCRIPTION
+[read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
+.SH ARGUMENTS
+.TP
+.B PATH
+Path to session file (.json or .jsonl)
+.SH OPTIONS
+.TP
+.B \-\-output OUTPUT, \-\-out OUTPUT, \-o OUTPUT
+Path to output bundle JSON file
+.TP
+.B \-\-json
+Output bundle as JSON to stdout
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.TP
+.B \-\-profile PROFILE
+Replay validation profile (default: neutral)
+.TP
+.B \-\-confidence\-min CONFIDENCE_MIN
+Minimum confidence threshold for format auto\-detection
+.TP
+.B \-\-margin\-min MARGIN_MIN
+Minimum margin threshold between top candidates for auto\-detection
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-check(1), sesslint\-completion(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

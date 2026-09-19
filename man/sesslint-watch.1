@@ -1,0 +1,49 @@
+.TH SESSLINT-WATCH 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-watch \- [read\-only] Poll session directories and flag newly corrupted files.
+.SH SYNOPSIS
+.B sesslint watch [\-\-agent {claude,codex,all}] [\-\-interval SEC] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-json] PATH...
+.SH DESCRIPTION
+[read\-only] Poll\-based observer: debounced mtime+size snapshots, emits one line per verdict transition. Pure observer — never writes, never installs hooks. Ctrl+C exits cleanly.
+.SH ARGUMENTS
+.TP
+.B PATH
+Path(s) to session file(s) or directories to watch
+.SH OPTIONS
+.TP
+.B \-\-agent {claude,codex,all}
+Watch a well\-known agent session root instead of paths Choices: claude, codex, all.
+.TP
+.B \-\-interval SEC
+Poll interval in seconds (default: 2.0, min: 0.05) Default: 2.0.
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter for all inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
+.TP
+.B \-\-json
+Emit sesslint.watch\-event/v1 NDJSON transition events
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

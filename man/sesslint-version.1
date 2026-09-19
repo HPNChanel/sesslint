@@ -1,0 +1,36 @@
+.TH SESSLINT-VERSION 1 "" "SessLint 0.2.0" "SessLint Manual"
+.SH NAME
+sesslint-version \- [read\-only] Display detailed component and schema version information.
+.SH SYNOPSIS
+.B sesslint version [\-\-json]
+.SH DESCRIPTION
+[read\-only] Display detailed component and schema version information.
+.SH OPTIONS
+.TP
+.B \-\-json
+Output version details as JSON object
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+
