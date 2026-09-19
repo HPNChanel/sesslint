@@ -179,6 +179,8 @@ def test_release_workflow_five_job_dag_order() -> None:
         "build",
         "github-draft",
         "binaries",
+        "provenance",
+        "image",
         "pypi-publish",
         "github-promote",
     ], f"job order/set mismatch: {list(blocks)}"
@@ -213,15 +215,23 @@ def test_release_workflow_minimal_permissions() -> None:
     for name, block in blocks.items():
         writes_contents = "contents: write" in block
         writes_idtoken = "id-token: write" in block
-        if name in ("github-draft", "github-promote", "binaries"):
-            # binaries needs contents: write to attach assets via gh release upload
+        if name in ("github-draft", "github-promote", "binaries", "provenance"):
+            # binaries: gh release upload; provenance: .intoto.jsonl asset upload
             assert writes_contents, f"{name} must hold contents: write"
         else:
             assert not writes_contents, f"{name} must not hold contents: write"
-        if name == "pypi-publish":
-            assert writes_idtoken, "pypi-publish must hold id-token: write"
+        if name in ("pypi-publish", "build", "binaries", "provenance"):
+            # pypi-publish: Trusted Publisher OIDC; build/binaries: Sigstore
+            # keyless signing; provenance: SLSA generator Fulcio OIDC —
+            # id-token only where OIDC is used.
+            assert writes_idtoken, f"{name} must hold id-token: write"
         else:
             assert not writes_idtoken, f"{name} must not hold id-token: write"
+        if name == "image":
+            # GHCR push needs packages: write; no other job may hold it.
+            assert "packages: write" in block, "image must hold packages: write"
+        else:
+            assert "packages: write" not in block, f"{name} must not hold packages: write"
 
 
 def test_release_workflow_pypi_environment_and_no_tokens() -> None:
@@ -302,9 +312,15 @@ def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
         "build",
         "github-draft",
         "binaries",
+        "provenance",
+        "image",
         "pypi-publish",
         "github-promote",
     ]
+    # SLSA provenance is off the promote critical path (non-blocking until
+    # verified end-to-end — flip deliberately, not silently).
+    assert "provenance" not in data["jobs"]["github-promote"]["needs"]
+    assert set(data["jobs"]["provenance"]["needs"]) == {"build", "github-draft"}
 
 
 def test_package_metadata_consistency() -> None:
@@ -321,3 +337,138 @@ def test_package_metadata_consistency() -> None:
     assert 'readme = "README.md"' in pyproject
     assert (REPO_ROOT / "LICENSE").is_file()
     assert (REPO_ROOT / "README.md").is_file()
+
+
+# ---------------------------------------------------------------------------
+# docs/CI_TEMPLATES.md — copy-paste pipeline snippets (integrations/T-05)
+# ---------------------------------------------------------------------------
+
+CI_TEMPLATES_DOC = REPO_ROOT / "docs" / "CI_TEMPLATES.md"
+
+
+def _extract_templates() -> dict[str, str]:
+    """Extract fenced yaml blocks carrying a `# ci-template: <name>` marker."""
+    text = CI_TEMPLATES_DOC.read_text(encoding="utf-8")
+    blocks = re.findall(r"```yaml\n(.*?)```", text, re.S)
+    out: dict[str, str] = {}
+    for block in blocks:
+        m = re.search(r"# ci-template: (\w+)", block)
+        if m:
+            out[m.group(1)] = block
+    return out
+
+
+def test_ci_templates_doc_has_all_platforms() -> None:
+    assert CI_TEMPLATES_DOC.is_file(), "docs/CI_TEMPLATES.md missing"
+    assert set(_extract_templates()) == {"gitlab", "azure", "circleci"}
+
+
+@pytest.mark.parametrize("platform", ["gitlab", "azure", "circleci"])
+def test_template_pins_version_and_invocation(platform: str) -> None:
+    block = _extract_templates()[platform]
+    assert re.search(r"sesslint==\d+\.\d+\.\d+", block), (
+        f"{platform}: template must pin a released version"
+    )
+    assert re.search(r"sesslint (scan|check) ", block), f"{platform}: no check/scan invocation"
+    assert "--fail-on" in block, f"{platform}: missing --fail-on"
+    assert "--output-format" in block, f"{platform}: missing --output-format"
+
+
+def test_template_required_keys_per_platform() -> None:
+    blocks = _extract_templates()
+    for key in ("image:", "script:", "artifacts:"):
+        assert key in blocks["gitlab"], f"gitlab template missing {key}"
+    for key in ("steps:", "task:"):
+        assert key in blocks["azure"], f"azure template missing {key}"
+    for key in ("version:", "jobs:", "steps:", "workflows:"):
+        assert key in blocks["circleci"], f"circleci template missing {key}"
+
+
+def test_templates_no_tabs_and_yaml_parseable() -> None:
+    blocks = _extract_templates()
+    for name, block in blocks.items():
+        assert "\t" not in block, f"{name}: YAML must not contain tabs"
+    yaml = pytest.importorskip("yaml", reason="PyYAML not installed")
+    for name, block in blocks.items():
+        data = yaml.safe_load(block)
+        assert isinstance(data, dict), f"{name}: template must parse to a mapping"
+        if name == "gitlab":
+            assert any(isinstance(v, dict) and "script" in v for v in data.values()), (
+                "gitlab: no job with script"
+            )
+        elif name == "azure":
+            assert isinstance(data.get("steps"), list), "azure: steps must be a list"
+        elif name == "circleci":
+            assert "jobs" in data and "workflows" in data
+
+
+def test_parity_table_covers_every_action_input() -> None:
+    """Every action.yml input must appear in the parity table."""
+    action = ACTION_YML.read_text(encoding="utf-8")
+    doc = CI_TEMPLATES_DOC.read_text(encoding="utf-8")
+    inputs_match = re.search(r"^inputs:\n((?:  .+\n)+)", action, re.M)
+    assert inputs_match
+    input_names = re.findall(r"^  ([a-z][\w-]*):", inputs_match.group(1), re.M)
+    assert input_names, "no action inputs parsed"
+    for name in input_names:
+        assert f"`{name}`" in doc, f"action input {name!r} missing from parity table"
+
+
+def test_release_workflow_slsa_provenance() -> None:
+    """release.yml generates SLSA L3 provenance via pinned reusable generator (T-03)."""
+    content = _release_content()
+    assert re.search(
+        r"slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3\.yml@[0-9a-f]{40}\s*#\s*v\d+\.\d+\.\d+",
+        content,
+    ), "SLSA generator must be pinned by SHA"
+    blocks = _job_blocks(content)
+    prov = blocks["provenance"]
+    assert "base64-subjects" in prov and "needs.build.outputs.artifact-subjects" in prov
+    assert "upload-assets: true" in prov
+    assert "provenance-name" in prov and ".intoto.jsonl" in prov
+    assert "artifact-subjects" in blocks["build"]
+    for perm in ("actions: read", "id-token: write", "contents: write"):
+        assert perm in prov, f"provenance missing {perm}"
+
+
+def test_release_workflow_ghcr_image() -> None:
+    """release.yml builds + pushes a GHCR image from the linux binary (T-05)."""
+    content = _release_content()
+    blocks = _job_blocks(content)
+    img = blocks["image"]
+    # Consumes the ubuntu-leg binary via short-lived workflow artifact.
+    assert "sesslint-linux-x86_64" in img
+    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in img
+    assert "ghcr.io" in img and "docker login" in img
+    assert "docker build" in img and "docker push" in img
+    # In-job smoke before push: version --json must run against the image.
+    assert img.index("docker run --rm") < img.index("docker push"), "smoke must precede push"
+    # Ubuntu leg of binaries uploads the binary as a 1-day artifact.
+    binaries = blocks["binaries"]
+    assert "sesslint-linux-x86_64" in binaries and "retention-days: 1" in binaries
+    # Image is off the promote critical path (like provenance).
+    assert "image" not in _job_blocks(content)["github-promote"].split("needs:")[1]
+
+
+def test_ghcr_dockerfile() -> None:
+    """Repo-root Dockerfile: distroless nonroot, /sesslint entrypoint (T-05)."""
+    df = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM gcr.io/distroless/base-debian12:nonroot" in df
+    assert "COPY sesslint /sesslint" in df
+    assert 'ENTRYPOINT ["/sesslint"]' in df
+
+
+def test_ci_matrix_covers_declared_python_and_arm() -> None:
+    """ci.yml matrix covers the declared python range + one ARM leg (qa-infra T-04)."""
+    yaml = pytest.importorskip("yaml", reason="PyYAML required for matrix assertions")
+    with open(CI_WORKFLOW, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    matrix = data["jobs"]["test"]["strategy"]["matrix"]
+    versions = matrix["python-version"]
+    for v in ("3.11", "3.12", "3.13", "3.14"):
+        assert v in versions, f"py{v} missing from test matrix"
+    assert set(matrix["os"]) == {"ubuntu-latest", "windows-latest", "macos-latest"}
+    includes = matrix.get("include", [])
+    arm_legs = [i for i in includes if "arm" in str(i.get("os", ""))]
+    assert len(arm_legs) == 1, "exactly one ARM leg expected (cost-bounded)"
+    assert arm_legs[0]["python-version"] == versions[-1], "ARM leg should run the newest py"

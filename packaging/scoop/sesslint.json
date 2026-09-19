@@ -1,0 +1,27 @@
+{
+    "version": "{version}",
+    "description": "Offline session-integrity checker and conservative repair tool for AI agent session ledgers",
+    "homepage": "https://github.com/{repo}",
+    "license": "Apache-2.0",
+    "notes": "Verify findings with: sesslint check <file> --json",
+    "architecture": {
+        "64bit": {
+            "url": "{url_windows_x86_64}#/sesslint.exe",
+            "hash": "{sha256_windows_x86_64}"
+        }
+    },
+    "bin": "sesslint.exe",
+    "checkver": {
+        "github": "https://github.com/{repo}"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/{repo}/releases/download/v$version/sesslint-$version-windows-x86_64.exe#/sesslint.exe"
+            }
+        },
+        "hash": {
+            "url": "$baseurl/SHA256SUMS-windows-latest"
+        }
+    }
+}

@@ -1,0 +1,29 @@
+# Maintainer: HPNChanel <https://github.com/{repo}>
+# AUR template (sesslint-bin). Rendered by scripts/render_manifests.py;
+# publish to AUR requires an aur.archlinux.org account (manual step).
+pkgname=sesslint-bin
+pkgver={version}
+pkgrel=1
+pkgdesc="Offline session-integrity checker and conservative repair tool for AI agent session ledgers"
+arch=('x86_64')
+url="https://github.com/{repo}"
+license=('Apache-2.0')
+provides=('sesslint')
+conflicts=('sesslint')
+source=("{url_linux_x86_64}")
+sha256sums=('{sha256_linux_x86_64}')
+{if:man}
+# Generated man pages ship as a separate release asset
+# (sesslint-<ver>-man.tar.gz, produced by scripts/gen_man.py at release time).
+source+=("{url_man}")
+sha256sums+=('{sha256_man}')
+{/if:man}
+
+package() {
+    install -Dm755 "sesslint-${pkgver}-linux-x86_64" "${pkgdir}/usr/bin/sesslint"
+{if:man}
+    for page in man/*.1; do
+        install -Dm644 "$page" "${pkgdir}/usr/share/man/man1/$(basename "$page")"
+    done
+{/if:man}
+}

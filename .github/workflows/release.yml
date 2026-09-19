@@ -36,6 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write  # Sigstore keyless signing (Fulcio OIDC)
+    outputs:
+      artifact-subjects: ${{ steps.subjects.outputs.subjects }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -67,6 +70,17 @@ jobs:
           echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
           python -m build --no-isolation --sdist --wheel
 
+      - name: Generate man pages and deterministic tarball
+        run: |
+          set -euo pipefail
+          python scripts/gen_man.py --out dist/man
+          # Reproducible tarball: sorted entries, epoch mtimes, gzip -n
+          # (no embedded timestamp) — identical bytes across rebuilds.
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" \
+            --owner=0 --group=0 --numeric-owner \
+            --use-compress-program='gzip -n' \
+            -cf "dist/sesslint-${GITHUB_REF_NAME#v}-man.tar.gz" -C dist man
+
       - name: Generate sha256sums and artifact manifest
         run: |
           set -euo pipefail
@@ -87,6 +101,25 @@ jobs:
           pathlib.Path("artifact-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
           print(pathlib.Path("artifact-manifest.json").read_text())
           PY
+
+      - name: Compute SLSA provenance subjects (base64 sha256sum output)
+        id: subjects
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          echo "subjects=$(sha256sum -- *.whl *.tar.gz sha256sums.txt artifact-manifest.json | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign (keyless signing)
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign artifacts (Sigstore keyless, repo OIDC identity)
+        run: |
+          set -euo pipefail
+          cd dist
+          for f in *.whl *.tar.gz sha256sums.txt artifact-manifest.json; do
+            cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
+          done
+          ls -la *.sigstore.json
 
       - name: Upload release artifact set
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -119,7 +152,8 @@ jobs:
             --draft \
             --title "SessLint ${GITHUB_REF_NAME}" \
             --generate-notes \
-            dist/*.whl dist/*.tar.gz dist/sha256sums.txt dist/artifact-manifest.json
+            dist/*.whl dist/*.tar.gz dist/sha256sums.txt dist/artifact-manifest.json \
+            dist/*.sigstore.json
 
   binaries:
     name: Build native binary (${{ matrix.os }})
@@ -127,6 +161,7 @@ jobs:
     needs: github-draft
     permissions:
       contents: write
+      id-token: write  # Sigstore keyless signing (Fulcio OIDC)
     strategy:
       fail-fast: false
       matrix:
@@ -161,11 +196,94 @@ jobs:
         shell: bash
         run: mv dist/bin/SHA256SUMS "dist/bin/SHA256SUMS-${{ matrix.os }}"
 
+      - name: Install cosign (keyless signing)
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign binaries (Sigstore keyless, repo OIDC identity)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in dist/bin/*; do
+            case "$f" in *.sigstore.json) continue;; esac
+            cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
+          done
+          ls -la dist/bin/*.sigstore.json
+
+      - name: Upload linux binary as image-job input
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sesslint-linux-x86_64
+          path: dist/bin/sesslint-*-linux-x86_64
+          retention-days: 1
+
       - name: Attach binaries to draft GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" dist/bin/* --repo "${{ github.repository }}"
+
+  provenance:
+    name: Generate SLSA provenance (Build L3)
+    needs: [build, github-draft]
+    permissions:
+      actions: read   # read workflow run metadata
+      id-token: write # sign provenance via Fulcio OIDC
+      contents: write # upload .intoto.jsonl to the release
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      base64-subjects: ${{ needs.build.outputs.artifact-subjects }}
+      upload-assets: true
+      upload-tag-name: ${{ github.ref_name }}
+      provenance-name: sesslint-provenance.intoto.jsonl
+    # Non-blocking by construction: github-promote does not need this job.
+    # Flip to required (add to promote needs) once verified end-to-end.
+
+  image:
+    name: Build + push GHCR image
+    runs-on: ubuntu-latest
+    needs: [build, binaries]
+    permissions:
+      contents: read
+      packages: write # push ghcr.io/<owner>/sesslint
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/sesslint
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout (Dockerfile source)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download linux binary artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sesslint-linux-x86_64
+          path: image-context
+
+      - name: Prepare build context
+        run: |
+          set -euo pipefail
+          mv image-context/sesslint-*-linux-x86_64 image-context/sesslint
+          chmod +x image-context/sesslint
+          cp Dockerfile image-context/Dockerfile
+
+      - name: Build image
+        run: docker build -t "$IMAGE:$TAG" image-context
+
+      - name: Smoke test image
+        run: |
+          set -euo pipefail
+          docker run --rm "$IMAGE:$TAG" version --json
+          docker run --rm "$IMAGE:$TAG" check --help >/dev/null
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push release tags
+        run: |
+          set -euo pipefail
+          docker tag "$IMAGE:$TAG" "$IMAGE:latest"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
 
   pypi-publish:
     name: Publish to PyPI (Trusted Publisher / OIDC)

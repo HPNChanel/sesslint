@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+# Rendered by scripts/render_manifests.py — submitted as a PR to
+# microsoft/winget-pkgs under manifests/h/HPNChanel/Sesslint/{version}/.
+PackageIdentifier: HPNChanel.Sesslint
+PackageVersion: {version}
+InstallerType: portable
+Installers:
+  - Architecture: x64
+    InstallerUrl: {url_windows_x86_64}
+    InstallerSha256: {sha256_windows_x86_64}
+ManifestType: installer
+ManifestVersion: 1.6.0

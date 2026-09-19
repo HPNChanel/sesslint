@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+# Rendered by scripts/render_manifests.py — submitted as a PR to
+# microsoft/winget-pkgs under manifests/h/HPNChanel/Sesslint/{version}/.
+PackageIdentifier: HPNChanel.Sesslint
+PackageVersion: {version}
+PackageLocale: en-US
+Publisher: HPNChanel
+PublisherUrl: https://github.com/{repo}
+PackageName: SessLint
+PackageUrl: https://github.com/{repo}
+License: Apache-2.0
+LicenseUrl: https://github.com/{repo}/blob/main/LICENSE
+ShortDescription: Offline session-integrity checker and conservative repair tool for AI agent session ledgers
+Description: >-
+  SessLint verifies AI-agent session ledgers (Claude Code, Codex, OpenAI
+  Agents, canonical JSONL) offline: it detects corruption, ranks findings
+  by rule code, and performs conservative, fail-closed repairs. Zero
+  runtime dependencies; no network access; content-free reports.
+Moniker: sesslint
+Tags:
+  - lint
+  - cli
+  - session
+  - jsonl
+  - offline
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

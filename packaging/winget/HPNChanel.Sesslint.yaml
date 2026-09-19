@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
+# Rendered by scripts/render_manifests.py — submitted as a PR to
+# microsoft/winget-pkgs under manifests/h/HPNChanel/Sesslint/{version}/.
+PackageIdentifier: HPNChanel.Sesslint
+PackageVersion: {version}
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0
