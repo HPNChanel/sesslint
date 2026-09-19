@@ -60,6 +60,20 @@ _CREDENTIAL_ASSIGN_PATTERN: Final[re.Pattern[str]] = re.compile(
 _CONTROL_CHAR_PATTERN: Final[re.Pattern[str]] = re.compile(r"[\r\n\t\x00-\x1f\x7f]")
 _DANGEROUS_UNICODE_CATEGORIES: Final[frozenset[str]] = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
+# Combined fast-reject for enforce_content_free_text: one NFA scan instead of
+# five sequential searches on the dominant (clean) path. On a hit the ordered
+# per-pattern checks below still run to preserve the exact error precedence
+# (control char > unicode > email > private key > bearer > api key > credential
+# assignment).
+_CONTENT_REJECT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"[\r\n\t\x00-\x1f\x7f]"
+    r"|\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    r"|-----BEGIN [A-Z ]+KEY-----"
+    r"|\bBearer\s+[A-Za-z0-9_\-\.]{10,}\b"
+    r"|\b(?:sk|ghp|gho|glpat|slack_token)[_\-][A-Za-z0-9_\-]{16,}\b"
+    r"|(?i:\b(?:password|passwd|api_key|secret|token)\s*[:=]\s*\S+)"
+)
+
 
 def enforce_content_free_text(text: str, *, context: str = "text") -> None:
     """Validate that text does not contain control characters, line breaks, or credentials/PII.
@@ -72,6 +86,8 @@ def enforce_content_free_text(text: str, *, context: str = "text") -> None:
     Raises:
         FindingError: If control characters, formatting overrides, or sensitive patterns are found.
     """
+    if not _CONTENT_REJECT_PATTERN.search(text) and text.isascii():
+        return
     if _CONTROL_CHAR_PATTERN.search(text):
         raise FindingError(f"Forbidden control or newline characters in {context}: {text!r}")
     if not text.isascii():

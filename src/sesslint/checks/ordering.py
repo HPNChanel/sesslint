@@ -89,15 +89,43 @@ def check_ordering(
         parent_idx = parent_indices[0]
         parent = events[parent_idx]
 
-        child_ts = _parse_ts(_event_get(child, "ts"))
-        parent_ts = _parse_ts(_event_get(parent, "ts"))
-        if child_ts is None or parent_ts is None:
-            continue
-        if (child_ts.tzinfo is None) != (parent_ts.tzinfo is None):
-            continue  # naive-vs-aware mixing cannot be ordered reliably
-        if not child_ts < parent_ts:
-            continue
+        child_ts_raw = _event_get(child, "ts")
+        parent_ts_raw = _event_get(parent, "ts")
+        # Fast path: fixed-length RFC3339 UTC strings (``...Z``) sort
+        # chronologically — equal-length lexicographic compare is exact and
+        # skips two datetime parses on the dominant clean edge.
+        child_ts: datetime | None = None
+        parent_ts: datetime | None = None
+        fast_violation = False
+        if (
+            isinstance(child_ts_raw, str)
+            and isinstance(parent_ts_raw, str)
+            and len(child_ts_raw) == len(parent_ts_raw)
+            and child_ts_raw.endswith("Z")
+            and parent_ts_raw.endswith("Z")
+        ):
+            if child_ts_raw == _TS_EPOCH_SENTINEL or parent_ts_raw == _TS_EPOCH_SENTINEL:
+                continue
+            if child_ts_raw >= parent_ts_raw:
+                continue
+            fast_violation = True
+        else:
+            child_ts = _parse_ts(child_ts_raw)
+            parent_ts = _parse_ts(parent_ts_raw)
+            if child_ts is None or parent_ts is None:
+                continue
+            if (child_ts.tzinfo is None) != (parent_ts.tzinfo is None):
+                continue  # naive-vs-aware mixing cannot be ordered reliably
+            if not child_ts < parent_ts:
+                continue
 
+        if fast_violation:
+            child_ts = _parse_ts(child_ts_raw)
+            parent_ts = _parse_ts(parent_ts_raw)
+            if child_ts is None or parent_ts is None:
+                continue
+        if child_ts is None or parent_ts is None:
+            continue  # unreachable: both branches above narrow or continue
         delta_ms = math.floor((child_ts - parent_ts).total_seconds() * 1000)
         resolved_path, line_num = _resolve_source_coords(child, source_path)
         clean_rec_id = _safe_id(str(_event_id_safe(child) or ""))
