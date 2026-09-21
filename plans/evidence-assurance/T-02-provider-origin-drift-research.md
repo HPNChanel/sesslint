@@ -1,6 +1,6 @@
 # T-02: Provider-origin drift research memo
 
-- Status: planned
+- Status: done (2026-09-21) — GO verdict, see MEMO-provider-drift.md
 - Phase: evidence-assurance
 - Priority: P3
 - Type: research (memo only — no code)
@@ -84,3 +84,20 @@ None — research deliverable. Review = maintainer read of the memo.
 ## Out of Scope
 
 - Code changes, network calls to test providers, any live-API probing.
+
+## Implementation Notes (2026-09-21)
+
+- Memo delivered: `plans/evidence-assurance/MEMO-provider-drift.md`.
+- Verdict **GO** — narrow cited shape-vocabulary detector, proposed
+  code SL305 (format family, codex-rollout scoped).
+- Provider identity: recoverable only as *self-reported*
+  (`session_meta.model_provider`/`originator`); endpoint never
+  persisted — detector reports declared-provider hash, never claims
+  provenance.
+- Poisoned shape definable: `reasoning.content` non-null (official =
+  null/absent; #36551 verified 2026-09-21, labels custom-model+session).
+- Follow-up task filed: `plans/detector-depth/T-05-sl305-foreign-
+  shape-vocabulary.md`.
+- Complementarity verified vs SL206 (uniform foreign absence silent
+  there; SL305 covers it) and SL304 (intra-file drift != uniform
+  foreign).
