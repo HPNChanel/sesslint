@@ -43,12 +43,14 @@ from sesslint.canonical import (
     canonical_bytes,
     compute_content_hash,
 )
+from sesslint.checks.hygiene import SecretScanTracker
 from sesslint.codes import SL001, SL002, SL301, SL302, Repairability, Severity
 from sesslint.errors import MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding, sort_findings
 from sesslint.io import (
     _STRICT_JSON_DECODER,
     DEFAULT_READER_LIMITS,
+    MalformedTailTracker,
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
@@ -642,9 +644,23 @@ def load_openai_agents(
             ):
                 is_json_doc = True
 
+        secret_tracker = SecretScanTracker()
         if is_json_doc:
-            return _load_openai_agents_json(full_bytes, path_str=path_str, limits=effective_limits)
-        return _load_openai_agents_jsonl(full_bytes, path_str=path_str, limits=effective_limits)
+            events, found = _load_openai_agents_json(
+                full_bytes,
+                path_str=path_str,
+                limits=effective_limits,
+                secret_tracker=secret_tracker,
+            )
+        else:
+            events, found = _load_openai_agents_jsonl(
+                full_bytes,
+                path_str=path_str,
+                limits=effective_limits,
+                secret_tracker=secret_tracker,
+            )
+        found.extend(secret_tracker.into_findings(path_str=path_str))
+        return events, sort_findings(found)
 
     finally:
         if is_owned_file:
@@ -656,6 +672,7 @@ def _load_openai_agents_json(
     *,
     path_str: str,
     limits: ReaderLimits,
+    secret_tracker: SecretScanTracker,
 ) -> tuple[EventList, list[Finding]]:
     """Parse a single JSON document export with hostile input validation.
 
@@ -665,6 +682,10 @@ def _load_openai_agents_json(
     emit `record_ordinal` and `line_number` (best-available), without faked
     byte offsets.
     """
+    # SL009: scan the whole persisted document line-by-line before any
+    # validation rejects it — secrets persist even in unparseable exports.
+    secret_tracker.feed_blob(data)
+
     findings: list[Finding] = []
     source_metadata = SourceMetadata(format="openai-agents", checkpoints=[])
     source_metadata["record_sizes"] = []
@@ -885,6 +906,7 @@ def _load_openai_agents_jsonl(
     *,
     path_str: str,
     limits: ReaderLimits,
+    secret_tracker: SecretScanTracker,
 ) -> tuple[EventList, list[Finding]]:
     """Stream a JSONL item stream with 1-record lookahead for SL001 vs SL002."""
     events: list[SessionEvent] = []
@@ -900,6 +922,7 @@ def _load_openai_agents_jsonl(
     record_count = 0
     total_len = len(data)
     pending_raw: _RawLine | None = None
+    tail_tracker = MalformedTailTracker()
 
     while current_offset < total_len:
         line_number += 1
@@ -940,6 +963,7 @@ def _load_openai_agents_jsonl(
                     f"Record count {pending_raw.record_ordinal} exceeds limit of "
                     f"{limits.max_records}"
                 )
+            n_ev, n_f = len(events), len(findings)
             _process_jsonl_line(
                 pending_raw,
                 is_terminal=False,
@@ -951,15 +975,19 @@ def _load_openai_agents_jsonl(
                 seen_version_sl301=seen_version_sl301,
                 guard=guard,
                 drift=drift,
+                secret_tracker=secret_tracker,
             )
+            tail_tracker.note_produced(events[n_ev:], findings[n_f:])
 
         pending_raw = current_raw
 
+    torn_tail_offset: int | None = None
     if pending_raw is not None:
         if limits.max_records is not None and pending_raw.record_ordinal > limits.max_records:
             raise MaxRecordsExceededError(
                 f"Record count {pending_raw.record_ordinal} exceeds limit of {limits.max_records}"
             )
+        n_ev, n_f = len(events), len(findings)
         _process_jsonl_line(
             pending_raw,
             is_terminal=True,
@@ -971,7 +999,14 @@ def _load_openai_agents_jsonl(
             seen_version_sl301=seen_version_sl301,
             guard=guard,
             drift=drift,
+            secret_tracker=secret_tracker,
         )
+        new_findings = findings[n_f:]
+        tail_tracker.note_produced(events[n_ev:], new_findings)
+        if any(f.code == SL002 for f in new_findings):
+            torn_tail_offset = pending_raw.byte_offset
+
+    tail_tracker.finalize(total_bytes=total_len, torn_tail_offset=torn_tail_offset)
 
     guard.assert_no_collision()
     source_metadata.run_state_projection = project_run_state(source_metadata)
@@ -991,8 +1026,20 @@ def _process_jsonl_line(
     seen_version_sl301: bool,
     guard: SyntheticIdCollisionGuard | None = None,
     drift: DriftTracker | None = None,
+    secret_tracker: SecretScanTracker | None = None,
 ) -> None:
     """Process a single JSONL line, emitting SessionEvent or SL001/SL002."""
+    # SL009: scan the persisted raw bytes for secret shapes before any
+    # validation rejects the record — malformed lines still carry secrets.
+    if secret_tracker is not None:
+        secret_tracker.feed(
+            raw.raw_bytes,
+            line_number=raw.line_number,
+            byte_offset=raw.byte_offset,
+            byte_end=raw.byte_end,
+            record_ordinal=raw.record_ordinal,
+        )
+
     code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,

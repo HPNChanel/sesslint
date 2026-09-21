@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "originalPath": "/synthetic/project",
+  "entries": [
+    {
+      "sessionId": "sess-a",
+      "fullPath": "sess-a.jsonl",
+      "fileMtime": 1757000000000,
+      "firstPrompt": "synthetic",
+      "summary": "synthetic",
+      "messageCount": 1,
+      "created": "2025-01-01T00:00:00Z",
+      "modified": "2025-01-01T00:00:01Z",
+      "gitBranch": "main",
+      "projectPath": "/synthetic/project",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "sess-b",
+      "fullPath": "sess-b.jsonl",
+      "fileMtime": 1757000000000,
+      "firstPrompt": "synthetic",
+      "summary": "synthetic",
+      "messageCount": 1,
+      "created": "2025-01-01T00:00:00Z",
+      "modified": "2025-01-01T00:00:01Z",
+      "gitBranch": "main",
+      "projectPath": "/synthetic/project",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "sess-ghost",
+      "fullPath": "sess-ghost.jsonl",
+      "fileMtime": 1757000000000,
+      "firstPrompt": "synthetic",
+      "summary": "synthetic",
+      "messageCount": 1,
+      "created": "2025-01-01T00:00:00Z",
+      "modified": "2025-01-01T00:00:01Z",
+      "gitBranch": "main",
+      "projectPath": "/synthetic/project",
+      "isSidechain": false
+    }
+  ]
+}

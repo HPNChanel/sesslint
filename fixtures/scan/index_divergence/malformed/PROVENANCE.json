@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "sesslint.test_harness",
+  "seed": 42,
+  "created": "2026-09-06",
+  "contains_real_data": false,
+  "description": "Synthetic vendor session-index divergence scenarios for SL402 scan-layer tests"
+}

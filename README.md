@@ -36,7 +36,7 @@
   - [Command Matrix](#command-matrix)
   - [Exit Codes](#exit-codes)
 - [Supported Formats & Conformance Matrix](#supported-formats)
-- [Diagnostic Reason Codes (SL001–SL302)](#diagnostic-reason-codes-sl001sl302)
+- [Diagnostic Reason Codes (SL001–SL402)](#diagnostic-reason-codes-sl001sl402)
 - [Finding Fingerprints & Deterministic Ordering](#finding-fingerprints--deterministic-ordering)
 - [Report Coverage & Run-State Evidence](#report-coverage--run-state-evidence)
 - [Repair Engine](#repair-engine)
@@ -382,7 +382,7 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
-SessLint exposes thirteen CLI commands designed for both interactive developer usage and CI/CD automation (plus `sesslint completion` for shell integration):
+SessLint exposes seventeen CLI commands designed for both interactive developer usage and CI/CD automation (plus `sesslint completion` for shell integration):
 
 | Command | Purpose | Mutates Disk? | Default Format | Exit Codes |
 | :--- | :--- | :---: | :---: | :---: |
@@ -402,6 +402,7 @@ SessLint exposes thirteen CLI commands designed for both interactive developer u
 | **`sesslint watch`** | Poll session dirs, flag newly corrupted files on verdict transitions | **No** (read-only observer) | `auto` | `0`, `2` |
 | **`sesslint mcp`** | MCP stdio server exposing check/precheck/scan tools to agents | **No** (read-only stdio) | N/A | `0` |
 | **`sesslint init-hooks`** | Print ready-to-merge agent hook snippets — never writes config | **No** (print-only) | N/A | `0` |
+| **`sesslint hook`** | Agent hook entrypoint: stdin payload → resolved transcript check | **No** (read-only) | `auto` | `0`, `1` |
 | **`sesslint version`** | Print diagnostic version environment struct | **No** | N/A | `0` |
 
 ---
@@ -784,9 +785,9 @@ For comprehensive compatibility matrix across formats and validation profiles, c
 
 ---
 
-## Diagnostic Reason Codes (SL001–SL302)
+## Diagnostic Reason Codes (SL001–SL402)
 
-SessLint implements **20 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
+SessLint implements **28 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
 
 ### 1. Syntax & Framing
 | Code | Name | Default Severity | Repairability | Action & Rationale |
@@ -807,6 +808,8 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 | **`SL006`** | Disconnected branch | `warning` | `manual` | Unreachable subtrees require manual review before pruning. |
 | **`SL007`** | Ambiguous session head | `warning` | `manual` | Multiple leaf heads require operator branch selection. |
 | **`SL008`** | Non-monotonic timestamp | `warning` | `manual` | Child event predates its uniquely-resolved parent (clock skew is legitimate; never reordered). |
+| **`SL009`** | Persisted secret material | `warning` | `manual` | Record bytes contain a known secret token shape; reports family, coordinates, and match digests only — the value is never emitted and the record is never rewritten. |
+| **`SL010`** | Interleaved writer markers | `warning` | `manual` | Writer identity markers (adapter-normalized versions) reappear interleaved in one stream — forensic evidence of concurrent writers; a clean ordered upgrade transition stays clean (one finding/file; marker values are hashed, never emitted). |
 | **`SL011`** | Record size anomaly | `info` | `manual` | Largest record exceeds `max(median×20, 256 KiB)` of the file's own size distribution — relative outlier tripwire for spliced blobs (one finding/file; <8 records skip). |
 
 ### 4. Tool Call & Result Pairing
@@ -829,6 +832,7 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 | **`SL203`** | Unknown side-effect | `error` | `manual` | **Hard Stop**: Automated repair must abstain if side effects are unknown. |
 | **`SL204`** | Usage arithmetic | `warning` | `manual` | Cumulative token-usage marker contradicts the window's contribution sum. |
 | **`SL205`** | Compaction coverage gap | `warning` | `manual` | Boundary claims a covered span that is missing or non-contiguous on the parent chain (pointerless boundaries skip). |
+| **`SL206`** | Durable-prefix boundary | `warning` | `manual` | Durable record sequence does not cover the envelope ordinal the resume path expects — trailing non-durable tail, durable hole, or resume-required field absent (codex-rollout streams only; ≤ one finding per divergence kind). |
 
 ### 6. Format Compatibility
 | Code | Name | Default Severity | Repairability | Action & Rationale |
@@ -838,6 +842,7 @@ SessLint implements **20 registered diagnostic codes**. Severity and repairabili
 | **`SL303`** | Duplicate JSON key | `warning` | `manual` | Duplicated object key — `error` when the key drives integrity semantics; never silently picks a winner. |
 | **`SL304`** | Mid-file schema drift | `warning` | `manual` | Record-level schema version or foreign-format signature changes mid-file (compatible bumps stay clean; `SL301` takes precedence). |
 | **`SL401`** | Unresolved cross-file link | `warning` | `manual` | Declared resume/fork pointer misses the scanned file set or resolves ambiguously (scan-level only; out-of-scope targets emit `info`). |
+| **`SL402`** | Session-index divergence | `warning` | `manual` | Vendor session index and on-disk session set disagree — unindexed ledger, dangling entry, or malformed/truncated index (scan-level only). |
 
 ---
 
@@ -893,11 +898,11 @@ Every report emitted by `sesslint check --json` embeds a top-level `coverage` bl
     "version": "1.0.0"
   },
   "performed": [
-    "SL001", "SL002", "SL003", "SL004", "SL005", "SL006", "SL007", "SL008", "SL011",
+    "SL001", "SL002", "SL003", "SL004", "SL005", "SL006", "SL007", "SL008", "SL009", "SL010", "SL011",
     "SL101", "SL102", "SL103", "SL104", "SL105", "SL106", "SL107", "SL108",
-    "SL201", "SL202", "SL203", "SL204", "SL205", "SL301", "SL302",
+    "SL201", "SL202", "SL203", "SL204", "SL205", "SL206", "SL301", "SL302",
     "accounting", "checkpoint", "graph", "identity", "ordering", "size",
-    "tool_pairing_1", "tool_pairing_2"
+    "tool_pairing_1", "tool_pairing_2", "writers"
   ],
   "profile": {
     "id": "neutral",

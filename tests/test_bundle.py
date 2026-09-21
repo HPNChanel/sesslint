@@ -247,6 +247,101 @@ class TestBundleCLI:
         assert data["schema_version"] == "sesslint.report/v1"
 
 
+class TestBundleShareAdvisory:
+    """Pre-share advisory for SL009-positive sources (transcript-hygiene T-03).
+
+    The bundle is content-free, but the *source* artifact may still carry live
+    secret-shaped material — the advisory warns at the exact moment a user
+    produces a shareable artifact.
+    """
+
+    SEEDED = FIXTURES_ROOT / "checks" / "secret_seed" / "sl009_seeded.jsonl"
+    CLEAN = FIXTURES_ROOT / "checks" / "secret_seed" / "sl009_clean.jsonl"
+
+    def test_seeded_source_emits_advisory(self) -> None:
+        bundle = build_bundle(self.SEEDED, format="canonical")
+        adv = bundle.to_dict()["share_advisory"]
+        assert adv["kind"] == "secret-material-present"
+        assert adv["finding_count"] == 14
+        assert adv["families"] == sorted(adv["families"])
+        assert len(adv["families"]) == 14
+        assert "aws-access-key" in adv["families"]
+        assert "rotate" in adv["note"]
+
+    def test_clean_source_omits_advisory_key(self) -> None:
+        bundle = build_bundle(self.CLEAN, format="canonical")
+        # Absent, not null — the key must not appear at all.
+        assert "share_advisory" not in bundle.to_dict()
+        assert "share_advisory" not in bundle.to_json()
+
+    def test_advisory_is_content_free(self) -> None:
+        """No canary bytes anywhere in a seeded bundle JSON."""
+        blob = build_bundle(self.SEEDED, format="canonical").to_json()
+        for token in (
+            "sk-ant-api03-SECRET-CANARY-TOKEN-XYZ123",
+            "sk-live-OPENAI-SECRET-TOKEN-51Nz888",
+            "AKIAIOSFODNN7EXAMPLE",
+            "whsec_TESTWEBHOOKSECRET1234567890",
+        ):
+            assert token not in blob
+
+    def test_advisory_deterministic(self) -> None:
+        j1 = build_bundle(self.SEEDED, format="canonical").to_json()
+        j2 = build_bundle(self.SEEDED, format="canonical").to_json()
+        assert j1 == j2
+
+    def test_cli_advisory_warns_stderr_but_exits_0(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Non-strict bundle of a seeded file: advisory on stderr, exit 0."""
+        code = main(["bundle", str(self.SEEDED), "--format", "canonical", "--json"])
+        assert code == 0
+        captured = capsys.readouterr()
+        assert "share_advisory: source contains secret-shaped material" in captured.err
+        data = json.loads(captured.out)  # stdout stays pure JSON
+        assert data["share_advisory"]["kind"] == "secret-material-present"
+
+    def test_cli_strict_share_gates_and_writes_nothing(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--strict-share turns the advisory into a gate: exit 1, no output."""
+        out_file = tmp_path / "bundle.json"
+        code = main(
+            [
+                "bundle",
+                str(self.SEEDED),
+                "--format",
+                "canonical",
+                "--strict-share",
+                "-o",
+                str(out_file),
+            ]
+        )
+        assert code == 1
+        assert "share_advisory" in capsys.readouterr().err
+        assert not out_file.exists()
+
+    def test_cli_strict_share_clean_source_passes(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--strict-share on a clean source: no advisory, exit 0."""
+        out_file = tmp_path / "bundle.json"
+        code = main(
+            [
+                "bundle",
+                str(self.CLEAN),
+                "--format",
+                "canonical",
+                "--strict-share",
+                "-o",
+                str(out_file),
+            ]
+        )
+        assert code == 0
+        assert "share_advisory" not in capsys.readouterr().err
+        assert out_file.exists()
+
+
 class TestBundleGolden:
     """Golden contract test for bundle JSON structure and byte snapshot."""
 

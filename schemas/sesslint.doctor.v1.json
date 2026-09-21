@@ -38,6 +38,7 @@
           "exists",
           "file_count",
           "file_count_capped",
+          "index",
           "newest_mtime",
           "path",
           "source",
@@ -68,6 +69,26 @@
               },
               "additionalProperties": false
             }
+          },
+          "index": {
+            "type": ["object", "null"],
+            "required": ["index_entries", "sessions_on_disk", "state"],
+            "properties": {
+              "sessions_on_disk": {"type": "integer", "minimum": 0},
+              "index_entries": {"type": ["integer", "null"], "minimum": 0},
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "stale-divergent",
+                  "malformed",
+                  "truncated",
+                  "unverified-format",
+                  "absent"
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

@@ -39,6 +39,40 @@ def _iso_utc(ts: float) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class IndexDiag:
+    """Per-root vendor index health — counts and a closed state enum only.
+
+    ``sessions_on_disk`` counts session-shaped ``.jsonl`` files in index-
+    scope positions (Claude: project-dir top level, excluding ``agent-*``
+    sidecars; other runtimes: all ``.jsonl`` candidates). ``index_entries``
+    is the summed membership count across parsed indexes — ``None`` when no
+    index file exists at all. ``state`` is a closed enum:
+
+    - ``ok`` — every found index parsed and counts agree (advisory; SL402
+      remains the precise detector)
+    - ``stale-divergent`` — an index's entry count disagrees with its
+      session-file count, or sessions sit in dirs with no index while
+      other dirs are indexed
+    - ``malformed`` / ``truncated`` — index parse failed (truncated =
+      picker-crash signature, partial set salvaged)
+    - ``unverified-format`` — index shape unrecognized, or the runtime
+      has no verified file-readable index format (e.g. Codex thread store)
+    - ``absent`` — no index file found under the root
+    """
+
+    sessions_on_disk: int
+    index_entries: int | None
+    state: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "index_entries": self.index_entries,
+            "sessions_on_disk": self.sessions_on_disk,
+            "state": self.state,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class RootDiag:
     """Diagnostics for one discovered agent session root."""
 
@@ -52,6 +86,7 @@ class RootDiag:
     checked: int
     verdicts: Mapping[str, int]
     top_codes: tuple[tuple[str, int], ...]
+    index: IndexDiag | None
 
     def to_dict(self, *, home: Path | None = None) -> dict[str, Any]:
         from sesslint.report import minimize_path
@@ -67,6 +102,7 @@ class RootDiag:
             "checked": self.checked,
             "verdicts": dict(sorted(self.verdicts.items())),
             "top_codes": [{"code": c, "count": n} for c, n in self.top_codes],
+            "index": self.index.to_dict() if self.index is not None else None,
         }
 
 
@@ -123,6 +159,13 @@ class DoctorReport:
                 lines.append(f"{'':<14}checked={r.checked}  {verdict_bits or 'clean'}")
                 for code, n in r.top_codes:
                     lines.append(f"{'':<16}{code} x{n}")
+            if r.index is not None:
+                idx = r.index
+                ent = "none" if idx.index_entries is None else str(idx.index_entries)
+                lines.append(
+                    f"{'':<14}index={idx.state}  sessions={idx.sessions_on_disk}"
+                    f"  index_entries={ent}"
+                )
         return "\n".join(lines)
 
 
@@ -205,6 +248,76 @@ def _quick_verdicts(
     return checked, verdicts, top
 
 
+def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDiag:
+    """Compute per-root vendor index health — counts only, bounded reads.
+
+    Reuses the already-collected ``candidates`` list (zero extra walk IO);
+    per index file it pays one bounded ``read_index``. Claude-only detail:
+    ``agent-*.jsonl`` sub-agent sidecars are never vendor-indexed, so they
+    are excluded from session counts.
+    """
+    from sesslint.indexes import discover_index_files, has_index_format, read_index
+
+    claude_layout = has_index_format(agent)
+
+    def _is_session_shaped(c: Path) -> bool:
+        if c.suffix != ".jsonl" or c.name.startswith("agent-"):
+            return False
+        # Claude sessions live at the top level of each project dir (or the
+        # root itself); deeper .jsonl files are sidecars (file-history, etc).
+        return not claude_layout or c.parent == root or c.parent.parent == root
+
+    sessions = [c for c in candidates if _is_session_shaped(c)]
+    session_dirs = {c.parent for c in sessions}
+
+    if not claude_layout:
+        return IndexDiag(
+            sessions_on_disk=len(sessions),
+            index_entries=None,
+            state="unverified-format",
+        )
+
+    index_paths = discover_index_files(root, agent)
+    indexed_dirs = {p.parent for p in index_paths}
+    entries = 0
+    states: list[str] = []
+    for ip in index_paths:
+        snap = read_index(ip)
+        entries += snap.entry_count
+        sibling = sum(1 for c in sessions if c.parent == ip.parent)
+        if not snap.parse_ok:
+            states.append("truncated" if snap.truncated else "malformed")
+        elif snap.schema_note == "absent":
+            states.append("absent")  # vanished between discover and read
+        elif snap.schema_note == "unrecognized-shape":
+            states.append("unverified-format")
+        elif sibling != snap.entry_count:
+            states.append("stale-divergent")
+        else:
+            states.append("ok")
+
+    # Session-bearing dirs with no index only count as divergence when
+    # other dirs are indexed — otherwise the whole root is simply absent.
+    unindexed_dirs = bool(index_paths) and bool(session_dirs - indexed_dirs)
+    if not index_paths:
+        state = "absent"
+    elif "malformed" in states:
+        state = "malformed"
+    elif "truncated" in states:
+        state = "truncated"
+    elif "stale-divergent" in states or unindexed_dirs:
+        state = "stale-divergent"
+    elif "unverified-format" in states or "absent" in states:
+        state = "unverified-format"
+    else:
+        state = "ok"
+    return IndexDiag(
+        sessions_on_disk=len(sessions),
+        index_entries=entries if index_paths else None,
+        state=state,
+    )
+
+
 def doctor_report(
     *,
     agents: Sequence[str] | None = None,
@@ -255,6 +368,7 @@ def doctor_report(
                     checked=0,
                     verdicts={},
                     top_codes=(),
+                    index=None,
                 )
             )
             continue
@@ -285,6 +399,7 @@ def doctor_report(
                 checked=checked,
                 verdicts=verdicts,
                 top_codes=top_codes,
+                index=_index_health(root.agent, root.path, candidates),
             )
         )
 
@@ -322,6 +437,7 @@ __all__ = [
     "MAX_QUICK_CHECKS",
     "MAX_TOP_CODES",
     "DoctorReport",
+    "IndexDiag",
     "RootDiag",
     "doctor_report",
     "get_doctor_schema_path",

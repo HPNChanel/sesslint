@@ -147,3 +147,132 @@ def test_doctor_file_count_bound(tmp_path: Path) -> None:
     """The counter caps at MAX_FILE_COUNT honestly (walk stops, flag set)."""
     assert MAX_FILE_COUNT == 10_000
     # Bounded check via the module constant — full 10k-file walk is impractical.
+
+
+def _write_index(path: Path, ids: list[str]) -> None:
+    doc = {"version": 1, "entries": [{"sessionId": s} for s in ids]}
+    path.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
+
+
+def test_doctor_index_stale_divergent(tmp_path: Path) -> None:
+    """Divergent project dir -> stale-divergent state with honest counts."""
+    home = tmp_path / "home"
+    proj = home / ".claude" / "projects" / "p1"
+    proj.mkdir(parents=True)
+    for s in ("s-a", "s-b", "s-c"):
+        (proj / f"{s}.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in _claude_records(1)),
+            encoding="utf-8",
+        )
+    _write_index(proj / "sessions-index.json", ["s-a", "s-b"])
+    rep = doctor_report(agents=["claude"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "stale-divergent"
+    assert idx.sessions_on_disk == 3
+    assert idx.index_entries == 2
+
+
+def test_doctor_index_ok_and_absent(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    proj = home / ".claude" / "projects" / "p1"
+    proj.mkdir(parents=True)
+    (proj / "s-a.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in _claude_records(1)),
+        encoding="utf-8",
+    )
+    _write_index(proj / "sessions-index.json", ["s-a"])
+    rep = doctor_report(agents=["claude"], env={}, home=home, quick_checks=False)
+    assert rep.roots[0].index is not None
+    assert rep.roots[0].index.state == "ok"
+
+    empty = tmp_path / "home2"
+    (empty / ".claude" / "projects").mkdir(parents=True)
+    rep = doctor_report(agents=["claude"], env={}, home=empty, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "absent"
+    assert idx.index_entries is None
+
+
+def test_doctor_index_malformed_and_truncated(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    proj = home / ".claude" / "projects" / "p1"
+    proj.mkdir(parents=True)
+    (proj / "s-a.jsonl").write_text("{}\n", encoding="utf-8")
+    (proj / "sessions-index.json").write_bytes(b"\x00\xff garbage")
+    rep = doctor_report(agents=["claude"], env={}, home=home, quick_checks=False)
+    assert rep.roots[0].index is not None
+    assert rep.roots[0].index.state == "malformed"
+
+    (proj / "sessions-index.json").write_text(
+        '{"version": 1, "entries": [{"sessionId": "s-a"',
+        encoding="utf-8",
+        newline="\n",
+    )
+    rep = doctor_report(agents=["claude"], env={}, home=home, quick_checks=False)
+    assert rep.roots[0].index is not None
+    assert rep.roots[0].index.state == "truncated"
+
+
+def test_doctor_index_unverified_runtime(tmp_path: Path) -> None:
+    """Codex has no verified file-readable index -> unverified-format."""
+    home = tmp_path / "home"
+    sess = home / ".codex" / "sessions" / "2026" / "09" / "21"
+    sess.mkdir(parents=True)
+    (sess / "rollout-a.jsonl").write_text("{}\n", encoding="utf-8")
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "unverified-format"
+    assert idx.index_entries is None
+    assert idx.sessions_on_disk == 1
+
+
+def test_doctor_index_sidecars_not_sessions(tmp_path: Path) -> None:
+    """agent-* sidecars and deep .jsonl files don't inflate session counts."""
+    home = tmp_path / "home"
+    proj = home / ".claude" / "projects" / "p1"
+    (proj / "file-history").mkdir(parents=True)
+    (proj / "s-a.jsonl").write_text("{}\n", encoding="utf-8")
+    (proj / "agent-x.jsonl").write_text("{}\n", encoding="utf-8")
+    (proj / "file-history" / "snap.jsonl").write_text("{}\n", encoding="utf-8")
+    _write_index(proj / "sessions-index.json", ["s-a"])
+    rep = doctor_report(agents=["claude"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.sessions_on_disk == 1
+    assert idx.state == "ok"
+
+
+def test_doctor_index_json_shape_pinned(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    rep = doctor_report(env={}, home=home, quick_checks=False)
+    for root in rep.to_dict()["roots"]:
+        assert "index" in root
+        if root["index"] is None:
+            continue
+        assert set(root["index"]) == {"index_entries", "sessions_on_disk", "state"}
+        assert root["index"]["state"] in {
+            "ok",
+            "stale-divergent",
+            "malformed",
+            "truncated",
+            "unverified-format",
+            "absent",
+        }
+
+
+def test_doctor_index_state_words_are_closed_enum() -> None:
+    schema = load_doctor_schema()
+    enum = schema["properties"]["roots"]["items"]["properties"]["index"]["properties"]["state"][
+        "enum"
+    ]
+    assert set(enum) == {
+        "ok",
+        "stale-divergent",
+        "malformed",
+        "truncated",
+        "unverified-format",
+        "absent",
+    }

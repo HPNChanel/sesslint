@@ -18,7 +18,7 @@ from sesslint.codes import (
 )
 from sesslint.errors import FindingError
 
-EXPECTED_27_CODES: frozenset[str] = frozenset(
+EXPECTED_CODES: frozenset[str] = frozenset(
     {
         "SL001",
         "SL002",
@@ -28,6 +28,8 @@ EXPECTED_27_CODES: frozenset[str] = frozenset(
         "SL006",
         "SL007",
         "SL008",
+        "SL009",
+        "SL010",
         "SL011",
         "SL101",
         "SL102",
@@ -42,11 +44,13 @@ EXPECTED_27_CODES: frozenset[str] = frozenset(
         "SL203",
         "SL204",
         "SL205",
+        "SL206",
         "SL301",
         "SL302",
         "SL303",
         "SL304",
         "SL401",
+        "SL402",
     }
 )
 
@@ -107,18 +111,18 @@ DEMAND_VERBATIM_SUMMARIES: dict[str, str] = {
 }
 
 
-def test_registry_has_exact_27_codes() -> None:
-    """Registry contains exactly the 27 codes (DEMAND.md + checks-rules pack)."""
-    assert ALL_CODES == EXPECTED_27_CODES
-    assert frozenset(CODE_REGISTRY.keys()) == EXPECTED_27_CODES
-    assert len(CODE_REGISTRY) == 27
-    assert len(Code) == 27
+def test_registry_has_exact_31_codes() -> None:
+    """Registry contains exactly 31 codes (DEMAND.md + hygiene/reconciliation/depth packs)."""
+    assert ALL_CODES == EXPECTED_CODES
+    assert frozenset(CODE_REGISTRY.keys()) == EXPECTED_CODES
+    assert len(CODE_REGISTRY) == 31
+    assert len(Code) == 31
 
 
 def test_code_enum_matches_registry() -> None:
     """Verify Code enum values match registry keys."""
     enum_values = {e.value for e in Code}
-    assert enum_values == EXPECTED_27_CODES
+    assert enum_values == EXPECTED_CODES
 
 
 def test_verbatim_demand_names_and_summaries() -> None:
@@ -135,7 +139,7 @@ def test_verbatim_demand_names_and_summaries() -> None:
 
 def test_is_valid_code() -> None:
     """Verify is_valid_code returns True for registered codes and False otherwise."""
-    for code in EXPECTED_27_CODES:
+    for code in EXPECTED_CODES:
         assert is_valid_code(code) is True
 
     assert is_valid_code("SL000") is False
@@ -170,7 +174,7 @@ def test_codes_and_taxonomies_match_finding_schema_anti_drift() -> None:
 
     # Codes enum anti-drift
     schema_codes = set(schema["properties"]["code"]["enum"])
-    assert schema_codes == EXPECTED_27_CODES
+    assert schema_codes == EXPECTED_CODES
     assert schema_codes == ALL_CODES
 
     # Severity enum anti-drift

@@ -69,7 +69,7 @@ from sesslint.adapters.synthetic import (
 from sesslint.api import check_file
 from sesslint.canonical import compute_content_hash
 from sesslint.cli import main
-from sesslint.codes import SL101, SL102, SL107, SL301, SL302
+from sesslint.codes import SL009, SL101, SL102, SL107, SL301, SL302
 from sesslint.finding import Finding
 from sesslint.io import ReaderLimits
 
@@ -271,7 +271,7 @@ CASES: Final[list[ConformanceCase]] = [
         expectations={
             FORMAT_CANONICAL: CaseExpectation(
                 fixture_relpath="secret_seed/canonical_secret.jsonl",
-                expected_codes=(),
+                expected_codes=(SL009,),
                 expected_exit_code=0,
                 extra={
                     "secret_tokens": (
@@ -282,7 +282,7 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_CLAUDE_CODE: CaseExpectation(
                 fixture_relpath="secret_seed/claude_secret.jsonl",
-                expected_codes=(),
+                expected_codes=(SL009,),
                 expected_exit_code=0,
                 extra={
                     "secret_tokens": (
@@ -293,7 +293,7 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_OPENAI_AGENTS: CaseExpectation(
                 fixture_relpath="secret_seed/openai_secret.json",
-                expected_codes=(),
+                expected_codes=(SL009,),
                 expected_exit_code=0,
                 extra={
                     "secret_tokens": (
@@ -304,7 +304,7 @@ CASES: Final[list[ConformanceCase]] = [
             ),
             FORMAT_CODEX_ROLLOUT: CaseExpectation(
                 fixture_relpath="secret_seed/codex_secret.jsonl",
-                expected_codes=(),
+                expected_codes=(SL009,),
                 expected_exit_code=0,
                 extra={
                     "secret_tokens": (

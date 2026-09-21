@@ -26,6 +26,7 @@ from sesslint.canonical import (
     parse_session_event,
     parse_session_header,
 )
+from sesslint.checks.hygiene import SecretScanTracker
 from sesslint.codes import SL001, SL002, SL303, Repairability, Severity
 from sesslint.errors import (
     FileTooLargeError,
@@ -504,6 +505,74 @@ class _RawLine:
         _validate_stream_coordinates(self.byte_offset, self.byte_end, self.record_ordinal)
 
 
+class MalformedTailTracker:
+    """Quantify the vendor-invisible tail after the first malformed record (T-01).
+
+    Vendor loaders commonly stop reading at the first malformed line: every
+    byte after it is still parsed by SessLint but invisible to that vendor's
+    resume/picker. The tracker observes produced items in stream order;
+    ``finalize`` enriches the first SL001's evidence mapping *in place* with
+    two integer keys — ``following_complete_records`` and ``following_bytes``.
+
+    The Finding itself stays frozen; only the already-attached mutable
+    evidence dict gains keys, so stream order, fingerprints, and wire shape
+    are unchanged. Shared by the yield-style canonical generator and the
+    list-style vendor line processors.
+    """
+
+    __slots__ = ("_end_offset", "_evidence", "following_records")
+
+    def __init__(self) -> None:
+        self._evidence: dict[str, Any] | None = None
+        self._end_offset: int = 0
+        self.following_records: int = 0
+
+    def note_item(self, item: SessionEvent | Finding | None) -> None:
+        """Observe one produced item (event or finding) in stream order."""
+        if item is None:
+            return
+        if isinstance(item, Finding):
+            ev = item.evidence
+            byte_end = ev.get("byte_end") if isinstance(ev, dict) else None
+            if (
+                item.code == SL001
+                and self._evidence is None
+                and isinstance(ev, dict)
+                and isinstance(byte_end, int)
+                and not isinstance(byte_end, bool)
+            ):
+                self._evidence = ev
+                self._end_offset = byte_end
+        elif self._evidence is not None:
+            self.following_records += 1
+
+    def note_produced(
+        self,
+        events: Iterator[SessionEvent] | list[SessionEvent],
+        findings: Iterator[Finding] | list[Finding],
+    ) -> None:
+        """Observe items appended by a list-style per-line processor."""
+        for f in findings:
+            self.note_item(f)
+        for e in events:
+            self.note_item(e)
+
+    def finalize(self, *, total_bytes: int, torn_tail_offset: int | None = None) -> None:
+        """Attach tail counts to the first SL001's evidence (integers only).
+
+        ``torn_tail_offset`` is the byte offset of a terminal line already
+        claimed by SL002 — those bytes belong to that finding, not this tail.
+        Both keys are omitted when the tail is empty (malformed-on-last-line).
+        """
+        if self._evidence is None:
+            return
+        end = torn_tail_offset if torn_tail_offset is not None else total_bytes
+        following_bytes = max(0, end - self._end_offset)
+        if self.following_records > 0 or following_bytes > 0:
+            self._evidence["following_complete_records"] = self.following_records
+            self._evidence["following_bytes"] = following_bytes
+
+
 def _process_line(
     raw: _RawLine,
     *,
@@ -513,6 +582,7 @@ def _process_line(
     is_first_record: bool,
     dup_sink: list[Finding] | None = None,
     critical_keys: frozenset[str] | None = None,
+    secret_tracker: SecretScanTracker | None = None,
 ) -> SessionEvent | Finding | None:
     """Process a single non-empty physical line, enforcing hostile-input validation.
 
@@ -522,6 +592,17 @@ def _process_line(
     - Finding(SL002) if terminal line has any error (incomplete append or terminal defect).
     - Finding(SL001) if nonterminal line has any error (malformed record).
     """
+    # SL009: scan the persisted raw bytes for secret shapes before any
+    # validation rejects the record — malformed lines still carry secrets.
+    if secret_tracker is not None:
+        secret_tracker.feed(
+            raw.raw_bytes,
+            line_number=raw.line_number,
+            byte_offset=raw.byte_offset,
+            byte_end=raw.byte_end,
+            record_ordinal=raw.record_ordinal,
+        )
+
     code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
@@ -843,9 +924,14 @@ def iter_events(
 
     Yields:
     - SessionEvent: Valid session events in document order.
-    - Finding(SL001): Malformed nonterminal records (skip-and-continue).
+    - Finding(SL001): Malformed nonterminal records (skip-and-continue). The
+      first SL001's evidence gains ``following_complete_records`` /
+      ``following_bytes`` integers at end-of-stream, quantifying the tail a
+      stop-at-first-error vendor loader would hide (detector-depth T-01).
     - Finding(SL002): Torn terminal record on the last non-empty line (deterministic suffix drop).
     - Finding(SL303): Duplicated JSON object keys within a decoded record.
+    - Finding(SL009): Persisted secret-shaped material, emitted after the stream
+      completes (aggregated per record/family; content-free).
 
     Invariants:
     - Bounded RSS: At most two lines in memory at any time (1-record lookahead).
@@ -897,6 +983,8 @@ def iter_events(
         record_count = 0
         pending_raw: _RawLine | None = None
         has_any_records = False
+        secret_tracker = SecretScanTracker()
+        tail_tracker = MalformedTailTracker()
 
         while True:
             line_start_offset = total_bytes_read
@@ -970,7 +1058,9 @@ def iter_events(
                     is_first_record=is_first,
                     dup_sink=dup_sink,
                     critical_keys=critical_keys,
+                    secret_tracker=secret_tracker,
                 )
+                tail_tracker.note_item(item)
                 if item is not None:
                     yield item
                 yield from dup_sink
@@ -978,6 +1068,7 @@ def iter_events(
             pending_raw = current_raw
 
         # EOF reached: pending_raw is the final non-empty record in the stream (TERMINAL)
+        torn_tail_offset: int | None = None
         if pending_raw is not None:
             has_any_records = True
             is_first = pending_raw.record_ordinal == 1
@@ -999,13 +1090,21 @@ def iter_events(
                 is_first_record=is_first,
                 dup_sink=dup_sink,
                 critical_keys=critical_keys,
+                secret_tracker=secret_tracker,
             )
+            tail_tracker.note_item(item)
             if item is not None:
                 yield item
             yield from dup_sink
+            if isinstance(item, Finding) and item.code == SL002:
+                torn_tail_offset = pending_raw.byte_offset
+
+        tail_tracker.finalize(total_bytes=total_bytes_read, torn_tail_offset=torn_tail_offset)
 
         if not has_any_records:
             raise HeaderMissingError(f"Session file contains no records: {path_str}")
+
+        yield from secret_tracker.into_findings(path_str=path_str)
 
     finally:
         if is_owned_file:

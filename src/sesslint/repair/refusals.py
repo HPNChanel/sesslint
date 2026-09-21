@@ -28,6 +28,8 @@ from sesslint.codes import (
     SL001,
     SL007,
     SL008,
+    SL009,
+    SL010,
     SL011,
     SL101,
     SL103,
@@ -39,11 +41,13 @@ from sesslint.codes import (
     SL203,
     SL204,
     SL205,
+    SL206,
     SL301,
     SL302,
     SL303,
     SL304,
     SL401,
+    SL402,
 )
 from sesslint.finding import enforce_content_free_text
 
@@ -135,6 +139,24 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "fabricate causal timing data"
         ),
         demand_citation="Non-goal #13",
+    ),
+    SL009: RefusalRationale(
+        code=SL009,
+        rationale=(
+            "secret-shaped material requires credential rotation and operator-side "
+            "removal; rewriting or redacting the persisted record would mutate "
+            "evidence without revoking the exposed credential"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL010: RefusalRationale(
+        code=SL010,
+        rationale=(
+            "interleaved writer markers are forensic evidence of concurrent "
+            "writers, not a defect to edit out; rewriting markers or "
+            "reordering records would fabricate provenance"
+        ),
+        demand_citation="Conservative policy MUST refuse",
     ),
     SL011: RefusalRationale(
         code=SL011,
@@ -252,6 +274,15 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
         ),
         demand_citation="Conservative policy MUST refuse",
     ),
+    SL206: RefusalRationale(
+        code=SL206,
+        rationale=(
+            "a durable-prefix violation is a vendor resume-contract failure; "
+            "dropping the non-durable tail or synthesizing missing fields would "
+            "edit evidence to match a contract the file never satisfied"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
     SL303: RefusalRationale(
         code=SL303,
         rationale=(
@@ -275,6 +306,20 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "file is unknown; fabricating a link target would invent lineage"
         ),
         demand_citation="Conservative policy MUST refuse",
+    ),
+    SL402: RefusalRationale(
+        code=SL402,
+        rationale=(
+            "session-index divergence is vendor metadata drift, not ledger "
+            "corruption; rewriting, rebuilding, or deleting the vendor index "
+            "would mutate agent-owned state SessLint must not touch"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+        salvage_path=(
+            "the session file is intact and explicit-ID resume may still "
+            "work; back up then remove the stale vendor index to force a "
+            "vendor rebuild - SessLint performs no deletion or mutation"
+        ),
     ),
 }
 

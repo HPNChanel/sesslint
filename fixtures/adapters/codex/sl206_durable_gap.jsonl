@@ -1,0 +1,4 @@
+{"ordinal":0,"type":"session_meta","timestamp":"2026-09-17T10:00:00Z","payload":{"session_id":"sess-syn-206b","cli_version":"0.42.0"}}
+{"ordinal":1,"type":"response_item","timestamp":"2026-09-17T10:01:00Z","payload":{"type":"message","role":"user","id":"msg_b01","content":[{"type":"input_text","text":"ping"}]}}
+{"ordinal":3,"type":"response_item","timestamp":"2026-09-17T10:03:00Z","payload":{"type":"message","role":"assistant","id":"msg_b03","content":[{"type":"output_text","text":"pong"}]}}
+{"ordinal":4,"type":"response_item","timestamp":"2026-09-17T10:04:00Z","payload":{"type":"message","role":"assistant","id":"msg_b04","content":[{"type":"output_text","text":"done"}]}}

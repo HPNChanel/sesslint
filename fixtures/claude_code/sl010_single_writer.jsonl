@@ -1,0 +1,3 @@
+{"id":"msg_01","type":"user_message","version":"2.0.9","message":"synthetic record","timestamp":"2025-01-01T12:00:00Z"}
+{"id":"msg_02","type":"assistant_message","version":"2.0.9","message":"synthetic record","timestamp":"2025-01-01T12:00:01Z","parentId":"msg_01"}
+{"id":"msg_03","type":"assistant_message","version":"2.0.9","message":"synthetic record","timestamp":"2025-01-01T12:00:02Z","parentId":"msg_02"}

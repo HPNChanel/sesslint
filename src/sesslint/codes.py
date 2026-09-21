@@ -1,10 +1,10 @@
 """Registry of detector reason codes and severity/repairability taxonomies.
 
-This module defines the 27 reason codes (SL001–SL011, SL101–SL108, SL201–SL205,
-SL301–SL304, SL401) established in DEMAND.md plus the checks-rules pack (SL008,
-SL011, SL204, SL205, SL303, SL304, SL401), along with their verbatim names,
-summaries, categories, and default
-(severity, repairability) assignments.
+This module defines the 29 reason codes (SL001–SL011, SL101–SL108, SL201–SL205,
+SL301–SL304, SL401–SL402) established in DEMAND.md plus the checks-rules pack
+(SL008, SL011, SL204, SL205, SL303, SL304, SL401), the transcript-hygiene pack
+(SL009), and the index-reconciliation pack (SL402), along with their verbatim
+names, summaries, categories, and default (severity, repairability) assignments.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class Repairability(StrEnum):
 
 
 class Code(StrEnum):
-    """The 21 stable detector reason codes (DEMAND.md plus checks-rules additions)."""
+    """The 30 stable detector reason codes (DEMAND.md plus pack additions)."""
 
     SL001 = "SL001"
     SL002 = "SL002"
@@ -67,6 +67,8 @@ class Code(StrEnum):
     SL006 = "SL006"
     SL007 = "SL007"
     SL008 = "SL008"
+    SL009 = "SL009"
+    SL010 = "SL010"
     SL011 = "SL011"
     SL101 = "SL101"
     SL102 = "SL102"
@@ -81,11 +83,13 @@ class Code(StrEnum):
     SL203 = "SL203"
     SL204 = "SL204"
     SL205 = "SL205"
+    SL206 = "SL206"
     SL301 = "SL301"
     SL302 = "SL302"
     SL303 = "SL303"
     SL304 = "SL304"
     SL401 = "SL401"
+    SL402 = "SL402"
 
 
 SL001: Final[str] = "SL001"
@@ -96,6 +100,8 @@ SL005: Final[str] = "SL005"
 SL006: Final[str] = "SL006"
 SL007: Final[str] = "SL007"
 SL008: Final[str] = "SL008"
+SL009: Final[str] = "SL009"
+SL010: Final[str] = "SL010"
 SL011: Final[str] = "SL011"
 SL101: Final[str] = "SL101"
 SL102: Final[str] = "SL102"
@@ -110,11 +116,13 @@ SL202: Final[str] = "SL202"
 SL203: Final[str] = "SL203"
 SL204: Final[str] = "SL204"
 SL205: Final[str] = "SL205"
+SL206: Final[str] = "SL206"
 SL301: Final[str] = "SL301"
 SL302: Final[str] = "SL302"
 SL303: Final[str] = "SL303"
 SL304: Final[str] = "SL304"
 SL401: Final[str] = "SL401"
+SL402: Final[str] = "SL402"
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +226,33 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
         override_policy=(
             "Clock skew and vendor timestamp semantics are legitimate; "
             "reordering or rewriting timestamps is never auto-justified."
+        ),
+    ),
+    SL009: CodeInfo(
+        code=SL009,
+        name="Persisted secret material",
+        summary="Persisted record bytes contain a known secret token shape.",
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="structure",
+        override_policy=(
+            "Detection reports family label, coordinates, and a match digest only; "
+            "the matched value is never emitted and records are never rewritten."
+        ),
+    ),
+    SL010: CodeInfo(
+        code=SL010,
+        name="Interleaved writer markers",
+        summary=(
+            "Writer identity markers (e.g. application versions) reappear "
+            "interleaved in one stream — evidence of concurrent writers."
+        ),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="structure",
+        override_policy=(
+            "Forensic context only; marker sequences are never rewritten and a "
+            "clean ordered transition is a legitimate mid-session upgrade."
         ),
     ),
     SL011: CodeInfo(
@@ -375,6 +410,22 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
             "rewritten and the gap is never auto-filled."
         ),
     ),
+    SL206: CodeInfo(
+        code=SL206,
+        name="Durable-prefix boundary violation",
+        summary=(
+            "Durable record sequence does not cover the envelope ordinal the "
+            "resume path expects — trailing non-durable tail, durable hole, or "
+            "resume-required field absent."
+        ),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="checkpoint",
+        override_policy=(
+            "Resume-boundary evidence is advisory; records are never reordered, "
+            "dropped, or field-filled to force a durable prefix."
+        ),
+    ),
     SL301: CodeInfo(
         code=SL301,
         name="Unsupported format version",
@@ -431,13 +482,28 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
             "are reported, not repaired."
         ),
     ),
+    SL402: CodeInfo(
+        code=SL402,
+        name="Session index divergence",
+        summary=(
+            "On-disk session files and the vendor session index disagree "
+            "(missing membership, dangling entries, or an unparseable index)."
+        ),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="linkage",
+        override_policy=(
+            "Indexes are never written, rebuilt, or deleted by SessLint; "
+            "divergence is reported as evidence for the vendor's rebuild path."
+        ),
+    ),
 }
 
 ALL_CODES: Final[frozenset[str]] = frozenset(CODE_REGISTRY.keys())
 
 
 def is_valid_code(code: str) -> bool:
-    """Return True if code is one of the 27 registered detector codes."""
+    """Return True if code is one of the 29 registered detector codes."""
     return code in ALL_CODES
 
 

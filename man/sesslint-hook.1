@@ -1,0 +1,48 @@
+.TH SESSLINT-HOOK 1 "" "SessLint 0.3.0" "SessLint Manual"
+.SH NAME
+sesslint-hook \- [read\-only] Agent hook entrypoint: reads one hook payload from stdin and checks the transcript.
+.SH SYNOPSIS
+.B sesslint hook \-\-event NAME [\-\-json] [\-\-fail\-on {never,error,warning}] [\-\-profile PROFILE] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}]
+.SH DESCRIPTION
+[read\-only] Reads one JSON hook payload from stdin (Claude Code contract: session_id, transcript_path, cwd, hook_event_name), resolves the transcript file, and runs the event\-appropriate integrity check. Prints one content\-free line and exits 0 (advisory) — or 1 when \-\-fail\-on gates on findings. Exit 2 is never emitted: hook checks never block the agent.
+.SH OPTIONS
+.TP
+.B \-\-event NAME
+Hook event name (e.g. SessionStart, PreCompact, PostCompact, SessionEnd). Unknown names run the generic integrity check.
+.TP
+.B \-\-json
+Emit sesslint.hook\-result/v1 JSON instead of the one\-line form
+.TP
+.B \-\-fail\-on {never,error,warning}
+Minimum finding severity that exits 1 (default: never — hook checks are advisory; 'warning' fails on any finding) Choices: never, error, warning.
+.TP
+.B \-\-profile PROFILE
+Validation profile (default: neutral)
+.TP
+.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
+Session format adapter (default: auto\-detect) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

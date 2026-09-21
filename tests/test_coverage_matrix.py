@@ -166,6 +166,12 @@ CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_compaction_coverage.py::test_pointerless_boundary_silent",
         "malformed": "test_compaction_coverage.py::test_broken_ancestor_chain_fires",
     },
+    "SL206": {
+        "positive": "test_durable_prefix.py::test_conformance_healthy_stays_clean",
+        "negative": "test_durable_prefix.py::test_trailing_nondurable_fires_once_with_ordinals",
+        "boundary": "test_durable_prefix.py::test_gap_beyond_durable_range_not_a_hole",
+        "malformed": "test_durable_prefix.py::test_malformed_codex_markers_ignored",
+    },
     "SL304": {
         "positive": "test_schema_drift.py::test_fixture_compatible_bump_clean",
         "negative": "test_schema_drift.py::test_fixture_version_drift",
@@ -178,11 +184,29 @@ CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_cross_file_links.py::test_ambiguous_target_warns",
         "malformed": "test_cross_file_links.py::test_outside_scan_root_is_info_unresolved",
     },
+    "SL402": {
+        "positive": "test_index_divergence.py::test_absent_index_is_silent",
+        "negative": "test_index_divergence.py::test_missing_member_flags_unindexed_file",
+        "boundary": "test_index_divergence.py::test_idless_entries_block_absence_allow_dangling",
+        "malformed": "test_index_divergence.py::test_malformed_index_emits_only_malformed",
+    },
+    "SL010": {
+        "positive": "test_writers.py::test_upgrade_transition_stays_clean",
+        "negative": "test_writers.py::test_interleaved_fires_once_with_structural_evidence",
+        "boundary": "test_writers.py::test_minimal_three_record_interleave_fires",
+        "malformed": "test_writers.py::test_malformed_writer_shapes_ignored",
+    },
     "SL011": {
         "positive": "test_size_anomaly.py::test_uniform_file_stays_clean",
         "negative": "test_size_anomaly.py::test_outlier_fires_once_with_numbers_only_evidence",
         "boundary": "test_size_anomaly.py::test_threshold_boundary_exact",
         "malformed": "test_size_anomaly.py::test_missing_size_metadata_yields_nothing",
+    },
+    "SL009": {
+        "positive": "test_hygiene.py::test_clean_and_near_miss_fixtures_silent",
+        "negative": "test_hygiene.py::test_seeded_fixture_fires_all_families",
+        "boundary": "test_hygiene.py::test_finding_cap_marks_overflow",
+        "malformed": "test_hygiene.py::test_malformed_line_still_scanned",
     },
 }
 

@@ -24,6 +24,13 @@ from sesslint.checks.graph import (
     check_missing_parent,
     compute_graph_fingerprint,
 )
+from sesslint.checks.hygiene import (
+    MAX_DIGESTS_PER_FINDING,
+    MAX_SECRET_FINDINGS_PER_FILE,
+    SECRET_FAMILY_IDS,
+    SECRET_FAMILY_SET_VERSION,
+    SecretScanTracker,
+)
 from sesslint.checks.identity import (
     MAX_IDENTITY_FINDINGS,
     MAX_RECORD_INDEXES_IN_EVIDENCE,
@@ -72,13 +79,18 @@ __all__ = [
     "CALL_KINDS",
     "COMPACTION_KINDS",
     "MAX_CHECKPOINT_FINDINGS",
+    "MAX_DIGESTS_PER_FINDING",
     "MAX_GRAPH_FINDINGS",
     "MAX_IDENTITY_FINDINGS",
     "MAX_MEMBER_SAMPLE_SIZE",
     "MAX_PAIRING_FINDINGS",
     "MAX_PAIRING_SAMPLE_SIZE",
     "MAX_RECORD_INDEXES_IN_EVIDENCE",
+    "MAX_SECRET_FINDINGS_PER_FILE",
     "RESULT_KINDS",
+    "SECRET_FAMILY_IDS",
+    "SECRET_FAMILY_SET_VERSION",
+    "SecretScanTracker",
     "TOOL_KINDS",
     "cap_checkpoint_findings",
     "cap_findings",

@@ -1779,6 +1779,17 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
     return p.name
 
 
+def _human_bytes(n: int) -> str:
+    """Deterministic IEC byte-size rendering for human output (detector-depth T-01)."""
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KiB"
+    if n < 1024 * 1024 * 1024:
+        return f"{n / (1024 * 1024):.1f} MiB"
+    return f"{n / (1024 * 1024 * 1024):.1f} GiB"
+
+
 def hint_path(path: Path | str, *, home: Path | None = None) -> str:
     """Render a path for an operator-facing command hint (must stay usable).
 
@@ -2229,6 +2240,22 @@ def render_human(
                     loc_str = f"{loc_str} (bytes {b_start}-{b_end})"
             sev_color = red if f.severity.value in ("error", "fatal") else yellow
             why_str = f.message
+            # SL001 tail enrichment (detector-depth T-01): quantify the
+            # vendor-invisible tail on the first malformed record. "may be" —
+            # stop-at-first-error loader behavior varies by vendor version.
+            if f.code == "SL001" and f.evidence is not None:
+                f_rec = f.evidence.get("following_complete_records")
+                f_by = f.evidence.get("following_bytes")
+                if (
+                    isinstance(f_rec, int)
+                    and not isinstance(f_rec, bool)
+                    and isinstance(f_by, int)
+                    and not isinstance(f_by, bool)
+                ):
+                    why_str += (
+                        f" ({f_rec} further record(s) / {_human_bytes(f_by)}"
+                        " may be invisible to vendor loaders)"
+                    )
             fix_str = get_finding_remediation(f, home=home, for_operator=True)
 
             sev_rep = f"({f.severity.value.upper()}, {f.repairability.value})"
@@ -2237,6 +2264,34 @@ def render_human(
             lines.append(f"    Why:         {why_str}")
             lines.append(f"    Fix:         {fix_str}")
             lines.append(f"    Fingerprint: {f.fingerprint}")
+
+        # SL009 hygiene rollup: one content-free aggregate line — record and
+        # occurrence counts plus family labels only, never matched bytes.
+        secret_findings = [f for f in sorted_findings if f.code == "SL009"]
+        if secret_findings:
+            records = {
+                (
+                    f.source.line,
+                    f.evidence.get("record_ordinal") if f.evidence is not None else None,
+                )
+                for f in secret_findings
+            }
+            family_counts: dict[str, int] = {}
+            for f in secret_findings:
+                ev = f.evidence if f.evidence is not None else {}
+                fam = ev.get("secret_family")
+                fam_str = fam if isinstance(fam, str) else "unknown"
+                occ = ev.get("occurrence_count")
+                family_counts[fam_str] = family_counts.get(fam_str, 0) + (
+                    occ if isinstance(occ, int) and not isinstance(occ, bool) else 1
+                )
+            families_str = ", ".join(
+                f"{name} x{family_counts[name]}" for name in sorted(family_counts)
+            )
+            lines.append(
+                f"  SL009 warning - {len(records)} record(s) contain secret-shaped "
+                f"material (families: {families_str}) - see --json for coordinates/hashes"
+            )
 
     return "\n".join(lines)
 

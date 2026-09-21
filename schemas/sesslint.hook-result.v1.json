@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.hook-result/v1",
+  "title": "SessLint Hook Result Format v1",
+  "description": "Content-free result emitted by `sesslint hook --json` (agent-hooks T-01): the event, verdict, skip/findings reason, per-code finding counts, and hash-truncated session identifier. Carries no payload values — hook stdout may be injected into agent context.",
+  "type": "object",
+  "required": [
+    "event",
+    "findings_by_code",
+    "reason",
+    "schema",
+    "verdict"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sesslint.hook-result/v1"
+    },
+    "event": {
+      "type": "string",
+      "description": "Hook event name passed via --event (e.g. SessionStart, SessionEnd)."
+    },
+    "verdict": {
+      "enum": ["ok", "findings", "skipped"]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Outcome reason: clean, findings-present, detection-failed, or a skip reason (malformed-payload, payload-too-large, no-transcript-path, transcript-not-found, io-error, usage-error, internal-error)."
+    },
+    "findings_by_code": {
+      "type": "object",
+      "description": "Sorted map of emitted finding codes to counts; empty on ok/skipped.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "top_code": {
+      "type": "string",
+      "description": "Highest-severity emitted code (ties break alphabetically); present only on verdict=findings."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "SHA-256 hash-truncated (8 hex chars) session identifier from the hook payload, when present — an identifier, never content."
+    }
+  },
+  "additionalProperties": false
+}

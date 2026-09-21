@@ -6,10 +6,11 @@ properties established in DEMAND.md, FR-017, AC-003, and AC-004.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from sesslint.canonical import SessionEvent
-from sesslint.codes import SL001, SL002, Repairability, Severity
+from sesslint.codes import SL001, SL002, SL009, Repairability, Severity
 from sesslint.finding import Finding
 from sesslint.io import iter_events
 
@@ -215,7 +216,12 @@ class TestEdgeCases:
         assert "<none>" in items[0].message
 
     def test_broken_line_with_credential_in_id_suppressed(self, tmp_path: Path) -> None:
-        """If broken line contains credentials in id, finding suppresses it."""
+        """If broken line contains credentials in id, finding suppresses it.
+
+        The torn terminal record still yields SL002 with the credential
+        suppressed from the message; SL009 additionally flags the persisted
+        secret shape, also content-free (family + digest only).
+        """
         file_path = tmp_path / "leak_id.jsonl"
         file_path.write_text(
             '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1",'
@@ -225,10 +231,14 @@ class TestEdgeCases:
         )
 
         items = list(iter_events(file_path))
-        assert len(items) == 1
+        assert len(items) == 2
         assert isinstance(items[0], Finding)
+        assert items[0].code == SL002
         assert items[0].source.record_id is None
         assert "sk-secret" not in items[0].message
+        assert isinstance(items[1], Finding)
+        assert items[1].code == SL009
+        assert "sk-secret" not in json.dumps(items[1].to_dict())
 
     def test_continuation_after_multiple_sl001(self, tmp_path: Path) -> None:
         """Reader continues across multiple nonterminal errors."""

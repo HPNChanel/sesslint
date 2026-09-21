@@ -1,0 +1,6 @@
+{"ordinal":0,"type":"session_meta","timestamp":"2026-09-17T10:00:00Z","payload":{"session_id":"sess-syn-206a","cli_version":"0.42.0","subagent_history_start_ordinal":5}}
+{"ordinal":1,"type":"response_item","timestamp":"2026-09-17T10:01:00Z","payload":{"type":"message","role":"user","id":"msg_a01","content":[{"type":"input_text","text":"ping"}]}}
+{"ordinal":2,"type":"response_item","timestamp":"2026-09-17T10:02:00Z","payload":{"type":"reasoning","id":"rs_a01","encrypted_content":"enc","summary":[]}}
+{"ordinal":3,"type":"response_item","timestamp":"2026-09-17T10:03:00Z","payload":{"type":"message","role":"assistant","id":"msg_a02","content":[{"type":"output_text","text":"pong"}]}}
+{"ordinal":4,"type":"response_item","timestamp":"2026-09-17T10:04:00Z","payload":{"type":"message","role":"assistant","id":"msg_a03","content":[{"type":"output_text","text":"done"}]}}
+{"ordinal":5,"type":"event_msg","timestamp":"2026-09-17T10:05:00Z","payload":{"type":"token_count","usage":{"input_tokens":10}}}

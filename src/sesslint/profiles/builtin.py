@@ -19,6 +19,8 @@ from sesslint.codes import (
     SL006,
     SL007,
     SL008,
+    SL009,
+    SL010,
     SL011,
     SL101,
     SL102,
@@ -33,11 +35,13 @@ from sesslint.codes import (
     SL203,
     SL204,
     SL205,
+    SL206,
     SL301,
     SL302,
     SL303,
     SL304,
     SL401,
+    SL402,
     Severity,
 )
 from sesslint.profiles.profile import Profile
@@ -51,6 +55,8 @@ ALL_RULES: Final[tuple[str, ...]] = (
     SL006,
     SL007,
     SL008,
+    SL009,
+    SL010,
     SL011,
     SL101,
     SL102,
@@ -65,11 +71,13 @@ ALL_RULES: Final[tuple[str, ...]] = (
     SL203,
     SL204,
     SL205,
+    SL206,
     SL301,
     SL302,
     SL303,
     SL304,
     SL401,
+    SL402,
 )
 
 NEUTRAL_PROFILE: Final[Profile] = Profile(

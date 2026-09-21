@@ -204,7 +204,11 @@ class PurePythonCanonicalCodec:
                                 raise SchemaError(
                                     f"Non-string dictionary key rejected under RFC 8785: {k!r}"
                                 )
-                            if k not in ev_dict:
+                            # Only experimental_* extras are wire-legal on
+                            # canonical events (parse_session_event mirrors
+                            # this gate); adapter-internal analysis markers
+                            # (writer/codex/usage/coverage) stay in-memory.
+                            if k.startswith("experimental_") and k not in ev_dict:
                                 ev_dict[k] = self._normalize(v, seen)
                 return ev_dict
             finally:
@@ -263,7 +267,10 @@ class PurePythonCanonicalCodec:
                                     raise SchemaError(
                                         f"Non-string dictionary key rejected under RFC 8785: {k!r}"
                                     )
-                                if k not in result:
+                                # Same gate as the SessionEvent fast path:
+                                # experimental_* keys hoist; internal extras
+                                # are analysis-only and never reach the wire.
+                                if k.startswith("experimental_") and k not in result:
                                     result[k] = self._normalize(v, seen)
                         continue
                     if val is None and f.name != "parent_id":

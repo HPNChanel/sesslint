@@ -46,6 +46,7 @@ from sesslint.canonical import (
     _normalize_for_canonical_json,
     _validate_rfc3339_utc,
 )
+from sesslint.checks.hygiene import SecretScanTracker
 from sesslint.codes import SL001, SL002, SL301, SL302, Repairability, Severity
 from sesslint.errors import MaxRecordsExceededError, SchemaError
 from sesslint.finding import (
@@ -840,10 +841,36 @@ def _parse_canonical_event_record(
     )
 
 
+def _canonical_source_label(path: Path | str | BinaryIO | bytes) -> str:
+    """Derive the deterministic source label used for finding coordinates."""
+    if isinstance(path, bytes):
+        return "<bytes>"
+    if isinstance(path, (str, os.PathLike, Path)):
+        return str(Path(path)).replace("\\", "/")
+    return str(getattr(path, "name", "<stream>")).replace("\\", "/")
+
+
 def load_canonical(
     path: Path | str | BinaryIO | bytes,
     *,
     limits: ReaderLimits | None = None,
+) -> tuple[EventList, list[Finding]]:
+    """Strictly load and validate a canonical session document (sesslint.session/v1).
+
+    Same contract as the implementation below; additionally flushes SL009
+    persisted-secret findings collected during the parse into the result.
+    """
+    secret_tracker = SecretScanTracker()
+    events, findings = _load_canonical(path, limits=limits, secret_tracker=secret_tracker)
+    findings.extend(secret_tracker.into_findings(path_str=_canonical_source_label(path)))
+    return events, sort_findings(findings)
+
+
+def _load_canonical(
+    path: Path | str | BinaryIO | bytes,
+    *,
+    limits: ReaderLimits | None = None,
+    secret_tracker: SecretScanTracker,
 ) -> tuple[EventList, list[Finding]]:
     """Strictly load and validate a canonical session document (sesslint.session/v1).
 
@@ -866,10 +893,10 @@ def load_canonical(
 
     if isinstance(path, bytes):
         stream = io.BytesIO(path)
-        path_str = "<bytes>"
+        path_str = _canonical_source_label(path)
     elif isinstance(path, (str, os.PathLike, Path)):
         path_obj = Path(path)
-        path_str = str(path_obj).replace("\\", "/")
+        path_str = _canonical_source_label(path)
         if not path_obj.exists():
             raise FileNotFoundError(f"Session file not found: {path_obj}")
         if path_obj.is_dir():
@@ -899,8 +926,7 @@ def load_canonical(
         is_owned_file = True
     else:
         stream = path
-        path_str = getattr(path, "name", "<stream>")
-        path_str = str(path_str).replace("\\", "/")
+        path_str = _canonical_source_label(path)
 
     findings: list[Finding] = []
     seen_fingerprints: set[str] = set()
@@ -984,6 +1010,10 @@ def load_canonical(
             is_single_doc = False
 
         if is_single_doc:
+            # SL009: single-doc records cannot be mapped to physical byte
+            # offsets — scan the whole blob line-by-line (line/offset exact,
+            # record_ordinal absent) before validation rejects the document.
+            secret_tracker.feed_blob(raw_data)
             # Document must be a JSON object
             if not isinstance(doc, dict):
                 finding = make_finding(
@@ -1233,6 +1263,15 @@ def load_canonical(
             line_nos.append(line_no)
             line_starts.append(start_pos)
             line_ends.append(end_pos)
+            # SL009: scan every non-empty record's raw bytes during this same
+            # pass — including records later rejected as malformed or unknown.
+            secret_tracker.feed(
+                raw_data[start_pos:end_pos],
+                line_number=line_no,
+                byte_offset=start_pos,
+                byte_end=end_pos,
+                record_ordinal=len(line_nos),
+            )
 
         if not line_nos:
             finding = make_finding(

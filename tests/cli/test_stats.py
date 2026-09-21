@@ -111,13 +111,13 @@ def test_stats_compaction_and_checkpoint(tmp_path: Path) -> None:
     fixture = FIXTURES_DIR / "checks"
     result = stats_paths([fixture], recursive=True)
     # Known fixture corpus: counters are exact and stable.
-    assert result.events_total == 179
+    assert result.events_total == 187
     assert result.by_kind.get("checkpoint") == 10
     assert result.by_kind.get("compaction_boundary") == 7
     assert result.checkpoints == 10
     assert result.compaction_boundaries == 7
     assert result.tool_calls_total == 16
-    assert result.files_processed == 43
+    assert result.files_processed == 47
 
 
 def test_stats_deterministic(tmp_path: Path) -> None:

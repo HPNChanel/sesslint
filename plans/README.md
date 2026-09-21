@@ -27,7 +27,12 @@ local-only). Packs under `plans/` are committable if the maintainer chooses.
 | `ux-reporting/` | HTML report, `diff`, `stats`, `doctor`, `watch`, stdin, pwsh completion, scan aggregation, baseline v2 | T-01..T-09 | ready |
 | `repair-engine/` | Plan export/apply, batch repair, structural diff preview, new recipes | T-01..T-04 | ready |
 | `checks-rules/` | New detector rules (SL008–SL011, SL204–SL205, SL303–SL304, SL401) | T-01..T-07 | ready |
-| `adapters-coverage/` | Shape inventory, adapter SDK doc, drift watch, new adapters | T-01..T-07 | T-01..T-03 ready; T-04..T-07 **DV-gated** |
+| `adapters-coverage/` | Shape inventory, adapter SDK doc, drift watch, new adapters | T-01..T-09 | T-01..T-03 done; T-04..T-09 **DV-gated** |
+| `transcript-hygiene/` | SL009 persisted-secret detector, hygiene surfaces, bundle pre-share advisory | T-01..T-03 | planned (2026-09-21 refresh) |
+| `agent-hooks/` | `sesslint hook` stdin-payload subcommand, zero-config snippets, runtime hook research | T-01..T-03 | planned (2026-09-21 refresh) |
+| `index-reconciliation/` | Vendor session-index readers, SL402 index divergence, doctor/scan integration | T-01..T-03 | planned (2026-09-21 refresh) |
+| `detector-depth/` | SL001 invisible-tail evidence, SL010 concurrent writers, SL206 Codex durable-prefix, context-pressure decision | T-01..T-04 | planned (2026-09-21 refresh) |
+| `evidence-assurance/` | `seal` hash-chain ledger (maintainer-gated), provider-origin drift memo | T-01..T-02 | T-01 blocked pending maintainer decision; T-02 planned |
 | `integrations/` | MCP stdio server, init-hooks, SchemaStore, problem matchers, CI templates | T-01..T-05 | ready |
 | `release-dist/` | PyInstaller binaries, Sigstore, SLSA, package managers, GHCR, release-skew fix | T-01..T-06 | ready |
 | `qa-infra/` | Stateful fuzz, mutation testing, coverage gate, CI matrix, corpus growth | T-01..T-05 | ready |

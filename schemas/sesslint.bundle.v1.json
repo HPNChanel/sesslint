@@ -268,6 +268,36 @@
         }
       },
       "additionalProperties": false
+    },
+    "share_advisory": {
+      "type": "object",
+      "description": "Optional pre-share advisory emitted when the bundled source produced SL009 findings (transcript-hygiene T-03). Content-free: family labels and counts only, never matched values. Absent (not null) when the source is clean.",
+      "required": [
+        "families",
+        "finding_count",
+        "kind",
+        "note"
+      ],
+      "properties": {
+        "kind": {
+          "const": "secret-material-present"
+        },
+        "finding_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "families": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

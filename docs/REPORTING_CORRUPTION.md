@@ -50,6 +50,31 @@ or timestamps of your activity.
 > review `bundle.json` before attaching — and never attach
 > `--include-content` output anywhere public.
 
+### Pre-share advisory (SL009)
+
+<!-- next-release -->
+
+The bundle is content-free, but the **source file it describes may still
+carry live secrets** — and pasting raw transcript excerpts alongside the
+bundle would expose them. When the bundled source produced `SL009`
+findings, the bundle gains a content-free advisory block:
+
+```json
+"share_advisory": {
+  "kind": "secret-material-present",
+  "finding_count": 3,
+  "families": ["aws-access-key", "github-pat-classic"],
+  "note": "source artifact contains secret-shaped material; rotate ..."
+}
+```
+
+The advisory lists family labels and counts only — never matched values.
+`bundle` also prints a one-line notice to stderr when the advisory is
+present (stdout stays pure JSON). To gate on it in CI, pass
+`--strict-share`: the command exits `1` and writes no output when the
+source contains secret-shaped material. Rotate the credentials first —
+see [hygiene.md](hygiene.md) — then bundle and share.
+
 ## Step 3 — File the upstream issue
 
 Attach `bundle.json` to your issue on the agent vendor's tracker

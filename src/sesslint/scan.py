@@ -19,12 +19,13 @@ import stat
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from sesslint.codes import SL001, SL301, SL302, SL401, Repairability, Severity
+from sesslint.codes import SL001, SL301, SL302, SL401, SL402, Repairability, Severity
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import SEVERITY_ORDER, Finding, SourceRef, make_finding
+from sesslint.indexes import INDEX_FILE_NAMES
 from sesslint.io import probe_bytes_encoding, probe_text_encoding, sha256_file_bytes
 from sesslint.profiles import (
     EffectiveConfig,
@@ -39,7 +40,7 @@ from sesslint.progress import (
     check_token,
     emit,
 )
-from sesslint.report import minimize_path
+from sesslint.report import minimize_path, short_hash
 
 if TYPE_CHECKING:
     from sesslint.cache import ScanCache
@@ -99,6 +100,7 @@ class FileResult:
     links: tuple[SessionLink, ...] = ()
     session_id: str | None = None
     tip_id: str | None = None
+    detected_format: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize file result to canonical JSON-compatible dictionary."""
@@ -135,6 +137,7 @@ class FileResult:
             "links": [lk.to_dict() for lk in self.links],
             "session_id": self.session_id,
             "tip_id": self.tip_id,
+            "detected_format": self.detected_format,
             "findings": [f.to_dict() for f in self.findings],
         }
 
@@ -151,6 +154,7 @@ class FileResult:
             links=tuple(SessionLink.from_dict(lk) for lk in d.get("links", ())),
             session_id=d.get("session_id"),
             tip_id=d.get("tip_id"),
+            detected_format=d.get("detected_format"),
             findings=tuple(Finding.from_dict(f) for f in d.get("findings", ())),
         )
 
@@ -668,6 +672,7 @@ def _scan_single_source(
             links=scan_links,
             session_id=scan_session_id,
             tip_id=scan_tip_id,
+            detected_format=resolved_fmt,
         )
     except (FileTooLargeError, MaxRecordsExceededError, OSError) as err:
         f = make_finding(
@@ -974,6 +979,7 @@ def scan_path(
     seen_files: set[tuple[int, int]] = set()
     file_results: list[FileResult] = []
     pending_files: list[tuple[Path, str, str | None]] = []
+    index_files: list[Path] = []
     cumulative_bytes = 0
     scanned_count = 0
 
@@ -1053,6 +1059,13 @@ def scan_path(
                 and entry_p.suffix.lower() not in ext_set
             ):
                 continue
+
+            # Index-reconciliation (SL402): vendor index files in scope are
+            # collected for the post-walk membership diff. They still get
+            # scanned as ordinary files below — findings attach to their
+            # own FileResult.
+            if not entry.is_dir(follow_symlinks=False) and entry.name in INDEX_FILE_NAMES:
+                index_files.append(entry_p)
 
             try:
                 st = entry_p.lstat()
@@ -1336,6 +1349,12 @@ def scan_path(
     if SL401 in scan_enabled:
         file_results = _resolve_cross_file_links(file_results, baseline=baseline)
 
+    # SL402 session-index reconciliation — same scan-layer discipline: the
+    # membership diff needs the whole file set plus the vendor index, so it
+    # never runs from single-file ``check``.
+    if SL402 in scan_enabled and index_files:
+        file_results = _reconcile_session_indexes(file_results, index_files, baseline=baseline)
+
     healthy_c = sum(1 for r in file_results if r.verdict == "healthy")
     invalid_c = sum(1 for r in file_results if r.verdict == "invalid")
     unsupported_c = sum(1 for r in file_results if r.verdict == "unsupported")
@@ -1466,6 +1485,190 @@ def _resolve_cross_file_links(
                 res,
                 findings=tuple(new_findings),
                 warning_count=res.warning_count + added_warn,
+            )
+    return out
+
+
+def _reconcile_session_indexes(
+    results: list[FileResult],
+    index_paths: Sequence[Path],
+    *,
+    baseline: frozenset[str] | None,
+) -> list[FileResult]:
+    """Diff each in-scope vendor index against the scanned file set (SL402).
+
+    For every collected index file the scan already produced a ``FileResult``
+    (the index was walked like any other file); findings attach there for
+    index-side divergence and to sibling session files for membership gaps:
+
+    * ``parse_ok=False, truncated``      -> one ``index-truncated`` warning;
+      the salvaged subset cannot support membership claims.
+    * ``parse_ok=False``                 -> one ``index-malformed`` warning.
+    * ``parse_ok``                       -> ``index-entry-no-file`` per index
+      entry that provably resolves to nothing (no sibling result, no member
+      session id, no file on disk); ``file-not-in-index`` per indexable
+      sibling file absent from the index — only when
+      ``membership_complete`` (a partial/unknown index cannot prove absence).
+
+    "Indexable" is conservative: only files the adapter layer identified as
+    primary session ledgers of the index's vendor format count as members
+    (``detected_format``). Sidecars, sub-agent logs, and undetected files can
+    exist without index membership, so they are never flagged — but their
+    stems still satisfy dangling checks because the file *exists*.
+
+    Findings append in deterministic order: malformed/truncated first, then
+    dangling entries sorted by id. Never runs from single-file ``check``.
+    """
+    from sesslint.adapters.detect import FORMAT_CLAUDE_CODE
+    from sesslint.indexes import read_index
+
+    # Per-index-filename vendor format: only ledger files the adapter layer
+    # identified as this format count as membership candidates (T-02 scope:
+    # Claude only; non-Claude index readers land in T-03).
+    index_format_by_name = {"sessions-index.json": FORMAT_CLAUDE_CODE}
+
+    by_path = {res.path: i for i, res in enumerate(results)}
+    out = list(results)
+    by_parent: dict[str, list[int]] = {}
+    for i, res in enumerate(results):
+        by_parent.setdefault(PurePosixPath(res.path).parent.as_posix(), []).append(i)
+
+    def _emit(res_idx: int, finding: Finding) -> None:
+        res = out[res_idx]
+        if baseline is not None and finding.fingerprint in baseline:
+            return
+        out[res_idx] = replace(
+            res,
+            findings=res.findings + (finding,),
+            warning_count=res.warning_count + 1,
+        )
+
+    def _index_finding(res: FileResult, ev: dict[str, Any], msg: str) -> Finding:
+        return make_finding(
+            code=SL402,
+            severity=Severity.WARNING,
+            repairability=Repairability.MANUAL,
+            message_template=msg,
+            source=SourceRef(path=res.path),
+            evidence=ev,
+        )
+
+    for index_p in sorted(index_paths, key=lambda p: str(p)):
+        index_disp = minimize_path(index_p)
+        idx_i = by_path.get(index_disp)
+        if idx_i is None:
+            continue  # scope-filtered or capped out of the scan
+        snap = read_index(index_p)
+        if snap.parse_ok and snap.schema_note == "absent" and not snap.truncated:
+            continue  # index vanished between walk and read — normal, silent
+        idx_res = out[idx_i]
+
+        if not snap.parse_ok:
+            if snap.truncated:
+                ev = {
+                    "divergence": "index-truncated",
+                    "resolution": "truncated",
+                    "parsed_entry_count": snap.entry_count,
+                }
+                msg = "Vendor session index is truncated (partial index cannot be trusted)"
+            else:
+                ev = {
+                    "divergence": "index-malformed",
+                    "resolution": "unparseable",
+                    "error_kind": snap.schema_note or "malformed",
+                }
+                msg = "Vendor session index cannot be parsed"
+            _emit(idx_i, _index_finding(idx_res, ev, msg))
+            continue  # no membership claims from an unproven index
+
+        parent_key = PurePosixPath(index_disp).parent.as_posix()
+        siblings = [i for i in by_parent.get(parent_key, ()) if i != idx_i]
+        expected_fmt = index_format_by_name.get(index_p.name)
+        members = (
+            [
+                i
+                for i in siblings
+                if results[i].detected_format == expected_fmt
+                and results[i].verdict in ("healthy", "invalid")
+            ]
+            if expected_fmt is not None
+            else []
+        )
+        member_ids: set[str] = set()
+        for i in members:
+            r = results[i]
+            member_ids.update(x for x in (r.session_id, PurePosixPath(r.path).stem) if x)
+        sibling_stems = {
+            PurePosixPath(results[i].path).stem
+            for i in siblings
+            if PurePosixPath(results[i].path).stem
+        }
+        claimed = snap.normalized_ids
+
+        if snap.membership_complete:
+            for i in members:
+                r = results[i]
+                ids = {x for x in (r.session_id, PurePosixPath(r.path).stem) if x}
+                if ids and not ids & claimed:
+                    ev = {
+                        "divergence": "file-not-in-index",
+                        "resolution": "missing",
+                        "session_id_hash8": short_hash(r.session_id or sorted(ids)[0]),
+                        "index_entry_count": snap.entry_count,
+                    }
+                    _emit(
+                        i,
+                        _index_finding(
+                            r, ev, "Session file is not listed in the vendor session index"
+                        ),
+                    )
+
+        # Dangling entries: one finding per index entry whose claims resolve
+        # to nothing — an entry's sessionId and fullPath describe the same
+        # session, so both must miss before the entry is dangling. Provable
+        # per entry even when the full set is uncertain; truncated snapshots
+        # never reach this loop.
+        seen_keys: set[str] = set()
+        ordered = sorted(
+            snap.entries,
+            key=lambda e: (e.session_id or "", e.full_path or ""),
+        )
+        for entry in ordered:
+            forms = {
+                x
+                for x in (
+                    entry.session_id,
+                    Path(entry.session_id).stem if entry.session_id else None,
+                    Path(entry.full_path).stem if entry.full_path else None,
+                )
+                if x
+            }
+            ekey = entry.session_id or next(iter(sorted(forms)), "")
+            if not ekey or ekey in seen_keys:
+                continue
+            seen_keys.add(ekey)
+            if forms & member_ids or forms & sibling_stems:
+                continue
+            if entry.full_path:
+                fp = Path(entry.full_path)
+                if fp.is_absolute() and fp.is_file():
+                    continue  # path claim resolves outside this dir but exists
+                if not fp.is_absolute() and (index_p.parent / fp).is_file():
+                    continue  # relative path claim resolves beside the index
+            if any((index_p.parent / f"{k}.jsonl").is_file() for k in forms):
+                continue  # sibling file exists but was filtered out of scope
+            ev = {
+                "divergence": "index-entry-no-file",
+                "resolution": "dangling",
+                "entry_id_hash8": short_hash(ekey),
+            }
+            _emit(
+                idx_i,
+                _index_finding(
+                    out[idx_i],
+                    ev,
+                    "Vendor session index entry has no matching session file",
+                ),
             )
     return out
 

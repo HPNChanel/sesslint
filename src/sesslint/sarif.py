@@ -14,7 +14,7 @@ scanning and other SARIF viewers. Invariants preserved:
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from sesslint.codes import CODE_REGISTRY, Severity
@@ -82,14 +82,24 @@ def _result_object(finding: Finding) -> dict[str, Any]:
     if finding.source.line is not None:
         location["physicalLocation"]["region"] = {"startLine": finding.source.line}
 
+    partial_fingerprints: dict[str, str] = {
+        "sesslint/finding-fingerprint": finding.fingerprint,
+    }
+    if isinstance(finding.evidence, Mapping):
+        digests = finding.evidence.get("match_sha256")
+        if isinstance(digests, list):
+            hex_digests = sorted(d for d in digests if isinstance(d, str))
+            if hex_digests:
+                # SL009: content-free rotation token — the digest set lets a
+                # scanner confirm a secret was removed without seeing it.
+                partial_fingerprints["sesslint/secret-match-sha256"] = ",".join(hex_digests)
+
     return {
         "ruleId": finding.code,
         "level": _LEVEL_MAP[finding.severity],
         "message": {"text": finding.message},
         "locations": [location],
-        "partialFingerprints": {
-            "sesslint/finding-fingerprint": finding.fingerprint,
-        },
+        "partialFingerprints": partial_fingerprints,
     }
 
 

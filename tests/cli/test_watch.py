@@ -222,3 +222,53 @@ def test_watch_cli_usage_errors(tmp_path: Path, capsys: pytest.CaptureFixture[st
     _write(f, _CLAUDE)
     assert main(["watch", str(f), "--agent", "claude"]) == 2
     capsys.readouterr()
+
+
+def test_watch_clean_to_secret_transition(tmp_path: Path) -> None:
+    """A file gaining a persisted-secret shape emits a transition with SL009.
+
+    Uses the real ``check_file`` path (transcript-hygiene T-02 acceptance):
+    clean -> warnings with codes containing SL009.
+    """
+    import shutil
+
+    fixture_dir = (
+        Path(__file__).resolve().parent.parent.parent / "fixtures" / "checks" / "secret_seed"
+    )
+    f = tmp_path / "s.jsonl"
+    shutil.copyfile(fixture_dir / "sl009_clean.jsonl", f)
+    armed = {"n": 0}
+
+    def sleep(_s: float) -> None:
+        armed["n"] += 1
+        if armed["n"] == 3:
+            with f.open("ab") as fh:
+                fh.write(
+                    b'{"actor":"user","id":"evt_900","kind":"message",'
+                    b'"parent_id":"evt_002","payload":{"text":"rotation"},'
+                    b'"seq":900,"ts":"2026-09-21T00:00:09Z"}\n'
+                )
+                fh.write(
+                    b'{"actor":"assistant","id":"evt_901","kind":"message",'
+                    b'"parent_id":"evt_900","payload":{"text":"'
+                    b"ghp_0123456789abcdefghijklmnopqrstuvwxyzAB"
+                    b'"},"seq":901,"ts":"2026-09-21T00:00:10Z"}\n'
+                )
+
+    transitions: list[WatchTransition] = []
+    emitted = watch(
+        [tmp_path],
+        interval=MIN_INTERVAL,
+        sleep_fn=sleep,
+        on_transition=transitions.append,
+        max_polls=8,
+        format="canonical",
+    )
+    assert emitted == 1
+    t = transitions[0]
+    assert t.from_state == "healthy"
+    assert t.to_state == "warnings"
+    assert "SL009" in t.codes
+    line = format_transition(t)
+    assert "SL009" in line
+    assert "ghp_" not in line

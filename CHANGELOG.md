@@ -7,6 +7,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SL009 persisted-secret detector** (transcript-hygiene T-01): adapters now
+  scan raw persisted record bytes during the existing read pass — including
+  records that fail JSON validation — for 14 well-known secret token shapes
+  (API keys, webhook secrets, JWTs, private-key blocks, credential
+  assignments). Findings are content-free: family label, record/line/byte
+  coordinates, occurrence count, and SHA-256 digests of matched spans —
+  the secret value is never emitted. WARNING severity, manual repairability;
+  automated repair is refused (rotate the credential, do not redact the
+  transcript). One finding per (record, family); output bounded by
+  `MAX_SECRET_FINDINGS_PER_FILE`/`MAX_DIGESTS_PER_FINDING` caps.
+- **SL009 surface wiring** (transcript-hygiene T-02): human check output
+  ends with a content-free rollup line (`N record(s) contain secret-shaped
+  material`, per-family occurrence counts); `scan` human output prints
+  `secret-shaped material: N file(s)` when any scanned file carries SL009;
+  SARIF results carry a `sesslint/secret-match-sha256` partial fingerprint
+  (rotation token — digests only); `watch` transitions surface SL009 via
+  the existing `codes` field; new `docs/hygiene.md` documents the
+  rotate-don't-redact workflow and `--fail-on warning` CI recipe.
+- **Bundle pre-share advisory** (transcript-hygiene T-03): when the bundled
+  source file produced SL009 findings, `sesslint bundle` output gains a
+  content-free `share_advisory` block (`kind`, `finding_count`, sorted
+  `families`, rotation `note`) and prints a one-line stderr notice. New
+  `--strict-share` flag exits `1` and writes no output while the advisory
+  is present — a CI gate before artifacts leave the machine. Schema
+  `sesslint.bundle/v1` gains the field additively (absent when clean).
+- **SessionEnd hook recipe** (transcript-hygiene T-03):
+  `sesslint init-hooks --agent claude` now emits a `SessionEnd` snippet —
+  a non-blocking check that flags persisted secrets (SL009) at the
+  moment the transcript stops growing.
+- **`sesslint hook` subcommand** (agent-hooks T-01): zero-config agent
+  hook entrypoint — reads one Claude Code stdin payload
+  (`session_id`/`transcript_path`/`cwd`/`hook_event_name`, capped at
+  1 MiB), resolves the transcript literally (no glob/shell), and runs the
+  event-appropriate check: `SessionEnd` maps to `--select SL009`, all
+  other (including unknown) events run the full integrity pass. Prints
+  one content-free line (`ok` / `findings=N top=<code>` /
+  `skipped (<reason>)`); `--json` emits `sesslint.hook-result/v1`.
+  Advisory by design: exits `0` even on findings, `1` only under
+  `--fail-on {error,warning}` (same vocabulary as `check`/`scan`), and
+  never emits `2` so a hook can never block the agent.
+  Every failure path (malformed/oversized payload, missing or
+  nonexistent `transcript_path`, I/O error) degrades to `skipped` —
+  the command never throws.
+- **Vendor index readers** (index-reconciliation T-01): internal
+  `sesslint.indexes` module reads `sessions-index.json`-style files
+  into bounded, shape-only `IndexSnapshot` membership sets (16 MiB /
+  64k-entry caps, no symlinks, no writes). Malformed, truncated
+  (picker-crash signature, with salvaged partial set), absent, and
+  schema-drifted indexes each get a deterministic `schema_note`;
+  `membership_complete` marks when absence claims are provable.
+  Plumbing only — no user-visible surface yet.
+- **SL402 session-index divergence detector** (index-reconciliation T-02):
+  `sesslint scan` now diffs each in-scope `sessions-index.json` against the
+  scanned session set — the scan-level complement to SL401's links between
+  files. Four divergence kinds, all WARNING/manual:
+  `file-not-in-index` (indexable ledger absent from a cleanly parsed index,
+  emitted on the file), `index-entry-no-file` (per index entry that provably
+  resolves to nothing, emitted on the index), `index-malformed` and
+  `index-truncated` (the picker-crash signature) on the index itself.
+  Conservative by construction: only adapter-identified primary ledgers
+  count as members (sidecars/sub-agent logs never flag), incomplete or
+  truncated indexes cannot prove absence, scope-filtered files still
+  satisfy dangling checks via on-disk existence, and a missing index is
+  never a finding. Evidence carries divergence kind, resolution, and
+  hash-truncated ids only — no raw session ids or paths. Single-file
+  `sesslint check` never emits SL402. `FileResult` gains a wire-only
+  `detected_format` field (report shape unchanged).
+- **Doctor index health + scan divergence summary** (index-reconciliation
+  T-03): `sesslint doctor` roots gain an `index` block —
+  `{sessions_on_disk, index_entries, state}` with a closed state enum
+  (`ok`, `stale-divergent`, `malformed`, `truncated`,
+  `unverified-format`, `absent`), counts only per the doctor contract;
+  `sesslint.doctor/v1` schema gains the field additively. `scan` human
+  output prints an `index divergence:` summary line when SL402 fired.
+  `docs/codes/SL402.md` gains a per-runtime index-coverage matrix
+  (verified 2026-09-21): Claude's `sessions-index.json` is the only
+  shipped reader — Codex (`session_index.jsonl` + SQLite thread store),
+  Gemini (no stored index — picker filters chat files), and Copilot
+  (`session-store.db` SQLite, vendor rebuild via `/chronicle reindex`)
+  are documented research-only.
+- **SL001 vendor-invisible-tail evidence** (detector-depth T-01): the first
+  `SL001` finding per file now carries `following_complete_records` and
+  `following_bytes` integer evidence — the records and bytes a
+  stop-at-first-error vendor loader may hide after the first malformed
+  line (the claude-code#50347 "11 MB silently invisible" class). Keys are
+  omitted when the tail is empty, later SL001s on the same file are not
+  enriched (no double-counting), a torn terminal tail already claimed by
+  `SL002` is excluded from the byte count, and human output renders the
+  conservative "may be invisible to vendor loaders" caveat. Applied
+  uniformly across the canonical stream reader and the Claude, Codex, and
+  OpenAI adapters; fingerprints, stream order, and wire shape unchanged.
+- **SL010 interleaved-writer detector** (detector-depth T-02): flags a
+  session file when adapter-normalized writer markers — per-instance
+  discriminators when a vendor records them, else application-version
+  build markers — *reappear* interleaved in one stream (A → B → A proves
+  concurrent or spliced writers; the claude-code#31328/#45286 class). A
+  clean ordered A* → B* upgrade transition, a single writer, and absent
+  markers all stay clean; at most one finding per file, anchored to the
+  first interleave line. Evidence is structural only
+  (`distinct_writer_count`, `transition_count`, `first_interleave_line`,
+  sorted `writer_hashes` — 8-hex SHA-256 prefixes; marker values never
+  emitted). WARNING severity, manual repairability; adapters that emit no
+  writer markers skip via coverage `adapter-not-applicable`. The Claude
+  adapter now populates `extra_fields["writer"]` from application-version
+  fields (`schemaVersion` is a format marker, never a writer) and sets a
+  `writer_markers` source capability flag.
+- **SL206 durable-prefix boundary detector** (detector-depth T-03,
+  codex-rollout-scoped): flags rollout files whose durable record
+  sequence does not cover the envelope ordinals the paginated resume
+  path expects — three divergence kinds, at most one finding each per
+  file: `trailing-non-durable` (highest-ordinal record is non-durable;
+  the openai/codex#40747 "inherited prefix through ordinal 828, found
+  final durable 827" signature), `durable-gap` (an ordinal inside the
+  durable range absent entirely — non-durable interleave is legitimate,
+  never a hole), and `missing-required-field` (`reasoning` items lacking
+  `encrypted_content` while siblings carry it; openai/codex#19661).
+  The Codex adapter now surfaces `extra_fields["codex"]` markers
+  (`durable`, `ordinal`, `envelope_type`, `item_type`,
+  `has_encrypted_content`, `subagent_history_start_ordinal`) from its
+  existing envelope table — `session_meta`/`response_item`/`compacted`
+  are durable, telemetry families are not. WARNING severity, manual
+  repairability; non-codex adapters skip via coverage
+  `adapter-not-applicable`. Evidence is structural only (ordinals,
+  counts, envelope family names).
+
+### Changed
+
+- **`init-hooks` snippets are now zero-config** (agent-hooks T-02): all
+  four emitted recipes call `sesslint hook --event <name> || true`,
+  which resolves `transcript_path` from the hook stdin payload — the
+  `/path/to/session.jsonl` placeholder and the `$CLAUDE_PROJECT_DIR`
+  glob are gone. New `PostCompact` recipe catches compaction-boundary
+  faults; `SessionStart` matcher now covers `compact|fork` sources;
+  the `SessionEnd` secret check drops the `jq` fallback for the
+  canonical `sesslint hook` form. Previously merged v1 snippets remain
+  valid; v2 requires a release carrying `sesslint hook`.
+- **`init-hooks --agent codex` note corrected** (agent-hooks T-03):
+  Codex now documents a real lifecycle-hook surface
+  (`~/.codex/hooks.json`, `config.toml [hooks]`) whose stdin payload
+  carries `transcript_path` — the old "no documented hook surface"
+  claim was stale. Snippets remain unemitted pending matcher/timeout/
+  trust-review verification; `docs/INTEGRATIONS.md` gains a
+  cross-runtime hook-surface matrix.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added

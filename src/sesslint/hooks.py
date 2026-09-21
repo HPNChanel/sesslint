@@ -6,8 +6,9 @@ configuration** — that is a permanent design invariant, not a deferral.
 There is no ``--install``/``--write`` flag and there never will be.
 
 Snippets are content-free by construction: hook commands reference
-``sesslint check``/``sesslint precheck`` with ``--json`` and take no
-transcript arguments. Output is deterministic modulo the optional binary
+``sesslint hook --event <name>``, which reads the hook payload (including
+``transcript_path``) from stdin — no paths to substitute, no globs, no
+shell plumbing. Output is deterministic modulo the optional binary
 path interpolation (bare ``sesslint`` by default — PATH requirement is
 documented).
 """
@@ -26,14 +27,11 @@ _CLAUDE_SESSIONSTART_BLOCK: dict[str, Any] = {
     "hooks": {
         "SessionStart": [
             {
-                "matcher": "startup|resume|clear",
+                "matcher": "startup|resume|clear|compact|fork",
                 "hooks": [
                     {
                         "type": "command",
-                        "command": (
-                            'sesslint check "$CLAUDE_PROJECT_DIR"/*.jsonl '
-                            "--json --skip-undetected || true"
-                        ),
+                        "command": "sesslint hook --event SessionStart || true",
                     }
                 ],
             }
@@ -49,7 +47,38 @@ _CLAUDE_PRECOMPACT_BLOCK: dict[str, Any] = {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "sesslint check /path/to/session.jsonl --json",
+                        "command": "sesslint hook --event PreCompact || true",
+                    }
+                ],
+            }
+        ]
+    }
+}
+
+_CLAUDE_POSTCOMPACT_BLOCK: dict[str, Any] = {
+    "hooks": {
+        "PostCompact": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "sesslint hook --event PostCompact || true",
+                    }
+                ],
+            }
+        ]
+    }
+}
+
+_CLAUDE_SESSIONEND_BLOCK: dict[str, Any] = {
+    "hooks": {
+        "SessionEnd": [
+            {
+                "matcher": "clear|logout|prompt_input_exit|other",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "sesslint hook --event SessionEnd || true",
                     }
                 ],
             }
@@ -59,17 +88,22 @@ _CLAUDE_PRECOMPACT_BLOCK: dict[str, Any] = {
 
 _CLAUDE_NOTE = (
     "Merge each block into ~/.claude/settings.json (user) or "
-    ".claude/settings.json (project). || true keeps SessionStart "
-    "non-blocking; drop it to hard-block. Replace "
-    "/path/to/session.jsonl in the PreCompact recipe with the session "
-    "file you actually resume. See docs/INTEGRATIONS.md."
+    ".claude/settings.json (project). Every command reads the hook "
+    "payload from stdin (transcript_path, session_id) - no paths to "
+    "substitute. '|| true' keeps each recipe advisory; 'sesslint hook' "
+    "never exits 2, so nothing can block the agent. To gate on findings, "
+    "pass '--fail-on warning' (exits 1; drop '|| true' to surface it). "
+    "Requires a SessLint release carrying 'sesslint hook' - check "
+    "'sesslint version'. See docs/INTEGRATIONS.md."
 )
 
 _CODEX_NOTE = (
-    "Codex CLI has no documented user-facing hook surface as of this "
-    "writing — no snippet is emitted (SessLint never invents agent "
-    "configuration). Coverage for Codex session roots: "
-    "`sesslint scan --agent codex`; gate behavior via wrapper scripts."
+    "Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in "
+    "config.toml) whose stdin payload carries transcript_path - the same "
+    "contract `sesslint hook` reads. Snippets are not emitted yet: "
+    "matcher values, the 1s SessionEnd timeout, and the /hooks "
+    "trust-review flow need recipe-level verification first. Interim "
+    "coverage for Codex session roots: `sesslint scan --agent codex`."
 )
 
 VALID_AGENTS: tuple[str, ...] = ("claude", "codex", "all")
@@ -135,8 +169,18 @@ def _claude_doc() -> InitHooksDoc:
             ),
             HookFile(
                 target_path_hint=_CLAUDE_TARGET,
-                recipe="PreCompact gate",
+                recipe="PreCompact integrity check (non-blocking)",
                 merge_block=dict(_CLAUDE_PRECOMPACT_BLOCK),
+            ),
+            HookFile(
+                target_path_hint=_CLAUDE_TARGET,
+                recipe="PostCompact boundary check (non-blocking)",
+                merge_block=dict(_CLAUDE_POSTCOMPACT_BLOCK),
+            ),
+            HookFile(
+                target_path_hint=_CLAUDE_TARGET,
+                recipe="SessionEnd secret check (non-blocking)",
+                merge_block=dict(_CLAUDE_SESSIONEND_BLOCK),
             ),
         ),
         note=_CLAUDE_NOTE,

@@ -81,6 +81,8 @@
         "SL006",
         "SL007",
         "SL008",
+        "SL009",
+        "SL010",
         "SL101",
         "SL102",
         "SL103",
@@ -102,7 +104,8 @@
         "identity",
         "ordering",
         "tool_pairing_1",
-        "tool_pairing_2"
+        "tool_pairing_2",
+        "writers"
       ],
       "profile": {
         "id": "neutral",
@@ -112,6 +115,11 @@
         {
           "check": "SL011",
           "detail": "fewer than 8 records — size distribution not meaningful",
+          "reason": "adapter-not-applicable"
+        },
+        {
+          "check": "SL206",
+          "detail": "durable-prefix boundary applies to codex-rollout streams only",
           "reason": "adapter-not-applicable"
         },
         {

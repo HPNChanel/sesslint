@@ -22,6 +22,7 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
@@ -74,10 +75,11 @@ class Bundle:
     detection: dict[str, Any]
     report: dict[str, Any]
     fixture_skeleton: dict[str, Any]
+    share_advisory: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return canonical dictionary representation with sorted keys."""
-        return {
+        d: dict[str, Any] = {
             "bundle_version": self.bundle_version,
             "created_by": self.created_by,
             "detection": self.detection,
@@ -85,6 +87,9 @@ class Bundle:
             "report": self.report,
             "source": self.source,
         }
+        if self.share_advisory is not None:
+            d["share_advisory"] = self.share_advisory
+        return d
 
     def to_json(self, *, indent: int = 2) -> str:
         """Serialize bundle to canonical formatted JSON string."""
@@ -392,6 +397,34 @@ def build_bundle(
             f"File mutated during bundle creation (TOCTOU detected): {target_path}"
         )
 
+    # 6. Pre-share advisory (transcript-hygiene T-03): the bundle itself is
+    # content-free, but the *source* artifact it describes may still carry
+    # live secret-shaped material — the user could paste the raw transcript
+    # alongside the bundle. Advisory is kind + count + sorted family labels;
+    # per-match digests stay in the embedded report. Sourced from the report
+    # already computed above — never a second scan.
+    sl009_findings = [f for f in report.findings if f.code == "SL009"]
+    share_advisory: dict[str, Any] | None = None
+    if sl009_findings:
+        share_advisory = {
+            "kind": "secret-material-present",
+            "finding_count": len(sl009_findings),
+            "families": sorted(
+                {
+                    fam
+                    for f in sl009_findings
+                    if isinstance(f.evidence, Mapping)
+                    for fam in [f.evidence.get("secret_family")]
+                    if isinstance(fam, str)
+                }
+            ),
+            "note": (
+                "source artifact contains secret-shaped material; rotate "
+                "affected credentials before sharing the source file or raw "
+                "transcript excerpts (see docs/codes/SL009.md)"
+            ),
+        }
+
     return Bundle(
         bundle_version=BUNDLE_SCHEMA_VERSION,
         created_by=created_by_block,
@@ -399,6 +432,7 @@ def build_bundle(
         detection=detection_dict,
         report=report_dict,
         fixture_skeleton=skeleton_dict,
+        share_advisory=share_advisory,
     )
 
 

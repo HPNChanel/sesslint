@@ -36,12 +36,14 @@ from sesslint.canonical import (
     canonical_bytes,
     compute_content_hash,
 )
+from sesslint.checks.hygiene import SecretScanTracker
 from sesslint.codes import SL001, SL002, SL301, SL302, Repairability, Severity
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding, sort_findings
 from sesslint.io import (
     _CHUNK_DRAIN_SIZE,
     DEFAULT_READER_LIMITS,
+    MalformedTailTracker,
     ReaderLimits,
     _MMapLineSource,
     _open_byte_source,
@@ -431,6 +433,7 @@ def _load_claude_code_internal(
         "links": [],
         "record_sizes": [],
         "drift": DriftTracker("claude-code-jsonl"),
+        "secret_tracker": SecretScanTracker(),
     }
 
     try:
@@ -438,6 +441,7 @@ def _load_claude_code_internal(
         total_bytes_read = 0
         record_count = 0
         pending_raw: _RawLine | None = None
+        tail_tracker = MalformedTailTracker()
 
         while True:
             line_start_offset = total_bytes_read
@@ -494,6 +498,7 @@ def _load_claude_code_internal(
                         f"{effective_limits.max_records}"
                     )
 
+                n_ev, n_f = len(events), len(findings)
                 _process_claude_line(
                     pending_raw,
                     is_terminal=False,
@@ -503,10 +508,12 @@ def _load_claude_code_internal(
                     findings=findings,
                     context=context,
                 )
+                tail_tracker.note_produced(events[n_ev:], findings[n_f:])
 
             pending_raw = current_raw
 
         # Handle final terminal record (EOF reached)
+        torn_tail_offset: int | None = None
         if pending_raw is not None:
             if (
                 effective_limits.max_records is not None
@@ -517,6 +524,7 @@ def _load_claude_code_internal(
                     f"{effective_limits.max_records}"
                 )
 
+            n_ev, n_f = len(events), len(findings)
             _process_claude_line(
                 pending_raw,
                 is_terminal=True,
@@ -526,10 +534,19 @@ def _load_claude_code_internal(
                 findings=findings,
                 context=context,
             )
+            new_findings = findings[n_f:]
+            tail_tracker.note_produced(events[n_ev:], new_findings)
+            if any(f.code == SL002 for f in new_findings):
+                torn_tail_offset = pending_raw.byte_offset
+
+        tail_tracker.finalize(total_bytes=total_bytes_read, torn_tail_offset=torn_tail_offset)
 
         drift_ctx = context.get("drift")
         if isinstance(drift_ctx, DriftTracker):
             findings.extend(drift_ctx.into_findings(path_str=path_str))
+        secret_ctx = context.get("secret_tracker")
+        if isinstance(secret_ctx, SecretScanTracker):
+            findings.extend(secret_ctx.into_findings(path_str=path_str))
         guard.assert_no_collision()
         return (
             events,
@@ -574,6 +591,8 @@ def load_claude_code(
         source["session_id"] = session_id
     source["links"] = links
     source["record_sizes"] = record_sizes
+    # SL010 capability flag: this adapter emits extra_fields["writer"] markers.
+    source["writer_markers"] = True
     return EventList(events, source=source), findings
 
 
@@ -588,6 +607,18 @@ def _process_claude_line(
     context: dict[str, Any],
 ) -> None:
     """Process a single physical line, emitting either SessionEvent or syntax/integrity findings."""
+    # SL009: scan the persisted raw bytes for secret shapes before any
+    # validation rejects the record — malformed lines still carry secrets.
+    secret_tracker = context.get("secret_tracker")
+    if isinstance(secret_tracker, SecretScanTracker):
+        secret_tracker.feed(
+            raw.raw_bytes,
+            line_number=raw.line_number,
+            byte_offset=raw.byte_offset,
+            byte_end=raw.byte_end,
+            record_ordinal=raw.record_ordinal,
+        )
+
     # Bounded per-record byte size for the SL011 distribution check.
     sizes_meta = context.get("record_sizes")
     if isinstance(sizes_meta, list) and raw.byte_end >= raw.byte_offset:
@@ -907,6 +938,20 @@ def _process_claude_line(
                 byte_end=raw.byte_end,
             )
 
+    # Writer-marker extraction (SL010, detector-depth T-02): application
+    # version fields identify the writing build; ``schemaVersion`` is a format
+    # marker, never a writer. No verified per-process instance discriminator
+    # exists on records — ``instance`` stays None and version-interleave alone
+    # proves concurrent writers.
+    writer_extra: dict[str, Any] = {}
+    if version_field != "schemaVersion" and isinstance(version_candidate, (str, int, float)):
+        writer_extra = {
+            "writer": {
+                "version": normalize_version(str(version_candidate).strip()),
+                "instance": None,
+            }
+        }
+
     # 9. Type canonicalization and SL302 evaluation
     raw_type = obj.get("type")
     raw_role = obj.get("role")
@@ -1030,6 +1075,7 @@ def _process_claude_line(
                 agent_id=agent_id,
                 branch_id=branch_id,
                 interaction_id=interaction_id,
+                extra_fields=writer_extra,
             )
             events.append(msg_event)
             current_parent = text_event_id
@@ -1084,6 +1130,7 @@ def _process_claude_line(
                 agent_id=agent_id,
                 branch_id=branch_id,
                 interaction_id=interaction_id,
+                extra_fields=writer_extra,
             )
             events.append(call_event)
             current_parent = call_event_id
@@ -1133,6 +1180,7 @@ def _process_claude_line(
                 agent_id=agent_id,
                 branch_id=branch_id,
                 interaction_id=interaction_id,
+                extra_fields=writer_extra,
             )
             events.append(res_event)
         return
@@ -1175,7 +1223,7 @@ def _process_claude_line(
         else:
             side_effects = "unknown"
 
-    event_extra: dict[str, Any] = {}
+    event_extra: dict[str, Any] = dict(writer_extra)
     if kind == "compaction_boundary":
         # SL205 coverage pointer (bounded names only): the leaf event this
         # summary claims to cover through. Normalized adapter-neutrally as

@@ -78,7 +78,13 @@ class TestGoldenByteVectors:
         )
 
     def test_extra_fields_hoisting(self) -> None:
-        """extra_fields must be hoisted into top-level keys lexicographically."""
+        """Only ``experimental_*`` extras hoist into top-level keys.
+
+        The canonical wire schema rejects arbitrary top-level fields on
+        reparse — non-experimental extras are in-memory metadata and must
+        not leak onto the wire (adapter markers such as ``codex`` /
+        ``writer`` would otherwise break repair round-trips).
+        """
         ev = SessionEvent(
             seq=1,
             id="evt_002",
@@ -91,7 +97,7 @@ class TestGoldenByteVectors:
         )
         data = canonical_json_bytes(ev, newline=False)
         assert data == (
-            b'{"actor":"agent","alpha_tag":"x1","experimental_mode":true,'
+            b'{"actor":"agent","experimental_mode":true,'
             b'"id":"evt_002","kind":"tool_call","parent_id":"evt_001",'
             b'"payload":{},"seq":1,"ts":"2026-09-06T00:00:01Z"}'
         )
@@ -252,7 +258,7 @@ class TestIdentityAndFingerprintSeam:
             source_adapter="test_adapter",
             source_location="/test/loc",
             side_effects="none",
-            extra_fields={"extra_k": "extra_v"},
+            extra_fields={"extra_k": "extra_v", "experimental_k": "x"},
         )
         codec = PurePythonCanonicalCodec()
         normalized = codec._normalize(ev)
@@ -277,7 +283,7 @@ class TestIdentityAndFingerprintSeam:
             "source_adapter",
             "source_location",
             "side_effects",
-            "extra_k",
+            "experimental_k",
         }
         assert set(normalized.keys()) == expected_keys
 

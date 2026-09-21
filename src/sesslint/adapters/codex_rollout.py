@@ -79,12 +79,14 @@ from sesslint.canonical import (
     canonical_bytes,
     compute_content_hash,
 )
+from sesslint.checks.hygiene import SecretScanTracker
 from sesslint.codes import SL001, SL002, SL301, SL302, Repairability, Severity
 from sesslint.errors import MaxRecordsExceededError
 from sesslint.finding import Finding, SourceRef, make_finding, sort_findings
 from sesslint.io import (
     _STRICT_JSON_DECODER,
     DEFAULT_READER_LIMITS,
+    MalformedTailTracker,
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
@@ -120,6 +122,23 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
         "world_state",
         "inter_agent_communication_metadata",
         "token_usage_record",
+    }
+)
+
+# Envelope families the rollout writer persists as thread history — the
+# durable record sequence the paginated resume path replays (SL206,
+# detector-depth T-03). ``session_meta`` is the durable thread header;
+# ``response_item`` carries conversation items; ``compacted`` is a durable
+# history rewrite. The remaining ENVELOPE_OPAQUE_TYPES families
+# (``event_msg``, ``turn_context``, ``world_state``,
+# ``inter_agent_communication_metadata``, ``token_usage_record``) are
+# per-run telemetry — present in the file but not part of the durable
+# prefix. Unknown envelope types fail closed as non-durable.
+DURABLE_ENVELOPE_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "session_meta",
+        "response_item",
+        "compacted",
     }
 )
 
@@ -636,6 +655,21 @@ def _process_rollout_record(
     out_payload: dict[str, Any] = {}
     event_extra: dict[str, Any] = {}
 
+    # SL206 markers (detector-depth T-03): normalized durability + ordinal +
+    # envelope family so the durable-prefix check never re-derives vendor
+    # semantics. Type-specific claims (item_type, encrypted_content presence,
+    # inherited-prefix ordinal) are attached inside the branches below.
+    env_ord_raw = envelope.get("ordinal")
+    codex_extra: dict[str, Any] = {
+        "durable": isinstance(env_type, str) and env_type in DURABLE_ENVELOPE_TYPES,
+        "ordinal": (
+            env_ord_raw
+            if isinstance(env_ord_raw, int) and not isinstance(env_ord_raw, bool)
+            else None
+        ),
+        "envelope_type": env_type if isinstance(env_type, str) else None,
+    }
+
     # Declared cross-file resume pointers (bounded structural ids only —
     # scan-layer SL401 resolves them; per-file processing never does).
     if isinstance(payload, Mapping):
@@ -663,6 +697,12 @@ def _process_rollout_record(
             out_payload = {"type": "<invalid>"}
         else:
             item_type = payload.get("type")
+            if isinstance(item_type, str):
+                codex_extra["item_type"] = item_type
+                if item_type == "reasoning":
+                    # SL206 resume-projection marker (#19661): field
+                    # presence only — never the encrypted value.
+                    codex_extra["has_encrypted_content"] = "encrypted_content" in payload
             if isinstance(item_type, str) and item_type in RESPONSE_ITEM_TYPE_MAP:
                 actor, kind = RESPONSE_ITEM_TYPE_MAP[item_type]
             else:
@@ -826,6 +866,11 @@ def _process_rollout_record(
                 source_metadata.session_meta = meta
                 if payload.get("session_id") is not None:
                     out_payload["session_id"] = str(payload.get("session_id"))
+                _shso = payload.get("subagent_history_start_ordinal")
+                if isinstance(_shso, int) and not isinstance(_shso, bool):
+                    # SL206: declared inherited-prefix ordinal the file's
+                    # durable sequence must cover (#40747 signature).
+                    codex_extra["subagent_history_start_ordinal"] = _shso
         elif env_type == "turn_context" and isinstance(payload, Mapping):
             if payload.get("turn_id") is not None:
                 out_payload["turn_id"] = str(payload.get("turn_id"))
@@ -884,6 +929,8 @@ def _process_rollout_record(
                     findings=findings,
                 )
                 break
+
+    event_extra["codex"] = codex_extra
 
     cur_envelope_ordinal = envelope.get("ordinal")
     contiguous = (
@@ -948,6 +995,7 @@ def _process_jsonl_line(
     last_envelope_ordinal: int | None = None,
     gap_after_drop: bool = False,
     drift: DriftTracker | None = None,
+    secret_tracker: SecretScanTracker | None = None,
 ) -> tuple[bool, bool, int | None]:
     """Process a single rollout JSONL line, emitting SessionEvent or SL001/SL002.
 
@@ -955,6 +1003,17 @@ def _process_jsonl_line(
     ``emitted`` is True when a canonical event was appended for this line and
     ``envelope_ordinal`` is the record's envelope ``ordinal`` (or None).
     """
+    # SL009: scan the persisted raw bytes for secret shapes before any
+    # validation rejects the record — malformed lines still carry secrets.
+    if secret_tracker is not None:
+        secret_tracker.feed(
+            raw.raw_bytes,
+            line_number=raw.line_number,
+            byte_offset=raw.byte_offset,
+            byte_end=raw.byte_end,
+            record_ordinal=raw.record_ordinal,
+        )
+
     code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
@@ -1205,6 +1264,7 @@ def load_codex_rollout(
         guard = SyntheticIdCollisionGuard()
         seen_version_sl301 = False
         drift = DriftTracker("codex-rollout")
+        secret_tracker = SecretScanTracker()
         last_event_id: str | None = None
         last_envelope_ordinal: int | None = None
         gap_after_drop = False
@@ -1215,6 +1275,7 @@ def load_codex_rollout(
         record_count = 0
         total_len = len(data)
         pending_raw: _RawLine | None = None
+        tail_tracker = MalformedTailTracker()
 
         while current_offset < total_len:
             line_number += 1
@@ -1259,6 +1320,7 @@ def load_codex_rollout(
                         f"{effective_limits.max_records}"
                     )
                 prev_len = len(events)
+                prev_findings = len(findings)
                 seen_version_sl301, emitted, env_ord = _process_jsonl_line(
                     pending_raw,
                     is_terminal=False,
@@ -1273,7 +1335,9 @@ def load_codex_rollout(
                     last_envelope_ordinal=last_envelope_ordinal,
                     gap_after_drop=gap_after_drop,
                     drift=drift,
+                    secret_tracker=secret_tracker,
                 )
+                tail_tracker.note_produced(events[prev_len:], findings[prev_findings:])
                 if emitted and len(events) > prev_len:
                     last_event_id = events[-1].id
                     last_envelope_ordinal = env_ord
@@ -1283,6 +1347,7 @@ def load_codex_rollout(
 
             pending_raw = current_raw
 
+        torn_tail_offset: int | None = None
         if pending_raw is not None:
             if (
                 effective_limits.max_records is not None
@@ -1293,6 +1358,7 @@ def load_codex_rollout(
                     f"{effective_limits.max_records}"
                 )
             prev_len = len(events)
+            prev_findings = len(findings)
             seen_version_sl301, _emitted, _ord = _process_jsonl_line(
                 pending_raw,
                 is_terminal=True,
@@ -1307,11 +1373,19 @@ def load_codex_rollout(
                 last_envelope_ordinal=last_envelope_ordinal,
                 gap_after_drop=gap_after_drop,
                 drift=drift,
+                secret_tracker=secret_tracker,
             )
+            new_findings = findings[prev_findings:]
+            tail_tracker.note_produced(events[prev_len:], new_findings)
+            if any(f.code == SL002 for f in new_findings):
+                torn_tail_offset = pending_raw.byte_offset
             _ = prev_len  # terminal line ends the stream; lineage state unused
+
+        tail_tracker.finalize(total_bytes=total_len, torn_tail_offset=torn_tail_offset)
 
         guard.assert_no_collision()
         findings.extend(drift.into_findings(path_str=path_str))
+        findings.extend(secret_tracker.into_findings(path_str=path_str))
         return EventList(events, source=source_metadata), sort_findings(findings)
     finally:
         if is_owned_file:

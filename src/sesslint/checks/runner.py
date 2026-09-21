@@ -19,12 +19,14 @@ from typing import Any
 from sesslint.canonical import SessionEvent
 from sesslint.checks.accounting import check_accounting
 from sesslint.checks.checkpoint import check_checkpoint
+from sesslint.checks.durable_prefix import check_durable_prefix
 from sesslint.checks.graph import check_graph
 from sesslint.checks.identity import check_identities
 from sesslint.checks.ordering import check_ordering
 from sesslint.checks.size import SIZE_MIN_RECORDS, check_size_anomaly
 from sesslint.checks.tool_pairing_1 import check_tool_pairing_1
 from sesslint.checks.tool_pairing_2 import check_tool_pairing_2
+from sesslint.checks.writers import check_writers
 from sesslint.context import CheckContext
 from sesslint.finding import Finding
 from sesslint.profiles.builtin import NEUTRAL_PROFILE
@@ -96,7 +98,7 @@ def run_all_checks(
                 skipped_checks.append(_gate_skip(ap, "rule disabled by profile"))
                 already_skipped_checks.add(ap)
     else:
-        adapter_rules = ("SL001", "SL002", "SL301", "SL302")
+        adapter_rules = ("SL001", "SL002", "SL009", "SL301", "SL302")
         for ar in adapter_rules:
             if ar not in already_skipped_checks:
                 if ar in enabled:
@@ -113,9 +115,10 @@ def run_all_checks(
         ("identity", ("SL003",)),
         ("graph", ("SL004", "SL005", "SL006", "SL007")),
         ("ordering", ("SL008",)),
+        ("writers", ("SL010",)),
         ("tool_pairing_1", ("SL101", "SL102", "SL103", "SL104")),
         ("tool_pairing_2", ("SL105", "SL106", "SL107", "SL108")),
-        ("checkpoint", ("SL201", "SL202", "SL203", "SL205")),
+        ("checkpoint", ("SL201", "SL202", "SL203", "SL205", "SL206")),
         ("accounting", ("SL204",)),
         ("size", ("SL011",)),
     ]
@@ -226,6 +229,30 @@ def run_all_checks(
         if "SL008" in enabled:
             findings.extend(check_ordering(events, source_path=source_path, context=context))
 
+        if "SL010" in enabled:
+            sm = context.source_metadata or {}
+            if not sm.get("writer_markers"):
+                # Adapter emitted no writer markers — nothing to sequence;
+                # absence of evidence is not evidence of a single writer.
+                performed_checks.discard("writers")
+                performed_checks.discard("SL010")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="writers",
+                        reason="adapter-not-applicable",
+                        detail="adapter emits no writer markers",
+                    )
+                )
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL010",
+                        reason="adapter-not-applicable",
+                        detail="adapter emits no writer markers",
+                    )
+                )
+            else:
+                findings.extend(check_writers(events, source_path=source_path, context=context))
+
         tp1_rules = {"SL101", "SL102", "SL103", "SL104"}
         if tp1_rules & enabled:
             findings.extend(check_tool_pairing_1(events, source_path=source_path, context=context))
@@ -251,6 +278,34 @@ def run_all_checks(
                     context=context,
                 )
             )
+
+        if "SL206" in enabled:
+            if context.adapter_id != "codex-rollout":
+                # Adapter-scoped rule: durable-prefix semantics exist only on
+                # codex-rollout streams; other formats carry no such markers.
+                performed_checks.discard("SL206")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL206",
+                        reason="adapter-not-applicable",
+                        detail=("durable-prefix boundary applies to codex-rollout streams only"),
+                    )
+                )
+                if not (cp_rules & enabled):
+                    performed_checks.discard("checkpoint")
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check="checkpoint",
+                            reason="adapter-not-applicable",
+                            detail=(
+                                "durable-prefix boundary applies to codex-rollout streams only"
+                            ),
+                        )
+                    )
+            else:
+                findings.extend(
+                    check_durable_prefix(events, source_path=source_path, context=context)
+                )
 
         if "SL204" in enabled:
             findings.extend(check_accounting(events, source_path=source_path, context=context))

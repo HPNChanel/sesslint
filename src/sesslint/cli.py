@@ -133,6 +133,41 @@ def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
                     f"  {row.path}  ({row.error_count} error(s), {row.warning_count} warning(s))"
                 )
 
+    # SL009 hygiene rollup: secret-shaped material deserves its own
+    # section — a warning-bucket row can hide inside a long by_code list.
+    secret_files = sum(1 for r in scan_report.files if any(f.code == "SL009" for f in r.findings))
+    if secret_files:
+        lines.append("-" * 80)
+        lines.append(f"  secret-shaped material: {secret_files} file(s)")
+
+    # SL402 index-divergence rollup (index-reconciliation T-03): divergence
+    # is invisible in per-file verdicts — the file itself is healthy.
+    kinds: dict[str, int] = {}
+    for r in scan_report.files:
+        for f in r.findings:
+            if f.code == "SL402" and f.evidence:
+                kind = f.evidence.get("divergence")
+                if isinstance(kind, str):
+                    kinds[kind] = kinds.get(kind, 0) + 1
+    if kinds:
+        parts: list[str] = []
+        if kinds.get("file-not-in-index"):
+            parts.append(f"{kinds['file-not-in-index']} session file(s) not listed in vendor index")
+        if kinds.get("index-entry-no-file"):
+            n = kinds["index-entry-no-file"]
+            parts.append(f"{n} dangling index {'entry' if n == 1 else 'entries'}")
+        if kinds.get("index-malformed"):
+            parts.append("malformed index")
+        if kinds.get("index-truncated"):
+            parts.append("truncated index")
+        hint = (
+            "resumable by explicit id; see docs/codes/SL402.md"
+            if kinds.get("file-not-in-index")
+            else "see docs/codes/SL402.md"
+        )
+        lines.append("-" * 80)
+        lines.append(f"  index divergence: {', '.join(parts)} ({hint})")
+
     return "\n".join(lines)
 
 
@@ -1220,6 +1255,15 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Minimum margin threshold between top candidates for auto-detection",
     )
+    bundle_parser.add_argument(
+        "--strict-share",
+        action="store_true",
+        default=False,
+        help=(
+            "Exit 1 without writing output when the source file contains "
+            "secret-shaped material (SL009 share_advisory present)"
+        ),
+    )
 
     # export
     export_parser = subparsers.add_parser(
@@ -1512,6 +1556,58 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Emit sesslint.init-hooks/v1 JSON instead of human text",
+    )
+
+    # hook
+    hook_parser = subparsers.add_parser(
+        "hook",
+        help=(
+            "[read-only] Agent hook entrypoint: reads one hook payload "
+            "from stdin and checks the transcript."
+        ),
+        description=(
+            "[read-only] Reads one JSON hook payload from stdin (Claude Code "
+            "contract: session_id, transcript_path, cwd, hook_event_name), "
+            "resolves the transcript file, and runs the event-appropriate "
+            "integrity check. Prints one content-free line and exits 0 "
+            "(advisory) — or 1 when --fail-on gates on findings. Exit 2 is "
+            "never emitted: hook checks never block the agent."
+        ),
+    )
+    hook_parser.add_argument(
+        "--event",
+        required=True,
+        metavar="NAME",
+        help=(
+            "Hook event name (e.g. SessionStart, PreCompact, PostCompact, "
+            "SessionEnd). Unknown names run the generic integrity check."
+        ),
+    )
+    hook_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Emit sesslint.hook-result/v1 JSON instead of the one-line form",
+    )
+    hook_parser.add_argument(
+        "--fail-on",
+        choices=["never", "error", "warning"],
+        default=None,
+        help=(
+            "Minimum finding severity that exits 1 (default: never — hook "
+            "checks are advisory; 'warning' fails on any finding)"
+        ),
+    )
+    hook_parser.add_argument(
+        "--profile",
+        default=None,
+        help="Validation profile (default: neutral)",
+    )
+    hook_parser.add_argument(
+        "--format",
+        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        default=None,
+        help="Session format adapter (default: auto-detect)",
     )
 
     # mcp
@@ -2146,6 +2242,26 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             sys.stdout.write(hooks_doc.render_human())
         return 0
 
+    if args.command == "hook":
+        from sesslint.hook_event import MAX_HOOK_PAYLOAD_BYTES, run_hook
+
+        # Bounded stdin read: the payload is a small JSON control message,
+        # not session bytes — cap at 1 MiB so oversize is detectable.
+        payload = sys.stdin.buffer.read(MAX_HOOK_PAYLOAD_BYTES + 1)
+        fmt = getattr(args, "format", None)
+        hook_result = run_hook(
+            args.event,
+            payload,
+            profile=getattr(args, "profile", None),
+            format=None if fmt in (None, "auto") else fmt,
+            fail_on=getattr(args, "fail_on", None),
+        )
+        if getattr(args, "json", False):
+            print(hook_result.to_json())
+        else:
+            print(hook_result.line())
+        return hook_result.exit_code
+
     if args.command == "mcp":
         from sesslint.mcp_server import serve
 
@@ -2766,6 +2882,23 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return 2
         except Exception as err:
             return _handle_internal_error(err, args)
+
+        # SL009 pre-share advisory (transcript-hygiene T-03): the bundle is
+        # content-free, but the source file it describes may still hold live
+        # secret-shaped material. Warn on stderr (stdout stays pure JSON);
+        # --strict-share turns the advisory into a gate.
+        if bundle.share_advisory is not None:
+            adv = bundle.share_advisory
+            fams = ", ".join(str(x) for x in adv.get("families", ()))
+            print(
+                f"share_advisory: source contains secret-shaped material "
+                f"({adv.get('finding_count', 0)} finding(s); families: {fams}) - "
+                "rotate affected credentials before sharing the source file "
+                "(docs/codes/SL009.md)",
+                file=sys.stderr,
+            )
+            if getattr(args, "strict_share", False):
+                return 1
 
         bundle_json = bundle.to_json()
 

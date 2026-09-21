@@ -19,7 +19,7 @@ import pytest
 
 from sesslint.api import check_dir, check_file
 from sesslint.cli import main
-from sesslint.codes import SL201
+from sesslint.codes import SL009, SL201
 from sesslint.report import render_json
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures"
@@ -31,12 +31,17 @@ def test_run_state_evidence_fixture_survival_and_zero_leakage() -> None:
     assert fixture_path.is_file(), f"Fixture missing: {fixture_path}"
 
     report = check_file(fixture_path)
-    assert len(report.findings) == 1
+    assert len(report.findings) == 2
+    assert {f.code for f in report.findings} == {SL009, SL201}
 
-    finding = report.findings[0]
-    assert finding.code == SL201
+    finding = next(f for f in report.findings if f.code == SL201)
     assert finding.evidence is not None
     assert "run_state" in finding.evidence
+
+    # SL009 detects the persisted credential shape without emitting the value.
+    sl009 = next(f for f in report.findings if f.code == SL009)
+    assert sl009.evidence["secret_family"] == "generic-credential-assignment"
+    assert "sec_seed_secret_token_99999_xyz_alpha" not in json.dumps(sl009.to_dict())
 
     proj: dict[str, Any] = finding.evidence["run_state"]
     assert proj["keys"] == [
@@ -92,9 +97,8 @@ def test_cli_json_run_state_evidence(capsys: pytest.CaptureFixture[str]) -> None
     out = capsys.readouterr().out
     data = json.loads(out)
 
-    assert len(data.get("findings", [])) == 1
-    f0 = data["findings"][0]
-    assert f0["code"] == SL201
+    assert len(data.get("findings", [])) == 2
+    f0 = next(f for f in data["findings"] if f["code"] == SL201)
     assert "run_state" in f0["evidence"]
     assert f0["evidence"]["run_state"]["shapes"]["secret_token"] == "<str:len=37>"
 
@@ -136,8 +140,8 @@ def test_dynamic_secrets_and_pii_strictly_redacted(tmp_path: Path) -> None:
     test_file.write_text(json.dumps(content), encoding="utf-8")
 
     report = check_file(test_file)
-    assert len(report.findings) == 1
-    assert report.findings[0].code == SL201
+    assert len(report.findings) == 2
+    assert {f.code for f in report.findings} == {SL009, SL201}
 
     rep_json = render_json(report)
     # The rendered report must pass rigorous PII and credential leak scanning
@@ -151,9 +155,8 @@ def test_scan_run_state_evidence_preservation() -> None:
     assert len(target_results) == 1
     f_res = target_results[0]
     assert f_res.verdict == "invalid"
-    assert len(f_res.findings) == 1
-    finding = f_res.findings[0]
-    assert finding.code == SL201
+    assert len(f_res.findings) == 2
+    finding = next(f for f in f_res.findings if f.code == SL201)
     assert finding.evidence is not None
     assert "run_state" in finding.evidence
     proj = finding.evidence["run_state"]

@@ -24,6 +24,8 @@ Claude Code fires hooks at lifecycle points where SessLint adds value:
 | :--- | :--- | :--- |
 | `SessionStart` | Session begins, is resumed, or is cleared | Warn the agent if the session file is already corrupt *before* it resumes into a broken ledger. |
 | `PreCompact` | Before transcript compaction | Warn if compaction input is structurally damaged (orphan pairs, torn records) so the summary isn't built on a broken graph. |
+| `PostCompact` | After transcript compaction | Catch compaction-boundary faults (SL108/SL205 classes) immediately, while the boundary is fresh. |
+| `SessionEnd` | Session ends (clear, logout, prompt exit) | Flag secret-shaped material persisted in the transcript (SL009) at the exact moment the file stops growing — per-session instead of a monthly audit. |
 
 ### Exit-code contract
 
@@ -38,26 +40,85 @@ Hooks interpret exit codes as: `0` = success/allow, `2` = blocking error
 | `1` | Structural findings (corruption, pairing errors, detection failed) | non-blocking warning — surfaced to the agent |
 | `2` | I/O or usage error | blocking — the agent sees the error message |
 
-For `SessionStart` you usually want the non-blocking warning path: a corrupt
-session should *inform* the agent, not hard-block the session from opening.
-For `PreCompact`, blocking (`2`) is defensible: compacting a known-broken
-ledger produces a summary of garbage.
+The recipes below use `sesslint hook`, which is **advisory-only**: it never
+emits `2`, so nothing can block the agent — even if the recipe is merged
+into the wrong event. To opt into gating, add `--fail-on warning` (exit
+`1` on findings) and drop `|| true`.
 
-### Recipe: SessionStart corruption warning
+### `sesslint hook` — zero-config entrypoint
 
-Add to `.claude/settings.json` (project) or `~/.claude/settings.json` (user):
+<!-- next-release -->
+
+`sesslint hook --event <name>` is the single entrypoint every recipe
+below uses. It reads the hook payload from stdin, resolves the
+transcript, runs the event-appropriate check, and prints a single
+content-free line — no path substitution, no shell plumbing.
+
+Contract:
+
+- **stdin**: one JSON hook payload (`session_id`, `transcript_path`,
+  `cwd`, `hook_event_name`), capped at 1 MiB. Malformed or oversized
+  payloads print `skipped (<reason>)` and exit `0` — a hook must never
+  brick the agent because its own payload was thin.
+- **Event map**: `SessionEnd` runs `check --select SL009` (persisted
+  secrets at the moment the file stops growing); every other event —
+  including unknown names, for forward-compat — runs the full integrity
+  check.
+- **Output**: `sesslint hook[<event>]: ok` | `findings=N top=<code>` |
+  `skipped (<reason>)`. `--json` emits `sesslint.hook-result/v1`
+  (`schemas/sesslint.hook-result.v1.json`).
+- **Exit codes**: `0` always — findings included — unless `--fail-on`
+  gates them (`--fail-on warning` exits `1` on any finding, `--fail-on
+  error` on error/fatal findings only; default `never`). `2` is never
+  emitted in v1: none of the mapped events are blocking-capable, so a
+  merge error cannot wedge the agent.
+- `transcript_path` is untrusted input: resolved literally (no glob, no
+  shell), must be an existing regular file. Missing/nonexistent paths
+  skip cleanly.
+- Caveat from the vendor docs: `transcript_path` can lag the in-flight
+  turn. The check guards *durable* state — the on-disk record — which is
+  exactly what a later resume reads back.
+
+### Recipes
+
+<!-- next-release -->
+
+Add to `.claude/settings.json` (project) or `~/.claude/settings.json`
+(user). `sesslint init-hooks --agent claude --print` emits exactly these
+blocks — every command is `sesslint hook --event <name> || true`, so
+there is nothing to substitute.
 
 ```json
 {
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear",
+        "matcher": "startup|resume|clear|compact|fork",
         "hooks": [
-          {
-            "type": "command",
-            "command": "sesslint check \"$CLAUDE_PROJECT_DIR\"/*.jsonl --json --skip-undetected || true"
-          }
+          {"type": "command", "command": "sesslint hook --event SessionStart || true"}
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto|manual",
+        "hooks": [
+          {"type": "command", "command": "sesslint hook --event PreCompact || true"}
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {"type": "command", "command": "sesslint hook --event PostCompact || true"}
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "clear|logout|prompt_input_exit|other",
+        "hooks": [
+          {"type": "command", "command": "sesslint hook --event SessionEnd || true"}
         ]
       }
     ]
@@ -67,44 +128,28 @@ Add to `.claude/settings.json` (project) or `~/.claude/settings.json` (user):
 
 Notes:
 
-- `|| true` keeps the hook non-blocking; drop it to hard-block on findings.
-- `--skip-undetected` keeps non-session `*.jsonl` files that happen to sit in
-  the glob (exports, caches, fixtures) from reporting as `SL302` invalid —
-  they classify as `skipped` instead.
-- Point the command at the session file(s) you actually resume. A common
-  pattern is a small wrapper script that resolves the current session file
-  path and runs `sesslint check` on it.
-
-### Recipe: PreCompact gate
-
-```json
-{
-  "hooks": {
-    "PreCompact": [
-      {
-        "matcher": "auto|manual",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sesslint check /path/to/session.jsonl --json"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-With `exit 1` treated as a warning, the agent is told the ledger has structural
-issues before it summarizes it.
+- `SessionStart` matcher covers all documented sources including
+  `compact` and `fork` — a post-compaction re-injection deserves the
+  same integrity check as a fresh resume.
+- `PostCompact` carries no `matcher` (fires unconditionally after every
+  compaction).
+- `|| true` is belt-and-suspenders: `sesslint hook` already exits `0` on
+  findings, skips, and bad input — it can never produce the blocking `2`.
+- Merge order and event choice are yours; dropping `|| true` changes
+  nothing unless you add `--fail-on` (documented above).
+- Requires a SessLint release carrying `sesslint hook` — check
+  `sesslint version`. Older CLIs will surface a harmless shell error
+  under `|| true` and the agent keeps working.
 
 ### Content-free guarantee
 
-Hook stdout can be injected into the agent's context. `sesslint check --json`
-output is **content-free by design**: findings carry rule codes, severities,
-record indices, and fingerprints — never message text, tool arguments, or
-payloads. The `--include-content` flag exists for local debugging only; do not
-use it in hooks.
+Hook stdout can be injected into the agent's context. `sesslint hook`
+output is **content-free by design**: one status line, or a
+`sesslint.hook-result/v1` object under `--json`, carrying rule codes,
+severities, and counts — never message text, tool arguments, payloads,
+or raw `session_id`/`transcript_path` values. The `--include-content`
+flag on `sesslint check` exists for local debugging only; do not use it
+in hooks.
 
 ### Latency
 
@@ -201,11 +246,34 @@ VS Code, Zed, and compatible editors. Setup notes per editor plus a
 Path caveat: human output minimizes paths for privacy — use
 workspace-relative inputs for clickable navigation.
 
+## Runtime hook surfaces
+
+Which agent runtimes expose a user-facing hook surface whose stdin
+payload `sesslint hook` can read (verified 2026-09 — re-checked each
+release; see `plans/agent-hooks` T-03 memo):
+
+| Runtime | Hook surface | Payload carries `transcript_path` | SessLint recipes |
+| :--- | :--- | :--- | :--- |
+| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`init-hooks --agent claude`) |
+| Codex | `~/.codex/hooks.json`, `config.toml [hooks]` | Yes — all events | Not yet — matcher/timeout/trust-review semantics under verification |
+| Copilot CLI | `.github/hooks/*.json`, `~/.copilot/hooks/` | Only on `PreCompact`, `Stop`, `subagent*` events (PascalCase names → snake_case payload) | Not yet — needs the Copilot adapter first |
+| Gemini CLI | `settings.json` `hooks` | Yes — all events, but stdout must be JSON | Not yet — needs the Gemini adapter + `--json` contract check |
+| Cursor | `.cursor/hooks.json`, `~/.cursor/hooks.json` | Yes — all agent hooks | Not yet — needs the Cursor adapter first |
+| OpenCode | Plugin API (JS/TS modules) | n/a | Out of scope — requires plugin install |
+| Aider | None | n/a | Wrapper scripts + `sesslint scan` |
+
+## Session-index health
+
+Directory scans also reconcile the vendor session index against the files
+on disk (SL402): sessions the picker cannot see, index entries pointing at
+nothing, and malformed/truncated index files. `sesslint doctor` reports a
+per-root index state (`ok`, `stale-divergent`, `malformed`, `truncated`,
+`absent`, `unverified-format`) with counts only. The per-runtime index
+coverage matrix — which runtimes have a verified file-readable index —
+lives in [`codes/SL402.md`](codes/SL402.md#per-runtime-index-coverage).
+
 ## Not yet supported
 
-- **Codex CLI hooks** — Codex has no documented user-facing hook surface as of
-  this writing. `sesslint scan --agent codex` covers its
-  session roots; gate behavior via wrapper scripts.
 - **Automatic hook installation** — SessLint will never edit your agent
   configuration. Recipes above are intentionally copy-paste.
 - **OS-event watch backends** — `sesslint watch` polls via stdlib `scandir` snapshots (portable, no deps); inotify/FSEvents/ReadDirectoryChangesW integrations are out of scope.

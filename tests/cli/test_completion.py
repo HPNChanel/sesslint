@@ -16,6 +16,7 @@ PINNED_COMMANDS = (
     "doctor",
     "export",
     "formats",
+    "hook",
     "init-hooks",
     "mcp",
     "repair",
