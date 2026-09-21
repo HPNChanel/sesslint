@@ -1,4 +1,4 @@
-# Vendor Drift Watch Protocol *(next release)*
+# Vendor Drift Watch Protocol
 
 How SessLint keeps its adapters honest as vendors ship format changes.
 This is a maintainer-side protocol: offline, content-free, and manual —

@@ -1,10 +1,8 @@
-# CI Templates *(next release)*
+# CI Templates
 
 Copy-paste pipeline snippets for platforms without a native SessLint
 action — GitLab CI, Azure Pipelines, CircleCI. GitHub users should use the
 composite action instead (`.github/actions/sesslint-check`).
-
-<!-- next-release -->
 
 Conventions shared by every template below:
 
@@ -23,15 +21,13 @@ Conventions shared by every template below:
 
 ## GitLab CI
 
-<!-- next-release -->
-
 ```yaml
 # ci-template: gitlab
 sesslint-check:
   stage: test
   image: python:3.12-slim
   script:
-    - pip install sesslint==0.2.0
+    - pip install sesslint==0.3.0
     - sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
   artifacts:
     when: always
@@ -45,8 +41,6 @@ add `--skip-undetected` if the tree mixes non-session files.
 
 ## Azure Pipelines
 
-<!-- next-release -->
-
 ```yaml
 # ci-template: azure
 steps:
@@ -54,7 +48,7 @@ steps:
     inputs:
       versionSpec: "3.12"
   - script: |
-      pip install sesslint==0.2.0
+      pip install sesslint==0.3.0
       sesslint scan sessions/ --output-format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
     displayName: "Run SessLint integrity scan"
   - task: PublishBuildArtifacts@1
@@ -70,8 +64,6 @@ that file instead.
 
 ## CircleCI
 
-<!-- next-release -->
-
 ```yaml
 # ci-template: circleci
 version: 2.1
@@ -83,7 +75,7 @@ jobs:
       - checkout
       - run:
           name: "Install SessLint (pinned)"
-          command: pip install sesslint==0.2.0
+          command: pip install sesslint==0.3.0
       - run:
           name: "Run integrity scan"
           command: sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
@@ -96,8 +88,6 @@ workflows:
 ```
 
 ## Flag parity vs the GitHub action
-
-<!-- next-release -->
 
 Every action input maps to the identical CLI flag:
 
@@ -116,6 +106,6 @@ Every action input maps to the identical CLI flag:
 | `skip-undetected` | `--skip-undetected` | — |
 | `config` | `--config` | — |
 | `output-format` | `--output-format` | `json` (redirect to artifact) |
-| `package` / `source-ref` | install line | `sesslint==0.2.0` |
+| `package` / `source-ref` | install line | `sesslint==0.3.0` |
 | `python-version` | runner image | `3.12` |
 | `sarif` output | `--output-format sarif` | redirect to artifact file |

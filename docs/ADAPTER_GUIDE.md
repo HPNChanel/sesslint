@@ -295,7 +295,7 @@ The table below tracks known open questions regarding upstream vendor formats. T
 
 ---
 
-## Shape Inventory (dev tool) *(next release)*
+## Shape Inventory (dev tool)
 
 `scripts/shape_inventory.py` walks a local session directory and reports
 which record `type` values, payload types, and key names exist — the

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 CLI_VERSION: Final[str] = __version__
 SESSION_SCHEMA_VERSION: Final[str] = "sesslint.session/v1"
 REPORT_SCHEMA_VERSION: Final[str] = "sesslint.report/v1"

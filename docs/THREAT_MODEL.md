@@ -1,4 +1,4 @@
-# Threat Model — SessLint *(next release)*
+# Threat Model — SessLint
 
 Structured threat model for an offline session-integrity checker and
 conservative repair engine. Scope: the CLI/library as shipped — reading

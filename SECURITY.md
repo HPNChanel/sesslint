@@ -58,7 +58,7 @@ Design-level guarantees enforced by the test suite:
 
 For a structured account of what hostile input can attempt, which bounds
 stop it, and which threats are declared out of scope, see
-[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) *(next release)* — assets,
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) — assets,
 trust boundaries, per-boundary threats with enforcing-code citations, and
 the residual-risk register.
 

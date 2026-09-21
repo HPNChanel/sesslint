@@ -1,4 +1,4 @@
-# Adapter SDK v1 *(next release)*
+# Adapter SDK v1
 
 Contract for contributing a new input adapter to sesslint. This document is
 normative: "must" / "never" statements describe enforced behavior, and each
@@ -11,7 +11,7 @@ registration entries, fixtures, and tests. Everything in this SDK can be
 implemented touching only:
 
 > The normative event-model contract every adapter emits is specified in
-> [SPEC.md](SPEC.md) *(next release)* — field semantics, identity, ordering,
+> [SPEC.md](SPEC.md) — field semantics, identity, ordering,
 > and hashing rules cited below are defined there.
 
 - `src/sesslint/adapters/<name>.py` (new)

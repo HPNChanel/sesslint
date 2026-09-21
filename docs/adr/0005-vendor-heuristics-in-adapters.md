@@ -38,7 +38,7 @@ branch on vendor identity.
 
 ## Evidence
 
-- `docs/ADAPTER_SDK.md` *(next release)* — "non-goals for adapter
+- `docs/ADAPTER_SDK.md` — "non-goals for adapter
   authors" and the registration contract.
 - `README.md` — "The Anti-Leak Rule" note.
 - `tests/conformance/test_adapter_suite.py` — uniform battery across all

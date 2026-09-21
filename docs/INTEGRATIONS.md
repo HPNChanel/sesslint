@@ -15,7 +15,7 @@ are copy-paste recipes you own.
 > stops matching your runtime, treat it as community-verified and check the
 > upstream docs before filing an issue.
 
-> `sesslint init-hooks --agent claude --print` *(next release)* prints the
+> `sesslint init-hooks --agent claude --print` prints the
 > exact JSON blocks below ready to paste — it never writes your settings.
 
 Claude Code fires hooks at lifecycle points where SessLint adds value:
@@ -45,7 +45,6 @@ ledger produces a summary of garbage.
 
 ### Recipe: SessionStart corruption warning
 
-<!-- next-release -->
 Add to `.claude/settings.json` (project) or `~/.claude/settings.json` (user):
 
 ```json
@@ -134,29 +133,29 @@ if not result.ok:
 It never raises on session findings — only returns `PrecheckResult` with
 `exit_code` 0/1/2 matching the CLI contract above.
 
-## Live monitoring: `sesslint watch` *(next release)*
+## Live monitoring: `sesslint watch`
 
 Run `sesslint watch` alongside your agent to catch corruption the moment it
 is written — not at next resume:
 
 ```bash
 # Watch every discovered agent root (default 2s poll)
-sesslint watch --agent all  # next release
+sesslint watch --agent all
 
 # Or watch one project directory
 sesslint watch ~/.claude/projects/my-app/
 
 # Machine-consumable transitions (NDJSON sesslint.watch-event/v1)
-sesslint watch --agent all --json >> ~/.local/state/sesslint-watch.ndjson  # next release
+sesslint watch --agent all --json >> ~/.local/state/sesslint-watch.ndjson
 ```
 
 Each verdict change prints one line — `healthy->invalid` with the rule codes
 — and stays quiet otherwise. Watch is a pure observer: it never writes to
 watched directories, never installs hooks, and Ctrl+C exits cleanly. Poll
 cost scales with file count; narrow the scope with an explicit path or
-`--agent` when watching large roots. *(next release)*
+`--agent` when watching large roots.
 
-## MCP server: `sesslint mcp` *(next release)*
+## MCP server: `sesslint mcp`
 
 Agents that natively consume MCP servers (Claude Code, Codex) can call
 SessLint checks directly. `sesslint mcp` runs a Model Context Protocol
@@ -191,9 +190,9 @@ Each tool takes `path` (required), plus optional `profile` (`neutral`,
 paths and tool failures return `isError: true` results with content-free
 reason strings; protocol problems return JSON-RPC error objects. The server
 adds no timestamps — identical requests produce identical responses.
-EOF or Ctrl+C exits cleanly. *(next release)*
+EOF or Ctrl+C exits cleanly.
 
-## Editor problem-matchers *(next release)*
+## Editor problem-matchers
 
 `contrib/editors/problem-matcher.json` ships a two-line problemMatcher so
 `sesslint check`/`scan` human output becomes click-to-line navigation in
@@ -205,8 +204,8 @@ workspace-relative inputs for clickable navigation.
 ## Not yet supported
 
 - **Codex CLI hooks** — Codex has no documented user-facing hook surface as of
-  this writing. `sesslint scan --agent codex` *(next release)* covers its
+  this writing. `sesslint scan --agent codex` covers its
   session roots; gate behavior via wrapper scripts.
 - **Automatic hook installation** — SessLint will never edit your agent
   configuration. Recipes above are intentionally copy-paste.
-- **OS-event watch backends** — `sesslint watch` *(next release)* polls via stdlib `scandir` snapshots (portable, no deps); inotify/FSEvents/ReadDirectoryChangesW integrations are out of scope.
+- **OS-event watch backends** — `sesslint watch` polls via stdlib `scandir` snapshots (portable, no deps); inotify/FSEvents/ReadDirectoryChangesW integrations are out of scope.

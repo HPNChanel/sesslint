@@ -15,10 +15,10 @@ reference material.
 | [REPORTING_CORRUPTION.md](REPORTING_CORRUPTION.md) | The check → bundle → attach flow for filing privacy-safe upstream corruption reports. |
 | [INTEGRATIONS.md](INTEGRATIONS.md) | Agent runtime hook recipes (Claude Code `SessionStart`/`PreCompact`), the precheck gate contract, MCP server, and editor problem-matchers. |
 | [CI_TEMPLATES.md](CI_TEMPLATES.md) | Copy-paste pipeline templates for GitLab CI, Azure Pipelines, and CircleCI — pinned installs, flag parity with the GitHub action, artifact upload. |
-| [SPEC.md](SPEC.md) | Canonical event model — Spec v0.1: normative field/identity/ordering/hash semantics and assurance vocabulary with `file:symbol` enforcement cites. *(next release)* |
-| [adr/](adr/README.md) | Architecture decision records — why pinned invariants exist (fail-closed, identity, privacy, determinism). *(next release)* |
-| [THREAT_MODEL.md](THREAT_MODEL.md) | Structured threat model: assets, trust boundaries, per-boundary threats with enforcing-code citations, residual risks. *(next release)* |
-| [MUTATION_TESTING.md](MUTATION_TESTING.md) | Scoped mutmut protocol (qa-infra T-02): POSIX-only requirement, module scope, triage classes, baseline note. *(next release)* |
+| [SPEC.md](SPEC.md) | Canonical event model — Spec v0.1: normative field/identity/ordering/hash semantics and assurance vocabulary with `file:symbol` enforcement cites. |
+| [adr/](adr/README.md) | Architecture decision records — why pinned invariants exist (fail-closed, identity, privacy, determinism). |
+| [THREAT_MODEL.md](THREAT_MODEL.md) | Structured threat model: assets, trust boundaries, per-boundary threats with enforcing-code citations, residual risks. |
+| [MUTATION_TESTING.md](MUTATION_TESTING.md) | Scoped mutmut protocol (qa-infra T-02): POSIX-only requirement, module scope, triage classes, baseline note. |
 | [codes/](codes/README.md) | Per-code documentation for all 27 diagnostic reason codes (SL001–SL401), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
 | [recipes/](recipes/README.md) | Per-recipe documentation for the 12 deterministic repair recipes. |
 | [reviews/](reviews/README.md) | Historical review artifacts: audit findings, release verdicts, and remediation plans. |

@@ -44,4 +44,4 @@ recipe, never through silent identity stripping.
 - `src/sesslint/canonical.py:SessionEvent.content_identity_hash`,
   `src/sesslint/reference.py`, `src/sesslint/diff.py` — consumers.
 - `tests/test_canonical_codec.py` — hashing semantics.
-- `docs/SPEC.md` §6 *(next release)* — normative statement.
+- `docs/SPEC.md` §6 — normative statement.

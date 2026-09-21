@@ -331,7 +331,7 @@ def test_package_metadata_consistency() -> None:
     assert re.search(r'^name\s*=\s*"sesslint"', pyproject, re.M)
     assert 'path = "src/sesslint/_version.py"' in pyproject
     m = re.search(r'__version__\s*=\s*"([^"]+)"', version_py)
-    assert m and m.group(1) == "0.2.0"
+    assert m and m.group(1) == "0.3.0"
     assert 'license = "Apache-2.0"' in pyproject
     assert 'requires-python = ">=3.11"' in pyproject
     assert 'readme = "README.md"' in pyproject

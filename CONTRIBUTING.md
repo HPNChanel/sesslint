@@ -90,7 +90,7 @@ If you are adding a new session format adapter or updating an existing one (e.g.
 
 ## Submitting Pull Requests
 
-Record architecture decisions in [docs/adr/](docs/adr/README.md) *(next release)*: any change touching a pinned invariant — dependencies, fail-closed semantics, identity/ordering, privacy defaults, determinism, fixture provenance — needs an ADR before merge. Regenerate man pages when the CLI surface changes: `python scripts/gen_man.py --out man` *(next release)*.
+Record architecture decisions in [docs/adr/](docs/adr/README.md): any change touching a pinned invariant — dependencies, fail-closed semantics, identity/ordering, privacy defaults, determinism, fixture provenance — needs an ADR before merge. Regenerate man pages when the CLI surface changes: `python scripts/gen_man.py --out man`.
 
 1. Keep PRs focused, single-purpose, and well-tested.
 2. Include comprehensive docstrings and inline explanation for complex invariants.

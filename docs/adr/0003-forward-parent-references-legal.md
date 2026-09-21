@@ -38,4 +38,4 @@ constraint.
   at the missing-parent scan: "Forward references to IDs present later in
   the session do not fire."
 - `tests/checks/test_graph.py` — forward-reference and missing-parent rows.
-- `docs/SPEC.md` §5 *(next release)* — normative statement.
+- `docs/SPEC.md` §5 — normative statement.

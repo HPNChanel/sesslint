@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-21
+
 ### Added
 
 - PEP 561 `py.typed` marker — downstream consumers now get the strict inline
@@ -823,6 +825,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--flags` carry an explicit `next-release` marker; affected README and
   `docs/` sections are now marked. `RELEASING.md` gains the matching
   checklist steps.
+- README stale claims that `codex-rollout` repair always emits canonical and
+  that `--emit vendor` refuses: the supported-formats table now shows
+  codex-rollout as `Line-faithful` write-back capable, and the repair note
+  documents that `--emit auto` projects repairs onto verbatim rollout lines
+  under the same R1–R6 refusal rules.
 
 ## [0.2.0] - 2026-09-16
 
@@ -906,6 +913,7 @@ hash-verified identical artifacts on both channels.
 - GitHub Release: https://github.com/HPNChanel/sesslint/releases/tag/v0.1.0
 - PyPI: https://pypi.org/project/sesslint/0.1.0/
 
-[Unreleased]: https://github.com/HPNChanel/sesslint/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/HPNChanel/sesslint/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.3.0
 [0.2.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.2.0
 [0.1.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.1.0

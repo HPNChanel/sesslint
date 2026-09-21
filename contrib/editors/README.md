@@ -1,4 +1,4 @@
-# Editor problem-matchers *(next release)*
+# Editor problem-matchers
 
 Reusable problem-matchers for `sesslint check`/`sesslint scan` **human**
 output — click-to-line navigation in any editor that speaks the
