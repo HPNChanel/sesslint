@@ -33,6 +33,13 @@ def _validate_scan_dict_strictly(data: dict[str, Any]) -> None:
         + totals["unreadable"]
         + totals["skipped"]
     )
+    if "skipped_reasons" in totals:
+        reasons = totals["skipped_reasons"]
+        assert isinstance(reasons, dict)
+        assert list(reasons) == sorted(reasons)
+        assert all(isinstance(k, str) and k for k in reasons)
+        assert all(isinstance(v, int) and v >= 1 for v in reasons.values())
+        assert sum(reasons.values()) <= totals["skipped"]
 
     assert isinstance(data["files"], list)
     for f in data["files"]:
@@ -98,3 +105,31 @@ def test_scan_report_dict_validates() -> None:
 def test_scan_report_json_round_trip_validates() -> None:
     parsed = json.loads(_sample_report().to_json())
     _validate_scan_dict_strictly(parsed)
+
+
+def test_scan_report_skipped_reasons_aggregated() -> None:
+    files = (
+        FileResult(path="a.jsonl", verdict="healthy"),
+        FileResult(path="b.jsonl", verdict="skipped", skipped_reason="z-reason"),
+        FileResult(path="c.jsonl", verdict="skipped", skipped_reason="a-reason"),
+        FileResult(path="d.jsonl", verdict="skipped", skipped_reason="z-reason"),
+        FileResult(path="e.jsonl", verdict="skipped"),
+    )
+    rep = ScanReport(
+        root_path="/x",
+        totals=ScanTotals(healthy=1, skipped=4),
+        files=files,
+    )
+    assert rep.skipped_reason_totals() == {"a-reason": 1, "z-reason": 2}
+    totals = rep.to_dict()["totals"]
+    assert totals["skipped_reasons"] == {"a-reason": 1, "z-reason": 2}
+    _validate_scan_dict_strictly(rep.to_dict())
+
+
+def test_scan_report_skipped_reasons_omitted_when_empty() -> None:
+    rep = ScanReport(
+        root_path="/x",
+        totals=ScanTotals(healthy=1),
+        files=(FileResult(path="a.jsonl", verdict="healthy"),),
+    )
+    assert "skipped_reasons" not in rep.to_dict()["totals"]

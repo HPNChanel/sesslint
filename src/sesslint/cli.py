@@ -89,8 +89,16 @@ def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
             f"skipped={scan_report.totals.skipped} "
             f"(total={scan_report.totals.total})"
         ),
-        "-" * 80,
     ]
+    reason_totals = scan_report.skipped_reason_totals()
+    if reason_totals:
+        lines.append("Skipped reasons: " + " ".join(f"{k}={v}" for k, v in reason_totals.items()))
+        if "max-bytes-cap-exceeded" in reason_totals or "max-files-cap-exceeded" in reason_totals:
+            lines.append(
+                "Hint: resource budget exhausted -- raise --max-bytes/--max-files "
+                "to scan remaining files."
+            )
+    lines.append("-" * 80)
     for r in scan_report.files:
         if r.verdict == "healthy":
             tag_color = green

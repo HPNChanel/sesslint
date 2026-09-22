@@ -51,6 +51,14 @@
         "unsupported": {
           "type": "integer",
           "minimum": 0
+        },
+        "skipped_reasons": {
+          "type": "object",
+          "description": "Aggregate counts of skipped_reason values across skipped files.",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       },
       "additionalProperties": false

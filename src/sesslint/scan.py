@@ -255,13 +255,30 @@ class ScanReport:
     files: tuple[FileResult, ...] = ()
     summary: ScanSummary | None = None
 
+    def skipped_reason_totals(self) -> dict[str, int]:
+        """Aggregate per-file ``skipped_reason`` counts into a sorted dict.
+
+        Derived from ``files`` at call time so every construction path
+        (single-file, recursive walk, batch merge) reports identical
+        aggregates. Files skipped without a reason are not counted.
+        """
+        counts: dict[str, int] = {}
+        for fr in self.files:
+            if fr.verdict == "skipped" and fr.skipped_reason:
+                counts[fr.skipped_reason] = counts.get(fr.skipped_reason, 0) + 1
+        return dict(sorted(counts.items()))
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize scan report to canonical JSON-compatible dictionary."""
+        totals_d: dict[str, Any] = self.totals.to_dict()
+        reason_totals = self.skipped_reason_totals()
+        if reason_totals:
+            totals_d["skipped_reasons"] = reason_totals
         res: dict[str, Any] = {
             "files": [f.to_dict() for f in self.files],
             "root_path": self.root_path,
             "schema_version": self.schema_version,
-            "totals": self.totals.to_dict(),
+            "totals": totals_d,
         }
         if self.summary is not None:
             res["summary"] = self.summary.to_dict()

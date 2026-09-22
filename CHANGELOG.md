@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scan skip-reason aggregation**: `ScanReport.skipped_reason_totals()`
+  derives per-reason counts from the file results; serialized scan reports
+  gain an optional `totals.skipped_reasons` object (schema
+  `sesslint.scan-report/v1` extended additively, emitted only when skips
+  exist), and the human scan/check output prints a `Skipped reasons:`
+  rollup line plus a `--max-bytes`/`--max-files` hint when a resource cap
+  was the cause. Content-free: reason keys only.
 - **SL009 persisted-secret detector** (transcript-hygiene T-01): adapters now
   scan raw persisted record bytes during the existing read pass — including
   records that fail JSON validation — for 14 well-known secret token shapes

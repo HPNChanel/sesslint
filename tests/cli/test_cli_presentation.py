@@ -101,3 +101,35 @@ def test_cli_scan_command_color_alignment(
     for line in file_lines:
         assert len(line) > 23, f"Missing path column: {line}"
         assert line[22] == " " and line[23] != " ", f"Misaligned path start: {line}"
+
+
+def test_skipped_reasons_aggregate_line() -> None:
+    """Skipped-reason aggregates surface cap exhaustion; hint only for cap reasons."""
+    files = (
+        FileResult(path="a.jsonl", verdict="healthy"),
+        FileResult(path="b.jsonl", verdict="skipped", skipped_reason="max-bytes-cap-exceeded"),
+        FileResult(path="c.jsonl", verdict="skipped", skipped_reason="max-bytes-cap-exceeded"),
+    )
+    report = ScanReport(
+        root_path="/x",
+        totals=ScanTotals(healthy=1, skipped=2),
+        files=files,
+    )
+    out = format_scan_report_human(report, color=False)
+    assert "Skipped reasons: max-bytes-cap-exceeded=2" in out
+    assert "Hint: resource budget exhausted" in out
+
+
+def test_skipped_reasons_line_no_hint_for_non_cap() -> None:
+    """Non-capability skips get the aggregate line but no budget hint."""
+    report = _make_dummy_scan_report()
+    out = format_scan_report_human(report, color=False)
+    assert "Skipped reasons: max-depth-exceeded=1" in out
+    assert "Hint:" not in out
+
+
+def test_skipped_reasons_line_absent_without_skips() -> None:
+    files = (FileResult(path="a.jsonl", verdict="healthy"),)
+    report = ScanReport(root_path="/x", totals=ScanTotals(healthy=1), files=files)
+    out = format_scan_report_human(report, color=False)
+    assert "Skipped reasons:" not in out
