@@ -42,6 +42,7 @@ from sesslint.progress import (
     emit,
 )
 from sesslint.report import minimize_path, short_hash
+from sesslint.state_db import is_state_db_name, read_codex_state
 
 if TYPE_CHECKING:
     from sesslint.cache import ScanCache
@@ -981,6 +982,7 @@ def scan_path(
     file_results: list[FileResult] = []
     pending_files: list[tuple[Path, str, str | None]] = []
     index_files: list[Path] = []
+    state_db_files: list[Path] = []
     cumulative_bytes = 0
     scanned_count = 0
 
@@ -1065,8 +1067,11 @@ def scan_path(
             # collected for the post-walk membership diff. They still get
             # scanned as ordinary files below — findings attach to their
             # own FileResult.
-            if not entry.is_dir(follow_symlinks=False) and entry.name in INDEX_FILE_NAMES:
-                index_files.append(entry_p)
+            if not entry.is_dir(follow_symlinks=False):
+                if entry.name in INDEX_FILE_NAMES:
+                    index_files.append(entry_p)
+                elif is_state_db_name(entry.name):
+                    state_db_files.append(entry_p)
 
             try:
                 st = entry_p.lstat()
@@ -1353,8 +1358,11 @@ def scan_path(
     # SL402 session-index reconciliation — same scan-layer discipline: the
     # membership diff needs the whole file set plus the vendor index, so it
     # never runs from single-file ``check``.
-    if SL402 in scan_enabled and index_files:
-        file_results = _reconcile_session_indexes(file_results, index_files, baseline=baseline)
+    if SL402 in scan_enabled and (index_files or state_db_files):
+        file_results = _reconcile_session_indexes(
+            file_results, index_files, state_db_files=state_db_files, baseline=baseline
+        )
+        file_results = _reconcile_state_dbs(file_results, state_db_files, baseline=baseline)
 
     healthy_c = sum(1 for r in file_results if r.verdict == "healthy")
     invalid_c = sum(1 for r in file_results if r.verdict == "invalid")
@@ -1541,6 +1549,7 @@ def _reconcile_session_indexes(
     results: list[FileResult],
     index_paths: Sequence[Path],
     *,
+    state_db_files: Sequence[Path] = (),
     baseline: frozenset[str] | None,
 ) -> list[FileResult]:
     """Diff each in-scope vendor index against the scanned file set (SL402).
@@ -1651,6 +1660,12 @@ def _reconcile_session_indexes(
                 # already emitted; membership claims suppressed.
                 continue
             disk_ids, subtree_paths = walked
+            state_thread_ids: frozenset[str] = frozenset()
+            for dbp in state_db_files:
+                if dbp.parent == index_p.parent:
+                    s = read_codex_state(dbp)
+                    if s.parse_ok and s.schema_note is None:
+                        state_thread_ids |= s.thread_ids
             scope = [i for i, res in enumerate(results) if res.path in subtree_paths]
             members = [
                 i
@@ -1747,6 +1762,8 @@ def _reconcile_session_indexes(
                     continue  # sessions subtree not enumerable — absence unprovable
                 if forms & disk_ids:
                     continue  # file exists on disk but was out of scan scope
+                if forms & state_thread_ids:
+                    continue  # registry still tracks the thread (ledger retention)
             else:
                 if entry.full_path:
                     fp = Path(entry.full_path)
@@ -1769,6 +1786,178 @@ def _reconcile_session_indexes(
                     "Vendor session index entry has no matching session file",
                 ),
             )
+    return out
+
+
+def _reconcile_state_dbs(
+    results: list[FileResult],
+    state_db_files: Sequence[Path],
+    *,
+    baseline: frozenset[str] | None,
+) -> list[FileResult]:
+    """Reconcile Codex ``state_*.sqlite`` registries against disk truth (SL402).
+
+    The sqlite ``threads`` table is Codex's authoritative membership ledger
+    (unlike the opt-in ``session_index.jsonl`` named-threads registry), so
+    the provable divergences here are:
+
+    * ``index-malformed`` — the db cannot be read as a Codex registry
+      (locked, corrupt, oversized; ``unrecognized-shape`` files are foreign
+      dbs and stay silent).
+    * ``file-not-in-index`` — a rollout ledger on disk whose UUID has no
+      ``threads`` row (partial-write orphan).
+    * ``spawn-edge-orphan`` — a ``thread_spawn_edges`` row referencing a
+      nonexistent thread id.
+    * ``migration-skip-recorded`` — ``rollout_migration_skipped_rollouts``
+      is non-empty: the vendor itself recorded unmigratable ledgers.
+    * ``index-entry-no-file`` — a ``session_index.jsonl`` named id that
+      resolves to no threads row and no rollout on disk: the vendor's own
+      stores disagree.
+
+    The registry→file direction is deliberately silent: Codex retains
+    ``threads`` rows after rollout retention cleanup, so a missing ledger
+    for a registered thread is vendor-normal, not divergence.
+    """
+    from sesslint.adapters.detect import FORMAT_CODEX_ROLLOUT
+    from sesslint.indexes import read_index
+
+    by_path = {res.path: i for i, res in enumerate(results)}
+    out = list(results)
+
+    def _emit(res_idx: int, finding: Finding) -> None:
+        res = out[res_idx]
+        if baseline is not None and finding.fingerprint in baseline:
+            return
+        out[res_idx] = replace(
+            res,
+            findings=res.findings + (finding,),
+            warning_count=res.warning_count + 1,
+        )
+
+    def _finding(res: FileResult, ev: dict[str, Any], msg: str) -> Finding:
+        return make_finding(
+            code=SL402,
+            severity=Severity.WARNING,
+            repairability=Repairability.MANUAL,
+            message_template=msg,
+            source=SourceRef(path=res.path),
+            evidence=ev,
+        )
+
+    for db_path in sorted(state_db_files, key=lambda p: minimize_path(p)):
+        db_disp = minimize_path(db_path)
+        db_i = by_path.get(db_disp)
+        if db_i is None:
+            continue  # not scanned as a result — nowhere to attach
+        snap = read_codex_state(db_path)
+        if not snap.parse_ok:
+            if snap.schema_note == "unrecognized-shape":
+                continue  # valid sqlite but not a Codex registry — silent
+            ev: dict[str, Any] = {
+                "divergence": "index-malformed",
+                "resolution": "unparseable",
+                "error_kind": snap.schema_note or "malformed",
+                "store": "state-sqlite",
+            }
+            _emit(db_i, _finding(out[db_i], ev, "Codex state database cannot be parsed"))
+            continue
+        if snap.schema_note is not None:
+            continue  # absent — nothing provable
+
+        # Sessions subtree truth for membership + dangling resolution.
+        walked = _walk_rollout_files(db_path.parent / "sessions")
+        disk_ids: frozenset[str] = walked[0] if walked is not None else frozenset()
+        subtree_paths: frozenset[str] = walked[1] if walked is not None else frozenset()
+        members = [
+            i
+            for i, res in enumerate(out)
+            if res.path in subtree_paths
+            and res.detected_format == FORMAT_CODEX_ROLLOUT
+            and res.verdict in ("healthy", "invalid")
+        ]
+
+        # Unregistered ledgers: file on disk but no threads row.
+        for i in members:
+            u = _rollout_uuid(PurePosixPath(out[i].path).stem)
+            ids = {x for x in (out[i].session_id, u) if x}
+            if ids and not ids & snap.thread_ids:
+                ev = {
+                    "divergence": "file-not-in-index",
+                    "resolution": "missing",
+                    "session_id_hash8": short_hash(out[i].session_id or sorted(ids)[0]),
+                    "index_entry_count": snap.thread_rows,
+                    "store": "state-sqlite",
+                }
+                _emit(
+                    i,
+                    _finding(
+                        out[i], ev, "Session file is not registered in the Codex state database"
+                    ),
+                )
+
+        if snap.spawn_edge_orphans:
+            ev = {
+                "divergence": "spawn-edge-orphan",
+                "resolution": "dangling",
+                "orphan_edge_count": snap.spawn_edge_orphans,
+                "thread_rows": snap.thread_rows,
+                "store": "state-sqlite",
+            }
+            _emit(
+                db_i,
+                _finding(out[db_i], ev, "Codex spawn graph references nonexistent threads"),
+            )
+
+        if snap.migration_skips:
+            ev = {
+                "divergence": "migration-skip-recorded",
+                "resolution": "vendor-reported",
+                "skip_count": snap.migration_skips,
+                "skip_reason_hash8s": ",".join(snap.migration_skip_reason_hashes),
+                "store": "state-sqlite",
+            }
+            _emit(
+                db_i,
+                _finding(out[db_i], ev, "Codex recorded rollouts it could not migrate"),
+            )
+
+        # Cross-store: named-threads registry ids must resolve to a threads
+        # row or an on-disk rollout — the vendor's own stores disagreeing
+        # is provable divergence. When the JSONL index is itself in scan
+        # scope, ``_reconcile_session_indexes`` already owns its dangling
+        # check (with ``thread_ids`` arbitration) — skip to stay at one
+        # finding per entry.
+        idx_path = db_path.parent / "session_index.jsonl"
+        if minimize_path(idx_path) in by_path:
+            continue
+        if idx_path.is_file() and not idx_path.is_symlink():
+            named = read_index(idx_path)
+            if named.parse_ok and named.membership_complete:
+                member_ids: set[str] = set()
+                for i in members:
+                    r = out[i]
+                    member_ids.update(
+                        x for x in (r.session_id, _rollout_uuid(PurePosixPath(r.path).stem)) if x
+                    )
+                resolvable = snap.thread_ids | disk_ids | member_ids
+                idx_i = db_i
+                for ekey in sorted(named.normalized_ids):
+                    if ekey and ekey not in resolvable:
+                        ev = {
+                            "divergence": "index-entry-no-file",
+                            "resolution": "dangling",
+                            "entry_id_hash8": short_hash(ekey),
+                            "claim_source": "session_index.jsonl",
+                            "store": "state-sqlite",
+                        }
+                        _emit(
+                            idx_i,
+                            _finding(
+                                out[idx_i],
+                                ev,
+                                "Vendor session index entry has no matching session file",
+                            ),
+                        )
     return out
 
 

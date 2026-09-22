@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -267,6 +268,71 @@ def test_doctor_index_codex_subtree_states(tmp_path: Path) -> None:
     idx = rep.roots[0].index
     assert idx is not None
     assert idx.state == "stale-divergent"
+
+
+def _mk_codex_state_db(
+    path: Path, threads: list[tuple[str, str]], edges: list[tuple[str, str]] | None = None
+) -> None:
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)")
+    con.execute(
+        "CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT, status TEXT)"
+    )
+    con.execute(
+        "CREATE TABLE rollout_migration_skipped_rollouts (rollout_path TEXT, skip_reason TEXT)"
+    )
+    for tid, rp in threads:
+        con.execute("INSERT INTO threads VALUES (?,?)", (tid, rp))
+    for a, b in edges or []:
+        con.execute("INSERT INTO thread_spawn_edges VALUES (?,?,?)", (a, b, "open"))
+    con.commit()
+    con.close()
+
+
+def test_doctor_index_codex_state_db(tmp_path: Path) -> None:
+    """Codex state_*.sqlite is the authoritative membership ledger."""
+    home = tmp_path / "home"
+    codex_home = home / ".codex"
+    sess = codex_home / "sessions" / "2026" / "09" / "21"
+    sess.mkdir(parents=True)
+    ua = "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+    ub = "01a0c4d8-a9f7-7973-8155-dba14d25a378"
+    rp = sess / f"rollout-2026-09-21T00-00-00-{ua}.jsonl"
+    rp.write_text("{}\n", encoding="utf-8")
+    _mk_codex_state_db(codex_home / "state_1.sqlite", threads=[(ua, str(rp))])
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "ok"
+    assert idx.index_entries == 1
+    # unregistered rollout on disk -> stale-divergent
+    (sess / f"rollout-2026-09-21T00-00-00-{ub}.jsonl").write_text("{}\n", encoding="utf-8")
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    assert rep.roots[0].index is not None
+    assert rep.roots[0].index.state == "stale-divergent"
+
+
+def test_doctor_index_codex_state_db_orphans_and_malformed(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    codex_home = home / ".codex"
+    sess = codex_home / "sessions" / "2026" / "09" / "21"
+    sess.mkdir(parents=True)
+    ua = "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+    ub = "01a0c4d8-a9f7-7973-8155-dba14d25a378"
+    rp = sess / f"rollout-2026-09-21T00-00-00-{ua}.jsonl"
+    rp.write_text("{}\n", encoding="utf-8")
+    _mk_codex_state_db(
+        codex_home / "state_1.sqlite",
+        threads=[(ua, str(rp))],
+        edges=[(ua, ub)],  # ub has no threads row -> orphan edge
+    )
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    assert rep.roots[0].index is not None
+    assert rep.roots[0].index.state == "stale-divergent"
+    (codex_home / "state_1.sqlite").write_bytes(b"garbage not sqlite")
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    assert rep.roots[0].index is not None
+    assert rep.roots[0].index.state == "malformed"
 
 
 def test_doctor_index_sidecars_not_sessions(tmp_path: Path) -> None:

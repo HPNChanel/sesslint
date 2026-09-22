@@ -175,6 +175,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the bound suppresses absence claims (fail closed). `sesslint doctor`
   reports codex index health via a parent-dir probe, with the same
   dangling-only divergence rule.
+- **SL402 extended to Codex `state_*.sqlite`** (index-reconciliation
+  T-05): the sqlite `threads` table is Codex's authoritative membership
+  ledger (maintainer corpus: 796/796 on-disk rollouts registered). New
+  divergence kinds `spawn-edge-orphan` (spawn-graph references to
+  nonexistent threads — 9 live on the maintainer corpus) and
+  `migration-skip-recorded` (vendor's own `rollout_migration_skipped_rollouts`
+  ledger, reasons hash-only). Membership polarity is asymmetric by design:
+  disk rollout without a `threads` row is `file-not-in-index`
+  (partial-write orphan), while a `threads` row whose rollout is gone is
+  silent (retention is vendor-normal — 67.7% missing on corpus). The
+  named-threads JSONL index is arbitrated against `threads` when the
+  registry is in scope. Read-only by construction: stdlib `sqlite3`,
+  `mode=ro` + `PRAGMA query_only`, strict column allowlist (content
+  columns are never selected), row caps.
 
 ### Changed
 

@@ -258,6 +258,7 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
     """
     from sesslint.indexes import discover_index_files, has_index_format, read_index
     from sesslint.scan import _walk_rollout_files
+    from sesslint.state_db import STATE_DB_GLOB, read_codex_state
 
     indexed = has_index_format(agent)
     codex_layout = agent == "codex"
@@ -306,11 +307,17 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
         elif codex_layout:
             # ``session_index.jsonl`` is a named-threads registry (opt-in),
             # not a membership ledger — unindexed rollouts are vendor-normal.
-            # Divergence is only provable one way: a claimed id with no
-            # rollout on disk. Subtree not enumerable -> nothing provable.
+            # Divergence is only provable one way: a claimed id resolving
+            # to nothing — no rollout on disk AND no threads row in the
+            # state db (the authoritative registry arbitrates retention).
             walked = _walk_rollout_files(subtree)
-            disk_uuids = walked[0] if walked is not None else None
-            if disk_uuids is not None and snap.normalized_ids - disk_uuids:
+            disk_uuids = walked[0] if walked is not None else frozenset()
+            resolvable = set(disk_uuids)
+            for db in sorted(ip.parent.glob(STATE_DB_GLOB))[:64]:
+                s = read_codex_state(db)
+                if s.parse_ok and s.schema_note is None:
+                    resolvable |= s.thread_ids
+            if walked is not None and snap.normalized_ids - resolvable:
                 states.append("stale-divergent")
             else:
                 states.append("ok")
@@ -319,10 +326,29 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
         else:
             states.append("ok")
 
+    # Codex ``state_*.sqlite`` registries (authoritative membership ledger):
+    # health = parse state + provable divergences only. threads→file
+    # direction stays silent (retention is vendor-normal).
+    if codex_layout:
+        for db in sorted(root.parent.glob(STATE_DB_GLOB))[:64]:
+            s = read_codex_state(db)
+            if not s.parse_ok:
+                if s.schema_note == "unrecognized-shape":
+                    continue  # foreign sqlite — not ours
+                states.append("malformed")
+                continue
+            entries += s.thread_rows
+            walked = _walk_rollout_files(root)
+            divergent = s.spawn_edge_orphans > 0 or s.migration_skips > 0
+            if walked is not None:
+                disk_uuids = walked[0]
+                divergent = divergent or bool(disk_uuids - s.thread_ids)
+            states.append("stale-divergent" if divergent else "ok")
+
     # Session-bearing dirs with no index only count as divergence when
     # other dirs are indexed — otherwise the whole root is simply absent.
     unindexed_dirs = not codex_layout and bool(index_paths) and bool(session_dirs - indexed_dirs)
-    if not index_paths:
+    if not index_paths and not states:
         state = "absent"
     elif "malformed" in states:
         state = "malformed"
@@ -336,7 +362,7 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
         state = "ok"
     return IndexDiag(
         sessions_on_disk=len(sessions),
-        index_entries=entries if index_paths else None,
+        index_entries=entries if (index_paths or states) else None,
         state=state,
     )
 
