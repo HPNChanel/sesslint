@@ -290,6 +290,65 @@ def test_compaction_boundary_without_checkpoint_triggers_sl203() -> None:
     assert _evidence(findings[0])["caused_by"] == ["compaction"]
 
 
+def test_sl203_gated_on_codex_rollout() -> None:
+    """codex-rollout has no checkpoint mechanism — compaction followed by
+    tool events is vendor-normal operation, so SL203 cannot fire. On a
+    real corpus this trigger produced ~246 deterministic false positives
+    (~93% of compacted files, the main driver of invalid verdicts)."""
+    from sesslint.context import CheckContext
+
+    events = [
+        SessionEvent(
+            id="bound-1",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:01Z",
+            actor="system",
+            kind="compaction_boundary",
+        ),
+        SessionEvent(
+            id="call-1",
+            parent_id="bound-1",
+            seq=1,
+            ts="2026-09-05T12:00:02Z",
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="c1",
+        ),
+    ]
+    ctx = CheckContext(adapter_id="codex-rollout")
+    assert check_unsafe_continuation(events, context=ctx) == []
+
+
+def test_sl203_codex_gate_reports_coverage_skip(tmp_path) -> None:
+    """End-to-end: a codex rollout with `compacted` + later tool calls
+    emits no SL203 and records an adapter-not-applicable coverage skip."""
+    import json
+
+    from sesslint.api import check_file
+
+    p = tmp_path / "rollout-compact.jsonl"
+    rows = [
+        {"type": "session_meta", "payload": {"id": "thread-x"}},
+        {
+            "type": "response_item",
+            "id": "e1",
+            "payload": {"type": "function_call", "name": "t", "call_id": "c1"},
+        },
+        {"type": "compacted", "payload": {"message": "x"}},
+        {
+            "type": "response_item",
+            "id": "e2",
+            "payload": {"type": "function_call", "name": "t", "call_id": "c2"},
+        },
+    ]
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8", newline="\n")
+    res = check_file(p, format="codex-rollout")
+    assert all(f.code != SL203 for f in res.findings)
+    skips = {(s.check, s.reason) for s in res.coverage.skipped}
+    assert ("SL203", "adapter-not-applicable") in skips
+
+
 def test_determinism_and_stable_fingerprints() -> None:
     """Repeated runs produce byte-identical sorted outputs and stable fingerprints."""
     events = [

@@ -281,6 +281,22 @@ def run_all_checks(
                     context=context,
                 )
             )
+            if "SL203" in enabled and context.adapter_id == "codex-rollout":
+                # codex-rollout never emits checkpoint-kind events, so the
+                # compaction-boundary trigger is structurally unsatisfiable
+                # and SL201/SL202 cannot fire (no run_state) — the check is
+                # inapplicable on this adapter, not merely silent.
+                performed_checks.discard("SL203")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL203",
+                        reason="adapter-not-applicable",
+                        detail=(
+                            "codex-rollout has no checkpoint mechanism — "
+                            "continuation after compaction is vendor-normal"
+                        ),
+                    )
+                )
 
         if "SL206" in enabled:
             if context.adapter_id != "codex-rollout":

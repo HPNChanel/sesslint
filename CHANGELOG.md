@@ -212,6 +212,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   producing `ambiguous`/`missing` noise); and the `rollout-<ts>-<uuid>`
   filename uuid is now indexed as a link target alias, so links resolve
   even when the parent's `session_meta` is torn and surfaces no id.
+- **SL203 gated off `codex-rollout`**: the unsafe-continuation check's
+  only reachable trigger on Codex is "compaction boundary without a
+  subsequent checkpoint", but `compacted` records are vendor-normal
+  context management and Codex has no checkpoint mechanism to satisfy
+  the requirement — on a real 799-file corpus this produced 246
+  deterministic ERRORs (~93% of compacted files) and drove most
+  `invalid` verdicts. The check now reports `adapter-not-applicable`
+  on codex; SL201/SL202/SL205 are unchanged.
 - **SL011 gated off `codex-rollout`**: Codex envelopes mix byte-scale
   metadata records with multi-MiB bulk payloads (`event_msg`/`compacted`/
   `response_item`) by design, so the within-file size outlier fired on

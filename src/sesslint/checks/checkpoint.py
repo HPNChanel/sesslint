@@ -829,6 +829,16 @@ def check_unsafe_continuation(
     - evidence: {caused_by: [sorted triggers], first_unsafe_index}.
     """
     ctx = context if context is not None else CheckContext()
+    if ctx.adapter_id == "codex-rollout":
+        # codex-rollout has no checkpoint mechanism — the adapter never emits
+        # checkpoint-kind events — so "compaction without a subsequent
+        # checkpoint" is the format's normal operation mode, not a provable
+        # unsafe continuation. On a real corpus this trigger fired on ~93%
+        # of compacted files (246/265) — deterministic false positives.
+        # SL201/SL202-derived triggers cannot fire either (no checkpoint
+        # events and no run_state projection), so the check is wholly
+        # inapplicable on this adapter.
+        return []
     # Compute SL201 and SL202 if not provided
     f201 = (
         prior_sl201_findings
