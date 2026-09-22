@@ -23,13 +23,16 @@ MAX_INDEX_ENTRIES: int = 65536
 MAX_PROJECT_DIRS: int = 4096
 
 _INDEX_FORMAT_CLAUDE = "claude-sessions-index"
+_INDEX_FORMAT_CODEX = "codex-session-index"
 _INDEX_FORMAT_UNKNOWN = "unknown"
 
-# Per-runtime index-file names discoverable under a session root. Codex's
-# thread index lives in its internal store — out of scope for file-based
-# reads (T-01 limitation, see plans/index-reconciliation).
+# Per-runtime index-file names discoverable under a session root. Codex
+# keeps a JSONL thread index at the vendor home (``session_index.jsonl``)
+# while ledgers live under ``sessions/**`` — reconciled as a subtree
+# scope, not a sibling set (index-reconciliation T-04).
 _INDEX_FILENAMES: dict[str, tuple[str, ...]] = {
     "claude": ("sessions-index.json",),
+    "codex": ("session_index.jsonl",),
 }
 
 # Flat set of every vendor index filename the scanner recognizes (SL402).
@@ -197,6 +200,9 @@ def read_index(path: Path) -> IndexSnapshot:
     except UnicodeDecodeError:
         return _snapshot(parse_ok=False, note="malformed")
 
+    if path.name == "session_index.jsonl":
+        return _read_jsonl_index(text)
+
     try:
         doc = json.loads(text)
     except json.JSONDecodeError:
@@ -215,6 +221,55 @@ def read_index(path: Path) -> IndexSnapshot:
         return _snapshot(parse_ok=False, note="oversized")
     fmt = _INDEX_FORMAT_CLAUDE if note != "unrecognized-shape" else _INDEX_FORMAT_UNKNOWN
     return _snapshot(fmt=fmt, entries=entries, parse_ok=True, note=note)
+
+
+def _read_jsonl_index(text: str) -> IndexSnapshot:
+    """Read a Codex ``session_index.jsonl`` thread index (T-04).
+
+    One ``{"id", "thread_name", "updated_at"}`` object per line; only
+    ``id`` is retained — ``thread_name`` is content and is dropped at
+    the reader boundary. A malformed final line marks the snapshot
+    ``truncated`` (salvaged prefix kept); a malformed mid-file line
+    fails the whole index — a corrupted middle is not a clean cut.
+    """
+    entries: list[IndexEntry] = []
+    lines = text.splitlines()
+    missing_id = 0
+    saw_object = False
+    for pos, line in enumerate(lines):
+        if len(entries) >= MAX_INDEX_ENTRIES:
+            return _snapshot(fmt=_INDEX_FORMAT_CODEX, parse_ok=False, note="oversized")
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            tail = pos == len(lines) - 1
+            return _snapshot(
+                fmt=_INDEX_FORMAT_CODEX,
+                entries=tuple(entries),
+                parse_ok=False,
+                truncated=tail,
+                note="truncated" if tail else "malformed",
+            )
+        if not isinstance(obj, dict):
+            return _snapshot(fmt=_INDEX_FORMAT_CODEX, parse_ok=False, note="unrecognized-shape")
+        saw_object = True
+        sid = obj.get("id")
+        sid_v = sid if isinstance(sid, str) and sid else None
+        if sid_v is None:
+            missing_id += 1
+        entries.append(IndexEntry(session_id=sid_v, full_path=None))
+    if not saw_object:
+        return _snapshot(fmt=_INDEX_FORMAT_CODEX, parse_ok=False, note="unrecognized-shape")
+    note = f"{missing_id} entries lack id" if missing_id else None
+    return _snapshot(
+        fmt=_INDEX_FORMAT_CODEX,
+        entries=tuple(entries),
+        parse_ok=True,
+        note=note,
+    )
 
 
 def has_index_format(agent: str) -> bool:
@@ -242,6 +297,15 @@ def discover_index_files(root: Path, agent: str) -> tuple[Path, ...]:
                 out.append(direct)
         except OSError:
             pass
+        if agent == "codex":
+            # Codex keeps the index at the vendor home (``~/.codex/``) —
+            # one level above the ``sessions/`` root callers pass in.
+            try:
+                parent_idx = root.parent / name
+                if parent_idx.is_file() and not parent_idx.is_symlink():
+                    out.append(parent_idx)
+            except OSError:
+                pass
         try:
             if not root.is_dir() or root.is_symlink():
                 return tuple(out)

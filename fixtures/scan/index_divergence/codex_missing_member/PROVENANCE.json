@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "sesslint.test_harness",
+  "seed": 42,
+  "created": "2026-09-21",
+  "contains_real_data": false,
+  "description": "Synthetic Codex session_index.jsonl divergence scenario for SL402"
+}

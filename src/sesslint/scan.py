@@ -15,6 +15,7 @@ import fnmatch
 import io
 import json
 import os
+import re
 import stat
 import sys
 from collections.abc import Iterable, Mapping, Sequence
@@ -1376,6 +1377,53 @@ def scan_path(
     )
 
 
+_CODEX_ROLLOUT_UUID = re.compile(
+    r"^rollout-.*-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+)
+
+
+def _rollout_uuid(stem: str) -> str | None:
+    """Codex rollout filename -> thread UUID (``rollout-<ts>-<uuid>``)."""
+    m = _CODEX_ROLLOUT_UUID.match(stem)
+    return m.group(1).lower() if m else None
+
+
+def _walk_rollout_files(
+    sessions_dir: Path, max_files: int = 200_000
+) -> tuple[frozenset[str], frozenset[str]] | None:
+    """Enumerate ``sessions/`` rollout ledgers for SL402 codex scope.
+
+    Returns ``(uuids, minimized_paths)`` — the on-disk UUID set for
+    dangling proofs plus the minimized display paths identifying which
+    scan results sit under this subtree (``res.path`` values are
+    minimized, so directory ancestry is only recoverable by hashing each
+    candidate's real parent). ``None`` when enumeration is not provable
+    — directory absent/unreadable or over the bound — so callers must
+    suppress absence claims rather than guess (fail closed).
+    """
+    if not sessions_dir.is_dir():
+        return None
+    ids: set[str] = set()
+    paths: set[str] = set()
+    seen = 0
+    try:
+        for root, _dirs, files in os.walk(sessions_dir):
+            for name in files:
+                seen += 1
+                if seen > max_files:
+                    return None
+                if not name.startswith("rollout-") or not name.endswith(".jsonl"):
+                    continue
+                u = _rollout_uuid(name[: -len(".jsonl")])
+                if u:
+                    ids.add(u)
+                paths.add(minimize_path(Path(root) / name))
+    except OSError:
+        return None
+    return frozenset(ids), frozenset(paths)
+
+
 def _looks_pathy(target: str) -> bool:
     """True when a link target is spelled like a path rather than a bare id."""
     t = target.replace("\\", "/")
@@ -1519,13 +1567,15 @@ def _reconcile_session_indexes(
     Findings append in deterministic order: malformed/truncated first, then
     dangling entries sorted by id. Never runs from single-file ``check``.
     """
-    from sesslint.adapters.detect import FORMAT_CLAUDE_CODE
+    from sesslint.adapters.detect import FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT
     from sesslint.indexes import read_index
 
     # Per-index-filename vendor format: only ledger files the adapter layer
-    # identified as this format count as membership candidates (T-02 scope:
-    # Claude only; non-Claude index readers land in T-03).
-    index_format_by_name = {"sessions-index.json": FORMAT_CLAUDE_CODE}
+    # identified as this format count as membership candidates.
+    index_format_by_name = {
+        "sessions-index.json": FORMAT_CLAUDE_CODE,
+        "session_index.jsonl": FORMAT_CODEX_ROLLOUT,
+    }
 
     by_path = {res.path: i for i, res in enumerate(results)}
     out = list(results)
@@ -1584,31 +1634,74 @@ def _reconcile_session_indexes(
         parent_key = PurePosixPath(index_disp).parent.as_posix()
         siblings = [i for i in by_parent.get(parent_key, ()) if i != idx_i]
         expected_fmt = index_format_by_name.get(index_p.name)
-        members = (
-            [
+        codex_scope = expected_fmt == FORMAT_CODEX_ROLLOUT
+        disk_ids: frozenset[str] | None = None
+        if codex_scope:
+            # Codex layout: the index sits at the vendor home while ledgers
+            # live under ``sessions/YYYY/MM/DD/`` — members are the codex
+            # ledgers under that subtree, keyed by rollout-filename UUID
+            # (the vendor's own degraded-lookup key, codex#24425) plus the
+            # adapter-declared session id when present. ``res.path`` is
+            # minimized (``.._<sha1(parent)>/name``), so subtree membership
+            # is recovered by hashing each on-disk candidate's parent.
+            walked = _walk_rollout_files(index_p.parent / "sessions")
+            if walked is None:
+                # Subtree not enumerable — the index alone proves nothing
+                # about files outside the scanned set: index-side kinds
+                # already emitted; membership claims suppressed.
+                continue
+            disk_ids, subtree_paths = walked
+            scope = [i for i, res in enumerate(results) if res.path in subtree_paths]
+            members = [
                 i
-                for i in siblings
+                for i in scope
                 if results[i].detected_format == expected_fmt
                 and results[i].verdict in ("healthy", "invalid")
             ]
-            if expected_fmt is not None
-            else []
-        )
-        member_ids: set[str] = set()
-        for i in members:
-            r = results[i]
-            member_ids.update(x for x in (r.session_id, PurePosixPath(r.path).stem) if x)
-        sibling_stems = {
-            PurePosixPath(results[i].path).stem
-            for i in siblings
-            if PurePosixPath(results[i].path).stem
-        }
+            member_ids = set()
+            for i in members:
+                r = results[i]
+                if r.session_id:
+                    member_ids.add(r.session_id)
+                u = _rollout_uuid(PurePosixPath(r.path).stem)
+                if u:
+                    member_ids.add(u)
+            # ``sibling_stems`` carries rollout UUIDs for codex scope — the
+            # forms compared later are bare uuids, not full stems.
+            sibling_stems = {
+                u for i in scope if (u := _rollout_uuid(PurePosixPath(results[i].path).stem))
+            }
+        else:
+            members = (
+                [
+                    i
+                    for i in siblings
+                    if results[i].detected_format == expected_fmt
+                    and results[i].verdict in ("healthy", "invalid")
+                ]
+                if expected_fmt is not None
+                else []
+            )
+            member_ids = set()
+            for i in members:
+                r = results[i]
+                member_ids.update(x for x in (r.session_id, PurePosixPath(r.path).stem) if x)
+            sibling_stems = {
+                PurePosixPath(results[i].path).stem
+                for i in siblings
+                if PurePosixPath(results[i].path).stem
+            }
         claimed = snap.normalized_ids
 
         if snap.membership_complete:
             for i in members:
                 r = results[i]
-                ids = {x for x in (r.session_id, PurePosixPath(r.path).stem) if x}
+                if codex_scope:
+                    ids = {
+                        x for x in (r.session_id, _rollout_uuid(PurePosixPath(r.path).stem)) if x
+                    }
+                else:
+                    ids = {x for x in (r.session_id, PurePosixPath(r.path).stem) if x}
                 if ids and not ids & claimed:
                     ev = {
                         "divergence": "file-not-in-index",
@@ -1649,14 +1742,20 @@ def _reconcile_session_indexes(
             seen_keys.add(ekey)
             if forms & member_ids or forms & sibling_stems:
                 continue
-            if entry.full_path:
-                fp = Path(entry.full_path)
-                if fp.is_absolute() and fp.is_file():
-                    continue  # path claim resolves outside this dir but exists
-                if not fp.is_absolute() and (index_p.parent / fp).is_file():
-                    continue  # relative path claim resolves beside the index
-            if any((index_p.parent / f"{k}.jsonl").is_file() for k in forms):
-                continue  # sibling file exists but was filtered out of scope
+            if codex_scope:
+                if disk_ids is None:
+                    continue  # sessions subtree not enumerable — absence unprovable
+                if forms & disk_ids:
+                    continue  # file exists on disk but was out of scan scope
+            else:
+                if entry.full_path:
+                    fp = Path(entry.full_path)
+                    if fp.is_absolute() and fp.is_file():
+                        continue  # path claim resolves outside this dir but exists
+                    if not fp.is_absolute() and (index_p.parent / fp).is_file():
+                        continue  # relative path claim resolves beside the index
+                if any((index_p.parent / f"{k}.jsonl").is_file() for k in forms):
+                    continue  # sibling file exists but was filtered out of scope
             ev = {
                 "divergence": "index-entry-no-file",
                 "resolution": "dangling",

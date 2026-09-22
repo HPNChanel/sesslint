@@ -160,6 +160,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `adapter-not-applicable`. Evidence is integers plus a
   `threshold_source` id — never estimated values. The Codex adapter
   gains the `context_pressure` marker (`{occupancy, window}`).
+- **SL402 extended to Codex `session_index.jsonl`** (index-reconciliation
+  T-04): the Codex thread index is a JSONL file at the vendor home
+  (`~/.codex/session_index.jsonl`, `{id, thread_name, updated_at}` per
+  line — only `id` is retained; `thread_name` is content and is dropped
+  at the reader boundary). Member scope is the `<index_dir>/sessions/`
+  subtree with rollout-filename-UUID identity (`rollout-<ts>-<uuid>` —
+  the vendor's own degraded-lookup key per codex#24425), so unparseable
+  ledgers still count. Dangling proofs enumerate the subtree on disk via
+  one bounded walk; when the subtree is absent or over the bound, absence
+  claims are suppressed (fail closed). Maintainer corpus evidence
+  (aggregate counts only): 796 rollout files vs 53 unique index ids —
+  ~96.7% unindexed, the same "session disappeared" class as
+  claude-code#25552/#23614. `sesslint doctor` reports codex index health
+  via a parent-dir probe (the index lives one level above the sessions
+  root).
 
 ### Changed
 

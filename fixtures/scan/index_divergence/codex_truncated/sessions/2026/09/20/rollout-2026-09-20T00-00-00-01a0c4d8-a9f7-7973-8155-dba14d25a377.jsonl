@@ -1,0 +1,2 @@
+{"type": "session_meta", "ordinal": 0, "payload": {"session_id": "01a0c4d8-a9f7-7973-8155-dba14d25a377", "cli_version": "0.0.0-test", "model_provider": "openai", "originator": "codex"}}
+{"type": "response_item", "ordinal": 1, "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "synthetic"}]}}

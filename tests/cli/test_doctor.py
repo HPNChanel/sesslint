@@ -215,8 +215,8 @@ def test_doctor_index_malformed_and_truncated(tmp_path: Path) -> None:
     assert rep.roots[0].index.state == "truncated"
 
 
-def test_doctor_index_unverified_runtime(tmp_path: Path) -> None:
-    """Codex has no verified file-readable index -> unverified-format."""
+def test_doctor_index_absent_codex(tmp_path: Path) -> None:
+    """Codex has a verified reader (T-04) — no index file -> absent."""
     home = tmp_path / "home"
     sess = home / ".codex" / "sessions" / "2026" / "09" / "21"
     sess.mkdir(parents=True)
@@ -224,9 +224,32 @@ def test_doctor_index_unverified_runtime(tmp_path: Path) -> None:
     rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
     idx = rep.roots[0].index
     assert idx is not None
-    assert idx.state == "unverified-format"
+    assert idx.state == "absent"
     assert idx.index_entries is None
     assert idx.sessions_on_disk == 1
+
+
+def test_doctor_index_codex_subtree_states(tmp_path: Path) -> None:
+    """Codex index lives at the vendor home, one level above sessions/."""
+    home = tmp_path / "home"
+    codex_home = home / ".codex"
+    sess = codex_home / "sessions" / "2026" / "09" / "21"
+    sess.mkdir(parents=True)
+    (sess / "rollout-a.jsonl").write_text("{}\n", encoding="utf-8")
+    (codex_home / "session_index.jsonl").write_text(
+        '{"id": "u-a", "thread_name": "x", "updated_at": "t"}' + chr(10),
+        encoding="utf-8",
+    )
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "ok"
+    assert idx.index_entries == 1
+    (sess / "rollout-b.jsonl").write_text("{}\n", encoding="utf-8")
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "stale-divergent"
 
 
 def test_doctor_index_sidecars_not_sessions(tmp_path: Path) -> None:

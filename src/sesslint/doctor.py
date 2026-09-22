@@ -258,19 +258,24 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
     """
     from sesslint.indexes import discover_index_files, has_index_format, read_index
 
-    claude_layout = has_index_format(agent)
+    indexed = has_index_format(agent)
+    codex_layout = agent == "codex"
 
     def _is_session_shaped(c: Path) -> bool:
         if c.suffix != ".jsonl" or c.name.startswith("agent-"):
             return False
+        if codex_layout:
+            # Codex ledgers are ``rollout-*.jsonl`` anywhere under the
+            # ``sessions/`` subtree (nested YYYY/MM/DD).
+            return c.name.startswith("rollout-")
         # Claude sessions live at the top level of each project dir (or the
         # root itself); deeper .jsonl files are sidecars (file-history, etc).
-        return not claude_layout or c.parent == root or c.parent.parent == root
+        return not indexed or c.parent == root or c.parent.parent == root
 
     sessions = [c for c in candidates if _is_session_shaped(c)]
     session_dirs = {c.parent for c in sessions}
 
-    if not claude_layout:
+    if not indexed:
         return IndexDiag(
             sessions_on_disk=len(sessions),
             index_entries=None,
@@ -284,7 +289,13 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
     for ip in index_paths:
         snap = read_index(ip)
         entries += snap.entry_count
-        sibling = sum(1 for c in sessions if c.parent == ip.parent)
+        if codex_layout:
+            # Codex members live under ``<index_dir>/sessions/`` — the
+            # index is not a sibling of the ledgers it tracks.
+            subtree = ip.parent / "sessions"
+            sibling = sum(1 for c in sessions if subtree in c.parents)
+        else:
+            sibling = sum(1 for c in sessions if c.parent == ip.parent)
         if not snap.parse_ok:
             states.append("truncated" if snap.truncated else "malformed")
         elif snap.schema_note == "absent":
@@ -298,7 +309,7 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
 
     # Session-bearing dirs with no index only count as divergence when
     # other dirs are indexed — otherwise the whole root is simply absent.
-    unindexed_dirs = bool(index_paths) and bool(session_dirs - indexed_dirs)
+    unindexed_dirs = not codex_layout and bool(index_paths) and bool(session_dirs - indexed_dirs)
     if not index_paths:
         state = "absent"
     elif "malformed" in states:

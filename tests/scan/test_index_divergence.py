@@ -247,3 +247,67 @@ def test_scan_summary_line_index_side_kinds():
 def test_scan_summary_line_absent_when_clean():
     out = _human_output(scan_path(DIVERGENCE / "absent", recursive=True))
     assert "index divergence" not in out
+
+
+CODEX_UA = "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+CODEX_UB = "01a0c4d8-a9f7-7973-8155-dba14d25a378"
+
+
+def test_codex_consistent_clean():
+    rep = scan_path(DIVERGENCE / "codex_consistent", recursive=True)
+    assert _sl402(rep) == []
+
+
+def test_codex_missing_member_flags_unindexed_rollout():
+    rep = scan_path(DIVERGENCE / "codex_missing_member", recursive=True)
+    hits = _sl402(rep, "session_index.jsonl")
+    assert hits == []  # index-side stays clean
+    hits = _sl402(rep, CODEX_UB + ".jsonl")
+    assert len(hits) == 1
+    fr, f = hits[0]
+    assert f.evidence["divergence"] == "file-not-in-index"
+    assert f.evidence["resolution"] == "missing"
+    assert f.severity is Severity.WARNING
+    # the indexed rollout must not be flagged
+    assert _sl402(rep, CODEX_UA + ".jsonl") == []
+
+
+def test_codex_dangling_entry_flags_index():
+    rep = scan_path(DIVERGENCE / "codex_dangling", recursive=True)
+    hits = _sl402(rep, "session_index.jsonl")
+    assert len(hits) == 1
+    _, f = hits[0]
+    assert f.evidence["divergence"] == "index-entry-no-file"
+    assert f.evidence["resolution"] == "dangling"
+
+
+def test_codex_truncated_tail_line():
+    rep = scan_path(DIVERGENCE / "codex_truncated", recursive=True)
+    hits = _sl402(rep, "session_index.jsonl")
+    assert len(hits) == 1
+    _, f = hits[0]
+    assert f.evidence["divergence"] == "index-truncated"
+    assert f.evidence["parsed_entry_count"] == 1
+
+
+def test_codex_malformed_mid_line():
+    rep = scan_path(DIVERGENCE / "codex_malformed", recursive=True)
+    hits = _sl402(rep, "session_index.jsonl")
+    assert len(hits) == 1
+    _, f = hits[0]
+    assert f.evidence["divergence"] == "index-malformed"
+    # a malformed index cannot prove absence — the member stays clean
+    assert _sl402(rep, CODEX_UA + ".jsonl") == []
+
+
+def test_codex_index_without_sessions_subtree_silent():
+    rep = scan_path(DIVERGENCE / "codex_no_sessions", recursive=True)
+    assert _sl402(rep) == []
+
+
+def test_codex_evidence_is_content_free():
+    rep = scan_path(DIVERGENCE / "codex_missing_member", recursive=True)
+    for _, f in _sl402(rep):
+        blob = json.dumps(dict(f.evidence or {}))
+        for leak in ("synthetic", "thread_name", CODEX_UA, CODEX_UB):
+            assert leak not in blob

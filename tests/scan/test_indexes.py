@@ -189,17 +189,18 @@ def test_verified_matrix_rows_have_readers() -> None:
     from sesslint.indexes import has_index_format
 
     readers = {a for a in ("claude", "codex", "gemini", "copilot") if has_index_format(a)}
-    assert readers == {"claude"}
+    assert readers == {"claude", "codex"}
 
     doc = Path(__file__).resolve().parent.parent.parent / "docs" / "codes" / "SL402.md"
     text = doc.read_text(encoding="utf-8")
     verified_rows = [ln for ln in text.splitlines() if "verified" in ln and ln.startswith("|")]
-    # Exactly one row carries the bold 'verified' reader marker: Claude.
+    # Rows carrying the bold 'verified' reader marker: Claude + Codex (T-04).
     marked = [ln for ln in verified_rows if "**verified**" in ln]
-    assert len(marked) == 1
+    assert len(marked) == 2
     assert "Claude" in marked[0]
+    assert "Codex" in marked[1]
     for row in verified_rows:
-        if "Claude" not in row:
+        if "**verified**" not in row:
             assert "research-only" in row
 
 
@@ -217,3 +218,77 @@ def test_snapshot_is_frozen() -> None:
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         snap.truncated = True  # type: ignore[misc]
+
+
+def _write_codex_index(path: Path, lines: list[str]) -> Path:
+    p = path / "session_index.jsonl"
+    p.write_text(chr(10).join(lines) + chr(10), encoding="utf-8", newline="")
+    return p
+
+
+def test_codex_jsonl_index_reads_ids_only(tmp_path: Path) -> None:
+    from sesslint.indexes import read_index
+
+    p = _write_codex_index(
+        tmp_path,
+        [
+            '{"id": "u-a", "thread_name": "secret title", "updated_at": "t"}',
+            '{"id": "u-b", "thread_name": "x", "updated_at": "t"}',
+            '{"id": "u-a", "thread_name": "y", "updated_at": "t2"}',
+        ],
+    )
+    snap = read_index(p)
+    assert snap.parse_ok and snap.membership_complete
+    assert snap.format == "codex-session-index"
+    assert snap.entry_ids == frozenset({"u-a", "u-b"})  # deduped
+    assert snap.entry_count == 2
+    # thread_name is content — retained nowhere
+    assert "secret title" not in repr(snap)
+
+
+def test_codex_jsonl_truncated_last_line_salvages(tmp_path: Path) -> None:
+    from sesslint.indexes import read_index
+
+    p = tmp_path / "session_index.jsonl"
+    p.write_text(
+        '{"id": "u-a", "thread_name": "x", "updated_at": "t"}' + chr(10) + '{"id": "u-b", "thr',
+        encoding="utf-8",
+        newline="",
+    )
+    snap = read_index(p)
+    assert not snap.parse_ok and snap.truncated
+    assert snap.entry_ids == frozenset({"u-a"})
+
+
+def test_codex_jsonl_malformed_mid_line_fails(tmp_path: Path) -> None:
+    from sesslint.indexes import read_index
+
+    p = tmp_path / "session_index.jsonl"
+    p.write_text(
+        '{"id": "u-a"}' + chr(10) + "not-json{{{" + chr(10) + '{"id": "u-b"}' + chr(10),
+        encoding="utf-8",
+        newline="",
+    )
+    snap = read_index(p)
+    assert not snap.parse_ok and not snap.truncated
+    assert snap.schema_note == "malformed"
+
+
+def test_codex_jsonl_non_index_shape(tmp_path: Path) -> None:
+    from sesslint.indexes import read_index
+
+    p = tmp_path / "session_index.jsonl"
+    p.write_text('[{"id": "u-a"}]' + chr(10), encoding="utf-8", newline="")
+    snap = read_index(p)
+    assert not snap.parse_ok and snap.schema_note == "unrecognized-shape"
+
+
+def test_codex_discover_index_files_parent_probe(tmp_path: Path) -> None:
+    from sesslint.indexes import discover_index_files
+
+    home = tmp_path / "codex_home"
+    sessions = home / "sessions"
+    sessions.mkdir(parents=True)
+    _write_codex_index(home, ['{"id": "u-a", "thread_name": "x", "updated_at": "t"}'])
+    found = discover_index_files(sessions, "codex")
+    assert found == (home / "session_index.jsonl",)
