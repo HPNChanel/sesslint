@@ -123,6 +123,11 @@
           "reason": "adapter-not-applicable"
         },
         {
+          "check": "SL207",
+          "detail": "declared-window pressure applies to codex-rollout streams only",
+          "reason": "adapter-not-applicable"
+        },
+        {
           "check": "SL305",
           "detail": "replay-vocabulary check applies to codex-rollout streams only",
           "reason": "adapter-not-applicable"

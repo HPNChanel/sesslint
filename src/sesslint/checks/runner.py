@@ -19,6 +19,7 @@ from typing import Any
 from sesslint.canonical import SessionEvent
 from sesslint.checks.accounting import check_accounting
 from sesslint.checks.checkpoint import check_checkpoint
+from sesslint.checks.context_pressure import check_context_pressure
 from sesslint.checks.durable_prefix import check_durable_prefix
 from sesslint.checks.foreign_shape import check_foreign_shape
 from sesslint.checks.graph import check_graph
@@ -120,7 +121,7 @@ def run_all_checks(
         ("tool_pairing_1", ("SL101", "SL102", "SL103", "SL104")),
         ("tool_pairing_2", ("SL105", "SL106", "SL107", "SL108")),
         ("checkpoint", ("SL201", "SL202", "SL203", "SL205", "SL206")),
-        ("accounting", ("SL204",)),
+        ("accounting", ("SL204", "SL207")),
         ("size", ("SL011",)),
         ("shape", ("SL305",)),
     ]
@@ -336,6 +337,35 @@ def run_all_checks(
 
         if "SL204" in enabled:
             findings.extend(check_accounting(events, source_path=source_path, context=context))
+
+        if "SL207" in enabled:
+            if context.adapter_id != "codex-rollout":
+                # Adapter-scoped rule: declared-window markers exist only
+                # on codex-rollout token_count records; other formats
+                # carry no on-disk window declaration to compare against.
+                performed_checks.discard("SL207")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL207",
+                        reason="adapter-not-applicable",
+                        detail=("declared-window pressure applies to codex-rollout streams only"),
+                    )
+                )
+                if "SL204" not in enabled:
+                    performed_checks.discard("accounting")
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check="accounting",
+                            reason="adapter-not-applicable",
+                            detail=(
+                                "declared-window pressure applies to codex-rollout streams only"
+                            ),
+                        )
+                    )
+            else:
+                findings.extend(
+                    check_context_pressure(events, source_path=source_path, context=context)
+                )
 
         if "SL011" in enabled:
             if len(events) < SIZE_MIN_RECORDS:

@@ -892,6 +892,32 @@ def _process_rollout_record(
                 out_payload["subtype"] = str(payload.get("type"))
             if payload.get("turn_id") is not None:
                 out_payload["turn_id"] = str(payload.get("turn_id"))
+            if payload.get("type") == "token_count":
+                # SL207: ``token_count`` events carry the vendor's own
+                # per-request context footprint
+                # (``info.last_token_usage.input_tokens`` — the input side
+                # is what occupies the window; ``cached_input_tokens`` is a
+                # subset of it) and the declared model window
+                # (``info.model_context_window``). Lifetime counters such
+                # as ``total_token_usage`` are billing totals, not window
+                # occupancy, and are deliberately not used.
+                info = payload.get("info")
+                if isinstance(info, Mapping):
+                    last_usage = info.get("last_token_usage")
+                    occupancy = (
+                        last_usage.get("input_tokens") if isinstance(last_usage, Mapping) else None
+                    )
+                    window = info.get("model_context_window")
+                    if (
+                        isinstance(occupancy, int)
+                        and not isinstance(occupancy, bool)
+                        and isinstance(window, int)
+                        and not isinstance(window, bool)
+                    ):
+                        codex_extra["context_pressure"] = {
+                            "occupancy": occupancy,
+                            "window": window,
+                        }
     else:
         # Unknown or missing envelope type -> SL302 unknown critical record.
         _emit_sl302(

@@ -146,6 +146,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per file; WARNING severity, manual repairability; non-codex adapters
   skip via coverage `adapter-not-applicable`. The Codex adapter gains
   the `reasoning_content_shape` marker (`absent|null|array|other`).
+- **SL207 context-pressure projection** (detector-depth T-04,
+  codex-rollout-scoped): warns when the last `token_count` marker's
+  declared context occupancy (`info.last_token_usage.input_tokens`)
+  leaves less than 15% headroom under the declared model window
+  (`info.model_context_window`) — the approach to the un-compactable
+  deadlock boundary (contextspectre `docs/deadlock.md`;
+  claude-code#18720/#29890/#75759). The window limit is self-declared
+  in the file, so no profile constants are pinned. Lifetime counters
+  (`total_token_usage`, `thread_token_usage`) are billing totals and
+  deliberately not used. One finding per file; WARNING severity, manual
+  repairability; non-codex adapters skip via coverage
+  `adapter-not-applicable`. Evidence is integers plus a
+  `threshold_source` id — never estimated values. The Codex adapter
+  gains the `context_pressure` marker (`{occupancy, window}`).
 
 ### Changed
 

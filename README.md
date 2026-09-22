@@ -833,6 +833,7 @@ SessLint implements **28 registered diagnostic codes**. Severity and repairabili
 | **`SL204`** | Usage arithmetic | `warning` | `manual` | Cumulative token-usage marker contradicts the window's contribution sum. |
 | **`SL205`** | Compaction coverage gap | `warning` | `manual` | Boundary claims a covered span that is missing or non-contiguous on the parent chain (pointerless boundaries skip). |
 | **`SL206`** | Durable-prefix boundary | `warning` | `manual` | Durable record sequence does not cover the envelope ordinal the resume path expects — trailing non-durable tail, durable hole, or resume-required field absent (codex-rollout streams only; ≤ one finding per divergence kind). |
+| **`SL207`** | Context-pressure projection | `warning` | `manual` | Last declared context occupancy leaves <15% headroom under the declared model window — approaching the un-compactable deadlock boundary (codex-rollout `token_count` markers only; ≤ one finding per file). |
 
 ### 6. Format Compatibility
 | Code | Name | Default Severity | Repairability | Action & Rationale |
@@ -895,28 +896,27 @@ Every report emitted by `sesslint check --json` embeds a top-level `coverage` bl
 ```json
 "coverage": {
   "adapter": {
-    "id": "canonical",
+    "id": "claude-code-jsonl",
     "version": "1.0.0"
   },
   "performed": [
     "SL001", "SL002", "SL003", "SL004", "SL005", "SL006", "SL007", "SL008", "SL009",
-    "SL101", "SL102", "SL103", "SL104", "SL105", "SL106", "SL107", "SL108",
+    "SL010", "SL101", "SL102", "SL103", "SL104", "SL105", "SL106", "SL107", "SL108",
     "SL201", "SL202", "SL203", "SL204", "SL205", "SL301", "SL302",
     "accounting", "checkpoint", "graph", "identity", "ordering",
-    "tool_pairing_1", "tool_pairing_2"
+    "tool_pairing_1", "tool_pairing_2", "writers"
   ],
   "profile": {
     "id": "neutral",
     "version": "1.0.0"
   },
   "skipped": [
-    {"check": "SL010", "reason": "adapter-not-applicable"},
     {"check": "SL011", "reason": "adapter-not-applicable"},
     {"check": "SL206", "reason": "adapter-not-applicable"},
+    {"check": "SL207", "reason": "adapter-not-applicable"},
     {"check": "SL305", "reason": "adapter-not-applicable"},
     {"check": "shape", "reason": "adapter-not-applicable"},
-    {"check": "size", "reason": "adapter-not-applicable"},
-    {"check": "writers", "reason": "adapter-not-applicable"}
+    {"check": "size", "reason": "adapter-not-applicable"}
   ]
 }
 ```

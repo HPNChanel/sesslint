@@ -130,7 +130,7 @@ def test_override_validation_errors() -> None:
 
 def test_enabled_rules_pinned() -> None:
     """Each profile's rule list contains all 31 SL codes; flags reflect specialization."""
-    assert len(ALL_RULES) == 32
+    assert len(ALL_RULES) == 33
     assert ALL_RULES == tuple(sorted(ALL_RULES))
 
     for p in (NEUTRAL_PROFILE, CLAUDE_STRICT_PROFILE, OPENAI_STRICT_PROFILE):

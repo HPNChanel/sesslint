@@ -1,0 +1,2 @@
+{"type":"session_meta","ordinal":0,"payload":{"session_id":"fx207","cli_version":"0.0.0-test","model_provider":"openai","originator":"codex"}}
+{"type":"response_item","ordinal":1,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"synthetic"}]}}

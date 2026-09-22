@@ -42,6 +42,7 @@ from sesslint.codes import (
     SL204,
     SL205,
     SL206,
+    SL207,
     SL301,
     SL302,
     SL303,
@@ -281,6 +282,15 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "a durable-prefix violation is a vendor resume-contract failure; "
             "dropping the non-durable tail or synthesizing missing fields would "
             "edit evidence to match a contract the file never satisfied"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL207: RefusalRationale(
+        code=SL207,
+        rationale=(
+            "context pressure is advisory evidence against a declared window; "
+            "truncating or dropping content to buy headroom would destroy the "
+            "very context the operator needs to checkpoint"
         ),
         demand_citation="Conservative policy MUST refuse",
     ),

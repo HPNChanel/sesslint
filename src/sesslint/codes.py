@@ -1,6 +1,6 @@
 """Registry of detector reason codes and severity/repairability taxonomies.
 
-This module defines the 32 reason codes (SL001–SL011, SL101–SL108, SL201–SL206,
+This module defines the 33 reason codes (SL001–SL011, SL101–SL108, SL201–SL207,
 SL301–SL305, SL401–SL402) established in DEMAND.md plus the checks-rules pack
 (SL008, SL011, SL204, SL205, SL303, SL304, SL401), the transcript-hygiene pack
 (SL009), the index-reconciliation pack (SL402), and the detector-depth pack
@@ -85,6 +85,7 @@ class Code(StrEnum):
     SL204 = "SL204"
     SL205 = "SL205"
     SL206 = "SL206"
+    SL207 = "SL207"
     SL301 = "SL301"
     SL302 = "SL302"
     SL303 = "SL303"
@@ -119,6 +120,7 @@ SL203: Final[str] = "SL203"
 SL204: Final[str] = "SL204"
 SL205: Final[str] = "SL205"
 SL206: Final[str] = "SL206"
+SL207: Final[str] = "SL207"
 SL301: Final[str] = "SL301"
 SL302: Final[str] = "SL302"
 SL303: Final[str] = "SL303"
@@ -427,6 +429,23 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
         override_policy=(
             "Resume-boundary evidence is advisory; records are never reordered, "
             "dropped, or field-filled to force a durable prefix."
+        ),
+    ),
+    SL207: CodeInfo(
+        code=SL207,
+        name="Context-pressure projection",
+        summary=(
+            "Last declared context occupancy leaves too little headroom "
+            "against the declared model window — approaching the "
+            "un-compactable deadlock boundary."
+        ),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="accounting",
+        override_policy=(
+            "Pressure evidence is advisory; usage markers and window "
+            "declarations are never edited, and no content is truncated "
+            "or dropped to buy headroom."
         ),
     ),
     SL301: CodeInfo(
