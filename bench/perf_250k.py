@@ -66,6 +66,37 @@ def generate_benchmark_file(path: Path, num_records: int) -> None:
             f.write("\n".join(lines) + "\n")
 
 
+def generate_dense_lines_file(path: Path) -> int:
+    """Generate a small canonical session with ~2.4MB keyword-dense records.
+
+    Reproduces the real-corpus shape that once made the SL009
+    generic-credential scan quadratic (commit 2e4f24a): giant lines full of
+    credential-adjacent keywords but no assignment values, so SL009 stays
+    silent (SL011 size-anomaly findings are expected and disclosed, not
+    gated). Returns the record count.
+    """
+    dense_unit = (
+        "{token_count: 1, key: v, secret_name: x, id_token_hint: null, "
+        "api_key_label: y, password_hint: z, client_secret_tag: w},"
+    )
+    giant_text = dense_unit * (2_400_000 // len(dense_unit))
+    records = 5
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(
+            '{"created_at":"2026-09-06T00:00:00Z","schema_version":"sesslint.session/v1",'
+            '"session_id":"sess_perf_dense"}\n'
+        )
+        for i in range(records):
+            pid_str = "null" if i == 0 else f'"evt_{i - 1:07d}"'
+            f.write(
+                f'{{"actor":"user","id":"evt_{i:07d}","kind":"message",'
+                f'"parent_id":{pid_str},'
+                f'"payload":{{"index":{i},"text":"{giant_text}"}},'
+                f'"seq":{i},"ts":"2026-09-06T00:00:00Z"}}\n'
+            )
+    return records
+
+
 def get_rss_mb() -> float | None:
     """Retrieve process RSS/WorkingSet in megabytes cross-platform (Linux, macOS, Windows)."""
     if sys.platform == "win32":
@@ -391,6 +422,18 @@ def run_benchmark(
             except json.JSONDecodeError:
                 child_report = None
 
+        # Auxiliary metric: keyword-dense giant lines — the SL009
+        # generic-credential scan must stay linear (regression lock for the
+        # lazy-prefix backtracking fixed in 2e4f24a; old pattern took
+        # ~2.4s/MB here, the linear one ~0.1s/MB). SL011 size-anomaly
+        # findings on giant lines are expected — disclosed, not gated.
+        dense_file = Path(tmp_dir) / "dense_lines.jsonl"
+        dense_records = generate_dense_lines_file(dense_file)
+        dense_start = time.perf_counter()
+        dense_report = api.check_file(dense_file)
+        dense_elapsed = time.perf_counter() - dense_start
+        dense_findings = sorted({f.code for f in dense_report.findings})
+
         rss_mb = get_rss_mb()
         rss_str = f"{rss_mb:.1f} MB" if rss_mb is not None else "N/A"
         throughput = count / stream_elapsed if stream_elapsed > 0 else 0.0
@@ -414,6 +457,11 @@ def run_benchmark(
             )
         else:
             print("Fresh-process check (normative): UNAVAILABLE")
+        print(
+            f"Keyword-dense giant lines (auxiliary): {dense_records} records, "
+            f"{dense_file.stat().st_size / (1024 * 1024):.1f} MB in {dense_elapsed:.3f}s "
+            f"(findings: {','.join(dense_findings) or 'none'})"
+        )
 
         # 1. Functional correctness: MUST ALWAYS PASS (RVW-037).
         # Disclosure rule applies ONLY to performance budget shortfalls, never functional bugs.
@@ -476,6 +524,14 @@ def run_benchmark(
         if child_check_s > time_budget:
             perf_shortfalls.append(
                 f"Check time exceeded budget: {child_check_s:.3f}s > {time_budget:.1f}s"
+            )
+
+        # Dense-lines regression gate: the fixed scan is ~0.1s/MB; 15s on a
+        # ~12MB file still catches the old ~2.4s/MB backtracking (~28s).
+        if dense_elapsed > time_budget:
+            perf_shortfalls.append(
+                f"Keyword-dense giant-line check exceeded budget: "
+                f"{dense_elapsed:.3f}s > {time_budget:.1f}s"
             )
 
         if child_peak_mb > mem_budget:

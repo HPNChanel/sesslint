@@ -208,7 +208,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not match count or the digested value group — so removing it preserves
   detection exactly while making the scan linear (~100x faster on the
   affected lines; verified byte-identical hit sets on real corpus lines
-  and the shape matrix).
+  and the shape matrix). `bench/perf_250k.py` now runs a dedicated
+  keyword-dense giant-lines phase (5 records, ~11MB) gated against the
+  time budget, locking the regression into the perf contract.
 
 ### Changed
 
