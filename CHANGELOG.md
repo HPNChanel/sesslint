@@ -212,6 +212,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   producing `ambiguous`/`missing` noise); and the `rollout-<ts>-<uuid>`
   filename uuid is now indexed as a link target alias, so links resolve
   even when the parent's `session_meta` is torn and surfaces no id.
+- **SL009 vendor-prefix families now require a token boundary**: every
+  prefix pattern (`sk-`, `ghp_`, `gho_`, `whsec_`, `AKIA`, `sbp_`, `eyJ`,
+  `-----BEGIN`, …) rejects matches preceded by `[A-Za-z0-9_-]` — real
+  credentials start at a boundary, while `…Gsk-X`-style substrings inside
+  longer random tokens are noise. On a real 9GB corpus all 910 `sk-`
+  hits and all `ghp_`/`gho_` hits were mid-token (zero real boundary
+  keys), so this removes ~450 false positives while boundary-start
+  secrets (e.g. 4 real `AKIA` shapes) still flag. Bumps
+  `SECRET_FAMILY_SET_VERSION` to 2.
 - **SL203 gated off `codex-rollout`**: the unsafe-continuation check's
   only reachable trigger on Codex is "compaction boundary without a
   subsequent checkpoint", but `compacted` records are vendor-normal

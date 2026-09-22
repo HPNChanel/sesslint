@@ -463,3 +463,28 @@ def test_generic_assignment_no_catastrophic_backtracking() -> None:
     elapsed = time.monotonic() - t
     assert findings == []  # keyword shapes without credential values
     assert elapsed < 10.0, f"secret scan took {elapsed:.1f}s on 2MB dense line"
+
+
+def test_vendor_prefix_families_require_token_boundary() -> None:
+    """Mid-token substrings must not flag: on a real 9GB codex corpus every
+    one of 910 ``sk-``-shape hits sat inside a longer alnum/-/_ token
+    (random blob material) — zero boundary starts. Vendor prefixes are
+    real credentials only when the token starts at a boundary."""
+    from sesslint.checks.hygiene import SecretScanTracker
+
+    def scan(record: bytes) -> list:
+        t = SecretScanTracker()
+        t.feed(record, line_number=1, byte_offset=0, byte_end=len(record), record_ordinal=0)
+        return t.into_findings(path_str="x.jsonl")
+
+    key = b"sk-" + b"A" * 48
+    # Boundary starts still flag (quoted value, assignment, line start).
+    assert scan(b'{"k": "' + key + b'"}')
+    assert scan(b"KEY=" + key)
+    assert scan(key)
+    # Mid-token: same shape embedded in a longer alnum token is noise.
+    assert scan(b'{"id": "Xy' + key + b'"}') == []
+    assert scan(b"a" * 30 + key) == []  # alnum run continues through "sk-"
+    # Mid-token after '-'/'_' inside a longer blob is also noise.
+    assert scan(b'{"tok": "part-' + key + b'"}') == []
+    assert scan(b'{"tok": "part_' + key + b'"}') == []

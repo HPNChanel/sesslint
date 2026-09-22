@@ -45,7 +45,7 @@ from sesslint.finding import (
     make_finding,
 )
 
-SECRET_FAMILY_SET_VERSION: Final[int] = 1
+SECRET_FAMILY_SET_VERSION: Final[int] = 2
 MAX_SECRET_FINDINGS_PER_FILE: Final[int] = 64
 MAX_DIGESTS_PER_FINDING: Final[int] = 16
 
@@ -54,65 +54,73 @@ MAX_DIGESTS_PER_FINDING: Final[int] = 16
 # for most families the whole match (0); for ``generic-credential-assignment``
 # the captured assigned value (1), so ``token: X`` and ``token=X`` digest the
 # same credential. Ordered data, not a dict, so iteration order is contract.
+#
+# Vendor-prefix families anchor with ``_TOKEN_BOUNDARY`` — a real credential
+# starts at a token boundary, while ``...Gsk-X``, ``xghp_y`` inside longer
+# base64url/random blobs are substring noise (on a real 9GB corpus every one
+# of 910 ``sk-``-shape hits was mid-token — zero boundary starts).
+_TOKEN_BOUNDARY: Final[bytes] = rb"(?<![A-Za-z0-9_-])"
 _SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
     (
         "anthropic-api-key",
-        re.compile(rb"sk-ant-[A-Za-z0-9_-]{20,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"sk-ant-[A-Za-z0-9_-]{20,}"),
         0,
     ),
     (
         "openai-api-key",
-        re.compile(rb"sk-[A-Za-z0-9]{20,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"sk-[A-Za-z0-9]{20,}"),
         0,
     ),
     (
         "openrouter-api-key",
-        re.compile(rb"sk-or-v1-[0-9a-f]{48,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"sk-or-v1-[0-9a-f]{48,}"),
         0,
     ),
     (
         "github-pat-classic",
-        re.compile(rb"ghp_[A-Za-z0-9]{36,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"ghp_[A-Za-z0-9]{36,}"),
         0,
     ),
     (
         "github-pat-fine-grained",
-        re.compile(rb"github_pat_[A-Za-z0-9_]{22,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"github_pat_[A-Za-z0-9_]{22,}"),
         0,
     ),
     (
         "github-oauth-token",
-        re.compile(rb"gh[osru]_[A-Za-z0-9]{36,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"gh[osru]_[A-Za-z0-9]{36,}"),
         0,
     ),
     (
         "stripe-webhook-secret",
-        re.compile(rb"whsec_[A-Za-z0-9]{24,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"whsec_[A-Za-z0-9]{24,}"),
         0,
     ),
     (
         "stripe-key",
-        re.compile(rb"[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"),
         0,
     ),
     (
         "aws-access-key",
-        re.compile(rb"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+        re.compile(_TOKEN_BOUNDARY + rb"(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
         0,
     ),
     (
         "supabase-pat",
-        re.compile(rb"sbp_[0-9a-f]{40,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"sbp_[0-9a-f]{40,}"),
         0,
     ),
     (
         "telegram-bot-token",
-        re.compile(rb"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"),
+        re.compile(_TOKEN_BOUNDARY + rb"\d{8,10}:[A-Za-z0-9_-]{35}\b"),
         0,
     ),
     (
         "jwt",
-        re.compile(rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+        re.compile(
+            _TOKEN_BOUNDARY + rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+        ),
         0,
     ),
     (
@@ -120,7 +128,10 @@ _SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
         # adjacent (JSON-escaped ``\n`` or real newline both count), so two
         # different keys hash differently while the marker alone still flags.
         "private-key-block",
-        re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----((?:\\n|\s)+[A-Za-z0-9+/=_-]{8,})?"),
+        re.compile(
+            _TOKEN_BOUNDARY
+            + rb"-----BEGIN [A-Z ]*PRIVATE KEY-----((?:\\n|\s)+[A-Za-z0-9+/=_-]{8,})?"
+        ),
         0,
     ),
     (
