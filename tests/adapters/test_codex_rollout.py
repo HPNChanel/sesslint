@@ -229,6 +229,118 @@ class TestEnvelopeMapping:
         # cwd / instructions are content-adjacent and must be minimized away.
         assert "cwd" not in meta
 
+    def test_token_usage_record_uses_usage_as_contribution(self) -> None:
+        """``usage`` is the per-request contribution; ``turn_token_usage`` is a
+        turn-scoped cumulative and must never land in the contribution slot."""
+        events, _ = load_codex_rollout(
+            _jsonl(
+                _env(0, "session_meta", {"session_id": "s1"}),
+                _env(
+                    1,
+                    "token_usage_record",
+                    {
+                        "turn_id": "t1",
+                        "usage": {"input_tokens": 100, "output_tokens": 10},
+                        "turn_token_usage": {"input_tokens": 100, "output_tokens": 10},
+                        "thread_token_usage": {"input_tokens": 500, "output_tokens": 50},
+                    },
+                ),
+                _env(
+                    2,
+                    "token_usage_record",
+                    {
+                        "turn_id": "t1",
+                        "usage": {"input_tokens": 60, "output_tokens": 5},
+                        "turn_token_usage": {"input_tokens": 160, "output_tokens": 15},
+                        "thread_token_usage": {"input_tokens": 560, "output_tokens": 55},
+                    },
+                ),
+            )
+        )
+        slot1 = events[1].extra_fields["usage"]
+        assert slot1["contribution"] == {"input_tokens": 100, "output_tokens": 10}
+        assert slot1["cumulative"] == {"input_tokens": 500, "output_tokens": 50}
+        slot2 = events[2].extra_fields["usage"]
+        assert slot2["contribution"] == {"input_tokens": 60, "output_tokens": 5}
+        assert slot2["cumulative"] == {"input_tokens": 560, "output_tokens": 55}
+
+    def test_token_usage_record_without_usage_emits_no_slot(self) -> None:
+        """A cumulative marker without a contribution stream is not
+        arithmetically checkable — no usage slot is emitted."""
+        events, _ = load_codex_rollout(
+            _jsonl(
+                _env(0, "session_meta", {"session_id": "s1"}),
+                _env(
+                    1,
+                    "token_usage_record",
+                    {
+                        "turn_id": "t1",
+                        "turn_token_usage": {"input_tokens": 160},
+                        "thread_token_usage": {"input_tokens": 560},
+                    },
+                ),
+            )
+        )
+        assert "usage" not in events[1].extra_fields
+
+    def test_turn_cumulative_growth_does_not_fire_sl204(self, tmp_path: Path) -> None:
+        """Regression: turn-scoped cumulative growth across markers is
+        vendor-normal — SL204 must stay silent (was 34k+ false findings)."""
+        rows = [_env(0, "session_meta", {"session_id": "s1"})]
+        for i in range(1, 5):
+            rows.append(
+                _env(
+                    i,
+                    "token_usage_record",
+                    {
+                        "turn_id": "t1",
+                        "usage": {"input_tokens": 100, "output_tokens": 10},
+                        "turn_token_usage": {
+                            "input_tokens": 100 * i,
+                            "output_tokens": 10 * i,
+                        },
+                        "thread_token_usage": {
+                            "input_tokens": 100 * i,
+                            "output_tokens": 10 * i,
+                        },
+                    },
+                )
+            )
+        p = tmp_path / "rollout-usage.jsonl"
+        p.write_bytes(_jsonl(*rows))
+        report = check_file(p, format="codex-rollout")
+        assert [f for f in report.findings if f.code == "SL204"] == []
+
+    def test_usage_thread_divergence_still_fires_sl204(self, tmp_path: Path) -> None:
+        """A genuine gap (thread cumulative outruns the contribution stream)
+        still fires — the check retains value after the mapping fix."""
+        rows = [
+            _env(0, "session_meta", {"session_id": "s1"}),
+            _env(
+                1,
+                "token_usage_record",
+                {
+                    "turn_id": "t1",
+                    "usage": {"input_tokens": 100},
+                    "thread_token_usage": {"input_tokens": 100},
+                },
+            ),
+            _env(
+                2,
+                "token_usage_record",
+                {
+                    "turn_id": "t1",
+                    "usage": {"input_tokens": 60},
+                    # 900 unattributed tokens appeared between markers.
+                    "thread_token_usage": {"input_tokens": 1060},
+                },
+            ),
+        ]
+        p = tmp_path / "rollout-usage-gap.jsonl"
+        p.write_bytes(_jsonl(*rows))
+        report = check_file(p, format="codex-rollout")
+        assert [f.code for f in report.findings].count("SL204") == 1
+
     def test_timestamp_normalization(self) -> None:
         events, _ = load_codex_rollout(
             _jsonl(

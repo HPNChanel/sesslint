@@ -846,14 +846,21 @@ def _process_rollout_record(
         actor, kind = "system", "opaque"
         out_payload = {"type": env_type}
         if env_type == "token_usage_record" and isinstance(payload, Mapping):
-            # SL204 canonical slot (adapter-neutral): numeric counters only —
-            # ``turn_token_usage``/``usage`` is this record's contribution,
-            # ``thread_token_usage`` is the cumulative running-total marker.
+            # SL204 canonical slot (adapter-neutral): numeric counters only.
+            # ``usage`` is this record's per-request contribution — on real
+            # corpora it equals the thread-cumulative delta on 4314/4314
+            # consecutive-marker pairs. ``turn_token_usage`` is the
+            # TURN-scoped cumulative (same-turn deltas match thread deltas
+            # 4296/4296); summing it as a contribution double-counts every
+            # marker, so it is never mapped here. ``thread_token_usage`` is
+            # the cumulative running-total marker. Markers lacking ``usage``
+            # emit no slot at all: a cumulative with no contribution stream
+            # is not arithmetically checkable and would false-fire.
             usage_slot: dict[str, Any] = {}
-            contribution_raw = payload.get("turn_token_usage")
-            if contribution_raw is None:
-                contribution_raw = payload.get("usage")
-            cumulative_raw = payload.get("thread_token_usage")
+            contribution_raw = payload.get("usage")
+            cumulative_raw = (
+                payload.get("thread_token_usage") if contribution_raw is not None else None
+            )
             if isinstance(contribution_raw, Mapping):
                 usage_slot["contribution"] = {
                     str(k): v

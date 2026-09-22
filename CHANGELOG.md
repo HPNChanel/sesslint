@@ -199,6 +199,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SL204 Codex usage mapping double-counted every marker**: the adapter
+  mapped `turn_token_usage` — a *turn-scoped cumulative* — into the
+  contribution slot, so summing it across markers inflated the expected
+  total and fired SL204 on nearly every marker (~34k findings on a real
+  799-file corpus). Verified against the real corpus: `usage` equals the
+  thread-cumulative delta on 4314/4314 consecutive-marker pairs and is
+  the true per-request contribution; it is now the only contribution
+  source. Markers lacking `usage` emit no usage slot (a cumulative
+  without a contribution stream is not arithmetically checkable and
+  would false-fire on vendor-normal growth). The three
+  `sl204_usage_*.jsonl` fixtures were re-shaped to the real field
+  semantics (`usage` + turn-cumulative `turn_token_usage` + thread
+  `thread_token_usage`).
 - **SL009 secret-scan no longer hangs on giant keyword-dense records**:
   the `generic-credential-assignment` family pattern carried a lazy
   `[\w.-]*?` prefix that forced per-position expansion — ~4.7s per 2MB on
