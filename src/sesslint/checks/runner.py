@@ -368,7 +368,35 @@ def run_all_checks(
                 )
 
         if "SL011" in enabled:
-            if len(events) < SIZE_MIN_RECORDS:
+            if context.adapter_id == "codex-rollout":
+                # Codex envelopes mix byte-scale metadata records with
+                # multi-MiB bulk payloads (event_msg/compacted/
+                # response_item) by design — on real corpora the relative
+                # outlier fires on ~84% of files, so the within-file size
+                # distribution carries no discriminative signal.
+                performed_checks.discard("size")
+                performed_checks.discard("SL011")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="size",
+                        reason="adapter-not-applicable",
+                        detail=(
+                            "record-size variance is vendor-normal on codex-rollout "
+                            "envelopes (bulk payload records are routine)"
+                        ),
+                    )
+                )
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL011",
+                        reason="adapter-not-applicable",
+                        detail=(
+                            "record-size variance is vendor-normal on codex-rollout "
+                            "envelopes (bulk payload records are routine)"
+                        ),
+                    )
+                )
+            elif len(events) < SIZE_MIN_RECORDS:
                 # Size distribution is meaningless below the minimum —
                 # the family ran but could not evaluate (FR-047 honesty).
                 performed_checks.discard("size")

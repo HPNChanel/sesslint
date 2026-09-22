@@ -183,6 +183,36 @@ def test_e2e_legit_large_codex_shape_clean(tmp_path: Path):
     assert all(f.code != "SL011" for f in res.findings)
 
 
+def test_codex_adapter_skips_size_check(tmp_path: Path):
+    """codex-rollout skips SL011 entirely: bulk payload records are
+    vendor-normal there (~84% real-corpus fire rate = no signal), so the
+    family is gated ``adapter-not-applicable`` — even a genuine
+    20x-median outlier stays silent."""
+    p = tmp_path / "rollout-outlier.jsonl"
+    rows = [{"type": "session_meta", "payload": {"id": "thread-x"}}]
+    for i in range(9):
+        rows.append(
+            {
+                "type": "response_item",
+                "id": f"e{i}",
+                "payload": {"type": "custom_tool_call_output", "output": "Q" * 1000},
+            }
+        )
+    rows.append(
+        {
+            "type": "response_item",
+            "id": "big",
+            "payload": {"type": "custom_tool_call_output", "output": "Q" * 5_000_000},
+        }
+    )
+    _write_jsonl(p, rows)
+    res = check_file(p, format="codex-rollout")
+    assert all(f.code != "SL011" for f in res.findings)
+    skips = {(s.check, s.reason) for s in res.coverage.skipped}
+    assert ("SL011", "adapter-not-applicable") in skips
+    assert "size" not in res.coverage.performed
+
+
 def test_adapter_publishes_record_sizes(tmp_path: Path):
     """Adapter normalization feeds the distribution — no re-read needed."""
     p = tmp_path / "sizes.jsonl"

@@ -199,6 +199,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SL011 gated off `codex-rollout`**: Codex envelopes mix byte-scale
+  metadata records with multi-MiB bulk payloads (`event_msg`/`compacted`/
+  `response_item`) by design, so the within-file size outlier fired on
+  ~84% of a real 799-file corpus — no discriminative signal. The check
+  now reports `adapter-not-applicable` on codex and is unchanged for
+  other formats.
 - **SL204 Codex usage mapping double-counted every marker**: the adapter
   mapped `turn_token_usage` — a *turn-scoped cumulative* — into the
   contribution slot, so summing it across markers inflated the expected
