@@ -230,14 +230,21 @@ def test_doctor_index_absent_codex(tmp_path: Path) -> None:
 
 
 def test_doctor_index_codex_subtree_states(tmp_path: Path) -> None:
-    """Codex index lives at the vendor home, one level above sessions/."""
+    """Codex index is a named-threads registry at the vendor home.
+
+    Unindexed rollouts are vendor-normal (not divergence); divergence is a
+    claimed id with no rollout on disk.
+    """
     home = tmp_path / "home"
     codex_home = home / ".codex"
     sess = codex_home / "sessions" / "2026" / "09" / "21"
     sess.mkdir(parents=True)
-    (sess / "rollout-a.jsonl").write_text("{}\n", encoding="utf-8")
-    (codex_home / "session_index.jsonl").write_text(
-        '{"id": "u-a", "thread_name": "x", "updated_at": "t"}' + chr(10),
+    ua = "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+    ub = "01a0c4d8-a9f7-7973-8155-dba14d25a378"
+    (sess / f"rollout-2026-09-21T00-00-00-{ua}.jsonl").write_text("{}\n", encoding="utf-8")
+    index = codex_home / "session_index.jsonl"
+    index.write_text(
+        f'{{"id": "{ua}", "thread_name": "x", "updated_at": "t"}}' + chr(10),
         encoding="utf-8",
     )
     rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
@@ -245,7 +252,17 @@ def test_doctor_index_codex_subtree_states(tmp_path: Path) -> None:
     assert idx is not None
     assert idx.state == "ok"
     assert idx.index_entries == 1
-    (sess / "rollout-b.jsonl").write_text("{}\n", encoding="utf-8")
+    # an unindexed rollout is vendor-normal — still ok
+    (sess / f"rollout-2026-09-21T00-00-00-{ub}.jsonl").write_text("{}\n", encoding="utf-8")
+    rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
+    idx = rep.roots[0].index
+    assert idx is not None
+    assert idx.state == "ok"
+    # a claimed id with no rollout on disk is provable divergence
+    index.write_text(
+        f'{{"id": "{ub}9", "thread_name": "x", "updated_at": "t"}}' + chr(10),
+        encoding="utf-8",
+    )
     rep = doctor_report(agents=["codex"], env={}, home=home, quick_checks=False)
     idx = rep.roots[0].index
     assert idx is not None

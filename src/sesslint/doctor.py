@@ -257,6 +257,7 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
     are excluded from session counts.
     """
     from sesslint.indexes import discover_index_files, has_index_format, read_index
+    from sesslint.scan import _walk_rollout_files
 
     indexed = has_index_format(agent)
     codex_layout = agent == "codex"
@@ -302,6 +303,17 @@ def _index_health(agent: str, root: Path, candidates: Sequence[Path]) -> IndexDi
             states.append("absent")  # vanished between discover and read
         elif snap.schema_note == "unrecognized-shape":
             states.append("unverified-format")
+        elif codex_layout:
+            # ``session_index.jsonl`` is a named-threads registry (opt-in),
+            # not a membership ledger — unindexed rollouts are vendor-normal.
+            # Divergence is only provable one way: a claimed id with no
+            # rollout on disk. Subtree not enumerable -> nothing provable.
+            walked = _walk_rollout_files(subtree)
+            disk_uuids = walked[0] if walked is not None else None
+            if disk_uuids is not None and snap.normalized_ids - disk_uuids:
+                states.append("stale-divergent")
+            else:
+                states.append("ok")
         elif sibling != snap.entry_count:
             states.append("stale-divergent")
         else:

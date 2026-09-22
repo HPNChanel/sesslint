@@ -164,17 +164,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   T-04): the Codex thread index is a JSONL file at the vendor home
   (`~/.codex/session_index.jsonl`, `{id, thread_name, updated_at}` per
   line — only `id` is retained; `thread_name` is content and is dropped
-  at the reader boundary). Member scope is the `<index_dir>/sessions/`
-  subtree with rollout-filename-UUID identity (`rollout-<ts>-<uuid>` —
-  the vendor's own degraded-lookup key per codex#24425), so unparseable
-  ledgers still count. Dangling proofs enumerate the subtree on disk via
-  one bounded walk; when the subtree is absent or over the bound, absence
-  claims are suppressed (fail closed). Maintainer corpus evidence
-  (aggregate counts only): 796 rollout files vs 53 unique index ids —
-  ~96.7% unindexed, the same "session disappeared" class as
-  claude-code#25552/#23614. `sesslint doctor` reports codex index health
-  via a parent-dir probe (the index lives one level above the sessions
-  root).
+  at the reader boundary). Corpus inspection established the index is a
+  **named-threads registry**, not a membership ledger (63/63 entries carry
+  `thread_name`; ~96.7% of rollouts unindexed is vendor-normal), so
+  `file-not-in-index` never fires for Codex. What is provable is the index
+  side: an `id` resolving to no rollout-filename UUID under
+  `<index_dir>/sessions/` (the vendor's own degraded-lookup key per
+  codex#24425) is a named thread that vanished — `index-entry-no-file`.
+  Resolution uses one bounded `sessions/` walk; subtree absent or over
+  the bound suppresses absence claims (fail closed). `sesslint doctor`
+  reports codex index health via a parent-dir probe, with the same
+  dangling-only divergence rule.
 
 ### Changed
 

@@ -75,3 +75,11 @@ Same "session disappeared" class as claude-code#25552/#23614.
 ## Outcome (2026-09-21)
 
 status: done
+
+**Semantics correction (post-commit review):** maintainer-corpus evidence
+(63/63 index entries carry `thread_name`; ~96.7% of rollouts unindexed)
+proved `session_index.jsonl` is a *named-threads registry*, not a
+membership ledger. `file-not-in-index` never fires for Codex — only
+index-side kinds (`index-entry-no-file`, `index-truncated`,
+`index-malformed`). `doctor` divergence likewise uses dangling-only
+resolution, not entry-count vs rollout-count.

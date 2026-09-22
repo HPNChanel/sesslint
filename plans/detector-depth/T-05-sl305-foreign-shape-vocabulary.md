@@ -1,6 +1,6 @@
 # T-05: SL305 provider-incompatible record shape
 
-- Status: implemented (awaiting review)
+- Status: done (2026-09-21)
 - Phase: detector-depth
 - Priority: P3
 - Type: feature (detector)

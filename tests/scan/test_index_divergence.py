@@ -258,18 +258,14 @@ def test_codex_consistent_clean():
     assert _sl402(rep) == []
 
 
-def test_codex_missing_member_flags_unindexed_rollout():
+def test_codex_unindexed_member_silent():
+    """session_index.jsonl is a named-threads registry — entries exist only
+    for threads the user named (maintainer corpus: 63/63 entries carry
+    thread_name while ~96.7% of rollouts are unindexed). Unindexed
+    membership is vendor-normal, so ``file-not-in-index`` never fires for
+    codex; only index-side kinds apply."""
     rep = scan_path(DIVERGENCE / "codex_missing_member", recursive=True)
-    hits = _sl402(rep, "session_index.jsonl")
-    assert hits == []  # index-side stays clean
-    hits = _sl402(rep, CODEX_UB + ".jsonl")
-    assert len(hits) == 1
-    fr, f = hits[0]
-    assert f.evidence["divergence"] == "file-not-in-index"
-    assert f.evidence["resolution"] == "missing"
-    assert f.severity is Severity.WARNING
-    # the indexed rollout must not be flagged
-    assert _sl402(rep, CODEX_UA + ".jsonl") == []
+    assert _sl402(rep) == []
 
 
 def test_codex_dangling_entry_flags_index():
@@ -306,7 +302,8 @@ def test_codex_index_without_sessions_subtree_silent():
 
 
 def test_codex_evidence_is_content_free():
-    rep = scan_path(DIVERGENCE / "codex_missing_member", recursive=True)
+    rep = scan_path(DIVERGENCE / "codex_dangling", recursive=True)
+    assert _sl402(rep)  # dangling finding exists to inspect
     for _, f in _sl402(rep):
         blob = json.dumps(dict(f.evidence or {}))
         for leak in ("synthetic", "thread_name", CODEX_UA, CODEX_UB):

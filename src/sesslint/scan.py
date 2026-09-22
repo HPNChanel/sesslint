@@ -1693,15 +1693,15 @@ def _reconcile_session_indexes(
             }
         claimed = snap.normalized_ids
 
-        if snap.membership_complete:
+        # Codex's ``session_index.jsonl`` is a named-threads registry, not a
+        # membership ledger — entries exist only for threads the user named
+        # (maintainer corpus: 63/63 entries carry thread_name while ~96.7%
+        # of rollouts are unindexed). Unindexed membership is vendor-normal,
+        # so ``file-not-in-index`` never applies; only index-side kinds do.
+        if snap.membership_complete and not codex_scope:
             for i in members:
                 r = results[i]
-                if codex_scope:
-                    ids = {
-                        x for x in (r.session_id, _rollout_uuid(PurePosixPath(r.path).stem)) if x
-                    }
-                else:
-                    ids = {x for x in (r.session_id, PurePosixPath(r.path).stem) if x}
+                ids = {x for x in (r.session_id, PurePosixPath(r.path).stem) if x}
                 if ids and not ids & claimed:
                     ev = {
                         "divergence": "file-not-in-index",
