@@ -1485,6 +1485,12 @@ def _resolve_cross_file_links(
         stem = Path(res.path).stem
         if stem:
             by_stem.setdefault(stem, set()).add(idx)
+            # Codex rollouts embed the thread UUID in the filename
+            # (``rollout-<ts>-<uuid>``); links target the bare UUID, so index
+            # the extracted form too — resolvable even when session_meta is
+            # torn and ``session_id`` never surfaced (same key as SL402).
+            if u := _rollout_uuid(stem):
+                by_stem.setdefault(u, set()).add(idx)
         if res.tip_id:
             by_tip.setdefault(res.tip_id, set()).add(idx)
 

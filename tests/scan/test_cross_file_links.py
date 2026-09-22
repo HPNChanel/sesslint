@@ -228,6 +228,125 @@ def test_codex_forked_from_id_extracted(tmp_path: Path):
     assert f.evidence["resolution"] == "missing"
 
 
+def test_codex_parent_thread_id_resolves_via_meta_id(tmp_path: Path):
+    """Codex ``session_meta.id`` is the linkable thread identity — equal to
+    the ``rollout-<ts>-<uuid>`` filename suffix and the target of
+    ``parent_thread_id`` spawn links. Without it every spawn link
+    false-fired ``missing`` (766 findings on a real 799-file corpus)."""
+    d = tmp_path / "codex"
+    d.mkdir()
+
+    def _write_rollout(name: str, thread_id: str, extra: dict | None = None) -> None:
+        payload: dict = {"id": thread_id, "session_id": f"sess-{thread_id}"}
+        if extra:
+            payload.update(extra)
+        (d / name).write_text(
+            json.dumps({"type": "session_meta", "payload": payload})
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "hi"}],
+                    },
+                    "id": "e1",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    _write_rollout("rollout-2026-01-01T00-00-00-aaaa.jsonl", "thread-parent")
+    _write_rollout(
+        "rollout-2026-01-01T00-00-01-bbbb.jsonl",
+        "thread-child",
+        {"parent_thread_id": "thread-parent"},
+    )
+    rep = scan_path(d, recursive=True)
+    assert _sl401(rep) == []
+
+
+def test_codex_missing_parent_still_fires(tmp_path: Path):
+    """A spawn link whose parent rollout is genuinely absent still reports
+    ``missing`` — the fix removes false positives, not the check."""
+    d = tmp_path / "codex"
+    d.mkdir()
+    payload = {"id": "thread-child", "session_id": "sess-c", "parent_thread_id": "gone"}
+    (d / "rollout-2026-01-01T00-00-02-cccc.jsonl").write_text(
+        json.dumps({"type": "session_meta", "payload": payload}) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    rep = scan_path(d, recursive=True)
+    hits = _sl401(rep)
+    assert len(hits) == 1
+    assert hits[0][1].evidence["resolution"] == "missing"
+
+
+def test_codex_first_session_meta_wins_session_id(tmp_path: Path):
+    """A second ``session_meta`` record (inherited parent context on real
+    subagent rollouts) must not overwrite the file's own thread identity —
+    last-write-wins misindexed 36 files under 6 shared ids on the corpus."""
+    d = tmp_path / "codex"
+    d.mkdir()
+
+    def _write(name: str, meta_ids: list[str], extra: dict | None = None) -> None:
+        lines = []
+        for i, tid in enumerate(meta_ids):
+            pay: dict = {"id": tid, "session_id": f"sess-{tid}"}
+            if i == 0 and extra:
+                pay.update(extra)
+            lines.append(json.dumps({"type": "session_meta", "payload": pay}))
+        (d / name).write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+    _write("rollout-2026-01-01T00-00-00-aaaa.jsonl", ["thread-parent"])
+    # Child carries its own meta first, then the parent's inherited meta —
+    # the second must not reindex the file under the parent id.
+    _write(
+        "rollout-2026-01-01T00-00-01-bbbb.jsonl",
+        ["thread-child", "thread-parent"],
+        {"parent_thread_id": "thread-parent"},
+    )
+    rep = scan_path(d, recursive=True)
+    assert _sl401(rep) == []
+    by_path = {Path(fr.path).name: fr for fr in rep.files}
+    child = by_path["rollout-2026-01-01T00-00-01-bbbb.jsonl"]
+    assert child.session_id == "thread-child"
+
+
+def test_codex_link_resolves_via_filename_uuid(tmp_path: Path):
+    """A child links to a parent whose ``session_meta`` is torn (no usable
+    ``id``): the ``rollout-<ts>-<uuid>`` filename still proves the target —
+    resilience independent of session header health."""
+    d = tmp_path / "codex"
+    d.mkdir()
+    # Parent rollout with a corrupt session_meta (no id anywhere).
+    (d / "rollout-2026-01-01T00-00-00-019f8b5a-7c3e-4d2f-9a1b-000000000001.jsonl").write_text(
+        json.dumps({"type": "session_meta", "payload": {"cwd": "/x"}}) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (d / "rollout-2026-01-01T00-00-01-bbbb.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {
+                    "id": "thread-child",
+                    "parent_thread_id": "019f8b5a-7c3e-4d2f-9a1b-000000000001",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    rep = scan_path(d, recursive=True)
+    assert _sl401(rep) == []
+
+
 def test_scan_report_dict_shape_unchanged():
     """Linkage metadata stays internal — report dict has no new top-level keys."""
     rep = scan_path(LINKAGE / "missing", recursive=True)

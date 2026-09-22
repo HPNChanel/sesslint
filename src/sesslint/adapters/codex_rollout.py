@@ -886,6 +886,18 @@ def _process_rollout_record(
                 source_metadata.session_meta = meta
                 if payload.get("session_id") is not None:
                     out_payload["session_id"] = str(payload.get("session_id"))
+                # SL401: the linkable thread identity is ``id`` — on real
+                # rollouts it equals the ``rollout-<ts>-<uuid>`` filename
+                # suffix and is what ``parent_thread_id``/``forked_from_id``
+                # links point at (``session_id`` is a different identifier).
+                # Without it the scan-layer session index stays empty and
+                # every spawn link reports a false "missing".
+                if "session_id" not in source_metadata:
+                    thread_id = payload.get("id")
+                    if isinstance(thread_id, (str, int)) and str(thread_id).strip():
+                        source_metadata["session_id"] = str(thread_id).strip()
+                    elif payload.get("session_id") is not None:
+                        source_metadata["session_id"] = str(payload["session_id"]).strip()
                 _shso = payload.get("subagent_history_start_ordinal")
                 if isinstance(_shso, int) and not isinstance(_shso, bool):
                     # SL206: declared inherited-prefix ordinal the file's

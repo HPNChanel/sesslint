@@ -199,6 +199,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SL401 Codex spawn links always reported missing**: the adapter never
+  published a `session_id` identity for link resolution, and Codex's
+  linkable identity is `session_meta.id` (the thread uuid — equal to the
+  `rollout-<ts>-<uuid>` filename suffix and the `parent_thread_id`/
+  `forked_from_id` target), not the separate `session_id` field. The
+  adapter now publishes `id` (falling back to `session_id`), resolving
+  ~800/811 links on a real corpus that previously all false-fired.
+  Additionally: only the *first* `session_meta` contributes identity —
+  subagent rollouts carry a second inherited meta that previously
+  overwrote it (36 files misindexed under 6 shared ids on the corpus,
+  producing `ambiguous`/`missing` noise); and the `rollout-<ts>-<uuid>`
+  filename uuid is now indexed as a link target alias, so links resolve
+  even when the parent's `session_meta` is torn and surfaces no id.
 - **SL011 gated off `codex-rollout`**: Codex envelopes mix byte-scale
   metadata records with multi-MiB bulk payloads (`event_msg`/`compacted`/
   `response_item`) by design, so the within-file size outlier fired on
