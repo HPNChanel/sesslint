@@ -270,6 +270,42 @@ def test_null_correlation() -> None:
     assert _evidence(f102)["index"] == 0
 
 
+def test_null_correlation_result_suppressed_on_codex() -> None:
+    """codex-rollout legitimately emits call_id-less tool outputs
+    (namespaced ``function_call_output`` variant: ``id``/``name``/
+    ``namespace`` only — ~0.08% of outputs on a real corpus, one stable
+    shape). A result declaring no correlator makes no pairing claim, so
+    the null-correlation path is suppressed on that adapter; declared-but-
+    absent correlations still fire."""
+    from sesslint.context import CheckContext
+
+    events = [
+        SessionEvent(
+            id="res-null",
+            parent_id=None,
+            seq=0,
+            ts="2026-09-05T12:00:00Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id=None,
+        ),
+        SessionEvent(
+            id="res-orphan",
+            parent_id=None,
+            seq=1,
+            ts="2026-09-05T12:00:01Z",
+            actor="tool",
+            kind="tool_result",
+            correlation_id="call-absent",
+        ),
+    ]
+    findings = check_tool_pairing_1(events, context=CheckContext(adapter_id="codex-rollout"))
+    sl101 = [f for f in findings if f.code == SL101]
+    assert len(sl101) == 1
+    assert sl101[0].source.record_id == "res-orphan"
+    assert _evidence(sl101[0])["correlation_id"] == "call-absent"
+
+
 def test_empty_string_correlation() -> None:
     """Empty or whitespace correlation string is treated as a real key, firing SL103/SL104."""
     events = [

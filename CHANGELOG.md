@@ -212,6 +212,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   producing `ambiguous`/`missing` noise); and the `rollout-<ts>-<uuid>`
   filename uuid is now indexed as a link target alias, so links resolve
   even when the parent's `session_meta` is torn and surfaces no id.
+- **SL101 null-correlation path gated on `codex-rollout`**: Codex emits
+  correlator-less tool outputs by design (namespaced `function_call_output`
+  items carrying only `id`/`name`/`namespace` — 95 records across 7 files
+  on a real corpus, one stable shape). A result that declares no
+  correlator makes no pairing claim, so absence is not corruption
+  evidence — 20 deterministic ERRORs removed. Declared-but-absent
+  correlations (section 1) still flag on all adapters including codex.
 - **SL009 vendor-prefix families now require a token boundary**: every
   prefix pattern (`sk-`, `ghp_`, `gho_`, `whsec_`, `AKIA`, `sbp_`, `eyJ`,
   `-----BEGIN`, …) rejects matches preceded by `[A-Za-z0-9_-]` — real

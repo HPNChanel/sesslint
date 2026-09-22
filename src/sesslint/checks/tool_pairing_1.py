@@ -280,35 +280,42 @@ def check_orphans(
                 )
             )
 
-    # 2. Results with null correlation_id
-    for idx, ev in indexer.null_results:
-        raw_ev_id = getattr(ev, "id", None)
-        if raw_ev_id is None and isinstance(ev, Mapping):
-            raw_ev_id = ev.get("id")
-        ev_id_str = str(raw_ev_id) if raw_ev_id is not None else f"<result:{idx}>"
-        safe_ev_id = _safe_id(ev_id_str)
-        rec_id = _source_record_id(ev_id_str)
+    # 2. Results with null correlation_id — except on codex-rollout, where
+    # the vendor legitimately emits correlator-less tool outputs (namespaced
+    # output items carrying only ``id``/``name``/``namespace``; ~0.08% of
+    # outputs on a real corpus, single stable shape). No declared correlator
+    # means no pairing claim — absence of the field is not corruption
+    # evidence on that adapter. Results that *declare* a correlation id
+    # whose call is absent still flag via section 1.
+    if ctx.adapter_id != "codex-rollout":
+        for idx, ev in indexer.null_results:
+            raw_ev_id = getattr(ev, "id", None)
+            if raw_ev_id is None and isinstance(ev, Mapping):
+                raw_ev_id = ev.get("id")
+            ev_id_str = str(raw_ev_id) if raw_ev_id is not None else f"<result:{idx}>"
+            safe_ev_id = _safe_id(ev_id_str)
+            rec_id = _source_record_id(ev_id_str)
 
-        path, line = _resolve_source_coords(ev, source_path)
+            path, line = _resolve_source_coords(ev, source_path)
 
-        findings.append(
-            make_finding(
-                code=SL101,
-                severity=Severity.ERROR,
-                repairability=Repairability.MANUAL,
-                message_template=_MSG_SL101,
-                source=SourceRef(path=path, line=line, record_id=rec_id),
-                evidence={
-                    "correlation_id": None,
-                    "index": idx,
-                    "result_id": safe_ev_id,
-                },
-                adapter_id=ctx.adapter_id,
-                adapter_version=ctx.adapter_version,
-                profile_id=ctx.profile_id,
-                profile_version=ctx.profile_version,
+            findings.append(
+                make_finding(
+                    code=SL101,
+                    severity=Severity.ERROR,
+                    repairability=Repairability.MANUAL,
+                    message_template=_MSG_SL101,
+                    source=SourceRef(path=path, line=line, record_id=rec_id),
+                    evidence={
+                        "correlation_id": None,
+                        "index": idx,
+                        "result_id": safe_ev_id,
+                    },
+                    adapter_id=ctx.adapter_id,
+                    adapter_version=ctx.adapter_version,
+                    profile_id=ctx.profile_id,
+                    profile_version=ctx.profile_version,
+                )
             )
-        )
 
     return cap_pairing_findings(
         findings,
