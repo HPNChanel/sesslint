@@ -134,7 +134,7 @@ _SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
         # brackets, and backslashes so a trailing `\"` is never captured.
         "generic-credential-assignment",
         re.compile(
-            rb"[\w.-]*?(?:password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret"
+            rb"(?:password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret"
             rb"|private[_-]?key|auth[_-]?token|secret|token)(?:\\?[\"'.-])*\s*[:=]\s*"
             rb"(?:\\?[\"'`])?([^\s\"'`,)\]}\\]{8,})",
             re.IGNORECASE,

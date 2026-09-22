@@ -190,6 +190,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mode=ro` + `PRAGMA query_only`, strict column allowlist (content
   columns are never selected), row caps.
 
+### Fixed
+
+- **SL009 secret-scan no longer hangs on giant keyword-dense records**:
+  the `generic-credential-assignment` family pattern carried a lazy
+  `[\w.-]*?` prefix that forced per-position expansion — ~4.7s per 2MB on
+  real Codex rollout lines (which routinely exceed 10MB and are dense with
+  `token_count`/`key`/`secret` JSON keys), hanging `doctor`/`check` for
+  minutes on real session trees. The prefix only affected match *start* —
+  not match count or the digested value group — so removing it preserves
+  detection exactly while making the scan linear (~100x faster on the
+  affected lines; verified byte-identical hit sets on real corpus lines
+  and the shape matrix).
+
 ### Changed
 
 - **`init-hooks` snippets are now zero-config** (agent-hooks T-02): all

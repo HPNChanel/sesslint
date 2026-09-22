@@ -433,3 +433,33 @@ def test_scan_json_by_code_lists_sl009(tmp_path: Path) -> None:
     assert SL009 in rows
     assert rows[SL009].severity == "warning"
     assert rows[SL009].files == 1
+
+
+def test_generic_assignment_no_catastrophic_backtracking() -> None:
+    """Perf regression: the generic-credential pattern must stay linear on
+    keyword-dense giant records (real Codex rollouts carry 14MB+ lines full
+    of ``token_count``/``key``/``secret`` shapes — the old lazy-prefix
+    pattern spent seconds per megabyte there)."""
+    import time
+
+    from sesslint.checks.hygiene import SecretScanTracker
+
+    # 2MB of keyword-dense JSON-ish noise: no real assignment values.
+    noise = (
+        b'{"token_count": 1, "key": "v", "secret_name": "x", '
+        b'"id_token_hint": null, "api_key_label": "y"},'
+    ) * 40_000
+    assert len(noise) > 1_000_000
+    tracker = SecretScanTracker()
+    t = time.monotonic()
+    tracker.feed(
+        noise,
+        line_number=1,
+        byte_offset=0,
+        byte_end=len(noise),
+        record_ordinal=0,
+    )
+    findings = tracker.into_findings(path_str="perf.jsonl")
+    elapsed = time.monotonic() - t
+    assert findings == []  # keyword shapes without credential values
+    assert elapsed < 10.0, f"secret scan took {elapsed:.1f}s on 2MB dense line"
