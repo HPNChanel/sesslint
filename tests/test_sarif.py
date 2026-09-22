@@ -30,7 +30,7 @@ def test_check_sarif_structure(capsys: pytest.CaptureFixture[str]) -> None:
     assert doc["version"] == SARIF_VERSION == "2.1.0"
     run = doc["runs"][0]
     rules = run["tool"]["driver"]["rules"]
-    assert len(rules) == 31
+    assert len(rules) == 32
     assert [r["id"] for r in rules] == sorted(r["id"] for r in rules)
     results = run["results"]
     assert len(results) == 1

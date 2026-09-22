@@ -1,0 +1,5 @@
+{"ordinal":0,"type":"session_meta","timestamp":"2026-09-21T10:00:00Z","payload":{"session_id":"sess-syn-305a","cli_version":"0.42.0","model_provider":"third-party-syn","originator":"codex_cli_rs"}}
+{"ordinal":1,"type":"response_item","timestamp":"2026-09-21T10:01:00Z","payload":{"type":"message","role":"user","id":"m1","content":[{"type":"output_text","text":"x"}]}}
+{"ordinal":2,"type":"response_item","timestamp":"2026-09-21T10:02:00Z","payload":{"type":"reasoning","id":"rs_01","content":[{"type":"reasoning_text","text":"syn"}]}}
+{"ordinal":3,"type":"response_item","timestamp":"2026-09-21T10:03:00Z","payload":{"type":"reasoning","id":"rs_02","content":[{"type":"reasoning_text","text":"syn"}]}}
+{"ordinal":4,"type":"response_item","timestamp":"2026-09-21T10:04:00Z","payload":{"type":"message","role":"assistant","id":"m2","content":[{"type":"output_text","text":"x"}]}}

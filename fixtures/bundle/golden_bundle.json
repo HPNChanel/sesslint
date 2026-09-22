@@ -123,6 +123,16 @@
           "reason": "adapter-not-applicable"
         },
         {
+          "check": "SL305",
+          "detail": "replay-vocabulary check applies to codex-rollout streams only",
+          "reason": "adapter-not-applicable"
+        },
+        {
+          "check": "shape",
+          "detail": "replay-vocabulary check applies to codex-rollout streams only",
+          "reason": "adapter-not-applicable"
+        },
+        {
           "check": "size",
           "detail": "fewer than 8 records — size distribution not meaningful",
           "reason": "adapter-not-applicable"

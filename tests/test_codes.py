@@ -49,6 +49,7 @@ EXPECTED_CODES: frozenset[str] = frozenset(
         "SL302",
         "SL303",
         "SL304",
+        "SL305",
         "SL401",
         "SL402",
     }
@@ -112,11 +113,11 @@ DEMAND_VERBATIM_SUMMARIES: dict[str, str] = {
 
 
 def test_registry_has_exact_31_codes() -> None:
-    """Registry contains exactly 31 codes (DEMAND.md + hygiene/reconciliation/depth packs)."""
+    """Registry contains exactly 32 codes (DEMAND.md + hygiene/reconciliation/depth packs)."""
     assert ALL_CODES == EXPECTED_CODES
     assert frozenset(CODE_REGISTRY.keys()) == EXPECTED_CODES
-    assert len(CODE_REGISTRY) == 31
-    assert len(Code) == 31
+    assert len(CODE_REGISTRY) == 32
+    assert len(Code) == 32
 
 
 def test_code_enum_matches_registry() -> None:

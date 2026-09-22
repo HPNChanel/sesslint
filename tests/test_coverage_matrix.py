@@ -172,6 +172,12 @@ CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_durable_prefix.py::test_gap_beyond_durable_range_not_a_hole",
         "malformed": "test_durable_prefix.py::test_malformed_codex_markers_ignored",
     },
+    "SL305": {
+        "positive": "test_foreign_shape.py::test_null_content_fixture_clean",
+        "negative": "test_foreign_shape.py::test_foreign_reasoning_fires_once",
+        "boundary": "test_foreign_shape.py::test_mixed_splice_fires_alongside_sl206",
+        "malformed": "test_foreign_shape.py::test_malformed_markers_ignored",
+    },
     "SL304": {
         "positive": "test_schema_drift.py::test_fixture_compatible_bump_clean",
         "negative": "test_schema_drift.py::test_fixture_version_drift",

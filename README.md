@@ -841,6 +841,7 @@ SessLint implements **28 registered diagnostic codes**. Severity and repairabili
 | **`SL302`** | Unknown critical record | `error` | `manual` | Unrecognized record participates in core semantics. |
 | **`SL303`** | Duplicate JSON key | `warning` | `manual` | Duplicated object key — `error` when the key drives integrity semantics; never silently picks a winner. |
 | **`SL304`** | Mid-file schema drift | `warning` | `manual` | Record-level schema version or foreign-format signature changes mid-file (compatible bumps stay clean; `SL301` takes precedence). |
+| **`SL305`** | Provider-incompatible record shape | `warning` | `manual` | Record shape outside the cited official replay vocabulary (e.g. `reasoning` with non-null `content`; codex-rollout streams only, ≤ one finding per file). |
 | **`SL401`** | Unresolved cross-file link | `warning` | `manual` | Declared resume/fork pointer misses the scanned file set or resolves ambiguously (scan-level only; out-of-scope targets emit `info`). |
 | **`SL402`** | Session-index divergence | `warning` | `manual` | Vendor session index and on-disk session set disagree — unindexed ledger, dangling entry, or malformed/truncated index (scan-level only). |
 
@@ -898,17 +899,25 @@ Every report emitted by `sesslint check --json` embeds a top-level `coverage` bl
     "version": "1.0.0"
   },
   "performed": [
-    "SL001", "SL002", "SL003", "SL004", "SL005", "SL006", "SL007", "SL008", "SL009", "SL010", "SL011",
+    "SL001", "SL002", "SL003", "SL004", "SL005", "SL006", "SL007", "SL008", "SL009",
     "SL101", "SL102", "SL103", "SL104", "SL105", "SL106", "SL107", "SL108",
-    "SL201", "SL202", "SL203", "SL204", "SL205", "SL206", "SL301", "SL302",
-    "accounting", "checkpoint", "graph", "identity", "ordering", "size",
-    "tool_pairing_1", "tool_pairing_2", "writers"
+    "SL201", "SL202", "SL203", "SL204", "SL205", "SL301", "SL302",
+    "accounting", "checkpoint", "graph", "identity", "ordering",
+    "tool_pairing_1", "tool_pairing_2"
   ],
   "profile": {
     "id": "neutral",
     "version": "1.0.0"
   },
-  "skipped": []
+  "skipped": [
+    {"check": "SL010", "reason": "adapter-not-applicable"},
+    {"check": "SL011", "reason": "adapter-not-applicable"},
+    {"check": "SL206", "reason": "adapter-not-applicable"},
+    {"check": "SL305", "reason": "adapter-not-applicable"},
+    {"check": "shape", "reason": "adapter-not-applicable"},
+    {"check": "size", "reason": "adapter-not-applicable"},
+    {"check": "writers", "reason": "adapter-not-applicable"}
+  ]
 }
 ```
 

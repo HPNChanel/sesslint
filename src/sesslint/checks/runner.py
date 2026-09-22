@@ -20,6 +20,7 @@ from sesslint.canonical import SessionEvent
 from sesslint.checks.accounting import check_accounting
 from sesslint.checks.checkpoint import check_checkpoint
 from sesslint.checks.durable_prefix import check_durable_prefix
+from sesslint.checks.foreign_shape import check_foreign_shape
 from sesslint.checks.graph import check_graph
 from sesslint.checks.identity import check_identities
 from sesslint.checks.ordering import check_ordering
@@ -121,6 +122,7 @@ def run_all_checks(
         ("checkpoint", ("SL201", "SL202", "SL203", "SL205", "SL206")),
         ("accounting", ("SL204",)),
         ("size", ("SL011",)),
+        ("shape", ("SL305",)),
     ]
 
     for fam_name, fam_rules in families:
@@ -305,6 +307,31 @@ def run_all_checks(
             else:
                 findings.extend(
                     check_durable_prefix(events, source_path=source_path, context=context)
+                )
+
+        if "SL305" in enabled:
+            if context.adapter_id != "codex-rollout":
+                # Adapter-scoped rule: replay-vocabulary markers exist only on
+                # codex-rollout streams; other formats carry no such markers.
+                performed_checks.discard("shape")
+                performed_checks.discard("SL305")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="shape",
+                        reason="adapter-not-applicable",
+                        detail="replay-vocabulary check applies to codex-rollout streams only",
+                    )
+                )
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL305",
+                        reason="adapter-not-applicable",
+                        detail="replay-vocabulary check applies to codex-rollout streams only",
+                    )
+                )
+            else:
+                findings.extend(
+                    check_foreign_shape(events, source_path=source_path, context=context)
                 )
 
         if "SL204" in enabled:

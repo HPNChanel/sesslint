@@ -1,9 +1,10 @@
 """Registry of detector reason codes and severity/repairability taxonomies.
 
-This module defines the 29 reason codes (SL001–SL011, SL101–SL108, SL201–SL205,
-SL301–SL304, SL401–SL402) established in DEMAND.md plus the checks-rules pack
+This module defines the 32 reason codes (SL001–SL011, SL101–SL108, SL201–SL206,
+SL301–SL305, SL401–SL402) established in DEMAND.md plus the checks-rules pack
 (SL008, SL011, SL204, SL205, SL303, SL304, SL401), the transcript-hygiene pack
-(SL009), and the index-reconciliation pack (SL402), along with their verbatim
+(SL009), the index-reconciliation pack (SL402), and the detector-depth pack
+(SL010, SL206, SL305), along with their verbatim
 names, summaries, categories, and default (severity, repairability) assignments.
 """
 
@@ -88,6 +89,7 @@ class Code(StrEnum):
     SL302 = "SL302"
     SL303 = "SL303"
     SL304 = "SL304"
+    SL305 = "SL305"
     SL401 = "SL401"
     SL402 = "SL402"
 
@@ -121,6 +123,7 @@ SL301: Final[str] = "SL301"
 SL302: Final[str] = "SL302"
 SL303: Final[str] = "SL303"
 SL304: Final[str] = "SL304"
+SL305: Final[str] = "SL305"
 SL401: Final[str] = "SL401"
 SL402: Final[str] = "SL402"
 
@@ -468,6 +471,22 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
         override_policy=(
             "Drift may indicate a spliced file; records are never migrated or "
             "normalized across a drift boundary automatically."
+        ),
+    ),
+    SL305: CodeInfo(
+        code=SL305,
+        name="Provider-incompatible record shape",
+        summary=(
+            "Record shape sits outside the replay vocabulary of the declared "
+            "record family — file parses, replay target rejects."
+        ),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="compatibility",
+        override_policy=(
+            "Foreign-shape records are never rewritten to match the replay "
+            "vocabulary; the known-shapes list is citation-only and never "
+            "treats unknown shapes as foreign."
         ),
     ),
     SL401: CodeInfo(

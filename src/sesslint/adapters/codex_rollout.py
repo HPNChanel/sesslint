@@ -703,6 +703,19 @@ def _process_rollout_record(
                     # SL206 resume-projection marker (#19661): field
                     # presence only — never the encrypted value.
                     codex_extra["has_encrypted_content"] = "encrypted_content" in payload
+                    # SL305 replay-vocabulary marker (#36551): official
+                    # reasoning items carry content=null or no content key;
+                    # a non-null value (array of reasoning_text parts) is a
+                    # third-party provider shape. Shape class only — never
+                    # the content value.
+                    if "content" not in payload:
+                        codex_extra["reasoning_content_shape"] = "absent"
+                    elif payload["content"] is None:
+                        codex_extra["reasoning_content_shape"] = "null"
+                    elif isinstance(payload["content"], list):
+                        codex_extra["reasoning_content_shape"] = "array"
+                    else:
+                        codex_extra["reasoning_content_shape"] = "other"
             if isinstance(item_type, str) and item_type in RESPONSE_ITEM_TYPE_MAP:
                 actor, kind = RESPONSE_ITEM_TYPE_MAP[item_type]
             else:

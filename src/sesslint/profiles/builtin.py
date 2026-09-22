@@ -40,6 +40,7 @@ from sesslint.codes import (
     SL302,
     SL303,
     SL304,
+    SL305,
     SL401,
     SL402,
     Severity,
@@ -76,6 +77,7 @@ ALL_RULES: Final[tuple[str, ...]] = (
     SL302,
     SL303,
     SL304,
+    SL305,
     SL401,
     SL402,
 )

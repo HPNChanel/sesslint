@@ -119,9 +119,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   codex-rollout-scoped): flags rollout files whose durable record
   sequence does not cover the envelope ordinals the paginated resume
   path expects — three divergence kinds, at most one finding each per
-  file: `trailing-non-durable` (highest-ordinal record is non-durable;
-  the openai/codex#40747 "inherited prefix through ordinal 828, found
-  final durable 827" signature), `durable-gap` (an ordinal inside the
+  file: `trailing-non-durable` (a declared `subagent_history_start_ordinal`
+  points past the last durable ordinal — the openai/codex#40747
+  "inherited prefix through ordinal 828, found final durable 827"
+  signature; bare telemetry tails without the claim stay clean),
+  `durable-gap` (an ordinal inside the
   durable range absent entirely — non-durable interleave is legitimate,
   never a hole), and `missing-required-field` (`reasoning` items lacking
   `encrypted_content` while siblings carry it; openai/codex#19661).
@@ -133,6 +135,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repairability; non-codex adapters skip via coverage
   `adapter-not-applicable`. Evidence is structural only (ordinals,
   counts, envelope family names).
+- **SL305 provider-incompatible record shape** (detector-depth T-05,
+  codex-rollout-scoped; evidence-assurance T-02 memo GO verdict): flags
+  `reasoning` items carrying a non-null `content` value — outside the
+  official replay vocabulary (openai/codex#36551: third-party
+  Responses-compatible providers persist `reasoning_text` parts arrays;
+  the official API expects `content: null`, "Expected maximum length
+  0"). Shape-vocabulary check, not provenance inference — the declared
+  provider is surfaced as a bounded hash, never a claim. One finding
+  per file; WARNING severity, manual repairability; non-codex adapters
+  skip via coverage `adapter-not-applicable`. The Codex adapter gains
+  the `reasoning_content_shape` marker (`absent|null|array|other`).
 
 ### Changed
 

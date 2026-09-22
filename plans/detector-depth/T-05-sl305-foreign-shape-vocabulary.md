@@ -1,6 +1,6 @@
 # T-05: SL305 provider-incompatible record shape
 
-- Status: planned
+- Status: implemented (awaiting review)
 - Phase: detector-depth
 - Priority: P3
 - Type: feature (detector)
@@ -54,3 +54,26 @@ SL010 `writer_hashes` precedent), `declared_originator_present`.
 - Memo spec implemented end-to-end; all repo gates green; fixtures
   with PROVENANCE; conformance row; content-free evidence asserted in
   tests (no `reasoning_text` payload text anywhere in report output).
+
+## Implementation Notes (2026-09-22)
+
+- `checks/foreign_shape.py`, family `shape`. Fires on
+  `reasoning_content_shape` in {`array`, `other`} — the
+  `_FOREIGN_SHAPES` table is citation-keyed (only `reasoning` +
+  #36551 in v1); unknown item families or shape labels are silent.
+- Adapter marker: `reasoning_content_shape` ∈
+  `absent|null|array|other` computed in the existing `reasoning`
+  branch — `content` was already in `KNOWN_PAYLOAD_KEYS`, so the
+  foreign shape parsed silently before this task.
+- Evidence: `shape_violation`, `item_family`, `item_count`,
+  `first_ordinal`, `declared_provider_hash` (sha256-8 of
+  `model_provider`), `declared_originator_present` — from
+  `ctx.source_metadata["session_meta"]`.
+- Boundary verified by fixture: `sl305_mixed_splice.jsonl` fires SL305
+  AND SL206 `missing-required-field` (complementary); uniform-foreign
+  files fire SL305 only.
+- README coverage example corrected — it predated adapter-scoped
+  skips (showed SL206 performed on canonical, `skipped: []`); now
+  matches real output including SL305/shape skip rows.
+- Registry/schema/profile/SARIF pins 31 -> 32; bundle golden
+  regenerated (delta = SL305 + shape skip rows only).

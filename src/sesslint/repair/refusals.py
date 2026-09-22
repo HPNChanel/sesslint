@@ -46,6 +46,7 @@ from sesslint.codes import (
     SL302,
     SL303,
     SL304,
+    SL305,
     SL401,
     SL402,
 )
@@ -298,6 +299,20 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "normalizing one record's schema would invent which generation it belongs to"
         ),
         demand_citation="Conservative policy MUST refuse",
+    ),
+    SL305: RefusalRationale(
+        code=SL305,
+        rationale=(
+            "a foreign-shape record is only provable against a cited replay "
+            "vocabulary; rewriting it to the expected shape would discard "
+            "provider-persisted fields and invent record semantics"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+        salvage_path=(
+            "the vendor-documented manual path rewrites the offending field "
+            "to the replay vocabulary's expected value after backup - "
+            "SessLint performs no rewrite"
+        ),
     ),
     SL401: RefusalRationale(
         code=SL401,
