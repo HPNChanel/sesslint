@@ -181,7 +181,7 @@ rm -rf .smoke_env
 - [ ] In the release commit: bump `rev:`/`==` doc examples to the new tag and drop `next-release` markers for features shipping in that tag.
 - [ ] `docs/MATRIX.md` matches generator output from `tests/conformance/test_matrix.py`.
 - [ ] All 20 reason codes have synced documentation in `docs/codes/SL*.md` (`tests/test_rule_docs.py` passes).
-- [ ] All 12 repair recipes have synced documentation in `docs/recipes/*.md` (`tests/test_registry_docs.py` passes).
+- [ ] All 13 repair recipes have synced documentation in `docs/recipes/*.md` (`tests/test_registry_docs.py` passes).
 - [ ] Every fixture directory contains a valid `PROVENANCE.json` with `contains_real_data: false` (`tests/test_fixture_provenance.py` passes).
 - [ ] Multi-platform CI workflow succeeds across Ubuntu, Windows, and macOS on Python 3.11 and 3.12.
 - [ ] `python bench/perf_250k.py --record --host-tag <host>` run once on the maintainer host before tagging — appends the normative row to `bench/LEDGER.jsonl` so `scripts/bench_gate.py` has a fresh same-OS baseline for the release.

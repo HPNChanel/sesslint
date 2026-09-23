@@ -1,6 +1,6 @@
 """Salvage repair recipe pack (TASK-020).
 
-This module implements the four lossy salvage repair recipes as pure event-list
+This module implements the five lossy salvage repair recipes as pure event-list
 transforms under explicit opt-in policy:
 1. unresolvable-branch-amputate: drop a weakly-connected parent component that contains
    an SL006 disconnected branch or SL005 fatal cycle with no checkpoints.
@@ -11,6 +11,9 @@ transforms under explicit opt-in policy:
 4. orphan-result-drop: drop a single SL101 orphan tool_result record when the
    operator explicitly accepts that the record may be the sole evidence of a
    completed external action.
+5. torn-record-excision: drop a single SL001 nonterminal malformed record when
+   the operator accepts that its contents are unrecoverable; realized at
+   write-back since the record never produced an event.
 
 Guarantees:
 - Zero I/O, zero disk access, zero network calls.
@@ -34,7 +37,7 @@ from sesslint._events import (
     _event_parent_id,
     _to_event_dict,
 )
-from sesslint.codes import SL005, SL006, SL101, SL102, SL108
+from sesslint.codes import SL001, SL005, SL006, SL101, SL102, SL108
 from sesslint.policy.abstention import AffectedRegion
 from sesslint.repair.planner import PlanStep
 from sesslint.repair.preconditions import (
@@ -443,6 +446,131 @@ _EMPTY_STEP: Final[PlanStep] = PlanStep(
 
 
 # ---------------------------------------------------------------------------
+# 5. Torn Record Excision (SL001)
+# ---------------------------------------------------------------------------
+
+
+def _has_extractable_dependents(events: Sequence[Any], record_id: Any) -> bool:
+    """True when any parsed event parents itself to the torn record's id.
+
+    Only reachable when the reader extracted a usable record id from the
+    malformed bytes; a fully garbled record cannot be checked this way and
+    relies on post-repair revalidation to refuse dangling-parent output.
+    """
+    rec_str = str(record_id)
+    return any(_event_parent_id(ev) == rec_str for ev in events)
+
+
+def sl001_excisable(ctx: PreconditionContext) -> bool:
+    """Precondition: SL001 finding is a physically excisable torn record.
+
+    Passes only for real per-line malformed records — never for stream-level
+    refusals (``size_limit_exceeded`` carries no droppable line) — and never
+    when a parsed event provably parents to the torn record's extracted id
+    (excision would orphan a known dependent; such sessions need manual
+    intervention or branch handling).
+    """
+    f = ctx.finding
+    if f is None or f.code != SL001:
+        return False
+    ev = f.evidence if isinstance(f.evidence, Mapping) else {}
+    if ev.get("reason") == "size_limit_exceeded":
+        return False
+    byte_offset = ev.get("byte_offset")
+    byte_end = ev.get("byte_end")
+    ordinal = ev.get("record_ordinal")
+    if (
+        not isinstance(byte_offset, int)
+        or isinstance(byte_offset, bool)
+        or not isinstance(byte_end, int)
+        or isinstance(byte_end, bool)
+        or not isinstance(ordinal, int)
+        or isinstance(ordinal, bool)
+    ):
+        return False
+    if byte_end <= byte_offset or ordinal < 1:
+        return False
+    if f.source is None:
+        return False
+    line = f.source.line
+    if not isinstance(line, int) or isinstance(line, bool) or line < 1:
+        return False
+    if f.source.record_id is not None and _has_extractable_dependents(
+        ctx.events, f.source.record_id
+    ):
+        return False
+    return True
+
+
+def apply_torn_record_excision_with_loss(
+    events: Sequence[Any],
+    step: PlanStep,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Excise one nonterminal malformed record (lossy, salvage-only).
+
+    The torn line never produced a canonical event, so the excision is
+    realized at write-back: canonical re-serialization simply omits it, and
+    vendor emit drops the physical line via the step's finding fingerprint.
+    This transform therefore preserves every parsed event verbatim while
+    declaring the dropped record in the loss accounting.
+
+    Raises:
+        PreconditionFailed: If the step is not anchored to a real torn
+            record (missing/invalid ``line`` or ``record_ordinal`` params,
+            degenerate byte span) or a parsed event provably depends on the
+            torn record's id.
+    """
+    if not events:
+        raise PreconditionFailed("torn-record-excision: cannot apply to an empty session")
+
+    params = step.params if isinstance(step.params, Mapping) else {}
+    line = params.get("line")
+    ordinal = params.get("record_ordinal")
+    byte_offset = params.get("byte_offset")
+    byte_end = params.get("byte_end")
+    if (
+        not isinstance(line, int)
+        or isinstance(line, bool)
+        or not isinstance(ordinal, int)
+        or isinstance(ordinal, bool)
+        or not isinstance(byte_offset, int)
+        or isinstance(byte_offset, bool)
+        or not isinstance(byte_end, int)
+        or isinstance(byte_end, bool)
+    ):
+        raise PreconditionFailed(
+            "torn-record-excision: step params 'line', 'record_ordinal', "
+            f"'byte_offset', 'byte_end' must be integers, got "
+            f"line={line!r} record_ordinal={ordinal!r} "
+            f"byte_offset={byte_offset!r} byte_end={byte_end!r}"
+        )
+    if line < 1 or ordinal < 1 or byte_end <= byte_offset:
+        raise PreconditionFailed(
+            "torn-record-excision: step params do not anchor a real torn record "
+            f"(line={line!r}, record_ordinal={ordinal!r}, "
+            f"byte_offset={byte_offset!r}, byte_end={byte_end!r})"
+        )
+
+    record_id = params.get("record_id")
+    if record_id is not None and _has_extractable_dependents(events, record_id):
+        raise PreconditionFailed(
+            "torn-record-excision: a parsed event parents to the torn record's "
+            "id; excision would orphan a known dependent"
+        )
+
+    return _copy_events_as_dicts(events), {"torn-record": 1}
+
+
+def apply_torn_record_excision(
+    events: Sequence[Any],
+    step: PlanStep,
+) -> list[dict[str, Any]]:
+    """Excise one nonterminal malformed record (019-compatible signature)."""
+    transformed, _ = apply_torn_record_excision_with_loss(events, step)
+    return transformed
+
+
+# ---------------------------------------------------------------------------
 # Recipe Registry Definitions
 # ---------------------------------------------------------------------------
 
@@ -483,22 +611,34 @@ RECIPE_ORPHAN_RESULT_DROP: Final[Recipe] = Recipe(
     affected_region=affected_region_orphan_result_drop,
 )
 
+RECIPE_TORN_RECORD_EXCISION: Final[Recipe] = Recipe(
+    name="torn-record-excision",
+    handles=(SL001,),
+    preconditions=("salvage_policy", "acknowledge_side_effects", "sl001_excisable"),
+    lossy=True,
+    salvage_only=True,
+    apply=apply_torn_record_excision,
+)
+
 RECIPES: Final[tuple[Recipe, ...]] = (
     RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE,
     RECIPE_TORN_COMPACTION_PROJECT,
     RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE,
     RECIPE_ORPHAN_RESULT_DROP,
+    RECIPE_TORN_RECORD_EXCISION,
 )
 SALVAGE_RECIPES: Final[tuple[Recipe, ...]] = RECIPES
 
 # The recipe's finding-level precondition lives in this module but registers
 # through the public precondition extension point so the planner can gate on it.
 register_precondition("sl101_orphan_present", sl101_orphan_present)
+register_precondition("sl001_excisable", sl001_excisable)
 
 
 def register_all() -> None:
-    """Register all four salvage recipes into the repair registry."""
+    """Register all five salvage recipes into the repair registry."""
     register_precondition("sl101_orphan_present", sl101_orphan_present)
+    register_precondition("sl001_excisable", sl001_excisable)
     for r in RECIPES:
         if get_recipe(r.name) is None:
             register_recipe(r)
@@ -510,6 +650,7 @@ __all__ = [
     "RECIPE_ORPHAN_RESULT_DROP",
     "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
     "RECIPE_TORN_COMPACTION_PROJECT",
+    "RECIPE_TORN_RECORD_EXCISION",
     "RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE",
     "SALVAGE_RECIPES",
     "affected_region_orphan_result_drop",
@@ -519,8 +660,11 @@ __all__ = [
     "apply_side_effect_unknown_truncate_with_loss",
     "apply_torn_compaction_project",
     "apply_torn_compaction_project_with_loss",
+    "apply_torn_record_excision",
+    "apply_torn_record_excision_with_loss",
     "apply_unresolvable_branch_amputate",
     "apply_unresolvable_branch_amputate_with_loss",
     "register_all",
+    "sl001_excisable",
     "sl101_orphan_present",
 ]

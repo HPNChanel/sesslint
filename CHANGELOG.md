@@ -226,6 +226,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registry is in scope. Read-only by construction: stdlib `sqlite3`,
   `mode=ro` + `PRAGMA query_only`, strict column allowlist (content
   columns are never selected), row caps.
+- **`torn-record-excision` salvage recipe** (repair follow-on, maintainer
+  corpus demand): `sesslint repair --policy salvage
+  --acknowledge-side-effects` can now excise a single nonterminal
+  malformed record (`SL001`) — the corruption class observed on real
+  session files that previously had no path but manual editing. The
+  torn line never produced an event, so excision is realized at
+  write-back: canonical re-serialization omits it, vendor write-back
+  drops the physical line via the step's finding fingerprint, and every
+  parsed event is preserved verbatim. Fail-closed bounds: only real
+  per-line records qualify — stream-level `size_limit_exceeded`
+  refusals are never excisable — and the precondition plus apply-time
+  validation refuse when a parsed event provably parents to the torn
+  record's extracted id (post-repair revalidation remains the backstop
+  for ids the reader could not extract). Loss is declared per step as
+  `torn-record` — a record loss that does not consume the parsed-event
+  `total_kept` count — and output assurance is capped at structural
+  validity.
 
 ### Fixed
 
@@ -297,6 +314,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the shape matrix). `bench/perf_250k.py` now runs a dedicated
   keyword-dense giant-lines phase (5 records, ~11MB) gated against the
   time budget, locking the regression into the perf contract.
+- **`api.plan`/`api.plan_repair` and `repair --plan-out` now forward
+  `--acknowledge-side-effects`**: the planning entrypoints had no
+  acknowledgement parameter, so plans computed via `--dry-run`,
+  `--plan-out`, or the API could never produce acknowledgement-gated
+  salvage steps (orphan-result-drop, torn-record-excision) and reported
+  `needs-acknowledgement` even when the flag was passed. The parameter
+  is now accepted and forwarded end to end.
 
 ### Changed
 

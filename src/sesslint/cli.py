@@ -2854,6 +2854,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     policy=policy_opt,
                     format=format_opt if format_opt != "auto" else None,
                     profile=profile_opt,
+                    acknowledge_side_effects=ack_side_effects,
                 )
                 try:
                     from sesslint.atomic import atomic_write_text

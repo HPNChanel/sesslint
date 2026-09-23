@@ -125,6 +125,10 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "require guessing record structure and content"
         ),
         demand_citation="AC-004",
+        salvage_path=(
+            "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' "
+            "(recipe torn-record-excision; per-line malformed records only)"
+        ),
     ),
     SL007: RefusalRationale(
         code=SL007,

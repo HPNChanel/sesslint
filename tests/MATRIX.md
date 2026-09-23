@@ -51,3 +51,4 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 | torn-compaction-project | salvage_recipe_applications | conservative_default_blocks_salvage | empty_events_salvage_policy | torn_compaction_direct_apply_validation |
 | side-effect-unknown-truncate | salvage_recipe_applications | sl203_refusal_beats_salvage | empty_events_salvage_policy | truncate_direct_apply_validation |
 | orphan-result-drop | test_orphan_result_drop_plans_and_applies | test_orphan_result_drop_conservative_blocks | test_orphan_result_drop_resolves_by_params | test_orphan_result_drop_direct_apply_refusals |
+| torn-record-excision | test_plan_sl001_salvage_emits_excision_step | test_plan_sl001_conservative_and_noack_blocked | test_sl001_excisable_precondition | test_apply_torn_record_excision_validation |

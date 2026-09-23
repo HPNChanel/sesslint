@@ -42,7 +42,7 @@ REPAIR_SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src" / "sessli
 # Codes documented in the refusal registry that additionally gained a salvage
 # recipe. The rationale stays registered because the refusal remains normative
 # under the default conservative policy.
-DOCUMENTED_BUT_COVERED: frozenset[str] = frozenset({SL101})
+DOCUMENTED_BUT_COVERED: frozenset[str] = frozenset({SL001, SL101})
 
 _CITATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^(?:AC|FR|NFR|DEV|RVW)-\d{3}$"),
@@ -76,7 +76,7 @@ def test_every_code_has_recipe_or_documented_refusal() -> None:
 
 
 def test_uncovered_codes_match_registry_exactly() -> None:
-    """The refusal registry covers exactly the uncovered codes plus SL101."""
+    """The refusal registry covers exactly the uncovered codes plus SL001/SL101."""
     uncovered = {c for c in ALL_CODES if not recipes_for(c)}
     assert uncovered == REFUSAL_CODES - DOCUMENTED_BUT_COVERED
     assert REFUSAL_CODES - uncovered == DOCUMENTED_BUT_COVERED
@@ -129,6 +129,15 @@ def test_sl101_salvage_path_is_explicit_opt_in() -> None:
     assert "--policy salvage" in entry.salvage_path
     assert "--acknowledge-side-effects" in entry.salvage_path
     assert "orphan-result-drop" in entry.salvage_path
+
+
+def test_sl001_salvage_path_is_explicit_opt_in() -> None:
+    """The SL001 entry documents the salvage-only lossy path explicitly."""
+    entry = REFUSAL_REGISTRY[SL001]
+    assert entry.salvage_path is not None
+    assert "--policy salvage" in entry.salvage_path
+    assert "--acknowledge-side-effects" in entry.salvage_path
+    assert "torn-record-excision" in entry.salvage_path
 
 
 def test_blocked_describe_surfaces_rationale() -> None:

@@ -860,6 +860,7 @@ def plan(
     policy: Literal["conservative", "salvage"] = "conservative",
     format: str | None = None,
     profile: str = "neutral",
+    acknowledge_side_effects: bool = False,
 ) -> RepairPlan:
     """Compute a dry-run repair plan for a source session file without writing files.
 
@@ -868,6 +869,7 @@ def plan(
         policy: 'conservative' or 'salvage' (default 'conservative').
         format: Optional format adapter override.
         profile: Profile name (default 'neutral').
+        acknowledge_side_effects: Explicit acknowledgment for salvage policy.
 
     Returns:
         A frozen RepairPlan instance.
@@ -879,6 +881,7 @@ def plan(
         format=format,
         profile=profile,
         dry_run=True,
+        acknowledge_side_effects=acknowledge_side_effects,
     )
     return res
 
@@ -889,6 +892,7 @@ def plan_repair(
     policy: Literal["conservative", "salvage"] = "conservative",
     format: str | None = None,
     profile: str = "neutral",
+    acknowledge_side_effects: bool = False,
 ) -> RepairPlan:
     """Compute a repair plan without writing files (repair-engine T-01).
 
@@ -896,7 +900,13 @@ def plan_repair(
     ``RepairPlan.to_dict()`` as a ``sesslint.plan/v1`` document for later
     :func:`apply_plan` execution.
     """
-    return plan(source_path, policy=policy, format=format, profile=profile)
+    return plan(
+        source_path,
+        policy=policy,
+        format=format,
+        profile=profile,
+        acknowledge_side_effects=acknowledge_side_effects,
+    )
 
 
 def apply_plan(

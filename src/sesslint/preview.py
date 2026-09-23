@@ -36,6 +36,7 @@ RECIPE_ACTIONS: Final[dict[str, str]] = {
     "proven-unique-parent-restore": "relink",
     "compaction-projection-reunion": "relink",
     "orphan-result-drop": "drop",
+    "torn-record-excision": "drop",
     "unresolvable-branch-amputate": "drop",
     "identical-duplicate-drop": "dedupe",
     "seq-renumber": "normalize",

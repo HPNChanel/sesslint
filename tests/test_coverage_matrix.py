@@ -301,6 +301,12 @@ RECIPE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_orphan_result_drop_resolves_by_params",
         "malformed": "test_orphan_result_drop_direct_apply_refusals",
     },
+    "torn-record-excision": {
+        "positive": "test_plan_sl001_salvage_emits_excision_step",
+        "negative": "test_plan_sl001_conservative_and_noack_blocked",
+        "boundary": "test_sl001_excisable_precondition",
+        "malformed": "test_apply_torn_record_excision_validation",
+    },
 }
 
 

@@ -52,10 +52,16 @@ ALLOWED_LOSS_CLASSES: Final[frozenset[str]] = frozenset(
         "none",
         "orphan-result",
         "projected-orphans",
+        "torn-record",
         "truncated-projection",
         "truncated-side-effects",
     }
 )
+
+# Loss classes that count dropped *records* rather than canonical events.
+# A torn record never produced an event, so it must not reduce ``total_kept``
+# (the kept universe is the parsed event list).
+NON_EVENT_LOSS_CLASSES: Final[frozenset[str]] = frozenset({"torn-record"})
 
 # Recipes that remove events from the emitted stream. After any such step on
 # canonical input, the planner appends a ``seq-renumber`` normalizing step so
@@ -689,6 +695,21 @@ def plan(
             step_loss = {"truncated-side-effects": max(0, len(events) - eff_idx)}
         elif matched_recipe.name == "orphan-result-drop":
             step_loss = {"orphan-result": 1}
+        elif matched_recipe.name == "torn-record-excision":
+            step_loss = {"torn-record": 1}
+            # Anchor the step to the physical record: source coordinates for
+            # validation and manifest honesty, extracted record id (when the
+            # reader recovered one) for the dependents re-check at apply time.
+            if f.source is not None:
+                if isinstance(f.source.line, int) and not isinstance(f.source.line, bool):
+                    step_params["line"] = f.source.line
+                if f.source.record_id is not None:
+                    step_params["record_id"] = f.source.record_id
+            if isinstance(f.evidence, Mapping):
+                for c_key in ("byte_offset", "byte_end", "record_ordinal"):
+                    c_val = f.evidence.get(c_key)
+                    if isinstance(c_val, int) and not isinstance(c_val, bool):
+                        step_params[c_key] = c_val
         elif matched_recipe.lossy:
             step_loss = {"none": 0}
 
@@ -864,7 +885,10 @@ def plan(
             loss_preview[k] = loss_preview.get(k, 0) + v
 
     total_lost = sum(sum(s.loss.values()) for s in final_steps)
-    total_kept = max(0, len(events) - total_lost)
+    event_lost = sum(
+        v for s in final_steps for k, v in s.loss.items() if k not in NON_EVENT_LOSS_CLASSES
+    )
+    total_kept = max(0, len(events) - event_lost)
 
     loss_accounting = Loss(
         preview=loss_preview,
