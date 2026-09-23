@@ -532,6 +532,85 @@ def test_cli_repair_seal_refuses_batch(tmp_path: Path) -> None:
     assert not ledger.exists()
 
 
+# --- CLI: repair --seal -------------------------------------------------------
+
+REPAIR_FIXTURES = FIXTURES_DIR / "repair_cli"
+
+
+def test_cli_repair_seal(tmp_path: Path) -> None:
+    src = REPAIR_FIXTURES / "basic" / "source.jsonl"
+    out = tmp_path / "repaired.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    code = main(["repair", str(src), "--out", str(out), "--seal", str(ledger)])
+    assert code == 0
+    e = _lines(ledger)[0]
+    assert e["tool"] == "repair" and e["verdict"] == "repaired"
+    assert e["codes"] == {}
+    # The sealed artifact is the produced output, not the source.
+    assert e["file_sha256"] == seal.sha256_file(out)
+    assert e["file_sha256"] != seal.sha256_file(src)
+
+
+def test_cli_repair_seal_refuses_dry_run(tmp_path: Path) -> None:
+    src = REPAIR_FIXTURES / "basic" / "source.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    code = main(
+        [
+            "repair",
+            str(src),
+            "--out",
+            str(tmp_path / "out.jsonl"),
+            "--dry-run",
+            "--seal",
+            str(ledger),
+        ]
+    )
+    assert code == 2
+    assert not ledger.exists()
+
+
+def test_cli_repair_seal_refuses_preview(tmp_path: Path) -> None:
+    src = REPAIR_FIXTURES / "basic" / "source.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    code = main(["repair", str(src), "--preview", "--seal", str(ledger)])
+    assert code == 2
+    assert not ledger.exists()
+
+
+def test_cli_repair_seal_refuses_plan_only(tmp_path: Path) -> None:
+    src = REPAIR_FIXTURES / "basic" / "source.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    code = main(
+        [
+            "repair",
+            str(src),
+            "--plan-out",
+            str(tmp_path / "plan.json"),
+            "--seal",
+            str(ledger),
+        ]
+    )
+    assert code == 2
+    assert not ledger.exists()
+
+
+def test_cli_repair_seal_refuses_batch(tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger.jsonl"
+    code = main(
+        [
+            "repair",
+            "--batch",
+            str(REPAIR_FIXTURES / "basic"),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--seal",
+            str(ledger),
+        ]
+    )
+    assert code == 2
+    assert not ledger.exists()
+
+
 # --- schema -------------------------------------------------------------------
 
 
