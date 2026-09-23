@@ -355,8 +355,11 @@ def test_cli_check_seal_deterministic_modulo_clock(tmp_path: Path) -> None:
         main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(led)])
     ea, eb = _lines(a)[0], _lines(b)[0]
     for k in set(ea) | set(eb):
-        if k != "sealed_at":
+        if k not in ("sealed_at", "entry_sha256"):  # entry hash covers the clock
             assert ea[k] == eb[k], k
+    for led in (a, b):
+        count, div = seal.verify_ledger(led)
+        assert div is None and count == 1  # each hash stays self-consistent
 
 
 def test_cli_check_seal_stdin_omits_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
