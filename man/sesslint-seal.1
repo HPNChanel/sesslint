@@ -1,0 +1,39 @@
+.TH SESSLINT-SEAL 1 "" "SessLint 0.3.0" "SessLint Manual"
+.SH NAME
+sesslint-seal \- [read\-only] Verify a tamper\-evident seal ledger's hash chain.
+.SH SYNOPSIS
+.B sesslint seal \-\-verify LEDGER [\-\-json]
+.SH DESCRIPTION
+[read\-only] Re\-walk a seal ledger produced by check/verify/repair \-\-seal and report the first chain divergence (edited, dropped, reordered, or truncated lines). The ledger is a tamper\-evident record of SessLint verdicts — self\-verifying, no keys or trusted clock.
+.SH OPTIONS
+.TP
+.B \-\-verify LEDGER
+Ledger JSONL file to re\-walk and verify
+.TP
+.B \-\-json
+Output the verification result as JSON to stdout
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

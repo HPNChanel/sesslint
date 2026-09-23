@@ -382,7 +382,7 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
-SessLint exposes seventeen CLI commands designed for both interactive developer usage and CI/CD automation (plus `sesslint completion` for shell integration):
+SessLint exposes eighteen CLI commands designed for both interactive developer usage and CI/CD automation (plus `sesslint completion` for shell integration):
 
 | Command | Purpose | Mutates Disk? | Default Format | Exit Codes |
 | :--- | :--- | :---: | :---: | :---: |
@@ -390,6 +390,7 @@ SessLint exposes seventeen CLI commands designed for both interactive developer 
 | **`sesslint scan`** | Traverse directory trees (or auto-discover agent session roots) with 5-bucket triage | **No** (read-only) | `auto` | `0`, `1`, `2` |
 | **`sesslint repair`** | Plan and execute atomic surgical session repairs | **Yes** (to `--output`) | `auto` | `0`, `1`, `2` |
 | **`sesslint verify`** | 7-stage cryptographic audit of repair and manifest | **No** (read-only) | `auto` | `0`, `1`, `2` |
+| **`sesslint seal`** | Verify a tamper-evident hash-chain ledger of verdicts (`--seal` on check/verify/repair appends) | **No** (read-only; `--seal` appends one line) | N/A | `0`, `1`, `2` *(next release)* |
 | **`sesslint bundle`** | Emit zero-leak diagnostic support bundle for bug/adapter reports | **Optional** (`--out`) | `auto` | `0`, `1`, `2` |
 | **`sesslint export`** | Export a vendor artifact to a canonical file for repair | **Yes** (to `--output`) | `auto` | `0`, `1`, `2` |
 | **`sesslint validate-session`**| Validate canonical session against JSON Schema | **No** (read-only) | `canonical` | `0`, `1`, `2` |
@@ -670,6 +671,23 @@ sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
 | `--json` | `flag` | `False` | Emit machine-readable JSON verdict. |
 | `--color` | `choice` | `auto` | Control colored output: `auto`, `always`, `never`. |
 | `--no-color` | `flag` | `False` | Disable ANSI color styling. |
+
+---
+
+#### `sesslint seal`
+<!-- next-release -->
+Verify the hash chain of a tamper-evident verdict ledger — an append-only JSONL record written by `--seal` on `check`, `verify`, and `repair`. See [docs/seal.md](docs/seal.md) for the line format, honesty boundary, and divergence vocabulary.
+
+```bash
+sesslint seal --verify <ledger> [OPTIONS]
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--verify` | `Path` | *required* | Ledger JSONL file to re-walk and verify. |
+| `--json` | `flag` | `False` | Emit machine-readable JSON result. |
+
+Seal-appending flags on `check`, `verify`, `repair`: `--seal LEDGER` (append one line; fails `2` if the ledger is divergent or unwritable), `--seal-no-path` (omit the artifact path), `--seal-genesis-of HEX` (bind a new ledger's first line to a prior ledger's last hash). Single-artifact invocations only — scan/batch/plan-only modes refuse `--seal`.
 
 ---
 

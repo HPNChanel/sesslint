@@ -21,6 +21,7 @@ PINNED_COMMANDS = (
     "mcp",
     "repair",
     "scan",
+    "seal",
     "stats",
     "validate-session",
     "verify",

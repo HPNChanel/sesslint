@@ -1,7 +1,8 @@
 # T-01: `sesslint seal` — hash-chain evidence ledger
 
-- Status: **blocked — maintainer decision required** (borders DEMAND
-  non-goal 19; approved framing must be recorded before start)
+- Status: done (2026-09-23) — maintainer sign-off recorded; implemented
+  with the honesty-boundary wording below ("tamper-evident record of
+  SessLint verdicts", never audit/compliance claims)
 - Phase: evidence-assurance
 - Priority: P2
 - Type: feature (new command, additive surface)

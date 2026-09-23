@@ -316,6 +316,97 @@ def _read_stdin_bytes() -> bytes:
     return sys.stdin.buffer.read(DEFAULT_MAX_FILE_BYTES + 1)
 
 
+def _add_seal_args(sub: argparse.ArgumentParser) -> None:
+    """Register the seal-ledger flags on a verdict-producing subcommand
+    (evidence-assurance T-01)."""
+    sub.add_argument(
+        "--seal",
+        type=Path,
+        default=None,
+        metavar="LEDGER",
+        help=(
+            "Append a tamper-evident seal line to LEDGER (append-only "
+            "hash-chained verdict record; 'sesslint seal --verify' re-checks it)"
+        ),
+    )
+    sub.add_argument(
+        "--seal-no-path",
+        action="store_true",
+        default=False,
+        help="Omit the artifact path from the seal line (multi-machine ledgers)",
+    )
+    sub.add_argument(
+        "--seal-genesis-of",
+        type=str,
+        default=None,
+        metavar="HEX",
+        help=(
+            "Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)"
+        ),
+    )
+
+
+def _check_seal_verdict(report: Any) -> str:
+    """Derive the seal verdict vocabulary for a check report — mirrors the
+    scan bucket classification (SL301->unsupported, errors->invalid)."""
+    codes = report.counts.by_code
+    if codes.get("SL301"):
+        return "unsupported"
+    err = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get("fatal", 0)
+    return "invalid" if err > 0 else "healthy"
+
+
+def _maybe_append_seal(
+    args: argparse.Namespace,
+    *,
+    tool: str,
+    artifact_bytes: bytes | None,
+    artifact_path: Path | None,
+    verdict: str,
+    codes: Mapping[str, int],
+    report_bytes: bytes,
+) -> int | None:
+    """Append one seal-ledger line when ``--seal`` was passed.
+
+    Returns an exit code only on failure (``2`` — sealing must never be
+    silently skipped); returns None when the flag is absent or the append
+    succeeded, so callers keep their normal exit path.
+    """
+    ledger = getattr(args, "seal", None)
+    if ledger is None:
+        return None
+    from sesslint import seal as seal_mod
+    from sesslint.report import minimize_path
+
+    try:
+        if artifact_bytes is not None:
+            file_sha = seal_mod.sha256_bytes(artifact_bytes)
+        elif artifact_path is not None:
+            file_sha = seal_mod.sha256_file(artifact_path)
+        else:
+            raise seal_mod.SealError("no artifact bytes or path to seal")
+        entry_path = (
+            None
+            if getattr(args, "seal_no_path", False) or artifact_path is None
+            else minimize_path(artifact_path)
+        )
+        entry = seal_mod.append_seal(
+            ledger,
+            tool=tool,
+            file_sha256=file_sha,
+            path=entry_path,
+            verdict=verdict,
+            codes=codes,
+            report_sha256=seal_mod.sha256_bytes(report_bytes),
+            genesis_of=getattr(args, "seal_genesis_of", None),
+        )
+    except (seal_mod.SealError, OSError) as err:
+        print(f"Error: seal failed: {err}", file=sys.stderr)
+        return 2
+    print(f"sealed: seq {entry['seq']} -> {ledger}", file=sys.stderr)
+    return None
+
+
 def _emit_check_report(
     report: Any,
     args: argparse.Namespace,
@@ -708,6 +799,7 @@ def create_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="Embed raw transcript content in reports (warning: emits raw sensitive data)",
     )
+    _add_seal_args(check_parser)
 
     # formats
     formats_parser = subparsers.add_parser(
@@ -1131,6 +1223,7 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Explicit config file path (overrides [tool.sesslint] discovery)",
     )
+    _add_seal_args(repair_parser)
 
     # verify
     verify_parser = subparsers.add_parser(
@@ -1210,6 +1303,33 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=argparse.SUPPRESS,
         help="Embed raw transcript content (warning: emits raw sensitive data)",
+    )
+    _add_seal_args(verify_parser)
+
+    # seal (evidence-assurance T-01)
+    seal_parser = subparsers.add_parser(
+        "seal",
+        help="[read-only] Verify a tamper-evident seal ledger's hash chain.",
+        description=(
+            "[read-only] Re-walk a seal ledger produced by "
+            "check/verify/repair --seal and report the first chain "
+            "divergence (edited, dropped, reordered, or truncated lines). "
+            "The ledger is a tamper-evident record of SessLint verdicts — "
+            "self-verifying, no keys or trusted clock."
+        ),
+    )
+    seal_parser.add_argument(
+        "--verify",
+        type=Path,
+        required=True,
+        metavar="LEDGER",
+        help="Ledger JSONL file to re-walk and verify",
+    )
+    seal_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the verification result as JSON to stdout",
     )
 
     # bundle
@@ -1992,6 +2112,17 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
         target_paths: list[Path] = args.path
 
+        # --seal binds one verdict artifact per line; aggregate scan modes
+        # have no single subject artifact, so refuse rather than seal a
+        # partial picture (evidence-assurance T-01).
+        if getattr(args, "seal", None) is not None and len(target_paths) != 1:
+            print(
+                "Error: --seal applies to single-file checks only "
+                "(one artifact per line; scans are not sealed).",
+                file=sys.stderr,
+            )
+            return 2
+
         # `-` reads one session artifact from stdin (ux T-06). It cannot be
         # combined with filesystem paths — one stream is one virtual file.
         if any(str(p) == "-" for p in target_paths):
@@ -2031,13 +2162,25 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             except Exception as err:
                 return _handle_internal_error(err, args)
 
-            return _emit_check_report(
+            rc = _emit_check_report(
                 report,
                 args,
                 display_path="<stdin>",
                 format_opt=format_opt,
                 profile_opt=profile_opt,
             )
+            from sesslint.report import render_json as _render_check_json
+
+            seal_rc = _maybe_append_seal(
+                args,
+                tool="check",
+                artifact_bytes=stdin_data,
+                artifact_path=None,
+                verdict=_check_seal_verdict(report),
+                codes=dict(report.counts.by_code),
+                report_bytes=_render_check_json(report).encode("utf-8"),
+            )
+            return seal_rc if seal_rc is not None else rc
 
         # Multi-path mode: aggregate per-path results into one ScanReport
         # (pre-commit appends every staged filename to a single invocation).
@@ -2101,6 +2244,13 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
         target_path: Path = target_paths[0]
         if target_path.is_dir():
+            if getattr(args, "seal", None) is not None:
+                print(
+                    "Error: --seal applies to single-file checks only "
+                    "(one artifact per line; directory scans are not sealed).",
+                    file=sys.stderr,
+                )
+                return 2
             if not getattr(args, "recursive", False):
                 print(
                     f"Error: Path {target_path} is a directory. "
@@ -2165,13 +2315,25 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     return 2
                 parser.error(str(err))
 
-            return _emit_check_report(
+            rc = _emit_check_report(
                 report,
                 args,
                 display_path=str(target_path),
                 format_opt=format_opt,
                 profile_opt=profile_opt,
             )
+            from sesslint.report import render_json as _render_check_json
+
+            seal_rc = _maybe_append_seal(
+                args,
+                tool="check",
+                artifact_bytes=None,
+                artifact_path=target_path,
+                verdict=_check_seal_verdict(report),
+                codes=dict(report.counts.by_code),
+                report_bytes=_render_check_json(report).encode("utf-8"),
+            )
+            return seal_rc if seal_rc is not None else rc
 
         except SesslintError as err:
             print(f"Validation error [{err.code}]: {err}", file=sys.stderr)
@@ -2436,6 +2598,13 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         # --output-dir, not --output).
         _batch_modes = [m for m in (args.batch, args.from_scan, args.files) if m]
         if _batch_modes:
+            if getattr(args, "seal", None) is not None:
+                print(
+                    "Error: --seal applies to single-file repair only "
+                    "(batch modes produce no single subject artifact).",
+                    file=sys.stderr,
+                )
+                return 2
             if len(_batch_modes) > 1:
                 print(
                     "Error: --batch, --from-scan, and --files are mutually exclusive.",
@@ -2555,6 +2724,15 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         plan_only = bool(args.dry_run) or (
             getattr(args, "plan_out", None) is not None and args.output is None
         )
+        if getattr(args, "seal", None) is not None and (
+            plan_only or getattr(args, "preview", False)
+        ):
+            print(
+                "Error: --seal requires a completed repair — incompatible with "
+                "--dry-run, plan-only export, or --preview (nothing is produced).",
+                file=sys.stderr,
+            )
+            return 2
         if not plan_only and not getattr(args, "preview", False) and args.output is None:
             print(
                 "Error: --output is required unless --dry-run, --plan-out, or "
@@ -2768,6 +2946,26 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                             "vendor session store.",
                             file=sys.stderr,
                         )
+            if getattr(args, "seal", None) is not None and manifest is None:
+                # The plan-only paths returned earlier; reaching here without
+                # a manifest means no outcome artifact exists to seal.
+                print(
+                    "Error: --seal requires a completed repair with a manifest.",
+                    file=sys.stderr,
+                )
+                return 2
+            if manifest is not None:
+                seal_rc = _maybe_append_seal(
+                    args,
+                    tool="repair",
+                    artifact_bytes=None,
+                    artifact_path=args.output,
+                    verdict="repaired",
+                    codes={},
+                    report_bytes=dump_manifest(manifest).encode("utf-8"),
+                )
+                if seal_rc is not None:
+                    return seal_rc
             return 0
         except VendorRepairRefused as err:
             # Vendor-format refusal (auto-detected inside api.repair) is a usage
@@ -2847,12 +3045,52 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             else:
                 use_color = should_color(args, sys.stdout)
                 print(render_verify_human(verdict, color=use_color))
+            seal_rc = _maybe_append_seal(
+                args,
+                tool="verify",
+                artifact_bytes=None,
+                artifact_path=Path(repaired_target),
+                verdict="ok" if verdict.ok else "failed",
+                codes={},
+                report_bytes=verdict.to_json().encode("utf-8"),
+            )
+            if seal_rc is not None:
+                return seal_rc
             return 0 if verdict.ok else 1
         except (FileNotFoundError, OSError) as err:
             print(f"Verify I/O error: {err}", file=sys.stderr)
             return 2
         except Exception as err:
             return _handle_internal_error(err, args)
+
+    if args.command == "seal":
+        from sesslint.seal import SealError, verify_ledger
+
+        try:
+            entries_ok, divergence = verify_ledger(args.verify)
+        except SealError as err:
+            print(f"Error: {err}", file=sys.stderr)
+            return 2
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {
+                        "entries": entries_ok,
+                        "ok": divergence is None,
+                        "divergence": divergence,
+                    },
+                    sort_keys=True,
+                )
+            )
+        elif divergence is None:
+            print(f"ok: {entries_ok} sealed entries")
+        else:
+            print(
+                f"divergence at line {divergence['line']}: "
+                f"{divergence['kind']} — {divergence['detail']}",
+                file=sys.stderr,
+            )
+        return 0 if divergence is None else 1
 
     if args.command == "bundle":
         target_bundle_path: Path = args.path

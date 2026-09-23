@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.seal-ledger/v1",
+  "title": "SessLint Seal Ledger Entry v1",
+  "description": "One line of a tamper-evident hash-chain ledger recording a SessLint check/verify/repair outcome. entry_sha256 is the SHA-256 of the canonical JSON of every other field; prev_sha256 binds each line to the previous line's entry_sha256 (GENESIS on the first). Content-free: hashes, verdict, code counts, optional minimized path, self-reported sealed_at only.",
+  "type": "object",
+  "required": [
+    "schema",
+    "seq",
+    "prev_sha256",
+    "file_sha256",
+    "tool",
+    "verdict",
+    "codes",
+    "report_sha256",
+    "sealed_at",
+    "entry_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sesslint.seal-ledger/v1"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prev_sha256": {
+      "type": "string",
+      "pattern": "^(GENESIS|[0-9a-f]{64})$"
+    },
+    "file_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Minimized path of the subject artifact; omitted by --seal-no-path or non-file subjects (stdin)."
+    },
+    "tool": {
+      "type": "string",
+      "enum": [
+        "check",
+        "verify",
+        "repair"
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Closed-vocabulary outcome of the sealed invocation (e.g. healthy/invalid/unsupported for check, ok/failed for verify, repaired for repair)."
+    },
+    "codes": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^SL[0-9]{3}$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "report_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sealed_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "Self-reported UTC wall-clock time inside the hashed line; no trust anchor."
+    },
+    "genesis_of": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Optional: prior ledger's last entry hash, binding a rotated ledger's first line to its predecessor."
+    },
+    "entry_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

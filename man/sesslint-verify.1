@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-verify \- [read\-only] Verify integrity, hash bindings, and idempotence of a repaired session.
 .SH SYNOPSIS
-.B sesslint verify [\-\-source SOURCE_FLAG] [\-\-output OUTPUT_FLAG] \-\-manifest MANIFEST [\-\-plan PLAN] [\-\-json] [\-\-color {auto,always,never}] [\-\-no\-color] [\-\-acknowledge\-side\-effects] [\-\-include\-content] [SOURCE] [REPAIRED]
+.B sesslint verify [\-\-source SOURCE_FLAG] [\-\-output OUTPUT_FLAG] \-\-manifest MANIFEST [\-\-plan PLAN] [\-\-json] [\-\-color {auto,always,never}] [\-\-no\-color] [\-\-acknowledge\-side\-effects] [\-\-include\-content] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [SOURCE] [REPAIRED]
 .SH DESCRIPTION
 [read\-only] Verify integrity, hash bindings, and idempotence of a repaired session artifact.
 .SH ARGUMENTS
@@ -38,6 +38,15 @@ Acknowledge tool side\-effects for salvage policy during verify idempotence chec
 .TP
 .B \-\-include\-content
 Embed raw transcript content (warning: emits raw sensitive data)
+.TP
+.B \-\-seal LEDGER
+Append a tamper\-evident seal line to LEDGER (append\-only hash\-chained verdict record; 'sesslint seal \-\-verify' re\-checks it)
+.TP
+.B \-\-seal\-no\-path
+Omit the artifact path from the seal line (multi\-machine ledgers)
+.TP
+.B \-\-seal\-genesis\-of HEX
+Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)
 .SH EXIT STATUS
 .TP
 .B 0

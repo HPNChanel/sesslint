@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sesslint seal` tamper-evident verdict ledger** (evidence-assurance
+  T-01): `check`, `verify`, and `repair` accept `--seal LEDGER` to append
+  one canonical-JSON line binding the invocation's outcome (file SHA-256,
+  closed-vocabulary verdict, per-code counts, report hash) into a
+  SHA-256 hash chain; `sesslint seal --verify LEDGER` re-walks the chain
+  and reports the first divergence (`malformed-line`, `bad-schema`,
+  `seq-gap`, `chain-break`, `hash-mismatch`). Appends re-verify the
+  existing chain first — a divergent ledger is never extended (exit 2);
+  `--seal-no-path` omits the artifact path and `--seal-genesis-of` binds
+  a rotated ledger to its predecessor's last hash. `sealed_at` is
+  self-reported inside the hashed line — the deterministic outputs of
+  check/verify/repair are unaffected. Lines are content-free; single-
+  artifact invocations only (scan/batch/plan-only modes refuse).
 - **SL208 compaction-snapshot divergence detector** (detector-depth T-04):
   `compacted` records on codex-rollout streams embed the vendor's own
   pre-compaction snapshot (`guardian_history`); the adapter now projects

@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-repair \- [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file.
 .SH SYNOPSIS
-.B sesslint repair [\-\-output | \-\-out | \-o OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-batch DIR] [\-\-from\-scan REPORT.json] [\-\-files FILE] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-salvage\-unsupported] [\-\-include\-content] [\-\-config PATH] [PATH]
+.B sesslint repair [\-\-output | \-\-out | \-o OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-batch DIR] [\-\-from\-scan REPORT.json] [\-\-files FILE] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-salvage\-unsupported] [\-\-include\-content] [\-\-config PATH] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [PATH]
 .SH DESCRIPTION
 [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file with atomic execution.
 .SH ARGUMENTS
@@ -70,6 +70,15 @@ Embed raw transcript content in manifests (warning: emits raw sensitive data)
 .TP
 .B \-\-config PATH
 Explicit config file path (overrides [tool.sesslint] discovery)
+.TP
+.B \-\-seal LEDGER
+Append a tamper\-evident seal line to LEDGER (append\-only hash\-chained verdict record; 'sesslint seal \-\-verify' re\-checks it)
+.TP
+.B \-\-seal\-no\-path
+Omit the artifact path from the seal line (multi\-machine ledgers)
+.TP
+.B \-\-seal\-genesis\-of HEX
+Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)
 .SH EXIT STATUS
 .TP
 .B 0

@@ -1,8 +1,7 @@
 # SessLint Evidence-Assurance Plan (00)
 
-- Status: planned — **T-01 requires explicit maintainer decision before
-  start** (buyer-facing surface, non-goal boundary); T-02 is research-only
-  and unblocked.
+- Status: done — T-01 implemented (2026-09-23, maintainer sign-off on the
+  honesty-boundary framing); T-02 done (GO verdict → SL305).
 - Language: English
 - Created: 2026-09-21
 - Authority: planning only. `DEMAND.md` non-goal 19 (not a legal/
