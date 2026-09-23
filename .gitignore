@@ -57,6 +57,7 @@ docs/implementation/
 .claude/
 .cursor/
 .windsurf/
+.playwright-mcp/
 scratch/
 
 agent_tasks/

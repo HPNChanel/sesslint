@@ -1,6 +1,8 @@
 # SessLint Detector-Depth Plan (00)
 
-- Status: T-01/T-02/T-03 done (2026-09-21); T-04 planned (decision task)
+- Status: done — T-01..T-05 done (2026-09-21); SL208 compaction-snapshot
+  divergence added out-of-band from the dogfood wave (2026-09-23, commit
+  16c00f7)
 - Language: English
 - Created: 2026-09-21
 - Authority: execution plan for detector depth-work driven by the

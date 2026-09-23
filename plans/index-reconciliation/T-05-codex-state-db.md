@@ -1,6 +1,7 @@
 # T-05: Codex `state_*.sqlite` registry reconciliation (SL402 extension)
 
-- Status: implemented (awaiting review)
+- Status: done (2026-09-23) — implemented 2026-09-22 (commits 681ab1f,
+  86a4381); reviewed in the sequential task workflow, all gates green
 - Phase: index-reconciliation
 - Priority: P1
 - Type: feature — extends SL402 to Codex's authoritative thread registry
