@@ -1,7 +1,5 @@
 # Seal Ledger — Tamper-Evident Verdict Records
 
-<!-- next-release -->
-
 `sesslint seal` is an **append-only, hash-chained local ledger** of SessLint
 verdicts. `check`, `verify`, and `repair` accept `--seal LEDGER` and append
 one JSON line binding that invocation's outcome — file hash, verdict,
@@ -11,8 +9,6 @@ divergence, so a recorded verdict history cannot be edited, reordered,
 truncated, or extended silently.
 
 ## Honesty Boundary
-
-<!-- next-release -->
 
 A seal ledger is a **tamper-evident record of SessLint verdicts** — nothing
 more:
@@ -32,8 +28,6 @@ more:
   is self-verifying via stdlib SHA-256 and the canonical JSON codec.
 
 ## Line Format (`sesslint.seal-ledger/v1`)
-
-<!-- next-release -->
 
 One canonical-JSON object per line (LF, UTF-8), `schemas/sesslint.seal-ledger.v1.json`:
 
@@ -59,8 +53,6 @@ One canonical-JSON object per line (LF, UTF-8), `schemas/sesslint.seal-ledger.v1
 | `entry_sha256` | SHA-256 over the canonical JSON of every other field. |
 
 ## Usage
-
-<!-- next-release -->
 
 ```bash
 # Seal each verdict as it is produced.
@@ -89,8 +81,6 @@ Rules enforced by the append path (fail-closed):
 
 ## Verification Output
 
-<!-- next-release -->
-
 `seal --verify` reports `ok: N sealed entries`, or the first divergence as
 a closed-vocabulary kind plus the line number:
 
@@ -106,8 +96,6 @@ Only the **first** divergence is reported — downstream lines are
 untrustworthy by construction once the chain breaks.
 
 ## Content-Free Guarantee
-
-<!-- next-release -->
 
 Ledger lines carry hashes, a verdict word, per-code counts, a bounded
 minimized path, and a self-reported timestamp — never transcript content,

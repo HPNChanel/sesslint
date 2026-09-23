@@ -20,7 +20,7 @@ reference material.
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Structured threat model: assets, trust boundaries, per-boundary threats with enforcing-code citations, residual risks. |
 | [MUTATION_TESTING.md](MUTATION_TESTING.md) | Scoped mutmut protocol (qa-infra T-02): POSIX-only requirement, module scope, triage classes, baseline note. |
 | [hygiene.md](hygiene.md) | Transcript hygiene: SL009 persisted-secret detection surface, the rotate-don't-redact workflow, digest-based removal verification, and the `--fail-on warning` CI recipe. |
-| [seal.md](seal.md) | Seal ledger: append-only hash-chained record of check/verify/repair verdicts (`--seal` flags, `seal --verify`, divergence kinds, honesty boundary). *(next release)* |
+| [seal.md](seal.md) | Seal ledger: append-only hash-chained record of check/verify/repair verdicts (`--seal` flags, `seal --verify`, divergence kinds, honesty boundary). |
 | [codes/](codes/README.md) | Per-code documentation for all 34 diagnostic reason codes (SL001–SL402), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
 | [recipes/](recipes/README.md) | Per-recipe documentation for the 12 deterministic repair recipes. |
 | [reviews/](reviews/README.md) | Historical review artifacts: audit findings, release verdicts, and remediation plans. |

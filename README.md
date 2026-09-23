@@ -239,12 +239,12 @@ on [GitHub Releases](https://github.com/HPNChanel/sesslint/releases) — no inte
 
 ```bash
 # Download the binary for your OS, then verify it against the published checksums
-curl -LO https://github.com/HPNChanel/sesslint/releases/download/v0.3.0/sesslint-0.3.0-linux-x86_64
-curl -LO https://github.com/HPNChanel/sesslint/releases/download/v0.3.0/sha256sums.txt
+curl -LO https://github.com/HPNChanel/sesslint/releases/download/v0.4.0/sesslint-0.4.0-linux-x86_64
+curl -LO https://github.com/HPNChanel/sesslint/releases/download/v0.4.0/sha256sums.txt
 sha256sum -c sha256sums.txt --ignore-missing   # Windows: Get-FileHash -Algorithm SHA256 .\sesslint-*.exe
 
-chmod +x sesslint-0.3.0-linux-x86_64
-./sesslint-0.3.0-linux-x86_64 version --json
+chmod +x sesslint-0.4.0-linux-x86_64
+./sesslint-0.4.0-linux-x86_64 version --json
 ```
 
 Substitute the current release tag and your platform asset (`macos-arm64`,
@@ -257,10 +257,10 @@ installing:
 
 ```bash
 cosign verify-blob \
-  --bundle sesslint-0.3.0-linux-x86_64.sigstore.json \
+  --bundle sesslint-0.4.0-linux-x86_64.sigstore.json \
   --certificate-identity-regexp "github.com/HPNChanel/sesslint" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  sesslint-0.3.0-linux-x86_64
+  sesslint-0.4.0-linux-x86_64
 ```
 
 The canonical artifact set (wheel, sdist, `sha256sums.txt`, manifest) also
@@ -283,7 +283,7 @@ A container image ships to GHCR on every release — useful for CI sandboxes
 and Docker-first setups (distroless nonroot, no shell, ~10 MB binary):
 
 ```bash
-docker run --rm -v "$PWD:/data"   ghcr.io/hpnchanel/sesslint:0.3.0 check /data/session.jsonl
+docker run --rm -v "$PWD:/data"   ghcr.io/hpnchanel/sesslint:0.4.0 check /data/session.jsonl
 ```
 
 The image is built from the same Sigstore-signed linux binary as the other
@@ -390,7 +390,7 @@ SessLint exposes eighteen CLI commands designed for both interactive developer u
 | **`sesslint scan`** | Traverse directory trees (or auto-discover agent session roots) with 5-bucket triage | **No** (read-only) | `auto` | `0`, `1`, `2` |
 | **`sesslint repair`** | Plan and execute atomic surgical session repairs | **Yes** (to `--output`) | `auto` | `0`, `1`, `2` |
 | **`sesslint verify`** | 7-stage cryptographic audit of repair and manifest | **No** (read-only) | `auto` | `0`, `1`, `2` |
-| **`sesslint seal`** | Verify a tamper-evident hash-chain ledger of verdicts (`--seal` on check/verify/repair appends) | **No** (read-only; `--seal` appends one line) | N/A | `0`, `1`, `2` *(next release)* |
+| **`sesslint seal`** | Verify a tamper-evident hash-chain ledger of verdicts (`--seal` on check/verify/repair appends) | **No** (read-only; `--seal` appends one line) | N/A | `0`, `1`, `2` |
 | **`sesslint bundle`** | Emit zero-leak diagnostic support bundle for bug/adapter reports | **Optional** (`--out`) | `auto` | `0`, `1`, `2` |
 | **`sesslint export`** | Export a vendor artifact to a canonical file for repair | **Yes** (to `--output`) | `auto` | `0`, `1`, `2` |
 | **`sesslint validate-session`**| Validate canonical session against JSON Schema | **No** (read-only) | `canonical` | `0`, `1`, `2` |
@@ -675,7 +675,6 @@ sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
 ---
 
 #### `sesslint seal`
-<!-- next-release -->
 Verify the hash chain of a tamper-evident verdict ledger — an append-only JSONL record written by `--seal` on `check`, `verify`, and `repair`. See [docs/seal.md](docs/seal.md) for the line format, honesty boundary, and divergence vocabulary.
 
 ```bash
@@ -1199,7 +1198,6 @@ Add SessLint validation inside custom checkpoint savers or state graphs before r
 ```python
 from sesslint import precheck
 
-
 def restore_agent_state(session_file: str) -> None:
     res = precheck(session_file, profile="neutral")
     if not res.ok:
@@ -1211,7 +1209,6 @@ def restore_agent_state(session_file: str) -> None:
 Gate model invocation inside the agent loop:
 ```python
 from sesslint import precheck
-
 
 def run_agent_turn(ledger_path: str) -> None:
     res = precheck(ledger_path, profile="claude-strict")
@@ -1392,7 +1389,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate Session Artifacts
-        uses: HPNChanel/sesslint/.github/actions/sesslint-check@v0.3.0
+        uses: HPNChanel/sesslint/.github/actions/sesslint-check@v0.4.0
         with:
           path: sessions/
           profile: neutral
@@ -1439,7 +1436,7 @@ Enforce session integrity locally before commits are created by adding SessLint 
 ```yaml
 repos:
   - repo: https://github.com/HPNChanel/sesslint
-    rev: v0.3.0  # or git commit SHA
+    rev: v0.4.0  # or git commit SHA
     hooks:
       - id: sesslint-check
 ```

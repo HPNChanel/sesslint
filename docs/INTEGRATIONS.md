@@ -47,8 +47,6 @@ into the wrong event. To opt into gating, add `--fail-on warning` (exit
 
 ### `sesslint hook` — zero-config entrypoint
 
-<!-- next-release -->
-
 `sesslint hook --event <name>` is the single entrypoint every recipe
 below uses. It reads the hook payload from stdin, resolves the
 transcript, runs the event-appropriate check, and prints a single
@@ -80,8 +78,6 @@ Contract:
   exactly what a later resume reads back.
 
 ### Recipes
-
-<!-- next-release -->
 
 Add to `.claude/settings.json` (project) or `~/.claude/settings.json`
 (user). `sesslint init-hooks --agent claude --print` emits exactly these

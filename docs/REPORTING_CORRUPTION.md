@@ -52,8 +52,6 @@ or timestamps of your activity.
 
 ### Pre-share advisory (SL009)
 
-<!-- next-release -->
-
 The bundle is content-free, but the **source file it describes may still
 carry live secrets** — and pasting raw transcript excerpts alongside the
 bundle would expose them. When the bundled source produced `SL009`

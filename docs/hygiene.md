@@ -82,8 +82,6 @@ one poll interval instead of a postmortem.
 
 ## SessionEnd hook (Claude Code)
 
-<!-- next-release -->
-
 `sesslint init-hooks --agent claude` prints a `SessionEnd` recipe that
 runs `sesslint hook --event SessionEnd` — which resolves
 `transcript_path` from the hook stdin payload and maps the event to
@@ -92,8 +90,6 @@ is non-blocking (`|| true`) by design; a session must never fail
 to end because a lint warned. See [INTEGRATIONS.md](INTEGRATIONS.md).
 
 ## Bundling and sharing
-
-<!-- next-release -->
 
 `sesslint bundle` output is content-free, but the *source* file may still
 carry the live secret. When the bundled source produced SL009 findings,
