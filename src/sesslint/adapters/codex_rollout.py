@@ -26,7 +26,8 @@ Guarantees:
 - call_id pairing preserved in ``correlation_id`` for tool calls and results.
 - ``compacted`` records map to canonical ``compaction_boundary`` events so
   post-compaction corruption analysis sees the same boundary structure other
-  adapters expose.
+  adapters expose; their embedded ``guardian_history`` snapshots project as
+  bounded structural markers (id/type/correlator only) for SL208.
 - Run-metadata records (``event_msg``, ``turn_context``, ``world_state``,
   ``session_meta``, ``inter_agent_communication_metadata``,
   ``token_usage_record``) are kept as ``system``/``opaque`` events — preserved
@@ -156,6 +157,14 @@ RESPONSE_ITEM_TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
     "tool_search_output": ("tool", "tool_result"),
 }
 
+# SL208: bound on the structural projection of a compacted record's embedded
+# pre-compaction snapshot (``guardian_history``). Real snapshots observed in
+# the wild stay ≤ ~250 items; the cap keeps the per-event marker bounded on
+# hostile input while still covering the entire observed range. Only item
+# ``id``/``type``/correlation ids are projected — never item content.
+GUARDIAN_SNAPSHOT_ITEM_CAP: Final[int] = 512
+_GUARDIAN_ID_MAX: Final[int] = 256
+
 # Envelope keys observed in rollout records.
 KNOWN_ENVELOPE_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -256,6 +265,7 @@ KNOWN_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
         "window_id",
         "window_number",
         "replacement_history",
+        "guardian_history",
         # inter_agent_communication_metadata
         "trigger_turn",
         # version markers honored when present
@@ -758,6 +768,14 @@ def _process_rollout_record(
                 )
                 call_id = str(raw_call_id) if raw_call_id is not None else rec_id_str
                 correlation_id = call_id
+                # SL208 marker: the declared correlator as written (never the
+                # item-id fallback) so snapshot-vs-stream comparison sees the
+                # same field the vendor persisted on both sides.
+                codex_extra["call_id"] = (
+                    str(raw_call_id)
+                    if isinstance(raw_call_id, str) and len(raw_call_id) <= _GUARDIAN_ID_MAX
+                    else None
+                )
                 tool_name = str(payload.get("name") or "")
                 raw_input = (
                     payload.get("arguments")
@@ -797,6 +815,12 @@ def _process_rollout_record(
                 )
                 call_id = str(raw_call_id) if raw_call_id is not None else ""
                 correlation_id = call_id or None
+                # SL208 marker: declared correlator as written (see above).
+                codex_extra["call_id"] = (
+                    str(raw_call_id)
+                    if isinstance(raw_call_id, str) and len(raw_call_id) <= _GUARDIAN_ID_MAX
+                    else None
+                )
                 raw_output = (
                     payload.get("output")
                     if payload.get("output") is not None
@@ -840,6 +864,44 @@ def _process_rollout_record(
             for key in ("window_id", "window_number", "first_window_id", "previous_window_id"):
                 if payload.get(key) is not None:
                     out_payload[key] = payload.get(key)
+            # SL208 markers (detector-depth T-04): bounded structural
+            # projection of the vendor's embedded pre-compaction snapshot
+            # (``guardian_history``). Each projected item keeps only its
+            # structural id, its declared item type, and its declared
+            # correlator — never input/output/message content. The check
+            # compares shared ids against the durable stream; snapshot-only
+            # ids are unprovable (they may be inherited context) and are
+            # still projected so the stream-side lookup stays authoritative.
+            guardian_history = payload.get("guardian_history")
+            if isinstance(guardian_history, list):
+                projected: list[dict[str, Any]] = []
+                for gh_item in guardian_history[:GUARDIAN_SNAPSHOT_ITEM_CAP]:
+                    if not isinstance(gh_item, Mapping):
+                        continue
+                    gh_id = gh_item.get("id")
+                    gh_type = gh_item.get("type")
+                    gh_corr = gh_item.get("call_id")
+                    projected.append(
+                        {
+                            "id": (
+                                gh_id
+                                if isinstance(gh_id, str) and len(gh_id) <= _GUARDIAN_ID_MAX
+                                else None
+                            ),
+                            "type": (
+                                gh_type if isinstance(gh_type, str) and len(gh_type) <= 64 else None
+                            ),
+                            "call_id": (
+                                gh_corr
+                                if isinstance(gh_corr, str) and len(gh_corr) <= _GUARDIAN_ID_MAX
+                                else None
+                            ),
+                        }
+                    )
+                codex_extra["guardian_items"] = projected
+                codex_extra["guardian_items_total"] = len(guardian_history)
+                if len(guardian_history) > GUARDIAN_SNAPSHOT_ITEM_CAP:
+                    codex_extra["guardian_items_truncated"] = True
         else:
             out_payload = {"summary": ""}
     elif isinstance(env_type, str) and env_type in ENVELOPE_OPAQUE_TYPES:

@@ -95,7 +95,7 @@ def test_scan_schema_loads_and_self_consistent() -> None:
     assert set(file_item["properties"]["verdict"]["enum"]) == set(VALID_VERDICTS)
     finding_item = file_item["properties"]["findings"]["items"]
     assert set(finding_item["properties"]["code"]["enum"]) == set(ALL_CODES)
-    assert len(ALL_CODES) == 33
+    assert len(ALL_CODES) == 34
 
 
 def test_scan_report_dict_validates() -> None:

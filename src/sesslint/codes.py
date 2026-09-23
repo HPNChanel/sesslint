@@ -1,10 +1,11 @@
 """Registry of detector reason codes and severity/repairability taxonomies.
 
-This module defines the 33 reason codes (SL001–SL011, SL101–SL108, SL201–SL207,
+This module defines the 34 reason codes (SL001–SL011, SL101–SL108, SL201–SL208,
 SL301–SL305, SL401–SL402) established in DEMAND.md plus the checks-rules pack
 (SL008, SL011, SL204, SL205, SL303, SL304, SL401), the transcript-hygiene pack
-(SL009), the index-reconciliation pack (SL402), and the detector-depth pack
-(SL010, SL206, SL305), along with their verbatim
+(SL009), the index-reconciliation pack (SL402), the detector-depth pack
+(SL010, SL206, SL305), and the compaction-snapshot pack (SL208), along with
+their verbatim
 names, summaries, categories, and default (severity, repairability) assignments.
 """
 
@@ -58,7 +59,7 @@ class Repairability(StrEnum):
 
 
 class Code(StrEnum):
-    """The 30 stable detector reason codes (DEMAND.md plus pack additions)."""
+    """The 34 stable detector reason codes (DEMAND.md plus pack additions)."""
 
     SL001 = "SL001"
     SL002 = "SL002"
@@ -86,6 +87,7 @@ class Code(StrEnum):
     SL205 = "SL205"
     SL206 = "SL206"
     SL207 = "SL207"
+    SL208 = "SL208"
     SL301 = "SL301"
     SL302 = "SL302"
     SL303 = "SL303"
@@ -121,6 +123,7 @@ SL204: Final[str] = "SL204"
 SL205: Final[str] = "SL205"
 SL206: Final[str] = "SL206"
 SL207: Final[str] = "SL207"
+SL208: Final[str] = "SL208"
 SL301: Final[str] = "SL301"
 SL302: Final[str] = "SL302"
 SL303: Final[str] = "SL303"
@@ -448,6 +451,21 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
             "or dropped to buy headroom."
         ),
     ),
+    SL208: CodeInfo(
+        code=SL208,
+        name="Compaction snapshot divergence",
+        summary=(
+            "The embedded pre-compaction snapshot disagrees with the durable "
+            "item stream on a shared item's type, correlation, or ordering."
+        ),
+        default_severity=Severity.WARNING,
+        default_repairability=Repairability.MANUAL,
+        category="checkpoint",
+        override_policy=(
+            "Snapshot evidence is advisory; embedded snapshots and stream "
+            "items are never rewritten to force agreement."
+        ),
+    ),
     SL301: CodeInfo(
         code=SL301,
         name="Unsupported format version",
@@ -541,7 +559,7 @@ ALL_CODES: Final[frozenset[str]] = frozenset(CODE_REGISTRY.keys())
 
 
 def is_valid_code(code: str) -> bool:
-    """Return True if code is one of the 29 registered detector codes."""
+    """Return True if code is one of the 34 registered detector codes."""
     return code in ALL_CODES
 
 

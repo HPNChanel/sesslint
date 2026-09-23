@@ -30,6 +30,9 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 | SL303 | test_dup_keys decode_clean_no_dups | test_fixture_critical_dup | test_dup_cap_truncated | test_strictness_preserved |
 | SL204 | test_accounting fixture_consistent_clean | test_fixture_divergent_fires | test_zero_baseline_first_marker_checked | test_non_int_counters_ignored |
 | SL205 | test_compaction_coverage fixture_valid_clean | test_fixture_missing_leaf | test_pointerless_boundary_silent | test_broken_ancestor_chain_fires |
+| SL206 | test_durable_prefix conformance_healthy_stays_clean | test_trailing_nondurable_fires_once_with_ordinals | test_gap_beyond_durable_range_not_a_hole | test_malformed_codex_markers_ignored |
+| SL207 | test_context_pressure fixture_healthy_silent | test_fixture_near_limit_fires | test_boundary_exactly_15pct_silent | test_malformed_markers_ignored |
+| SL208 | test_compaction_snapshot e2e_healthy_fixture_silent | test_type_mismatch_fires_once | test_snapshot_only_ids_silent | test_malformed_markers_ignored |
 | SL304 | test_schema_drift fixture_compatible_bump_clean | test_fixture_version_drift | test_fixture_multi_transition_cap | test_fixture_foreign_splice |
 | SL401 | test_cross_file_links intact_chain_emits_nothing | test_missing_middle_warns_on_child | test_ambiguous_target_warns | test_outside_scan_root_is_info_unresolved |
 | SL011 | test_size_anomaly uniform_file_stays_clean | test_outlier_fires_once_with_numbers_only_evidence | test_threshold_boundary_exact | test_missing_size_metadata_yields_nothing |

@@ -19,6 +19,7 @@ from typing import Any
 from sesslint.canonical import SessionEvent
 from sesslint.checks.accounting import check_accounting
 from sesslint.checks.checkpoint import check_checkpoint
+from sesslint.checks.compaction_snapshot import check_compaction_snapshot
 from sesslint.checks.context_pressure import check_context_pressure
 from sesslint.checks.durable_prefix import check_durable_prefix
 from sesslint.checks.foreign_shape import check_foreign_shape
@@ -120,7 +121,7 @@ def run_all_checks(
         ("writers", ("SL010",)),
         ("tool_pairing_1", ("SL101", "SL102", "SL103", "SL104")),
         ("tool_pairing_2", ("SL105", "SL106", "SL107", "SL108")),
-        ("checkpoint", ("SL201", "SL202", "SL203", "SL205", "SL206")),
+        ("checkpoint", ("SL201", "SL202", "SL203", "SL205", "SL206", "SL208")),
         ("accounting", ("SL204", "SL207")),
         ("size", ("SL011",)),
         ("shape", ("SL305",)),
@@ -324,6 +325,35 @@ def run_all_checks(
             else:
                 findings.extend(
                     check_durable_prefix(events, source_path=source_path, context=context)
+                )
+
+        if "SL208" in enabled:
+            if context.adapter_id != "codex-rollout":
+                # Adapter-scoped rule: embedded pre-compaction snapshots
+                # exist only on codex-rollout streams; other formats carry
+                # no vendor snapshot to reconcile against the durable items.
+                performed_checks.discard("SL208")
+                skipped_checks.append(
+                    CoverageSkip(
+                        check="SL208",
+                        reason="adapter-not-applicable",
+                        detail=("compaction snapshot markers apply to codex-rollout streams only"),
+                    )
+                )
+                if not (cp_rules & enabled) and "SL206" not in enabled:
+                    performed_checks.discard("checkpoint")
+                    skipped_checks.append(
+                        CoverageSkip(
+                            check="checkpoint",
+                            reason="adapter-not-applicable",
+                            detail=(
+                                "codex-scoped checkpoint rules apply to codex-rollout streams only"
+                            ),
+                        )
+                    )
+            else:
+                findings.extend(
+                    check_compaction_snapshot(events, source_path=source_path, context=context)
                 )
 
         if "SL305" in enabled:

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SL208 compaction-snapshot divergence detector** (detector-depth T-04):
+  `compacted` records on codex-rollout streams embed the vendor's own
+  pre-compaction snapshot (`guardian_history`); the adapter now projects
+  each snapshot item into bounded `extra_fields["codex"]["guardian_items"]`
+  markers (declared `id`/`type`/`call_id` only, capped at 512 items with a
+  truncation flag) plus the durable item's declared correlator
+  (`call_id`). The new check reconciles item ids shared by both
+  representations and flags three provable divergences — `type-mismatch`,
+  `correlation-mismatch` (including presence disagreement), and
+  `future-item` (snapshot cites an item first written after the
+  boundary). Snapshot-only ids, intra-snapshot pairing, and items absent
+  from the snapshot are deliberately unprovable and stay silent.
+  Codex-rollout scoped (other adapters report `adapter-not-applicable`),
+  WARNING severity, ≤ one finding per divergence kind per file; evidence
+  is structural only — never item content.
 - **Scan skip-reason aggregation**: `ScanReport.skipped_reason_totals()`
   derives per-reason counts from the file results; serialized scan reports
   gain an optional `totals.skipped_reasons` object (schema

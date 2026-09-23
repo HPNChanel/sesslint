@@ -1,6 +1,6 @@
 # Diagnostic Reason Codes (SL001–SL402)
 
-This directory documents the 33 diagnostic reason codes recognized and reported by SessLint.
+This directory documents the 34 diagnostic reason codes recognized and reported by SessLint.
 
 ## Crucial Disclaimer Boundaries
 

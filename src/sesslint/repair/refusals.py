@@ -43,6 +43,7 @@ from sesslint.codes import (
     SL205,
     SL206,
     SL207,
+    SL208,
     SL301,
     SL302,
     SL303,
@@ -291,6 +292,15 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "context pressure is advisory evidence against a declared window; "
             "truncating or dropping content to buy headroom would destroy the "
             "very context the operator needs to checkpoint"
+        ),
+        demand_citation="Conservative policy MUST refuse",
+    ),
+    SL208: RefusalRationale(
+        code=SL208,
+        rationale=(
+            "snapshot divergence means two vendor-written claims disagree; "
+            "choosing the authoritative one would edit evidence toward a "
+            "contract the file never satisfied"
         ),
         demand_citation="Conservative policy MUST refuse",
     ),

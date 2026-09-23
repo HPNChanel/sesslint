@@ -787,7 +787,7 @@ For comprehensive compatibility matrix across formats and validation profiles, c
 
 ## Diagnostic Reason Codes (SL001–SL402)
 
-SessLint implements **28 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
+SessLint implements **34 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
 
 ### 1. Syntax & Framing
 | Code | Name | Default Severity | Repairability | Action & Rationale |
@@ -834,6 +834,7 @@ SessLint implements **28 registered diagnostic codes**. Severity and repairabili
 | **`SL205`** | Compaction coverage gap | `warning` | `manual` | Boundary claims a covered span that is missing or non-contiguous on the parent chain (pointerless boundaries skip). |
 | **`SL206`** | Durable-prefix boundary | `warning` | `manual` | Durable record sequence does not cover the envelope ordinal the resume path expects — trailing non-durable tail, durable hole, or resume-required field absent (codex-rollout streams only; ≤ one finding per divergence kind). |
 | **`SL207`** | Context-pressure projection | `warning` | `manual` | Last declared context occupancy leaves <15% headroom under the declared model window — approaching the un-compactable deadlock boundary (codex-rollout `token_count` markers only; ≤ one finding per file). |
+| **`SL208`** | Compaction snapshot divergence | `warning` | `manual` | Embedded pre-compaction snapshot disagrees with the durable stream on a shared item's type, correlator, or ordering (codex-rollout `guardian_history` markers only; ≤ one finding per divergence kind). |
 
 ### 6. Format Compatibility
 | Code | Name | Default Severity | Repairability | Action & Rationale |

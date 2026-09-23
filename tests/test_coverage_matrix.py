@@ -178,6 +178,12 @@ CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
         "boundary": "test_context_pressure.py::test_boundary_exactly_15pct_silent",
         "malformed": "test_context_pressure.py::test_malformed_markers_ignored",
     },
+    "SL208": {
+        "positive": "test_compaction_snapshot.py::test_e2e_healthy_fixture_silent",
+        "negative": "test_compaction_snapshot.py::test_type_mismatch_fires_once",
+        "boundary": "test_compaction_snapshot.py::test_snapshot_only_ids_silent",
+        "malformed": "test_compaction_snapshot.py::test_malformed_markers_ignored",
+    },
     "SL305": {
         "positive": "test_foreign_shape.py::test_null_content_fixture_clean",
         "negative": "test_foreign_shape.py::test_foreign_reasoning_fires_once",
