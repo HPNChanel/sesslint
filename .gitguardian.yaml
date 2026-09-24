@@ -1,0 +1,11 @@
+# GitGuardian configuration — sesslint
+#
+# fixtures/ and tests/ contain synthetic secret-shaped tokens that exercise
+# the SL009 persisted-secret detector (a secret checker must ship test
+# secrets). Every fixtures/**/ directory carries PROVENANCE.json declaring
+# `contains_real_data: false` (AGENTS.md hard invariant); tokens in tests/
+# are generated fakes used to assert detection. None are real credentials.
+version: 2
+paths-ignore:
+  - "fixtures/**"
+  - "tests/**"
