@@ -4,7 +4,7 @@
 > **Canonical CLI command:** `sesslint`  
 > **One-line definition:** An offline, vendor-neutral integrity checker and conservative repair tool for persisted tool-using AI agent sessions.  
 > **Document date:** 2026-09-04  
-> **Status:** Demand specification; MVP implemented (v0.1.0 published 2026-09-15, v0.2.0 published 2026-09-16); demand campaign active per `post-alpha-hardening-plan/CAMPAIGN_LEDGER.md`  
+> **Status:** Demand specification; MVP implemented (v0.1.0 published 2026-09-15, v0.2.0 published 2026-09-16); demand campaign active per the internal campaign ledger  
 > **Evidence refresh:** 2026-09-17 — see "Evidence refresh (2026-09-17)" under "Evidence of current demand" and the dated annotations under "Demand hypothesis" and "Future opportunities"
 > **Proposed license:** Apache-2.0 for the OSS core  
 > **Naming note:** “SessLint” is a contraction of “session” and “lint.” An exact-match public namespace screen performed on 2026-09-04 found no software repository named `sesslint` on GitHub and no indexed exact-match package on npm, PyPI, or crates.io. This is a preliminary collision screen, not legal trademark clearance. The GitHub organization/repository, package names, and relevant domains should be reserved before a public announcement.

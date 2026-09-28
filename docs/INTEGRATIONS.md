@@ -246,7 +246,7 @@ workspace-relative inputs for clickable navigation.
 
 Which agent runtimes expose a user-facing hook surface whose stdin
 payload `sesslint hook` can read (verified 2026-09 — re-checked each
-release; see `plans/agent-hooks` T-03 memo):
+release):
 
 | Runtime | Hook surface | Payload carries `transcript_path` | SessLint recipes |
 | :--- | :--- | :--- | :--- |

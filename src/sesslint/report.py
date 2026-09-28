@@ -1743,6 +1743,11 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
     p = Path(path)
     p_str = str(path).replace("\\", "/")
     is_abs = p.is_absolute() or p_str.startswith("/") or (len(p_str) > 1 and p_str[1] == ":")
+    # resolve() must only run on paths that are absolute in the *native* sense:
+    # a foreign-shaped absolute (e.g. "D:/x" on POSIX) resolves by prepending cwd,
+    # which can fabricate a location under ~ and leak the raw path. Those inputs
+    # must fall through to the hashed '.._<hash>/name' form instead.
+    native_abs = p.is_absolute() or p_str.startswith("/")
     h = home if home is not None else Path.home()
 
     if is_abs:
@@ -1754,15 +1759,16 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
         except (ValueError, RuntimeError):
             pass
 
-        try:
-            resolved_p = p.resolve()
-            resolved_h = h.resolve()
-            rel = resolved_p.relative_to(resolved_h)
-            if rel.parts == ():
-                return "~"
-            return f"~/{rel.as_posix()}"
-        except (ValueError, RuntimeError):
-            pass
+        if native_abs:
+            try:
+                resolved_p = p.resolve()
+                resolved_h = h.resolve()
+                rel = resolved_p.relative_to(resolved_h)
+                if rel.parts == ():
+                    return "~"
+                return f"~/{rel.as_posix()}"
+            except (ValueError, RuntimeError):
+                pass
 
         parent_str = str(p.parent).replace("\\", "/")
         p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
@@ -1807,10 +1813,11 @@ def hint_path(path: Path | str, *, home: Path | None = None) -> str:
             return f"~/{p.relative_to(h).as_posix()}"
         except (ValueError, RuntimeError):
             pass
-        try:
-            return f"~/{p.resolve().relative_to(h.resolve()).as_posix()}"
-        except (ValueError, RuntimeError):
-            pass
+        if p.is_absolute() or p_str.startswith("/"):
+            try:
+                return f"~/{p.resolve().relative_to(h.resolve()).as_posix()}"
+            except (ValueError, RuntimeError):
+                pass
         return p_str
     return p_str
 

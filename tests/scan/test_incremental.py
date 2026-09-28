@@ -212,7 +212,7 @@ def test_cache_db_lives_in_cache_dir(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cached_payload_has_no_session_content(tmp_path: Path) -> None:
+def test_cached_rows_carry_no_session_data(tmp_path: Path) -> None:
     tree = _build_tree(tmp_path / "tree")
     cache_dir = tmp_path / "cdb"
     scan_path(tree, recursive=True, incremental=True, cache_dir=cache_dir)

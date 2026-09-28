@@ -537,7 +537,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Action gains `select`, `ignore`, `baseline`, `write-baseline`, `exclude`,
   `ext`, `skip-undetected`, `config`, and `output-format` inputs, and its
   result parser understands SARIF documents.
-- `sesslint scan --jobs N` (plans/perf-scale T-01): parallel per-file
+- `sesslint scan --jobs N` (perf-scale T-01): parallel per-file
   analysis via `ProcessPoolExecutor` on directory scans (`auto`/`0` =
   CPU count). The walk, caps, exclusions, and deterministic merge stay in
   the parent; workers resolve config once via an initializer and return
@@ -545,7 +545,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Finding.from_dict`), so report bytes are identical for any `N` — only
   wall time changes. Opt-in because process-spawn overhead outweighs
   gains on trivial per-file workloads (see `bench/PERF_NOTES.md` §5).
-- `sesslint scan --incremental` and `--cache-dir DIR` (plans/perf-scale
+- `sesslint scan --incremental` and `--cache-dir DIR` (perf-scale
   T-02): opt-in sqlite result cache (stdlib `sqlite3`, zero new deps).
   Repeat scans replay provably-unchanged files — keyed on SHA-256 of file
   bytes (never mtime) plus an analysis fingerprint covering format,
@@ -558,7 +558,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content, and the cache is never created inside the scanned tree.
   Location: `$SESSLINT_CACHE_DIR`, else `%LOCALAPPDATA%\sesslint`
   (Windows) or `$XDG_CACHE_HOME/sesslint` / `~/.cache/sesslint`.
-- Benchmark ledger (plans/perf-scale T-04, dev-facing):
+- Benchmark ledger (perf-scale T-04, dev-facing):
   `bench/perf_250k.py --record --host-tag <label>` appends normative
   fresh-process metrics to `bench/LEDGER.jsonl` (committed, append-only).
   `scripts/bench_gate.py` compares the latest row against the previous
@@ -566,7 +566,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `perf-benchmark` as an advisory step (plus schedule/dispatch/PR runs)
   with the ledger uploaded as a workflow artifact.
   `scripts/bench_report.py` renders per-host run tables for PERF_NOTES.
-- Stdin input via `-` PATH (plans/ux-reporting T-06): `sesslint check -`,
+- Stdin input via `-` PATH (ux-reporting T-06): `sesslint check -`,
   `sesslint scan -`, and `sesslint repair -` read one session artifact from
   stdin (bounded at 100 MB, `sys.stdin.buffer` binary read). Piped bytes run
   through the identical probe → detect → load → check pipeline as a file —
@@ -578,7 +578,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scan.scan_bytes()`, plus `probe_bytes_encoding`/`probe_stream_encoding`,
   `detect_format_bytes`/`resolve_format_bytes`, and `fingerprint_bytes`
   byte-source variants shared by both surfaces.
-- `sesslint completion powershell` (plans/ux-reporting T-07): emits a
+- `sesslint completion powershell` (ux-reporting T-07): emits a
   `Register-ArgumentCompleter` script generated from the live argparse tree —
   subcommands, per-command flags, and enum values for `--format`, `--emit`,
   `--policy`, `--agent`, `--color`, `--fail-on`, `--output-format`, and
@@ -588,7 +588,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   five-parameter signature on pre-backport Windows PowerShell 5.1 builds.
   All four shells now also complete `--profile` values. Install with
   `sesslint completion powershell >> $PROFILE`.
-- Scan aggregation views (plans/ux-reporting T-08): `sesslint scan` reports
+- Scan aggregation views (ux-reporting T-08): `sesslint scan` reports
   gain a `summary` block — findings grouped `by_code` (severity rank, count
   desc, code asc) plus a top-N `worst_files` ranking (error count, warning
   count, path). New flags `--top N` (default 10, `0` disables) and
@@ -599,7 +599,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emits an additive `summary` object inside `sesslint.scan-report/v1` (no
   schema bump: the top-level object permits additional properties); API
   reports stay summary-free unless callers attach one explicitly.
-- Baseline format v2 (plans/ux-reporting T-09): `--write-baseline` now emits
+- Baseline format v2 (ux-reporting T-09): `--write-baseline` now emits
   `sesslint.baseline/v2` — entries keyed by a path-normalized fingerprint
   binding rule code, file role (`parent-basename/basename`), and structural
   position rather than the literal path spelling, so baselines survive
@@ -614,7 +614,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema `schemas/sesslint.baseline.v2.json`. Residual ambiguity documented:
   renaming the immediate parent directory changes the file role.
 - `schemas/sesslint-config.schema.json` (`sesslint-config/v1`,
-  plans/integrations T-03): a draft-07 JSON Schema covering every key
+  integrations T-03): a draft-07 JSON Schema covering every key
   `config.py` accepts, with `additionalProperties: false` mirroring
   fail-closed unknown-key rejection. Editors get autocomplete/validation
   for `sesslint.toml`, `.sesslint.toml`, and `[tool.sesslint]` via the
@@ -624,7 +624,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema cannot drift from the runtime; dev extras gain `jsonschema`.
   The README config example is corrected to actual accepted syntax
   (flat keys, `fail_on` underscore, list-typed `select`/`ignore`).
-- Package-manager manifest templates (plans/release-dist T-04):
+- Package-manager manifest templates (release-dist T-04):
   `packaging/homebrew/sesslint.rb`, `packaging/scoop/sesslint.json`,
   `packaging/winget/*.yaml`, and `packaging/aur/PKGBUILD`, rendered per
   release by new stdlib script `scripts/render_manifests.py`. Every
@@ -634,7 +634,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Channel strategy: self-hosted Homebrew tap + Scoop bucket first, then
   upstream PRs (winget-pkgs, homebrew-core) once cadence is proven —
   see `RELEASING.md` for per-channel steps.
-- `SL008` non-monotonic timestamp detector (plans/checks-rules T-01): a
+- `SL008` non-monotonic timestamp detector (checks-rules T-01): a
   new `ordering` check family compares each event's `ts` against its
   uniquely-resolved parent's — per-branch monotonicity only, never global
   file order (sidechains legitimately interleave). Severity `warning`,
@@ -646,7 +646,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream indices, integer ms delta. Registered across all profiles;
   `docs/codes/SL008.md`, fixture `sl008_ts_regression.json`, and the
   three emitted-report schemas gained the new code in their `code` enums.
-- `SL303` duplicate JSON key detector (plans/checks-rules T-02): record
+- `SL303` duplicate JSON key detector (checks-rules T-02): record
   decoding now runs through a duplicate-aware `object_pairs_hook`, so the
   last-wins parse result is preserved while every repeated key position is
   reported. Severity `error` when the duplicated key is in the decoding
@@ -665,7 +665,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/codes/SL303.md`, four synthetic `sl303_*.jsonl` fixtures, and the
   three emitted-report schemas gained the code in their `code` enums.
 - `SL204` token-usage arithmetic inconsistency detector
-  (plans/checks-rules T-03): a new `accounting` check family reconciles
+  (checks-rules T-03): a new `accounting` check family reconciles
   cumulative usage markers against the sum of per-event contributions
   inside one window — exact integer equality per counter. Adapters
   normalize vendor usage fields into the adapter-neutral slot
@@ -681,7 +681,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ignored per key. New `docs/codes/SL204.md`, three synthetic
   `sl204_usage_*.jsonl` fixtures, and the three emitted-report schemas
   gained the code in their `code` enums.
-- `SL205` compaction coverage gap detector (plans/checks-rules T-04):
+- `SL205` compaction coverage gap detector (checks-rules T-04):
   the `checkpoint` family now verifies each `compaction_boundary`
   carrying a normalized coverage pointer
   (`extra_fields["coverage"]["covered_through_id"]`) — the referenced
@@ -697,7 +697,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Evidence is structural facts only. New `docs/codes/SL205.md`, four
   synthetic `sl205_*.jsonl` fixtures, and the three emitted-report
   schemas gained the code in their `code` enums.
-- `SL304` mid-file schema drift detector (plans/checks-rules T-05): a new
+- `SL304` mid-file schema drift detector (checks-rules T-05): a new
   per-file `DriftTracker` (`sesslint.adapters.drift`) rides the existing
   record decode — O(1) state per record, no second pass. `version` drift
   fires when a schema-version marker changes between two individually
@@ -712,7 +712,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`safe_discriminator` markers). New `docs/codes/SL304.md`, five
   synthetic `sl304_*.jsonl` fixtures, and the three emitted-report
   schemas gained the code in their `code` enums.
-- `SL401` unresolved cross-file link (plans/checks-rules T-06): the first
+- `SL401` unresolved cross-file link (checks-rules T-06): the first
   scan-layer detector. Adapters surface declared resume/continuation
   pointers (`parent_session_id`, `resume_from`, `forked_from_id`,
   `parent_thread_id`, `resume_head_id` family) as bounded structural
@@ -731,7 +731,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single-file `check`. New `docs/codes/SL401.md` and
   `fixtures/scan/linkage/` scenario trees (intact chain, missing,
   ambiguous, outside-root, head-ref).
-- `--output-format html` on `check` and `scan` (plans/ux-reporting T-01):
+- `--output-format html` on `check` and `scan` (ux-reporting T-01):
   emits a single self-contained `.html` report — inline CSS only, no
   JavaScript, no external assets or network references — a human can open
   and attach to an issue. Same content-free fields as the JSON reports
@@ -739,7 +739,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remediation hints), `html.escape` on every emitted value, deterministic
   bytes, and tables capped at 500 rows with an explicit "N more" counter.
   New `sesslint.html_report` module (`render_html` / `scan_report_html`).
-- `sesslint diff A B` (plans/ux-reporting T-02): structural comparator —
+- `sesslint diff A B` (ux-reporting T-02): structural comparator —
   event-identity alignment, not text diff. Two-pass deterministic pairing
   (primary `event.id`, then `(kind, parent_id, content_identity_hash)`
   multiset fallback) emits content-free delta categories: `added`,
@@ -750,7 +750,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differences, `2` usage/input error. New `sesslint.diff` module
   (`diff_events` / `diff_sessions`), `api.diff_sessions`, and
   `--format`/`--format-a`/`--format-b` adapter overrides.
-- `sesslint stats <path|--agent>` (plans/ux-reporting T-03): content-free
+- `sesslint stats <path|--agent>` (ux-reporting T-03): content-free
   aggregate statistics over session files/directories — file buckets by
   adapter, event counters by canonical kind and actor, tool-call volume
   per truncated sha256 tool-name hash (raw names never emitted),
@@ -761,7 +761,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sesslint.stats/v1` (new `schemas/sesslint.stats.v1.json`); exit `0`
   on aggregation, `2` on usage error. New `sesslint.stats` module,
   `api.stats_paths`, `--agent` root discovery composition.
-- `sesslint doctor` (plans/ux-reporting T-04): read-only environment
+- `sesslint doctor` (ux-reporting T-04): read-only environment
   diagnostics for support reports — tool/adapter versions, resolved
   config file (or `none`), and per-agent session roots with bounded file
   counts (10k cap reported honestly), newest-file mtime, and quick
@@ -772,7 +772,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schemas/sesslint.doctor.v1.json`); absent roots report `absent` and
   exit stays `0`. New `sesslint.doctor` module, `api.doctor_report`;
   `docs/REPORTING_CORRUPTION.md` evidence checklist updated.
-- `sesslint watch` (plans/ux-reporting T-05): poll-based directory monitor
+- `sesslint watch` (ux-reporting T-05): poll-based directory monitor
   — flag newly corrupted session files as they are written (prevention
   posture before resume). Stdlib `scandir` mtime+size snapshots with the
   scan exclusions, one-full-interval debounce before checking (agents
@@ -784,7 +784,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   injectable check/sleep for deterministic tests; `--agent` root
   discovery; `--interval` (default 2.0s, min 0.05s);
   `docs/INTEGRATIONS.md` monitoring recipe.
-- `SL011` record size anomaly (plans/checks-rules T-07): the content-free
+- `SL011` record size anomaly (checks-rules T-07): the content-free
   tripwire for spliced blobs. Adapters publish bounded per-record byte
   sizes on `source_metadata["record_sizes"]`; the new `size` check family
   fires at most once per file when the largest record exceeds
@@ -794,7 +794,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Severity `info`, repairability `manual`, evidence numbers-only
   (`record_index`, `record_bytes`, `file_median_bytes`, `ratio`). New
   `docs/codes/SL011.md` and three `sl011_*.jsonl` fixtures.
-- `repair --plan-out` / `--apply-plan` (plans/repair-engine T-01): the
+- `repair --plan-out` / `--apply-plan` (repair-engine T-01): the
   plan/execute split is now operable. `--plan-out plan.json` exports the
   computed plan as a `sesslint.plan/v1` document — plan-only when
   `--output` is absent, export-then-apply in one run otherwise.
@@ -809,7 +809,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   New API entry points `api.plan_repair` and `api.apply_plan`
   (accepting `RepairPlan`, plan path, or plan mapping); `api.repair`
   gains a `plan=` kwarg, mutually exclusive with `plan_path`.
-- `repair --batch` / `--from-scan` / `--files` (plans/repair-engine T-02):
+- `repair --batch` / `--from-scan` / `--files` (repair-engine T-02):
   batch-repair a whole tree in one audited pass. Eligibility reuses the
   planner's classification verbatim — a file is attempted only when its
   plan has steps and zero blocked findings (SL203/manual/unknown blockers
@@ -824,7 +824,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`schemas/sesslint.batch-repair.v1.json`). Exit `0` only when nothing
   was skipped/refused, `1` otherwise. New `sesslint.batch` module and
   `api.repair_many`.
-- `repair --preview` (plans/repair-engine T-03): structural diff of the
+- `repair --preview` (repair-engine T-03): structural diff of the
   would-be repair, computed with zero writes. Each plan step renders as a
   content-free delta row `{action: drop|relink|discard-tail|dedupe,
   event_id, kind, source_line, reason_code}` — bounded identifiers and
@@ -835,7 +835,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `--output`/`--emit`/`--plan`/`--plan-out`/batch flags (exit 2).
   New `sesslint.preview` module, `api.repair_preview`, and a shared
   `batch._plan_detail` planning pipeline.
-- Two new repair recipes (plans/repair-engine T-04):
+- Two new repair recipes (repair-engine T-04):
   `identical-duplicate-drop` consolidates `SL003` identical-duplicate
   findings beyond adjacent pairs — keeps the earliest canonical position
   and drops every later occurrence after re-verifying kind, event id and
@@ -850,7 +850,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `input_format` kwarg + `EVENT_DROP_RECIPES`/`SYNTHETIC_STEP_FP`
   constants, `docs/recipes/{identical-duplicate-drop,seq-renumber}.md`,
   and fixtures under `fixtures/repair/t04_*`.
-- `scripts/shape_inventory.py` (plans/adapters-coverage T-01): a
+- `scripts/shape_inventory.py` (adapters-coverage T-01): a
   maintainer-side drift early-warning tool — walks a local session tree
   and reports record `type` histograms, payload types, and key names per
   detected format, plus an `unknown` diff against the live adapter
@@ -861,7 +861,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   honors `io.py` file-size limits. `--json`, `--known-only`,
   `--unknown-only`; `sesslint.shape-inventory/v1` document. Dev-only,
   stdlib-only, not shipped in the wheel.
-- `docs/ADAPTER_SDK.md` (plans/adapters-coverage T-02): Adapter SDK v1 —
+- `docs/ADAPTER_SDK.md` (adapters-coverage T-02): Adapter SDK v1 —
   the normative external-contributor contract for writing a conforming
   adapter. Documents the mandatory `detect_<name>`/`load_<name>`
   signatures, canonical `SessionEvent` field semantics, the
@@ -873,7 +873,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new AST-level docs-drift test (`tests/test_adapter_sdk_docs.py`).
   Cross-linked from `ADAPTER_GUIDE.md`, `CONTRIBUTING.md`, `docs/README.md`,
   and the root README contribution section.
-- `docs/VENDOR_DRIFT.md` (plans/adapters-coverage T-03): the vendor-drift
+- `docs/VENDOR_DRIFT.md` (adapters-coverage T-03): the vendor-drift
   watch protocol — when to inventory shapes (vendor updates, version
   bumps, quarterly backstop), how to classify drift (additive-type /
   additive-key / changed-shape / removed-type / version-bump), the
@@ -885,7 +885,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   format-global payload-key histogram (`payload_keys`) so untyped
   payloads surface keys for the drift diff (per-type view kept as
   `payload_keys_by_type`).
-- `sesslint mcp` (plans/integrations T-01): a Model Context Protocol
+- `sesslint mcp` (integrations T-01): a Model Context Protocol
   server over stdio — newline-delimited JSON-RPC 2.0, protocol revision
   `2025-06-18`, zero dependencies, no sockets, no threads. Agents that
   consume MCP natively (Claude Code, Codex) can call SessLint checks
@@ -898,7 +898,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no timestamps added; EOF/Ctrl+C exits cleanly. See
   `docs/INTEGRATIONS.md` for the client-config snippet.
 - `sesslint init-hooks --agent claude|codex|all [--print|--json]`
-  (plans/integrations T-02): prints ready-to-merge `settings.json` hook
+  (integrations T-02): prints ready-to-merge `settings.json` hook
   blocks for the documented SessionStart/PreCompact recipes — verbatim
   from `docs/INTEGRATIONS.md`, including `--skip-undetected` and the
   `|| true` non-blocking variant. **Print-only by permanent design** —
@@ -906,7 +906,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints an honest "no documented hook surface" note rather than
   inventing config. `--json` emits `sesslint.init-hooks/v1`.
 - `contrib/editors/problem-matcher.json` + `contrib/editors/README.md`
-  (plans/integrations T-04): a two-line problemMatcher matching the human
+  (integrations T-04): a two-line problemMatcher matching the human
   report's `[CODE] message (SEVERITY, ...)` header + `Span: path:line`
   location lines — click-to-line navigation in VS Code/Zed/compatible
   editors and CI log viewers. Includes a `tasks.json` example, generic
@@ -914,7 +914,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (workspace-relative inputs navigate cleanly; `.._<hash>` paths are
   deliberately non-reversible). Drift-guarded by
   `tests/test_problem_matcher.py` against the live renderer format.
-- Sigstore keyless signing of release artifacts (plans/release-dist T-02):
+- Sigstore keyless signing of release artifacts (release-dist T-02):
   `release.yml` `build` + `binaries` jobs now `cosign sign-blob --bundle`
   every wheel, sdist, `sha256sums.txt`, `artifact-manifest.json`, and
   per-OS binary under the workflow's own GitHub OIDC identity (Fulcio +
@@ -925,7 +925,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   --certificate-oidc-issuer https://token.actions.githubusercontent.com`
   — documented in `RELEASING.md` §Verify Sigstore Signatures and the
   README install section.
-- SLSA v1 provenance for release artifacts (plans/release-dist T-03):
+- SLSA v1 provenance for release artifacts (release-dist T-03):
   new `provenance` job in `release.yml` invokes the pinned
   `slsa-framework/slsa-github-generator` generic generator
   (`generator_generic_slsa3.yml` @ f7dd8c5, v2.1.0) over the canonical
@@ -937,7 +937,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deliberately off the `github-promote` critical path until validated
   end-to-end on a real tag — verify with `slsa-verifier verify-artifact`
   per `RELEASING.md` §Verify SLSA Provenance.
-- GHCR container image (plans/release-dist T-05): new
+- GHCR container image (release-dist T-05): new
   `Dockerfile` — `gcr.io/distroless/base-debian12:nonroot`
   (glibc for the dynamically-linked PyInstaller binary, writable /tmp for
   onefile extraction, no shell) with `ENTRYPOINT ["/sesslint"]`. The
@@ -947,7 +947,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `packages: write` — non-blocking, off the `github-promote`
   critical path like `provenance`. Usage documented in the README
   install section (`docker run -v $PWD:/data … check /data/…`).
-- `tests/fuzz/test_stateful_sessions.py` (plans/qa-infra T-01):
+- `tests/fuzz/test_stateful_sessions.py` (qa-infra T-01):
   hypothesis `RuleBasedStateMachine` that mutates a synthetic canonical
   session through real corruption operations — duplicate/swap/truncate
   records, NUL/0xFF injection, dangling parents, spliced blobs, corrupt
@@ -956,7 +956,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the check-vs-scan metamorphic invariant that hunts the field-test
   divergence bug class), and registered-code coverage. Sessions capped
   at 200 events; failures replay by seed; seeded-divergence verified.
-- Scoped mutation testing infrastructure (plans/qa-infra T-02):
+- Scoped mutation testing infrastructure (qa-infra T-02):
   `mutation` extra (`mutmut>=3.8,<4`) + `[tool.mutmut]` config copying
   full `src/` with `only_mutate` restricted to `checks/*`,
   `repair/planner.py`, `repair/executor.py`, `io.py`. New informational
@@ -965,18 +965,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires `os.fork`, so it cannot run on native Windows). Triage
   protocol in `docs/MUTATION_TESTING.md`; baseline survival run is
   deferred to the first POSIX run and recorded as pending.
-- Coverage ratchet gate (plans/qa-infra T-03): `fail_under` floor
+- Coverage ratchet gate (qa-infra T-03): `fail_under` floor
   in `[tool.coverage.report]` (baseline measured 87%, floor set at 86)
   + dedicated `coverage` job in `ci.yml` (separate failure signal from
   the test job) uploading HTML+XML reports as artifacts. The floor may
   only tighten — documented as a tripwire, not a quality metric, in
   `CONTRIBUTING.md` §Running Verification Gates.
 - CI test matrix gains one `ubuntu-24.04-arm` leg at py3.14
-  (plans/qa-infra T-04): arch-specific assumptions (mmap, file
+  (qa-infra T-04): arch-specific assumptions (mmap, file
   locking, path semantics) now covered at the newest declared python —
   single leg keeps job count bounded. Python 3.13/3.14 were already in
   the matrix and classifiers match the tested range.
-- Real-shape corpus expansion (plans/qa-infra T-05):
+- Real-shape corpus expansion (qa-infra T-05):
   `fixtures/corpus/` gains five synthetic families mirroring every
   field-observed shape — `codex-telemetry` (token_count, task_started/
   complete, item_completed, turn_aborted, thread_settings_applied,
@@ -989,7 +989,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EXPECTATIONS.json` pins exact code-sets + assurance, consumed by
   `tests/test_corpus_families.py`; the real-shape regression rule is
   codified in `FIXTURES.md` §4.
-- Generated man pages (plans/docs-spec T-05):
+- Generated man pages (docs-spec T-05):
   `scripts/gen_man.py` walks the live argparse tree and emits classic
   roff — `sesslint.1` master + `sesslint-<cmd>.1` per subcommand
   (18 pages, deterministic: sorted commands, epoch-free `.TH`,
@@ -1001,20 +1001,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under `{if:man}` conditional; `tests/test_man_pages.py` asserts
   full parser coverage (every subcommand, flag, positional),
   roff structure, determinism, and golden freshness.
-- Docs site via GitHub Pages (plans/docs-spec T-04):
+- Docs site via GitHub Pages (docs-spec T-04):
   `mkdocs.yml` (mkdocs-material, `docs_dir: docs`, no `nav:` —
   auto-include so new docs reach the site without nav drift),
   `.github/workflows/docs.yml` (build → upload-pages-artifact →
   deploy-pages on pushes to main touching `docs/`; SHA-pinned
   actions; `pages: write`/`id-token: write` confined to the deploy
   job), `docs` extra (`mkdocs-material`, dev-only — runtime
-  untouched), `docs/reviews/README.md` index, fixed absolute
-  `file:///` links in `docs/ADAPTER_GUIDE.md`, `pyyaml` dev dep for
+  untouched), fixed absolute `file:///` links in
+  `docs/ADAPTER_GUIDE.md`, `pyyaml` dev dep for
   workflow-validation tests, `tests/test_docs_site.py` drift guards.
   Custom domain deferred — site ships on the default github.io URL
   (cost: $0).
 - `docs/THREAT_MODEL.md` — structured threat model
-  (plans/docs-spec T-03): assets/adversaries/trust boundaries, 14
+  (docs-spec T-03): assets/adversaries/trust boundaries, 14
   threats mapped to enforcing bounds (`DEFAULT_MAX_*`, encoding probe,
   TOCTOU/drift re-checks, plan fingerprints, content-free evidence)
   with `file:symbol` citations, hostile-fixture↔threat map, explicit
@@ -1022,7 +1022,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guarded by `tests/test_threat_model.py` (citation + fixture-map
   drift checks); SECURITY.md cross-link.
 - `docs/adr/` — architecture decision records
-  (plans/docs-spec T-02): eight seed ADRs (0001–0008) recording
+  (docs-spec T-02): eight seed ADRs (0001–0008) recording
   decisions tests pin but nothing explained — zero-runtime-dep posture,
   fail-closed repair/SL203 permanence, forward-reference legality,
   content-identity provenance set (`seq` participates), vendor-neutral
@@ -1031,7 +1031,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   template + accepted/superseded status vocabulary; CONTRIBUTING names
   when an ADR is required.
 
-  (plans/docs-spec T-01): normative specification of the implemented
+  (docs-spec T-01): normative specification of the implemented
   model — `sesslint.session/v1` envelope, all 20 `SessionEvent` fields
   with required/optional rules, kind/actor/execution-state
   vocabularies, synthetic-id namespace, forward-reference legality,
@@ -1039,7 +1039,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vocabulary, and finding-fingerprint semantics — every claim cites
   `file:symbol` enforcement, guarded by `tests/test_spec_docs.py`
   (citation resolution + vocabulary drift vs the live registry).
-- `docs/CI_TEMPLATES.md` (plans/integrations T-05): copy-paste pipeline
+- `docs/CI_TEMPLATES.md` (integrations T-05): copy-paste pipeline
   templates for GitLab CI, Azure Pipelines, and CircleCI — each pins a
   released version (`sesslint==0.2.0`), uses the documented flag surface
   (`--fail-on`, `--output-format json|sarif`, `--skip-undetected`), and

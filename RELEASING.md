@@ -162,8 +162,6 @@ cryptographic verification is performed by cosign and slsa-verifier.
 Record version, commit, source-dirty status, SHA-256, epoch, host, toolchain,
 gate results and remaining external work. A dirty checkout's base commit is
 not its exact source identity; attach a source snapshot hash manifest.
-See [0.4.1 notes](docs/RELEASE_0.4.1.md) and the current
-[handoff evidence](docs/COMPLETION_0.4.1.md).
 
 GHCR and Homebrew/Scoop/winget/AUR remain prepared channels. Render their
 templates with `scripts/render_manifests.py` only from verified release
@@ -175,8 +173,7 @@ CLI/API release and are not advertised as already available.
 The Windows binary job builds `sesslint-0.4.1-acceptance-windows.zip` and runs
 its PowerShell 5.1 driver. The complete-set gate binds that ZIP and
 `smoke-windows-powershell.json` to the candidate EXE, kit, commit and 32-case
-contract. Its logs are retained even on failure. See
-[Windows acceptance](docs/WINDOWS_ACCEPTANCE.md) for the no-Python walkthrough.
+contract. Its logs are retained even on failure.
 Clean-machine qualification remains separate; retest if release CI changes EXE bytes.
 
 For local installed-wheel performance, use `bench/measure_installed.py --python

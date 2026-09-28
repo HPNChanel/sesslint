@@ -65,3 +65,12 @@ docs/implementation/
 scratch/
 
 agent_tasks/
+
+# Internal task/plan packs and release evidence docs (maintainer-local; not published)
+/plans/
+/docs/reviews/
+/docs/COMPLETION_*.md
+/docs/DELIVERY_*.md
+/docs/RELEASE_*.md
+/docs/SANDBOX_*.md
+/docs/WINDOWS_ACCEPTANCE.md

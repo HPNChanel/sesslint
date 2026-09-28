@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 ADRs record decisions **already made and pinned by code/tests** — they are
-history, not proposals. Proposals live in `plans/` task files, never here.
+history, not proposals. Proposals live in the issue tracker, never here.
 
 ## Status vocabulary
 

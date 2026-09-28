@@ -85,7 +85,7 @@ Observed via `scripts/shape_inventory.py` on <date>.
 Evidence: names and counts only. No session content was copied.
 ```
 
-File it under `plans/` (or the tracker) with the `adapters` phase tag.
+File it in the issue tracker with the `adapters` phase tag.
 
 ## 6. Fixture regeneration protocol
 

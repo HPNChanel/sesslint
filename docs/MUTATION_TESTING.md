@@ -54,6 +54,6 @@ a triage queue, not a badge.
 ## Baseline
 
 The first completed scoped run establishes per-module survival rates in the
-task note (`plans/qa-infra/T-02-mutation-testing.md`). Until a POSIX runner
+internal task note (qa-infra T-02). Until a POSIX runner
 completes it, the baseline is **pending** — the maintainer's box is Windows
 without WSL, so the weekly CI job is the expected first real run.

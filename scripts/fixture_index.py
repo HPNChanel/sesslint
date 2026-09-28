@@ -28,7 +28,10 @@ def render() -> str:
         "| Code | Execution | Input | Golden |",
         "| --- | --- | --- | --- |",
     ]
-    for path in sorted((ROOT / "fixtures/conformance/detectors").glob("*.expected.json")):
+    for path in sorted(
+        (ROOT / "fixtures/conformance/detectors").glob("*.expected.json"),
+        key=lambda p: p.name,
+    ):
         data = json.loads(path.read_text(encoding="utf-8"))
         code = path.name.split(".")[0].upper()
         source = data["input"]
@@ -44,7 +47,10 @@ def render() -> str:
         "| Directory | Files | Provenance |",
         "| --- | ---: | --- |",
     ]
-    for path in sorted((ROOT / "fixtures").rglob("PROVENANCE.json")):
+    for path in sorted(
+        (ROOT / "fixtures").rglob("PROVENANCE.json"),
+        key=lambda p: p.parent.relative_to(ROOT / "fixtures").as_posix(),
+    ):
         data = json.loads(path.read_text(encoding="utf-8"))
         if data.get("contains_real_data") is not False:
             raise ValueError("Fixture provenance must explicitly exclude real data")

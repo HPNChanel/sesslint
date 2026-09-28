@@ -4,8 +4,7 @@ Public documentation shipped with the repository. The primary user-facing
 reference is the root [README.md](https://github.com/HPNChanel/sesslint/blob/main/README.md); this directory holds the deep
 reference material.
 
-Current handoff: [0.4.1 completion evidence](COMPLETION_0.4.1.md),
-[starter kit](STARTER_KIT.md), and [Windows acceptance](WINDOWS_ACCEPTANCE.md).
+Quick start: [starter kit](STARTER_KIT.md).
 
 ## Contents
 
@@ -26,7 +25,6 @@ Current handoff: [0.4.1 completion evidence](COMPLETION_0.4.1.md),
 | [seal.md](seal.md) | Seal ledger: append-only hash-chained record of check/verify/repair verdicts (`--seal` flags, `seal --verify`, divergence kinds, honesty boundary). |
 | [codes/](codes/README.md) | Per-code documentation for all 34 diagnostic reason codes (SL001–SL402), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
 | [recipes/](recipes/README.md) | Per-recipe documentation for all 13 registered repair recipes. |
-| [reviews/](reviews/README.md) | Historical review artifacts: audit findings, release verdicts, and remediation plans. |
 
 ## Related References
 

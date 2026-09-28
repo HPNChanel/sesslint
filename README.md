@@ -26,9 +26,7 @@
 > This checkout prepares **0.4.1 (next release)**. Local tags are not proof of
 > publication. Install commands without a version select the public PyPI release.
 > For the candidate, use the supplied wheel or binary with the
-> [starter-kit walkthrough](docs/STARTER_KIT.md) and [release notes](docs/RELEASE_0.4.1.md).
-> Current local evidence: [completion report](docs/COMPLETION_0.4.1.md);
-> Windows handoff: [PowerShell acceptance kit](docs/WINDOWS_ACCEPTANCE.md).
+> [starter-kit walkthrough](docs/STARTER_KIT.md).
 
 ## Table of Contents
 
@@ -1486,7 +1484,7 @@ The NDP-001 "Trustworthy Alpha" program introduces several intentional behaviora
 The test suite covers unit, property-based, adversarial, fault-injection, and cross-adapter conformance testing:
 
 ```bash
-# Run the complete test suite; current results are in docs/COMPLETION_0.4.1.md
+# Run the complete test suite
 uv run pytest
 
 # Run repair tests including fault-injection kill simulations
