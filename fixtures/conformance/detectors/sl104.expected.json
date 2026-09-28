@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL104": 1
+    },
+    "by_severity": {
+      "error": 1,
+      "fatal": 0,
+      "info": 0,
+      "warning": 0
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL104",
+      "line": null,
+      "record_id": "evt-res-1",
+      "severity": "error"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl104_multi_result.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL104"
+}

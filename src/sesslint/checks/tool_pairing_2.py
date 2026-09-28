@@ -237,6 +237,7 @@ class _ToolPairing2Indexer:
         "results_by_corr",
         "source_path",
         "uses_by_corr",
+        "_components_built",
     )
 
     def __init__(
@@ -252,29 +253,33 @@ class _ToolPairing2Indexer:
         self.event_kinds: list[str] = []
         self.id_set: set[str] = set()
         self.ds = _DisjointSet()
+        self._components_built = False
 
         # Pass 1: Gather IDs and kinds
         for idx, ev in enumerate(events):
-            raw_kind = getattr(ev, "kind", None)
-            if raw_kind is None and isinstance(ev, Mapping):
-                raw_kind = ev.get("kind")
+            if type(ev) is SessionEvent:
+                raw_kind: Any = ev.kind
+                raw_id: Any = ev.id
+                corr: Any = ev.correlation_id
+            else:
+                raw_kind = getattr(ev, "kind", None)
+                if raw_kind is None and isinstance(ev, Mapping):
+                    raw_kind = ev.get("kind")
+                raw_id = getattr(ev, "id", None)
+                if raw_id is None and isinstance(ev, Mapping):
+                    raw_id = ev.get("id")
+                corr = getattr(ev, "correlation_id", None)
+                if corr is None and isinstance(ev, Mapping):
+                    corr = ev.get("correlation_id")
             kind_str = str(raw_kind) if raw_kind is not None else "unknown"
             self.event_kinds.append(kind_str)
 
-            raw_id = getattr(ev, "id", None)
-            if raw_id is None and isinstance(ev, Mapping):
-                raw_id = ev.get("id")
             if raw_id is not None and str(raw_id).strip():
                 ev_id_str = str(raw_id)
                 self.id_set.add(ev_id_str)
-                self.ds.find(ev_id_str)
 
             if kind_str in COMPACTION_KINDS:
                 self.compaction_indices.append(idx)
-
-            corr = getattr(ev, "correlation_id", None)
-            if corr is None and isinstance(ev, Mapping):
-                corr = ev.get("correlation_id")
 
             if corr is not None:
                 corr_str = str(corr)
@@ -283,8 +288,21 @@ class _ToolPairing2Indexer:
                 elif kind_str in RESULT_KINDS:
                     self.results_by_corr[corr_str].append((idx, ev))
 
+        # Pass 3: Filter clean pairs (exactly 1 use and 1 result)
+        common_corrs = set(self.uses_by_corr.keys()) & set(self.results_by_corr.keys())
+        self.clean_corrs = sorted(
+            corr
+            for corr in common_corrs
+            if len(self.uses_by_corr[corr]) == 1 and len(self.results_by_corr[corr]) == 1
+        )
+
+    def _ensure_components(self) -> None:
+        """Build parent components only when a tool-pair check needs them (T-10)."""
+        if self._components_built:
+            return
+        self._components_built = True
         # Pass 2: Build weakly-connected parent components
-        for ev in events:
+        for ev in self.events:
             raw_id = getattr(ev, "id", None)
             if raw_id is None and isinstance(ev, Mapping):
                 raw_id = ev.get("id")
@@ -300,18 +318,11 @@ class _ToolPairing2Indexer:
                 if parent_id in self.id_set:
                     self.ds.union(ev_id, parent_id)
 
-        # Pass 3: Filter clean pairs (exactly 1 use and 1 result)
-        common_corrs = set(self.uses_by_corr.keys()) & set(self.results_by_corr.keys())
-        self.clean_corrs = sorted(
-            corr
-            for corr in common_corrs
-            if len(self.uses_by_corr[corr]) == 1 and len(self.results_by_corr[corr]) == 1
-        )
-
     def component(self, event_id: str | None) -> str:
         """Return canonical component root for an event ID."""
         if event_id is None or not str(event_id).strip():
             return "<unknown>"
+        self._ensure_components()
         return self.ds.find(str(event_id))
 
 

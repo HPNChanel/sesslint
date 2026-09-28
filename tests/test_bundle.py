@@ -385,11 +385,18 @@ class TestBundleGolden:
         }
         assert set(bundle_dict["report"].keys()) == expected_report_keys
 
-    def test_golden_bundle_byte_exact_snapshot(self) -> None:
+    def test_golden_bundle_byte_exact_snapshot(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify bundle JSON output identically matches committed golden snapshot."""
         golden_path = FIXTURES_ROOT / "bundle" / "golden_bundle.json"
         assert golden_path.is_file(), f"Golden bundle missing at {golden_path}"
 
+        # Preserve the historical byte-exact fixture across package releases.
+        # Current version identity is exercised separately by CLI/package gates.
+        import sesslint.bundle as bundle_module
+
+        monkeypatch.setattr(bundle_module, "CLI_VERSION", "0.4.0")
+        monkeypatch.setattr("sesslint._version.CLI_VERSION", "0.4.0")
+        monkeypatch.setattr(api, "CLI_VERSION", "0.4.0")
         bundle = api.build_bundle(HEALTHY_CANONICAL)
         assert bundle.to_json() == golden_path.read_text(encoding="utf-8")
 

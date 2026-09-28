@@ -31,7 +31,6 @@ import hashlib
 import json
 import os
 import re
-import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -364,16 +363,12 @@ def _sync_dir(path: Path) -> None:
 
 def get_seal_schema_path() -> Path:
     """Return filesystem path to schemas/sesslint.seal-ledger.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.seal-ledger.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = (
-        Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.seal-ledger.v1.json"
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.seal-ledger.v1.json"
     )
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    return schema_path("sesslint.seal-ledger.v1.json", development_path)
 
 
 def load_seal_schema() -> dict[str, Any]:

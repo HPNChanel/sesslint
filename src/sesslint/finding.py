@@ -11,7 +11,6 @@ import hashlib
 import json
 import re
 import string
-import sys
 import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -924,14 +923,12 @@ def parse_finding_dict(obj: Mapping[str, Any]) -> Finding:
 
 def get_finding_schema_path() -> Path:
     """Return the filesystem path to schemas/sesslint.finding.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.finding.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.finding.v1.json"
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.finding.v1.json"
+    )
+    return schema_path("sesslint.finding.v1.json", development_path)
 
 
 def load_finding_schema() -> dict[str, Any]:

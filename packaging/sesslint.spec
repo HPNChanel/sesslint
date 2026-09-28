@@ -18,18 +18,19 @@ REPO_ROOT = os.path.dirname(SPECPATH)  # packaging/ -> repository root
 SRC_DIR = os.path.join(REPO_ROOT, "src")
 ENTRY_SCRIPT = os.path.join(SRC_DIR, "sesslint", "__main__.py")
 
-# Runtime schema lookup probes <sys.prefix>/share/sesslint/schemas/ (see e.g.
-# src/sesslint/canonical.py::get_session_schema_path) — the same location the
-# wheel installs them as shared data. Inside a frozen bundle sys.prefix is the
-# PyInstaller application directory (sys._MEIPASS for onefile), so mirroring
-# the shared-data layout here keeps the existing lookup working unmodified.
+# Runtime schema lookup uses sys._MEIPASS in a frozen bundle, and sys.prefix
+# for an installed wheel. Both use the share/sesslint/schemas layout.
 SCHEMAS_DIR = os.path.join(REPO_ROOT, "schemas")
 
 a = Analysis(
     [ENTRY_SCRIPT],
     pathex=[SRC_DIR],
     binaries=[],
-    datas=[(SCHEMAS_DIR, "share/sesslint/schemas")],
+    datas=[
+        (SCHEMAS_DIR, "share/sesslint/schemas"),
+        (os.path.join(REPO_ROOT, "LICENSE"), "share/sesslint"),
+        (os.path.join(REPO_ROOT, "NOTICE"), "share/sesslint"),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

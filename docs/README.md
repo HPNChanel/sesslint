@@ -1,8 +1,11 @@
 # SessLint Documentation Index
 
 Public documentation shipped with the repository. The primary user-facing
-reference is the root [README.md](../README.md); this directory holds the deep
+reference is the root [README.md](https://github.com/HPNChanel/sesslint/blob/main/README.md); this directory holds the deep
 reference material.
+
+Current handoff: [0.4.1 completion evidence](COMPLETION_0.4.1.md),
+[starter kit](STARTER_KIT.md), and [Windows acceptance](WINDOWS_ACCEPTANCE.md).
 
 ## Contents
 
@@ -22,17 +25,17 @@ reference material.
 | [hygiene.md](hygiene.md) | Transcript hygiene: SL009 persisted-secret detection surface, the rotate-don't-redact workflow, digest-based removal verification, and the `--fail-on warning` CI recipe. |
 | [seal.md](seal.md) | Seal ledger: append-only hash-chained record of check/verify/repair verdicts (`--seal` flags, `seal --verify`, divergence kinds, honesty boundary). |
 | [codes/](codes/README.md) | Per-code documentation for all 34 diagnostic reason codes (SL001–SL402), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
-| [recipes/](recipes/README.md) | Per-recipe documentation for the 12 deterministic repair recipes. |
+| [recipes/](recipes/README.md) | Per-recipe documentation for all 13 registered repair recipes. |
 | [reviews/](reviews/README.md) | Historical review artifacts: audit findings, release verdicts, and remediation plans. |
 
 ## Related References
 
-- [CHANGELOG.md](../CHANGELOG.md) — versioned release notes.
-- [RELEASING.md](../RELEASING.md) — reproducible build and release protocol.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — development gates and adapter
+- [CHANGELOG.md](https://github.com/HPNChanel/sesslint/blob/main/CHANGELOG.md) — versioned release notes.
+- [RELEASING.md](https://github.com/HPNChanel/sesslint/blob/main/RELEASING.md) — reproducible build and release protocol.
+- [CONTRIBUTING.md](https://github.com/HPNChanel/sesslint/blob/main/CONTRIBUTING.md) — development gates and adapter
   contribution requirements.
-- [FIXTURES.md](../FIXTURES.md) — fixture provenance and synthetic-data rules.
-- [SECURITY.md](../SECURITY.md) — vulnerability reporting and security model.
-- [DEMAND.md](../DEMAND.md) — original product requirements document.
-- [schemas/](../schemas/) — JSON Schemas for sessions, reports, findings, scan
+- [FIXTURES.md](https://github.com/HPNChanel/sesslint/blob/main/FIXTURES.md) — fixture provenance and synthetic-data rules.
+- [SECURITY.md](https://github.com/HPNChanel/sesslint/blob/main/SECURITY.md) — vulnerability reporting and security model.
+- [DEMAND.md](https://github.com/HPNChanel/sesslint/blob/main/DEMAND.md) — original product requirements document.
+- [schemas/](https://github.com/HPNChanel/sesslint/tree/main/schemas) — JSON Schemas for sessions, reports, findings, scan
   reports, repair manifests, repair plans, and support bundles.

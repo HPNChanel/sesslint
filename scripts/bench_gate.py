@@ -75,8 +75,8 @@ def main() -> int:
     failures: list[str] = []
     if base_wall > 0 and wall > base_wall * args.tolerance:
         failures.append(f"wall_s {wall:.3f}s > baseline {base_wall:.3f}s x {args.tolerance}")
-    if isinstance(rss, (int, float)) and rss > args.mem_budget:
-        failures.append(f"peak_rss_mb {rss:.1f} > budget {args.mem_budget:.1f}")
+    if isinstance(rss, (int, float)) and rss >= args.mem_budget:
+        failures.append(f"peak_rss_mb {rss:.1f} >= budget {args.mem_budget:.1f}")
 
     where = f"os={current.get('os')}"
     if failures:

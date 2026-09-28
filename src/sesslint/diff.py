@@ -20,7 +20,6 @@ identifiers, kinds, indices and content hashes.
 from __future__ import annotations
 
 import json
-import sys
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -378,14 +377,12 @@ def diff_sessions(
 
 def get_diff_schema_path() -> Path:
     """Return the filesystem path to schemas/sesslint.diff.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.diff.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.diff.v1.json"
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.diff.v1.json"
+    )
+    return schema_path("sesslint.diff.v1.json", development_path)
 
 
 def load_diff_schema() -> dict[str, Any]:

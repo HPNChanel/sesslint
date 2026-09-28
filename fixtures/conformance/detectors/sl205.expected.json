@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL205": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL205",
+      "line": 3,
+      "record_id": "sesslint:synthetic:claude_code:2:1283a01b",
+      "severity": "warning"
+    }
+  ],
+  "format": "claude-code-jsonl",
+  "input": "checks/sl205_missing_leaf.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL205"
+}

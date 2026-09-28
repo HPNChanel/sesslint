@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, KeysView, Mapping, Sequence
 from typing import Any, Final
 
 from sesslint.canonical import SessionEvent
@@ -100,6 +100,10 @@ def _cap_finding_sort_key(f: Finding) -> tuple[str, int, str, str]:
 
 
 def _event_get(ev: Any, field: str) -> Any:
+    # Exact-type fast path: SessionEvent declares every queried field, so the
+    # Mapping fallback branch (an ABC isinstance check) never applies (T-10).
+    if type(ev) is SessionEvent:
+        return getattr(ev, field)
     val = getattr(ev, field, None)
     if val is None and isinstance(ev, Mapping):
         val = ev.get(field)
@@ -107,22 +111,22 @@ def _event_get(ev: Any, field: str) -> Any:
 
 
 def _event_id_safe(ev: Any) -> str | None:
-    raw = _event_get(ev, "id")
+    raw = ev.id if type(ev) is SessionEvent else _event_get(ev, "id")
     return str(raw) if raw is not None else None
 
 
 def _event_parent_id_safe(ev: Any) -> str | None:
-    raw = _event_get(ev, "parent_id")
+    raw = ev.parent_id if type(ev) is SessionEvent else _event_get(ev, "parent_id")
     return str(raw) if raw is not None else None
 
 
 def _event_branch_safe(ev: Any) -> str | None:
-    raw = _event_get(ev, "branch_id")
+    raw = ev.branch_id if type(ev) is SessionEvent else _event_get(ev, "branch_id")
     return str(raw) if raw is not None else None
 
 
 def _event_seq_safe(ev: Any, default_idx: int | None = None) -> int | None:
-    raw = _event_get(ev, "seq")
+    raw = ev.seq if type(ev) is SessionEvent else _event_get(ev, "seq")
     if isinstance(raw, int) and not isinstance(raw, bool):
         return raw
     return default_idx
@@ -392,9 +396,16 @@ class _OccurrenceGraph:
         self.primary_source_path = default_path.replace("\\", "/")
 
         for idx, event in enumerate(events):
-            raw_id = getattr(event, "id", None)
-            if raw_id is None and isinstance(event, Mapping):
-                raw_id = event.get("id")
+            if type(event) is SessionEvent:
+                raw_id: Any = event.id
+                raw_parent: Any = event.parent_id
+            else:
+                raw_id = getattr(event, "id", None)
+                if raw_id is None and isinstance(event, Mapping):
+                    raw_id = event.get("id")
+                raw_parent = getattr(event, "parent_id", None)
+                if raw_parent is None and isinstance(event, Mapping):
+                    raw_parent = event.get("parent_id")
             if not isinstance(raw_id, str):
                 continue
             if not raw_id.strip():
@@ -409,10 +420,6 @@ class _OccurrenceGraph:
             self.id_to_index[id_str] = idx
             self.id_order.append(id_str)
 
-            raw_parent = getattr(event, "parent_id", None)
-            if raw_parent is None and isinstance(event, Mapping):
-                raw_parent = event.get("parent_id")
-
             if raw_parent is None:
                 self.id_to_parent[id_str] = None
             elif isinstance(raw_parent, str):
@@ -421,7 +428,7 @@ class _OccurrenceGraph:
             else:
                 self.id_to_parent[id_str] = str(raw_parent)
 
-        self.id_set: frozenset[str] = frozenset(self.id_to_event.keys())
+        self.id_set: KeysView[str] = self.id_to_event.keys()
 
 
 def check_missing_parent(
@@ -536,8 +543,13 @@ def check_cycles(
     cycles: list[list[str]] = []
     seen_cycles: set[frozenset[str]] = set()
 
-    for start_node in sorted(g.id_set):
+    # Traversal order is private; cycle rotation and final sorting define output.
+    for start_node in g.id_order:
         if color.get(start_node) == 2:
+            continue
+        parent_node = g.id_to_parent[start_node]
+        if parent_node is None or parent_node not in g.id_set or color.get(parent_node) == 2:
+            color[start_node] = 2
             continue
 
         curr: str | None = start_node
@@ -652,25 +664,33 @@ def check_components(
     if not g.id_set:
         return []
 
-    parent_uf: dict[str, str] = {i: i for i in g.id_set}
-    rank_uf: dict[str, int] = {i: 0 for i in g.id_set}
+    # T-10: compact integer union-find; observable roots are still selected
+    # from member IDs below, never from these internal representatives.
+    ids = g.id_order
+    positions = (
+        g.id_to_index
+        if len(ids) == len(events)
+        else {node: index for index, node in enumerate(ids)}
+    )
+    parent_uf = list(range(len(ids)))
+    rank_uf = [0] * len(ids)
+    component_count = len(ids)
 
-    def find(i: str) -> str:
-        root = i
-        while parent_uf[root] != root:
-            root = parent_uf[root]
-        curr = i
-        while curr != root:
-            nxt = parent_uf[curr]
-            parent_uf[curr] = root
-            curr = nxt
-        return root
+    def find(i: int) -> int:
+        while parent_uf[i] != i:
+            parent_uf[i] = parent_uf[parent_uf[i]]
+            i = parent_uf[i]
+        return i
 
-    def union(i: str, j: str) -> None:
-        root_i = find(i)
-        root_j = find(j)
+    for index, node in enumerate(ids):
+        parent_id = g.id_to_parent[node]
+        parent = positions.get(parent_id) if parent_id is not None else None
+        if parent is None:
+            continue
+        root_i, root_j = find(index), find(parent)
         if root_i == root_j:
-            return
+            continue
+        component_count -= 1
         if rank_uf[root_i] < rank_uf[root_j]:
             parent_uf[root_i] = root_j
         elif rank_uf[root_i] > rank_uf[root_j]:
@@ -679,16 +699,11 @@ def check_components(
             parent_uf[root_j] = root_i
             rank_uf[root_i] += 1
 
-    # Connect present parent edges
-    for u in g.id_set:
-        p = g.id_to_parent.get(u)
-        if p is not None and p in g.id_set:
-            union(u, p)
-
-    # Group components by representative
-    components_by_rep: dict[str, list[str]] = defaultdict(list)
-    for u in sorted(g.id_set):
-        components_by_rep[find(u)].append(u)
+    if component_count == 1:
+        return []
+    components_by_rep: dict[int, list[str]] = defaultdict(list)
+    for index, node in enumerate(ids):
+        components_by_rep[find(index)].append(node)
 
     # Identify root for each component and build sort tuples
     component_records: list[tuple[int, str, list[str]]] = []

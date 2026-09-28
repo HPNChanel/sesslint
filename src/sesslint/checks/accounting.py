@@ -73,7 +73,7 @@ def _clean_counters(raw: Any) -> dict[str, int]:
 def _usage_slot(ev: SessionEvent) -> tuple[dict[str, int], dict[str, int]]:
     """Return ``(contribution, cumulative)`` counter dicts for an event."""
     extra = _event_get(ev, "extra_fields")
-    if not isinstance(extra, Mapping):
+    if not extra or not isinstance(extra, Mapping):
         return {}, {}
     usage = extra.get("usage")
     if not isinstance(usage, Mapping):

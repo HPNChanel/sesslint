@@ -1,0 +1,857 @@
+{
+  "adjacent-duplicate/conservative/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-collapse",
+      "seq-renumber"
+    ]
+  },
+  "adjacent-duplicate/conservative/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-collapse",
+      "seq-renumber"
+    ]
+  },
+  "adjacent-duplicate/conservative/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-collapse",
+      "seq-renumber"
+    ]
+  },
+  "adjacent-duplicate/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-collapse",
+      "seq-renumber"
+    ]
+  },
+  "adjacent-duplicate/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-collapse",
+      "seq-renumber"
+    ]
+  },
+  "adjacent-duplicate/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-collapse",
+      "seq-renumber"
+    ]
+  },
+  "nonadjacent-duplicate/conservative/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-drop",
+      "seq-renumber"
+    ]
+  },
+  "nonadjacent-duplicate/conservative/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-drop",
+      "seq-renumber"
+    ]
+  },
+  "nonadjacent-duplicate/conservative/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-drop",
+      "seq-renumber"
+    ]
+  },
+  "nonadjacent-duplicate/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-drop",
+      "seq-renumber"
+    ]
+  },
+  "nonadjacent-duplicate/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-drop",
+      "seq-renumber"
+    ]
+  },
+  "nonadjacent-duplicate/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "identical-duplicate-drop",
+      "seq-renumber"
+    ]
+  },
+  "orphan-result/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "orphan-result/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "orphan-result/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "orphan-result/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [
+      "orphan-result:1"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "orphan-result": 1,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "orphan-result-drop",
+      "seq-renumber"
+    ]
+  },
+  "orphan-result/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [
+      "orphan-result:1"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "orphan-result": 1,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "orphan-result-drop",
+      "seq-renumber"
+    ]
+  },
+  "orphan-result/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [
+      "orphan-result:1"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "orphan-result": 1,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "orphan-result-drop",
+      "seq-renumber"
+    ]
+  },
+  "recipe_parent_restore/conservative/claude-strict": {
+    "blocked": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "no-op",
+    "recipes": []
+  },
+  "recipe_parent_restore/conservative/neutral": {
+    "blocked": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "no-op",
+    "recipes": []
+  },
+  "recipe_parent_restore/conservative/openai-strict": {
+    "blocked": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "no-op",
+    "recipes": []
+  },
+  "recipe_parent_restore/salvage/claude-strict": {
+    "blocked": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "no-op",
+    "recipes": []
+  },
+  "recipe_parent_restore/salvage/neutral": {
+    "blocked": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "no-op",
+    "recipes": []
+  },
+  "recipe_parent_restore/salvage/openai-strict": {
+    "blocked": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "no-op",
+    "recipes": []
+  },
+  "recipe_projection_removal/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_projection_removal/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_projection_removal/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_projection_removal/salvage/claude-strict": {
+    "blocked": [
+      "SL007"
+    ],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "duplicate-projection-removal",
+      "seq-renumber"
+    ]
+  },
+  "recipe_projection_removal/salvage/neutral": {
+    "blocked": [
+      "SL007"
+    ],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "duplicate-projection-removal",
+      "seq-renumber"
+    ]
+  },
+  "recipe_projection_removal/salvage/openai-strict": {
+    "blocked": [
+      "SL007"
+    ],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "duplicate-projection-removal",
+      "seq-renumber"
+    ]
+  },
+  "recipe_reunion/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_reunion/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_reunion/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_reunion/salvage/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_reunion/salvage/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_reunion/salvage/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_suffix_discard/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_suffix_discard/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_suffix_discard/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "recipe_suffix_discard/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [
+      "truncated-side-effects:1"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0,
+      "truncated-side-effects": 1
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "side-effect-unknown-truncate",
+      "seq-renumber"
+    ]
+  },
+  "recipe_suffix_discard/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [
+      "truncated-side-effects:1"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0,
+      "truncated-side-effects": 1
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "side-effect-unknown-truncate",
+      "seq-renumber"
+    ]
+  },
+  "recipe_suffix_discard/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [
+      "truncated-side-effects:1"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0,
+      "truncated-side-effects": 1
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "side-effect-unknown-truncate",
+      "seq-renumber"
+    ]
+  },
+  "salvage_branch/conservative/claude-strict": {
+    "blocked": [
+      "SL006",
+      "SL007"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "blocked",
+    "recipes": []
+  },
+  "salvage_branch/conservative/neutral": {
+    "blocked": [
+      "SL006",
+      "SL007"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "blocked",
+    "recipes": []
+  },
+  "salvage_branch/conservative/openai-strict": {
+    "blocked": [
+      "SL006",
+      "SL007"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "blocked",
+    "recipes": []
+  },
+  "salvage_branch/salvage/claude-strict": {
+    "blocked": [
+      "SL007"
+    ],
+    "declared_loss": [
+      "amputated-branch:2"
+    ],
+    "loss_preview": {
+      "amputated-branch": 2,
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "unresolvable-branch-amputate",
+      "seq-renumber"
+    ]
+  },
+  "salvage_branch/salvage/neutral": {
+    "blocked": [
+      "SL007"
+    ],
+    "declared_loss": [
+      "amputated-branch:2"
+    ],
+    "loss_preview": {
+      "amputated-branch": 2,
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "unresolvable-branch-amputate",
+      "seq-renumber"
+    ]
+  },
+  "salvage_branch/salvage/openai-strict": {
+    "blocked": [
+      "SL007"
+    ],
+    "declared_loss": [
+      "amputated-branch:2"
+    ],
+    "loss_preview": {
+      "amputated-branch": 2,
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "unresolvable-branch-amputate",
+      "seq-renumber"
+    ]
+  },
+  "salvage_project/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_project/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_project/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_project/salvage/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_project/salvage/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_project/salvage/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_truncate/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_truncate/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_truncate/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "salvage_truncate/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [
+      "truncated-side-effects:2"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0,
+      "truncated-side-effects": 2
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "side-effect-unknown-truncate",
+      "seq-renumber"
+    ]
+  },
+  "salvage_truncate/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [
+      "truncated-side-effects:2"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0,
+      "truncated-side-effects": 2
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "side-effect-unknown-truncate",
+      "seq-renumber"
+    ]
+  },
+  "salvage_truncate/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [
+      "truncated-side-effects:2"
+    ],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0,
+      "truncated-side-effects": 2
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "side-effect-unknown-truncate",
+      "seq-renumber"
+    ]
+  },
+  "seq-renumber/conservative/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard",
+      "seq-renumber"
+    ]
+  },
+  "seq-renumber/conservative/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard",
+      "seq-renumber"
+    ]
+  },
+  "seq-renumber/conservative/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard",
+      "seq-renumber"
+    ]
+  },
+  "seq-renumber/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard",
+      "seq-renumber"
+    ]
+  },
+  "seq-renumber/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard",
+      "seq-renumber"
+    ]
+  },
+  "seq-renumber/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard",
+      "seq-renumber"
+    ]
+  },
+  "sl203/conservative/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "sl203/conservative/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "sl203/conservative/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "sl203/salvage/claude-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "sl203/salvage/neutral": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "sl203/salvage/openai-strict": {
+    "outcome": "REPAIR_REFUSED"
+  },
+  "torn-middle/conservative/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-middle/conservative/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-middle/conservative/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-middle/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-middle/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-middle/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-tail/conservative/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-tail/conservative/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-tail/conservative/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-tail/salvage/claude-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-tail/salvage/neutral": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  },
+  "torn-tail/salvage/openai-strict": {
+    "blocked": [],
+    "declared_loss": [],
+    "loss_preview": {
+      "discarded-suffix": 0,
+      "none": 0,
+      "truncated-projection": 0
+    },
+    "outcome": "applied-and-verified",
+    "recipes": [
+      "torn-terminal-record-discard"
+    ]
+  }
+}

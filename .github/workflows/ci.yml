@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: "0 2 * * 1"  # Weekly Monday 02:00 UTC benchmark run
 
@@ -69,6 +70,9 @@ jobs:
 
       - name: Run Full Test Suite
         run: pytest -q
+
+      - name: Run property-based tests separately
+        run: pytest -q tests/fuzz/ --hypothesis-profile=ci
 
       - name: Run Acceptance & Smoke Tests
         run: pytest -q tests/test_smoke_release.py tests/accept/test_healthy.py tests/accept/test_parity.py
@@ -235,7 +239,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      github.event_name == 'pull_request'
+      github.event_name == 'pull_request' ||
+      startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -251,19 +256,22 @@ jobs:
           python -m pip install -e ".[dev]"
 
       - name: Execute 250k Performance Benchmark
-        run: >-
-          python bench/perf_250k.py --records 250000 --time-budget 15.0
-          --mem-budget 512.0 --record --host-tag ci-${{ runner.os }}
-          --source ci
+        run: |
+          set -o pipefail
+          python -u bench/perf_250k.py --records 250000 --time-budget 15.0 --mem-budget 512.0 --record --host-tag ci-${{ runner.os }} --source ci --receipt benchmark-receipt.json 2>&1 | tee benchmark.log
 
       - name: Perf regression gate (advisory until calibrated)
         continue-on-error: true
         run: python scripts/bench_gate.py --tolerance 1.25 --mem-budget 512
 
       - name: Upload bench ledger artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bench-ledger-${{ github.run_id }}
-          path: bench/LEDGER.jsonl
+          path: |
+            bench/LEDGER.jsonl
+            benchmark-receipt.json
+            benchmark.log
           retention-days: 30
 

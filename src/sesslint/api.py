@@ -950,6 +950,14 @@ def apply_plan(
         plan_obj = plan_doc
     else:
         plan_obj = load_plan(plan_doc)
+    # T-05: exported plans are untrusted, including programmatically supplied
+    # dataclasses. Reject unknown profiles with a typed, content-free refusal.
+    from sesslint.repair.errors import RepairRefused
+
+    try:
+        resolve_effective_config(plan_obj.profile)
+    except (KeyError, TypeError, ValueError) as error:
+        raise RepairRefused("Unsupported repair plan profile") from error
     derived_policy: Literal["conservative", "salvage"] = (
         "salvage" if plan_obj.policy == "salvage" else "conservative"
     )

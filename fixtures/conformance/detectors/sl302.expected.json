@@ -1,0 +1,34 @@
+{
+  "counts": {
+    "by_code": {
+      "SL302": 2
+    },
+    "by_severity": {
+      "error": 2,
+      "fatal": 0,
+      "info": 0,
+      "warning": 0
+    },
+    "total": 2
+  },
+  "findings": [
+    {
+      "code": "SL302",
+      "line": 1,
+      "record_id": null,
+      "severity": "error"
+    },
+    {
+      "code": "SL302",
+      "line": 1,
+      "record_id": "evt_001",
+      "severity": "error"
+    }
+  ],
+  "format": "canonical",
+  "input": "canonical/unknown_critical.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL302"
+}

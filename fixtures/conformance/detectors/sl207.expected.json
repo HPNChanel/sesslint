@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL207": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL207",
+      "line": 4,
+      "record_id": "sesslint:synthetic:codex_rollout:4:9d22a498",
+      "severity": "warning"
+    }
+  ],
+  "format": "codex-rollout",
+  "input": "adapters/codex/sl207_near_limit.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL207"
+}

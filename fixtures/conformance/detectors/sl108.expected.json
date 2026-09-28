@@ -1,0 +1,42 @@
+{
+  "counts": {
+    "by_code": {
+      "SL107": 1,
+      "SL108": 1,
+      "SL203": 1
+    },
+    "by_severity": {
+      "error": 1,
+      "fatal": 0,
+      "info": 0,
+      "warning": 2
+    },
+    "total": 3
+  },
+  "findings": [
+    {
+      "code": "SL203",
+      "line": null,
+      "record_id": "evt-res",
+      "severity": "error"
+    },
+    {
+      "code": "SL107",
+      "line": null,
+      "record_id": "evt-call",
+      "severity": "warning"
+    },
+    {
+      "code": "SL108",
+      "line": null,
+      "record_id": "evt-call",
+      "severity": "warning"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl108_compaction.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL108"
+}

@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "consolidation T-02; references existing synthetic inputs",
+  "seed": 41,
+  "created": "2026-09-26",
+  "contains_real_data": false,
+  "description": "Synthetic consolidation acceptance corpus; no real session data."
+}

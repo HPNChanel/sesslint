@@ -168,10 +168,24 @@ def _resolve_source_coords(
 
 def _get_event_kind(event: Any) -> str | None:
     """Extract event kind string safely from SessionEvent or mapping."""
+    raw_kind: Any
+    if type(event) is SessionEvent:
+        raw_kind = event.kind
+        return str(raw_kind) if raw_kind is not None else None
     raw_kind = getattr(event, "kind", None)
     if raw_kind is None and isinstance(event, Mapping):
         raw_kind = event.get("kind")
     return str(raw_kind) if raw_kind is not None else None
+
+
+def _get_event_id(event: Any) -> Any:
+    """Extract raw event id safely from SessionEvent or mapping."""
+    if type(event) is SessionEvent:
+        return event.id
+    raw_id = getattr(event, "id", None)
+    if raw_id is None and isinstance(event, Mapping):
+        raw_id = event.get("id")
+    return raw_id
 
 
 def _extract_checkpoint_fields(event: Any) -> tuple[str | None, int | None, str | None]:
@@ -542,14 +556,15 @@ def check_checkpoint_gap(
 
     # 2. Validate events stream
     for idx, ev in enumerate(events):
-        raw_kind = getattr(ev, "kind", None)
-        if raw_kind is None and isinstance(ev, Mapping):
-            raw_kind = ev.get("kind")
-        kind_str = str(raw_kind) if raw_kind is not None else "unknown"
+        kind_str = _get_event_kind(ev)
+        if kind_str is None:
+            kind_str = "unknown"
 
-        raw_id = getattr(ev, "id", None)
-        if raw_id is None and isinstance(ev, Mapping):
-            raw_id = ev.get("id")
+        # Only these event kinds can emit SL201 or update checkpoint state.
+        if kind_str not in _KIND_RUN_START and kind_str != _KIND_CHECKPOINT:
+            continue
+
+        raw_id = _get_event_id(ev)
         ev_id = str(raw_id) if raw_id is not None else f"<event:{idx}>"
         rec_id = _source_record_id(ev_id)
         path, line = _resolve_source_coords(ev, source_path)
@@ -754,9 +769,13 @@ def check_checkpoint_divergence(
 
     # 2. Process event checkpoints
     for idx, ev in enumerate(events):
-        raw_kind = getattr(ev, "kind", None)
-        if raw_kind is None and isinstance(ev, Mapping):
-            raw_kind = ev.get("kind")
+        raw_kind: Any
+        if type(ev) is SessionEvent:
+            raw_kind = ev.kind
+        else:
+            raw_kind = getattr(ev, "kind", None)
+            if raw_kind is None and isinstance(ev, Mapping):
+                raw_kind = ev.get("kind")
         if raw_kind != _KIND_CHECKPOINT:
             continue
 
@@ -764,9 +783,7 @@ def check_checkpoint_divergence(
         if seq is None or state_hash is None:
             continue
 
-        raw_id = getattr(ev, "id", None)
-        if raw_id is None and isinstance(ev, Mapping):
-            raw_id = ev.get("id")
+        raw_id = _get_event_id(ev)
         ev_id = str(raw_id) if raw_id is not None else f"<event:{idx}>"
         rec_id = _source_record_id(ev_id)
         path, line = _resolve_source_coords(ev, source_path)
@@ -875,25 +892,28 @@ def check_unsafe_continuation(
                         if ev_seq == seq:
                             triggers.append((idx, "SL202"))
 
-    # Compaction boundary with no intervening checkpoint before tool event
-    checkpoint_indices = [
-        c_idx for c_idx, c_ev in enumerate(events) if _get_event_kind(c_ev) == _KIND_CHECKPOINT
-    ]
+    # Compaction boundary with no intervening checkpoint before tool event.
+    # Single pass collects both kind indexes (T-10: two full scans merged).
+    checkpoint_indices: list[int] = []
+    compaction_indices: list[int] = []
+    for c_idx, c_ev in enumerate(events):
+        c_kind = _get_event_kind(c_ev)
+        if c_kind == _KIND_CHECKPOINT:
+            checkpoint_indices.append(c_idx)
+        elif c_kind == _KIND_COMPACTION:
+            compaction_indices.append(c_idx)
 
-    for idx, ev in enumerate(events):
-        raw_kind = _get_event_kind(ev)
-        if raw_kind == _KIND_COMPACTION:
-            has_subsequent_checkpoint = any(chk > idx for chk in checkpoint_indices)
-            if not has_subsequent_checkpoint:
+    for idx in compaction_indices:
+        has_subsequent_checkpoint = any(chk > idx for chk in checkpoint_indices)
+        if not has_subsequent_checkpoint:
+            triggers.append((idx, "compaction"))
+        else:
+            next_chk = min(chk for chk in checkpoint_indices if chk > idx)
+            has_tool_before_chk = any(
+                _get_event_kind(events[t_idx]) in _TOOL_KINDS for t_idx in range(idx + 1, next_chk)
+            )
+            if has_tool_before_chk:
                 triggers.append((idx, "compaction"))
-            else:
-                next_chk = min(chk for chk in checkpoint_indices if chk > idx)
-                has_tool_before_chk = any(
-                    _get_event_kind(events[t_idx]) in _TOOL_KINDS
-                    for t_idx in range(idx + 1, next_chk)
-                )
-                if has_tool_before_chk:
-                    triggers.append((idx, "compaction"))
 
     if not triggers:
         return []
@@ -904,9 +924,13 @@ def check_unsafe_continuation(
     first_unsafe_tool: tuple[int, Any] | None = None
     for idx in range(min_trigger_idx + 1, len(events)):
         ev = events[idx]
-        raw_kind = getattr(ev, "kind", None)
-        if raw_kind is None and isinstance(ev, Mapping):
-            raw_kind = ev.get("kind")
+        raw_kind: Any
+        if type(ev) is SessionEvent:
+            raw_kind = ev.kind
+        else:
+            raw_kind = getattr(ev, "kind", None)
+            if raw_kind is None and isinstance(ev, Mapping):
+                raw_kind = ev.get("kind")
         if raw_kind in _TOOL_KINDS:
             first_unsafe_tool = (idx, ev)
             break
@@ -919,9 +943,7 @@ def check_unsafe_continuation(
     # Filter causes that occurred at or before the unsafe tool index
     active_causes = sorted(set(cause for idx, cause in triggers if idx < unsafe_idx))
 
-    raw_id = getattr(unsafe_ev, "id", None)
-    if raw_id is None and isinstance(unsafe_ev, Mapping):
-        raw_id = unsafe_ev.get("id")
+    raw_id = _get_event_id(unsafe_ev)
     ev_id = str(raw_id) if raw_id is not None else f"<event:{unsafe_idx}>"
     rec_id = _source_record_id(ev_id)
     path, line = _resolve_source_coords(unsafe_ev, source_path)
@@ -947,9 +969,13 @@ def check_unsafe_continuation(
 
 def _coverage_pointer(event: Any) -> str | None:
     """Extract a normalized coverage pointer from ``extra_fields['coverage']``."""
-    extra = getattr(event, "extra_fields", None)
-    if extra is None and isinstance(event, Mapping):
-        extra = event.get("extra_fields")
+    extra: Any
+    if type(event) is SessionEvent:
+        extra = event.extra_fields
+    else:
+        extra = getattr(event, "extra_fields", None)
+        if extra is None and isinstance(event, Mapping):
+            extra = event.get("extra_fields")
     if not isinstance(extra, Mapping):
         return None
     coverage = extra.get("coverage")
@@ -982,22 +1008,24 @@ def check_compaction_coverage(
     """
     ctx = context if context is not None else CheckContext()
 
+    # Build the full lookup only when a coverage claim needs it (T-10).
+    claims = [
+        (idx, event, pointer)
+        for idx, event in enumerate(events)
+        if _get_event_kind(event) == _KIND_COMPACTION
+        and (pointer := _coverage_pointer(event)) is not None
+    ]
+    if not claims:
+        return []
+
     id_to_indices: dict[str, list[int]] = {}
     for idx, ev in enumerate(events):
-        raw_id = getattr(ev, "id", None)
-        if raw_id is None and isinstance(ev, Mapping):
-            raw_id = ev.get("id")
+        raw_id = _get_event_id(ev)
         if raw_id is not None:
             id_to_indices.setdefault(str(raw_id), []).append(idx)
 
     findings: list[Finding] = []
-    for b_idx, boundary in enumerate(events):
-        if _get_event_kind(boundary) != _KIND_COMPACTION:
-            continue
-        covered_id = _coverage_pointer(boundary)
-        if covered_id is None:
-            continue  # pointerless boundary — nothing to verify
-
+    for b_idx, boundary, covered_id in claims:
         missing = False
         non_contiguous = False
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sesslint import api
 from sesslint.canonical import canonical_bytes, to_canonical_json
 from sesslint.errors import HeaderMissingError, SchemaError, SesslintError
 from sesslint.finding import Finding
@@ -55,14 +56,25 @@ def discover_cases(root: Path = Path("fixtures")) -> list[Case]:
             continue
 
         raw_name = expected_path.name[: -len(".expected.json")]
-        input_path = expected_path.with_name(f"{raw_name}.jsonl")
+        expected_data = json.loads(expected_path.read_text(encoding="utf-8"))
+        mode = expected_data.get("mode", "reader")
+        if mode not in {"reader", "check_file", "scan"}:
+            raise ValueError(f"Unknown conformance mode: {mode}")
+        input_path = (
+            root / expected_data["input"]
+            if mode != "reader"
+            else expected_path.with_name(f"{raw_name}.jsonl")
+        )
         if not input_path.exists():
             raise FileNotFoundError(
                 f"Missing input fixture {input_path} for expected file {expected_path}"
             )
 
-        expected_data = json.loads(expected_path.read_text(encoding="utf-8"))
-        case_name = str(input_path.relative_to(root).with_suffix("")).replace("\\", "/")
+        case_name = (
+            str(input_path.relative_to(root).with_suffix("")).replace("\\", "/")
+            if mode == "reader"
+            else f"detectors/{raw_name}"
+        )
 
         cases.append(
             Case(
@@ -94,6 +106,30 @@ def run_case(
     Returns:
         Constructed Report instance.
     """
+    mode = case.expected.get("mode", "reader")
+    if mode == "check_file":
+        return api.check_file(
+            case.input_path,
+            format=case.expected.get("format"),
+            profile=case.expected.get("profile", "neutral"),
+        )
+    if mode == "scan":
+        scan = api.check_dir(case.input_path)
+        findings = [finding for result in scan.files for finding in result.findings]
+        return build_report(
+            session_id=case.name.replace("/", "_"),
+            source_fingerprint=hashlib.sha256(
+                "".join(
+                    fingerprint_file(path)
+                    for path in sorted(case.input_path.rglob("*"))
+                    if path.is_file()
+                ).encode()
+            ).hexdigest(),
+            tool_version=tool_version,
+            findings=findings,
+            assurance="A1",
+            limitation="Directory scan findings; not replay assurance.",
+        )
     source_fp = fingerprint_file(case.input_path)
 
     effective_limits = ReaderLimits() if limits is None else limits

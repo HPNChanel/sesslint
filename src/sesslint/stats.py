@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -340,14 +339,12 @@ def stats_paths(
 
 def get_stats_schema_path() -> Path:
     """Return the filesystem path to schemas/sesslint.stats.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.stats.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.stats.v1.json"
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.stats.v1.json"
+    )
+    return schema_path("sesslint.stats.v1.json", development_path)
 
 
 def load_stats_schema() -> dict[str, Any]:

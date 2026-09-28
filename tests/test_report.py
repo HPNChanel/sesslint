@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import inspect
+import json
+import os
 import random
-import time
+import subprocess
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -380,33 +383,24 @@ def test_unicode_session_id_support() -> None:
 
 def test_large_findings_performance() -> None:
     """Verify building report with 10,000 findings finishes in under 1 second."""
-    source = SourceRef(path="large.jsonl", line=1)
-    findings = [
-        make_finding(
-            code=SL001,
-            severity=Severity.ERROR,
-            repairability=Repairability.MANUAL,
-            message_template="Large scale defect",
-            source=source,
-            related_ids=(f"rel-{i % 50}",),
-        )
-        for i in range(10_000)
-    ]
-
-    t0 = time.perf_counter()
-    report = build_report(
-        session_id="sess-large",
-        source_fingerprint="fp-large",
-        tool_version="0.1.0",
-        findings=findings,
-        assurance="A1",
-        limitation="High-scale benchmark test",
+    # T-10: full-suite tracing/GC history is not part of this unchanged budget.
+    result = subprocess.run(
+        [sys.executable, "-I", str(Path(__file__).parents[1] / "bench/report_10k.py")],
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("PYTHON", "COVERAGE"))
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
     )
-    elapsed = time.perf_counter() - t0
-
-    assert report.counts.total == 10_000
-    assert report.counts.by_code["SL001"] == 10_000
-    assert elapsed < 1.0, f"10k findings took {elapsed:.2f}s, expected < 1.0s"
+    assert result.returncode == 0, result.stdout + result.stderr
+    stats = json.loads(result.stdout)
+    assert stats["total"] == stats["by_code"]["SL001"] == 10_000
+    assert stats["tracing"] is False
+    assert 0 <= stats["wall_s"] < 1.0, stats
 
 
 def test_a0_unreadable_invariant_documented_and_asserted() -> None:

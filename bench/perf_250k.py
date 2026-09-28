@@ -11,7 +11,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import platform
 import random
@@ -257,7 +259,7 @@ def verify_reference_disclosure_recorded() -> bool:
     derived: set[str] = set()
     if total_s > time_budget:
         derived.add("time")
-    if rss_mb > mem_budget:
+    if rss_mb >= mem_budget:
         derived.add("memory")
     if declared != derived:
         return False
@@ -281,13 +283,16 @@ sys.path.insert(0, {repo!r})
 from bench.perf_250k import get_rss_mb  # noqa: E402
 from sesslint.cli import main  # noqa: E402
 
+cpu0 = time.process_time()
 t0 = time.perf_counter()
 code = main(["check", sys.argv[1], "--json"])
 elapsed = time.perf_counter() - t0
 sys.stderr.write(
     "CHILD-STATS "
     + json.dumps(
-        {{"check_s": elapsed, "peak_rss_mb": get_rss_mb(), "exit_code": code}}
+        {{"check_s": elapsed, "cpu_s": time.process_time() - cpu0,
+          "peak_rss_mb": get_rss_mb(), "exit_code": code,
+          "trace": sys.gettrace() is not None, "profile": sys.getprofile() is not None}}
     )
     + "\\n"
 )
@@ -337,6 +342,8 @@ def run_benchmark(
     record: bool = False,
     host_tag: str = "dev",
     source: str = "record",
+    profile_heap: bool = False,
+    receipt: Path | None = None,
 ) -> int:
     """Execute 100MB / 250k streaming and validation benchmark.
 
@@ -391,14 +398,18 @@ def run_benchmark(
         stream_elapsed = time.perf_counter() - stream_start
         phase_rss["post-iter-events"] = get_rss_mb()
 
+        # Optional heap profiling is diagnostic only; functional checks always run.
         # Auxiliary metric: in-process check under tracemalloc — also the
         # functional-correctness gate for this run.
-        tracemalloc.start()
+        if profile_heap:
+            tracemalloc.start()
         check_start = time.perf_counter()
         report = api.check_file(bench_file)
         check_elapsed = time.perf_counter() - check_start
-        _curr2, check_heap_bytes = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        check_heap_bytes = 0
+        if profile_heap:
+            _curr2, check_heap_bytes = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
         check_heap_mb = check_heap_bytes / (1024 * 1024)
         phase_rss["post-check"] = get_rss_mb()
 
@@ -406,13 +417,17 @@ def run_benchmark(
         # in a fresh child process — its own wall time and peak RSS.
         child = run_fresh_process_check(bench_file)
         child_stats = child["stats"] if child is not None else None
-        child_check_s = float(child_stats["check_s"]) if isinstance(child_stats, dict) else None
-        child_peak_mb = (
-            float(child_stats["peak_rss_mb"])
-            if isinstance(child_stats, dict)
-            and isinstance(child_stats.get("peak_rss_mb"), (int, float))
-            else None
-        )
+        if not isinstance(child_stats, dict):
+            child_stats = None
+
+        def metric(stats: Any, name: str) -> float | None:
+            value = stats.get(name) if isinstance(stats, dict) else None
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                return None
+            return float(value)
+
+        child_check_s = metric(child_stats, "check_s")
+        child_peak_mb = metric(child_stats, "peak_rss_mb")
         child_report: dict[str, Any] | None = None
         if child is not None and child.get("stdout"):
             try:
@@ -429,10 +444,15 @@ def run_benchmark(
         # findings on giant lines are expected — disclosed, not gated.
         dense_file = Path(tmp_dir) / "dense_lines.jsonl"
         dense_records = generate_dense_lines_file(dense_file)
-        dense_start = time.perf_counter()
-        dense_report = api.check_file(dense_file)
-        dense_elapsed = time.perf_counter() - dense_start
-        dense_findings = sorted({f.code for f in dense_report.findings})
+        dense_child = run_fresh_process_check(dense_file)
+        dense_elapsed = metric(dense_child.get("stats"), "check_s") if dense_child else None
+        dense_findings = []
+        dense_valid = dense_child is not None and dense_child["exit_code"] == 0
+        if dense_valid:
+            try:
+                dense_findings = sorted(json.loads(dense_child["stdout"])["counts"]["by_code"])
+            except (TypeError, ValueError, KeyError):
+                dense_valid = False
 
         rss_mb = get_rss_mb()
         rss_str = f"{rss_mb:.1f} MB" if rss_mb is not None else "N/A"
@@ -444,28 +464,32 @@ def run_benchmark(
             f"(verdict: assurance={report.assurance})"
         )
         print(f"Tracemalloc heap peak, 5k sample (auxiliary): {tracemalloc_mb:.3f} MB")
-        print(f"Tracemalloc heap peak, full check path (auxiliary): {check_heap_mb:.3f} MB")
+        if profile_heap:
+            print(f"Tracemalloc heap peak, full check path (auxiliary): {check_heap_mb:.3f} MB")
         phase_str = " | ".join(
             f"{k}={v:.1f}MB" if v is not None else f"{k}=N/A" for k, v in phase_rss.items()
         )
         print(f"Phase RSS, in-process cumulative (auxiliary): {phase_str}")
         print(f"Parent process peak RSS (auxiliary): {rss_str}")
-        if child_stats is not None and child_check_s is not None:
+        if child_stats is not None and child_check_s is not None and child_peak_mb is not None:
             print(
                 f"Fresh-process check (normative): {child_check_s:.3f}s, "
                 f"peak RSS {child_peak_mb:.1f} MB, exit={child['exit_code']}"
             )
         else:
             print("Fresh-process check (normative): UNAVAILABLE")
+        dense_time = f"{dense_elapsed:.3f}s" if dense_elapsed is not None else "UNAVAILABLE"
         print(
             f"Keyword-dense giant lines (auxiliary): {dense_records} records, "
-            f"{dense_file.stat().st_size / (1024 * 1024):.1f} MB in {dense_elapsed:.3f}s "
+            f"{dense_file.stat().st_size / (1024 * 1024):.1f} MB in {dense_time} "
             f"(findings: {','.join(dense_findings) or 'none'})"
         )
 
         # 1. Functional correctness: MUST ALWAYS PASS (RVW-037).
         # Disclosure rule applies ONLY to performance budget shortfalls, never functional bugs.
         functional_failures: list[str] = []
+        if not dense_valid or dense_elapsed is None:
+            functional_failures.append("Dense-line subprocess result/measurement unavailable")
         if count != records:
             functional_failures.append(f"Item count mismatch: expected {records}, got {count}")
 
@@ -503,7 +527,41 @@ def run_benchmark(
                     f"Fresh-process check reported {c_findings} findings on clean session"
                 )
 
+        def save_receipt(status: str) -> None:
+            if receipt is None:
+                return
+            hashes = {
+                p.relative_to(_SRC_PATH).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted((_SRC_PATH / "sesslint").rglob("*.py"))
+            }
+            row = {
+                "schema_version": 1,
+                "status": status,
+                "kind": "source",
+                "input_bytes": bench_file.stat().st_size,
+                "input_sha256": hashlib.sha256(bench_file.read_bytes()).hexdigest(),
+                "records": records,
+                "time_budget_s": time_budget,
+                "memory_limit_mb_exclusive": mem_budget,
+                "python": platform.python_version(),
+                "platform": platform.platform(),
+                "source_sha256": hashlib.sha256(
+                    json.dumps(hashes, sort_keys=True).encode()
+                ).hexdigest(),
+                "source_files": hashes,
+                "metrics": {
+                    key: (None if isinstance(value, float) and not math.isfinite(value) else value)
+                    for key, value in (child_stats or {}).items()
+                },
+                "dense_s": dense_elapsed,
+            }
+            receipt.parent.mkdir(parents=True, exist_ok=True)
+            with receipt.open("x", encoding="utf-8", newline="\n") as stream:
+                json.dump(row, stream, indent=2, allow_nan=False)
+                stream.write("\n")
+
         if functional_failures:
+            save_receipt("FAIL")
             print(
                 f"FATAL FUNCTIONAL CORRECTNESS FAILURE (RVW-037):\n"
                 f"  {'; '.join(functional_failures)}\n"
@@ -513,7 +571,18 @@ def run_benchmark(
             return 1
 
         # 2. Normative performance budget evaluation — fresh-child metrics only.
-        if child_check_s is None or child_peak_mb is None:
+        if (
+            child_check_s is None
+            or child_peak_mb is None
+            or metric(child_stats, "cpu_s") is None
+            or (
+                isinstance(child_stats, dict)
+                and (
+                    child_stats.get("trace") is not False or child_stats.get("profile") is not False
+                )
+            )
+        ):
+            save_receipt("FAIL")
             print(
                 "FATAL: normative fresh-process measurement unavailable (child stats missing)",
                 file=sys.stderr,
@@ -528,21 +597,21 @@ def run_benchmark(
 
         # Dense-lines regression gate: the fixed scan is ~0.1s/MB; 15s on a
         # ~12MB file still catches the old ~2.4s/MB backtracking (~28s).
-        if dense_elapsed > time_budget:
+        if dense_elapsed is not None and dense_elapsed > time_budget:
             perf_shortfalls.append(
                 f"Keyword-dense giant-line check exceeded budget: "
                 f"{dense_elapsed:.3f}s > {time_budget:.1f}s"
             )
 
-        if child_peak_mb > mem_budget:
+        if child_peak_mb >= mem_budget:
             perf_shortfalls.append(
-                f"Check peak RSS exceeded budget: {child_peak_mb:.2f}MB > {mem_budget:.1f}MB"
+                f"Check peak RSS exceeded budget: {child_peak_mb:.2f}MB >= {mem_budget:.1f}MB"
             )
 
         breach_classes: list[str] = []
         if child_check_s > time_budget:
             breach_classes.append("time")
-        if child_peak_mb > mem_budget:
+        if child_peak_mb >= mem_budget:
             breach_classes.append("memory")
         breach_str = ", ".join(breach_classes) if breach_classes else "none"
         print(f"Breach classes: {breach_str}")
@@ -566,6 +635,7 @@ def run_benchmark(
             else:
                 print("Ledger: append failed (non-fatal)", file=sys.stderr)
 
+        save_receipt("FAIL" if perf_shortfalls else "PASS")
         if perf_shortfalls:
             reference_ok = verify_reference_disclosure_recorded()
             disclosure_info = (
@@ -616,6 +686,8 @@ def main() -> int:
         default="record",
         help="Ledger row provenance tag (record|ci|field-remediation|seed)",
     )
+    parser.add_argument("--receipt", type=Path, help="Write a new revision-bound receipt")
+    parser.add_argument("--profile-heap", action="store_true", help="Auxiliary full heap tracing")
     args = parser.parse_args()
 
     return run_benchmark(
@@ -625,6 +697,8 @@ def main() -> int:
         record=args.record,
         host_tag=args.host_tag,
         source=args.source,
+        profile_heap=args.profile_heap,
+        receipt=args.receipt,
     )
 
 

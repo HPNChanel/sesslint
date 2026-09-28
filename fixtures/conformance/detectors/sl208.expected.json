@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL208": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL208",
+      "line": 5,
+      "record_id": "sesslint:synthetic:codex_rollout:5:149761ac",
+      "severity": "warning"
+    }
+  ],
+  "format": "codex-rollout",
+  "input": "adapters/codex/sl208_type_mismatch.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL208"
+}

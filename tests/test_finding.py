@@ -856,22 +856,36 @@ def test_adversarial_10k_related_ids() -> None:
 
 def test_adversarial_100k_findings_sort_performance() -> None:
     """Verify sorting 100k findings completes in <1s (perf smoke test)."""
-    source = SourceRef(path="bench.jsonl", line=1)
-    base_finding = make_finding(
-        code=SL001,
-        message_template="Bench finding",
-        source=source,
+    # T-10: measure the same 100k sort in a fresh, untraced interpreter.
+    # Coverage still exercises sort_findings throughout this module; its
+    # tracing overhead is not part of the production performance contract.
+    import os
+    import subprocess
+    import sys
+
+    program = """
+import json, time
+from sesslint.finding import SourceRef, make_finding, sort_findings
+item = make_finding(code="SL001", message_template="Bench finding",
+                    source=SourceRef(path="bench.jsonl", line=1))
+items = [item] * 100_000
+t0 = time.perf_counter()
+result = sort_findings(items)
+elapsed = time.perf_counter() - t0
+print(json.dumps({"count": len(result), "elapsed": elapsed}))
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE")}
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
     )
-
-    # Generate 100k findings with small variations
-    items = [base_finding] * 100_000
-
-    t0 = time.perf_counter()
-    sorted_res = sort_findings(items)
-    elapsed = time.perf_counter() - t0
-
-    assert len(sorted_res) == 100_000
-    assert elapsed < 1.0
+    measurement = json.loads(result.stdout)
+    assert measurement["count"] == 100_000
+    assert measurement["elapsed"] < 1.0
 
 
 def test_no_vendor_strings_in_finding_module() -> None:

@@ -357,9 +357,12 @@ def repair_many(
 
 def get_batch_schema_path() -> Path:
     """Return the packaged ``sesslint.batch-repair/v1`` JSON Schema path."""
-    return (
+    from sesslint._resources import schema_path
+
+    development_path = (
         Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.batch-repair.v1.json"
     )
+    return schema_path("sesslint.batch-repair.v1.json", development_path)
 
 
 def load_batch_schema() -> dict[str, Any]:

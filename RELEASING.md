@@ -1,329 +1,186 @@
-# SessLint Release & Build Guide (TASK-028)
+# Releasing SessLint
 
-This document specifies the reproducible release and distribution protocol for SessLint.
+This checkout prepares **0.4.1 (next release)**. PyPI and GitHub Releases are
+the required channels. Local tags, successful tests and a draft are distinct
+from a public release. Push, tag and publication require separate authorization.
+Never move an existing release tag or replace published bytes.
 
-## Core Guarantees & Constraints
+## Candidate gates
 
-1. **Zero Runtime Dependencies**: The `src/sesslint` package relies exclusively on the Python 3.11+ standard library. No runtime packages may ever be added to `dependencies` in `pyproject.toml`.
-2. **Offline-by-Default**: SessLint never makes network connections during build, test, linting, scanning, or repair execution.
-3. **Reproducible Artifacts**: Builds must produce byte-deterministic source distributions (`.tar.gz`) and binary wheels (`.whl`).
-4. **Apache-2.0 Conformance**: All released source files must carry the Apache-2.0 license notice.
-
----
-
-## Release Prerequisites
-
-Before preparing a release, ensure all verification gates pass locally:
+Run from the exact source revision that will be tagged:
 
 ```bash
-# 1. Code formatting & linting
-ruff check src tests
-ruff format --check src tests
-
-# 2. Strict type checking
-mypy --strict src/sesslint
-
-# 3. Complete test suite (unit, conformance, fixtures, smoke, offline)
-pytest -q
-
-# 4. Release smoke verification
-pytest -q tests/test_smoke_release.py tests/accept/test_healthy.py
+uv sync --extra dev --extra packaging
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy --strict src/sesslint
+uv run pytest -q --cov=sesslint --cov-branch --cov-report=term --cov-report=json
+uv run pytest -q tests/fuzz/ --hypothesis-profile=ci
+uv run python bench/perf_250k.py
+uv run python scripts/check_release_refs.py
+uv run python scripts/fixture_index.py --check
 ```
 
----
+Coverage must remain at least 86%. The normative benchmark retains 250,000
+events / about 100 MB, a 15-second wall-time ceiling and peak RSS below 512 MB.
+It measures the CLI in a clean process outside tracing/coverage; optional
+`--profile-heap` adds a diagnostic allocation profile. Never shrink the fixture
+or relax thresholds to pass. Use `--record --host-tag <host>` only when adding
+an actual same-host measurement to the historical ledger.
 
-## Reproducible Build Protocol
+Check zero runtime dependencies, no egress/telemetry/dynamic evaluation,
+privacy, determinism, all 34 detector codes and all 13 recipe-level cases.
+- [ ] All 13 repair recipes have synced documentation and positive/refusal tests.
+- [ ] All 34 detector codes have actual golden results and synced documentation.
 
-### 1. Clean Workspace & Build Artifacts
+Keep SL203 fail-closed. Review [fixture navigation](fixtures/INDEX.md), the
+[adapter/profile matrix](docs/MATRIX.md) and the separate
+[detector/recipe matrix](tests/MATRIX.md).
 
-Ensure the git working tree is clean and build wheels using `build` (or `uv build` / `hatchling`):
+CI runs Python 3.11–3.14 on Windows/macOS/Linux plus the existing ARM leg.
+Actual platform receipts are required: a workflow definition is not a PASS.
+
+## Build and installed acceptance
+
+Use the candidate commit's committer timestamp as `SOURCE_DATE_EPOCH`, not
+the wall clock. Pin `build==1.2.2.post1` and `hatchling==1.27.0`. Build into
+two fresh directories; do not delete an earlier verified release set.
 
 ```bash
-# Clean previous build artifacts
-rm -rf dist/ build/ *.egg-info
-
-# Build standard source distribution and wheel
-python -m build --sdist --wheel
+export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+python -m build --no-isolation --sdist --wheel --outdir dist/candidate
+python -m build --no-isolation --sdist --wheel --outdir dist/reproducible
+python scripts/release_artifacts.py compare --directory dist/candidate --target dist/reproducible --version 0.4.1
+python scripts/build_starter_kit.py --version 0.4.1 --output dist/candidate/sesslint-0.4.1-starter-kit.zip
+python scripts/build_man_archive.py --epoch "$SOURCE_DATE_EPOCH" --output dist/candidate/sesslint-0.4.1-man.tar.gz
+python scripts/smoke_distributions.py --directory dist/candidate --version 0.4.1
+python scripts/package.py --outdir dist/bin
 ```
 
-### 1b. Man Pages (optional asset)
+PowerShell epoch equivalent:
 
-`scripts/gen_man.py` generates classic-roff man pages from the live argparse
-parser (cannot drift — same mechanism as shell completions). The release
-workflow emits `sesslint-<version>-man.tar.gz` into `dist/` before checksums,
-so it is covered by `sha256sums.txt`, `artifact-manifest.json`, SLSA subjects,
-and Sigstore bundles like every other artifact. Committed goldens live in
-`man/`; regenerate after any CLI surface or version change:
+```powershell
+$env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
+```
+
+Run `scripts/installed_smoke.py --binary <native-artifact> --kit <starter-kit>
+--version 0.4.1 --receipt <receipt.json>` on each required OS. It relocates the
+executable and examples outside the checkout to a path containing spaces and
+Unicode, removes Python from PATH on Windows, and checks the complete
+`check → dry-run/plan → repair/apply → verify` journey. It checks source
+immutability, idempotence, no output after refusal, adapters/profiles, report
+formats, hook and MCP. The Python-distribution runner also exercises public
+API calls and loads all 13 installed schema resources.
+
+Wheel/sdist include LICENSE/NOTICE; binaries bundle them with the schemas.
+The starter kit also contains licenses, schemas, rule/recipe documentation,
+PowerShell/POSIX instructions and labeled synthetic examples. PyInstaller
+builds only for its host OS. The Linux release leg uses Ubuntu 22.04 to avoid
+unnecessarily raising the glibc baseline; older systems still need their own
+compatibility evidence. Sigstore signing is mandatory for release assets.
+Windows Authenticode and macOS signing/notarization are separate opt-in build
+features; absent credentials do not imply a trusted OS publisher identity.
+
+## Two-channel publication pipeline
+
+`.github/workflows/release.yml` runs only for an authorized `v*` tag push:
+
+```text
+exact-commit CI → reproducible Python build → three-OS binary acceptance
+→ complete signed asset set → immutable GitHub draft
+→ SLSA provenance generation and verification
+→ metadata-validated PyPI upload → public PyPI download/hash/install checks
+→ GitHub draft promotion → public GitHub download/hash/install checks
+```
+
+PyPI receives exactly `sesslint-<version>-py3-none-any.whl` and
+`sesslint-<version>.tar.gz` with matching embedded name/version/Python metadata.
+Man-page tarballs and starter-kit ZIPs are excluded by regression tests.
+All binaries, installed receipts, man pages, starter kit, checksums, manifest,
+Sigstore bundles and provenance must exist before PyPI publication.
+
+The `pypi` GitHub environment and PyPI Trusted Publisher for owner `HPNChanel`,
+repository `sesslint`, workflow `release.yml`, environment `pypi` must be
+configured by the maintainer. Inspect existing settings; do not create another
+project or invent credentials. Remote configuration has not been proved by
+local tests. The workflow uses OIDC, not a stored PyPI token.
+
+Before triggering the tag workflow, confirm that the `pypi` environment requires
+maintainer approval. Keep publication waiting until clean-Windows provisioning
+evidence and its acceptance receipt have been reviewed against the exact EXE hash
+in the signed CI-built draft. The automated PowerShell receipt deliberately says
+`clean_windows: UNVERIFIED`; it cannot satisfy this human evidence check by itself.
+If that approval gate is unavailable, do not trigger this automatic publication
+workflow. Configuring the remote environment remains a separately authorized step.
+
+The SLSA generator must use its reviewed semver tag for certificate identity;
+the workflow verifies that tag's commit before use. Other release action
+references use reviewed commit SHAs. See the [upstream generator contract](https://github.com/slsa-framework/slsa-github-generator/blob/v2.1.0/internal/builders/generic/README.md).
+
+## Retry and partial failure
+
+Re-run failed jobs in the same workflow run. Successful jobs' immutable
+artifacts are reused, with hashes rechecked. Full reruns restore existing
+artifacts before building. An expired artifact, API failure or download error
+fails closed rather than triggering a replacement build. A retry may perform its first build only when every prior attempt's creation
+step is positively recorded as skipped. Missing history, a step that started
+and lost its artifact, or any ambiguous state fails closed. Downloads use the
+artifact ID, API archive digest, expected commit/version and bound receipt;
+listing an empty artifact collection is never proof that no build happened.
+
+Existing draft assets are downloaded and compared before reuse; differing
+bytes are never overwritten. Existing PyPI distributions must match both the
+signed candidate and downloaded public bytes. Only genuinely missing packages
+are staged for upload. Existing provenance is verified again. If retained
+artifacts cannot be recovered or source bytes must change, prepare a new
+version; never retag history or hide a conflict with `skip-existing`.
+
+## Artifact verification
+
+Download the exact release set and substitute its tag/asset below:
 
 ```bash
-python scripts/gen_man.py --out man
+sha256sum -c sha256sums.txt
+cosign verify-blob --bundle "$ASSET.sigstore.json" --certificate-identity "https://github.com/HPNChanel/sesslint/.github/workflows/release.yml@refs/tags/$TAG" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ASSET"
+slsa-verifier verify-artifact "$ASSET" --provenance-path sesslint-provenance.intoto.jsonl --source-uri github.com/HPNChanel/sesslint --source-tag "$TAG"
 ```
 
-The AUR `PKGBUILD` template installs them into `usr/share/man/man1/` when the
-asset is present (conditional `{if:man}` render block).
-
-### 2. Generate Checksums (`sha256sums.txt`)
-
-Compute cryptographically secure SHA-256 digests for all generated distribution artifacts:
-
-```bash
-# On Linux / macOS
-cd dist && sha256sum * > sha256sums.txt && cd ..
-
-# On Windows PowerShell
-Get-FileHash -Algorithm SHA256 dist/* | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Out-File -Encoding ascii dist/sha256sums.txt
-```
-
-### 3. Verify Checksums
-
-```bash
-# On Linux / macOS
-cd dist && sha256sum -c sha256sums.txt && cd ..
-
-# On Windows PowerShell
-Get-Content dist/sha256sums.txt | ForEach-Object {
-    $parts = $_ -split '\s+'
-    $hash = $parts[0]
-    $file = "dist/$($parts[1])"
-    $calc = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
-    if ($calc -ne $hash) { throw "Checksum mismatch for $file" }
-}
-```
-
-### 4. Verify Sigstore Signatures
-
-Every release artifact also carries a `<name>.sigstore.json` bundle —
-keyless Sigstore signatures produced by the release workflow's own OIDC
-identity (Fulcio + Rekor; no keys are stored or managed). Verify with
-`cosign` (https://github.com/sigstore/cosign):
-
-```bash
-# wheel / sdist / sha256sums.txt / artifact-manifest.json / binaries all verify the same way
-cosign verify-blob \
-  --bundle sesslint-0.2.0-py3-none-any.whl.sigstore.json \
-  --certificate-identity-regexp "github.com/HPNChanel/sesslint" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  sesslint-0.2.0-py3-none-any.whl
-```
-
-A successful verification prints `Verified OK` and proves the artifact was
-signed by *this repository's release workflow* (certificate subject = repo
-ref, issuer = GitHub Actions OIDC). Verify `sha256sums.txt` first, then
-`sha256sum -c` the rest — the signed sums close the trust loop.
-
-Posture: the signing step **fails the release job** on error — an unsigned
-release is a broken release once signing exists. If GitHub OIDC/cosign
-availability ever breaks, the fallback is checksums-only, called out
-explicitly in the release notes (never shipped silently unsigned).
-
-### 5. Verify SLSA Provenance
-
-Every release also carries `sesslint-provenance.intoto.jsonl` — a SLSA v1
-provenance attestation generated by the pinned
-`slsa-framework/slsa-github-generator` generic generator (Build L3). The
-subjects are the canonical artifact set (wheel, sdist, `sha256sums.txt`,
-`artifact-manifest.json`); the attestation binds them to this repository,
-the release tag, and the workflow that produced them.
-
-```bash
-slsa-verifier verify-artifact \
-  --provenance-path sesslint-provenance.intoto.jsonl \
-  --source-uri github.com/HPNChanel/sesslint \
-  --source-tag v0.2.0 \
-  sesslint-0.2.0-py3-none-any.whl
-```
-
-Rollout posture: provenance generation runs in its own `provenance` job that
-is **not** on the `github-promote` critical path — it is non-blocking until
-verified end-to-end on a real tag. Once validated, promote it deliberately
-(add `provenance` to `github-promote` needs); never claim more than the
-workflow actually proves.
-
----
-
-## Clean-Environment Smoke Test
-
-Test installing the built distribution into an isolated, clean virtual environment without network access:
-
-```bash
-# Create isolated temporary virtual environment
-python -m venv .smoke_env
-
-# Activate virtual environment
-# Windows:
-.smoke_env\Scripts\activate
-# Linux/macOS:
-source .smoke_env/bin/activate
-
-# Install from built wheel (offline)
-pip install --no-index --find-links=dist sesslint
-
-# Verify CLI version and schema versions
-sesslint version --json
-
-# Verify healthy check returns exit code 0
-sesslint check fixtures/cli/check_basic/healthy.jsonl --json
-
-# Verify verify command returns exit code 0
-sesslint verify --source fixtures/verify/ok/source.jsonl --plan fixtures/verify/ok/plan.json --output fixtures/verify/ok/output.jsonl --manifest fixtures/verify/ok/manifest.json
-
-# Cleanup
-deactivate
-rm -rf .smoke_env
-```
-
----
-
-## Release Checklist
-
-- [ ] `LICENSE` contains full Apache-2.0 text and `NOTICE` details zero runtime dependencies.
-- [ ] `python scripts/check_release_refs.py` passes — every `rev:`/`sesslint==X.Y.Z`/`uses: ...sesslint...@` pin in docs resolves to the latest published tag, or carries an explicit `next-release` marker for working-tree features.
-- [ ] In the release commit: bump `rev:`/`==` doc examples to the new tag and drop `next-release` markers for features shipping in that tag.
-- [ ] `docs/MATRIX.md` matches generator output from `tests/conformance/test_matrix.py`.
-- [ ] All 20 reason codes have synced documentation in `docs/codes/SL*.md` (`tests/test_rule_docs.py` passes).
-- [ ] All 13 repair recipes have synced documentation in `docs/recipes/*.md` (`tests/test_registry_docs.py` passes).
-- [ ] Every fixture directory contains a valid `PROVENANCE.json` with `contains_real_data: false` (`tests/test_fixture_provenance.py` passes).
-- [ ] Multi-platform CI workflow succeeds across Ubuntu, Windows, and macOS on Python 3.11 and 3.12.
-- [ ] `python bench/perf_250k.py --record --host-tag <host>` run once on the maintainer host before tagging — appends the normative row to `bench/LEDGER.jsonl` so `scripts/bench_gate.py` has a fresh same-OS baseline for the release.
-
----
-
-## Two-Channel Release Procedure (`v*`) — T-07a
-
-`.github/workflows/release.yml` implements a tag-gated, non-reusable pipeline with five jobs:
-
-```
-build → github-draft ─┬→ pypi-publish ──┐
-                      ├→ binaries ──────┼→ github-promote
-                      ├→ provenance (non-blocking)
-                      └→ image (GHCR, non-blocking)
-```
-
-- **`build`**: validates the pushed tag equals `v` + the version in `src/sesslint/_version.py`; computes `SOURCE_DATE_EPOCH` from the tagged commit (`git show -s --format=%ct "$GITHUB_SHA"`); builds sdist+wheel once with pinned tooling (`build==1.2.2.post1`, `hatchling==1.27.0`, `--no-isolation`); generates `sha256sums.txt` + `artifact-manifest.json`; signs every artifact
-with Sigstore keyless (`cosign sign-blob --bundle <name>.sigstore.json`,
-`id-token: write`, `sigstore/cosign-installer` pinned by SHA);
-uploads the `release-dist` artifact set.
-- **`github-draft`**: downloads the artifact set, verifies checksums, creates a **draft** GitHub Release attaching wheel, sdist, `sha256sums.txt`, the manifest, and the `.sigstore.json` bundles — staged before any PyPI publish.
-- **`binaries`**: 3-OS matrix (ubuntu/windows/macos-latest) that runs `scripts/package.py` to produce PyInstaller onefile executables, smoke-tests each binary, Sigstore-signs each artifact, and attaches the binaries + per-OS `SHA256SUMS` + `.sigstore.json` bundles to the draft release. It fans out after `github-draft` and **never gates `pypi-publish`** — PyPI ships only wheel+sdist. See [Native Binary Distribution](#native-binary-distribution).
-- **`provenance`**: after `github-draft`, generates SLSA v1 provenance for the canonical artifact set via `slsa-framework/slsa-github-generator` (`generator_generic_slsa3.yml`, pinned by SHA) with `actions: read` + `id-token: write` + `contents: write`; uploads `sesslint-provenance.intoto.jsonl` to the release. Intentionally off the promote critical path until validated end-to-end.
-- **`image`**: downloads the ubuntu-leg binary via a 1-day workflow artifact, builds the `Dockerfile` image (distroless nonroot — glibc for the PyInstaller binary, no shell), smoke-tests `version --json`, then pushes `ghcr.io/<owner>/sesslint:<tag>` + `:latest` with `packages: write`. Non-blocking: `github-promote` does not wait on it.
-- **`pypi-publish`**: runs inside the protected **`pypi`** environment (required reviewer approval); re-verifies hashes; publishes **only** `.whl`/`.tar.gz` from `pypi_dist/` via `pypa/gh-action-pypi-publish` using Trusted Publisher/OIDC. **No PyPI API token exists in this repository or workflow.**
-- **`github-promote`**: only after PyPI success *and* all three binary legs — promotes the existing draft to public. It never creates a second release or re-uploads assets.
-
-### Maintainer setup (one-time, outside this repo's code)
-
-1. On `HPNChanel/sesslint`: create protected environment **`pypi`** with required reviewers (Settings → Environments).
-2. On PyPI (project does not exist yet): create a **pending Trusted Publisher** for owner `HPNChanel`, repo `sesslint`, workflow `release.yml`, environment `pypi`.
-3. **PyPI name recheck**: a pending Trusted Publisher does *not* reserve the name `sesslint`. Immediately before the first authorized publish, confirm `https://pypi.org/project/sesslint/` still 404s and the name is unclaimed. If claimed, stop — do not publish under a different name silently.
-
-### `SOURCE_DATE_EPOCH` rule
-
-The reproducibility epoch is **the tagged commit's committer timestamp** (`git show -s --format=%ct <sha>`), never the wall clock. T-08's byte-parity verification must use the identical rule so locally rebuilt artifacts predict the released bytes.
-
-### Partial-failure protocol (identical bytes only)
-
-If exactly one channel fails after artifacts are built:
-
-- GitHub Release failure → fix and re-run `github-draft` (or `github-promote`) — the same `release-dist` artifact bytes are re-attached.
-- PyPI failure → re-run only `pypi-publish` against the retained artifact set.
-- **Never** rebuild and upload different bytes under an already-published tag. If the bytes must change, the tag must move to a new version.
-
-### Execution gate
-
-This workflow is prepared but deliberately not executed by this task. Tagging `v0.1.0`, pushing, and the resulting publications require the explicit authorization recorded in `post-alpha-hardening-plan/T-09a`.
-
----
-
-## Native Binary Distribution
-
-SessLint additionally ships standalone executables so users without Python can
-run the CLI. They are produced by PyInstaller via `packaging/sesslint.spec`
-(onefile, console) driven by `scripts/package.py`. Both files are **build
-tooling**: they live outside `src/sesslint`, are never shipped in the wheel or
-sdist, and PyInstaller is declared only in the `packaging` optional-dependency
-group — `dependencies` stays empty (guarantee #1).
-
-### Local build
-
-```bash
-# Install the build-time-only toolchain
-pip install -e ".[packaging]"          # or: uv pip install "pyinstaller>=6"
-
-# Build for the host OS (PyInstaller cannot cross-compile)
-python scripts/package.py              # --platforms auto --outdir dist/bin
-```
-
-Output in `dist/bin/`:
-
-- `sesslint-<version>-<os>-<arch>[.exe]` — e.g. `sesslint-0.1.0-linux-x86_64`,
-  `sesslint-0.1.0-windows-x86_64.exe`, `sesslint-0.1.0-macos-arm64`. The version
-  comes from `src/sesslint/_version.py` (single source of truth).
-- `SHA256SUMS` — `"<sha256>  <name>"` per artifact, same format as
-  `sha256sum` output; verify with `sha256sum -c SHA256SUMS` inside the dir.
-- `<binary>.asc` — GPG detached signature, present only when `GPG_KEY_ID` is set.
-
-The bundled executable embeds `schemas/` at `share/sesslint/schemas` so the
-runtime schema lookup (`<sys.prefix>/share/sesslint/schemas`, the wheel's
-shared-data location) resolves identically inside the frozen bundle.
-
-### Signing (all OPT-IN — skipped cleanly when env vars are absent)
-
-| Env var(s) | Platform | Action |
-|---|---|---|
-| `CODESIGN_PFX` (+ optional `CODESIGN_PFX_PASSWORD`) or `CERT_THUMBPRINT` | Windows | `signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256` |
-| `APPLE_SIGNING_IDENTITY` | macOS | `codesign --force --options runtime --timestamp --sign <id>` |
-| `APPLE_NOTARY_PROFILE` | macOS | zip + `xcrun notarytool submit --keychain-profile <profile> --wait` |
-| `GPG_KEY_ID` | all | `gpg --detach-sign --armor` → `<binary>.asc` |
-
-Missing credentials or missing tools produce a warning and exit 0 — unsigned
-binaries are still emitted. The script itself performs no network access;
-only explicitly enabled signing tools may reach the network (Authenticode
-timestamping, Apple notarization).
-
-### Where the artifacts go
-
-- **GitHub Release**: the `binaries` matrix job in `release.yml` builds each
-  per-OS binary, smoke-tests it (`version --json` + `check` against
-  `fixtures/cli/check_basic/healthy.jsonl`), and attaches
-  `sesslint-*` + `SHA256SUMS-<os>` (+ optional `.asc`) to the draft release
-  via `gh release upload`. `github-promote` waits for all three legs so the
-  public release is complete.
-- **PyPI**: nothing — `pypi-publish` still ships only the wheel + sdist and
-  does not depend on `binaries`.
-
-## Package-Manager Channels
-
-Templates for Homebrew, Scoop, winget, and AUR live under `packaging/` and
-are rendered per release with pinned `version` + `sha256` — never hand-edit
-rendered manifests.
-
-### Rendering
-
-After the GitHub Release exists (artifacts + `SHA256SUMS-<os>` assets):
-
-```bash
-# download the release's checksum assets, then render every channel
-python scripts/render_manifests.py \
-  --version 0.2.0 \
-  --sums sha256sums.txt \
-  --sums SHA256SUMS-ubuntu-latest \
-  --sums SHA256SUMS-macos-latest \
-  --sums SHA256SUMS-windows-latest \
-  --out dist/manifests
-```
-
-The renderer fails closed on malformed sums, conflicting digests, unresolved
-placeholders, or unpaired `{if:key}` markers. `{if:key}` blocks cover
-conditional arch stanzas — an artifact absent from the sums drops its stanza.
-
-### Per-channel steps
-
-| Channel | Manifest | Update step |
-| ------- | -------- | ----------- |
-| Homebrew tap | `homebrew/sesslint.rb` | Commit rendered file as `Formula/sesslint.rb` in `HPNChanel/homebrew-tap` (create repo once) |
-| Scoop bucket | `scoop/sesslint.json` | Commit rendered file as `sesslint.json` in `HPNChanel/scoop-bucket` (create repo once) |
-| winget | `winget/*.yaml` | PR to `microsoft/winget-pkgs` under `manifests/h/HPNChanel/Sesslint/<version>/` — validate locally with `winget validate --manifest <dir>` |
-| AUR | `aur/PKGBUILD` | Publish `sesslint-bin` via an aur.archlinux.org account (manual; run `makepkg -si` smoke first) |
-
-Upstream channels (homebrew-core, Scoop Main, winget-pkgs acceptance) follow
-once self-hosted cadence is proven; record PR links in the T-04 task note.
+Use `Get-FileHash -Algorithm SHA256` on PowerShell. Check every artifact you
+install. Manifest verification checks hashes and required receipts; actual
+cryptographic verification is performed by cosign and slsa-verifier.
+
+## Evidence states and handoff
+
+- `LOCAL_READY`: the approved Windows source/artifact gates, normative benchmark
+  and all three installed-wheel measurements pass; external evidence is listed separately.
+- `CANDIDATE_VERIFIED`: exact candidate commit, complete signed artifacts and
+  actual acceptance receipts for every required platform, including clean Windows
+  on the exact final EXE hash, pass.
+- `PUBLISHED_VERIFIED`: downloaded artifacts from both required public channels
+  match the candidate and installed acceptance passes.
+
+Record version, commit, source-dirty status, SHA-256, epoch, host, toolchain,
+gate results and remaining external work. A dirty checkout's base commit is
+not its exact source identity; attach a source snapshot hash manifest.
+See [0.4.1 notes](docs/RELEASE_0.4.1.md) and the current
+[handoff evidence](docs/COMPLETION_0.4.1.md).
+
+GHCR and Homebrew/Scoop/winget/AUR remain prepared channels. Render their
+templates with `scripts/render_manifests.py` only from verified release
+checksums, then seek separate channel authorization. They do not block the
+CLI/API release and are not advertised as already available.
+
+## Windows transferable acceptance
+
+The Windows binary job builds `sesslint-0.4.1-acceptance-windows.zip` and runs
+its PowerShell 5.1 driver. The complete-set gate binds that ZIP and
+`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 32-case
+contract. Its logs are retained even on failure. See
+[Windows acceptance](docs/WINDOWS_ACCEPTANCE.md) for the no-Python walkthrough.
+Clean-machine qualification remains separate; retest if release CI changes EXE bytes.
+
+For local installed-wheel performance, use `bench/measure_installed.py --python
+<clean-venv-python> --artifact <verified-wheel> --input <protected-250k-fixture>
+--receipt <new-receipt.json>`. All three fresh processes must satisfy <=15 s and
+<512 MiB. Keep failures, record machine load, and never run this alongside tests
+or tracing. The normative source probe also accepts `--receipt <new-file.json>`.

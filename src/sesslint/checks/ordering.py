@@ -72,25 +72,27 @@ def check_ordering(
     """
     ctx = context if context is not None else CheckContext()
 
-    id_to_indices: dict[str, list[int]] = {}
+    id_to_index: dict[str, int] = {}
     for idx, ev in enumerate(events):
         eid = _event_id_safe(ev)
         if eid:
-            id_to_indices.setdefault(eid, []).append(idx)
+            id_to_index[eid] = -1 if eid in id_to_index else idx
 
     findings: list[Finding] = []
     for child_idx, child in enumerate(events):
         parent_id = _event_parent_id_safe(child)
         if not parent_id:
             continue
-        parent_indices = id_to_indices.get(parent_id)
-        if parent_indices is None or len(parent_indices) != 1:
+        parent_idx = id_to_index.get(parent_id)
+        if parent_idx is None or parent_idx < 0:
             continue  # missing parent (SL004) or duplicated parent id (SL003)
-        parent_idx = parent_indices[0]
         parent = events[parent_idx]
 
         child_ts_raw = _event_get(child, "ts")
         parent_ts_raw = _event_get(parent, "ts")
+        # Equal timestamps cannot be non-monotonic, including unavailable values.
+        if child_ts_raw is parent_ts_raw:
+            continue
         # Fast path: fixed-length RFC3339 UTC strings (``...Z``) sort
         # chronologically — equal-length lexicographic compare is exact and
         # skips two datetime parses on the dominant clean edge.

@@ -225,7 +225,12 @@ def repair_preview(
 
 def get_preview_schema_path() -> Path:
     """Return the packaged ``sesslint.preview/v1`` JSON Schema path."""
-    return Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.preview.v1.json"
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.preview.v1.json"
+    )
+    return schema_path("sesslint.preview.v1.json", development_path)
 
 
 def load_preview_schema() -> dict[str, Any]:

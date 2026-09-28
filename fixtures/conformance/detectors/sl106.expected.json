@@ -1,0 +1,42 @@
+{
+  "counts": {
+    "by_code": {
+      "SL006": 1,
+      "SL007": 1,
+      "SL106": 1
+    },
+    "by_severity": {
+      "error": 1,
+      "fatal": 0,
+      "info": 0,
+      "warning": 2
+    },
+    "total": 3
+  },
+  "findings": [
+    {
+      "code": "SL106",
+      "line": null,
+      "record_id": "evt-call-branch1",
+      "severity": "error"
+    },
+    {
+      "code": "SL006",
+      "line": null,
+      "record_id": "root-chain-2",
+      "severity": "warning"
+    },
+    {
+      "code": "SL007",
+      "line": null,
+      "record_id": "evt-call-branch1",
+      "severity": "warning"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl106_cross_branch.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL106"
+}

@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL103": 1
+    },
+    "by_severity": {
+      "error": 1,
+      "fatal": 0,
+      "info": 0,
+      "warning": 0
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL103",
+      "line": null,
+      "record_id": "evt-call-1",
+      "severity": "error"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl103_reused.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL103"
+}

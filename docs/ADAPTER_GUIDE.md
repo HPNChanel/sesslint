@@ -10,7 +10,7 @@ internal reference.
 
 ## 1. Architectural Role of Adapters
 
-In SessLint's architecture, an **Adapter** is a pure, side-effect-free translation layer. Its sole responsibility is parsing external agent session artifacts (e.g. Claude Code JSONL, OpenAI Agents SDK JSON, or custom orchestrator traces) into a normalized sequence of [`CanonicalEvent`](../src/sesslint/canonical.py) objects.
+In SessLint's architecture, an **Adapter** is a pure, side-effect-free translation layer. Its sole responsibility is parsing external agent session artifacts (e.g. Claude Code JSONL, OpenAI Agents SDK JSON, or custom orchestrator traces) into a normalized sequence of [`CanonicalEvent`](https://github.com/HPNChanel/sesslint/blob/main/src/sesslint/canonical.py) objects.
 
 ```mermaid
 flowchart LR
@@ -79,7 +79,7 @@ def load_<adapter>(
 ```
 
 - **Limits Enforcement**:
-  - Wrap stream iteration with [`ReaderLimits`](../src/sesslint/io.py) to prevent line-length or record-count resource exhaustion.
+  - Wrap stream iteration with [`ReaderLimits`](https://github.com/HPNChanel/sesslint/blob/main/src/sesslint/io.py) to prevent line-length or record-count resource exhaustion.
 - **Fail-Closed on Unknown Version (`SL301`)**:
   - Define an immutable version allowlist:
     ```python
@@ -106,7 +106,7 @@ def load_<adapter>(
 
 When an unknown record type or turn kind is encountered:
 1. Do not crash or discard the record silently.
-2. Filter the discriminator through [`safe_discriminator`](../src/sesslint/adapters/detect.py) before embedding in evidence:
+2. Filter the discriminator through [`safe_discriminator`](https://github.com/HPNChanel/sesslint/blob/main/src/sesslint/adapters/detect.py) before embedding in evidence:
    - Allowlisted safe alphanumeric identifiers ($\le 32$ chars, matching `^[a-zA-Z0-9_.-]+$`) are echoed verbatim.
    - Overlong or hostile strings containing punctuation, control characters, or secrets are bounded to `<type:len=N>` with `type_truncated=True`.
 
@@ -118,7 +118,7 @@ If external session records do not provide persistent, globally-unique IDs:
    sesslint:synthetic:<adapter_id>:<seq>:<hash8>
    ```
 2. **Helper API**:
-   Use [`synthetic_event_id`](../src/sesslint/adapters/synthetic.py):
+   Use [`synthetic_event_id`](https://github.com/HPNChanel/sesslint/blob/main/src/sesslint/adapters/synthetic.py):
    ```python
    from sesslint.adapters.synthetic import synthetic_event_id
 
@@ -130,7 +130,7 @@ If external session records do not provide persistent, globally-unique IDs:
    )
    ```
 3. **Collision Guard**:
-   Maintain a [`SyntheticIdCollisionGuard`](../src/sesslint/adapters/synthetic.py) instance during ingest to prevent duplicate IDs or collisions with native IDs.
+   Maintain a [`SyntheticIdCollisionGuard`](https://github.com/HPNChanel/sesslint/blob/main/src/sesslint/adapters/synthetic.py) instance during ingest to prevent duplicate IDs or collisions with native IDs.
 4. **Never Leak Legacy Prefixes**:
    Do **not** use prefixes like `rec_` or `evt_` for synthetic IDs. Native IDs must set `original_id=event_id`, while synthetic IDs must set `original_id=None`.
 
@@ -201,7 +201,7 @@ Every directory containing fixtures must have a `PROVENANCE.json` defining licen
 
 ## 3. Running the Conformance Suite
 
-SessLint provides a unified, data-driven cross-adapter conformance test suite in [`tests/conformance/test_adapter_suite.py`](../tests/conformance/test_adapter_suite.py).
+SessLint provides a unified, data-driven cross-adapter conformance test suite in [`tests/conformance/test_adapter_suite.py`](https://github.com/HPNChanel/sesslint/blob/main/tests/conformance/test_adapter_suite.py).
 
 To execute the suite locally:
 
@@ -328,4 +328,4 @@ opaque envelope to classify.
 
 ---
 
-*For questions or guidance on contributing adapters, open an issue using the [Adapter Request Template](../.github/ISSUE_TEMPLATE/adapter_request.md) or join repository discussions.*
+*For questions or guidance on contributing adapters, open an issue using the [Adapter Request Template](https://github.com/HPNChanel/sesslint/blob/main/.github/ISSUE_TEMPLATE/adapter_request.md) or join repository discussions.*

@@ -92,7 +92,7 @@ week of "can you share the file?" — "I can't, it's private."
 
 False positives happen. If `sesslint check` flags a session that loads fine,
 or `sesslint bundle` mislabels the format, file an issue here with the
-[Session Corruption](../.github/ISSUE_TEMPLATE/session_corruption.md)
+[Session Corruption](https://github.com/HPNChanel/sesslint/blob/main/.github/ISSUE_TEMPLATE/session_corruption.md)
 template — same rules: bundle JSON yes, raw transcript never.
 
 ## Related

@@ -579,8 +579,8 @@ def test_vendor_free() -> None:
             assert match is None, f"Forbidden vendor keyword '{match.group(0)}' found in {py_file}"
 
 
-def test_perf_10k_findings() -> None:
-    """Adversarial performance: planning over 10,000 findings finishes well under 2.0s."""
+def _measure_10k_findings() -> float:
+    """Keep the exact adversarial fixture for traced correctness and clean timing."""
     register_recipe(
         Recipe(
             name="stub-perf",
@@ -603,6 +603,30 @@ def test_perf_10k_findings() -> None:
 
     assert len(p.steps) == MAX_STEPS
     assert len(p.blocked) == count - MAX_STEPS
+    return duration
+
+
+def test_perf_10k_findings() -> None:
+    """10,000 findings / 2s, measured outside coverage; correctness stays traced."""
+    import os
+    import subprocess
+    import sys
+
+    _measure_10k_findings()
+    program = (
+        "from tests.repair.test_planner import _measure_10k_findings, clear_registry; "
+        "clear_registry(); print(_measure_10k_findings())"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=Path(__file__).resolve().parents[2],
+        env={k: v for k, v in os.environ.items() if not k.startswith("COVERAGE")},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    duration = float(result.stdout)
     assert duration < 2.0, f"Planner exceeded 2.0s threshold: took {duration:.3f}s"
 
 

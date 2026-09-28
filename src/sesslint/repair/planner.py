@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,6 +84,26 @@ EVENT_DROP_RECIPES: Final[frozenset[str]] = frozenset(
 SYNTHETIC_STEP_FP: Final[str] = "-"
 
 
+def _object(data: Any, label: str) -> Mapping[str, Any]:
+    """T-05: validate containers before conversion; never echo input values."""
+    if not isinstance(data, Mapping) or any(not isinstance(key, str) for key in data):
+        raise ValueError(f"{label} must be an object")
+    return data
+
+
+def _strings(data: Mapping[str, Any], fields: tuple[str, ...], label: str) -> None:
+    for name in fields:
+        if name in data and not isinstance(data[name], str):
+            raise ValueError(f"{label} {name} must be a string")
+
+
+def _counts(data: Any, label: str) -> Mapping[str, int]:
+    values = _object(data, label)
+    if any(type(value) is not int or value < 0 for value in values.values()):
+        raise ValueError(f"{label} must contain nonnegative integer counts")
+    return values
+
+
 @dataclass(frozen=True, slots=True)
 class PlanStep:
     """An individual proposed repair step in a repair plan."""
@@ -131,6 +150,20 @@ class PlanStep:
         silently defaulting ``min_policy`` would let a salvage-gated step pass a
         conservative policy check, so plans missing them fail closed.
         """
+        data = _object(data, "Plan step")
+        _strings(data, ("recipe", "min_policy", "recipe_version", "target_finding_fp"), "Plan step")
+        for name in ("seq", "target_index"):
+            value = data.get(name)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"Plan step {name} must be a nonnegative integer")
+        if "seq" in data and data["seq"] is None:
+            raise ValueError("Plan step seq must be a nonnegative integer")
+        if "min_policy" in data and data["min_policy"] not in ("conservative", "salvage"):
+            raise ValueError("Plan step min_policy is unsupported")
+        if "lossy" in data and type(data["lossy"]) is not bool:
+            raise ValueError("Plan step lossy must be a boolean")
+        _object(data.get("params", {}), "Plan step params")
+        _counts(data.get("loss", {}), "Plan step loss")
         for field_name in ("seq", "recipe", "min_policy", "recipe_version"):
             if field_name not in data:
                 raise ValueError(f"Plan step missing required field {field_name!r}")
@@ -188,6 +221,8 @@ class Blocked:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Blocked:
         """Deserialize a blocked-finding record."""
+        data = _object(data, "Blocked entry")
+        _strings(data, ("finding_fp", "code", "reason"), "Blocked entry")
         return cls(
             finding_fp=str(data.get("finding_fp", "")),
             code=str(data.get("code", "")),
@@ -218,7 +253,13 @@ class Loss:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Loss:
         """Deserialize loss accounting, tolerating absent totals."""
+        data = _object(data, "Loss accounting")
         loss_preview = data.get("preview", {})
+        _counts(loss_preview, "Loss preview")
+        for name in ("total_lost", "total_kept"):
+            value = data.get(name, 0)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"Loss {name} must be a nonnegative integer")
         return cls(
             preview=dict(loss_preview),
             total_lost=int(data.get("total_lost", 0)),
@@ -271,13 +312,21 @@ class RepairPlan:
         """Deserialize a RepairPlan from a dictionary (single authoritative path, DW-T-08).
 
         Accepts an optional ``{"expected_plan": {...}}`` wrapper. A missing or
-        non-string ``fingerprint`` is recomputed over the (unwrapped) plan
+        empty ``fingerprint`` is recomputed over the (unwrapped) plan
         dictionary. Required fields are enforced per :meth:`PlanStep.from_dict`.
         """
-        data = dict(raw_data)
+        data = dict(_object(raw_data, "Plan"))
         if "expected_plan" in data and isinstance(data["expected_plan"], Mapping):
             data = dict(data["expected_plan"])
 
+        _strings(data, ("source_hash", "profile", "version", "policy", "fingerprint"), "Plan")
+        if data.get("policy", "conservative") not in ("conservative", "salvage"):
+            raise ValueError("Plan policy is unsupported")
+        if not data.get("profile", "neutral"):
+            raise ValueError("Plan profile must not be empty")
+        for name in ("steps", "blocked"):
+            if not isinstance(data.get(name, []), (list, tuple)):
+                raise ValueError(f"Plan {name} must be an array")
         steps_list = [PlanStep.from_dict(s) for s in data.get("steps", [])]
         blocked_list = [Blocked.from_dict(b) for b in data.get("blocked", [])]
         loss = Loss.from_dict(data.get("loss_accounting", {}))
@@ -935,14 +984,12 @@ def plan(
 
 def get_plan_schema_path() -> Path:
     """Return the filesystem path to schemas/sesslint.plan.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.plan.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.plan.v1.json"
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent.parent / "schemas" / "sesslint.plan.v1.json"
+    )
+    return schema_path("sesslint.plan.v1.json", development_path)
 
 
 def load_plan_schema() -> dict[str, Any]:

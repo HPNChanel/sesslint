@@ -1,5 +1,8 @@
 # SessLint Adapter & Profile Compatibility Matrix
 
+This is the adapter/profile compatibility matrix, not the detector/recipe test matrix.
+See [tests/MATRIX.md](https://github.com/HPNChanel/sesslint/blob/main/tests/MATRIX.md) for coverage and [fixture index](https://github.com/HPNChanel/sesslint/blob/main/fixtures/INDEX.md) for inputs.
+
 This matrix documents the support status across SessLint format adapters and validation profiles (TASK-028, FR-037, FR-038).
 
 ---

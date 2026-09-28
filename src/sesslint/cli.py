@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import math
 import os
@@ -3281,6 +3282,13 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
 
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point returning exit code with top-level safety guarantees."""
+    # T-12: redirected Windows streams otherwise use the legacy ANSI code page.
+    # Reports and diagnostics must accept Unicode filenames even in a frozen
+    # executable, where PYTHONUTF8 may be ignored. Leave caller-owned StringIO
+    # and other custom streams untouched; importing the API has no side effects.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
     parser = create_parser()
     args = parser.parse_args(argv)
 

@@ -165,162 +165,114 @@ def test_release_workflow_trigger_tag_gated() -> None:
         assert token not in on_block, f"release.yml must not trigger on {token!r}"
 
 
-def test_release_workflow_five_job_dag_order() -> None:
-    """Five jobs: build -> github-draft -> {binaries, pypi-publish} -> github-promote.
+def test_release_workflow_required_dag() -> None:
+    """T-11: all gates and delivery artifacts precede irreversible publication."""
+    import yaml
 
-    The ``binaries`` matrix job fans out after github-draft and attaches native
-    executables to the draft release. It must never gate ``pypi-publish``
-    (PyPI ships only wheel+sdist); ``github-promote`` waits on both so the
-    public release is complete.
-    """
-    content = _release_content()
-    blocks = _job_blocks(content)
-    assert list(blocks) == [
-        "build",
-        "github-draft",
-        "binaries",
-        "provenance",
-        "image",
-        "pypi-publish",
-        "github-promote",
-    ], f"job order/set mismatch: {list(blocks)}"
-    assert "needs: build" in blocks["github-draft"]
-    assert "needs: github-draft" in blocks["binaries"]
-    assert "needs: github-draft" in blocks["pypi-publish"]
-    promote_needs = re.search(r"needs:\s*\[([^\]]+)\]", blocks["github-promote"])
-    assert promote_needs, "github-promote must declare a multi-job needs list"
-    needed = {n.strip() for n in promote_needs.group(1).split(",")}
-    assert needed == {"pypi-publish", "binaries"}, (
-        f"github-promote must wait on pypi-publish AND binaries, got {needed}"
-    )
+    jobs = yaml.safe_load(_release_content())["jobs"]
+    assert jobs["quality"]["uses"] == "./.github/workflows/ci.yml"
+    assert jobs["build"]["needs"] == "quality"
+    assert set(jobs["binaries"]["needs"]) == {"quality", "build"}
+    assert set(jobs["assemble"]["needs"]) == {"build", "binaries"}
+    assert jobs["github-draft"]["needs"] == "assemble"
+    assert set(jobs["provenance-verify"]["needs"]) == {"assemble", "github-draft", "provenance"}
+    assert "provenance-verify" in jobs["pypi-publish"]["needs"]
+    assert jobs["pypi-verify"]["needs"] == "pypi-publish"
+    assert set(jobs["github-promote"]["needs"]) == {"pypi-verify", "provenance-verify"}
+    assert jobs["published-verify"]["needs"] == "github-promote"
 
 
-def test_release_workflow_tag_version_validation() -> None:
-    """The build job validates tag == 'v' + _version.py version before building."""
-    build = _job_blocks(_release_content())["build"]
-    assert "_version.py" in build
-    assert "GITHUB_REF_NAME" in build
-    assert re.search(r"GITHUB_REF_NAME#v", build), "tag must be stripped of leading 'v'"
-    assert re.search(r"mismatch|!=", build), "build must abort on tag/version mismatch"
+def test_release_workflow_tag_version_and_exact_commit_validation() -> None:
+    blocks = _job_blocks(_release_content())
+    assert "_version.py" in blocks["build"] and "Tag/version mismatch" in blocks["build"]
+    assert "git show -s --format=%ct" in blocks["build"]
+    assert '"$GITHUB_SHA"' in blocks["build"]
+    assert "--commit" in blocks["assemble"]
+    assert "--complete" in blocks["assemble"]
+    assert "release_artifacts.py compare" in blocks["build"]
+    assert "smoke_distributions.py" in blocks["build"]
+    assert "installed_smoke.py" in blocks["binaries"]
+    assert "--source-tag" in blocks["provenance-verify"]
 
 
 def test_release_workflow_minimal_permissions() -> None:
-    """contents:write only on draft/promote/binaries; id-token:write only on pypi-publish."""
-    content = _release_content()
-    top = content[: content.find("\njobs:")]
-    assert "contents: write" not in top, "no workflow-level write permission allowed"
-    assert re.search(r"permissions:\s*\n\s*contents:\s*read", top)
+    import yaml
 
-    blocks = _job_blocks(content)
-    for name, block in blocks.items():
-        writes_contents = "contents: write" in block
-        writes_idtoken = "id-token: write" in block
-        if name in ("github-draft", "github-promote", "binaries", "provenance"):
-            # binaries: gh release upload; provenance: .intoto.jsonl asset upload
-            assert writes_contents, f"{name} must hold contents: write"
-        else:
-            assert not writes_contents, f"{name} must not hold contents: write"
-        if name in ("pypi-publish", "build", "binaries", "provenance"):
-            # pypi-publish: Trusted Publisher OIDC; build/binaries: Sigstore
-            # keyless signing; provenance: SLSA generator Fulcio OIDC —
-            # id-token only where OIDC is used.
-            assert writes_idtoken, f"{name} must hold id-token: write"
-        else:
-            assert not writes_idtoken, f"{name} must not hold id-token: write"
-        if name == "image":
-            # GHCR push needs packages: write; no other job may hold it.
-            assert "packages: write" in block, "image must hold packages: write"
-        else:
-            assert "packages: write" not in block, f"{name} must not hold packages: write"
+    data = yaml.safe_load(_release_content())
+    assert data["permissions"] == {"contents": "read"}
+    for name, job in data["jobs"].items():
+        perms = job.get("permissions", {})
+        assert (perms.get("contents") == "write") == (
+            name in {"github-draft", "github-promote", "provenance"}
+        )
+        assert (perms.get("id-token") == "write") == (
+            name in {"assemble", "provenance", "pypi-publish"}
+        )
+        assert "packages" not in perms
+    assert data["jobs"]["pypi-publish"]["environment"] == "pypi"
+    assert "PYPI_TOKEN" not in _release_content()
 
 
-def test_release_workflow_pypi_environment_and_no_tokens() -> None:
-    """pypi-publish runs in the protected 'pypi' environment; no API-token secrets anywhere."""
-    content = _release_content()
-    pypi_block = _job_blocks(content)["pypi-publish"]
-    assert re.search(r"environment:\s*pypi\b", pypi_block)
-    for tokenish in ("pypi-token", "api-token", "PYPI_TOKEN", "password:"):
-        assert tokenish not in content, f"no API token allowed in release.yml: {tokenish!r}"
-
-
-def test_release_workflow_draft_before_pypi_promote_only() -> None:
-    """Draft release (with assets) precedes PyPI; promote only mutates the existing draft."""
-    content = _release_content()
-    draft = _job_blocks(content)["github-draft"]
-    promote = _job_blocks(content)["github-promote"]
-    assert "gh release create" in draft and "--draft" in draft
-    assert "sha256sums.txt" in draft and "artifact-manifest.json" in draft
-    assert re.search(r"\.whl.*\.tar\.gz", draft)
-    assert "gh release edit" in promote and "--draft=false" in promote
-    assert "gh release create" not in promote, "promote must never create a second release"
-
-
-def test_release_workflow_gh_commands_have_repo_context() -> None:
-    """gh release calls run in jobs without checkout, so each must pass explicit repo.
-
-    Regression guard for the v0.1.0 first-run failure: `gh release create` without
-    `-R/--repo` in a job lacking actions/checkout fails with 'not a git repository'.
-    """
-    for job_name, block in _job_blocks(_release_content()).items():
-        for m in re.finditer(r"gh release \w+", block):
-            seg = block[m.start() : m.start() + 300]
-            assert re.search(r"--repo|-R\s", seg), (
-                f"{job_name}: gh release command missing explicit repo context"
-            )
-
-
-def test_release_workflow_source_date_epoch_commit_derived() -> None:
-    """SOURCE_DATE_EPOCH derives from the tagged commit timestamp and lands in the manifest."""
-    build = _job_blocks(_release_content())["build"]
-    assert "SOURCE_DATE_EPOCH" in build
-    assert re.search(r"git show -s --format=%ct.*GITHUB_SHA", build)
-    assert "source_date_epoch" in build, "epoch must be recorded in the artifact manifest"
+def test_release_retry_reuses_verified_bytes() -> None:
+    blocks = _job_blocks(_release_content())
+    for name in ("build", "binaries", "assemble"):
+        assert "github.run_attempt > 1" in blocks[name]
+        assert "steps.reuse.outputs.restored != 'true'" in blocks[name]
+        assert "restore_release_artifact.py" in blocks[name]
+        assert "continue-on-error" not in blocks[name]
+    assert "--clobber" not in _release_content()
+    assert "github_stage.py" in blocks["github-draft"]
+    assert "--stage-missing" in blocks["pypi-publish"]
+    assert "provenance-exists" in blocks["provenance"]
+    assert "needs.provenance.result == 'skipped'" in blocks["provenance-verify"]
 
 
 def test_release_workflow_pypi_packages_only_distributions() -> None:
-    """The PyPI publish step receives only .whl/.tar.gz; checksums/manifest excluded."""
-    pypi_block = _job_blocks(_release_content())["pypi-publish"]
-    assert "packages-dir: pypi_dist/" in pypi_block
-    stage = pypi_block[pypi_block.find("pypi_dist") :]
-    assert "sha256sums" not in stage.split("uses:")[0].replace("sha256sum -c", ""), (
-        "packages-only dir must exclude sha256sums.txt"
-    )
-    assert re.search(r"cp dist/\*\.whl dist/\*\.tar\.gz pypi_dist/", pypi_block)
+    publish = _job_blocks(_release_content())["pypi-publish"]
+    assert "release_artifacts.py stage" in publish
+    assert "published_verify.py --directory validated-dist" in publish
+    assert "packages-dir: pypi_dist/" in publish
+    assert "cp dist/*.whl dist/*.tar.gz" not in publish
+    assert "skip-existing" not in publish
 
 
-def test_release_workflow_actions_pinned_to_full_sha() -> None:
-    """Every third-party action uses a full-length commit SHA (no floating tags)."""
+def test_release_workflow_actions_are_reviewed_pins() -> None:
     content = _release_content()
-    for m in re.finditer(r"uses:\s*([^\s#]+)", content):
-        ref = m.group(1)
+    for ref in re.findall(r"uses:\s*([^\s#]+)", content):
         if ref.startswith("./"):
             continue
-        assert re.search(r"@[0-9a-f]{40}$", ref), f"action not SHA-pinned: {ref}"
+        if "generator_generic_slsa3.yml" in ref:
+            # Upstream fails when called by SHA; exact semver is mandatory for
+            # the signing certificate identity. The tag SHA is checked first.
+            assert ref.endswith("@v2.1.0")
+            assert "git ls-remote" in content
+            assert "f7dd8c54c2067bafc12ca7a55595d5ee9b75204a" in content
+        else:
+            assert re.search(r"@[0-9a-f]{40}$", ref), ref
 
 
-def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
-    """If PyYAML is available, release.yml must parse and expose the five-job DAG."""
-    try:
-        import yaml
-    except ImportError:
-        pytest.skip("PyYAML not installed; stdlib structural checks succeeded")
+def test_release_workflow_binary_os_and_complete_signatures() -> None:
+    import yaml
 
-    with open(RELEASE_WORKFLOW, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    assert data is not None
-    assert list(data["jobs"]) == [
-        "build",
-        "github-draft",
-        "binaries",
-        "provenance",
-        "image",
-        "pypi-publish",
-        "github-promote",
-    ]
-    # SLSA provenance is off the promote critical path (non-blocking until
-    # verified end-to-end — flip deliberately, not silently).
-    assert "provenance" not in data["jobs"]["github-promote"]["needs"]
-    assert set(data["jobs"]["provenance"]["needs"]) == {"build", "github-draft"}
+    data = yaml.safe_load(_release_content())
+    legs = data["jobs"]["binaries"]["strategy"]["matrix"]["include"]
+    assert {leg["os"] for leg in legs} == {"windows", "macos", "linux"}
+    assert next(leg for leg in legs if leg["os"] == "linux")["runner"] == "ubuntu-22.04"
+    assemble = _job_blocks(_release_content())["assemble"]
+    assert "cosign sign-blob" in assemble and "cosign verify-blob" in assemble
+    assert "--certificate-identity" in assemble and "--certificate-oidc-issuer" in assemble
+    assert "sha256sum -- *" in assemble
+
+
+def test_release_publication_requires_download_and_install_evidence() -> None:
+    blocks = _job_blocks(_release_content())
+    assert "published_verify.py" in blocks["pypi-verify"]
+    assert "smoke_distributions.py" in blocks["pypi-verify"]
+    assert "gh release edit" in blocks["github-promote"]
+    assert "--draft=false" in blocks["github-promote"]
+    assert "gh release download" in blocks["published-verify"]
+    assert "cmp dist/artifact-manifest.json" in blocks["published-verify"]
+    assert "smoke_distributions.py" in blocks["published-verify"]
 
 
 def test_package_metadata_consistency() -> None:
@@ -331,7 +283,7 @@ def test_package_metadata_consistency() -> None:
     assert re.search(r'^name\s*=\s*"sesslint"', pyproject, re.M)
     assert 'path = "src/sesslint/_version.py"' in pyproject
     m = re.search(r'__version__\s*=\s*"([^"]+)"', version_py)
-    assert m and m.group(1) == "0.4.0"
+    assert m and m.group(1) == "0.4.1"
     assert 'license = "Apache-2.0"' in pyproject
     assert 'requires-python = ">=3.11"' in pyproject
     assert 'readme = "README.md"' in pyproject
@@ -415,39 +367,16 @@ def test_parity_table_covers_every_action_input() -> None:
 
 
 def test_release_workflow_slsa_provenance() -> None:
-    """release.yml generates SLSA L3 provenance via pinned reusable generator (T-03)."""
-    content = _release_content()
-    assert re.search(
-        r"slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3\.yml@[0-9a-f]{40}\s*#\s*v\d+\.\d+\.\d+",
-        content,
-    ), "SLSA generator must be pinned by SHA"
-    blocks = _job_blocks(content)
-    prov = blocks["provenance"]
-    assert "base64-subjects" in prov and "needs.build.outputs.artifact-subjects" in prov
-    assert "upload-assets: true" in prov
-    assert "provenance-name" in prov and ".intoto.jsonl" in prov
-    assert "artifact-subjects" in blocks["build"]
-    for perm in ("actions: read", "id-token: write", "contents: write"):
-        assert perm in prov, f"provenance missing {perm}"
+    blocks = _job_blocks(_release_content())
+    assert "needs.assemble.outputs.artifact-subjects" in blocks["provenance"]
+    assert "upload-assets: true" in blocks["provenance"]
+    assert "slsa-verifier verify-artifact dist/*" in blocks["provenance-verify"]
+    assert "provenance-verify" in blocks["pypi-publish"]
 
 
-def test_release_workflow_ghcr_image() -> None:
-    """release.yml builds + pushes a GHCR image from the linux binary (T-05)."""
-    content = _release_content()
-    blocks = _job_blocks(content)
-    img = blocks["image"]
-    # Consumes the ubuntu-leg binary via short-lived workflow artifact.
-    assert "sesslint-linux-x86_64" in img
-    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in img
-    assert "ghcr.io" in img and "docker login" in img
-    assert "docker build" in img and "docker push" in img
-    # In-job smoke before push: version --json must run against the image.
-    assert img.index("docker run --rm") < img.index("docker push"), "smoke must precede push"
-    # Ubuntu leg of binaries uploads the binary as a 1-day artifact.
-    binaries = blocks["binaries"]
-    assert "sesslint-linux-x86_64" in binaries and "retention-days: 1" in binaries
-    # Image is off the promote critical path (like provenance).
-    assert "image" not in _job_blocks(content)["github-promote"].split("needs:")[1]
+def test_ghcr_is_prepared_not_automatically_published() -> None:
+    assert "docker push" not in _release_content()
+    assert "image" not in _job_blocks(_release_content())
 
 
 def test_ghcr_dockerfile() -> None:

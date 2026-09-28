@@ -15,7 +15,7 @@ Invariants verified:
 5. Declared metadata (handles, lossy, salvage_only) in markdown docs matches the live registry.
 6. The recipe catalog in README.md matches the live registry (names, partition, count).
 7. The recipe catalog in docs/recipes/README.md matches the live registry.
-8. RELEASING.md checklist verifies the exact count of 12 recipes.
+8. RELEASING.md checklist verifies the exact count of 13 recipes.
 9. Negative unit tests prove that the catalog-lock assertions catch drift.
 """
 
@@ -303,7 +303,7 @@ def test_recipes_readme_catalog_matches_registry() -> None:
 
 
 def test_releasing_checklist_recipe_count() -> None:
-    """Assert RELEASING.md checklist has the correct 12 recipes count."""
+    """Assert RELEASING.md checklist has the correct 13 recipes count."""
     text = RELEASING_PATH.read_text(encoding="utf-8")
     assert "- [ ] All 13 repair recipes have synced documentation" in text, (
         "RELEASING.md checklist must mention 'All 13 repair recipes'"

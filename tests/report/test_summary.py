@@ -88,7 +88,10 @@ def test_summary_header_warning_state() -> None:
     assert "verdict: healthy with warnings" in first_line
     assert "errors: 0" in first_line
     assert "warnings: 1" in first_line
-    assert "Next Action: Review warnings; session is structurally replayable." in rendered
+    assert (
+        "Next Action: Review warnings and the reported assurance limits before resuming."
+        in rendered
+    )
 
 
 def test_disclaimer_sentences_present_verbatim() -> None:

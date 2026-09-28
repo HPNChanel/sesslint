@@ -154,7 +154,37 @@ _SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
     ),
 )
 
+# Bytes IGNORECASE folds ASCII only. The generic pattern's value character
+# class is case-independent, so matching a lowered shadow preserves every
+# span. Slice values from the original bytes below to preserve secret digests.
+# Keeping the original pattern above makes the equivalence testable (T-10).
+_GENERIC_ASSIGNMENT_LOWER: Final[re.Pattern[bytes]] = re.compile(
+    next(
+        pattern.pattern
+        for name, pattern, _ in _SECRET_FAMILIES
+        if name == "generic-credential-assignment"
+    )
+)
+
 SECRET_FAMILY_IDS: Final[tuple[str, ...]] = tuple(f[0] for f in _SECRET_FAMILIES)
+
+# Necessary literals, never sufficient matches (T-10). Avoid running every
+# negative-lookbehind regex across a giant record merely because one family
+# made the window gate positive. The exact family regex remains authoritative.
+_FAMILY_LITERALS: Final[dict[str, tuple[bytes, ...]]] = {
+    "anthropic-api-key": (b"sk-ant-",),
+    "openai-api-key": (b"sk-",),
+    "openrouter-api-key": (b"sk-or-v1-",),
+    "github-pat-classic": (b"ghp_",),
+    "github-pat-fine-grained": (b"github_pat_",),
+    "github-oauth-token": (b"gho_", b"ghs_", b"ghr_", b"ghu_"),
+    "stripe-webhook-secret": (b"whsec_",),
+    "stripe-key": (b"sk_live_", b"sk_test_", b"rk_live_", b"rk_test_"),
+    "aws-access-key": (b"AKIA", b"ASIA"),
+    "supabase-pat": (b"sbp_",),
+    "jwt": (b"eyJ",),
+    "private-key-block": (b"PRIVATE KEY-----",),
+}
 
 # --- Gate layer ------------------------------------------------------------
 # Per-line regex scanning does not meet the perf contract (~75-190us/line on
@@ -327,12 +357,14 @@ class SecretScanTracker:
 
     def __init__(self) -> None:
         self._hits: dict[_HitKey, _HitAgg] = {}
-        self._pending: list[tuple[bytes, int | None, int | None, int | None, int | None]] = []
+        self._pending: list[
+            tuple[bytes | memoryview, int | None, int | None, int | None, int | None]
+        ] = []
         self._pending_bytes = 0
 
     def feed(
         self,
-        raw_bytes: bytes,
+        raw_bytes: bytes | memoryview,
         *,
         line_number: int | None,
         byte_offset: int | None,
@@ -344,7 +376,9 @@ class SecretScanTracker:
         Called for every non-empty physical record — including records the
         adapter later rejects — so secrets in malformed lines are still
         surfaced. Cheap: an append plus a counter per record; the gate and
-        family regexes run at window flush, not per line.
+        family regexes run at window flush, not per line. ``memoryview``
+        spans are accepted zero-copy and only materialized to bytes when a
+        window actually passes the superset gate (T-10).
         """
         if not raw_bytes:
             return
@@ -359,9 +393,12 @@ class SecretScanTracker:
             return
         if _gate_maybe_contains_secret(b"".join(item[0] for item in self._pending)):
             for raw, line_number, byte_offset, byte_end, record_ordinal in self._pending:
-                if _line_gate_maybe_contains_secret(raw):
+                # bytes ``in``/lower() semantics need a materialized copy;
+                # memoryview silently misses multi-byte literals otherwise.
+                raw_b = raw.tobytes() if type(raw) is memoryview else raw
+                if _line_gate_maybe_contains_secret(raw_b):
                     self._scan_record(
-                        raw,
+                        raw_b,
                         line_number=line_number,
                         byte_offset=byte_offset,
                         byte_end=byte_end,
@@ -381,8 +418,23 @@ class SecretScanTracker:
     ) -> None:
         """Run the exact family patterns over one record's raw bytes."""
         for family_id, pattern, value_group in _SECRET_FAMILIES:
-            for match in pattern.finditer(raw_bytes):
-                secret_bytes = match.group(value_group)
+            anchors = _FAMILY_LITERALS.get(family_id)
+            if anchors is not None and not any(anchor in raw_bytes for anchor in anchors):
+                continue
+            if family_id == "telegram-bot-token" and _GATE_TOKEN_TAIL.search(raw_bytes) is None:
+                continue
+            generic = family_id == "generic-credential-assignment"
+            matches = (
+                _GENERIC_ASSIGNMENT_LOWER.finditer(raw_bytes.lower())
+                if generic
+                else pattern.finditer(raw_bytes)
+            )
+            for match in matches:
+                secret_bytes = (
+                    raw_bytes[match.start(value_group) : match.end(value_group)]
+                    if generic
+                    else match.group(value_group)
+                )
                 if family_id == "generic-credential-assignment" and _looks_like_placeholder(
                     secret_bytes
                 ):

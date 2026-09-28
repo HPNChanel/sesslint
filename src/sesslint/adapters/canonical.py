@@ -60,6 +60,7 @@ from sesslint.io import (
     DEFAULT_READER_LIMITS,
     DuplicateKey,
     ReaderLimits,
+    _DuplicateAwareDecoder,
     _validate_stream_coordinates,
     check_nesting_depth,
     decode_json_dupaware,
@@ -264,6 +265,23 @@ def _safe_type_value(val: Any) -> str:
 # byte-exact and the serialized schema clean.
 _INTERNAL_SOURCE_KEYS: Final = frozenset({"links", "record_sizes"})
 
+# Non-whitespace byte matcher: bytes.strip() semantics (space, \t, \n, \r,
+# \x0b, \x0c) without allocating a per-line copy (T-10).
+_NON_WS_BYTES: Final[re.Pattern[bytes]] = re.compile(rb"[^ \t\n\r\x0b\x0c]")
+
+
+def _classify_session_doc(candidate: Any) -> bool:
+    """Whether a decoded JSON value is a canonical single-document session."""
+    if isinstance(candidate, dict) and "events" in candidate:
+        return True
+    if (
+        isinstance(candidate, dict)
+        and ("schema" in candidate or "version" in candidate)
+        and ("schema_version" not in candidate and "session_id" not in candidate)
+    ):
+        return True
+    return not isinstance(candidate, dict)
+
 
 def dump_canonical(
     events: Sequence[CanonicalEvent] | Session,
@@ -433,6 +451,56 @@ def _safe_evidence_val(val: Any) -> str | None:
         return "<sanitized_control_chars>"
 
 
+_COMMON_EVENT_KEYS: Final[frozenset[str]] = frozenset(
+    {"id", "parent_id", "seq", "ts", "actor", "kind", "payload"}
+)
+
+
+def _common_event(
+    raw: dict[str, Any], validated_timestamps: set[str] | None
+) -> SessionEvent | None:
+    """T-10: equivalent fast path for fully valid, undecorated message records.
+
+    Any unproved condition returns to the diagnostic parser. Unknown fields,
+    malformed values, tool effects and extension metadata never bypass it.
+    Timestamp successes are cached only within this load, with a fixed bound.
+    """
+    if raw.keys() != _COMMON_EVENT_KEYS or raw["kind"] != "message":
+        return None
+    rec_id, parent, seq, ts = raw["id"], raw["parent_id"], raw["seq"], raw["ts"]
+    actor, payload = raw["actor"], raw["payload"]
+    if (
+        not isinstance(rec_id, str)
+        or _safe_rec_id(rec_id) != rec_id
+        or (parent is not None and (not isinstance(parent, str) or not parent.strip()))
+        or type(seq) is not int
+        or seq < 0
+        or not isinstance(ts, str)
+        or not isinstance(actor, str)
+        or actor not in VALID_ACTORS
+        or type(payload) is not dict
+        or "side_effects" in payload
+    ):
+        return None
+    if validated_timestamps is None or ts not in validated_timestamps:
+        try:
+            _validate_rfc3339_utc(ts, "ts")
+        except SchemaError:
+            return None
+        if validated_timestamps is not None and len(validated_timestamps) < 256:
+            validated_timestamps.add(ts)
+    return SessionEvent(
+        id=rec_id,
+        parent_id=parent,
+        seq=seq,
+        ts=sys.intern(ts),
+        actor=cast(ActorLiteral, sys.intern(actor)),
+        kind="message",
+        payload=payload,
+        extra_fields=_EMPTY_EXTRA_FIELDS,
+    )
+
+
 def _parse_canonical_event_record(
     ev_raw: dict[str, Any],
     idx: int,
@@ -444,8 +512,14 @@ def _parse_canonical_event_record(
     byte_end: int | None = None,
     record_ordinal: int | None = None,
     drift: DriftTracker | None = None,
+    validated_timestamps: set[str] | None = None,
 ) -> SessionEvent:
     """Parse and validate a single canonical event record, emitting findings as needed."""
+
+    common = _common_event(ev_raw, validated_timestamps)
+    if common is not None:
+        # No foreign `type` signature exists in this exact key set.
+        return common
 
     def _ev_dict(base: dict[str, Any]) -> dict[str, Any]:
         if byte_offset is not None and byte_end is not None and record_ordinal is not None:
@@ -984,30 +1058,47 @@ def _load_canonical(
             )
             return EventList([], source=source_metadata), [finding]
 
-        # Check if single-document JSON
+        # Check if single-document JSON. T-10 fast probe: decode only the
+        # first physical line — a complete JSON value followed by
+        # non-whitespace bytes is a JSONL stream, so the dominant streaming
+        # path skips the whole-file decode entirely. A first line that is
+        # not a complete value (pretty-printed document, malformed record)
+        # falls back to the original whole-document parse.
         is_single_doc = False
         doc: Any = None
         doc_dup_keys: tuple[DuplicateKey, ...] = ()
         doc_dups_truncated = False
+        probe_end = data.find(b"\n")
+        probe_src = data[:probe_end] if probe_end != -1 else data
+        probe_doc: Any = None
+        probe_ok = False
         try:
-            decoded_text = data.decode("utf-8", errors="strict")
-            doc, doc_dup_keys, doc_dups_truncated = decode_json_dupaware(
-                decoded_text, critical_keys=CRITICAL_KEYS
+            probe_text = probe_src.decode("utf-8", errors="strict")
+            probe_doc, doc_dup_keys, doc_dups_truncated = decode_json_dupaware(
+                probe_text, critical_keys=CRITICAL_KEYS
             )
-            if isinstance(doc, dict) and "events" in doc:
-                is_single_doc = True
-            elif (
-                isinstance(doc, dict)
-                and ("schema" in doc or "version" in doc)
-                and ("schema_version" not in doc and "session_id" not in doc)
-            ):
-                # Malformed single-doc missing 'events'
-                is_single_doc = True
-            elif not isinstance(doc, dict):
-                # Valid JSON value that is not an object (e.g. array, integer, string)
-                is_single_doc = True
+            probe_ok = True
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-            is_single_doc = False
+            probe_ok = False
+        if probe_ok:
+            has_trailing_content = (
+                probe_end != -1 and _NON_WS_BYTES.search(data, probe_end + 1, len(data)) is not None
+            )
+            is_single_doc = not has_trailing_content and _classify_session_doc(probe_doc)
+            doc = probe_doc
+        else:
+            try:
+                decoded_text = data.decode("utf-8", errors="strict")
+                doc, doc_dup_keys, doc_dups_truncated = decode_json_dupaware(
+                    decoded_text, critical_keys=CRITICAL_KEYS
+                )
+                is_single_doc = _classify_session_doc(doc)
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                is_single_doc = False
+            # T-10: the decoded whole-file probe is no longer needed once
+            # parsed. Keeping it during JSONL materialization needlessly
+            # retains another full input-sized allocation (~100 MB).
+            decoded_text = ""
 
         if is_single_doc:
             # SL009: single-doc records cannot be mapped to physical byte
@@ -1245,6 +1336,10 @@ def _load_canonical(
         curr_offset = 0
         raw_len = len(raw_data)
         line_no = 0
+        # Zero-copy view for SL009 feeds: the tracker only buffers the span
+        # until its 64 KiB window flush, so a view avoids one full-content
+        # memcpy per record (T-10). raw_data outlives every buffered view.
+        raw_view = memoryview(raw_data)
 
         while curr_offset < raw_len:
             line_no += 1
@@ -1257,7 +1352,11 @@ def _load_canonical(
             start_pos = curr_offset
             curr_offset = end_pos
 
-            if not raw_data[start_pos:end_pos].strip():
+            # Blank-line check without slicing: whitespace-only spans are
+            # skipped (bytes.strip() whitespace class) but still count for
+            # physical line coordinates.
+            span_end = nl_pos if nl_pos != -1 else raw_len
+            if _NON_WS_BYTES.search(raw_data, start_pos, span_end) is None:
                 continue
 
             line_nos.append(line_no)
@@ -1266,7 +1365,7 @@ def _load_canonical(
             # SL009: scan every non-empty record's raw bytes during this same
             # pass — including records later rejected as malformed or unknown.
             secret_tracker.feed(
-                raw_data[start_pos:end_pos],
+                raw_view[start_pos:end_pos],
                 line_number=line_no,
                 byte_offset=start_pos,
                 byte_end=end_pos,
@@ -1485,25 +1584,35 @@ def _load_canonical(
             )
 
         events_stream: list[SessionEvent] = []
+        validated_timestamps: set[str] = set()
+        record_decoder = _DuplicateAwareDecoder(CRITICAL_KEYS)
         for ev_idx in range(event_count):
             line_no = line_nos[ev_idx + 1]
             ev_byte_offset = line_starts[ev_idx + 1]
             ev_byte_end = line_ends[ev_idx + 1]
-            ev_chunk = raw_data[ev_byte_offset:ev_byte_end]
             is_terminal = ev_idx == event_count - 1
             ev_ordinal = ev_idx + 2
-            _validate_stream_coordinates(ev_byte_offset, ev_byte_end, ev_ordinal)
-            source_metadata["record_sizes"].append(ev_byte_end - ev_byte_offset)
-            ev_coord_ev: dict[str, Any] = {
-                "byte_offset": ev_byte_offset,
-                "byte_end": ev_byte_end,
-                "record_ordinal": ev_ordinal,
-            }
-            try:
-                ev_str = ev_chunk.decode("utf-8", errors="strict").strip()
-                ev_raw, ev_dup_keys, ev_dups_truncated = decode_json_dupaware(
-                    ev_str, critical_keys=CRITICAL_KEYS
+            # Same invariant as _validate_stream_coordinates, inlined: the
+            # offsets/ordinal are computed from our own line index above, so
+            # only the ordering bounds can ever be violated (DEV-006).
+            if ev_byte_end < ev_byte_offset or ev_byte_offset < 0 or ev_ordinal < 1:
+                raise ValueError(
+                    f"Invalid stream coordinates: {ev_byte_offset}..{ev_byte_end} "
+                    f"ordinal={ev_ordinal}"
                 )
+            source_metadata["record_sizes"].append(ev_byte_end - ev_byte_offset)
+            # Decode the record without its terminating newline: the decoded
+            # text then needs no strip copy for clean records (T-10). Decode
+            # errors keep identical positions — a trailing \n is never part
+            # of an invalid UTF-8 sequence.
+            content_end = ev_byte_end
+            if content_end > ev_byte_offset and raw_data[content_end - 1] == 0x0A:
+                content_end -= 1
+            try:
+                ev_str = (
+                    raw_data[ev_byte_offset:content_end].decode("utf-8", errors="strict").strip()
+                )
+                ev_raw, ev_dup_keys, ev_dups_truncated = record_decoder.decode(ev_str)
             except UnicodeDecodeError as err:
                 code = SL002 if is_terminal else SL001
                 rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
@@ -1520,7 +1629,9 @@ def _load_canonical(
                         message_template=msg,
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
                         evidence={
-                            **ev_coord_ev,
+                            "byte_offset": ev_byte_offset,
+                            "byte_end": ev_byte_end,
+                            "record_ordinal": ev_ordinal,
                             "reason": "invalid_utf8",
                             "detail": str(err),
                         },
@@ -1543,7 +1654,9 @@ def _load_canonical(
                         message_template=msg,
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
                         evidence={
-                            **ev_coord_ev,
+                            "byte_offset": ev_byte_offset,
+                            "byte_end": ev_byte_end,
+                            "record_ordinal": ev_ordinal,
                             "reason": "malformed_json",
                             "detail": str(err),
                         },
@@ -1551,15 +1664,16 @@ def _load_canonical(
                 )
                 continue
 
-            for dup_finding in dup_key_findings(
-                ev_dup_keys,
-                truncated=ev_dups_truncated,
-                path_str=path_str,
-                line=line_no,
-                record_id=extract_record_id(ev_str, ev_raw),
-                record_ordinal=ev_ordinal,
-            ):
-                add_finding(dup_finding)
+            if ev_dup_keys or ev_dups_truncated:
+                for dup_finding in dup_key_findings(
+                    ev_dup_keys,
+                    truncated=ev_dups_truncated,
+                    path_str=path_str,
+                    line=line_no,
+                    record_id=extract_record_id(ev_str, ev_raw),
+                    record_ordinal=ev_ordinal,
+                ):
+                    add_finding(dup_finding)
 
             if not isinstance(ev_raw, dict):
                 code = SL002 if is_terminal else SL001
@@ -1577,14 +1691,25 @@ def _load_canonical(
                         message_template=msg,
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
                         evidence={
-                            **ev_coord_ev,
+                            "byte_offset": ev_byte_offset,
+                            "byte_end": ev_byte_end,
+                            "record_ordinal": ev_ordinal,
                             "reason": "event_not_dict",
                         },
                     )
                 )
                 continue
 
-            if not check_nesting_depth(ev_raw, effective_limits.max_depth):
+            # The proved common shape contains only scalar fields and a dict
+            # payload. Its payload root is exactly one level below the record;
+            # retain the whole-record walk for every other shape (T-10).
+            common = _common_event(ev_raw, validated_timestamps)
+            depth_ok = (
+                check_nesting_depth(common.payload, effective_limits.max_depth - 1)
+                if common is not None
+                else check_nesting_depth(ev_raw, effective_limits.max_depth)
+            )
+            if not depth_ok:
                 add_finding(
                     make_finding(
                         code=SL001,
@@ -1596,11 +1721,17 @@ def _load_canonical(
                         ),
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
                         evidence={
-                            **ev_coord_ev,
+                            "byte_offset": ev_byte_offset,
+                            "byte_end": ev_byte_end,
+                            "record_ordinal": ev_ordinal,
                             "reason": "depth_exceeded",
                         },
                     )
                 )
+                continue
+
+            if common is not None:
+                events_stream.append(common)
                 continue
 
             event = _parse_canonical_event_record(
@@ -1613,6 +1744,7 @@ def _load_canonical(
                 byte_end=ev_byte_end,
                 record_ordinal=ev_ordinal,
                 drift=drift,
+                validated_timestamps=validated_timestamps,
             )
             events_stream.append(event)
 

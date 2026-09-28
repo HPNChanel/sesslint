@@ -14,10 +14,12 @@ from sesslint.report import (
     load_report_schema,
     render_json,
 )
+from tests.utils.schema import assert_schema
 
 
 def _validate_report_dict_strictly(data: dict[str, Any], *, include_content: bool = False) -> None:
     """Hand-rolled strict schema validator conforming to schemas/sesslint.report.v1.json."""
+    assert_schema(data, "sesslint.report.v1.json")
     # Root required keys
     assert data["schema_version"] == "sesslint.report/v1"
     assert isinstance(data["session_id"], str) and data["session_id"]

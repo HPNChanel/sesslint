@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL204": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL204",
+      "line": 5,
+      "record_id": "sesslint:synthetic:codex_rollout:5:18c887fd",
+      "severity": "warning"
+    }
+  ],
+  "format": "codex-rollout",
+  "input": "checks/sl204_usage_divergent.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL204"
+}

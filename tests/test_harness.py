@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from sesslint.canonical import canonical_bytes, to_canonical_json
+from sesslint.codes import ALL_CODES
 from tests.harness.conformance import CASES, Case, assert_case, discover_cases, run_case
 from tests.utils.determinism import assert_deterministic
 
@@ -14,6 +15,18 @@ from tests.utils.determinism import assert_deterministic
 def test_harness_discovers_minimum_cases() -> None:
     """Verify that discovery locates at least 8 valid golden cases."""
     assert len(CASES) >= 8, f"Expected at least 8 golden cases, found {len(CASES)}"
+
+
+def test_all_registered_codes_observed_through_public_detection() -> None:
+    """T-02: coverage is earned by actual outcomes, not expected-label presence."""
+    observed = set()
+    for case in CASES:
+        if case.expected.get("mode") in {"check_file", "scan"}:
+            findings = run_case(case).findings
+            codes = {f.code for f in findings}
+            assert case.expected["target_code"] in codes
+            observed.update(codes)
+    assert observed == ALL_CODES
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.name)

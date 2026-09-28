@@ -1,0 +1,47 @@
+{
+  "counts": {
+    "by_code": {
+      "SL302": 3,
+      "SL402": 1
+    },
+    "by_severity": {
+      "error": 3,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 4
+  },
+  "findings": [
+    {
+      "code": "SL402",
+      "line": null,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL302",
+      "line": 1,
+      "record_id": null,
+      "severity": "error"
+    },
+    {
+      "code": "SL302",
+      "line": 1,
+      "record_id": null,
+      "severity": "error"
+    },
+    {
+      "code": "SL302",
+      "line": 1,
+      "record_id": null,
+      "severity": "error"
+    }
+  ],
+  "format": "canonical",
+  "input": "scan/index_divergence/missing_member",
+  "mode": "scan",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL402"
+}

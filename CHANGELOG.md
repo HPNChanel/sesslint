@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Transferable Windows acceptance ZIP and a PowerShell 5.1+ runner sharing all
+  32 CLI cases with Python smoke, with checksums and retained failure receipts.
+- An installed-wheel performance probe binding exact wheel/runtime/input bytes
+  to three fresh, untraced process measurements.
+
+- Synthetic public detection goldens for all 34 codes, a 70-case SL009 corpus
+  across 14 families, adapter/plan fuzzing and 84 repair integration cases.
+- A deterministic starter kit with PowerShell/POSIX instructions, synthetic
+  healthy/repairable/refused examples, schemas and offline rule/recipe docs.
+- Installed wheel/sdist and native-binary acceptance outside the checkout,
+  including paths with spaces/Unicode, hook/MCP and the full repair journey.
+- Release artifact metadata validation, reproducible build comparison,
+  immutable retry checks and verification of public downloads on both channels.
+
+### Fixed
+
+- Release retries inspect prior-attempt step history and immutable artifact IDs;
+  absent or deleted verified artifacts can no longer silently trigger rebuilds.
+- Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction
+  lookups reduce allocation; JSONL loading releases the unused whole-file text probe.
+- Canonical records with a validated common shape avoid repeated validation;
+  nesting boundaries and malformed-record findings remain unchanged.
+- Generic secret assignment scanning reuses an ASCII-lowered byte buffer while
+  hashing original bytes, preserving case-sensitive evidence digests.
+- The unchanged 10,000-finding report timing gate runs in a fresh, untraced
+  process, independently of accumulated pytest and coverage state.
+- Benchmark memory limits are exclusive: exactly 512 MiB and missing/non-finite
+  measurements now fail the gate.
+
+- Windows CLI output now uses UTF-8 when piped or redirected, preventing
+  Unicode session filenames from failing with a legacy-code-page error.
+- Frozen binaries dispatch multiprocessing workers before parsing CLI arguments,
+  so directory scans with `--jobs 2` work without a separate Python installation.
+- Canonical parsing, secret prefilters and graph/checkpoint traversal costs on
+  the unchanged 250,000-event benchmark; timing checks run outside coverage.
+- JSONL loading decodes the single-document probe from the first physical line
+  only, detects blank lines without slice copies, scans records for secrets via
+  zero-copy views, and trims the per-record whitespace copy.
+- Identity, graph, ordering, tool-pairing and checkpoint checks read canonical
+  event fields directly on the hot path; the unsafe-continuation trigger scan
+  runs in a single pass. Detector output remains byte-identical.
+- Malformed repair-plan containers and unsupported profiles now produce
+  defined domain refusals instead of uncaught type/attribute errors.
+- Schema lookup for installed preview/batch APIs and frozen PyInstaller bundles.
+- Missing scan HTML remediation and misleading warning-only resume guidance.
+- PyPI selection excludes man-page/starter-kit archives. The complete signed
+  three-platform draft and verified SLSA provenance now gate publication;
+  downloaded PyPI verification precedes GitHub promotion.
+
+### Changed
+
+- Prepare 0.4.1 with API/schema v1 and existing exit codes. Publication remains
+  a separate action; local tags and local evidence do not establish a release.
+- GHCR and package-manager templates are prepared channels only.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added

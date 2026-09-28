@@ -288,20 +288,17 @@ def check_nesting_depth(obj: Any, max_depth: int) -> bool:
     if not isinstance(obj, (dict, list, tuple)):
         return True
 
+    containers = (dict, list, tuple)
     stack: list[tuple[Any, int]] = [(obj, 1)]
     while stack:
         current, depth = stack.pop()
         if depth > max_depth:
             return False
         next_depth = depth + 1
-        if isinstance(current, dict):
-            for v in current.values():
-                if isinstance(v, (dict, list, tuple)):
-                    stack.append((v, next_depth))
-        elif isinstance(current, (list, tuple)):
-            for item in current:
-                if isinstance(item, (dict, list, tuple)):
-                    stack.append((item, next_depth))
+        values = current.values() if isinstance(current, dict) else current
+        for value in values:
+            if isinstance(value, containers):
+                stack.append((value, next_depth))
     return True
 
 
@@ -377,16 +374,15 @@ def decode_json_dupaware(
     existed beyond the cap. When no duplicates exist the post-parse path walk
     is skipped entirely, so clean records only pay for the pairs hook.
     """
-    # id(decoded dict) -> duplicated (key, count) entries for that object.
-    # Every hooked object remains reachable from the decoded root for the
-    # duration of the post-parse walk, so ids cannot be recycled meanwhile.
+    # Preserve the one-shot path for readers without a per-load decoder. A
+    # bound callback on a temporary decoder would create a cycle per record.
     marked: dict[int, tuple[tuple[str, int], ...]] = {}
 
-    def _hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    def hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         obj = dict(pairs)
         if len(obj) != len(pairs):
             counts: dict[str, int] = {}
-            for key, _val in pairs:
+            for key, _value in pairs:
                 counts[key] = counts.get(key, 0) + 1
             marked[id(obj)] = tuple((k, n) for k, n in counts.items() if n > 1)
         return obj
@@ -395,11 +391,61 @@ def decode_json_dupaware(
         text,
         parse_constant=_reject_constant,
         parse_float=_strict_parse_float,
-        object_pairs_hook=_hook,
+        object_pairs_hook=hook,
     )
     if not marked:
         return obj, (), False
+    return _collect_duplicate_keys(obj, marked, critical_keys, max_dup_keys)
 
+
+class _DuplicateAwareDecoder:
+    """T-10: one strict decoder per load, with per-record state cleared on failure."""
+
+    def __init__(
+        self,
+        critical_keys: frozenset[str] | None = None,
+        max_dup_keys: int = _MAX_DUP_KEYS_PER_RECORD,
+    ) -> None:
+        self._critical_keys = critical_keys
+        self._max_dup_keys = max_dup_keys
+        self._marked: dict[int, tuple[tuple[str, int], ...]] = {}
+        marked = self._marked
+
+        def hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            obj = dict(pairs)
+            if len(obj) != len(pairs):
+                counts: dict[str, int] = {}
+                for key, _value in pairs:
+                    counts[key] = counts.get(key, 0) + 1
+                marked[id(obj)] = tuple((k, n) for k, n in counts.items() if n > 1)
+            return obj
+
+        self._decoder = json.JSONDecoder(
+            parse_constant=_reject_constant,
+            parse_float=_strict_parse_float,
+            object_pairs_hook=hook,
+        )
+
+    def decode(self, text: str) -> tuple[Any, tuple[DuplicateKey, ...], bool]:
+        try:
+            if text.startswith("\ufeff"):
+                raise json.JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)", text, 0)
+            obj = self._decoder.decode(text)
+            if not self._marked:
+                return obj, (), False
+            return _collect_duplicate_keys(
+                obj, self._marked, self._critical_keys, self._max_dup_keys
+            )
+        finally:
+            self._marked.clear()
+
+
+def _collect_duplicate_keys(
+    obj: Any,
+    marked: dict[int, tuple[tuple[str, int], ...]],
+    critical_keys: frozenset[str] | None,
+    max_dup_keys: int,
+) -> tuple[Any, tuple[DuplicateKey, ...], bool]:
     crit = critical_keys if critical_keys is not None else frozenset()
     dups: list[DuplicateKey] = []
     truncated = False

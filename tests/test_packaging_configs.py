@@ -7,8 +7,8 @@ Verifies, using pure standard-library scanning (no PyYAML/PyInstaller needed):
 - pyproject.toml keeps runtime dependencies empty while declaring the
   build-time-only `packaging` extra, and ships neither scripts/ nor
   packaging/ inside the wheel.
-- .github/workflows/release.yml has a `binaries` 3-OS matrix job that does
-  NOT gate pypi-publish (PyPI ships only wheel+sdist).
+- .github/workflows/release.yml requires a complete, tested 3-OS binary set
+  before PyPI publication (PyPI receives only wheel+sdist).
 """
 
 from __future__ import annotations
@@ -201,32 +201,30 @@ def test_release_workflow_binaries_job_matrix() -> None:
     blocks = _job_blocks(_read(RELEASE_WORKFLOW))
     assert "binaries" in blocks, "release.yml must define a binaries job"
     block = blocks["binaries"]
-    for os_name in ("ubuntu-latest", "windows-latest", "macos-latest"):
+    for os_name in ("ubuntu-22.04", "windows-latest", "macos-latest"):
         assert os_name in block, f"binaries matrix missing {os_name!r}"
-    assert "matrix:" in block and "runs-on: ${{ matrix.os }}" in block
+    assert "matrix:" in block and "runs-on: ${{ matrix.runner }}" in block
     assert "scripts/package.py" in block, "binaries must run scripts/package.py"
-    assert "gh release upload" in block, "binaries must attach assets to the release"
+    assert "actions/upload-artifact@" in block, "binaries must retain verified assets"
+    assert "github_stage.py" in blocks["github-draft"]
 
 
 def test_release_workflow_binaries_smoke_test() -> None:
     """Each OS leg must smoke-test the produced binary against a checked-in fixture."""
     block = _job_blocks(_read(RELEASE_WORKFLOW))["binaries"]
-    assert "version --json" in block
-    assert re.search(r"check\s+fixtures/cli/check_basic/healthy\.jsonl", block)
+    assert "scripts/installed_smoke.py --binary" in block
+    assert "--kit" in block and "--receipt" in block
     assert (REPO_ROOT / "fixtures" / "cli" / "check_basic" / "healthy.jsonl").is_file()
 
 
-def test_release_workflow_binaries_do_not_gate_pypi() -> None:
-    """pypi-publish must depend on github-draft only — never on binaries."""
+def test_release_workflow_binaries_gate_complete_draft_and_pypi() -> None:
+    """Publication requires accepted binaries and provenance through the DAG."""
     blocks = _job_blocks(_read(RELEASE_WORKFLOW))
     pypi_needs = _needs(blocks["pypi-publish"])
-    assert pypi_needs == {"github-draft"}, (
-        f"binaries must not gate pypi-publish; pypi needs={pypi_needs}"
-    )
-    binaries_needs = _needs(blocks["binaries"])
-    assert binaries_needs == {"github-draft"}, (
-        "binaries must wait for github-draft (the draft release it attaches to)"
-    )
+    assert pypi_needs == {"github-draft", "provenance-verify"}
+    assert _needs(blocks["github-draft"]) == {"assemble"}
+    assert _needs(blocks["assemble"]) == {"build", "binaries"}
+    assert _needs(blocks["binaries"]) == {"quality", "build"}
 
 
 def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
@@ -239,11 +237,10 @@ def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
     with open(RELEASE_WORKFLOW, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     binaries = data["jobs"]["binaries"]
-    assert set(binaries["strategy"]["matrix"]["os"]) == {
-        "ubuntu-latest",
+    assert {row["runner"] for row in binaries["strategy"]["matrix"]["include"]} == {
+        "ubuntu-22.04",
         "windows-latest",
         "macos-latest",
     }
-    assert binaries["needs"] == "github-draft"
-    pypi_needs = data["jobs"]["pypi-publish"]["needs"]
-    assert "binaries" not in ([pypi_needs] if isinstance(pypi_needs, str) else pypi_needs)
+    assert set(binaries["needs"]) == {"quality", "build"}
+    assert "provenance-verify" in data["jobs"]["pypi-publish"]["needs"]

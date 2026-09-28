@@ -1,0 +1,567 @@
+{
+  "schema_version": 1,
+  "copies": [
+    [
+      "examples/repairable.jsonl",
+      "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl"
+    ],
+    [
+      "examples/healthy.jsonl",
+      "parallel-inputs/healthy.jsonl"
+    ],
+    [
+      "examples/repairable.jsonl",
+      "parallel-inputs/repairable.jsonl"
+    ]
+  ],
+  "cases": [
+    {
+      "id": "version",
+      "args": [
+        "version",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "cli": "{version}"
+      },
+      "json_sets": {
+        "adapters": [
+          "canonical",
+          "claude-code-jsonl",
+          "codex-rollout",
+          "openai-agents"
+        ],
+        "profiles": [
+          "neutral",
+          "claude-strict",
+          "openai-strict"
+        ]
+      }
+    },
+    {
+      "id": "healthy",
+      "args": [
+        "check",
+        "examples/healthy.jsonl",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "findings": []
+      }
+    },
+    {
+      "id": "repairable-json",
+      "args": [
+        "check",
+        "examples/repairable.jsonl",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "repairable-human",
+      "args": [
+        "check",
+        "examples/repairable.jsonl",
+        "--output-format",
+        "human"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "repairable-sarif",
+      "args": [
+        "check",
+        "examples/repairable.jsonl",
+        "--output-format",
+        "sarif"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "repairable-html",
+      "args": [
+        "check",
+        "examples/repairable.jsonl",
+        "--output-format",
+        "html"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "unicode-human",
+      "args": [
+        "check",
+        "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
+        "--output-format",
+        "human"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "unicode-json",
+      "args": [
+        "check",
+        "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
+        "--output-format",
+        "json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "unicode-sarif",
+      "args": [
+        "check",
+        "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
+        "--output-format",
+        "sarif"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "unicode-html",
+      "args": [
+        "check",
+        "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
+        "--output-format",
+        "html"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "scan-sequential",
+      "args": [
+        "scan",
+        "parallel-inputs",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "contains": [
+        "SL003"
+      ]
+    },
+    {
+      "id": "scan-parallel",
+      "args": [
+        "scan",
+        "parallel-inputs",
+        "--json",
+        "--jobs",
+        "2"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdout_equals": "scan-sequential"
+    },
+    {
+      "id": "dry-run",
+      "args": [
+        "repair",
+        "examples/repairable.jsonl",
+        "--dry-run",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "absent_globs": [
+        "*.manifest.json"
+      ]
+    },
+    {
+      "id": "plan",
+      "args": [
+        "repair",
+        "examples/repairable.jsonl",
+        "--plan-out",
+        "plan.json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "files_exist": [
+        "plan.json"
+      ]
+    },
+    {
+      "id": "apply",
+      "args": [
+        "repair",
+        "examples/repairable.jsonl",
+        "--apply-plan",
+        "plan.json",
+        "--output",
+        "repaired.jsonl",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "files_exist": [
+        "repaired.jsonl",
+        "repaired.jsonl.manifest.json"
+      ]
+    },
+    {
+      "id": "verify",
+      "args": [
+        "verify",
+        "examples/repairable.jsonl",
+        "repaired.jsonl",
+        "--manifest",
+        "repaired.jsonl.manifest.json",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "id": "one-shot",
+      "args": [
+        "repair",
+        "examples/repairable.jsonl",
+        "--output",
+        "one-shot.jsonl",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "equal_files": [
+        [
+          "repaired.jsonl",
+          "one-shot.jsonl"
+        ]
+      ]
+    },
+    {
+      "id": "idempotence",
+      "args": [
+        "repair",
+        "repaired.jsonl",
+        "--dry-run",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "steps": []
+      }
+    },
+    {
+      "id": "refused-check",
+      "args": [
+        "check",
+        "examples/refused.json",
+        "--json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "contains": [
+        "SL203"
+      ]
+    },
+    {
+      "id": "refused-repair",
+      "args": [
+        "repair",
+        "examples/refused.json",
+        "--output",
+        "refused-output.jsonl",
+        "--json"
+      ],
+      "exit_codes": [
+        1,
+        2
+      ],
+      "files_absent": [
+        "refused-output.jsonl",
+        "refused-output.jsonl.manifest.json"
+      ]
+    },
+    {
+      "id": "claude-code-jsonl-neutral",
+      "args": [
+        "check",
+        "examples/claude.jsonl",
+        "--format",
+        "claude-code-jsonl",
+        "--profile",
+        "neutral",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "json_equals": {
+        "coverage.adapter.id": "claude-code-jsonl"
+      }
+    },
+    {
+      "id": "claude-code-jsonl-claude-strict",
+      "args": [
+        "check",
+        "examples/claude.jsonl",
+        "--format",
+        "claude-code-jsonl",
+        "--profile",
+        "claude-strict",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "json_equals": {
+        "coverage.adapter.id": "claude-code-jsonl"
+      }
+    },
+    {
+      "id": "claude-code-jsonl-openai-strict",
+      "args": [
+        "check",
+        "examples/claude.jsonl",
+        "--format",
+        "claude-code-jsonl",
+        "--profile",
+        "openai-strict",
+        "--json"
+      ],
+      "exit_codes": [
+        2
+      ]
+    },
+    {
+      "id": "codex-rollout-neutral",
+      "args": [
+        "check",
+        "examples/codex.jsonl",
+        "--format",
+        "codex-rollout",
+        "--profile",
+        "neutral",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "json_equals": {
+        "coverage.adapter.id": "codex-rollout"
+      }
+    },
+    {
+      "id": "codex-rollout-claude-strict",
+      "args": [
+        "check",
+        "examples/codex.jsonl",
+        "--format",
+        "codex-rollout",
+        "--profile",
+        "claude-strict",
+        "--json"
+      ],
+      "exit_codes": [
+        2
+      ]
+    },
+    {
+      "id": "codex-rollout-openai-strict",
+      "args": [
+        "check",
+        "examples/codex.jsonl",
+        "--format",
+        "codex-rollout",
+        "--profile",
+        "openai-strict",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "json_equals": {
+        "coverage.adapter.id": "codex-rollout"
+      }
+    },
+    {
+      "id": "openai-agents-neutral",
+      "args": [
+        "check",
+        "examples/openai.json",
+        "--format",
+        "openai-agents",
+        "--profile",
+        "neutral",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "json_equals": {
+        "coverage.adapter.id": "openai-agents"
+      }
+    },
+    {
+      "id": "openai-agents-claude-strict",
+      "args": [
+        "check",
+        "examples/openai.json",
+        "--format",
+        "openai-agents",
+        "--profile",
+        "claude-strict",
+        "--json"
+      ],
+      "exit_codes": [
+        2
+      ]
+    },
+    {
+      "id": "openai-agents-openai-strict",
+      "args": [
+        "check",
+        "examples/openai.json",
+        "--format",
+        "openai-agents",
+        "--profile",
+        "openai-strict",
+        "--json"
+      ],
+      "exit_codes": [
+        0,
+        1
+      ],
+      "json_equals": {
+        "coverage.adapter.id": "openai-agents"
+      }
+    },
+    {
+      "id": "missing",
+      "args": [
+        "check",
+        "missing.jsonl",
+        "--json"
+      ],
+      "exit_codes": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "hook",
+      "args": [
+        "hook",
+        "--event",
+        "SessionEnd",
+        "--json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdin_jsonl": [
+        {
+          "transcript_path": "{work}/examples/claude.jsonl"
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "args": [
+        "mcp"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdin_jsonl": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {
+              "name": "smoke",
+              "version": "1"
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "tools/call",
+          "params": {
+            "name": "sesslint_check",
+            "arguments": {
+              "path": "{work}/examples/healthy.jsonl"
+            }
+          }
+        }
+      ],
+      "jsonl_success": 2
+    }
+  ]
+}

@@ -17,7 +17,6 @@ import json
 import os
 import re
 import stat
-import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
@@ -294,16 +293,12 @@ SCAN_SCHEMA_VERSION: str = "sesslint.scan-report/v1"
 
 def get_scan_schema_path() -> Path:
     """Return the filesystem path to schemas/sesslint.scan-report.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.scan-report.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = (
-        Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.scan-report.v1.json"
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.scan-report.v1.json"
     )
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    return schema_path("sesslint.scan-report.v1.json", development_path)
 
 
 def load_scan_schema() -> dict[str, Any]:

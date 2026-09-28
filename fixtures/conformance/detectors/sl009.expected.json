@@ -1,0 +1,106 @@
+{
+  "counts": {
+    "by_code": {
+      "SL009": 14
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 14
+    },
+    "total": 14
+  },
+  "findings": [
+    {
+      "code": "SL009",
+      "line": 2,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 2,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 2,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 3,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 3,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 3,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "SL009",
+      "line": 4,
+      "record_id": null,
+      "severity": "warning"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/secret_seed/sl009_seeded.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL009"
+}

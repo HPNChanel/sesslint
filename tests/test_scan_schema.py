@@ -14,12 +14,14 @@ from sesslint.scan import (
     get_scan_schema_path,
     load_scan_schema,
 )
+from tests.utils.schema import assert_schema
 
 VALID_VERDICTS = ("healthy", "invalid", "unsupported", "unreadable", "skipped")
 
 
 def _validate_scan_dict_strictly(data: dict[str, Any]) -> None:
     """Hand-rolled strict validator conforming to schemas/sesslint.scan-report.v1.json."""
+    assert_schema(data, "sesslint.scan-report.v1.json")
     assert data["schema_version"] == "sesslint.scan-report/v1"
     assert isinstance(data["root_path"], str)
 

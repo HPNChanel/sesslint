@@ -254,12 +254,13 @@ def scan_report_html(scan_report: ScanReport, *, tool_version: str) -> str:
                     f"<td>{_esc(title)}</td>"
                     f'<td class="mono">{_esc(loc)}</td>'
                     f"<td>{_esc(f.message)}</td>"
+                    f"<td>{_esc(get_finding_remediation(f))}</td>"
                     "</tr>"
                 )
     hidden_findings = total_findings - len(findings_rows)
     if hidden_findings:
         findings_rows.append(
-            '<tr><td colspan="6" class="meta">... '
+            '<tr><td colspan="7" class="meta">... '
             f"{hidden_findings} more finding(s) not shown</td></tr>"
         )
     findings_section = ""
@@ -267,7 +268,9 @@ def scan_report_html(scan_report: ScanReport, *, tool_version: str) -> str:
         findings_section = (
             '<div class="card"><h2>Findings</h2><table>'
             "<tr><th>File</th><th>Code</th><th>Severity</th><th>Finding</th>"
-            "<th>Span</th><th>Why</th></tr>" + "".join(findings_rows) + "</table></div>"
+            "<th>Span</th><th>Why</th><th>Remediation</th></tr>"
+            + "".join(findings_rows)
+            + "</table></div>"
         )
 
     root_cell = _esc(minimize_path(scan_report.root_path))

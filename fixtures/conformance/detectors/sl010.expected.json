@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL010": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL010",
+      "line": 4,
+      "record_id": "msg_04",
+      "severity": "warning"
+    }
+  ],
+  "format": "claude-code-jsonl",
+  "input": "claude_code/sl010_interleaved.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL010"
+}

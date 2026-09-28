@@ -1,0 +1,35 @@
+{
+  "counts": {
+    "by_code": {
+      "SL006": 1,
+      "SL007": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 2
+    },
+    "total": 2
+  },
+  "findings": [
+    {
+      "code": "SL006",
+      "line": null,
+      "record_id": "c2-1",
+      "severity": "warning"
+    },
+    {
+      "code": "SL007",
+      "line": null,
+      "record_id": "c1-3",
+      "severity": "warning"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl006_disconnected.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL006"
+}

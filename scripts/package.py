@@ -344,10 +344,11 @@ def main(argv: list[str] | None = None) -> int:
     staging.mkdir(parents=True, exist_ok=True)
 
     _info(f"target={target} arch={arch} version={version} -> {outdir / final_name}")
+    if (outdir / final_name).exists():
+        raise FileExistsError("Artifact exists; use a new candidate directory")
     produced = run_pyinstaller(staging, workpath)
 
     binary = outdir / final_name
-    binary.unlink(missing_ok=True)
     shutil.move(str(produced), binary)
     if target != "windows":
         binary.chmod(0o755)

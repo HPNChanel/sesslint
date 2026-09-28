@@ -1,0 +1,49 @@
+{
+  "counts": {
+    "by_code": {
+      "SL006": 1,
+      "SL007": 1,
+      "SL302": 1,
+      "SL304": 1
+    },
+    "by_severity": {
+      "error": 1,
+      "fatal": 0,
+      "info": 0,
+      "warning": 3
+    },
+    "total": 4
+  },
+  "findings": [
+    {
+      "code": "SL006",
+      "line": 3,
+      "record_id": "sesslint:synthetic:claude_code:2:d8350872",
+      "severity": "warning"
+    },
+    {
+      "code": "SL007",
+      "line": 3,
+      "record_id": "sesslint:synthetic:claude_code:2:d8350872",
+      "severity": "warning"
+    },
+    {
+      "code": "SL304",
+      "line": 3,
+      "record_id": "sesslint:synthetic:claude_code:2:d8350872",
+      "severity": "warning"
+    },
+    {
+      "code": "SL302",
+      "line": 3,
+      "record_id": "sesslint:synthetic:claude_code:2:d8350872",
+      "severity": "error"
+    }
+  ],
+  "format": "claude-code-jsonl",
+  "input": "checks/sl304_foreign_splice.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL304"
+}

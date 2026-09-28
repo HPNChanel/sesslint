@@ -1,330 +1,363 @@
 name: Release
 
-# Tag-gated release pipeline for SessLint (post-alpha-hardening-plan/T-07a).
-#
-# Contract:
-#   - Triggers ONLY on pushing a v* tag; the tag must equal "v" + the package
-#     version declared in src/sesslint/_version.py.
-#   - Exactly one immutable artifact set is built once, then flows:
-#       build -> github-draft -> pypi-publish -> github-promote
-#     The `binaries` job fans out after github-draft (3-OS matrix) and attaches
-#     PyInstaller executables to the draft release; it never gates
-#     pypi-publish (PyPI ships only wheel+sdist) — github-promote waits for it
-#     so the public release is complete.
-#   - A draft GitHub Release (with all assets) is staged BEFORE PyPI publish;
-#     it is promoted to public only after PyPI publish succeeds.
-#   - SOURCE_DATE_EPOCH is derived from the tagged commit timestamp so builds
-#     are reproducible (T-08 reuses the same rule for byte-parity checks).
-#   - Permissions are minimal: contents:write only on github-draft, binaries
-#     (asset upload), and github-promote; id-token:write only on pypi-publish
-#     (Trusted Publisher / OIDC — no PyPI API token exists anywhere).
-
+# T-11: exact-commit gates -> immutable artifacts -> complete signed draft
+# -> required provenance -> PyPI -> downloaded PyPI verification -> public GitHub.
+# Re-run failed jobs to reuse successful artifacts. A full re-run also restores
+# immutable artifacts from this run before considering any build. Never clobber.
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
   contents: read
 
-env:
-  ARTIFACT_NAME: release-dist
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  quality:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
-    name: Build immutable artifact set
+    name: Build Python assets
+    permissions:
+      contents: read
+      actions: read
+    needs: quality
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Validate tag and commit epoch
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import runpy; print(runpy.run_path("src/sesslint/_version.py")["__version__"])')"
+          test "${GITHUB_REF_NAME#v}" = "$version" || { echo "Tag/version mismatch"; exit 1; }
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
+      - name: Verify reviewed SLSA generator tag
+        run: |
+          test "$(git ls-remote https://github.com/slsa-framework/slsa-github-generator.git refs/tags/v2.1.0 | cut -f1)" = f7dd8c54c2067bafc12ca7a55595d5ee9b75204a
+      - name: Restore previously verified artifacts on retry
+        id: reuse
+        if: github.run_attempt > 1
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/restore_release_artifact.py --repo "${{ github.repository }}" --run-id "${{ github.run_id }}" --name "python-assets" --target "dist" --attempt "${{ github.run_attempt }}" --job "Build Python assets" --step "Build twice and smoke installed wheel and sdist" --commit "$GITHUB_SHA" --version "${GITHUB_REF_NAME#v}" --receipt "${{ runner.temp }}/restore-python.json" >> "$GITHUB_OUTPUT"
+      - name: Retain restore diagnostics
+        if: always() && github.run_attempt > 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: restore-python-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/restore-python.json
+          if-no-files-found: warn
+      - name: Build twice and smoke installed wheel and sdist
+        if: steps.reuse.outputs.restored != 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install "build==1.2.2.post1" "hatchling==1.27.0"
+          python -m build --no-isolation --sdist --wheel --outdir dist
+          python -m build --no-isolation --sdist --wheel --outdir reproducible
+          python scripts/release_artifacts.py compare --version "${GITHUB_REF_NAME#v}" --target reproducible
+          python scripts/build_starter_kit.py --version "${GITHUB_REF_NAME#v}" --output "dist/sesslint-${GITHUB_REF_NAME#v}-starter-kit.zip"
+          python scripts/build_man_archive.py --epoch "$SOURCE_DATE_EPOCH" --output "dist/sesslint-${GITHUB_REF_NAME#v}-man.tar.gz"
+          python scripts/smoke_distributions.py --version "${GITHUB_REF_NAME#v}"
+          python scripts/release_artifacts.py manifest --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --epoch "$SOURCE_DATE_EPOCH"
+      - name: Verify restored or newly built bytes
+        run: python scripts/release_artifacts.py verify --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA"
+      - if: steps.reuse.outputs.restored != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: python-assets
+          path: dist/
+          if-no-files-found: error
+
+  binaries:
+    name: Build binary (${{ matrix.os }})
+    permissions:
+      contents: read
+      actions: read
+    needs: [quality, build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            os: linux
+          - runner: windows-latest
+            os: windows
+          - runner: macos-latest
+            os: macos
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-assets
+          path: python-assets
+      - name: Restore verified binary on retry
+        id: reuse
+        if: github.run_attempt > 1
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/restore_release_artifact.py --repo "${{ github.repository }}" --run-id "${{ github.run_id }}" --name "binary-${{ matrix.os }}" --target "dist/bin" --attempt "${{ github.run_attempt }}" --job "Build binary (${{ matrix.os }})" --step "Build native binary and exercise installed journey" --commit "$GITHUB_SHA" --version "${GITHUB_REF_NAME#v}" --receipt "${{ runner.temp }}/restore-binary-${{ matrix.os }}.json" >> "$GITHUB_OUTPUT"
+      - name: Retain restore diagnostics
+        if: always() && github.run_attempt > 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: restore-binary-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/restore-binary-${{ matrix.os }}.json
+          if-no-files-found: warn
+      - name: Build native binary and exercise installed journey
+        if: steps.reuse.outputs.restored != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -e '.[packaging]'
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          python scripts/package.py --outdir dist/bin
+          bin="$(find dist/bin -maxdepth 1 -type f -name 'sesslint-*' ! -name '*.asc' | sort | head -n 1)"
+          python scripts/installed_smoke.py --binary "$bin" --kit "python-assets/sesslint-${GITHUB_REF_NAME#v}-starter-kit.zip" --version "${GITHUB_REF_NAME#v}" --receipt "dist/bin/smoke-${{ matrix.os }}.json"
+          mv dist/bin/SHA256SUMS "dist/bin/SHA256SUMS-${{ matrix.os }}"
+      - name: Build and exercise transferable Windows acceptance
+        if: matrix.os == 'windows' && steps.reuse.outputs.restored != 'true'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $binary = Get-ChildItem dist/bin/sesslint-*-windows-*.exe | Select-Object -ExpandProperty FullName
+          $kit = "python-assets/sesslint-$version-starter-kit.zip"
+          $zip = "dist/bin/sesslint-$version-acceptance-windows.zip"
+          python scripts/build_windows_acceptance.py --binary "$binary" --kit "$kit" --version "$version" --commit "$env:GITHUB_SHA" --output "$zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows acceptance packaging failed' }
+          $unpacked = Join-Path $env:RUNNER_TEMP 'sesslint Windows acceptance'
+          Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+          & "$env:SystemRoot/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File "$unpacked/Test-SessLint.ps1" -PackageRoot "$unpacked" -ReceiptPath "$env:RUNNER_TEMP/smoke-windows-powershell.json"
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell acceptance failed' }
+          Copy-Item -LiteralPath "$env:RUNNER_TEMP/smoke-windows-powershell.json" -Destination dist/bin/
+      - name: Retain Windows acceptance diagnostics
+        if: always() && matrix.os == 'windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-acceptance-logs-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/smoke-windows-powershell.json
+            ${{ runner.temp }}/smoke-windows-powershell.json.logs/
+          if-no-files-found: warn
+      - if: steps.reuse.outputs.restored != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binary-${{ matrix.os }}
+          path: dist/bin/
+          if-no-files-found: error
+
+  assemble:
+    name: Assemble signed assets
+    needs: [build, binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Sigstore keyless signing (Fulcio OIDC)
+      actions: read
+      id-token: write
     outputs:
       artifact-subjects: ${{ steps.subjects.outputs.subjects }}
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.11"
-
-      - name: Validate tag matches package version
-        run: |
-          set -euo pipefail
-          pkg_version="$(python -c "import re, pathlib; m = re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('src/sesslint/_version.py').read_text()); print(m.group(1))")"
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [ "$tag_version" != "$pkg_version" ]; then
-            echo "Tag/version mismatch: tag '${GITHUB_REF_NAME}' implies '${tag_version}' but _version.py declares '${pkg_version}'"
-            exit 1
-          fi
-          echo "Tag ${GITHUB_REF_NAME} matches package version ${pkg_version}"
-
-      - name: Install pinned build tooling
-        run: python -m pip install "build==1.2.2.post1" "hatchling==1.27.0"
-
-      - name: Build sdist and wheel (reproducible, no build isolation)
-        run: |
-          set -euo pipefail
-          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
-          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
-          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
-          python -m build --no-isolation --sdist --wheel
-
-      - name: Generate man pages and deterministic tarball
-        run: |
-          set -euo pipefail
-          python scripts/gen_man.py --out dist/man
-          # Reproducible tarball: sorted entries, epoch mtimes, gzip -n
-          # (no embedded timestamp) — identical bytes across rebuilds.
-          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" \
-            --owner=0 --group=0 --numeric-owner \
-            --use-compress-program='gzip -n' \
-            -cf "dist/sesslint-${GITHUB_REF_NAME#v}-man.tar.gz" -C dist man
-
-      - name: Generate sha256sums and artifact manifest
-        run: |
-          set -euo pipefail
-          cd dist
-          sha256sum -- *.whl *.tar.gz > sha256sums.txt
-          sha256sum -c sha256sums.txt
-          python - <<'PY'
-          import hashlib, json, os, pathlib
-          files = sorted(p for p in pathlib.Path('.').iterdir() if p.suffix in {'.whl', '.gz'} or p.name.endswith('.tar.gz'))
-          manifest = {
-              "tag": os.environ["GITHUB_REF_NAME"],
-              "commit": os.environ["GITHUB_SHA"],
-              "source_date_epoch": int(os.environ["SOURCE_DATE_EPOCH"]),
-              "artifacts": {
-                  p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files
-              },
-          }
-          pathlib.Path("artifact-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-          print(pathlib.Path("artifact-manifest.json").read_text())
-          PY
-
-      - name: Compute SLSA provenance subjects (base64 sha256sum output)
-        id: subjects
-        working-directory: dist
-        run: |
-          set -euo pipefail
-          echo "subjects=$(sha256sum -- *.whl *.tar.gz sha256sums.txt artifact-manifest.json | base64 -w0)" >> "$GITHUB_OUTPUT"
-
-      - name: Install cosign (keyless signing)
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Sign artifacts (Sigstore keyless, repo OIDC identity)
-        run: |
-          set -euo pipefail
-          cd dist
-          for f in *.whl *.tar.gz sha256sums.txt artifact-manifest.json; do
-            cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
-          done
-          ls -la *.sigstore.json
-
-      - name: Upload release artifact set
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Restore complete signed set on retry
+        id: reuse
+        if: github.run_attempt > 1
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/restore_release_artifact.py --repo "${{ github.repository }}" --run-id "${{ github.run_id }}" --name "release-dist" --target "dist" --attempt "${{ github.run_attempt }}" --job "Assemble signed assets" --step "Bind every asset and sign the complete set" --commit "$GITHUB_SHA" --version "${GITHUB_REF_NAME#v}" --receipt "${{ runner.temp }}/restore-assemble.json" >> "$GITHUB_OUTPUT"
+      - name: Retain restore diagnostics
+        if: always() && github.run_attempt > 1
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ env.ARTIFACT_NAME }}
+          name: restore-assemble-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/restore-assemble.json
+          if-no-files-found: warn
+      - if: steps.reuse.outputs.restored != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-assets
+          path: dist
+      - if: steps.reuse.outputs.restored != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Bind every asset and sign the complete set
+        if: steps.reuse.outputs.restored != 'true'
+        run: |
+          set -euo pipefail
+          python scripts/release_artifacts.py manifest --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --epoch "$(git show -s --format=%ct "$GITHUB_SHA")"
+          for file in dist/*; do
+            case "$file" in *.sigstore.json) continue;; esac
+            cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
+          done
+      - name: Verify completeness, hashes and every signature
+        run: |
+          set -euo pipefail
+          python scripts/release_artifacts.py verify --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --complete
+          for bundle in dist/*.sigstore.json; do
+            cosign verify-blob --bundle "$bundle" --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@${GITHUB_REF}" --certificate-oidc-issuer https://token.actions.githubusercontent.com "${bundle%.sigstore.json}"
+          done
+      - name: Compute provenance subjects for all assets
+        id: subjects
+        run: echo "subjects=$(cd dist && sha256sum -- * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - if: steps.reuse.outputs.restored != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dist
           path: dist/
           if-no-files-found: error
 
   github-draft:
-    name: Stage draft GitHub Release
+    outputs:
+      provenance-exists: ${{ steps.existing.outputs.exists }}
+    needs: assemble
     runs-on: ubuntu-latest
-    needs: build
     permissions:
       contents: write
     steps:
-      - name: Download release artifact set
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: dist/
+          name: release-dist
+          path: dist
+      - name: Stage complete draft without overwriting existing bytes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/github_stage.py --repo "${{ github.repository }}" --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
 
-      - name: Create draft release with all assets
+      - name: Reuse existing provenance after verifying it in the next job
+        id: existing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          cd dist && sha256sum -c sha256sums.txt && cd ..
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "${{ github.repository }}" \
-            --draft \
-            --title "SessLint ${GITHUB_REF_NAME}" \
-            --generate-notes \
-            dist/*.whl dist/*.tar.gz dist/sha256sums.txt dist/artifact-manifest.json \
-            dist/*.sigstore.json
-
-  binaries:
-    name: Build native binary (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: github-draft
-    permissions:
-      contents: write
-      id-token: write  # Sigstore keyless signing (Fulcio OIDC)
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.11"
-
-      - name: Install packaging toolchain (build-time only)
-        run: python -m pip install -e ".[packaging]"
-
-      - name: Build binary + SHA256SUMS (signing hooks are opt-in via env)
-        run: python scripts/package.py --platforms auto --outdir dist/bin
-
-      - name: Smoke test binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="$(find dist/bin -maxdepth 1 -type f -name 'sesslint-*' \
-            ! -name '*.asc' ! -name 'SHA256SUMS' | sort | head -n 1)"
-          test -n "$bin" || { echo "no binary produced"; exit 1; }
-          chmod +x "$bin" 2>/dev/null || true
-          "$bin" version --json
-          "$bin" check fixtures/cli/check_basic/healthy.jsonl --json
-
-      - name: Rename SHA256SUMS to a per-OS unique asset name
-        shell: bash
-        run: mv dist/bin/SHA256SUMS "dist/bin/SHA256SUMS-${{ matrix.os }}"
-
-      - name: Install cosign (keyless signing)
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Sign binaries (Sigstore keyless, repo OIDC identity)
-        shell: bash
-        run: |
-          set -euo pipefail
-          for f in dist/bin/*; do
-            case "$f" in *.sigstore.json) continue;; esac
-            cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
-          done
-          ls -la dist/bin/*.sigstore.json
-
-      - name: Upload linux binary as image-job input
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: sesslint-linux-x86_64
-          path: dist/bin/sesslint-*-linux-x86_64
-          retention-days: 1
-
-      - name: Attach binaries to draft GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/bin/* --repo "${{ github.repository }}"
+          value=$(gh release view "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --json assets --jq 'any(.assets[]; .name == "sesslint-provenance.intoto.jsonl")')
+          echo "exists=$value" >> "$GITHUB_OUTPUT"
 
   provenance:
-    name: Generate SLSA provenance (Build L3)
-    needs: [build, github-draft]
+    if: needs.github-draft.outputs.provenance-exists != 'true'
+    needs: [assemble, github-draft]
     permissions:
-      actions: read   # read workflow run metadata
-      id-token: write # sign provenance via Fulcio OIDC
-      contents: write # upload .intoto.jsonl to the release
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0 # Required by SLSA certificate identity; tag SHA checked above
     with:
-      base64-subjects: ${{ needs.build.outputs.artifact-subjects }}
+      base64-subjects: ${{ needs.assemble.outputs.artifact-subjects }}
       upload-assets: true
       upload-tag-name: ${{ github.ref_name }}
       provenance-name: sesslint-provenance.intoto.jsonl
-    # Non-blocking by construction: github-promote does not need this job.
-    # Flip to required (add to promote needs) once verified end-to-end.
 
-  image:
-    name: Build + push GHCR image
+  provenance-verify:
+    needs: [assemble, github-draft, provenance]
+    if: always() && needs.assemble.result == 'success' && needs.github-draft.result == 'success' && (needs.provenance.result == 'success' || needs.provenance.result == 'skipped')
     runs-on: ubuntu-latest
-    needs: [build, binaries]
-    permissions:
-      contents: read
-      packages: write # push ghcr.io/<owner>/sesslint
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/sesslint
-      TAG: ${{ github.ref_name }}
     steps:
-      - name: Checkout (Dockerfile source)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Download linux binary artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: sesslint-linux-x86_64
-          path: image-context
-
-      - name: Prepare build context
+          name: release-dist
+          path: dist
+      - uses: slsa-framework/slsa-verifier/actions/installer@ea584f4502babc6f60d9bc799dbbb13c1caa9ee6 # v2.7.1
+      - name: Verify provenance over the entire signed artifact set
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mv image-context/sesslint-*-linux-x86_64 image-context/sesslint
-          chmod +x image-context/sesslint
-          cp Dockerfile image-context/Dockerfile
-
-      - name: Build image
-        run: docker build -t "$IMAGE:$TAG" image-context
-
-      - name: Smoke test image
-        run: |
-          set -euo pipefail
-          docker run --rm "$IMAGE:$TAG" version --json
-          docker run --rm "$IMAGE:$TAG" check --help >/dev/null
-
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Push release tags
-        run: |
-          set -euo pipefail
-          docker tag "$IMAGE:$TAG" "$IMAGE:latest"
-          docker push "$IMAGE:$TAG"
-          docker push "$IMAGE:latest"
+          gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --pattern sesslint-provenance.intoto.jsonl --dir provenance
+          slsa-verifier verify-artifact dist/* --provenance-path provenance/sesslint-provenance.intoto.jsonl --source-uri "github.com/${{ github.repository }}" --source-tag "$GITHUB_REF_NAME"
 
   pypi-publish:
-    name: Publish to PyPI (Trusted Publisher / OIDC)
+    needs: [github-draft, provenance-verify]
     runs-on: ubuntu-latest
-    needs: github-draft
     environment: pypi
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Download release artifact set
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: dist/
-
-      - name: Verify artifact hashes
+          name: release-dist
+          path: dist
+      - name: Select metadata-validated distributions only
         run: |
-          set -euo pipefail
-          cd dist && sha256sum -c sha256sums.txt && cd ..
-
-      - name: Stage packages-only directory for PyPI
-        run: |
-          set -euo pipefail
-          mkdir -p pypi_dist
-          cp dist/*.whl dist/*.tar.gz pypi_dist/
-          ls -la pypi_dist/
-
+          python scripts/release_artifacts.py verify --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --complete
+          python scripts/release_artifacts.py stage --version "${GITHUB_REF_NAME#v}" --target validated-dist
+      - name: Verify retry bytes already on PyPI and stage only missing packages
+        id: missing
+        run: python scripts/published_verify.py --directory validated-dist --version "${GITHUB_REF_NAME#v}" --target pypi_dist --stage-missing >> "$GITHUB_OUTPUT"
       - name: Publish distributions to PyPI
+        if: steps.missing.outputs.missing != '0'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: pypi_dist/
 
-  github-promote:
-    name: Promote draft release to public
+  pypi-verify:
+    needs: pypi-publish
     runs-on: ubuntu-latest
-    needs: [pypi-publish, binaries]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dist
+          path: dist
+      - name: Download public PyPI bytes, compare hashes, install and exercise them
+        run: |
+          set -euo pipefail
+          python scripts/published_verify.py --version "${GITHUB_REF_NAME#v}" --target public-pypi
+          cp "dist/sesslint-${GITHUB_REF_NAME#v}-starter-kit.zip" public-pypi/
+          python scripts/smoke_distributions.py --directory public-pypi --version "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: published-pypi-receipts
+          path: public-pypi/smoke-*.json
+
+  github-promote:
+    needs: [pypi-verify, provenance-verify]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Promote existing draft release
+      - name: Promote only the existing complete draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --draft=false
+
+  published-verify:
+    needs: github-promote
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dist
+          path: dist
+      - name: Verify public GitHub downloads against the signed candidate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --repo "${{ github.repository }}" --dir public-github
+          cmp dist/artifact-manifest.json public-github/artifact-manifest.json
+          python scripts/release_artifacts.py verify --directory public-github --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --complete
+          test -f public-github/sesslint-provenance.intoto.jsonl
+          python scripts/smoke_distributions.py --directory public-github --version "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: published-github-receipts
+          path: public-github/smoke-*.json

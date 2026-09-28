@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL305": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL305",
+      "line": 3,
+      "record_id": "rs_01",
+      "severity": "warning"
+    }
+  ],
+  "format": "codex-rollout",
+  "input": "adapters/codex/sl305_foreign_reasoning.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL305"
+}

@@ -30,24 +30,34 @@ local-only). Packs under `plans/` are committable if the maintainer chooses.
 | `adapters-coverage/` | Shape inventory, adapter SDK doc, drift watch, new adapters | T-01..T-09 | T-01..T-03 done; T-04..T-09 **DV-gated** |
 | `transcript-hygiene/` | SL009 persisted-secret detector, hygiene surfaces, bundle pre-share advisory | T-01..T-03 | done (2026-09-22) |
 | `agent-hooks/` | `sesslint hook` stdin-payload subcommand, zero-config snippets, runtime hook research | T-01..T-03 | done (2026-09-22) |
-| `index-reconciliation/` | Vendor session-index readers, SL402 index divergence, doctor/scan integration | T-01..T-03 | done (2026-09-22) |
+| `index-reconciliation/` | Vendor session-index readers, SL402 index divergence, doctor/scan integration, Codex index/state | T-01..T-05 | done (2026-09-23) |
 | `detector-depth/` | SL001 invisible-tail evidence, SL010 concurrent writers, SL206 Codex durable-prefix, context-pressure decision, SL208 snapshot divergence | T-01..T-05 | done (2026-09-23) |
 | `evidence-assurance/` | `seal` hash-chain ledger (maintainer-gated), provider-origin drift memo | T-01..T-02 | done (2026-09-23; T-01 signed off) |
 | `integrations/` | MCP stdio server, init-hooks, SchemaStore, problem matchers, CI templates | T-01..T-05 | done |
 | `release-dist/` | PyInstaller binaries, Sigstore, SLSA, package managers, GHCR, release-skew fix | T-01..T-06 | done |
 | `qa-infra/` | Stateful fuzz, mutation testing, coverage gate, CI matrix, corpus growth | T-01..T-05 | done |
 | `docs-spec/` | Canonical spec v0, ADRs, threat model, docs site, man pages | T-01..T-05 | done |
+| `plan-consolidation/` | Existing CLI/API 0.4.1: assurance, performance, complete release pipeline and installed delivery | T-01..T-14 | active governing plan (2026-09-27); T-04 DV-blocked |
 
-## Pre-Existing Packs (referenced, not duplicated)
+## Pre-Existing Packs (frozen — see `plan-consolidation/ARCHIVE_MANIFEST.md`)
+
+Frozen 2026-09-25: read-only history; changes must be appended
+supersession notes, never rewrites. Only the listed threads stay live.
 
 | Pack | Remaining work |
 | --- | --- |
-| `native-accel-plan/` | S0–S3 stages per `T-01-canonical-codec.md` (S2 gated on measured residual gap) |
+| `native-accel-plan/` | S2 deferred-with-evidence, S3 paper-only (gateway per `T-01-canonical-codec.md`) |
 | `demand-wedge-plan/` | All tasks done; campaign output tracked in ledger |
-| `post-alpha-hardening-plan/` | Campaign state machine, release-channel prep, campaign closeout |
+| `post-alpha-hardening-plan/` | T-10 closeout (planned) + campaign ledgers stay live; rest done |
 | `demand-wedge-plan/desktop-companion-spec.md` | Spec approved; **build requires demand gate or DEMAND.md amendment** |
 
-## Execution Protocol
+## Current execution authority
+
+Follow [plan-consolidation/00-plan.md](plan-consolidation/00-plan.md) for all
+current release work. The order below records the earlier planning sequence;
+it does not create another active backlog.
+
+## Historical execution protocol
 
 Follow `agent_tasks/00-README.md`: claim → reproduce → minimal diff →
 invariants → gates → mark done with evidence. Task files use the T-format of

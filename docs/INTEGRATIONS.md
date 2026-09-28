@@ -238,7 +238,7 @@ EOF or Ctrl+C exits cleanly.
 `contrib/editors/problem-matcher.json` ships a two-line problemMatcher so
 `sesslint check`/`scan` human output becomes click-to-line navigation in
 VS Code, Zed, and compatible editors. Setup notes per editor plus a
-`tasks.json` example live in [`contrib/editors/README.md`](../contrib/editors/README.md).
+`tasks.json` example live in [`contrib/editors/README.md`](https://github.com/HPNChanel/sesslint/blob/main/contrib/editors/README.md).
 Path caveat: human output minimizes paths for privacy — use
 workspace-relative inputs for clickable navigation.
 

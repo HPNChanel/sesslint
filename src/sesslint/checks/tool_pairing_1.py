@@ -203,25 +203,24 @@ class _ToolPairingIndexer:
         self.null_results: list[tuple[int, Any]] = []
 
         for idx, ev in enumerate(events):
-            raw_kind = getattr(ev, "kind", None)
-            if raw_kind is None and isinstance(ev, Mapping):
-                raw_kind = ev.get("kind")
-
-            if raw_kind in CALL_KINDS:
+            if type(ev) is SessionEvent:
+                raw_kind: Any = ev.kind
+                corr: Any = ev.correlation_id
+            else:
+                raw_kind = getattr(ev, "kind", None)
+                if raw_kind is None and isinstance(ev, Mapping):
+                    raw_kind = ev.get("kind")
                 corr = getattr(ev, "correlation_id", None)
                 if corr is None and isinstance(ev, Mapping):
                     corr = ev.get("correlation_id")
 
+            if raw_kind in CALL_KINDS:
                 if corr is None:
                     self.null_uses.append((idx, ev))
                 else:
                     self.uses_by_corr[str(corr)].append((idx, ev))
 
             elif raw_kind in RESULT_KINDS:
-                corr = getattr(ev, "correlation_id", None)
-                if corr is None and isinstance(ev, Mapping):
-                    corr = ev.get("correlation_id")
-
                 if corr is None:
                     self.null_results.append((idx, ev))
                 else:

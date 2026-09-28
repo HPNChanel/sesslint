@@ -1,0 +1,6 @@
+{
+  "origin": "synthetic",
+  "contains_real_data": false,
+  "seed": 41,
+  "description": "Public API expectations for existing synthetic repair scenarios; refusals are preserved."
+}

@@ -1,0 +1,35 @@
+{
+  "counts": {
+    "by_code": {
+      "SL201": 1,
+      "SL203": 1
+    },
+    "by_severity": {
+      "error": 2,
+      "fatal": 0,
+      "info": 0,
+      "warning": 0
+    },
+    "total": 2
+  },
+  "findings": [
+    {
+      "code": "SL201",
+      "line": null,
+      "record_id": "chk-2",
+      "severity": "error"
+    },
+    {
+      "code": "SL203",
+      "line": null,
+      "record_id": "tool-call-1",
+      "severity": "error"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl203_continuation.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL203"
+}

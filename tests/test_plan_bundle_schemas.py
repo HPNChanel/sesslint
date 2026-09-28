@@ -20,6 +20,7 @@ from sesslint.repair.planner import (
     get_plan_schema_path,
     load_plan_schema,
 )
+from tests.utils.schema import assert_schema
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPAIR_FIXTURES = REPO_ROOT / "fixtures" / "repair"
@@ -54,6 +55,7 @@ BUNDLE_TOP_REQUIRED = (
 
 def _validate_plan_dict(data: dict[str, Any]) -> None:
     """Strict structural check mirroring schemas/sesslint.plan.v1.json."""
+    assert_schema(data, "sesslint.plan.v1.json")
     assert set(PLAN_TOP_REQUIRED) <= set(data)
     assert data["version"] == "sesslint.plan/v1"
     assert isinstance(data["source_hash"], str) and len(data["source_hash"]) == 64
@@ -82,6 +84,7 @@ def _validate_plan_dict(data: dict[str, Any]) -> None:
 
 def _validate_bundle_dict(data: dict[str, Any]) -> None:
     """Strict structural check mirroring schemas/sesslint.bundle.v1.json."""
+    assert_schema(data, "sesslint.bundle.v1.json")
     assert set(BUNDLE_TOP_REQUIRED) <= set(data)
     assert data["bundle_version"] == "sesslint.bundle/v1"
 

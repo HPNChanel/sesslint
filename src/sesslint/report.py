@@ -1687,14 +1687,12 @@ def enforce_content_free(
 
 def get_report_schema_path() -> Path:
     """Return filesystem path to schemas/sesslint.report.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.report.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.report.v1.json"
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent / "schemas" / "sesslint.report.v1.json"
+    )
+    return schema_path("sesslint.report.v1.json", development_path)
 
 
 def load_report_schema() -> dict[str, Any]:
@@ -1707,16 +1705,14 @@ def load_report_schema() -> dict[str, Any]:
 
 def get_manifest_schema_path() -> Path:
     """Return filesystem path to schemas/sesslint.repair-manifest.v1.json."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    dev_path = repo_root / "schemas" / "sesslint.repair-manifest.v1.json"
-    if dev_path.is_file():
-        return dev_path
-    prefix_path = (
-        Path(sys.prefix) / "share" / "sesslint" / "schemas" / "sesslint.repair-manifest.v1.json"
+    from sesslint._resources import schema_path
+
+    development_path = (
+        Path(__file__).resolve().parent.parent.parent
+        / "schemas"
+        / "sesslint.repair-manifest.v1.json"
     )
-    if prefix_path.is_file():
-        return prefix_path
-    return dev_path
+    return schema_path("sesslint.repair-manifest.v1.json", development_path)
 
 
 def load_manifest_schema() -> dict[str, Any]:
@@ -2188,8 +2184,10 @@ def render_human(
                         p = hint_path(f.source.path, home=home)
                         next_action += f" Possible path: {entry.salvage_path.replace('{path}', p)}."
                         break
+        elif any(f.code == "SL009" for f in report.findings):
+            next_action = "Review secret warning; rotate or revoke exposed credentials."
         elif has_warning:
-            next_action = "Review warnings; session is structurally replayable."
+            next_action = "Review warnings and the reported assurance limits before resuming."
         else:
             next_action = "No repair needed."
 

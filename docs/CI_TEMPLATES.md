@@ -1,5 +1,7 @@
 # CI Templates
 
+These templates target 0.4.1 (next release). Select a published version before using them in production.
+
 Copy-paste pipeline snippets for platforms without a native SessLint
 action — GitLab CI, Azure Pipelines, CircleCI. GitHub users should use the
 composite action instead (`.github/actions/sesslint-check`).
@@ -27,7 +29,7 @@ sesslint-check:
   stage: test
   image: python:3.12-slim
   script:
-    - pip install sesslint==0.4.0
+    - pip install sesslint==0.4.1  # next release
     - sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
   artifacts:
     when: always
@@ -48,7 +50,7 @@ steps:
     inputs:
       versionSpec: "3.12"
   - script: |
-      pip install sesslint==0.4.0
+      pip install sesslint==0.4.1  # next release
       sesslint scan sessions/ --output-format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
     displayName: "Run SessLint integrity scan"
   - task: PublishBuildArtifacts@1
@@ -75,7 +77,7 @@ jobs:
       - checkout
       - run:
           name: "Install SessLint (pinned)"
-          command: pip install sesslint==0.4.0
+          command: pip install sesslint==0.4.1  # next release
       - run:
           name: "Run integrity scan"
           command: sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
@@ -106,6 +108,6 @@ Every action input maps to the identical CLI flag:
 | `skip-undetected` | `--skip-undetected` | — |
 | `config` | `--config` | — |
 | `output-format` | `--output-format` | `json` (redirect to artifact) |
-| `package` / `source-ref` | install line | `sesslint==0.4.0` |
+| `package` / `source-ref` | install line | `sesslint==0.4.1` | (next release)
 | `python-version` | runner image | `3.12` |
 | `sarif` output | `--output-format sarif` | redirect to artifact file |

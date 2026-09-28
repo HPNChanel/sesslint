@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL206": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL206",
+      "line": 6,
+      "record_id": "sesslint:synthetic:codex_rollout:6:f68183d7",
+      "severity": "warning"
+    }
+  ],
+  "format": "codex-rollout",
+  "input": "adapters/codex/sl206_trailing_nondurable.jsonl",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL206"
+}

@@ -2,10 +2,10 @@
 """Release-reference consistency checker (field-test debt F5).
 
 Scans user-facing docs for version pins and CLI flag mentions, and verifies
-they resolve against released git tags:
+they resolve against locally available git tags (not public availability):
 
 - Version pins (``rev: vX.Y.Z``, ``sesslint==X.Y.Z``, ``sesslint@vX.Y.Z``,
-  ``uses: ...sesslint...@vX.Y.Z``) must equal the latest published tag, or --
+  ``uses: ...sesslint...@vX.Y.Z``) must equal the latest local tag, or --
   when they reference the in-development ``_version.py`` version -- carry an
   explicit ``next-release`` marker.
 - Documented ``--flags`` that do not exist in ``src/sesslint/cli.py`` at the
@@ -296,7 +296,7 @@ def render_text(rep: Report) -> str:
         out.append(f"FAIL: {len(rep.violations)} violation(s)")
         out.extend(f"  - {v}" for v in rep.violations)
     else:
-        out.append("OK: all release references resolve")
+        out.append("OK: local tag references are consistent; public publication is not verified")
     return "\n".join(out)
 
 

@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "by_code": {
+      "SL107": 1
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 0,
+      "info": 0,
+      "warning": 1
+    },
+    "total": 1
+  },
+  "findings": [
+    {
+      "code": "SL107",
+      "line": null,
+      "record_id": "evt-2",
+      "severity": "warning"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl107_gap.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL107"
+}

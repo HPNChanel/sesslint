@@ -1,0 +1,48 @@
+{
+  "counts": {
+    "by_code": {
+      "SL005": 1,
+      "SL006": 1,
+      "SL008": 2
+    },
+    "by_severity": {
+      "error": 0,
+      "fatal": 1,
+      "info": 0,
+      "warning": 3
+    },
+    "total": 4
+  },
+  "findings": [
+    {
+      "code": "SL005",
+      "line": null,
+      "record_id": "a",
+      "severity": "fatal"
+    },
+    {
+      "code": "SL006",
+      "line": null,
+      "record_id": "h1",
+      "severity": "warning"
+    },
+    {
+      "code": "SL008",
+      "line": null,
+      "record_id": "a",
+      "severity": "warning"
+    },
+    {
+      "code": "SL008",
+      "line": null,
+      "record_id": "b",
+      "severity": "warning"
+    }
+  ],
+  "format": "canonical",
+  "input": "checks/sl005_cycle.json",
+  "mode": "check_file",
+  "profile": "neutral",
+  "schema_version": "sesslint.expected/v1",
+  "target_code": "SL005"
+}

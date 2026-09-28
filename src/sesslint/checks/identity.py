@@ -13,7 +13,6 @@ This module implements deterministic identity checks over canonical session even
 from __future__ import annotations
 
 import hashlib
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
@@ -162,13 +161,17 @@ def check_identities(
         return []
 
     ctx = context if context is not None else CheckContext()
-    groups: dict[str, list[tuple[int, Any]]] = defaultdict(list)
+    first_indices: dict[str, int] = {}
+    groups: dict[str, list[int]] = {}
     coerced_ids: set[str] = set()
 
     for idx, event in enumerate(events):
-        raw_id = getattr(event, "id", None)
-        if raw_id is None and isinstance(event, Mapping):
-            raw_id = event.get("id")
+        if type(event) is SessionEvent:
+            raw_id: Any = event.id
+        else:
+            raw_id = getattr(event, "id", None)
+            if raw_id is None and isinstance(event, Mapping):
+                raw_id = event.get("id")
         if raw_id is None:
             continue
         if isinstance(raw_id, str):
@@ -180,17 +183,20 @@ def check_identities(
             if not id_str.strip():
                 continue
             coerced_ids.add(id_str)
-        groups[id_str].append((idx, event))
+        first = first_indices.get(id_str)
+        if first is None:
+            first_indices[id_str] = idx
+        elif id_str in groups:
+            groups[id_str].append(idx)
+        else:
+            groups[id_str] = [first, idx]
 
     findings: list[Finding] = []
 
     for id_ in sorted(groups.keys()):
         occ = groups[id_]
-        if len(occ) < 2:
-            continue
-
-        idxs = [i for i, _ in occ]
-        evs = [e for _, e in occ]
+        idxs = occ
+        evs = [events[i] for i in occ]
         first_event = evs[0]
 
         canonical_hashes: list[str] = []
