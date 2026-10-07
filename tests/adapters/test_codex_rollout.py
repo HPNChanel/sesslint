@@ -513,9 +513,19 @@ class TestHostileInput:
         assert events[-1].parent_id is None
 
     def test_nul_byte_rejected(self) -> None:
+        # Newline-terminated: corruption, never a torn append (B17).
         data = _jsonl(_env(0, "session_meta", {})) + b'{"ordinal":1,"payload":\x00}\n'
         _, findings = load_codex_rollout(data)
-        assert any(f.code == SL002 and "NUL" in f.message for f in findings)
+        assert any(f.code == SL001 and "NUL" in f.message for f in findings)
+        assert not any(f.code == SL002 for f in findings)
+
+    def test_nul_padded_torn_tail_is_sl002(self) -> None:
+        # A crash can leave NUL padding after a cut-off append (B17).
+        data = _jsonl(_env(0, "session_meta", {})) + b'{"ordinal":1,"pay' + b"\x00" * 8
+        _, findings = load_codex_rollout(data)
+        torn = [f for f in findings if f.code == SL002]
+        assert len(torn) == 1
+        assert torn[0].evidence["unterminated"] is True
 
     def test_invalid_utf8(self) -> None:
         data = _jsonl(_env(0, "session_meta", {})) + b"\xff\xfe\n"

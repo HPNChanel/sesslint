@@ -236,6 +236,45 @@ def test_apply_plan_plan_out_conflict(tmp_path: Path, capsys: pytest.CaptureFixt
     assert "--plan-out" in capsys.readouterr().err
 
 
+def test_plan_out_refuses_source_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """--plan-out naming the session it describes is refused; the source is untouched (B18)."""
+    src = _stage(tmp_path)
+    before = src.read_bytes()
+    code = main(["repair", str(src), "--plan-out", str(src)])
+    assert code == 2
+    assert src.read_bytes() == before
+    assert "Error writing plan" in capsys.readouterr().err
+
+
+def test_plan_out_refuses_hard_link_to_source(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A hard-link alias of the source is the same file and is refused too (B18)."""
+    src = _stage(tmp_path)
+    alias = tmp_path / "alias.json"
+    try:
+        alias.hardlink_to(src)
+    except OSError:
+        pytest.skip("filesystem does not support hard links")
+    before = src.read_bytes()
+    code = main(["repair", str(src), "--plan-out", str(alias)])
+    assert code == 2
+    assert src.read_bytes() == before
+    assert "Error writing plan" in capsys.readouterr().err
+
+
+def test_plan_out_refuses_output_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """--plan-out equal to --output is refused before anything is written (B18)."""
+    src = _stage(tmp_path)
+    before = src.read_bytes()
+    out = tmp_path / "out.jsonl"
+    code = main(["repair", str(src), "--plan-out", str(out), "--output", str(out)])
+    assert code == 2
+    assert not out.exists()
+    assert src.read_bytes() == before
+    assert "Error writing plan" in capsys.readouterr().err
+
+
 def test_apply_plan_requires_output_unless_dry(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

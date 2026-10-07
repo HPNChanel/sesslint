@@ -10,12 +10,12 @@
       "info": 0
     },
     "by_code": {
-      "SL002": 1
+      "SL001": 1
     }
   },
   "findings": [
     {
-      "code": "SL002",
+      "code": "SL001",
       "severity": "error",
       "line": 2,
       "record_id": "evt_giant_01"

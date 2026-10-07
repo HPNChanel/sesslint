@@ -75,7 +75,7 @@ class TestCanonicalStream:
             b'{"actor":"user","id":"e1","kind":"message","parent_id":null,'
             b'"payload":{},"seq":0,"ts":"2026-01-01T00:00:00Z"}\n'
             b"BROKEN LINE\n"
-            b'{"id":"e2", torn'
+            b'{"id":"e2","pay'
         )
         findings = [it for it in list(iter_events(p)) if isinstance(it, Finding)]
         sl001 = _sl001s(findings)
@@ -106,7 +106,7 @@ class TestCanonicalStream:
             b'"payload":{},"seq":0,"ts":"2026-01-01T00:00:00Z"}\n'
         )
         p = tmp_path / "mid_plus_torn.jsonl"
-        p.write_bytes(good + b"BROKEN\n" + good + b'{"id":"e9", torn')
+        p.write_bytes(good + b"BROKEN\n" + good + b'{"id":"e9","pay')
         items = list(iter_events(p))
         f = _first_sl001(items)
         ev = f.evidence or {}

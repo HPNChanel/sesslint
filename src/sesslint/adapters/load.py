@@ -19,6 +19,7 @@ from sesslint.adapters.detect import (
 )
 from sesslint.canonical import SessionEvent
 from sesslint.finding import Finding
+from sesslint.io import DEFAULT_MAX_FILE_BYTES
 
 # Single authority mapping resolved format ids to the short keys used inside
 # profile ``allowed_adapters`` tuples. Both ``api.check_file`` and the
@@ -46,6 +47,45 @@ def profile_key_for_format(format: str | None) -> str | None:
 def is_vendor_format(format: str | None) -> bool:
     """Return True when ``format`` names a vendor (non-canonical) adapter."""
     return format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS, FORMAT_CODEX_ROLLOUT)
+
+
+class SourceSnapshot(io.BytesIO):
+    """In-memory snapshot of a session file, labelled with its on-disk path.
+
+    Loaders label findings with a stream's ``name``; naming the snapshot after
+    the file keeps finding coordinates (and fingerprints) identical to a
+    path-based load while parse and hash see the very same bytes (B19).
+    """
+
+    def __init__(self, data: bytes, path: str | Path) -> None:
+        super().__init__(data)
+        self.name = str(Path(path))
+
+
+def read_source_snapshot(path: str | Path) -> bytes | None:
+    """Read a session file once so parse and hash see identical bytes (B19).
+
+    Returns None for a non-file or a file above the reader size limit: callers
+    then use the path-based loaders, whose size gates never slurp the file.
+    """
+    p = Path(path)
+    try:
+        if not p.is_file() or p.stat().st_size > DEFAULT_MAX_FILE_BYTES:
+            return None
+        data = p.read_bytes()
+    except OSError:
+        return None
+    return data if len(data) <= DEFAULT_MAX_FILE_BYTES else None
+
+
+def snapshot_input(path: str | Path, data: bytes | None) -> Path | SourceSnapshot:
+    """Loader input for ``path``: a fresh stream over ``data`` when given, else the path.
+
+    Oversized snapshots fall back to the path so loaders keep their size gate.
+    """
+    if data is None or len(data) > DEFAULT_MAX_FILE_BYTES:
+        return Path(path)
+    return SourceSnapshot(data, path)
 
 
 def load_vendor_events(

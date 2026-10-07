@@ -23,12 +23,18 @@ from typing import Any
 
 from sesslint.adapters.canonical import dump_canonical, load_canonical
 from sesslint.adapters.detect import FORMAT_CANONICAL, resolve_format
-from sesslint.adapters.load import is_vendor_format, load_vendor_events
+from sesslint.adapters.load import (
+    is_vendor_format,
+    load_vendor_events,
+    read_source_snapshot,
+    snapshot_input,
+)
 from sesslint.atomic import atomic_write_bytes
 from sesslint.canonical import SessionEvent
 from sesslint.codes import SL302, Severity
 from sesslint.errors import SesslintError
 from sesslint.finding import Finding
+from sesslint.io import sha256_file_bytes
 from sesslint.repair.executor import is_live_store_path
 from sesslint.report import minimize_path
 
@@ -106,12 +112,15 @@ def export_to_canonical(
         reason = detection_res.reason if detection_res is not None else "unknown"
         raise ExportRefused(f"Format detection failed: {reason}")
 
+    # Parse and hash one read of the input: the summary's input digest must
+    # name the bytes actually exported (B19).
+    snapshot = read_source_snapshot(src)
     events: Sequence[SessionEvent]
     adapter_findings: Sequence[Finding]
     if resolved_fmt == FORMAT_CANONICAL:
-        events, adapter_findings = load_canonical(src)
+        events, adapter_findings = load_canonical(snapshot_input(src, snapshot))
     elif is_vendor_format(resolved_fmt):
-        events, adapter_findings = load_vendor_events(src, resolved_fmt)
+        events, adapter_findings = load_vendor_events(snapshot_input(src, snapshot), resolved_fmt)
     else:
         raise ExportRefused(f"Unsupported format for export: {resolved_fmt}")
 
@@ -126,7 +135,9 @@ def export_to_canonical(
 
     data = dump_canonical(events, None)
     output_sha256 = atomic_write_bytes(out, data, refuse_paths=[src])
-    input_sha256 = hashlib.sha256(src.read_bytes()).hexdigest()
+    input_sha256 = (
+        hashlib.sha256(snapshot).hexdigest() if snapshot is not None else sha256_file_bytes(src)
+    )
 
     by_severity: dict[str, int] = {}
     for f in all_findings:

@@ -27,13 +27,15 @@ def apply_torn_terminal_record_discard(
     Guarantees:
     - If the malformed terminal line was dropped during ingestion, ensures
       preceding events are valid and preserved.
-    - If target_index points to the terminal event in events, discards that terminal event.
+    - Discards the terminal event only when the step names it as both target
+      and ``cut_index``. A reader-minted SL002 addresses no event, and an event
+      that merely shares the id salvaged from the torn bytes is kept (B37).
     - Preserves all valid preceding events.
     """
     out = _copy_events_as_dicts(events)
-    if step.target_index is not None and 0 <= step.target_index < len(out):
-        if step.target_index == len(out) - 1:
-            out.pop()
+    cut = step.params.get("cut_index") if isinstance(step.params, Mapping) else None
+    if type(cut) is int and step.target_index == cut == len(out) - 1:
+        out.pop()
     return out
 
 

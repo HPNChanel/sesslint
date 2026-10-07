@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from sesslint.codes import SL002
+from sesslint.codes import SL001
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import Finding
 from sesslint.io import (
@@ -50,7 +50,8 @@ def test_max_line_bytes_exceeded() -> None:
 
     assert len(items) == 1
     assert isinstance(items[0], Finding)
-    assert items[0].code == SL002  # terminal line
+    # Over-limit lines are never fully buffered, so never provably torn (B17).
+    assert items[0].code == SL001
     assert "LIMIT" in items[0].message
 
 
@@ -107,5 +108,6 @@ def test_nesting_depth_limit() -> None:
 
     assert len(items) == 1
     assert isinstance(items[0], Finding)
-    assert items[0].code == SL002
+    # A complete (decodable) record is malformed, never a torn append (B17).
+    assert items[0].code == SL001
     assert "LIMIT" in items[0].message

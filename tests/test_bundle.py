@@ -201,6 +201,18 @@ class TestBundleCLI:
         assert data["bundle_version"] == "sesslint.bundle/v1"
         assert data["source"]["path"] == HEALTHY_CANONICAL.name
 
+    def test_bundle_out_refuses_source_path(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--out naming the bundled session is refused; the source is untouched (B18)."""
+        src = tmp_path / "session.jsonl"
+        src.write_bytes(HEALTHY_CANONICAL.read_bytes())
+        before = src.read_bytes()
+        code = main(["bundle", str(src), "--out", str(src)])
+        assert code == 2
+        assert src.read_bytes() == before
+        assert "Error writing bundle" in capsys.readouterr().err
+
     def test_bundle_missing_file_exits_2(self, capsys: pytest.CaptureFixture[str]) -> None:
         """sesslint bundle on nonexistent file prints error to stderr and exits 2."""
         code = main(["bundle", "non_existent_file_98765.jsonl"])

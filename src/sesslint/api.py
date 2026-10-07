@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ from sesslint.repair import (
     load_plan,
 )
 from sesslint.repair import executor as repair_executor
+from sesslint.repair.planner import PlanStep
 from sesslint.repair.planner import plan as planner_plan
 from sesslint.report import (
     Coverage,
@@ -586,6 +588,62 @@ def check_dir(
     )
 
 
+def _plan_step_identity(step: PlanStep) -> str:
+    """Everything a step does, minus its position (``seq``), as canonical JSON."""
+    body = {k: v for k, v in step.to_dict().items() if k != "seq"}
+    return json.dumps(body, sort_keys=True, separators=(",", ":"))
+
+
+def _vet_supplied_plan(
+    supplied: RepairPlan,
+    *,
+    findings: Sequence[Finding],
+    events: Sequence[SessionEvent],
+    source_hash: str,
+    acknowledge_side_effects: bool,
+    input_format: str,
+) -> None:
+    """Refuse a supplied plan unless each step is one the planner derives now (B20).
+
+    Exported plans are untrusted even when their fingerprint verifies (it is a
+    plain digest anyone can recompute). Every step must target a finding the
+    current source still has, through the recipe, params, and loss the planner
+    itself derives for it, in the planner's order; a plan may apply a subset.
+    Finding fingerprints include the source file name, so a plan applies only
+    to the file (name and bytes) it was exported from.
+    """
+    from sesslint.repair.errors import PlanSourceMismatch, RepairRefused
+    from sesslint.repair.planner import compute_events_source_hash
+
+    if supplied.source_hash not in (source_hash, compute_events_source_hash(events)):
+        raise PlanSourceMismatch(
+            f"Plan source_hash mismatch: plan '{supplied.source_hash}' matches neither "
+            f"source file SHA-256 ('{source_hash}') nor the source events hash"
+        )
+    expected = planner_plan(
+        findings=findings,
+        events=events,
+        profile=supplied.profile,
+        policy=supplied.policy,
+        source_hash=supplied.source_hash,
+        acknowledge_side_effects=acknowledge_side_effects,
+        input_format=input_format,
+    )
+    positions: dict[str, list[int]] = {}
+    for idx, step in enumerate(expected.steps):
+        positions.setdefault(_plan_step_identity(step), []).append(idx)
+    previous = -1
+    for step in sorted(supplied.steps, key=lambda s: s.seq):
+        later = [i for i in positions.get(_plan_step_identity(step), ()) if i > previous]
+        if not later:
+            raise RepairRefused(
+                f"Plan step {step.seq} (recipe '{step.recipe}') is not a repair sesslint "
+                "derives for this source now; export the plan from this exact file (same "
+                "name and bytes) with this sesslint version"
+            )
+        previous = later[0]
+
+
 def repair(
     source_path: Path | str,
     output_path: Path | str | None,
@@ -611,9 +669,10 @@ def repair(
         profile: Profile name (default 'neutral').
         plan_path: Optional path to pre-computed plan JSON.
         plan: Optional in-memory RepairPlan to apply directly (mutually
-            exclusive with ``plan_path``); the plan is authoritative —
-            fingerprint, source binding, and policy are re-validated at
-            execution.
+            exclusive with ``plan_path``). A supplied plan is untrusted: each
+            step must match one the planner derives for the current source
+            (B20), and fingerprint, source binding, and policy are
+            re-validated at execution.
         dry_run: If True, computes plan without writing files.
         acknowledge_side_effects: Explicit acknowledgment for salvage policy.
         emit: Output artifact format. 'auto' (default) emits the input's own
@@ -696,40 +755,58 @@ def repair(
     all_findings: list[Finding] = []
     source_events: list[SessionEvent] | None = None
     source_findings: list[Finding] | None = None
-    if (plan_path is None and plan is None) or input_is_vendor:
-        # Load for planning. For vendor input these events/findings are also
-        # passed to execute(): vendor events carry write-back provenance, and
-        # findings locate event-less source lines the plan explicitly discards
-        # (e.g. torn terminal record). For canonical input the executor
-        # re-loads the source itself (preserving the session header).
-        from sesslint.repair.executor import load_source_for_format, run_all_checks
+    # Load for planning, or to vet a supplied plan against the current source
+    # (B20). For vendor input these events/findings are also passed to
+    # execute(): vendor events carry write-back provenance, and findings locate
+    # event-less source lines the plan explicitly discards (e.g. torn terminal
+    # record). For canonical input the executor re-loads the source itself
+    # (preserving the session header).
+    from sesslint.adapters.load import read_source_snapshot
+    from sesslint.io import sha256_file_bytes
+    from sesslint.repair.executor import load_source_for_format, run_all_checks
 
-        check_token(cancel_token)
-        _source_header, loaded_events, stream_findings = load_source_for_format(
-            src, resolved_format
-        )
-        check_findings = run_all_checks(
-            loaded_events,
-            profile=profile,
-            source_path=src.name,
-            adapter=resolved_format,
-        )
-        all_findings = list(stream_findings) + list(check_findings)
-        if input_is_vendor:
-            source_events = list(loaded_events)
-            source_findings = all_findings
+    check_token(cancel_token)
+    # One read for parse and hash: the plan binds the exact bytes it was
+    # computed from, never a later state of a file still being written (B19).
+    src_snapshot = read_source_snapshot(src)
+    _source_header, loaded_events, stream_findings = load_source_for_format(
+        src, resolved_format, data=src_snapshot
+    )
+    check_findings = run_all_checks(
+        loaded_events,
+        profile=profile,
+        source_path=src.name,
+        adapter=resolved_format,
+    )
+    all_findings = list(stream_findings) + list(check_findings)
+    if input_is_vendor:
+        source_events = list(loaded_events)
+        source_findings = all_findings
+    source_hash = (
+        hashlib.sha256(src_snapshot).hexdigest()
+        if src_snapshot is not None
+        else sha256_file_bytes(src)
+    )
     emit_progress(
         progress_cb,
         ProgressEvent(phase="repair:load", completed=1, total=4, item=src.name),
     )
     check_token(cancel_token)
 
-    if plan is not None:
-        plan_obj = plan
-    elif plan_path is not None:
-        plan_obj = load_plan(plan_path, policy=policy)
+    supplied_plan = plan
+    if supplied_plan is None and plan_path is not None:
+        supplied_plan = load_plan(plan_path, policy=policy)
+    if supplied_plan is not None:
+        plan_obj = supplied_plan
+        _vet_supplied_plan(
+            plan_obj,
+            findings=all_findings,
+            events=loaded_events,
+            source_hash=source_hash,
+            acknowledge_side_effects=acknowledge_side_effects,
+            input_format=resolved_format,
+        )
     else:
-        source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
         import sys
 
         p_mod = sys.modules.get("sesslint.repair.planner")
@@ -924,14 +1001,18 @@ def apply_plan(
     """Execute a previously exported repair plan — plan-authoritative apply.
 
     The plan document is loaded through the strict deserializer and its own
-    ``policy``/``profile`` govern execution; no re-planning occurs. Every
+    ``policy``/``profile`` govern execution. The plan is untrusted: the source
+    is re-checked and every step must be one the planner derives for it now —
+    same finding, recipe, params and declared loss, in planner order (a subset
+    is allowed); anything else is refused (``RepairRefused``, B20). Every
     executor-side validation still applies: plan fingerprint recomputation,
     source-hash binding against the current source bytes/events, TOCTOU
     abstention, and post-execution output audit. A source that drifted since
     plan export is refused (``PlanSourceMismatch``, i.e. plan-stale).
 
     Args:
-        source_path: Path to source session file (must equal the planned one).
+        source_path: Path to source session file (must equal the planned one,
+            file name included: finding fingerprints bind it).
         plan_doc: ``RepairPlan``, path to a ``sesslint.plan/v1`` JSON, or a
             plan mapping.
         output_path: Path to output repaired session file (required unless

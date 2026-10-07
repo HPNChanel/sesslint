@@ -2860,9 +2860,15 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 try:
                     from sesslint.atomic import atomic_write_text
 
+                    # Never let the plan document replace the session it
+                    # describes, nor the repaired output about to be written (B18).
+                    plan_refuse: list[Path] = [src_path]
+                    if args.output is not None:
+                        plan_refuse.append(Path(args.output))
                     atomic_write_text(
                         Path(args.plan_out),
                         json.dumps(plan_obj.to_dict(), indent=2, sort_keys=True) + chr(10),
+                        refuse_paths=plan_refuse,
                     )
                 except OSError as err:
                     print(f"Error writing plan to {args.plan_out}: {err}", file=sys.stderr)
@@ -3155,7 +3161,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             try:
                 from sesslint.atomic import atomic_write_text
 
-                atomic_write_text(out_path, bundle_json)
+                # The bundle must never replace the session it describes (B18).
+                atomic_write_text(out_path, bundle_json, refuse_paths=[target_bundle_path])
             except Exception as err:
                 print(f"Error writing bundle to {out_path}: {err}", file=sys.stderr)
                 return 2

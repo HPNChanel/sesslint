@@ -699,81 +699,60 @@
     "outcome": "REPAIR_REFUSED"
   },
   "torn-middle/conservative/claude-strict": {
-    "blocked": [],
-    "declared_loss": [],
-    "loss_preview": {
-      "discarded-suffix": 0,
-      "none": 0,
-      "truncated-projection": 0
-    },
-    "outcome": "applied-and-verified",
-    "recipes": [
-      "torn-terminal-record-discard"
-    ]
+    "outcome": "REPAIR_REFUSED"
   },
   "torn-middle/conservative/neutral": {
-    "blocked": [],
-    "declared_loss": [],
-    "loss_preview": {
-      "discarded-suffix": 0,
-      "none": 0,
-      "truncated-projection": 0
-    },
-    "outcome": "applied-and-verified",
-    "recipes": [
-      "torn-terminal-record-discard"
-    ]
+    "outcome": "REPAIR_REFUSED"
   },
   "torn-middle/conservative/openai-strict": {
-    "blocked": [],
-    "declared_loss": [],
-    "loss_preview": {
-      "discarded-suffix": 0,
-      "none": 0,
-      "truncated-projection": 0
-    },
-    "outcome": "applied-and-verified",
-    "recipes": [
-      "torn-terminal-record-discard"
-    ]
+    "outcome": "REPAIR_REFUSED"
   },
   "torn-middle/salvage/claude-strict": {
     "blocked": [],
-    "declared_loss": [],
+    "declared_loss": [
+      "torn-record:1"
+    ],
     "loss_preview": {
       "discarded-suffix": 0,
       "none": 0,
+      "torn-record": 1,
       "truncated-projection": 0
     },
     "outcome": "applied-and-verified",
     "recipes": [
-      "torn-terminal-record-discard"
+      "torn-record-excision"
     ]
   },
   "torn-middle/salvage/neutral": {
     "blocked": [],
-    "declared_loss": [],
+    "declared_loss": [
+      "torn-record:1"
+    ],
     "loss_preview": {
       "discarded-suffix": 0,
       "none": 0,
+      "torn-record": 1,
       "truncated-projection": 0
     },
     "outcome": "applied-and-verified",
     "recipes": [
-      "torn-terminal-record-discard"
+      "torn-record-excision"
     ]
   },
   "torn-middle/salvage/openai-strict": {
     "blocked": [],
-    "declared_loss": [],
+    "declared_loss": [
+      "torn-record:1"
+    ],
     "loss_preview": {
       "discarded-suffix": 0,
       "none": 0,
+      "torn-record": 1,
       "truncated-projection": 0
     },
     "outcome": "applied-and-verified",
     "recipes": [
-      "torn-terminal-record-discard"
+      "torn-record-excision"
     ]
   },
   "torn-tail/conservative/claude-strict": {

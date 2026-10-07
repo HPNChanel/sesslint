@@ -618,7 +618,7 @@ def test_scenario_2_dangling_call_in_truncated_region(tmp_path: Path) -> None:
             repairability=Repairability.DETERMINISTIC,
             message_template="Torn terminal record at index 3",
             source=SourceRef(path="session.json", line=4, record_id="c-dangle"),
-            evidence={"cut_index": 3, "target_index": 3},
+            evidence={"cut_index": 3, "target_index": 3, "unterminated": True},
         )
     ]
 
@@ -854,7 +854,7 @@ def test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin(tmp_
         repairability=Repairability.DETERMINISTIC,
         message_template="Torn terminal record including index 1",
         source=SourceRef(path="session.json", line=2, record_id="c-unk-outside"),
-        evidence={"cut_index": 1, "target_index": 1},
+        evidence={"cut_index": 1, "target_index": 1, "unterminated": True},
     )
     p_pin = plan([finding_boundary], events, policy="conservative", source_hash=source_h)
     assert len(p_pin.steps) == 0
@@ -1045,7 +1045,7 @@ def test_positive_e2e_realistic_tool_session_repaired(tmp_path: Path) -> None:
             repairability=Repairability.DETERMINISTIC,
             message_template="Torn terminal record at index 6",
             source=SourceRef(path="session.json", line=7, record_id="msg-torn"),
-            evidence={"cut_index": 6, "target_index": 6},
+            evidence={"cut_index": 6, "target_index": 6, "unterminated": True},
         )
     ]
 

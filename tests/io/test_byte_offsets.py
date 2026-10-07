@@ -132,7 +132,8 @@ def test_exact_offsets_multibyte_intact() -> None:
     assert len(findings) == 1
 
     f = findings[0]
-    assert f.code == SL002  # Terminal since line3 is last line
+    # Terminal but newline-terminated: malformed, not a torn append (B17).
+    assert f.code == SL001
     assert f.source.line == 3
     assert f.evidence["byte_offset"] == l3_start
     assert f.evidence["byte_end"] == l3_end

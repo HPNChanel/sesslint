@@ -49,7 +49,9 @@ from sesslint.io import (
     _open_byte_source,
     _RawLine,
     check_nesting_depth,
+    decode_defect_code,
     decode_json_dupaware,
+    defect_evidence,
     dup_key_findings,
     extract_record_id,
 )
@@ -624,7 +626,6 @@ def _process_claude_line(
     if isinstance(sizes_meta, list) and raw.byte_end >= raw.byte_offset:
         sizes_meta.append(raw.byte_end - raw.byte_offset)
 
-    code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
         "byte_end": raw.byte_end,
@@ -640,7 +641,7 @@ def _process_claude_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -653,12 +654,13 @@ def _process_claude_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -676,12 +678,13 @@ def _process_claude_line(
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -700,7 +703,7 @@ def _process_claude_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -708,11 +711,12 @@ def _process_claude_line(
         )
         return
     except (json.JSONDecodeError, ValueError):
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = (
             "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
+            if code == SL002
             else "Malformed record on line {line} for record {record_id}"
         )
         findings.append(
@@ -720,7 +724,7 @@ def _process_claude_line(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -741,14 +745,10 @@ def _process_claude_line(
     if not isinstance(obj, dict):
         rec_id = None
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -766,7 +766,7 @@ def _process_claude_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,

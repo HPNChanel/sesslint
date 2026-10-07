@@ -555,7 +555,9 @@ def test_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_exit_codes_table(tmp_path: Path) -> None:
     """Verify FR-099 exit code contract: 0=success/dry-run, 1=refusal/no safe plan, 2=usage/I-O."""
-    valid_source = tmp_path / "valid_source.jsonl"
+    # Same file name as the fixture: plan steps bind finding fingerprints, which
+    # include the source name (B20).
+    valid_source = tmp_path / "source.jsonl"
     shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", valid_source)
     plan_path = FIXTURES_DIR / "exec_basic" / "plan.json"
 

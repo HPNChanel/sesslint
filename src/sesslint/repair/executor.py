@@ -15,6 +15,7 @@ in SessLint. It enforces a strict, pinned 8-step protocol:
 
 from __future__ import annotations
 
+import dataclasses
 import errno
 import hashlib
 import json
@@ -74,6 +75,7 @@ from sesslint.repair.errors import (
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
     MAX_STEPS,
+    PlanStep,
     RepairPlan,
     compute_events_source_hash,
 )
@@ -100,6 +102,24 @@ from sesslint.report import (
 
 StrPath = str | os.PathLike[str]
 SQLITE_MAGIC: Final[bytes] = b"SQLite format 3\x00"
+
+# B21: plan steps address events by their position in the source as loaded,
+# but each drop step shifts every later event. While recipes run, each working
+# event carries its source position under this private key (recipes deep-copy
+# events, so the key travels with the event); it is stripped before output
+# validation, and the canonical schema admits no such field.
+_ORIGIN_KEY: Final[str] = "\x00sesslint.origin"
+_STEP_INDEX_PARAMS: Final[tuple[str, ...]] = (
+    "at_index",
+    "boundary_index",
+    "cut_index",
+    "entry_index",
+    "first_index",
+    "first_unsafe_index",
+    "index",
+    "use_index",
+)
+_STEP_INDEX_LIST_PARAMS: Final[tuple[str, ...]] = ("record_indexes", "result_indexes")
 
 _ATOMIC_TEST_HOOKS: dict[str, Any] = {
     "pre_write": None,
@@ -147,6 +167,61 @@ def is_live_store_path(path: StrPath) -> bool:
         except OSError:
             pass
     return False
+
+
+def _source_positions(events: Sequence[Mapping[str, Any]]) -> dict[int, int]:
+    """Map each surviving source position to its current position (B21)."""
+    positions: dict[int, int] = {}
+    for current, ev in enumerate(events):
+        origin = ev.get(_ORIGIN_KEY)
+        if isinstance(origin, int):
+            if origin in positions:
+                raise OutputInvalid(f"Repair duplicated source event {origin}")
+            positions[origin] = current
+    return positions
+
+
+def _relocate_step(step: PlanStep, positions: Mapping[int, int], source_len: int) -> PlanStep:
+    """Re-address ``step`` from source positions to current positions (B21).
+
+    A position that an earlier step removed fails closed instead of letting
+    the step act on whichever event now sits there. Values that are not
+    source positions pass through for the recipe's own guards to judge.
+    """
+
+    def relocate(value: Any) -> Any:
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < source_len:
+            return value
+        current = positions.get(value)
+        if current is None:
+            raise OutputInvalid(
+                f"Step {step.seq} (recipe '{step.recipe}') targets source event {value}, "
+                "which an earlier step removed"
+            )
+        return current
+
+    params = dict(step.params)
+    for key in _STEP_INDEX_PARAMS:
+        if key in params:
+            params[key] = relocate(params[key])
+    for key in _STEP_INDEX_LIST_PARAMS:
+        values = params.get(key)
+        if isinstance(values, (list, tuple)):
+            params[key] = [relocate(value) for value in values]
+    return dataclasses.replace(step, target_index=relocate(step.target_index), params=params)
+
+
+def _targeted_lines(findings: Sequence[Finding], targeted_fps: set[str]) -> frozenset[int]:
+    """Physical source lines of ``findings`` whose fingerprints a plan step targets."""
+    return frozenset(
+        f.source.line
+        for f in findings
+        if f.fingerprint in targeted_fps
+        and f.source is not None
+        and isinstance(f.source.line, int)
+        and not isinstance(f.source.line, bool)
+        and f.source.line >= 1
+    )
 
 
 def _plan_requires_salvage(plan: RepairPlan) -> bool:
@@ -226,16 +301,21 @@ def load_plan(
 
 def load_session_source_with_findings(
     path: StrPath,
+    *,
+    data: bytes | None = None,
 ) -> tuple[SessionHeader, list[SessionEvent], list[Finding]]:
     """Load session header, events, and stream-level findings (SL001/SL002).
 
     Preserves duplicate IDs and nonterminal findings without prematurely failing.
     Falls back to single-document JSON parsing if the file is formatted as single-document JSON.
+    When ``data`` (a ``read_source_snapshot`` of the file) is given, header,
+    events and findings all derive from exactly those bytes (B19).
     """
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(f"Session file not found: {p}")
 
+    from sesslint.adapters.load import snapshot_input
     from sesslint.errors import SchemaError
     from sesslint.io import iter_events, read_header
 
@@ -243,21 +323,24 @@ def load_session_source_with_findings(
         from sesslint.adapters.canonical import CRITICAL_KEYS
 
         hdr_findings: list[Finding] = []
-        hdr = read_header(p, dup_sink=hdr_findings, critical_keys=CRITICAL_KEYS)
-        items = list(iter_events(p, critical_keys=CRITICAL_KEYS))
+        hdr = read_header(
+            snapshot_input(p, data), dup_sink=hdr_findings, critical_keys=CRITICAL_KEYS
+        )
+        items = list(iter_events(snapshot_input(p, data), critical_keys=CRITICAL_KEYS))
         events = [e for e in items if isinstance(e, SessionEvent)]
         findings = hdr_findings + [f for f in items if isinstance(f, Finding)]
         return hdr, events, findings
     except SchemaError:
         # Fall back to single-document canonical JSON if formatted as a single JSON object
-        text = p.read_text(encoding="utf-8-sig").strip()
+        raw_text = p.read_text(encoding="utf-8-sig") if data is None else data.decode("utf-8-sig")
+        text = raw_text.strip()
         if text.startswith("{"):
             try:
-                data = json.loads(text)
-                if isinstance(data, Mapping) and "events" in data:
+                doc = json.loads(text)
+                if isinstance(doc, Mapping) and "events" in doc:
                     from sesslint.adapters.canonical import load_canonical
 
-                    ev_list, can_findings = load_canonical(p)
+                    ev_list, can_findings = load_canonical(snapshot_input(p, data))
                     hdr = SessionHeader(
                         schema_version="sesslint.session/v1",
                         session_id=str(ev_list.source.get("session_id", p.stem)),
@@ -278,19 +361,23 @@ def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent
 def load_source_for_format(
     path: StrPath,
     format: str | None,
+    *,
+    data: bytes | None = None,
 ) -> tuple[SessionHeader | None, list[SessionEvent], list[Finding]]:
     """Load events (and stream findings) via the adapter matching ``format``.
 
     Vendor adapters return no session header and produce canonical events that
     carry provenance (``source_line``/``source_record_hash``) required for
-    vendor write-back projection.
+    vendor write-back projection. ``data`` is an optional snapshot of the
+    file's bytes: when given, everything derives from exactly the bytes the
+    caller hashes, with path-based finding coordinates (B19).
     """
-    from sesslint.adapters.load import is_vendor_format, load_vendor_events
+    from sesslint.adapters.load import is_vendor_format, load_vendor_events, snapshot_input
 
     if is_vendor_format(format):
-        events, findings = load_vendor_events(Path(path), format)
+        events, findings = load_vendor_events(snapshot_input(Path(path), data), format)
         return None, events, findings
-    hdr, events, findings = load_session_source_with_findings(Path(path))
+    hdr, events, findings = load_session_source_with_findings(Path(path), data=data)
     return hdr, events, findings
 
 
@@ -438,6 +525,8 @@ def execute(
     if not source_p.is_file():
         raise FileNotFoundError(f"Source session file not found: {source_p}")
 
+    # One read: the pre-hash, the parsed events and the write-back projection
+    # all describe these exact bytes, even while a writer appends (B19).
     source_bytes = source_p.read_bytes()
     source_pre_hash = hashlib.sha256(source_bytes).hexdigest()
 
@@ -448,7 +537,7 @@ def execute(
         loaded_events = list(source_events)
     else:
         source_header, loaded_events, loaded_stream_findings = load_source_for_format(
-            source_p, format
+            source_p, format, data=source_bytes
         )
 
     events_hash = compute_events_source_hash(loaded_events)
@@ -476,16 +565,15 @@ def execute(
     drop_lines: frozenset[int] = frozenset()
     if emit_is_vendor:
         targeted_fps = {s.target_finding_fp for s in plan.steps if s.target_finding_fp}
-        all_src_findings = list(source_findings or ()) + list(loaded_stream_findings)
-        drop_lines = frozenset(
-            f.source.line
-            for f in all_src_findings
-            if f.fingerprint in targeted_fps
-            and f.source is not None
-            and isinstance(f.source.line, int)
-            and not isinstance(f.source.line, bool)
-            and f.source.line >= 1
-        )
+        line_findings: Sequence[Finding] = loaded_stream_findings
+        if source_events is not None and _targeted_lines(source_findings or (), targeted_fps):
+            # Caller-supplied findings may describe an earlier read of the
+            # file: discard only lines that these bytes themselves still flag,
+            # so a torn tail completed since planning is kept (B19).
+            _hdr, _events, line_findings = load_source_for_format(
+                source_p, format, data=source_bytes
+            )
+        drop_lines = _targeted_lines(line_findings, targeted_fps)
 
     # -------------------------------------------------------------------------
     # STEP 2: Pre-flight destination path checks
@@ -528,6 +616,11 @@ def execute(
     register_all_sl002_recipes()
 
     working_events = _copy_events_as_dicts(loaded_events)
+    if any(_ORIGIN_KEY in ev for ev in working_events):
+        raise OutputInvalid("Source event carries a field reserved for repair bookkeeping")
+    for origin, ev_dict in enumerate(working_events):
+        ev_dict[_ORIGIN_KEY] = origin
+    source_len = len(working_events)
     sorted_steps = sorted(plan.steps, key=lambda s: s.seq)
 
     for step_idx, step in enumerate(sorted_steps):
@@ -579,8 +672,11 @@ def execute(
                         f"side-effect abstention"
                     )
 
+        # The scope check above judges the step in source coordinates; the
+        # recipe runs on the current events (B21).
+        current_step = _relocate_step(step, _source_positions(working_events), source_len)
         try:
-            working_events = recipe.apply(working_events, step)
+            working_events = recipe.apply(working_events, current_step)
         except Exception as err:
             raise OutputInvalid(f"Recipe '{step.recipe}' failed at step {step.seq}: {err}") from err
         emit(
@@ -592,6 +688,9 @@ def execute(
                 item=step.recipe,
             ),
         )
+
+    for ev_dict in working_events:
+        ev_dict.pop(_ORIGIN_KEY, None)
 
     # -------------------------------------------------------------------------
     # STEP 4: Output validation

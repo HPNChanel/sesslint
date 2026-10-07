@@ -133,6 +133,8 @@ def _plan_detail(
     import hashlib as _hl
 
     from sesslint.adapters.detect import FORMAT_CANONICAL, detect_format
+    from sesslint.adapters.load import read_source_snapshot
+    from sesslint.io import sha256_file_bytes
     from sesslint.profiles.profile import resolve_effective_config
     from sesslint.repair.executor import load_source_for_format, run_all_checks
     from sesslint.repair.planner import plan as planner_plan
@@ -143,7 +145,10 @@ def _plan_detail(
         resolved = det.format or FORMAT_CANONICAL
     else:
         resolved = str(format)
-    _hdr, events, stream_findings = load_source_for_format(src, resolved)
+    # Parse and hash one read of the file so the plan binds the bytes it was
+    # computed from (B19).
+    snapshot = read_source_snapshot(src)
+    _hdr, events, stream_findings = load_source_for_format(src, resolved, data=snapshot)
     check_findings = run_all_checks(events, profile=profile, source_path=src.name, adapter=resolved)
     all_findings = list(stream_findings) + list(check_findings)
     plan = planner_plan(
@@ -151,7 +156,9 @@ def _plan_detail(
         events=events,
         profile=profile,
         policy=policy,
-        source_hash=_hl.sha256(src.read_bytes()).hexdigest(),
+        source_hash=(
+            _hl.sha256(snapshot).hexdigest() if snapshot is not None else sha256_file_bytes(src)
+        ),
         acknowledge_side_effects=acknowledge_side_effects,
         input_format=resolved,
     )

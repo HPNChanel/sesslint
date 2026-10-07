@@ -360,13 +360,16 @@ def test_compaction_boundary_record(tmp_path: Path) -> None:
 
 
 def test_non_dict_record(tmp_path: Path) -> None:
-    """Verify non-dict JSON records (e.g. array or string) trigger SL001 / SL002."""
+    """Verify non-dict JSON records (e.g. array or string) trigger SL001.
+
+    A complete JSON value is never a torn append, even on the final line (B17).
+    """
     f = tmp_path / "not_dict.jsonl"
     f.write_text('["not", "a", "dict"]\n', encoding="utf-8")
     events, findings = load_claude_code(f)
     assert len(events) == 0
     assert len(findings) == 1
-    assert findings[0].code == SL002
+    assert findings[0].code == SL001
 
 
 def test_critical_field_sl302(tmp_path: Path) -> None:
@@ -916,17 +919,30 @@ def test_regression_encoding_sl001_mid_and_sl002_tail(tmp_path: Path) -> None:
     assert "byte_offset" in sl001_f[0].evidence
     assert "byte_end" in sl001_f[0].evidence
 
-    # Terminal invalid UTF-8 byte
+    # Terminal, unterminated, but the invalid byte sits mid-record: corruption,
+    # not a torn append — never suffix-dropped as SL002 (B17).
     bad_tail = tmp_path / "bad_tail.jsonl"
     bad_tail.write_bytes(part1 + part2.rstrip(b"\n"))
 
     events_tail, findings_tail = load_claude_code(bad_tail)
     assert len(events_tail) == 1
-    sl002_f = [f for f in findings_tail if f.code == SL002]
+    assert not [f for f in findings_tail if f.code == SL002]
+    tail_sl001 = [f for f in findings_tail if f.code == SL001]
+    assert len(tail_sl001) == 1
+    assert "ENCODING" in tail_sl001[0].message
+
+    # Terminal multi-byte sequence cut off at EOF: a torn append (SL002).
+    torn_tail = tmp_path / "torn_tail.jsonl"
+    torn_tail.write_bytes(part1 + b'{"id":"m2","type":"assistant_message","message":"caf\xc3')
+
+    events_torn, findings_torn = load_claude_code(torn_tail)
+    assert len(events_torn) == 1
+    sl002_f = [f for f in findings_torn if f.code == SL002]
     assert len(sl002_f) == 1
     assert "ENCODING" in sl002_f[0].message
     assert sl002_f[0].evidence is not None
     assert "byte_offset" in sl002_f[0].evidence
+    assert sl002_f[0].evidence["unterminated"] is True
 
 
 def test_regression_unsupported_version_single_finding(tmp_path: Path) -> None:

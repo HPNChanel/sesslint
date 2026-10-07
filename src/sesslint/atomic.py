@@ -32,6 +32,14 @@ def _sync_dir(path: Path) -> None:
             pass
 
 
+def _same_existing_file(dest: Path, prohibited: StrPath) -> bool:
+    """True when both paths exist and name one file (hard link, case alias)."""
+    try:
+        return os.path.samefile(dest, prohibited)
+    except OSError:
+        return False
+
+
 def atomic_write_bytes(
     dest: StrPath,
     data: bytes,
@@ -77,7 +85,7 @@ def atomic_write_bytes(
     # 1. Prohibited path preflight check (before creating any temporary artifact)
     for prohibited in refuse_paths:
         prohibited_real = os.path.realpath(prohibited)
-        if dest_real == prohibited_real:
+        if dest_real == prohibited_real or _same_existing_file(dest_path, prohibited):
             raise AtomicWriteError(
                 f"Refusing to write to protected path: {dest} "
                 f"(matches prohibited path {prohibited})"
