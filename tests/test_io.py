@@ -218,8 +218,8 @@ class TestLimitsEnforcement:
         assert isinstance(items[1], SessionEvent)
         assert items[1].id == "evt_tail"
 
-    def test_max_line_bytes_terminal_produces_sl002(self, tmp_path: Path) -> None:
-        """Line exceeding max_line_bytes at end of file produces SL002."""
+    def test_max_line_bytes_terminal_produces_sl001(self, tmp_path: Path) -> None:
+        """An over-limit final line is malformed data (SL001), never a torn append (B17)."""
         huge_line = '{"id":"evt_giant_term", "pad":"' + ("x" * 200) + '"}\n'
         file_path = tmp_path / "giant_term.jsonl"
         content = (
@@ -232,7 +232,7 @@ class TestLimitsEnforcement:
         items = list(iter_events(file_path, limits=limits))
         assert len(items) == 1
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002
+        assert items[0].code == SL001
         assert "LIMIT" in items[0].message
         assert items[0].source.line == 2
 
@@ -289,7 +289,7 @@ class TestLimitsEnforcement:
         items = list(iter_events(file_path, limits=limits))
         assert len(items) == 1
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002  # terminal line
+        assert items[0].code == SL001  # complete final line: malformed, not torn (B17)
         assert "LIMIT" in items[0].message
 
     def test_max_records_exceeded(self, tmp_path: Path) -> None:
@@ -524,8 +524,8 @@ class TestIterEventsEdgeCases:
         assert items[0].code == SL001
         assert isinstance(items[1], SessionEvent)
 
-    def test_terminal_event_schema_error_produces_sl002(self, tmp_path: Path) -> None:
-        """Event with schema violation on terminal line produces SL002."""
+    def test_terminal_event_schema_error_produces_sl001(self, tmp_path: Path) -> None:
+        """A complete final event that violates the schema is malformed (SL001, B17)."""
         file_path = tmp_path / "bad_term_event.jsonl"
         file_path.write_text(
             '{"created_at":"2026-09-05T00:00:00Z","schema_version":"sesslint.session/v1","session_id":"s1"}\n'
@@ -537,11 +537,28 @@ class TestIterEventsEdgeCases:
         assert len(items) == 2
         assert isinstance(items[0], SessionEvent)
         assert isinstance(items[1], Finding)
-        assert items[1].code == SL002
+        assert items[1].code == SL001
         assert items[1].source.record_id == "evt_bad"
 
-    def test_terminal_broken_header_produces_sl002(self, tmp_path: Path) -> None:
-        """Single-line file with invalid schema header produces SL002."""
+    def test_unterminated_torn_final_line_produces_sl002(self, tmp_path: Path) -> None:
+        """Only an unterminated, undecodable final line is a torn append (SL002, B17)."""
+        file_path = tmp_path / "torn_term_event.jsonl"
+        file_path.write_text(
+            '{"created_at":"2026-09-05T00:00:00Z","schema_version":"sesslint.session/v1","session_id":"s1"}\n'
+            '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{},"seq":0,"ts":"2026-09-05T12:00:00Z"}\n'
+            '{"actor":"user","id":"evt_torn","kind":"mess',
+            encoding="utf-8",
+        )
+        items = list(iter_events(file_path))
+        assert len(items) == 2
+        assert isinstance(items[0], SessionEvent)
+        assert isinstance(items[1], Finding)
+        assert items[1].code == SL002
+        assert items[1].evidence["unterminated"] is True
+        assert items[1].source.record_id == "evt_torn"
+
+    def test_terminal_broken_header_produces_sl001(self, tmp_path: Path) -> None:
+        """Single-line file with a complete but invalid header is malformed (SL001, B17)."""
         file_path = tmp_path / "bad_term_hdr.jsonl"
         file_path.write_text(
             '{"schema_version":"sesslint.session/v0","session_id":"bad_v"}\n',
@@ -550,7 +567,7 @@ class TestIterEventsEdgeCases:
         items = list(iter_events(file_path))
         assert len(items) == 1
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002
+        assert items[0].code == SL001
 
     def test_adversarial_deep_nesting_recursion_error(self, tmp_path: Path) -> None:
         """2000 levels of nesting triggering Python RecursionError maps to LIMIT finding."""
@@ -561,7 +578,7 @@ class TestIterEventsEdgeCases:
         items = list(iter_events(term_file))
         assert len(items) == 1
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002
+        assert items[0].code == SL001
         assert "LIMIT" in items[0].message
 
         # Nonterminal case
@@ -624,7 +641,7 @@ class TestIterEventsEdgeCases:
         assert isinstance(items[1], SessionEvent)
 
     def test_oversized_whitespace_line_terminal(self, tmp_path: Path) -> None:
-        """Terminal whitespace line exceeding max_line_bytes produces SL002 with LIMIT."""
+        """Terminal whitespace line exceeding max_line_bytes produces SL001 with LIMIT."""
         file_path = tmp_path / "ws_term.jsonl"
         content = (
             '{"created_at":"2026-09-05T00:00:00Z","schema_version":"sesslint.session/v1",'
@@ -635,7 +652,7 @@ class TestIterEventsEdgeCases:
         items = list(iter_events(file_path, limits=limits))
         assert len(items) == 1
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002
+        assert items[0].code == SL001
         assert items[0].source.line == 2
         assert "LIMIT" in items[0].message
 
@@ -690,7 +707,7 @@ class TestIterEventsEdgeCases:
         items_plus_one = list(iter_events(file_plus_one, limits=limits_200))
         assert len(items_plus_one) == 1
         assert isinstance(items_plus_one[0], Finding)
-        assert items_plus_one[0].code == SL002
+        assert items_plus_one[0].code == SL001
         assert "LIMIT" in items_plus_one[0].message
 
     def test_max_depth_exact_boundary(self) -> None:

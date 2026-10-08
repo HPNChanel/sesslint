@@ -1,9 +1,8 @@
 """Tests for multi-path ``sesslint check`` and ``--skip-undetected``.
 
 The pre-commit hook appends every staged filename to one invocation, so check
-accepts N paths and emits one aggregated ScanReport. ``--skip-undetected``
-reclassifies format-undetected files (e.g. package.json) as ``skipped``
-instead of ``invalid`` so non-session JSON does not fail hooks.
+accepts N paths and emits one aggregated ScanReport. Format-undetected files
+are ``unsupported`` by default and may be skipped explicitly in mixed trees.
 """
 
 from __future__ import annotations
@@ -84,13 +83,14 @@ def test_single_path_skip_undetected(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert "skipped" in capsys.readouterr().err.lower()
 
 
-def test_single_path_undetected_fails_without_flag(
+def test_single_path_undetected_is_unsupported_without_flag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     plain = tmp_path / "plain.json"
     _write_json(plain, {"unrelated": True})
     code = main(["check", str(plain)])
-    assert code == 1
+    assert code == 0
+    assert "unsupported" in capsys.readouterr().err.lower()
 
 
 def test_scan_skip_undetected_mixed_tree(
@@ -105,12 +105,13 @@ def test_scan_skip_undetected_mixed_tree(
     assert code == 0
 
 
-def test_scan_undetected_invalid_by_default(
+def test_scan_undetected_is_unsupported_by_default(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     plain = tmp_path / "data.json"
     _write_json(plain, {"a": 1})
     code = main(["scan", str(tmp_path), "--json"])
     data = json.loads(capsys.readouterr().out)
-    assert data["totals"]["invalid"] == 1
-    assert code == 1
+    assert data["totals"]["invalid"] == 0
+    assert data["totals"]["unsupported"] == 1
+    assert code == 0

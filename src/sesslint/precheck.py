@@ -118,7 +118,9 @@ def precheck(
         )
 
     # 1. Format detection failure or unsupported format version
-    if any(f.code in ("SL301", "SL302") for f in report.findings):
+    if report.limitation.startswith(("Unsupported:", "Skipped:")) or any(
+        f.code in ("SL301", "SL302") for f in report.findings
+    ):
         return PrecheckResult(
             ok=False,
             reason="detection-failed",

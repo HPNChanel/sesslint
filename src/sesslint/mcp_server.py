@@ -47,6 +47,10 @@ _E_METHOD_NOT_FOUND = -32601
 _E_INVALID_PARAMS = -32602
 _E_INTERNAL = -32603
 
+# A JSON-RPC request is one physical line.  Bound each read so an untrusted
+# client cannot make the stdio loop allocate an unbounded buffer.
+MAX_MCP_LINE_BYTES: int = 1_048_576
+
 _FORMATS = ("auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical")
 _PROFILES = tuple(sorted(PROFILE_REGISTRY))
 
@@ -318,12 +322,16 @@ def _dispatch(message: Any) -> dict[str, Any] | None:
 
 def handle_line(raw: bytes) -> bytes | None:
     """Process one newline-delimited request; returns response line or None."""
+    if len(raw) > MAX_MCP_LINE_BYTES:
+        return (json.dumps(_error(None, _E_PARSE, "parse error"), sort_keys=True) + "\n").encode(
+            "utf-8"
+        )
     raw = raw.strip()
     if not raw:
         return None
     try:
         message = json.loads(raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
         return (json.dumps(_error(None, _E_PARSE, "parse error"), sort_keys=True) + "\n").encode(
             "utf-8"
         )
@@ -336,9 +344,21 @@ def handle_line(raw: bytes) -> bytes | None:
 def serve(stdin: BinaryIO, stdout: BinaryIO) -> int:
     """Run the stdio JSON-RPC loop until EOF. Returns the process exit code."""
     while True:
-        line = stdin.readline()
+        line = stdin.readline(MAX_MCP_LINE_BYTES + 1)
         if not line:
             return 0
+        if len(line) > MAX_MCP_LINE_BYTES:
+            # Discard the rest of this physical line in bounded reads before
+            # accepting the next request; never reinterpret a suffix as JSON.
+            while line and not line.endswith(b"\n"):
+                line = stdin.readline(MAX_MCP_LINE_BYTES + 1)
+            stdout.write(
+                (json.dumps(_error(None, _E_PARSE, "parse error"), sort_keys=True) + "\n").encode(
+                    "utf-8"
+                )
+            )
+            stdout.flush()
+            continue
         out = handle_line(line)
         if out is not None:
             stdout.write(out)

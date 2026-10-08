@@ -32,6 +32,28 @@ def _sync_dir(path: Path) -> None:
             pass
 
 
+def _same_existing_file(dest: Path, prohibited: StrPath) -> bool:
+    """True when both paths exist and name one file (hard link, case alias)."""
+    try:
+        return os.path.samefile(dest, prohibited)
+    except OSError:
+        return False
+
+
+def _publish_exclusive(staged: Path, dest: Path) -> None:
+    """Publish complete bytes without replacing any existing directory entry (B23).
+
+    Windows rename is atomic and refuses an existing destination, including on
+    filesystems without hard links. POSIX rename may overwrite, so use atomic
+    hard-link creation there. If neither primitive is supported, fail closed;
+    copying into an O_EXCL file would expose partial output on a crash.
+    """
+    if os.name == "nt":
+        os.rename(staged, dest)
+    else:
+        os.link(staged, dest)
+
+
 def atomic_write_bytes(
     dest: StrPath,
     data: bytes,
@@ -43,6 +65,7 @@ def atomic_write_bytes(
     pre_write_hook: Callable[[], None] | None = None,
     pre_rename_hook: Callable[[Path], None] | None = None,
     sync_dir: bool = False,
+    overwrite: bool = True,
 ) -> str:
     """Write bytes to dest atomically using a temporary file in dest's parent directory.
 
@@ -63,6 +86,8 @@ def atomic_write_bytes(
         pre_write_hook: Optional hook called after temp file creation before write.
         pre_rename_hook: Optional hook called with temp Path before atomic rename.
         sync_dir: Whether to fsync parent directory after rename.
+        overwrite: If False, publish exclusively; an existing file or symlink
+            is never replaced, including one created during the write.
 
     Returns:
         64-character lowercase SHA-256 hexadecimal digest of the written bytes.
@@ -77,7 +102,7 @@ def atomic_write_bytes(
     # 1. Prohibited path preflight check (before creating any temporary artifact)
     for prohibited in refuse_paths:
         prohibited_real = os.path.realpath(prohibited)
-        if dest_real == prohibited_real:
+        if dest_real == prohibited_real or _same_existing_file(dest_path, prohibited):
             raise AtomicWriteError(
                 f"Refusing to write to protected path: {dest} "
                 f"(matches prohibited path {prohibited})"
@@ -111,8 +136,18 @@ def atomic_write_bytes(
         if pre_rename_hook is not None:
             pre_rename_hook(temp_path)
 
-        os.replace(temp_path, dest_path)
-        temp_path = None  # Successfully replaced, no cleanup needed
+        if overwrite:
+            os.replace(temp_path, dest_path)
+            temp_path = None
+        else:
+            _publish_exclusive(temp_path, dest_path)
+            # POSIX hard-link publication retains the staging name; Windows
+            # rename consumes it. Cleanup failure must not undo publication.
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            temp_path = None
 
         if sync_dir:
             _sync_dir(parent_dir)
@@ -141,6 +176,7 @@ def atomic_write_text(
     pre_write_hook: Callable[[], None] | None = None,
     pre_rename_hook: Callable[[Path], None] | None = None,
     sync_dir: bool = False,
+    overwrite: bool = True,
 ) -> str:
     """Convenience helper to write text to dest atomically using strict encoding.
 
@@ -155,6 +191,7 @@ def atomic_write_text(
         pre_write_hook: Optional hook called after temp file creation before write.
         pre_rename_hook: Optional hook called with temp Path before atomic rename.
         sync_dir: Whether to fsync parent directory after rename.
+        overwrite: Whether an existing destination may be replaced.
 
     Returns:
         64-character lowercase SHA-256 hexadecimal digest of the written bytes.
@@ -177,4 +214,5 @@ def atomic_write_text(
         pre_write_hook=pre_write_hook,
         pre_rename_hook=pre_rename_hook,
         sync_dir=sync_dir,
+        overwrite=overwrite,
     )

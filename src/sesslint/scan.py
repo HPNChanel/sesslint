@@ -17,8 +17,10 @@ import json
 import os
 import re
 import stat
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -26,7 +28,13 @@ from sesslint.codes import SL001, SL301, SL302, SL401, SL402, Repairability, Sev
 from sesslint.errors import FileTooLargeError, MaxRecordsExceededError
 from sesslint.finding import SEVERITY_ORDER, Finding, SourceRef, make_finding
 from sesslint.indexes import INDEX_FILE_NAMES
-from sesslint.io import probe_bytes_encoding, probe_text_encoding, sha256_file_bytes
+from sesslint.io import (
+    DEFAULT_MAX_FILE_BYTES,
+    ReaderLimits,
+    probe_bytes_encoding,
+    probe_text_encoding,
+    sha256_file_bytes,
+)
 from sesslint.profiles import (
     EffectiveConfig,
     Profile,
@@ -102,10 +110,15 @@ class FileResult:
     session_id: str | None = None
     tip_id: str | None = None
     detected_format: str | None = None
+    max_findings_per_code: int = 20
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize file result to canonical JSON-compatible dictionary."""
-        from sesslint.report import format_finding_content_free, minimize_path
+        from sesslint.report import (
+            finding_report_sort_key,
+            format_finding_content_free,
+            minimize_path,
+        )
 
         res: dict[str, Any] = {
             "error_count": self.error_count,
@@ -118,7 +131,28 @@ class FileResult:
         if self.cache_hit:
             res["cache"] = "hit"
         if self.findings:
-            res["findings"] = [format_finding_content_free(f) for f in self.findings]
+            grouped: dict[tuple[str, str], list[Finding]] = {}
+            counts: dict[str, int] = {}
+            samples: list[Finding] = []
+            for finding in sorted(self.findings, key=finding_report_sort_key):
+                kind = str((finding.evidence or {}).get("kind", ""))
+                grouped.setdefault((finding.code, kind), []).append(finding)
+                n = counts.get(finding.code, 0)
+                if n < self.max_findings_per_code:
+                    samples.append(finding)
+                counts[finding.code] = n + 1
+            res["findings"] = [format_finding_content_free(f) for f in samples]
+            res["finding_groups"] = [
+                {
+                    "code": code,
+                    "kind": kind,
+                    "count": len(items),
+                    "sample_fingerprints": [
+                        f.fingerprint for f in items[: self.max_findings_per_code]
+                    ],
+                }
+                for (code, kind), items in sorted(grouped.items())
+            ]
         return res
 
     def to_wire(self) -> dict[str, Any]:
@@ -139,6 +173,7 @@ class FileResult:
             "session_id": self.session_id,
             "tip_id": self.tip_id,
             "detected_format": self.detected_format,
+            "max_findings_per_code": self.max_findings_per_code,
             "findings": [f.to_dict() for f in self.findings],
         }
 
@@ -156,6 +191,7 @@ class FileResult:
             session_id=d.get("session_id"),
             tip_id=d.get("tip_id"),
             detected_format=d.get("detected_format"),
+            max_findings_per_code=d.get("max_findings_per_code", 20),
             findings=tuple(Finding.from_dict(f) for f in d.get("findings", ())),
         )
 
@@ -384,6 +420,7 @@ def _scan_single_file(
     skip_undetected: bool = False,
     resolved_profile: Profile | None = None,
     baseline: frozenset[str] | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
 ) -> FileResult:
     """Evaluate a single regular file artifact, mapping to one of 4 active buckets."""
     return _scan_single_source(
@@ -395,6 +432,7 @@ def _scan_single_file(
         skip_undetected=skip_undetected,
         resolved_profile=resolved_profile,
         baseline=baseline,
+        max_file_bytes=max_file_bytes,
     )
 
 
@@ -408,6 +446,7 @@ def _scan_single_source(
     skip_undetected: bool = False,
     resolved_profile: Profile | None = None,
     baseline: frozenset[str] | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
 ) -> FileResult:
     """Per-source evaluation shared by file and in-memory byte inputs (ux T-06).
 
@@ -419,28 +458,14 @@ def _scan_single_source(
     # 1. Read file with I/O and non-UTF8 / binary safety
     oversize = False
     if data is not None:
-        oversize = len(data) > DEFAULT_MAX_BYTES
+        oversize = len(data) > max_file_bytes
     else:
         try:
-            oversize = file_path.stat().st_size > DEFAULT_MAX_BYTES
+            oversize = file_path.stat().st_size > max_file_bytes
         except OSError:
             pass
     if oversize:
-        finding = make_finding(
-            code=SL001,
-            severity=Severity.ERROR,
-            repairability=Repairability.MANUAL,
-            message_template="Unreadable file [detail: LIMIT_OR_IO]",
-            source=SourceRef(path=display_path),
-            evidence={"reason": "limit_or_io_error", "detail": "FileTooLargeError"},
-        )
-        return FileResult(
-            path=display_path,
-            verdict="unreadable",
-            findings=(finding,),
-            error_count=1,
-            warning_count=0,
-        )
+        return FileResult(path=display_path, verdict="skipped", skipped_reason="file-too-large")
 
     # Binary check: NUL byte or invalid UTF-8 anywhere in the file, probed in
     # bounded chunks (DW-T-11). Semantics are identical to a whole-file read:
@@ -529,33 +554,25 @@ def _scan_single_source(
                 margin_min=effective_cfg.margin_min,
             )
         if resolved_fmt is None:
+            defects = tuple(f for f in det_findings if f.code != SL302 and f.code in enabled_rules)
+            if defects:
+                return FileResult(
+                    path=display_path,
+                    verdict="invalid",
+                    findings=defects,
+                    error_count=sum(
+                        f.severity in (Severity.ERROR, Severity.FATAL) for f in defects
+                    ),
+                    warning_count=sum(f.severity == Severity.WARNING for f in defects),
+                )
             if skip_undetected:
                 return FileResult(
                     path=display_path,
                     verdict="skipped",
                     skipped_reason="format-undetected",
                 )
-            rep_findings = list(det_findings)
-            if not rep_findings:
-                rep_findings.append(
-                    make_finding(
-                        code=SL302,
-                        severity=Severity.ERROR,
-                        repairability=Repairability.MANUAL,
-                        message_template="Format detection failed",
-                        source=SourceRef(path=display_path),
-                        evidence={"detail": detection_res.reason if detection_res else "unknown"},
-                    )
-                )
-            rep_findings = [f for f in rep_findings if f.code in enabled_rules]
-            err_c = sum(1 for f in rep_findings if f.severity in (Severity.ERROR, Severity.FATAL))
-            warn_c = sum(1 for f in rep_findings if f.severity == Severity.WARNING)
             return FileResult(
-                path=display_path,
-                verdict="invalid",
-                findings=tuple(rep_findings),
-                error_count=err_c,
-                warning_count=warn_c,
+                path=display_path, verdict="unsupported", skipped_reason="format-undetected"
             )
 
         from sesslint.adapters.load import load_events_for_format, profile_key_for_format
@@ -585,7 +602,15 @@ def _scan_single_source(
         # so every supported format (incl. codex-rollout) loads identically.
         adapter_findings: list[Finding] = list(det_findings)
         load_source: Path | io.BytesIO = io.BytesIO(data) if data is not None else file_path
-        events, loaded_findings = load_events_for_format(load_source, resolved_fmt)
+        events, loaded_findings = load_events_for_format(
+            load_source, resolved_fmt, limits=ReaderLimits(max_file_bytes=max_file_bytes)
+        )
+        if any(
+            (f.evidence or {}).get("reason") == "size_limit_exceeded"
+            or (f.evidence or {}).get("detail") == "FileTooLargeError"
+            for f in loaded_findings
+        ):
+            return FileResult(path=display_path, verdict="skipped", skipped_reason="file-too-large")
         adapter_findings.extend(loaded_findings)
         # An empty/whitespace-only file is not a valid session of any format —
         # a forced --format must not let it report healthy.
@@ -688,7 +713,9 @@ def _scan_single_source(
             tip_id=scan_tip_id,
             detected_format=resolved_fmt,
         )
-    except (FileTooLargeError, MaxRecordsExceededError, OSError) as err:
+    except FileTooLargeError:
+        return FileResult(path=display_path, verdict="skipped", skipped_reason="file-too-large")
+    except (MaxRecordsExceededError, OSError) as err:
         f = make_finding(
             code=SL001,
             severity=Severity.ERROR,
@@ -737,6 +764,7 @@ def _init_scan_worker(cfg: Mapping[str, Any]) -> None:
     resolved_profile = apply_rule_selection(
         str(cfg["profile"]), select=cfg["select"], ignore=cfg["ignore"]
     )
+    resolved_profile = replace(resolved_profile, timestamp_skew_ms=cfg["timestamp_skew_ms"])
     fmt = cfg["format"]
     effective_cfg = resolve_effective_config(
         resolved_profile,
@@ -749,6 +777,7 @@ def _init_scan_worker(cfg: Mapping[str, Any]) -> None:
         "format": fmt,
         "effective_cfg": effective_cfg,
         "skip_undetected": cfg["skip_undetected"],
+        "max_file_bytes": cfg["max_file_bytes"],
         "resolved_profile": resolved_profile,
         "baseline": frozenset(baseline_list) if baseline_list else None,
     }
@@ -798,6 +827,12 @@ def scan_path(
     jobs: int = 1,
     incremental: bool = False,
     cache_dir: Path | str | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    vendor_layout: str | None = None,
+    newest: int | None = None,
+    since: str | None = None,
+    max_findings_per_code: int = 20,
+    timestamp_skew_ms: int | None = None,
 ) -> ScanReport:
     """Scan a target path or directory tree, returning a ScanReport with 5-bucket totals.
 
@@ -806,8 +841,8 @@ def scan_path(
     ``total`` is ``None`` because the file count is not pre-walked (DW-T-13).
     ``cancel_token`` is checked at each directory-entry boundary.
     When ``skip_undetected`` is True, files whose format cannot be detected are
-    classified ``skipped`` (``format-undetected``) instead of ``invalid`` —
-    useful for hooks and mixed-content trees where non-session files exist.
+    classified ``unsupported`` without a corruption finding — useful for hooks
+    and mixed-content trees where non-session files exist.
     ``exclude`` drops entries whose name or path (relative to the scan root)
     matches a glob — directories excluded this way are not descended. ``ext``
     is an extension allowlist (``.jsonl``/``jsonl``) applied to files only;
@@ -830,6 +865,23 @@ def scan_path(
     if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
         raise ValueError(f"jobs must be a positive integer (>= 1), got {jobs}")
 
+    if type(max_file_bytes) is not int or max_file_bytes <= 0:
+        raise ValueError("max_file_bytes must be a positive integer")
+    if type(max_findings_per_code) is not int or max_findings_per_code < 1:
+        raise ValueError("max_findings_per_code must be a positive integer")
+    if newest is not None and (type(newest) is not int or newest < 1):
+        raise ValueError("newest must be a positive integer")
+    if vendor_layout not in (None, "claude", "codex"):
+        raise ValueError("vendor_layout must be claude or codex")
+    since_ns = None
+    if since is not None:
+        parsed_date = date.fromisoformat(since)
+        since_ns = (
+            int(datetime.combine(parsed_date, datetime.min.time(), UTC).timestamp()) * 1_000_000_000
+        )
+    if sys.platform == "win32":
+        jobs = min(jobs, 61)
+
     target = Path(path)
     root_str = minimize_path(target)
 
@@ -842,6 +894,11 @@ def scan_path(
 
     validate_detection_thresholds(confidence_min, margin_min)
     resolved_profile = apply_rule_selection(profile, select=select, ignore=ignore)
+    if timestamp_skew_ms is not None:
+        if type(timestamp_skew_ms) is not int or timestamp_skew_ms < 0:
+            raise ValueError("timestamp_skew_ms must be a nonnegative integer")
+        resolved_profile = replace(resolved_profile, timestamp_skew_ms=timestamp_skew_ms)
+
     effective_cfg = resolve_effective_config(
         resolved_profile,
         format=format if format != "auto" else None,
@@ -879,6 +936,8 @@ def scan_path(
             skip_undetected=skip_undetected,
             baseline=baseline,
         )
+
+    analysis_fp += f":wave1:{max_file_bytes}:{resolved_profile.timestamp_skew_ms}"
 
     def _cache_lookup(disp: str, file_path: Path) -> tuple[FileResult | None, str | None]:
         """Return (hit-result with cache_hit set, content hash for put) — or (None, hash)."""
@@ -951,6 +1010,7 @@ def scan_path(
                     skip_undetected=skip_undetected,
                     resolved_profile=resolved_profile,
                     baseline=baseline,
+                    max_file_bytes=max_file_bytes,
                 )
             except Exception as err:
                 err_finding = make_finding(
@@ -967,6 +1027,7 @@ def scan_path(
                     findings=(err_finding,),
                     error_count=1,
                 )
+        file_res = replace(file_res, max_findings_per_code=max_findings_per_code)
         _cache_store(root_str, file_sha, file_res)
         if cache is not None:
             cache.close()
@@ -995,6 +1056,7 @@ def scan_path(
     pending_files: list[tuple[Path, str, str | None]] = []
     index_files: list[Path] = []
     state_db_files: list[Path] = []
+    candidates: list[tuple[Path, str, int, int]] = []
     cumulative_bytes = 0
     scanned_count = 0
 
@@ -1196,6 +1258,20 @@ def scan_path(
                     continue
                 st = target_st
 
+            if vendor_layout is not None:
+                parts = entry_p.relative_to(target).parts
+                if vendor_layout == "claude":
+                    allowed = (len(parts) == 2 and entry_p.suffix == ".jsonl") or (
+                        len(parts) == 4
+                        and parts[-2] == "subagents"
+                        and entry_p.name.startswith("agent-")
+                        and entry_p.suffix == ".jsonl"
+                    )
+                else:
+                    allowed = entry_p.name.startswith("rollout-") and entry_p.suffix == ".jsonl"
+                if not allowed:
+                    continue
+
             # Hardlink / repeat path deduplication
             if st.st_ino != 0:
                 file_ident = (st.st_dev, st.st_ino)
@@ -1210,73 +1286,56 @@ def scan_path(
                     continue
                 seen_files.add(file_ident)
 
-            # Cap checks: max files — pending (dispatched-but-unmerged) entries
-            # count identically to inline results so jobs>1 caps the same way.
-            if len(file_results) + len(pending_files) >= max_files:
-                file_results.append(
-                    FileResult(
-                        path=disp_path,
-                        verdict="skipped",
-                        skipped_reason="max-files-cap-exceeded",
-                    )
-                )
-                continue
+            candidates.append((entry_p, disp_path, st.st_size, st.st_mtime_ns))
 
-            # Cap checks: max bytes
-            if cumulative_bytes + st.st_size > max_bytes:
-                file_results.append(
-                    FileResult(
-                        path=disp_path,
-                        verdict="skipped",
-                        skipped_reason="max-bytes-cap-exceeded",
-                    )
-                )
-                continue
-
-            cumulative_bytes += st.st_size
-            cached_res, file_sha = _cache_lookup(disp_path, entry_p)
-            if cached_res is not None:
-                file_results.append(cached_res)
-                scanned_count += 1
-                emit(
-                    progress_cb,
-                    ProgressEvent(
-                        phase="scan",
-                        completed=scanned_count,
-                        total=None,
-                        item=entry_p.name,
-                    ),
-                )
-                continue
-            if jobs > 1:
-                pending_files.append((entry_p, disp_path, file_sha))
-                continue
-            try:
-                res = _scan_single_file(
-                    entry_p,
-                    format=format,
-                    effective_cfg=effective_cfg,
-                    skip_undetected=skip_undetected,
-                    resolved_profile=resolved_profile,
-                    baseline=baseline,
-                )
-            except Exception as err:
-                err_finding = make_finding(
-                    code=SL001,
-                    severity=Severity.ERROR,
-                    repairability=Repairability.MANUAL,
-                    message_template="Unreadable file [detail: INTERNAL_ERROR]",
-                    source=SourceRef(path=disp_path),
-                    evidence={"reason": "unhandled_exception", "detail": type(err).__name__},
-                )
-                res = FileResult(
+    if newest is not None or since_ns is not None:
+        candidates.sort(key=lambda item: (-item[3], item[1]))
+    selected_count = 0
+    for entry_p, disp_path, file_size, mtime_ns in candidates:
+        check_token(cancel_token)
+        if since_ns is not None and mtime_ns < since_ns:
+            file_results.append(
+                FileResult(path=disp_path, verdict="skipped", skipped_reason="before-since")
+            )
+            continue
+        if newest is not None and selected_count >= newest:
+            file_results.append(
+                FileResult(path=disp_path, verdict="skipped", skipped_reason="newest-cap-exceeded")
+            )
+            continue
+        selected_count += 1
+        if file_size > max_file_bytes:
+            file_results.append(
+                FileResult(path=disp_path, verdict="skipped", skipped_reason="file-too-large")
+            )
+            continue
+        # Cap checks: max files — pending (dispatched-but-unmerged) entries
+        # count identically to inline results so jobs>1 caps the same way.
+        if scanned_count + len(pending_files) >= max_files:
+            file_results.append(
+                FileResult(
                     path=disp_path,
-                    verdict="unreadable",
-                    findings=(err_finding,),
-                    error_count=1,
+                    verdict="skipped",
+                    skipped_reason="max-files-cap-exceeded",
                 )
-            _cache_store(disp_path, file_sha, res)
-            file_results.append(res)
+            )
+            continue
+
+        # Cap checks: max bytes
+        if cumulative_bytes + file_size > max_bytes:
+            file_results.append(
+                FileResult(
+                    path=disp_path,
+                    verdict="skipped",
+                    skipped_reason="max-bytes-cap-exceeded",
+                )
+            )
+            continue
+
+        cumulative_bytes += file_size
+        cached_res, file_sha = _cache_lookup(disp_path, entry_p)
+        if cached_res is not None:
+            file_results.append(cached_res)
             scanned_count += 1
             emit(
                 progress_cb,
@@ -1287,6 +1346,47 @@ def scan_path(
                     item=entry_p.name,
                 ),
             )
+            continue
+        if jobs > 1:
+            pending_files.append((entry_p, disp_path, file_sha))
+            continue
+        try:
+            res = _scan_single_file(
+                entry_p,
+                format=format,
+                effective_cfg=effective_cfg,
+                skip_undetected=skip_undetected,
+                resolved_profile=resolved_profile,
+                baseline=baseline,
+                max_file_bytes=max_file_bytes,
+            )
+        except Exception as err:
+            err_finding = make_finding(
+                code=SL001,
+                severity=Severity.ERROR,
+                repairability=Repairability.MANUAL,
+                message_template="Unreadable file [detail: INTERNAL_ERROR]",
+                source=SourceRef(path=disp_path),
+                evidence={"reason": "unhandled_exception", "detail": type(err).__name__},
+            )
+            res = FileResult(
+                path=disp_path,
+                verdict="unreadable",
+                findings=(err_finding,),
+                error_count=1,
+            )
+        _cache_store(disp_path, file_sha, res)
+        file_results.append(res)
+        scanned_count += 1
+        emit(
+            progress_cb,
+            ProgressEvent(
+                phase="scan",
+                completed=scanned_count,
+                total=None,
+                item=entry_p.name,
+            ),
+        )
 
     # Parallel dispatch: workers return wire payloads in submission order;
     # merge into file_results before the deterministic path sort.
@@ -1303,6 +1403,8 @@ def scan_path(
             "confidence_min": confidence_min,
             "margin_min": margin_min,
             "skip_undetected": skip_undetected,
+            "max_file_bytes": max_file_bytes,
+            "timestamp_skew_ms": resolved_profile.timestamp_skew_ms,
             "baseline": sorted(baseline) if baseline is not None else None,
         }
         paths = [str(p) for p, _, _ in pending_files]
@@ -1376,6 +1478,7 @@ def scan_path(
         )
         file_results = _reconcile_state_dbs(file_results, state_db_files, baseline=baseline)
 
+    file_results = [replace(r, max_findings_per_code=max_findings_per_code) for r in file_results]
     healthy_c = sum(1 for r in file_results if r.verdict == "healthy")
     invalid_c = sum(1 for r in file_results if r.verdict == "invalid")
     unsupported_c = sum(1 for r in file_results if r.verdict == "unsupported")
@@ -1994,6 +2097,9 @@ def scan_bytes(
     ignore: Sequence[str] | None = None,
     baseline: frozenset[str] | None = None,
     max_input_bytes: int | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    timestamp_skew_ms: int | None = None,
+    max_findings_per_code: int = 20,
 ) -> ScanReport:
     """Scan an in-memory session artifact (e.g. piped stdin bytes) — ux T-06.
 
@@ -2005,31 +2111,20 @@ def scan_bytes(
     ``max_input_bytes`` bounds the slurped buffer: when exceeded the result is
     a structured SL001 ``unreadable`` finding, never a traceback.
     """
-    if max_input_bytes is not None and len(data) > max_input_bytes:
-        finding = make_finding(
-            code=SL001,
-            severity=Severity.ERROR,
-            repairability=Repairability.MANUAL,
-            message_template="Unreadable file [detail: LIMIT_OR_IO]",
-            source=SourceRef(path=virtual_path),
-            evidence={"reason": "limit_or_io_error", "detail": "stdin_too_large"},
-        )
-        res = FileResult(
-            path=virtual_path,
-            verdict="unreadable",
-            findings=(finding,),
-            error_count=1,
-            warning_count=0,
-        )
-        return ScanReport(
-            root_path=virtual_path,
-            totals=ScanTotals(unreadable=1),
-            files=(res,),
-        )
+    if max_input_bytes is not None:
+        max_file_bytes = min(max_file_bytes, max_input_bytes)
+    if type(max_file_bytes) is not int or max_file_bytes <= 0:
+        raise ValueError("max_file_bytes must be a positive integer")
+    if type(max_findings_per_code) is not int or max_findings_per_code <= 0:
+        raise ValueError("max_findings_per_code must be a positive integer")
     from sesslint.adapters.detect import validate_detection_thresholds
 
     validate_detection_thresholds(confidence_min, margin_min)
     resolved_profile = apply_rule_selection(profile, select=select, ignore=ignore)
+    if timestamp_skew_ms is not None:
+        if type(timestamp_skew_ms) is not int or timestamp_skew_ms < 0:
+            raise ValueError("timestamp_skew_ms must be a nonnegative integer")
+        resolved_profile = replace(resolved_profile, timestamp_skew_ms=timestamp_skew_ms)
     effective_cfg = resolve_effective_config(
         resolved_profile,
         format=format if format != "auto" else None,
@@ -2048,6 +2143,7 @@ def scan_bytes(
             skip_undetected=skip_undetected,
             resolved_profile=resolved_profile,
             baseline=baseline,
+            max_file_bytes=max_file_bytes,
         )
     except Exception as err:
         err_finding = make_finding(
@@ -2064,6 +2160,7 @@ def scan_bytes(
             findings=(err_finding,),
             error_count=1,
         )
+    file_res = replace(file_res, max_findings_per_code=max_findings_per_code)
     emit(
         progress_cb,
         ProgressEvent(phase="scan", completed=1, total=1, item=virtual_path),

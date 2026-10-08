@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-bundle \- [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .SH SYNOPSIS
-.B sesslint bundle [\-\-output | \-\-out | \-o OUTPUT] [\-\-json] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-strict\-share] PATH
+.B sesslint bundle [\-\-output | \-\-out | \-o OUTPUT] [\-\-json] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-strict\-share] PATH
 .SH DESCRIPTION
 [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .SH ARGUMENTS
@@ -17,8 +17,8 @@ Path to output bundle JSON file
 .B \-\-json
 Output bundle as JSON to stdout
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-profile PROFILE
 Replay validation profile (default: neutral)

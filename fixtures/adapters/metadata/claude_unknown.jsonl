@@ -1,0 +1,4 @@
+{"message":{"content":"synthetic","role":"user"},"timestamp":"2026-10-08T00:00:00Z","type":"user","uuid":"synthetic-u1"}
+{"message":{"content":"synthetic","role":"assistant"},"parentUuid":"synthetic-u1","timestamp":"2026-10-08T00:00:01Z","type":"assistant","uuid":"synthetic-a1"}
+{"sessionId":"synthetic-session","status":"idle","type":"future_status"}
+{"sessionId":"synthetic-session","status":"ready","type":"future_status"}

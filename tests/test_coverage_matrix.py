@@ -22,6 +22,14 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 QUADRANTS: Final[tuple[str, ...]] = ("positive", "negative", "boundary", "malformed")
 
 CODE_MATRIX: Final[dict[str, dict[str, str]]] = {
+    "SL306": {
+        "positive": "test_modern_metadata.py::test_known_claude_metadata_is_not_a_graph_node",
+        "negative": "test_modern_metadata.py::test_unknown_metadata_is_bounded_info",
+        "boundary": "test_modern_metadata.py::test_unknown_type_groups_have_a_fixed_memory_bound",
+        "malformed": (
+            "test_modern_metadata.py::test_unknown_record_with_nested_semantics_stays_critical"
+        ),
+    },
     "SL001": {
         "positive": "test_healthy_clean",
         "negative": "test_malformed_delegates_SL001",

@@ -1,5 +1,23 @@
 # Agent Runtime Integrations
 
+<!-- next-release -->
+
+Claude hook recipes match `resume|compact|fork` at SessionStart and set a
+five-second timeout for PostCompact and SessionEnd. `hook --output claude-json`
+emits a root `systemMessage` containing only outcome and code counts. The CLI's
+own JSON result remains available through `--json`; recipes stay advisory.
+
+SessionStart skips transcripts above 128 KiB. SessionEnd limits its SL009 pass
+to 1 MiB, and other hook checks accept at most 8 MiB. A budget skip never means
+the transcript passed. Use `sesslint check --max-file-bytes N` for a larger
+inspection. Hooks do not write transcripts or persist their own output. Actual
+host UI presentation depends on the installed Claude Code version.
+
+Seal ledgers retain a sibling `.lock` file to serialize competing appenders.
+The OS releases the lock when a process exits. The ledger records the digest of
+the checked snapshot even if the source changes before append. An uninspected
+file cannot be sealed as checked.
+
 How to wire SessLint into agent runtimes so session corruption is caught **before**
 it costs you work — not discovered after a failed resume.
 

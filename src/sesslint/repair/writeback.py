@@ -129,19 +129,29 @@ def emit_vendor_bytes(
 
     # R6: a single-document JSON export is not a per-line record stream; its
     # `source_line` coordinates do not denote physical record boundaries.
-    try:
-        json.loads(source_bytes)
-    except (ValueError, TypeError):
-        pass  # multi-record stream (JSONL) — expected
-    else:
-        raise VendorProjectionRefused(
-            "Write-back requires a per-line record stream (JSONL); a "
-            "single-document JSON export has no physical record boundaries. "
-            "Use '--emit canonical' to produce a canonical repaired artifact.",
-            reason="R6",
-        )
+    if emit_format == FORMAT_OPENAI_AGENTS:
+        try:
+            document = json.loads(source_bytes)
+        except (ValueError, TypeError, RecursionError):
+            pass
+        else:
+            if isinstance(document, list) or (
+                isinstance(document, Mapping)
+                and any(key in document for key in ("items", "run_state", "checkpoints"))
+            ):
+                raise VendorProjectionRefused(
+                    "Write-back requires a per-line record stream (JSONL); a "
+                    "single-document JSON export has no physical record boundaries. "
+                    "Use '--emit canonical' to produce a canonical repaired artifact.",
+                    reason="R6",
+                )
 
-    lines = source_bytes.splitlines(keepends=True) if source_bytes else []
+    # Only LF terminates a JSONL record. CR within JSON whitespace and Unicode
+    # line separators within strings are not physical record boundaries (B23).
+    parts = source_bytes.split(b"\n")
+    lines = [part + b"\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
     drop_lines = drop_lines or frozenset()
 
     # Index each event-bearing source line -> [(event_id, identity)] in order.

@@ -56,7 +56,7 @@ class TestCodecContract:
 
 
 class TestGoldenByteVectors:
-    """Golden vectors pinning RFC 8785 canonical serialization behavior (S1 requirement)."""
+    """Golden vectors pinning SessLint deterministic serialization behavior (S1 requirement)."""
 
     def test_parent_id_null_retention(self) -> None:
         """parent_id must be retained explicitly even when null."""
@@ -110,7 +110,7 @@ class TestGoldenByteVectors:
         assert data == expected
 
     def test_float_edges_and_nan_inf_refusal(self) -> None:
-        """RFC 8785 float serialization and rejection of NaN / Inf."""
+        """Python float serialization and rejection of NaN / Inf."""
         valid_floats = {"zero": 0.0, "exp_pos": 1e20, "exp_neg": 1e-20, "val": 3.14159}
         encoded = canonical_json_bytes(valid_floats, newline=False)
         assert b'"zero":0.0' in encoded
@@ -307,7 +307,7 @@ class TestHypothesisDifferential:
 
     @given(val=json_values)
     def test_seam_matches_reference_json_serialization(self, val: Any) -> None:
-        """Differential test against standard Python json.dumps with RFC 8785 params."""
+        """Differential test against standard Python json.dumps parameters."""
         import json
 
         try:

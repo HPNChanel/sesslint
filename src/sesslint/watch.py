@@ -15,8 +15,8 @@ Semantics:
   included); quiet by default — repeated states are not re-printed.
 - Pure observer: never writes, never installs hooks, never holds files
   open. Ctrl+C / cancellation exits cleanly.
-- Bounded memory: per-file state table is an LRU capped at
-  ``MAX_TRACKED_FILES``.
+- Historical state is capped at ``MAX_TRACKED_FILES``; active files remain
+  tracked through debounce, with a warning when the active set exceeds the cap.
 
 Determinism caveat (documented per plan): watch is inherently real-time —
 each transition *payload* is deterministic for a given file state;
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import time
+import warnings
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -113,6 +114,11 @@ def _walk_files(root: Path) -> list[Path]:
 
 def _verdict_of(report: Any) -> tuple[str, tuple[str, ...]]:
     """Map a check Report to a watch verdict + bounded code list."""
+    limitation = getattr(report, "limitation", "")
+    if limitation.startswith("Unsupported:"):
+        return "unsupported", ()
+    if limitation.startswith("Skipped:"):
+        return "skipped", ()
     sev = report.counts.by_severity
     codes = tuple(sorted({f.code for f in report.findings}))
     if sev.get("error", 0) + sev.get("fatal", 0) > 0:
@@ -163,6 +169,7 @@ def watch(
     pending: set[Path] = set()
     emitted = 0
     polls = 0
+    overflow_warned = False
 
     while True:
         if cancel_token is not None:
@@ -226,10 +233,24 @@ def watch(
                 )
                 emitted += 1
 
-        # LRU bound.
-        while len(states) > MAX_TRACKED_FILES:
-            evicted, _st = states.popitem(last=False)
-            pending.discard(evicted)
+        # Never evict an active file between its first and stable poll (B28).
+        # Only absent historical entries can be discarded safely.
+        for old in tuple(states):
+            if len(states) <= MAX_TRACKED_FILES:
+                break
+            if old not in seen:
+                del states[old]
+        if len(seen) > MAX_TRACKED_FILES:
+            if not overflow_warned:
+                warnings.warn(
+                    "watch active-file count exceeds the history cap; "
+                    "retaining active files for complete checking",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                overflow_warned = True
+        else:
+            overflow_warned = False
 
         if max_polls is not None and polls >= max_polls:
             return emitted

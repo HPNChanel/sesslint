@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-watch \- [read\-only] Poll session directories and flag newly corrupted files.
 .SH SYNOPSIS
-.B sesslint watch [\-\-agent {claude,codex,all}] [\-\-interval SEC] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-json] PATH...
+.B sesslint watch [\-\-agent {claude,codex,all}] [\-\-interval SEC] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-json] PATH...
 .SH DESCRIPTION
 [read\-only] Poll\-based observer: debounced mtime+size snapshots, emits one line per verdict transition. Pure observer — never writes, never installs hooks. Ctrl+C exits cleanly.
 .SH ARGUMENTS
@@ -17,8 +17,8 @@ Watch a well\-known agent session root instead of paths Choices: claude, codex, 
 .B \-\-interval SEC
 Poll interval in seconds (default: 2.0, min: 0.05) Default: 2.0.
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter for all inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter for all inputs (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
 .B \-\-json
 Emit sesslint.watch\-event/v1 NDJSON transition events

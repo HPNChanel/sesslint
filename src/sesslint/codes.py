@@ -1,7 +1,7 @@
 """Registry of detector reason codes and severity/repairability taxonomies.
 
-This module defines the 34 reason codes (SL001–SL011, SL101–SL108, SL201–SL208,
-SL301–SL305, SL401–SL402) established in DEMAND.md plus the checks-rules pack
+This module defines the 35 reason codes (SL001–SL011, SL101–SL108, SL201–SL208,
+SL301–SL306, SL401–SL402) established in DEMAND.md plus the checks-rules pack
 (SL008, SL011, SL204, SL205, SL303, SL304, SL401), the transcript-hygiene pack
 (SL009), the index-reconciliation pack (SL402), the detector-depth pack
 (SL010, SL206, SL305), and the compaction-snapshot pack (SL208), along with
@@ -59,7 +59,7 @@ class Repairability(StrEnum):
 
 
 class Code(StrEnum):
-    """The 34 stable detector reason codes (DEMAND.md plus pack additions)."""
+    """The 35 stable detector reason codes (DEMAND.md plus pack additions)."""
 
     SL001 = "SL001"
     SL002 = "SL002"
@@ -93,6 +93,7 @@ class Code(StrEnum):
     SL303 = "SL303"
     SL304 = "SL304"
     SL305 = "SL305"
+    SL306 = "SL306"
     SL401 = "SL401"
     SL402 = "SL402"
 
@@ -129,6 +130,7 @@ SL302: Final[str] = "SL302"
 SL303: Final[str] = "SL303"
 SL304: Final[str] = "SL304"
 SL305: Final[str] = "SL305"
+SL306: Final[str] = "SL306"
 SL401: Final[str] = "SL401"
 SL402: Final[str] = "SL402"
 
@@ -526,6 +528,17 @@ CODE_REGISTRY: Final[dict[str, CodeInfo]] = {
             "treats unknown shapes as foreign."
         ),
     ),
+    SL306: CodeInfo(
+        code=SL306,
+        name="Unknown non-linking metadata",
+        summary="Unrecognized metadata has no known identity, linkage, or replay-content fields.",
+        default_severity=Severity.INFO,
+        default_repairability=Repairability.MANUAL,
+        category="compatibility",
+        override_policy=(
+            "Advisory only; metadata is never rewritten or discarded by a repair recipe."
+        ),
+    ),
     SL401: CodeInfo(
         code=SL401,
         name="Unresolved cross-file link",
@@ -559,7 +572,7 @@ ALL_CODES: Final[frozenset[str]] = frozenset(CODE_REGISTRY.keys())
 
 
 def is_valid_code(code: str) -> bool:
-    """Return True if code is one of the 34 registered detector codes."""
+    """Return True if code is a registered detector reason."""
     return code in ALL_CODES
 
 

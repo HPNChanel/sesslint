@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-export \- [writes: output file] Export a session artifact to canonical format for repair.
 .SH SYNOPSIS
-.B sesslint export [\-\-output | \-\-out | \-o OUTPUT] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-json] PATH
+.B sesslint export [\-\-output | \-\-out | \-o OUTPUT] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-json] PATH
 .SH DESCRIPTION
 [writes: output file] Export a supported session artifact to a byte\-deterministic canonical file that the repair pipeline accepts.
 .SH ARGUMENTS
@@ -14,8 +14,8 @@ Path to session file (.json or .jsonl)
 .B \-\-output OUTPUT, \-\-out OUTPUT, \-o OUTPUT
 Path to output canonical file (required)
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-json
 Output export summary as JSON

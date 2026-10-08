@@ -7,10 +7,9 @@ dataclasses. It performs no terminal printing, no sys.exit, and no color formatt
 from __future__ import annotations
 
 import hashlib
-import io
 import os
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,12 +25,13 @@ from sesslint.adapters.detect import (
 from sesslint.batch import BatchRepairReport
 from sesslint.bundle import Bundle, build_bundle
 from sesslint.canonical import Session, SessionEvent, load_session_file
-from sesslint.codes import SL001, SL302, Repairability, Severity
+from sesslint.codes import SL001, Repairability, Severity
 from sesslint.context import CheckContext
 from sesslint.diff import SessionDiff
 from sesslint.doctor import DoctorReport
 from sesslint.exporter import ExportSummary
 from sesslint.finding import Finding, SourceRef, make_finding
+from sesslint.io import DEFAULT_MAX_FILE_BYTES, ReaderLimits
 from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
 from sesslint.preview import PreviewDoc
 from sesslint.profiles import (
@@ -55,6 +55,7 @@ from sesslint.repair import (
 )
 from sesslint.repair import executor as repair_executor
 from sesslint.repair.planner import plan as planner_plan
+from sesslint.repair.vetting import vet_plan as _vet_supplied_plan
 from sesslint.report import (
     Coverage,
     CoverageSkip,
@@ -90,6 +91,8 @@ def check_file(
     select: Sequence[str] | None = None,
     ignore: Sequence[str] | None = None,
     baseline: Collection[str] | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    timestamp_skew_ms: int | None = None,
 ) -> Report:
     """Evaluate a single session file artifact and return a frozen Report.
 
@@ -125,6 +128,8 @@ def check_file(
         select=select,
         ignore=ignore,
         baseline=baseline,
+        max_file_bytes=max_file_bytes,
+        timestamp_skew_ms=timestamp_skew_ms,
     )
 
 
@@ -142,6 +147,8 @@ def check_bytes(
     ignore: Sequence[str] | None = None,
     baseline: Collection[str] | None = None,
     max_input_bytes: int | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    timestamp_skew_ms: int | None = None,
 ) -> Report:
     """Evaluate a session artifact held in memory (e.g. piped stdin bytes).
 
@@ -153,42 +160,8 @@ def check_bytes(
     ``max_input_bytes`` bounds the slurped buffer: when exceeded the result is
     a structured SL001 finding, never a traceback (ux T-06).
     """
-    if max_input_bytes is not None and len(data) > max_input_bytes:
-        resolved_profile = apply_rule_selection(profile, select=select, ignore=ignore)
-        effective_cfg = resolve_effective_config(resolved_profile)
-        det_finding = make_finding(
-            code=SL001,
-            severity=Severity.ERROR,
-            repairability=Repairability.MANUAL,
-            message_template="Input exceeds maximum supported size",
-            source=SourceRef(path=virtual_path),
-            evidence={"reason": "limit_or_io_error", "detail": "stdin_too_large"},
-        )
-        rep_findings = [det_finding] if SL001 in set(resolved_profile.enabled_rules) else []
-        if baseline is not None:
-            from sesslint.baseline import filter_findings
-
-            rep_findings = filter_findings(rep_findings, frozenset(baseline))
-        cov = Coverage(
-            performed=(),
-            skipped=tuple(
-                CoverageSkip(
-                    check=r, reason="adapter-not-applicable", detail="input exceeds size limit"
-                )
-                for r in ALL_RULES
-            ),
-            adapter={"id": "unknown", "version": "unknown"},
-            profile={"id": effective_cfg.profile, "version": effective_cfg.version},
-        )
-        return build_report(
-            session_id="stdin",
-            source_fingerprint="0" * 64,
-            tool_version=CLI_VERSION,
-            findings=rep_findings,
-            assurance="A0",
-            limitation="No structural conclusion.",
-            coverage=cov,
-        )
+    if max_input_bytes is not None:
+        max_file_bytes = min(max_file_bytes, max_input_bytes)
     return _check_impl(
         Path(virtual_path),
         data=data,
@@ -202,6 +175,8 @@ def check_bytes(
         select=select,
         ignore=ignore,
         baseline=baseline,
+        max_file_bytes=max_file_bytes,
+        timestamp_skew_ms=timestamp_skew_ms,
     )
 
 
@@ -219,6 +194,8 @@ def _check_impl(
     select: Sequence[str] | None,
     ignore: Sequence[str] | None,
     baseline: Collection[str] | None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    timestamp_skew_ms: int | None = None,
 ) -> Report:
     """Shared check pipeline for file and in-memory byte sources (ux T-06).
 
@@ -231,12 +208,19 @@ def _check_impl(
     # `is not None` form so Optional types narrow without a flag variable.
     display_path = virtual_path if virtual_path is not None else str(target_path)
     item_name = virtual_path if virtual_path is not None else target_path.name
-    item_stem = "stdin" if data is not None else target_path.stem
+    item_stem = "stdin" if virtual_path is not None else target_path.stem
 
     if data is None and not target_path.exists():
         raise FileNotFoundError(f"Path not found: {target_path}")
 
     resolved_profile = apply_rule_selection(profile, select=select, ignore=ignore)
+    if type(max_file_bytes) is not int or max_file_bytes <= 0:
+        raise ValueError("max_file_bytes must be a positive integer")
+    if timestamp_skew_ms is not None:
+        if type(timestamp_skew_ms) is not int or timestamp_skew_ms < 0:
+            raise ValueError("timestamp_skew_ms must be a nonnegative integer")
+        resolved_profile = replace(resolved_profile, timestamp_skew_ms=timestamp_skew_ms)
+
     effective_cfg = resolve_effective_config(
         resolved_profile,
         format=format if format != "auto" else None,
@@ -245,6 +229,36 @@ def _check_impl(
     )
     enabled_rules = set(resolved_profile.enabled_rules)
     deselected = deselected_rules(profile, select=select, ignore=ignore)
+
+    # B27: parsing, findings and the seal digest refer to this one bounded snapshot.
+    if data is None:
+        if target_path.stat().st_size > max_file_bytes:
+            data = b""  # Do not allocate or hash an oversized uninspected artifact.
+            oversized = True
+        else:
+            with target_path.open("rb") as stream:
+                data = stream.read(max_file_bytes + 1)
+            oversized = len(data) > max_file_bytes
+    else:
+        oversized = len(data) > max_file_bytes
+    if oversized:
+        return build_report(
+            session_id=item_stem,
+            source_fingerprint="0" * 64,
+            tool_version=CLI_VERSION,
+            findings=[],
+            assurance="A0",
+            limitation="Skipped: file-too-large. No structural conclusion.",
+            coverage=Coverage(
+                performed=(),
+                skipped=tuple(
+                    CoverageSkip(check=r, reason="cap-exceeded", detail="file-too-large")
+                    for r in ALL_RULES
+                ),
+                adapter={"id": "unknown", "version": "unknown"},
+                profile={"id": effective_cfg.profile, "version": effective_cfg.version},
+            ),
+        )
 
     # Binary/encoding gate before format detection: a file that cannot decode
     # as UTF-8 (or contains NUL bytes) is unreadable regardless of what its
@@ -317,7 +331,7 @@ def _check_impl(
         resolved_fmt, detection_res, det_findings = resolve_format_bytes(
             format,
             data,
-            filename="stdin.jsonl",
+            filename="stdin.jsonl" if virtual_path is not None else target_path.name,
             display_path=display_path,
             confidence_min=effective_cfg.confidence_min,
             margin_min=effective_cfg.margin_min,
@@ -336,25 +350,9 @@ def _check_impl(
     check_token(cancel_token)
 
     if resolved_fmt is None:
-        rep_findings = (
-            list(det_findings)
-            if det_findings
-            else [
-                make_finding(
-                    code=SL302,
-                    severity=Severity.ERROR,
-                    repairability=Repairability.MANUAL,
-                    message_template="Format detection failed",
-                    source=SourceRef(path=display_path),
-                    evidence={"detail": detection_res.reason if detection_res else "unknown"},
-                )
-            ]
-        )
-        rep_findings = [f for f in rep_findings if f.code in enabled_rules]
-        if baseline is not None:
-            from sesslint.baseline import filter_findings
-
-            rep_findings = filter_findings(rep_findings, frozenset(baseline))
+        # Detection uncertainty is not a critical-record defect. Preserve
+        # actual reader defects such as empty input (SL001), however.
+        rep_findings = [f for f in det_findings if f.code != "SL302" and f.code in enabled_rules]
         if data is not None:
             fp = fingerprint_bytes(data)
         else:
@@ -380,7 +378,11 @@ def _check_impl(
             tool_version=CLI_VERSION,
             findings=rep_findings,
             assurance="A0",
-            limitation="No structural conclusion.",
+            limitation=(
+                "No structural conclusion."
+                if rep_findings
+                else "Unsupported: format-undetected. No structural conclusion."
+            ),
             coverage=cov,
         )
 
@@ -396,12 +398,16 @@ def _check_impl(
         )
 
     adapter_findings: list[Finding] = list(det_findings)
-    load_source: Path | io.BytesIO = io.BytesIO(data) if data is not None else target_path
-    events, loaded_findings = load_events_for_format(load_source, resolved_fmt)
+    from sesslint.adapters.load import SourceSnapshot
+
+    load_source = SourceSnapshot(data, display_path)
+    events, loaded_findings = load_events_for_format(
+        load_source, resolved_fmt, limits=ReaderLimits(max_file_bytes=max_file_bytes)
+    )
     adapter_findings.extend(loaded_findings)
     # An empty/whitespace-only file is not a valid session of any format —
     # a forced --format must not let it report healthy. (Auto-detect already
-    # fails closed via SL302.)
+    # retains the empty-input SL001 finding.)
     if not events:
         if data is not None:
             _empty_input = not data.strip()
@@ -524,6 +530,12 @@ def check_dir(
     jobs: int = 1,
     incremental: bool = False,
     cache_dir: Path | str | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    timestamp_skew_ms: int | None = None,
+    vendor_layout: str | None = None,
+    newest: int | None = None,
+    since: str | None = None,
+    max_findings_per_code: int = 20,
 ) -> ScanReport:
     """Scan a directory tree and return a ScanReport with aggregate 5-bucket totals.
 
@@ -541,8 +553,8 @@ def check_dir(
             inspected file (DW-T-13).
         cancel_token: Optional cooperative cancellation token checked at each
             directory-entry boundary.
-        skip_undetected: Classify format-undetected files as ``skipped`` instead
-            of ``invalid`` (useful for mixed-content trees and pre-commit hooks).
+        skip_undetected: Classify format-undetected files as ``unsupported``
+            without a corruption finding (useful for mixed-content trees and hooks).
         select: Optional rule codes to run exclusively.
         ignore: Optional rule codes to skip (mutually exclusive with select).
         baseline: Optional finding fingerprints to suppress per file.
@@ -564,6 +576,12 @@ def check_dir(
     validate_detection_thresholds(confidence_min, margin_min)
     return scan_path(
         path=path,
+        max_file_bytes=max_file_bytes,
+        timestamp_skew_ms=timestamp_skew_ms,
+        vendor_layout=vendor_layout,
+        newest=newest,
+        since=since,
+        max_findings_per_code=max_findings_per_code,
         recursive=recursive,
         follow_symlinks=follow_symlinks,
         max_files=max_files,
@@ -611,9 +629,10 @@ def repair(
         profile: Profile name (default 'neutral').
         plan_path: Optional path to pre-computed plan JSON.
         plan: Optional in-memory RepairPlan to apply directly (mutually
-            exclusive with ``plan_path``); the plan is authoritative —
-            fingerprint, source binding, and policy are re-validated at
-            execution.
+            exclusive with ``plan_path``). A supplied plan is untrusted: each
+            step must match one the planner derives for the current source
+            (B20), and fingerprint, source binding, and policy are
+            re-validated at execution.
         dry_run: If True, computes plan without writing files.
         acknowledge_side_effects: Explicit acknowledgment for salvage policy.
         emit: Output artifact format. 'auto' (default) emits the input's own
@@ -696,40 +715,58 @@ def repair(
     all_findings: list[Finding] = []
     source_events: list[SessionEvent] | None = None
     source_findings: list[Finding] | None = None
-    if (plan_path is None and plan is None) or input_is_vendor:
-        # Load for planning. For vendor input these events/findings are also
-        # passed to execute(): vendor events carry write-back provenance, and
-        # findings locate event-less source lines the plan explicitly discards
-        # (e.g. torn terminal record). For canonical input the executor
-        # re-loads the source itself (preserving the session header).
-        from sesslint.repair.executor import load_source_for_format, run_all_checks
+    # Load for planning, or to vet a supplied plan against the current source
+    # (B20). For vendor input these events/findings are also passed to
+    # execute(): vendor events carry write-back provenance, and findings locate
+    # event-less source lines the plan explicitly discards (e.g. torn terminal
+    # record). For canonical input the executor re-loads the source itself
+    # (preserving the session header).
+    from sesslint.adapters.load import read_source_snapshot
+    from sesslint.io import sha256_file_bytes
+    from sesslint.repair.executor import load_source_for_format, run_all_checks
 
-        check_token(cancel_token)
-        _source_header, loaded_events, stream_findings = load_source_for_format(
-            src, resolved_format
-        )
-        check_findings = run_all_checks(
-            loaded_events,
-            profile=profile,
-            source_path=src.name,
-            adapter=resolved_format,
-        )
-        all_findings = list(stream_findings) + list(check_findings)
-        if input_is_vendor:
-            source_events = list(loaded_events)
-            source_findings = all_findings
+    check_token(cancel_token)
+    # One read for parse and hash: the plan binds the exact bytes it was
+    # computed from, never a later state of a file still being written (B19).
+    src_snapshot = read_source_snapshot(src)
+    _source_header, loaded_events, stream_findings = load_source_for_format(
+        src, resolved_format, data=src_snapshot
+    )
+    check_findings = run_all_checks(
+        loaded_events,
+        profile=profile,
+        source_path=src.name,
+        adapter=resolved_format,
+    )
+    all_findings = list(stream_findings) + list(check_findings)
+    if input_is_vendor:
+        source_events = list(loaded_events)
+        source_findings = all_findings
+    source_hash = (
+        hashlib.sha256(src_snapshot).hexdigest()
+        if src_snapshot is not None
+        else sha256_file_bytes(src)
+    )
     emit_progress(
         progress_cb,
         ProgressEvent(phase="repair:load", completed=1, total=4, item=src.name),
     )
     check_token(cancel_token)
 
-    if plan is not None:
-        plan_obj = plan
-    elif plan_path is not None:
-        plan_obj = load_plan(plan_path, policy=policy)
+    supplied_plan = plan
+    if supplied_plan is None and plan_path is not None:
+        supplied_plan = load_plan(plan_path, policy=policy)
+    if supplied_plan is not None:
+        plan_obj = supplied_plan
+        _vet_supplied_plan(
+            plan_obj,
+            findings=all_findings,
+            events=loaded_events,
+            source_hash=source_hash,
+            acknowledge_side_effects=acknowledge_side_effects,
+            input_format=resolved_format,
+        )
     else:
-        source_hash = hashlib.sha256(src.read_bytes()).hexdigest()
         import sys
 
         p_mod = sys.modules.get("sesslint.repair.planner")
@@ -924,14 +961,18 @@ def apply_plan(
     """Execute a previously exported repair plan — plan-authoritative apply.
 
     The plan document is loaded through the strict deserializer and its own
-    ``policy``/``profile`` govern execution; no re-planning occurs. Every
+    ``policy``/``profile`` govern execution. The plan is untrusted: the source
+    is re-checked and every step must be one the planner derives for it now —
+    same finding, recipe, params and declared loss, in planner order (a subset
+    is allowed); anything else is refused (``RepairRefused``, B20). Every
     executor-side validation still applies: plan fingerprint recomputation,
     source-hash binding against the current source bytes/events, TOCTOU
     abstention, and post-execution output audit. A source that drifted since
     plan export is refused (``PlanSourceMismatch``, i.e. plan-stale).
 
     Args:
-        source_path: Path to source session file (must equal the planned one).
+        source_path: Path to source session file (must equal the planned one,
+            file name included: finding fingerprints bind it).
         plan_doc: ``RepairPlan``, path to a ``sesslint.plan/v1`` JSON, or a
             plan mapping.
         output_path: Path to output repaired session file (required unless
@@ -1052,6 +1093,8 @@ def check(
     follow_symlinks: bool = False,
     max_files: int = DEFAULT_MAX_FILES,
     max_bytes: int = DEFAULT_MAX_BYTES,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    timestamp_skew_ms: int | None = None,
     confidence_min: float | None = None,
     margin_min: float | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -1072,6 +1115,8 @@ def check(
         follow_symlinks: Whether to follow symlinks in directory scan (default False).
         max_files: Maximum files to scan in directory mode.
         max_bytes: Maximum cumulative bytes in directory mode.
+        max_file_bytes: Maximum source bytes inspected per file.
+        timestamp_skew_ms: Allowed backward timestamp skew in milliseconds.
         confidence_min: Format detection minimum confidence threshold.
         margin_min: Format detection minimum margin threshold.
         progress_cb: Optional callback receiving ``ProgressEvent`` records
@@ -1100,6 +1145,8 @@ def check(
             follow_symlinks=follow_symlinks,
             max_files=max_files,
             max_bytes=max_bytes,
+            max_file_bytes=max_file_bytes,
+            timestamp_skew_ms=timestamp_skew_ms,
             format=format,
             profile=profile,
             confidence_min=confidence_min,
@@ -1123,6 +1170,8 @@ def check(
         select=select,
         ignore=ignore,
         baseline=baseline,
+        max_file_bytes=max_file_bytes,
+        timestamp_skew_ms=timestamp_skew_ms,
     )
 
 
@@ -1271,6 +1320,7 @@ def discover_session_roots(
     *,
     env: Mapping[str, str] | None = None,
     home: Path | None = None,
+    include_archived: bool = False,
 ) -> tuple[DiscoveredRoot, ...]:
     """Enumerate well-known agent session roots in deterministic order (DW-T-05).
 
@@ -1311,6 +1361,16 @@ def discover_session_roots(
                 source=source,
             )
         )
+        if agent == "codex" and include_archived:
+            archived = candidate.parent / "archived_sessions"
+            roots.append(
+                DiscoveredRoot(
+                    agent=agent,
+                    path=archived,
+                    exists=archived.is_dir() and not archived.is_symlink(),
+                    source=source,
+                )
+            )
     return tuple(roots)
 
 

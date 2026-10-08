@@ -6,6 +6,11 @@ Claude Code hooks deliver one JSON control message on **stdin** carrying
 file, runs the event-appropriate integrity check, prints one content-free
 line, and exits advisory (0 — or 1 when ``--fail-on`` gates on findings).
 
+Claude Code integrations can instead render a result as a root
+``systemMessage`` object. It remains content-free and this module remains
+stateless: hooks neither write a transcript nor keep a cache that could feed
+hook output back into a later invocation.
+
 Invariants:
 
 - **Never throws.** The subcommand sits on the agent's critical path — a
@@ -34,6 +39,13 @@ HOOK_RESULT_SCHEMA = "sesslint.hook-result/v1"
 # stdin payload is a small JSON control message; anything beyond 1 MiB is
 # treated as malformed input rather than a transcript.
 MAX_HOOK_PAYLOAD_BYTES: int = 1_048_576
+
+# SessionStart runs on a latency-sensitive agent path. A metadata stat is
+# enough to decline a transcript that cannot fit the small hook budget; no
+# transcript bytes are read on that path.
+MAX_FAST_HOOK_TRANSCRIPT_BYTES: int = 131_072
+MAX_END_HOOK_TRANSCRIPT_BYTES: int = 1_048_576
+_FAST_EVENTS: frozenset[str] = frozenset({"SessionStart"})
 
 # Events whose hook action narrows the check. SessionEnd sweeps persisted
 # secret-shaped material (SL009) at the moment the file stops growing;
@@ -87,6 +99,19 @@ class HookResult:
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True)
 
+    def system_message(self) -> str:
+        """Return the content-free message Claude displays to the human user."""
+        if self.verdict == "skipped":
+            return f"SessLint: check skipped ({self.reason})."
+        if self.verdict == "ok":
+            return "SessLint: session integrity check passed."
+        total = sum(self.findings_by_code.values())
+        return f"SessLint: found {total} integrity finding(s); highest code {self.top_code}."
+
+    def to_claude_json(self) -> str:
+        """Render the Claude hook protocol envelope without transcript content."""
+        return json.dumps({"systemMessage": self.system_message()}, sort_keys=True)
+
 
 def _skip(event: str, reason: str, session_id: str | None = None) -> HookResult:
     return HookResult(
@@ -138,12 +163,19 @@ def run_hook(
 
     try:
         payload = json.loads(data.decode("utf-8", errors="replace"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (ValueError, RecursionError):
         return _skip(event, "malformed-payload")
     if not isinstance(payload, dict):
         return _skip(event, "malformed-payload")
 
     session_id = _truncated_session_id(payload.get("session_id"))
+
+    payload_event = payload.get("hook_event_name")
+    if payload_event is not None and not isinstance(payload_event, str):
+        return _skip(event, "malformed-payload", session_id)
+    payload_cwd = payload.get("cwd")
+    if payload_cwd is not None and not isinstance(payload_cwd, str):
+        return _skip(event, "malformed-payload", session_id)
 
     raw_path = payload.get("transcript_path")
     if not isinstance(raw_path, str) or not raw_path.strip():
@@ -155,6 +187,16 @@ def run_hook(
     except OSError:
         return _skip(event, "transcript-not-found", session_id)
 
+    budget = (
+        MAX_FAST_HOOK_TRANSCRIPT_BYTES if event in _FAST_EVENTS else MAX_END_HOOK_TRANSCRIPT_BYTES
+    )
+    if event in _FAST_EVENTS or event == "SessionEnd":
+        try:
+            if transcript.stat().st_size > budget:
+                return _skip(event, "budget-exceeded", session_id)
+        except OSError:
+            return _skip(event, "io-error", session_id)
+
     try:
         from sesslint.api import check_file
 
@@ -163,6 +205,9 @@ def run_hook(
             profile=profile or "neutral",
             format=format,
             select=_EVENT_SELECT.get(event),
+            max_file_bytes=budget
+            if event in _FAST_EVENTS or event == "SessionEnd"
+            else 8 * 1024 * 1024,
         )
     except (FileNotFoundError, PermissionError, IsADirectoryError, OSError):
         return _skip(event, "io-error", session_id)
@@ -172,6 +217,10 @@ def run_hook(
         # Last-resort containment: a hook must never crash the agent.
         return _skip(event, "internal-error", session_id)
 
+    if report.limitation.startswith("Unsupported:"):
+        return _skip(event, "format-undetected", session_id)
+    if report.limitation.startswith("Skipped:"):
+        return _skip(event, "budget-exceeded", session_id)
     by_code = dict(sorted(Counter(f.code for f in report.findings).items()))
     if not by_code:
         return HookResult(
@@ -210,6 +259,7 @@ def run_hook(
 
 __all__ = [
     "HOOK_RESULT_SCHEMA",
+    "MAX_FAST_HOOK_TRANSCRIPT_BYTES",
     "MAX_HOOK_PAYLOAD_BYTES",
     "HookResult",
     "run_hook",

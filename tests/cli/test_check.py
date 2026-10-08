@@ -68,20 +68,26 @@ def test_check_finding_exit1(capsys: pytest.CaptureFixture[str], tmp_path: Path)
 
 
 def test_check_ambiguity_fail_closed(capsys: pytest.CaptureFixture[str]) -> None:
-    """Ambiguous format fails closed with exit 1 and stderr actionable hint."""
+    """Ambiguous input is unsupported by default and fails only when requested."""
     fixture = FIXTURES_DIR / "check_ambiguity" / "polyglot.json"
     code = main(["check", str(fixture)])
-    assert code == 1
+    assert code == 0
     captured = capsys.readouterr()
-    assert "Format detection ambiguous" in captured.err
-    assert "specify --format" in captured.err
+    assert "unsupported" in captured.err.lower()
+    assert "healthy" not in captured.out.lower()
+
+    assert main(["check", str(fixture), "--fail-on-unsupported"]) == 1
+    capsys.readouterr()
 
     # With --json
     code_json = main(["check", str(fixture), "--json"])
-    assert code_json == 1
+    assert code_json == 0
     captured_json = capsys.readouterr()
     data = json.loads(captured_json.out)
-    assert any(f["code"] == "SL302" for f in data["findings"])
+    assert data["assurance"] == "A0"
+    assert data["limitation"].startswith("Unsupported: format-undetected")
+    assert data["findings"] == []
+    assert data["coverage"]["performed"] == []
 
 
 def test_check_directory_rejected(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:

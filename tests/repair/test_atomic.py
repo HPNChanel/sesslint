@@ -18,6 +18,7 @@ import pytest
 from sesslint import api
 from sesslint.atomic import atomic_write_bytes
 from sesslint.errors import AtomicWriteError
+from sesslint.repair.errors import OutputInvalid
 
 FIXTURES_REPAIR = (
     Path(__file__).resolve().parent.parent.parent / "fixtures" / "repair" / "conservative"
@@ -42,25 +43,16 @@ def test_atomic_replace_failure_cleans_temporary_files(tmp_path: Path) -> None:
 
 
 def test_repair_executor_atomic_failure_leaves_no_output(tmp_path: Path) -> None:
-    """Repair execution under simulated replace failure leaves no output and no manifest."""
-    src = FIXTURES_REPAIR / "valid_orphan_return.jsonl"
-    if not src.is_file():
-        # Create a minimal repairable fixture if needed
-        src = tmp_path / "source.jsonl"
-        src.write_text(
-            '{"created_at":"2026-09-06T00:00:00Z","schema_version":"sesslint.session/v1","session_id":"s1"}\n'
-            '{"actor":"tool","id":"t1","kind":"tool_return","parent_id":null,"payload":{},"seq":1,"ts":"2026-09-06T00:00:01Z"}\n',
-            encoding="utf-8",
-        )
+    """Failed exclusive publication leaves neither repair output nor its receipt."""
+    src = tmp_path / "source.jsonl"
+    src.write_bytes((FIXTURES_REPAIR.parent / "exec_basic" / "source.jsonl").read_bytes())
 
     out = tmp_path / "repaired_output.jsonl"
-    man = tmp_path / "manifest.json"
+    man = Path(f"{out}.manifest.json")
 
-    with patch("os.replace", side_effect=OSError("Permission denied on replace")):
-        try:
+    with patch("sesslint.atomic._publish_exclusive", side_effect=OSError("Publish failed")):
+        with pytest.raises(OutputInvalid, match="Publish failed"):
             api.repair(src, output_path=out, policy="conservative")
-        except Exception:
-            pass
 
     # Destination output file must NOT exist
     assert not out.exists(), "Corrupted or partial output file exists after replace failure"
@@ -68,5 +60,5 @@ def test_repair_executor_atomic_failure_leaves_no_output(tmp_path: Path) -> None
     assert not man.exists(), "Manifest was emitted despite repair execution failure"
 
     # Zero lingering temp files in tmp_path
-    temp_files = list(tmp_path.glob(".sesslint_tmp_*"))
+    temp_files = list(tmp_path.glob(".sesslint*"))
     assert len(temp_files) == 0

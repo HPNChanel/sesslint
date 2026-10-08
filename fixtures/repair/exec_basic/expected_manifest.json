@@ -3,23 +3,38 @@
     {
       "detail": "step 0",
       "kind": "identical-duplicate-collapse",
-      "record_id": "070ceee4b3954eb0"
+      "record_id": "b323969e9dfca06a"
     }
   ],
-  "assurance_ceiling": "A3",
+  "adapter_id": "canonical",
+  "adapter_version": "1.0.0",
+  "assurance": "repaired-lossless",
+  "assurance_ceiling": "A4",
+  "byte_counts": {
+    "output": 509,
+    "source": 651
+  },
   "declared_loss": [],
-  "idempotency_key": "d74db087f9461f8565b339e59f0d24ded18aa5c99a7b8478926d6cfdf5808987",
+  "idempotency_key": "9470f89d6798b92126ba903e53b218dcd10378d7adec38bf70a32023d65fcee6",
   "input_fingerprint": "ad96f2a760a8054b95027fb1771b6158d8edc313aad98e8323a8ddfc8c53d4a6",
   "output_fingerprint": "2c6da187e0203f22d155f9262e909c6244a3ad3975c8c54d61117a69b6587dba",
-  "plan_fingerprint": "d6e4585c7c09df3b53faaf14ee5fdef615b7a89fc43b60ba43ff14b9f9b271d4",
+  "plan_fingerprint": "0e69c071ffe361444dbd0a7aaa4a3e08a21ceede09f63b2ccb802b93c860449e",
   "policy": "conservative",
+  "profile_version": "1.0.0",
+  "recipe_versions": {
+    "identical-duplicate-collapse": "1.0.0"
+  },
+  "record_counts": {
+    "output": 3,
+    "source": 4
+  },
   "revalidate_report": null,
   "revalidation": {
-    "assurance": "A3",
+    "assurance": "A4",
     "error_count": 0,
     "profile_id": "neutral",
     "profile_version": "1.0.0",
-    "report_fingerprint": null,
+    "report_fingerprint": "8c62a50a084e49581c262bb2d2817ff9818514587c5c0ad1a425f140cd170d0d",
     "warning_count": 0
   },
   "schema_version": "sesslint.repair-manifest/v1"

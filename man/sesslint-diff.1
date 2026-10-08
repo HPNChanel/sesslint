@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-diff \- [read\-only] Structurally diff two session files.
 .SH SYNOPSIS
-.B sesslint diff [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-format\-a {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-format\-b {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-output\-format {human,json}] [\-\-json] A B
+.B sesslint diff [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-format\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-format\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-output\-format {human,json}] [\-\-json] A B
 .SH DESCRIPTION
 [read\-only] Compare two session files by event identity (not text diff): added/removed events, kind changes, parent relinks, sequence reorders, content changes (hash only).
 .SH ARGUMENTS
@@ -14,14 +14,14 @@ Path to the first session file
 Path to the second session file
 .SH OPTIONS
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter for both inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter for both inputs (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
-.B \-\-format\-a {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Format override for input A only Choices: claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-format\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Format override for input A only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
-.B \-\-format\-b {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Format override for input B only Choices: claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-format\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Format override for input B only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-output\-format {human,json}
 Output format (default: human) Choices: human, json.

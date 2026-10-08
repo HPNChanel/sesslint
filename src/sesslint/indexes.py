@@ -157,7 +157,7 @@ def _salvage_partial(text: str) -> tuple[IndexEntry, ...]:
             break
         try:
             obj, nxt = dec.raw_decode(text, pos)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError, RecursionError):
             break
         pos = nxt
         if isinstance(obj, dict):
@@ -205,7 +205,7 @@ def read_index(path: Path) -> IndexSnapshot:
 
     try:
         doc = json.loads(text)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError, RecursionError):
         stripped = text.lstrip()
         if stripped.startswith("{") and _looks_like_index(text):
             return _snapshot(
@@ -233,7 +233,11 @@ def _read_jsonl_index(text: str) -> IndexSnapshot:
     fails the whole index — a corrupted middle is not a clean cut.
     """
     entries: list[IndexEntry] = []
-    lines = text.splitlines()
+    # JSONL framing is physical LF; Unicode separators may occur in an index
+    # record's string fields and must not create synthetic records.
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
     missing_id = 0
     saw_object = False
     for pos, line in enumerate(lines):
@@ -244,7 +248,7 @@ def _read_jsonl_index(text: str) -> IndexSnapshot:
             continue
         try:
             obj = json.loads(stripped)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError, RecursionError):
             tail = pos == len(lines) - 1
             return _snapshot(
                 fmt=_INDEX_FORMAT_CODEX,

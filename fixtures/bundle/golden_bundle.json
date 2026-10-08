@@ -93,11 +93,11 @@
         "SL108",
         "SL201",
         "SL202",
-        "SL203",
         "SL204",
         "SL205",
         "SL301",
         "SL302",
+        "SL306",
         "accounting",
         "checkpoint",
         "graph",
@@ -115,6 +115,11 @@
         {
           "check": "SL011",
           "detail": "fewer than 8 records — size distribution not meaningful",
+          "reason": "adapter-not-applicable"
+        },
+        {
+          "check": "SL203",
+          "detail": "claude-code-jsonl exposes no checkpoint mechanism — continuation after compaction is vendor-normal",
           "reason": "adapter-not-applicable"
         },
         {

@@ -2160,7 +2160,15 @@ def render_human(
     err_cnt = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get("fatal", 0)
     warn_cnt = report.counts.by_severity.get("warning", 0)
 
-    if has_error:
+    if report.limitation.startswith("Unsupported:"):
+        verdict = "unsupported"
+        verdict_colored = f"{bold}Unsupported input (format-undetected){reset}"
+        files_summary = "H=0 I=0 U=1 R=0 S=0"
+    elif report.limitation.startswith("Skipped:"):
+        verdict = "skipped"
+        verdict_colored = f"{bold}Skipped input (file-too-large){reset}"
+        files_summary = "H=0 I=0 U=0 R=0 S=1"
+    elif has_error:
         verdict = "invalid"
         verdict_colored = f"{bold}{red}Integrity check failed{reset}"
         files_summary = "H=0 I=1 U=0 R=0 S=0"
@@ -2174,7 +2182,11 @@ def render_human(
         files_summary = "H=1 I=0 U=0 R=0 S=0"
 
     if next_action is None:
-        if has_error:
+        if verdict == "unsupported":
+            next_action = "Choose a supported session format; no integrity conclusion is available."
+        elif verdict == "skipped":
+            next_action = "Raise --max-file-bytes to inspect this file within your memory budget."
+        elif has_error:
             if any(f.repairability.value == "deterministic" for f in report.findings):
                 p = hint_path(report.findings[0].source.path, home=home)
                 next_action = f"Run 'sesslint repair {p} --output <out>'"

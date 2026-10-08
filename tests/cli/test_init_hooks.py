@@ -41,8 +41,10 @@ def test_claude_print_matches_documented_recipes() -> None:
     # every command is `sesslint hook --event <X> || true` — the payload
     # arrives on stdin, so no path substitution or glob is needed.
     entry = ss["hooks"]["SessionStart"][0]
-    assert entry["matcher"] == "startup|resume|clear|compact|fork"
-    assert entry["hooks"][0]["command"] == "sesslint hook --event SessionStart || true"
+    assert entry["matcher"] == "resume|compact|fork"
+    assert entry["hooks"][0]["command"] == (
+        "sesslint hook --event SessionStart --output claude-json || true"
+    )
     assert pc["hooks"]["PreCompact"][0]["matcher"] == "auto|manual"
     assert pc["hooks"]["PreCompact"][0]["hooks"][0]["command"] == (
         "sesslint hook --event PreCompact || true"
@@ -52,10 +54,12 @@ def test_claude_print_matches_documented_recipes() -> None:
     assert pxc["hooks"]["PostCompact"][0]["hooks"][0]["command"] == (
         "sesslint hook --event PostCompact || true"
     )
+    assert pxc["hooks"]["PostCompact"][0]["hooks"][0]["timeout"] == 5
     # SessionEnd hygiene recipe sweeps persisted secrets via SL009.
     se_entry = se["hooks"]["SessionEnd"][0]
     assert se_entry["matcher"] == "clear|logout|prompt_input_exit|other"
     assert se_entry["hooks"][0]["command"] == "sesslint hook --event SessionEnd || true"
+    assert se_entry["hooks"][0]["timeout"] == 5
 
 
 def test_snippets_have_no_placeholder_or_glob() -> None:

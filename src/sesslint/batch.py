@@ -9,7 +9,7 @@ non-overridable.
 
 Outputs mirror the input's relative structure under ``--output-dir`` with
 ``<stem>.repaired<suffix>`` names; manifests land in ``--manifest-dir`` as
-``<sha8-of-source-path>.manifest.json`` (deterministic, collision-free) or
+``<sha256-of-source-path>.manifest.json`` (deterministic, collision-resistant) or
 stay adjacent to their output under the single-file convention. Batch has
 no cross-file transaction: per-file atomicity is unchanged and partial
 results are valid results.
@@ -133,6 +133,8 @@ def _plan_detail(
     import hashlib as _hl
 
     from sesslint.adapters.detect import FORMAT_CANONICAL, detect_format
+    from sesslint.adapters.load import read_source_snapshot
+    from sesslint.io import sha256_file_bytes
     from sesslint.profiles.profile import resolve_effective_config
     from sesslint.repair.executor import load_source_for_format, run_all_checks
     from sesslint.repair.planner import plan as planner_plan
@@ -143,7 +145,10 @@ def _plan_detail(
         resolved = det.format or FORMAT_CANONICAL
     else:
         resolved = str(format)
-    _hdr, events, stream_findings = load_source_for_format(src, resolved)
+    # Parse and hash one read of the file so the plan binds the bytes it was
+    # computed from (B19).
+    snapshot = read_source_snapshot(src)
+    _hdr, events, stream_findings = load_source_for_format(src, resolved, data=snapshot)
     check_findings = run_all_checks(events, profile=profile, source_path=src.name, adapter=resolved)
     all_findings = list(stream_findings) + list(check_findings)
     plan = planner_plan(
@@ -151,7 +156,9 @@ def _plan_detail(
         events=events,
         profile=profile,
         policy=policy,
-        source_hash=_hl.sha256(src.read_bytes()).hexdigest(),
+        source_hash=(
+            _hl.sha256(snapshot).hexdigest() if snapshot is not None else sha256_file_bytes(src)
+        ),
         acknowledge_side_effects=acknowledge_side_effects,
         input_format=resolved,
     )
@@ -293,9 +300,9 @@ def repair_many(
 
         out_path = _output_for(src, root, out_dir)
         key = str(out_path)
-        if key in assigned:  # flat-mode basename collision -> sha8 prefix
-            sha8 = hashlib.sha256(str(src.resolve()).encode()).hexdigest()[:8]
-            out_path = out_path.with_name(f"{sha8}-{out_path.name}")
+        if key in assigned:  # flat-mode basename collision -> full digest prefix
+            source_digest = hashlib.sha256(str(src.resolve()).encode()).hexdigest()
+            out_path = out_path.with_name(f"{source_digest}-{out_path.name}")
             key = str(out_path)
         assigned.add(key)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -322,18 +329,33 @@ def repair_many(
             continue
 
         man_disp: str | None = None
+        relocation_reason: str | None = None
         default_manifest = Path(str(out_path) + ".manifest.json")
         if man_dir is not None and default_manifest.is_file():
             # Relocation goes through the sanctioned atomic write path (repo
             # invariant: file mutation lives in atomic.py/executor.py only).
             from sesslint.atomic import atomic_write_text
+            from sesslint.errors import AtomicWriteError
 
             man_dir.mkdir(parents=True, exist_ok=True)
-            sha8 = hashlib.sha256(str(src.resolve()).encode()).hexdigest()[:8]
-            target = man_dir / f"{sha8}.manifest.json"
-            atomic_write_text(target, default_manifest.read_text(encoding="utf-8"))
-            default_manifest.unlink()
-            man_disp = minimize_path(target)
+            source_digest = hashlib.sha256(str(src.resolve()).encode()).hexdigest()
+            target = man_dir / f"{source_digest}.manifest.json"
+            try:
+                atomic_write_text(
+                    target,
+                    default_manifest.read_text(encoding="utf-8"),
+                    refuse_paths=[src, out_path],
+                    overwrite=False,
+                )
+            except AtomicWriteError:
+                # The repair already succeeded. Retain its adjacent receipt
+                # and disclose the failed relocation without clobbering an
+                # existing receipt or losing the rest of the batch results.
+                man_disp = minimize_path(default_manifest)
+                relocation_reason = "manifest-relocation-refused"
+            else:
+                default_manifest.unlink()
+                man_disp = minimize_path(target)
         elif default_manifest.is_file():
             man_disp = minimize_path(default_manifest)
 
@@ -345,6 +367,7 @@ def repair_many(
                 codes=codes,
                 output=minimize_path(out_path),
                 manifest=man_disp,
+                reason=relocation_reason,
             )
         )
 

@@ -66,11 +66,12 @@ scratch/
 
 agent_tasks/
 
-# Internal task/plan packs and release evidence docs (maintainer-local; not published)
+# Internal task/plan packs and generated release evidence (maintainer-local; not published)
 /plans/
 /docs/reviews/
 /docs/COMPLETION_*.md
 /docs/DELIVERY_*.md
-/docs/RELEASE_*.md
+# Authored release notes must remain visible to Git; only generated variants are local.
+/docs/RELEASE_*.generated.md
 /docs/SANDBOX_*.md
 /docs/WINDOWS_ACCEPTANCE.md

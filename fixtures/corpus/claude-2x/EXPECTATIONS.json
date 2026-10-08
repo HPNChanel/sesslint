@@ -16,14 +16,10 @@
     "repairable": false
   },
   "queue_operation.jsonl": {
-    "codes": [
-      "SL006",
-      "SL007",
-      "SL302"
-    ],
-    "description": "queue-operation record type is unknown on the critical path -> SL302, plus graph-side warnings for the unlinked record.",
-    "exit": 1,
-    "expected_assurance": "A1",
+    "codes": [],
+    "description": "queue-operation without a uuid is session metadata, outside the causal graph.",
+    "exit": 0,
+    "expected_assurance": "A3",
     "repairable": false
   },
   "summary_isSidechain.jsonl": {

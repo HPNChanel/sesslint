@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-stats \- [read\-only] Aggregate content\-free statistics over session files.
 .SH SYNOPSIS
-.B sesslint stats [\-\-agent {claude,codex,all}] [\-\-recursive | \-r] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-output\-format {human,json}] [\-\-json] PATH...
+.B sesslint stats [\-\-agent {claude,codex,all}] [\-\-recursive | \-r] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-output\-format {human,json}] [\-\-json] PATH...
 .SH DESCRIPTION
 [read\-only] Aggregate statistics over session files or directories: event counts by kind/actor, tool\-call volume per hashed tool name, compactions, checkpoints, size percentiles.
 .SH ARGUMENTS
@@ -17,8 +17,8 @@ Aggregate over a well\-known agent session root instead of paths Choices: claude
 .B \-\-recursive, \-r
 Recursively walk directory arguments
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter for all inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter for all inputs (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
 .B \-\-output\-format {human,json}
 Output format (default: human) Choices: human, json.

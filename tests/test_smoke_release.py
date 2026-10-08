@@ -79,7 +79,8 @@ def test_smoke_mixed_directory_scan(capsys: pytest.CaptureFixture[str]) -> None:
 
     assert totals.get("total") == 5
     assert totals.get("healthy") == 1
-    assert totals.get("invalid") == 2
+    assert totals.get("invalid") == 1
     assert totals.get("unreadable") == 1
-    assert totals.get("unsupported") == 1
+    # Future canonical schema plus a file with no recognized session format.
+    assert totals.get("unsupported") == 2
     assert totals.get("skipped") == 0

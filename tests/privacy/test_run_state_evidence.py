@@ -32,6 +32,7 @@ def test_run_state_evidence_fixture_survival_and_zero_leakage() -> None:
 
     report = check_file(fixture_path)
     assert len(report.findings) == 2
+    assert sum(f.code == SL009 for f in report.findings) == 1
     assert {f.code for f in report.findings} == {SL009, SL201}
 
     finding = next(f for f in report.findings if f.code == SL201)
@@ -140,7 +141,8 @@ def test_dynamic_secrets_and_pii_strictly_redacted(tmp_path: Path) -> None:
     test_file.write_text(json.dumps(content), encoding="utf-8")
 
     report = check_file(test_file)
-    assert len(report.findings) == 2
+    assert len(report.findings) == 3
+    assert sum(f.code == SL009 for f in report.findings) == 2
     assert {f.code for f in report.findings} == {SL009, SL201}
 
     rep_json = render_json(report)

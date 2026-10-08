@@ -223,13 +223,16 @@ def test_precheck_contract() -> None:
     assert res_usage.exit_code == 2
     assert res_usage.report is None
 
-    # Ambiguous format returns detection-failed with report attached
+    # Ambiguous format remains fail-closed at precheck, with an honest A0 report.
     res_ambig = api.precheck(FIXTURES_ROOT / "cli" / "check_ambiguity" / "polyglot.json")
     assert isinstance(res_ambig, PrecheckResult)
     assert res_ambig.ok is False
     assert res_ambig.reason == "detection-failed"
     assert res_ambig.exit_code == 1
     assert isinstance(res_ambig.report, Report)
+    assert res_ambig.report.assurance == "A0"
+    assert res_ambig.report.limitation.startswith("Unsupported: format-undetected")
+    assert res_ambig.report.coverage.performed == ()
 
 
 def test_api_numeric_range_validation(tmp_path: Path) -> None:
@@ -293,22 +296,23 @@ def _copy_healthy(dst_dir: Path, name: str) -> Path:
     return dst
 
 
-def test_check_file_threshold_override_alters_detection(tmp_path: Path) -> None:
-    """check_file applies effective thresholds: 0.60 passes at 0.55, fails at 0.70."""
+def test_check_file_threshold_override_reports_undetected_input_honestly(tmp_path: Path) -> None:
+    """Raised thresholds return A0/unsupported without inventing an SL302 finding."""
     p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
     with p1, p2, p3:
         report_ok = api.check_file(HEALTHY_FIXTURE)
         assert not any(f.code == "SL302" for f in report_ok.findings)
 
         report_strict = api.check_file(HEALTHY_FIXTURE, confidence_min=0.70)
-        sl302 = [f for f in report_strict.findings if f.code == "SL302"]
-        assert sl302, "expected SL302 ambiguous-format finding under raised threshold"
-        assert sl302[0].evidence is not None
-        assert sl302[0].evidence["confidence_min"] == 0.70
+        assert report_strict.assurance == "A0"
+        assert report_strict.limitation.startswith("Unsupported: format-undetected")
+        assert report_strict.findings == ()
+        assert report_strict.coverage.performed == ()
+        assert report_strict.coverage.skipped
 
 
-def test_check_dir_threshold_override_applies_once(tmp_path: Path) -> None:
-    """check_dir applies effective thresholds to per-file detection."""
+def test_check_dir_threshold_override_marks_undetected_files_unsupported(tmp_path: Path) -> None:
+    """Directory results classify threshold-rejected files as unsupported, never invalid."""
     _copy_healthy(tmp_path, "a.jsonl")
     _copy_healthy(tmp_path, "b.jsonl")
 
@@ -319,10 +323,12 @@ def test_check_dir_threshold_override_applies_once(tmp_path: Path) -> None:
         assert rep_ok.totals.invalid == 0
 
         rep_strict = api.check_dir(tmp_path, confidence_min=0.70)
-        assert rep_strict.totals.invalid == 2
+        assert rep_strict.totals.invalid == 0
+        assert rep_strict.totals.unsupported == 2
         for fr in rep_strict.files:
-            sl302 = [f for f in fr.findings if f.code == "SL302"]
-            assert sl302 and sl302[0].evidence["confidence_min"] == 0.70
+            assert fr.verdict == "unsupported"
+            assert fr.findings == ()
+            assert fr.detected_format is None
 
 
 def test_scan_path_resolves_effective_config_once(tmp_path: Path) -> None:
@@ -349,13 +355,15 @@ def test_scan_path_resolves_effective_config_once(tmp_path: Path) -> None:
 
 
 def test_check_unified_forwards_thresholds_to_dir(tmp_path: Path) -> None:
-    """api.check on a directory forwards effective thresholds to the scan path."""
+    """api.check preserves the directory unsupported classification for undetected files."""
     _copy_healthy(tmp_path, "a.jsonl")
     p1, p2, p3 = _patch_detector_scores(0.60, 0.10, 0.10)
     with p1, p2, p3:
         rep = api.check(tmp_path, confidence_min=0.70)
         assert isinstance(rep, ScanReport)
-        assert rep.totals.invalid == 1
+        assert rep.totals.invalid == 0
+        assert rep.totals.unsupported == 1
+        assert rep.files[0].verdict == "unsupported"
 
 
 @pytest.mark.parametrize(

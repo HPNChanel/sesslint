@@ -43,7 +43,7 @@ inputs:
     required: false
     default: ""
   skip-undetected:
-    description: "Classify format-undetected files as skipped instead of invalid ('true'/'false')"
+    description: "Classify format-undetected files as skipped instead of unsupported ('true'/'false')"
     required: false
     default: "false"
   config:
@@ -59,7 +59,7 @@ inputs:
     required: false
     default: "sesslint"
   source-ref:
-    description: "Source path or git ref for source install"
+    description: "Source workspace path for source install"
     required: false
     default: ""
   python-version:
@@ -82,23 +82,49 @@ runs:
   using: "composite"
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Install SessLint
-      shell: bash
+      shell: python
+      env:
+        PACKAGE: ${{ inputs.package }}
+        SOURCE_REF: ${{ inputs.source-ref }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
       run: |
-        python -m pip install --upgrade pip
-        if [ -n "${{ inputs.source-ref }}" ]; then
-          python -m pip install "${{ inputs.source-ref }}"
-        else
-          python -m pip install "${{ inputs.package }}"
-        fi
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+        source_ref = os.environ["SOURCE_REF"].strip()
+        package = os.environ["PACKAGE"].strip()
+
+        if source_ref:
+            source = (workspace / source_ref).resolve()
+            try:
+                source.relative_to(workspace)
+            except ValueError as error:
+                raise SystemExit("source-ref must resolve inside GITHUB_WORKSPACE") from error
+            if not source.exists():
+                raise SystemExit("source-ref must name an existing workspace path")
+            install_target = str(source)
+        elif package:
+            if "\x00" in package:
+                raise SystemExit("package must not contain a NUL byte")
+            if package.startswith("-"):
+                raise SystemExit("package must not start with an option prefix")
+            install_target = package
+        else:
+            raise SystemExit("package is required when source-ref is empty")
+
+        subprocess.run([sys.executable, "-m", "pip", "install", install_target], check=True)
 
     - name: Run SessLint Check
       id: sesslint-check
-      shell: bash
+      shell: python
       env:
         TARGET_PATH: ${{ inputs.path }}
         PROFILE: ${{ inputs.profile }}
@@ -114,74 +140,112 @@ runs:
         CONFIG: ${{ inputs.config }}
         OUTPUT_FORMAT: ${{ inputs.output-format }}
       run: |
-        CMD=(python -m sesslint.cli check "$TARGET_PATH" --profile "$PROFILE")
-        if [ "$OUTPUT_FORMAT" = "sarif" ]; then
-          CMD+=(--output-format sarif)
-        else
-          CMD+=(--json)
-        fi
-        if [ -n "$FORMAT" ] && [ "$FORMAT" != "auto" ]; then
-          CMD+=(--format "$FORMAT")
-        fi
-        if [ -n "$SELECT" ]; then
-          CMD+=(--select "$SELECT")
-        fi
-        if [ -n "$IGNORE" ]; then
-          CMD+=(--ignore "$IGNORE")
-        fi
-        if [ -n "$BASELINE" ]; then
-          CMD+=(--baseline "$BASELINE")
-        fi
-        if [ -n "$WRITE_BASELINE" ]; then
-          CMD+=(--write-baseline "$WRITE_BASELINE")
-        fi
-        if [ -n "$EXCLUDE" ]; then
-          IFS=',' read -ra _excl <<< "$EXCLUDE"
-          for _g in "${_excl[@]}"; do CMD+=(--exclude "$_g"); done
-        fi
-        if [ -n "$EXT" ]; then
-          IFS=',' read -ra _exts <<< "$EXT"
-          for _e in "${_exts[@]}"; do CMD+=(--ext "$_e"); done
-        fi
-        if [ "$SKIP_UNDETECTED" = "true" ]; then
-          CMD+=(--skip-undetected)
-        fi
-        if [ -n "$CONFIG" ]; then
-          CMD+=(--config "$CONFIG")
-        fi
-        if [ -d "$TARGET_PATH" ]; then
-          CMD+=(--recursive)
-        fi
-
-        set +e
-        "${CMD[@]}" > sesslint_stdout.json 2> sesslint_stderr.log
-        CLI_EXIT=$?
-        set -e
-
-        export CLI_EXIT
-        python - << 'EOF'
         import json
         import os
+        import re
+        import subprocess
         import sys
         import uuid
+        from pathlib import Path
 
-        target = os.environ.get("TARGET_PATH", "")
-        fail_on = os.environ.get("FAIL_ON", "error").strip().lower()
-        cli_exit_raw = os.environ.get("CLI_EXIT", "0")
-        try:
-            cli_exit = int(cli_exit_raw)
-        except ValueError:
-            cli_exit = 2
+        workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
 
-        stdout_text = ""
-        if os.path.exists("sesslint_stdout.json"):
-            with open("sesslint_stdout.json", "r", encoding="utf-8") as f:
-                stdout_text = f.read()
+        def value(name: str) -> str:
+            return os.environ.get(name, "").strip()
 
-        stderr_text = ""
-        if os.path.exists("sesslint_stderr.log"):
-            with open("sesslint_stderr.log", "r", encoding="utf-8") as f:
-                stderr_text = f.read()
+        def scoped_path(name: str, *, required: bool = False, exists: bool = False) -> Path | None:
+            raw = value(name)
+            if not raw:
+                if required:
+                    raise SystemExit(f"{name.lower().replace('_', '-')} is required")
+                return None
+            if "\x00" in raw:
+                raise SystemExit(f"{name.lower().replace('_', '-')} must not contain a NUL byte")
+            candidate = Path(raw)
+            resolved = (candidate if candidate.is_absolute() else workspace / candidate).resolve()
+            try:
+                resolved.relative_to(workspace)
+            except ValueError as error:
+                raise SystemExit(f"{name.lower().replace('_', '-')} must resolve inside GITHUB_WORKSPACE") from error
+            if exists and not resolved.exists():
+                raise SystemExit(f"{name.lower().replace('_', '-')} must name an existing workspace path")
+            return resolved
+
+        def choice(name: str, allowed: set[str]) -> str:
+            raw = value(name).lower()
+            if raw not in allowed:
+                allowed_text = ", ".join(sorted(allowed))
+                raise SystemExit(f"{name.lower().replace('_', '-')} must be one of: {allowed_text}")
+            return raw
+
+        def code_list(name: str) -> str:
+            raw = value(name)
+            if not raw:
+                return ""
+            codes = [code.strip().upper() for code in raw.split(",")]
+            if not all(re.fullmatch(r"SL\d{3}", code) for code in codes):
+                raise SystemExit(f"{name.lower().replace('_', '-')} must be comma-separated SL### codes")
+            return ",".join(codes)
+
+        def comma_values(name: str) -> list[str]:
+            raw = value(name)
+            if not raw:
+                return []
+            values = [item.strip() for item in raw.split(",")]
+            if not all(values) or any("\x00" in item for item in values):
+                raise SystemExit(f"{name.lower().replace('_', '-')} contains an invalid value")
+            return values
+
+        target = scoped_path("TARGET_PATH", required=True, exists=True)
+        assert target is not None
+        profile = choice("PROFILE", {"neutral", "claude-strict", "openai-strict"})
+        format_name = choice(
+            "FORMAT", {"auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"}
+        )
+        fail_on = choice("FAIL_ON", {"error", "warning"})
+        output_format = choice("OUTPUT_FORMAT", {"json", "sarif"})
+        skip_undetected = choice("SKIP_UNDETECTED", {"true", "false"})
+        select = code_list("SELECT")
+        ignore = code_list("IGNORE")
+        if select and ignore:
+            raise SystemExit("select and ignore are mutually exclusive")
+        baseline = scoped_path("BASELINE", exists=True)
+        config = scoped_path("CONFIG", exists=True)
+        write_baseline = scoped_path("WRITE_BASELINE")
+        if write_baseline is not None and not write_baseline.parent.is_dir():
+            raise SystemExit("write-baseline parent directory must exist")
+
+        command = [sys.executable, "-m", "sesslint.cli", "check", str(target), "--profile", profile]
+        command.extend(["--fail-on", fail_on])
+        if output_format == "sarif":
+            command.extend(["--output-format", "sarif"])
+        else:
+            command.append("--json")
+        if format_name != "auto":
+            command.extend(["--format", format_name])
+        if select:
+            command.extend(["--select", select])
+        if ignore:
+            command.extend(["--ignore", ignore])
+        if baseline is not None:
+            command.extend(["--baseline", str(baseline)])
+        if write_baseline is not None:
+            command.extend(["--write-baseline", str(write_baseline)])
+        for pattern in comma_values("EXCLUDE"):
+            command.extend(["--exclude", pattern])
+        for extension in comma_values("EXT"):
+            command.extend(["--ext", extension])
+        if skip_undetected == "true":
+            command.append("--skip-undetected")
+        if config is not None:
+            command.extend(["--config", str(config)])
+        if target.is_dir():
+            command.append("--recursive")
+
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        cli_exit = completed.returncode
+        stdout_text = completed.stdout
+        stderr_text = completed.stderr
 
         assurance = "-"
         error_count = 0
@@ -247,4 +311,3 @@ runs:
             sys.stderr.flush()
 
         sys.exit(step_exit)
-        EOF

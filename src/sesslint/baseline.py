@@ -207,7 +207,9 @@ def dump_baseline(findings: Iterable[Finding], *, created_by: str = "sesslint") 
 def write_baseline(path: Path, findings: Iterable[Finding], *, created_by: str = "sesslint") -> int:
     """Write findings as a v2 baseline file; returns the entry count written."""
     doc = dump_baseline(findings, created_by=created_by)
-    path.write_text(doc, encoding="utf-8", newline="\n")
+    from sesslint.atomic import atomic_write_text
+
+    atomic_write_text(path, doc)
     return doc.count('"key"')
 
 

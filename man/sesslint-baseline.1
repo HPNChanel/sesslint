@@ -1,10 +1,10 @@
 .TH SESSLINT-BASELINE 1 "" "SessLint 0.4.1" "SessLint Manual"
 .SH NAME
-sesslint-baseline \- [read\-only] Upgrade a v1 baseline to the path\-normalized v2 format.
+sesslint-baseline \- [writes: output file] Upgrade a v1 baseline to the path\-normalized v2 format.
 .SH SYNOPSIS
-.B sesslint baseline \-\-upgrade FILE [\-\-source PATH] [\-\-output | \-o PATH] [\-\-format {auto,canonical,claude\-code\-jsonl,openai\-agents,codex\-rollout}] [\-\-profile PROFILE]
+.B sesslint baseline \-\-upgrade FILE [\-\-source PATH] [\-\-output | \-o PATH] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE]
 .SH DESCRIPTION
-[read\-only] Baseline maintenance: \-\-upgrade rewrites a sesslint.baseline/v1 file as v2 (path\-normalized keys). With \-\-source, findings are reproduced to verify entries; without it every entry migrates 'unverified' (still matchable via the v1 leg).
+[writes: output file] Baseline maintenance: \-\-upgrade rewrites a sesslint.baseline/v1 file as v2 (path\-normalized keys). With \-\-source, findings are reproduced to verify entries; without it every entry migrates 'unverified' (still matchable via the v1 leg).
 .SH OPTIONS
 .TP
 .B \-\-upgrade FILE
@@ -16,8 +16,8 @@ Session file or directory to re\-check for verified migration
 .B \-\-output PATH, \-o PATH
 Write the upgraded baseline here (default: stdout)
 .TP
-.B \-\-format {auto,canonical,claude\-code\-jsonl,openai\-agents,codex\-rollout}
-Input format override for \-\-source (default: auto) Choices: auto, canonical, claude\-code\-jsonl, openai\-agents, codex\-rollout. Default: auto.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Input format override for \-\-source (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
 .B \-\-profile PROFILE
 Validation profile for \-\-source re\-check (default: neutral) Default: neutral.

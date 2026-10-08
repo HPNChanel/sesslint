@@ -91,14 +91,17 @@ def test_precheck_reason_vocabulary() -> None:
 
 
 def test_precheck_detection_failed_polyglot() -> None:
-    """Verify precheck returns reason='detection-failed' on ambiguous format (SL302)."""
+    """Verify precheck remains fail-closed on an unsupported polyglot format."""
     res = precheck(POLYGLOT_FIXTURE)
     assert isinstance(res, PrecheckResult)
     assert res.ok is False
     assert res.reason == "detection-failed"
     assert res.exit_code == 1
     assert isinstance(res.report, Report)
-    assert any(f.code == "SL302" for f in res.report.findings)
+    assert res.report.assurance == "A0"
+    assert res.report.limitation.startswith("Unsupported: format-undetected")
+    assert res.report.findings == ()
+    assert res.report.coverage.performed == ()
 
 
 def test_precheck_detection_failed_version_old() -> None:

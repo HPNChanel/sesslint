@@ -11,6 +11,7 @@ from typing import Any, Final
 
 from sesslint.errors import FindingError
 from sesslint.finding import enforce_content_free_text
+from sesslint.secret_families import SECRET_FAMILIES
 
 # Allowlist: 1 to 64 chars of alphanumeric, underscore, dot, hyphen
 _DISCRIMINATOR_ALLOWLIST: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
@@ -21,12 +22,16 @@ _SENSITIVE_DISCRIMINATOR_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:"
     r"(?:sk|rk)[_\-]"  # OpenAI / Stripe secret or restricted key
     r"|gh[pousr]_[A-Za-z0-9]"  # GitHub tokens: ghp_, gho_, ghu_, ghs_, ghr_
-    r"|glpat-[A-Za-z0-9]"  # GitLab personal access token
+    r"|glpat-[A-Za-z0-9]"  # Redact suspicious prefixes, including truncated tokens.
     r"|(?:akia|asia)[0-9a-z]{16}"  # AWS Access Key ID (permanent or temporary session)
     r"|aiza[0-9a-z_\-]{20,}"  # Google API key
-    r"|xox[baprs]-[0-9a-z]"  # Slack tokens: xoxb-, xoxp-, xapp-, xoxa-, xoxr-
+    r"|xox[a-z]-[0-9a-z]"  # Redaction stays stricter than detector minimum lengths.
+    r"|npm_[a-z0-9]{20,}"  # npm access token
+    r"|hf_[a-z0-9]{20,}"  # Hugging Face access token
     r"|slack[_\-]token[_\-]"  # Generic slack token marker
     r"|bearer[_\-]"  # Bearer token indicator
+    r"|(?:azure|gcp)[_\-](?:client[_\-]?secret|service[_\-]?account|private[_\-]?key)"
+    r"[_\-][a-z0-9]{8,}"
     r")"
 )
 _CREDENTIAL_PREFIXES: Final[tuple[str, ...]] = (
@@ -72,6 +77,8 @@ def safe_discriminator(val: Any) -> tuple[str, bool]:
         tuple[str, bool]: (type_value, is_truncated)
     """
     if isinstance(val, str) and _DISCRIMINATOR_ALLOWLIST.fullmatch(val):
+        if any(pattern.search(val.encode("ascii")) for _, pattern, _ in SECRET_FAMILIES):
+            return safe_type_value(val), True
         try:
             enforce_content_free_text(val, context="safe_discriminator")
         except FindingError:

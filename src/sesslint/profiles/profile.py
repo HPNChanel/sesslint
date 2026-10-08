@@ -29,6 +29,7 @@ class Profile:
     checkpoint_sensitivity: str
     version: str = "1.0.0"
     rule_severities: Mapping[str, Severity] = field(default_factory=dict)
+    timestamp_skew_ms: int = 2000
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize profile definition to standard dictionary with sorted keys."""
@@ -39,6 +40,7 @@ class Profile:
             "enabled_rules": list(self.enabled_rules),
             "name": self.name,
             "thresholds": dict(self.thresholds),
+            "timestamp_skew_ms": self.timestamp_skew_ms,
             "version": self.version,
         }
         if self.rule_severities:

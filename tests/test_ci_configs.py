@@ -105,6 +105,64 @@ def test_ci_workflow_dogfood_job() -> None:
     assert "action-dogfood" in content[content.find("build-and-smoke:") :]
 
 
+def test_ci_workflow_uses_reviewed_action_pins_and_locked_tools() -> None:
+    """CI action revisions and Python tool inputs must be independently reproducible."""
+    content = CI_WORKFLOW.read_text(encoding="utf-8")
+    expected_pins = {
+        "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+        "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081",
+    }
+    refs = set(re.findall(r"uses:\s*([^\s#]+)", content))
+    assert expected_pins <= refs
+    for ref in refs:
+        if ref.startswith("./"):
+            continue
+        assert re.search(r"@[0-9a-f]{40}$", ref), ref
+    assert 'version: "0.10.10"' in content
+    assert "uv sync --locked --extra dev" in content
+    assert "uv sync --locked --extra packaging" in content
+    assert "uv run mkdocs build --strict" in content
+
+
+def test_ci_workflow_dogfood_requires_the_expected_exit_code() -> None:
+    """A crash or usage error cannot satisfy a corrupt-fixture expectation."""
+    content = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert content.count('expected-exit: "1"') == 3
+    assert "steps.corrupt-check.outputs.exit-code" in content
+    assert "matrix.expected-exit" in content
+
+
+def test_action_uses_environment_inputs_and_structured_argv() -> None:
+    """Composite inputs are validated before Python executes a fixed argv list."""
+    content = ACTION_YML.read_text(encoding="utf-8")
+    assert content.count("shell: python") == 2
+    assert "shell: bash" not in content
+    for env_name, action_input in (
+        ("TARGET_PATH", "path"),
+        ("PROFILE", "profile"),
+        ("FORMAT", "format"),
+        ("FAIL_ON", "fail-on"),
+        ("OUTPUT_FORMAT", "output-format"),
+    ):
+        assert f"{env_name}: ${{{{ inputs.{action_input} }}}}" in content
+    assert "subprocess.run(command, capture_output=True, text=True, check=False)" in content
+    assert "relative_to(workspace)" in content
+    assert "--fail-on" in content, "Action must forward its configured failure threshold"
+    assert "CMD=(" not in content
+
+
+def test_action_python_steps_parse() -> None:
+    """The composite action's Python-shell payloads are valid Python source."""
+    yaml = pytest.importorskip("yaml", reason="PyYAML required for action step parsing")
+    action = yaml.safe_load(ACTION_YML.read_text(encoding="utf-8"))
+    python_steps = [step for step in action["runs"]["steps"] if step.get("shell") == "python"]
+    assert len(python_steps) == 2
+    for step in python_steps:
+        compile(step["run"], ACTION_YML.name, "exec")
+
+
 def test_yaml_parses_if_pyyaml_installed() -> None:
     """If PyYAML is available, verify full syntax parsing of CI metadata files."""
     try:

@@ -132,7 +132,8 @@ def test_exact_offsets_multibyte_intact() -> None:
     assert len(findings) == 1
 
     f = findings[0]
-    assert f.code == SL002  # Terminal since line3 is last line
+    # Terminal but newline-terminated: malformed, not a torn append (B17).
+    assert f.code == SL001
     assert f.source.line == 3
     assert f.evidence["byte_offset"] == l3_start
     assert f.evidence["byte_end"] == l3_end
@@ -367,8 +368,8 @@ def test_overlong_line_truncation_offset() -> None:
     raw = line1 + line2 + line3
     l1_end = len(line1)
     l2_start = l1_end
-    # The reader reads up to max_line_bytes + 1 before truncating and draining
-    l2_truncation_point = l2_start + limits.max_line_bytes + 1
+    # Evidence spans the entire physical record, including drained bytes (B30).
+    l2_truncation_point = l2_start + len(line2)
 
     findings = _collect_stream_findings(raw, limits=limits)
     assert len(findings) >= 1
@@ -389,7 +390,7 @@ def test_overlong_line_truncation_offset() -> None:
     cl_l3 = b'{"type": "user", "message": {"content": "world"}}\n'
     raw_cl = cl_l1 + cl_l2 + cl_l3
     cl_l2_start = len(cl_l1)
-    cl_trunc_point = cl_l2_start + limits.max_line_bytes + 1
+    cl_trunc_point = cl_l2_start + len(cl_l2)
 
     _, cl_findings = load_claude_code(raw_cl, limits=limits)
     assert len(cl_findings) >= 1
@@ -409,7 +410,7 @@ def test_overlong_line_truncation_offset() -> None:
     oa_l3 = b'{"type": "user", "content": "world"}\n'
     raw_oa = oa_l1 + oa_l2 + oa_l3
     oa_l2_start = len(oa_l1)
-    oa_trunc_point = oa_l2_start + limits.max_line_bytes + 1
+    oa_trunc_point = oa_l2_start + len(oa_l2)
 
     _, oa_findings = load_openai_agents(raw_oa, limits=limits)
     assert len(oa_findings) >= 1

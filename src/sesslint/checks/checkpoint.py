@@ -903,6 +903,11 @@ def check_unsafe_continuation(
         elif c_kind == _KIND_COMPACTION:
             compaction_indices.append(c_idx)
 
+    # Without a checkpoint-kind mapping, native compaction alone cannot
+    # establish a lost checkpoint. Explicit SL201/SL202 triggers stay intact.
+    if not ctx.compaction_checkpoint_capable:
+        compaction_indices = []
+
     for idx in compaction_indices:
         has_subsequent_checkpoint = any(chk > idx for chk in checkpoint_indices)
         if not has_subsequent_checkpoint:

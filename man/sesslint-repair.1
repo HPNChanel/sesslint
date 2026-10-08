@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-repair \- [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file.
 .SH SYNOPSIS
-.B sesslint repair [\-\-output | \-\-out | \-o OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-batch DIR] [\-\-from\-scan REPORT.json] [\-\-files FILE] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-salvage\-unsupported] [\-\-include\-content] [\-\-config PATH] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [PATH]
+.B sesslint repair [\-\-output | \-\-out | \-o OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-batch DIR] [\-\-from\-scan REPORT.json] [\-\-files FILE] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-salvage\-unsupported] [\-\-include\-content] [\-\-config PATH] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [PATH]
 .SH DESCRIPTION
 [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file with atomic execution.
 .SH ARGUMENTS
@@ -18,13 +18,13 @@ Path to output repaired session file
 Plan\-only mode; do not write any files
 .TP
 .B \-\-preview
-Render the structural repair preview (sesslint.preview/v1): content\-free delta rows per plan step, then exit without writing. Incompatible with \-\-output/\-\-plan\-out/\-\-apply\-plan/batch modes. *(next release)*
+Render the structural repair preview (sesslint.preview/v1): content\-free delta rows per plan step, then exit without writing. Incompatible with \-\-output/\-\-plan\-out/\-\-apply\-plan/batch modes.
 .TP
 .B \-\-policy {conservative,salvage}
 Repair policy (choices: conservative, salvage; default: conservative) Choices: conservative, salvage.
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-emit {auto,canonical,vendor}
 Output artifact format. 'auto' (default) emits the input's own format: vendor input produces a drop\-only line\-verbatim write\-back; 'canonical' always emits the canonical session stream. Choices: auto, canonical, vendor. Default: auto.
@@ -39,25 +39,25 @@ Output manifest or plan in JSON format
 Emit NDJSON progress events to stderr (stdout stays the result channel)
 .TP
 .B \-\-plan PLAN, \-\-apply\-plan PLAN
-Apply a previously exported plan JSON (sesslint.plan/v1) without re\-planning. The plan is authoritative: \-\-policy/\-\-profile/\-\-format overrides are refused, and execution still re\-validates the plan fingerprint and source binding. *(next release)*
+Apply a previously exported plan JSON (sesslint.plan/v1) without re\-planning. The plan is authoritative: \-\-policy/\-\-profile/\-\-format overrides are refused, and execution still re\-validates the plan fingerprint and source binding.
 .TP
 .B \-\-plan\-out PLAN_OUT
-Export the computed repair plan (sesslint.plan/v1) to PATH for review or later \-\-apply\-plan. Plan\-only when \-\-output is absent; with \-\-output the exported plan is executed in the same run. *(next release)*
+Export the computed repair plan (sesslint.plan/v1) to PATH for review or later \-\-apply\-plan. Plan\-only when \-\-output is absent; with \-\-output the exported plan is executed in the same run.
 .TP
 .B \-\-batch DIR
-Batch\-repair every eligible session file under DIR (eligibility = planner computes steps with zero blocked findings). Outputs mirror DIR's structure under \-\-output\-dir. *(next release)*
+Batch\-repair every eligible session file under DIR (eligibility = planner computes steps with zero blocked findings). Outputs mirror DIR's structure under \-\-output\-dir.
 .TP
 .B \-\-from\-scan REPORT.json
-Batch\-repair files listed in a sesslint scan JSON report; only '~/'\-minimized and absolute paths resolve — '.._<hash>' entries are reported skipped. *(next release)*
+Batch\-repair files listed in a sesslint scan JSON report; only '~/'\-minimized and absolute paths resolve — '.._<hash>' entries are reported skipped.
 .TP
 .B \-\-files FILE
-Batch\-repair an explicit file list into \-\-output\-dir. *(next release)*
+Batch\-repair an explicit file list into \-\-output\-dir.
 .TP
 .B \-\-output\-dir DIR
-Output root for batch repair modes (mirrors input structure). *(next release)*
+Output root for batch repair modes (mirrors input structure).
 .TP
 .B \-\-manifest\-dir DIR
-Manifest root for batch modes; manifests are named <sha8\-of\-source\-path>.manifest.json. Default: adjacent to each output. *(next release)*
+Manifest root for batch modes; manifests are named <sha8\-of\-source\-path>.manifest.json. Default: adjacent to each output.
 .TP
 .B \-\-acknowledge\-side\-effects
 Acknowledge tool side\-effects for salvage policy

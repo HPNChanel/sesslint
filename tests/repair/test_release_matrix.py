@@ -54,6 +54,8 @@ def source_bytes(scenario: str) -> bytes:
         )
         if scenario == "torn-tail":
             return b"".join(lines) + b'{"id":"synthetic-torn"'
+        # Newline-terminated fragment: not a provable torn append (B17), so
+        # conservative refuses and salvage excises it with declared loss.
         return b"".join(lines[:2]) + b'{"id":"synthetic-torn"\n' + b"".join(lines[2:])
     data = json.loads((ROOT / "fixtures/repair" / f"{scenario}.json").read_text())
     data = data.get("happy_path", data)

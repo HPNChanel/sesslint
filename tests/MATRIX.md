@@ -44,6 +44,11 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 
 ## Recipes
 
+SL306: known metadata remains clean; unknown non-linking metadata is advisory;
+32-group overflow is bounded; nested identity/linkage fields remain critical.
+The executable quadrant mapping lives in `test_coverage_matrix.py` and is checked
+against collected test nodes.
+
 | Recipe | Positive | Negative | Boundary | Malformed |
 | ------ | -------- | -------- | -------- | --------- |
 | terminal-suffix-discard | …_fixture | …_refusal_empty_session | …_refusal_out_of_bounds | …_refusal_checkpoint_in_suffix |

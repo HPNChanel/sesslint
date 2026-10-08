@@ -753,6 +753,33 @@ sesslint baseline --upgrade .sesslint-baseline.json --source sessions/ -o .sessl
 
 ## Supported Formats
 
+<!-- next-release -->
+
+Agent scans follow transcript layouts: Claude project and subagent JSONL files,
+or Codex `rollout-*.jsonl`. Memory notes, tool results and auxiliary metadata are
+outside that scope. Add `--include-archived` to include Codex archives.
+
+```sh
+sesslint scan --agent all --newest 20 --max-findings-per-code 10 --json
+sesslint scan sessions/ --since 2026-10-01 --max-file-bytes 209715200
+sesslint scan sessions/ --fail-on-unsupported
+```
+
+`--since` is an absolute UTC date applied to file modification time. Newest
+selection uses modification time with a deterministic path tie-break. Skipped
+counts identify the size, selection or cumulative scan limit that applied.
+The per-file default is 100 MiB; raising it can increase memory use. An undetected
+format is `unsupported`; `--fail-on-unsupported` makes that outcome exit 1.
+Reports show up to 20 finding samples per code per file while retaining full
+code and severity totals.
+
+SL008 allows 2000 ms of backwards clock skew by default. Configure
+`timestamp_skew_ms` in `[tool.sesslint]` or use `--timestamp-skew-ms`; zero restores
+strict ordering. One SL008 finding carries the affected edge count and maximum
+backwards delta. Unknown non-linking Claude/Codex metadata is grouped as SL306;
+unknown records with identity, links or semantic fields still fail closed.
+
+
 SessLint includes four production adapters with fail-closed auto-detection:
 
 | Format Identifier   | Source Description                                  | Typical File Pattern | Vendor Write-Back | Live Store Policy                       |

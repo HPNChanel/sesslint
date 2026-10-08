@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-hook \- [read\-only] Agent hook entrypoint: reads one hook payload from stdin and checks the transcript.
 .SH SYNOPSIS
-.B sesslint hook \-\-event NAME [\-\-json] [\-\-fail\-on {never,error,warning}] [\-\-profile PROFILE] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}]
+.B sesslint hook \-\-event NAME [\-\-json] [\-\-output {text,claude\-json}] [\-\-fail\-on {never,error,warning}] [\-\-profile PROFILE] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}]
 .SH DESCRIPTION
 [read\-only] Reads one JSON hook payload from stdin (Claude Code contract: session_id, transcript_path, cwd, hook_event_name), resolves the transcript file, and runs the event\-appropriate integrity check. Prints one content\-free line and exits 0 (advisory) — or 1 when \-\-fail\-on gates on findings. Exit 2 is never emitted: hook checks never block the agent.
 .SH OPTIONS
@@ -13,14 +13,17 @@ Hook event name (e.g. SessionStart, PreCompact, PostCompact, SessionEnd). Unknow
 .B \-\-json
 Emit sesslint.hook\-result/v1 JSON instead of the one\-line form
 .TP
+.B \-\-output {text,claude\-json}
+Output format; claude\-json emits a content\-free systemMessage envelope Choices: text, claude\-json. Default: text.
+.TP
 .B \-\-fail\-on {never,error,warning}
 Minimum finding severity that exits 1 (default: never — hook checks are advisory; 'warning' fails on any finding) Choices: never, error, warning.
 .TP
 .B \-\-profile PROFILE
 Validation profile (default: neutral)
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter (default: auto\-detect) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter (default: auto\-detect) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .SH EXIT STATUS
 .TP
 .B 0

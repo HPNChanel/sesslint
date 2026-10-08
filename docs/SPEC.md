@@ -120,14 +120,17 @@ than dropped, preserving the record for diagnostics
   is not stripped. Gap-free `seq` values are not required by any check —
   ordering evidence comes from record position and `ts` monotonicity (`SL008`).
 - **Timestamps** SHOULD be non-decreasing along the causal chain; regressions
-  are reported (`SL008`), never rewritten.
+  beyond the configured clock tolerance (default 2000 ms) are reported (`SL008`),
+  never rewritten.
 
 ## 6. Canonicalization and hashing
 
 - `to_canonical_dict`/`to_canonical_bytes` produce a normalized mapping /
-  RFC-8785-style canonical JSON (sorted keys, no insignificant whitespace,
+  SessLint canonical JSON (Python key ordering, no insignificant whitespace,
   `ensure_ascii=False`, `allow_nan=False`) and MUST NOT include wall-clock
   or random data (`src/sesslint/_canonical_codec.py`).
+  The byte contract uses Python JSON number formatting and does not claim
+  RFC 8785/JCS interoperability.
 - `canonical_hash()` = SHA-256 over `to_canonical_bytes()` — full event
   identity including provenance fields (`src/sesslint/canonical.py:SessionEvent.canonical_hash`).
 - `content_identity_bytes()` strips exactly the provenance set

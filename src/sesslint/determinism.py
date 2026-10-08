@@ -22,7 +22,7 @@ def canonical_json_bytes(obj: Any, *, newline: bool = True) -> bytes:
     - Keys are sorted lexicographically (sort_keys=True)
     - Compact separators without whitespace (",", ":")
     - Non-ASCII characters preserved directly as UTF-8 (ensure_ascii=False)
-    - Strict RFC 8785 compliance (rejects out-of-range floats like NaN/Inf and cyclic structures)
+    - SessLint's deterministic Python codec rejects non-finite floats and cyclic structures
 
     Two domains are explicitly supported:
     1. Serialization / file writing domain (newline=True, default): terminates

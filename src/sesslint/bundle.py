@@ -163,13 +163,15 @@ def _count_records_bounded(path: Path) -> int:
         with open(path, "rb") as stream:
             non_empty_line = False
             while chunk := stream.read(65536):
-                for b in chunk:
-                    if b == 10:  # \n
-                        if non_empty_line:
-                            count += 1
-                            non_empty_line = False
-                    elif b not in (32, 9, 13):  # space, tab, \r
-                        non_empty_line = True
+                # Split only this bounded chunk.  The final fragment joins the
+                # next chunk's first fragment, preserving physical-LF record
+                # semantics without Python-level iteration over every byte.
+                fragments = chunk.split(b"\n")
+                for fragment in fragments[:-1]:
+                    if non_empty_line or fragment.strip(b" \t\r"):
+                        count += 1
+                    non_empty_line = False
+                non_empty_line = non_empty_line or bool(fragments[-1].strip(b" \t\r"))
             if non_empty_line:
                 count += 1
     except OSError:

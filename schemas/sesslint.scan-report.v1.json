@@ -148,6 +148,7 @@
                     "SL303",
                     "SL304",
                     "SL305",
+                    "SL306",
                     "SL401",
                     "SL402"
                   ]
@@ -176,17 +177,57 @@
                       "minLength": 1
                     },
                     "line": {
-                      "type": ["integer", "null"]
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
                     },
                     "byte": {
-                      "type": ["integer", "null"]
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
                     }
                   }
                 },
                 "evidence": {
-                  "type": ["object", "null"]
+                  "type": [
+                    "object",
+                    "null"
+                  ]
                 }
               }
+            }
+          },
+          "finding_groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "kind",
+                "count",
+                "sample_fingerprints"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sample_fingerprints": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
             }
           }
         }

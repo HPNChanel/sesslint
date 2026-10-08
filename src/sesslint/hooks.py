@@ -27,11 +27,13 @@ _CLAUDE_SESSIONSTART_BLOCK: dict[str, Any] = {
     "hooks": {
         "SessionStart": [
             {
-                "matcher": "startup|resume|clear|compact|fork",
+                "matcher": "resume|compact|fork",
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "sesslint hook --event SessionStart || true",
+                        "command": (
+                            "sesslint hook --event SessionStart --output claude-json || true"
+                        ),
                     }
                 ],
             }
@@ -63,6 +65,7 @@ _CLAUDE_POSTCOMPACT_BLOCK: dict[str, Any] = {
                     {
                         "type": "command",
                         "command": "sesslint hook --event PostCompact || true",
+                        "timeout": 5,
                     }
                 ],
             }
@@ -79,6 +82,7 @@ _CLAUDE_SESSIONEND_BLOCK: dict[str, Any] = {
                     {
                         "type": "command",
                         "command": "sesslint hook --event SessionEnd || true",
+                        "timeout": 5,
                     }
                 ],
             }

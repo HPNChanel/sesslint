@@ -59,6 +59,7 @@ from typing import Any, BinaryIO, Final
 
 from sesslint.adapters.drift import DriftTracker
 from sesslint.adapters.links import extract_links
+from sesslint.adapters.metadata import UnknownMetadataTracker, has_semantic_fields
 from sesslint.adapters.openai_agents import (
     EventList,
     SourceMetadata,
@@ -91,7 +92,9 @@ from sesslint.io import (
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
+    decode_defect_code,
     decode_json_dupaware,
+    defect_evidence,
     dup_key_findings,
     extract_record_id,
 )
@@ -123,6 +126,7 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
         "world_state",
         "inter_agent_communication_metadata",
         "token_usage_record",
+        "retained_context",
     }
 )
 
@@ -554,6 +558,7 @@ def _process_rollout_record(
     last_envelope_ordinal: int | None = None,
     gap_after_drop: bool = False,
     drift: DriftTracker | None = None,
+    unknown_metadata: UnknownMetadataTracker | None = None,
 ) -> tuple[bool, int | None]:
     """Canonicalize one rollout envelope record into a SessionEvent.
 
@@ -728,6 +733,13 @@ def _process_rollout_record(
                         codex_extra["reasoning_content_shape"] = "other"
             if isinstance(item_type, str) and item_type in RESPONSE_ITEM_TYPE_MAP:
                 actor, kind = RESPONSE_ITEM_TYPE_MAP[item_type]
+            elif isinstance(item_type, str) and item_type and not has_semantic_fields(payload):
+                actor, kind = "system", "opaque"
+                tracker = unknown_metadata or UnknownMetadataTracker()
+                tracker.note(item_type, line=line_number)
+                if unknown_metadata is None:
+                    findings.extend(tracker.findings(path_str))
+                out_payload = {"type": item_type}
             else:
                 _emit_sl302(
                     path_str=path_str,
@@ -965,6 +977,12 @@ def _process_rollout_record(
                     # SL206: declared inherited-prefix ordinal the file's
                     # durable sequence must cover (#40747 signature).
                     codex_extra["subagent_history_start_ordinal"] = _shso
+        elif env_type == "retained_context" and isinstance(payload, Mapping):
+            # This is bookkeeping, not a response/tool result or durable replay
+            # item. Its call_id must never participate in tool pairing.
+            for key in ("type", "turn_id"):
+                if isinstance(payload.get(key), str):
+                    out_payload["subtype" if key == "type" else key] = payload[key]
         elif env_type == "turn_context" and isinstance(payload, Mapping):
             if payload.get("turn_id") is not None:
                 out_payload["turn_id"] = str(payload.get("turn_id"))
@@ -999,6 +1017,13 @@ def _process_rollout_record(
                             "occupancy": occupancy,
                             "window": window,
                         }
+    elif isinstance(env_type, str) and env_type and not has_semantic_fields(envelope):
+        actor, kind = "system", "opaque"
+        out_payload = {"type": env_type}
+        tracker = unknown_metadata or UnknownMetadataTracker()
+        tracker.note(env_type, line=line_number)
+        if unknown_metadata is None:
+            findings.extend(tracker.findings(path_str))
     else:
         # Unknown or missing envelope type -> SL302 unknown critical record.
         _emit_sl302(
@@ -1116,6 +1141,7 @@ def _process_jsonl_line(
     gap_after_drop: bool = False,
     drift: DriftTracker | None = None,
     secret_tracker: SecretScanTracker | None = None,
+    unknown_metadata: UnknownMetadataTracker | None = None,
 ) -> tuple[bool, bool, int | None]:
     """Process a single rollout JSONL line, emitting SessionEvent or SL001/SL002.
 
@@ -1134,7 +1160,6 @@ def _process_jsonl_line(
             record_ordinal=raw.record_ordinal,
         )
 
-    code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
         "byte_end": raw.byte_end,
@@ -1145,7 +1170,7 @@ def _process_jsonl_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=(
                     "Line {line} exceeds maximum line byte limit [detail: LIMIT] "
                     "for record {record_id}"
@@ -1158,12 +1183,13 @@ def _process_jsonl_line(
 
     if b"\x00" in raw.raw_bytes:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template="Forbidden NUL byte on line {line} for record {record_id}",
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return seen_version_sl301, False, None
@@ -1176,6 +1202,7 @@ def _process_jsonl_line(
         decoded_text = to_decode.decode("utf-8", errors="strict").strip()
     except UnicodeDecodeError:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
@@ -1184,7 +1211,7 @@ def _process_jsonl_line(
                     "for record {record_id}"
                 ),
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return seen_version_sl301, False, None
@@ -1197,7 +1224,7 @@ def _process_jsonl_line(
         rec_id = extract_record_id(decoded_text)
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=(
                     "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
                     "for record {record_id}"
@@ -1209,9 +1236,10 @@ def _process_jsonl_line(
         return seen_version_sl301, False, None
     except (json.JSONDecodeError, ValueError):
         rec_id = extract_record_id(decoded_text)
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         msg_template = (
             "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
+            if code == SL002
             else "Malformed record on line {line} for record {record_id}"
         )
         findings.append(
@@ -1219,7 +1247,7 @@ def _process_jsonl_line(
                 code=code,
                 message_template=msg_template,
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return seen_version_sl301, False, None
@@ -1237,14 +1265,10 @@ def _process_jsonl_line(
         )
 
     if not isinstance(obj, dict):
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=None),
                 evidence=coord_evidence,
@@ -1256,7 +1280,7 @@ def _process_jsonl_line(
         rec_id = extract_record_id(decoded_text, obj)
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=(
                     "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
                     "for record {record_id}"
@@ -1283,6 +1307,7 @@ def _process_jsonl_line(
         last_envelope_ordinal=last_envelope_ordinal,
         gap_after_drop=gap_after_drop,
         drift=drift,
+        unknown_metadata=unknown_metadata,
     )
     return latch, True, env_ord
 
@@ -1385,6 +1410,7 @@ def load_codex_rollout(
         seen_version_sl301 = False
         drift = DriftTracker("codex-rollout")
         secret_tracker = SecretScanTracker()
+        unknown_metadata = UnknownMetadataTracker()
         last_event_id: str | None = None
         last_envelope_ordinal: int | None = None
         gap_after_drop = False
@@ -1419,7 +1445,6 @@ def load_codex_rollout(
             rec_byte_end = line_end
             if truncated:
                 record_bytes = line_chunk[: effective_limits.max_line_bytes + 1]
-                rec_byte_end = line_start + len(record_bytes)
 
             current_raw = _RawLine(
                 line_number=line_number,
@@ -1456,6 +1481,7 @@ def load_codex_rollout(
                     gap_after_drop=gap_after_drop,
                     drift=drift,
                     secret_tracker=secret_tracker,
+                    unknown_metadata=unknown_metadata,
                 )
                 tail_tracker.note_produced(events[prev_len:], findings[prev_findings:])
                 if emitted and len(events) > prev_len:
@@ -1494,6 +1520,7 @@ def load_codex_rollout(
                 gap_after_drop=gap_after_drop,
                 drift=drift,
                 secret_tracker=secret_tracker,
+                unknown_metadata=unknown_metadata,
             )
             new_findings = findings[prev_findings:]
             tail_tracker.note_produced(events[prev_len:], new_findings)
@@ -1506,6 +1533,7 @@ def load_codex_rollout(
         guard.assert_no_collision()
         findings.extend(drift.into_findings(path_str=path_str))
         findings.extend(secret_tracker.into_findings(path_str=path_str))
+        findings.extend(unknown_metadata.findings(path_str))
         return EventList(events, source=source_metadata), sort_findings(findings)
     finally:
         if is_owned_file:

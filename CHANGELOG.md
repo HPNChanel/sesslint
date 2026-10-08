@@ -9,13 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SL306 groups unknown, non-linking Claude/Codex metadata as informational findings.
+  Unknown records carrying identity, links or semantic fields still fail closed.
+- Scan selectors `--newest` and `--since`, per-file byte limits, bounded finding
+  samples with full aggregate counts, and `--fail-on-unsupported`.
+- Configurable timestamp tolerance (default 2000 ms), with one SL008 summary per
+  file carrying its edge count and maximum backwards delta.
+- Claude hook JSON output, resume/compact/fork recipes and explicit check budgets.
 - Transferable Windows acceptance ZIP and a PowerShell 5.1+ runner sharing all
   32 CLI cases with Python smoke, with checksums and retained failure receipts.
 - An installed-wheel performance probe binding exact wheel/runtime/input bytes
   to three fresh, untraced process measurements.
 
-- Synthetic public detection goldens for all 34 codes, a 70-case SL009 corpus
-  across 14 families, adapter/plan fuzzing and 84 repair integration cases.
+- Synthetic public detection goldens for all 35 codes, a 100-case SL009 corpus
+  across 20 families, adapter/plan fuzzing and 84 repair integration cases.
 - A deterministic starter kit with PowerShell/POSIX instructions, synthetic
   healthy/repairable/refused examples, schemas and offline rule/recipe docs.
 - Installed wheel/sdist and native-binary acceptance outside the checkout,
@@ -24,6 +31,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immutable retry checks and verification of public downloads on both channels.
 
 ### Fixed
+
+- Modern Claude attachments, metadata and compaction links, plus Codex retained
+  context, no longer generate false critical-record and adjacency findings.
+- Native Claude compaction no longer requires a nonexistent checkpoint to avoid
+  SL203; explicit checkpoint loss and canonical repair refusal remain enforced.
+  Caller-provided checkpoint loss retains performed coverage whenever SL203 fires.
+- Vendor discovery excludes auxiliary memory, tool-result and metadata files.
+  Undetected formats are unsupported; files above the reader limit are skipped.
+- A generic session identifier no longer selects the Claude adapter by itself;
+  known Claude metadata remains a valid format signal.
+- Check and seal bind one source snapshot. Seal appends use an OS lock and retain
+  a missing final LF separator; active watch files survive history-cap pressure.
+- The SL004 detector no longer scans every preceding record for an impossible
+  parent candidate. A parent absent from the complete id index remains manual.
+- Atomic LF baseline/canonical writes, escaped-secret detection, Unicode record
+  separators, hostile JSON handling, SARIF URIs and chunked bundle record counts.
+- Google, Slack, GitLab, bearer, npm and Hugging Face secret shapes now share a
+  registry with adapter redaction; escape scanning preserves original-byte digests.
+- Release staging derives notes from the requested CHANGELOG version or explicit
+  generated notes. CI pins actions, validates inputs and builds docs strictly.
+- Repair plans are checked against current source findings at both public API
+  boundaries, including the low-level executor. Recomputing a plan fingerprint
+  cannot authorize changed targets, recipes, ordering or declared loss.
+- Repair parses, hashes and projects one source snapshot, refuses unaccounted
+  malformed records during canonical emission, and preserves complete events
+  whose IDs also occur in a torn tail. Multi-step repairs retain source coordinates.
+- SL002 now requires a provable truncated JSON-object append without a final
+  newline; complete malformed, oversized or interior-corrupt records remain SL001.
+- Output, plan and bundle writes protect the source, including hard-link aliases.
+  Repair and export publication refuse racing destinations and dangling symlinks;
+  Windows publication works on filesystems without hard links. Repair preserves
+  source permission bits, and batch receipt relocation preserves existing receipts.
+- Vendor write-back preserves single-record JSONL and splits physical records only
+  at LF. Synthesized canonical headers derive their timestamp from the first
+  source event and mark that provenance instead of inventing a fixed creation date.
 
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.

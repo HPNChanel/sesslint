@@ -61,7 +61,7 @@ def test_parity_check_file_healthy(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_parity_check_file_ambiguity(capsys: pytest.CaptureFixture[str]) -> None:
-    """api.check_file produces identical Report data on ambiguous input to CLI check --json."""
+    """Undetected input produces the same A0 report through API and CLI."""
     fixture = CLI_FIXTURES / "check_ambiguity" / "polyglot.json"
 
     # Library call
@@ -69,7 +69,7 @@ def test_parity_check_file_ambiguity(capsys: pytest.CaptureFixture[str]) -> None
 
     # CLI call
     code = main(["check", str(fixture), "--json"])
-    assert code == 1
+    assert code == 0
     cli_out = capsys.readouterr().out
     cli_json = json.loads(cli_out)
 
@@ -155,7 +155,7 @@ def test_check_detection_failure_json_shape(capsys: pytest.CaptureFixture[str]) 
     """Verify format detection failure JSON has identical top-level keys as normal check."""
     polyglot = CLI_FIXTURES / "check_ambiguity" / "polyglot.json"
     code = main(["check", str(polyglot), "--json"])
-    assert code == 1
+    assert code == 0
 
     cli_out = capsys.readouterr().out
     data = json.loads(cli_out)
@@ -174,8 +174,9 @@ def test_check_detection_failure_json_shape(capsys: pytest.CaptureFixture[str]) 
     }
     assert set(data.keys()) == expected_keys
     assert data["assurance"] == "A0"
-    assert data["limitation"] == "No structural conclusion."
-    assert any(f["code"] in ("SL301", "SL302") for f in data["findings"])
+    assert data["limitation"].startswith("Unsupported: format-undetected")
+    assert data["findings"] == []
+    assert data["coverage"]["performed"] == []
 
 
 def test_check_policy_flag_rejected(capsys: pytest.CaptureFixture[str]) -> None:

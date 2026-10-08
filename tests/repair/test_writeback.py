@@ -174,6 +174,19 @@ def test_writeback_refuses_single_doc_json_r6(tmp_path: Path) -> None:
     assert exc.value.reason == "R6"
 
 
+@pytest.mark.parametrize("prefix", [b"{", b"{\r"])
+def test_single_jsonl_record_and_interior_cr_are_preserved(tmp_path: Path, prefix: bytes) -> None:
+    src = tmp_path / "one.jsonl"
+    data = prefix + b'"type":"user","uuid":"one","message":{"role":"user","content":"x"}}\n'
+    src.write_bytes(data)
+    _data, events = _load(src)
+    assert len(events) == 1
+    out, summary = emit_vendor_bytes(data, events, events, "claude-code-jsonl")
+    assert out == data
+    assert summary.retained_lines == 1
+    assert summary.dropped_lines == 0
+
+
 def test_writeback_refuses_unsupported_format_r6() -> None:
     """R6: unknown emit format refuses."""
     ev = _mk_event("e1", seq=0, source_line=1)

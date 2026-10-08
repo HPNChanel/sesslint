@@ -80,6 +80,10 @@ class Verdict:
     ok: bool
     checks: tuple[Check, ...]
     assurance: str
+    # Internal snapshot identity for callers that must bind a later action to
+    # the exact output bytes verified here.  Deliberately omitted from rendered
+    # verdicts so the established public JSON shape remains stable.
+    artifact_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize verdict to dictionary with sorted keys."""
@@ -218,7 +222,9 @@ def _parse_session_events(
         except Exception:
             pass
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    # Canonical JSONL records use physical LF framing.  Unicode line-separator
+    # code points are legal JSON string content, not record boundaries.
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
     if not lines:
         return None, []
 
@@ -384,6 +390,7 @@ def verify(
     source_bytes = src_p.read_bytes()
     output_bytes = out_p.read_bytes()
     manifest_bytes = man_p.read_bytes()
+    artifact_sha256 = hashlib.sha256(output_bytes).hexdigest()
 
     # Safely parse manifest via parse_manifest (DEV-009: no fallback to raw JSON)
     manifest_dict: dict[str, Any] | None = None
@@ -511,17 +518,9 @@ def verify(
     if manifest_dict is None:
         c1 = Check(name="source_hash", ok=False, detail=manifest_err_detail)
     else:
-        in_place = bool(manifest_dict.get("in_place", False))
-        if in_place:
-            expected_src_hash = (
-                manifest_dict.get("source_post_hash")
-                or manifest_dict.get("output_fingerprint")
-                or manifest_dict.get("output_hash")
-            )
-        else:
-            expected_src_hash = manifest_dict.get("input_fingerprint") or manifest_dict.get(
-                "source_pre_hash"
-            )
+        expected_src_hash = manifest_dict.get("input_fingerprint") or manifest_dict.get(
+            "source_pre_hash"
+        )
 
         if expected_src_hash is None:
             c1 = Check(name="source_hash", ok=False, detail="field-missing")
@@ -577,7 +576,7 @@ def verify(
             )
 
     # Check 3: output_hash
-    actual_output_hash = hashlib.sha256(output_bytes).hexdigest()
+    actual_output_hash = artifact_sha256
     if manifest_dict is None:
         c3 = Check(name="output_hash", ok=False, detail=manifest_err_detail)
     else:
@@ -1000,6 +999,7 @@ def verify(
         ok=overall_ok,
         checks=checks,
         assurance=recomputed_assurance,
+        artifact_sha256=artifact_sha256,
     )
 
 

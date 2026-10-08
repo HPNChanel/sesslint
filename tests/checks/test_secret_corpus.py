@@ -1,4 +1,4 @@
-"""T-03: exact synthetic labels for all 14 families; no real-data accuracy claim."""
+"""T-03: exact synthetic labels for every registered family; no real-data accuracy claim."""
 
 import json
 import re

@@ -34,6 +34,10 @@ _LEVEL_MAP: Final[dict[Severity, str]] = {
     Severity.INFO: "note",
 }
 
+_URI_PATH_SAFE: Final[frozenset[int]] = frozenset(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"
+)
+
 
 def _rule_objects() -> list[dict[str, Any]]:
     rules: list[dict[str, Any]] = []
@@ -68,9 +72,11 @@ def _artifact_uri(path: str) -> str:
     """
     p_str = str(path).replace("\\", "/")
     is_abs = p_str.startswith("/") or (len(p_str) > 1 and p_str[1] == ":") or p_str.startswith("~/")
-    if is_abs:
-        return minimize_path(p_str)
-    return p_str
+    safe_path = minimize_path(p_str) if is_abs else p_str
+    return "".join(
+        chr(byte) if byte in _URI_PATH_SAFE else f"%{byte:02X}"
+        for byte in safe_path.encode("utf-8")
+    )
 
 
 def _result_object(finding: Finding) -> dict[str, Any]:

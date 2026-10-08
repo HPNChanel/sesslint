@@ -276,8 +276,12 @@ def test_scan_threshold_flags_reach_detection(
         # Default thresholds: 0.60 wins -> file is healthy -> exit 0.
         assert main(["scan", str(tmp_path)]) == 0
         capsys.readouterr()
-        # Raised confidence_min=0.70: detection fails -> file invalid -> exit 1.
-        assert main(["scan", str(tmp_path), "--confidence-min", "0.7"]) == 1
+        # Raised confidence_min=0.70: detection is unsupported by default.
+        assert main(["scan", str(tmp_path), "--confidence-min", "0.7"]) == 0
+        capsys.readouterr()
+        assert (
+            main(["scan", str(tmp_path), "--confidence-min", "0.7", "--fail-on-unsupported"]) == 1
+        )
 
 
 def test_check_dir_branch_threshold_flags_reach_detection(
@@ -302,4 +306,18 @@ def test_check_dir_branch_threshold_flags_reach_detection(
     ):
         assert main(["check", str(tmp_path), "-r"]) == 0
         capsys.readouterr()
-        assert main(["check", str(tmp_path), "-r", "--confidence-min", "0.7"]) == 1
+        assert main(["check", str(tmp_path), "-r", "--confidence-min", "0.7"]) == 0
+        capsys.readouterr()
+        assert (
+            main(
+                [
+                    "check",
+                    str(tmp_path),
+                    "-r",
+                    "--confidence-min",
+                    "0.7",
+                    "--fail-on-unsupported",
+                ]
+            )
+            == 1
+        )

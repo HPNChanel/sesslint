@@ -233,7 +233,11 @@ def _quick_verdicts(
         checked += 1
         sev = report.counts.by_severity
         errors = sev.get("error", 0) + sev.get("fatal", 0)
-        if errors > 0:
+        if report.limitation.startswith("Unsupported:"):
+            verdict = "unsupported"
+        elif report.limitation.startswith("Skipped:"):
+            verdict = "skipped"
+        elif errors > 0:
             verdict = "invalid"
         elif sev.get("warning", 0) > 0:
             verdict = "warnings"

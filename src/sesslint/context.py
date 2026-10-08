@@ -34,6 +34,16 @@ class CheckContext:
     profile_id: str = "unknown"
     profile_version: str = "unknown"
     source_metadata: Mapping[str, Any] | None = None
+    timestamp_skew_ms: int = 2000
+
+    @property
+    def compaction_checkpoint_capable(self) -> bool:
+        """Whether the adapter can expose checkpoints after a native compaction.
+
+        This is adapter capability, not a claim that any checkpoint exists.
+        Canonical/unknown contexts retain conservative checkpoint semantics.
+        """
+        return self.adapter_id not in ("claude-code-jsonl", "codex-rollout")
 
     def __post_init__(self) -> None:
         if not self.adapter_id or not self.adapter_id.strip():
@@ -116,6 +126,7 @@ class CheckContext:
             profile_id=prof_id,
             profile_version=prof_ver,
             source_metadata=source_metadata,
+            timestamp_skew_ms=resolved_prof.timestamp_skew_ms,
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -138,6 +149,7 @@ class CheckContext:
     ) -> CheckContext:
         """Return a copy of CheckContext with overridden fields."""
         return CheckContext(
+            timestamp_skew_ms=self.timestamp_skew_ms,
             adapter_id=self.adapter_id if adapter_id is None else adapter_id,
             adapter_version=self.adapter_version if adapter_version is None else adapter_version,
             profile_id=self.profile_id if profile_id is None else profile_id,

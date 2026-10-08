@@ -47,6 +47,17 @@ def _run_cli(*argv: str, stdin: bytes) -> subprocess.CompletedProcess[bytes]:
     )
 
 
+def test_claude_json_cli_envelope() -> None:
+    result = _run_cli(
+        "hook", "--event", "SessionStart", "--output", "claude-json", stdin=_payload(CLEAN)
+    )
+    assert result.returncode == 0
+    message = json.loads(result.stdout)
+    assert set(message) == {"systemMessage"}
+    assert "SessLint:" in message["systemMessage"]
+    assert str(CLEAN) not in result.stdout.decode()
+
+
 class TestPayloadHandling:
     """Malformed/thin payloads degrade to a skip line, never a crash."""
 
@@ -102,12 +113,11 @@ class TestEventMap:
         assert r.exit_code == 0
         assert r.line() == "sesslint hook[SessionStart]: ok"
 
-    def test_sessionstart_corrupt_reports_findings(self) -> None:
+    def test_sessionstart_over_budget_skips_without_reading_transcript(self) -> None:
         r = run_hook("SessionStart", _payload(CORRUPT))
-        assert r.verdict == "findings"
-        assert r.top_code == "SL011"
-        assert r.findings_by_code == {"SL011": 1}
-        assert r.exit_code == 0  # advisory: findings never block
+        assert r.verdict == "skipped"
+        assert r.reason == "budget-exceeded"
+        assert r.exit_code == 0
 
     def test_sessionend_runs_sl009_only(self) -> None:
         """SessionEnd sweeps persisted secrets — the seeded fixture has 14."""

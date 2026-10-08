@@ -83,6 +83,9 @@ EVENT_DROP_RECIPES: Final[frozenset[str]] = frozenset(
 # address a specific finding (currently only ``seq-renumber``).
 SYNTHETIC_STEP_FP: Final[str] = "-"
 
+# Line-level findings: the record failed to decode, so it has no event.
+UNDECODED_RECORD_CODES: Final[frozenset[str]] = frozenset({"SL001", "SL002"})
+
 
 def _object(data: Any, label: str) -> Mapping[str, Any]:
     """T-05: validate containers before conversion; never echo input values."""
@@ -364,7 +367,12 @@ def compute_events_source_hash(events: Sequence[Any]) -> str:
 
 
 def _resolve_target_index(f: Finding, events: Sequence[Any] | None = None) -> int | None:
-    """Extract 0-based target event index from finding evidence or record ID."""
+    """Extract 0-based target event index from finding evidence or record ID.
+
+    SL001/SL002 describe a record that never decoded into an event: an event
+    sharing the id the reader salvaged from those bytes is a different record,
+    so it never becomes the step's target (B37).
+    """
     if f.evidence and isinstance(f.evidence, Mapping):
         for key in (
             "at_index",
@@ -386,7 +394,7 @@ def _resolve_target_index(f: Finding, events: Sequence[Any] | None = None) -> in
                     if isinstance(v, int) and not isinstance(v, bool):
                         return v
 
-    if events is not None:
+    if events is not None and f.code not in UNDECODED_RECORD_CODES:
         rec_id: Any = None
         if f.evidence and isinstance(f.evidence, Mapping):
             rec_id = f.evidence.get("root_id") or f.evidence.get("event_id")

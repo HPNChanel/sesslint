@@ -236,7 +236,7 @@ def test_tampered_source(tmp_path: Path) -> None:
 
 
 def test_in_place_manifest_rejected(tmp_path: Path) -> None:
-    """Unknown-shape manifest with in_place: true is rejected with manifest-schema."""
+    """Unsupported in_place manifests are rejected with manifest-schema."""
     src, pln, out, man = _write_ok_bundle(tmp_path)
     src.write_bytes(out.read_bytes())
     manifest_data = json.loads(man.read_text(encoding="utf-8"))
@@ -248,6 +248,33 @@ def test_in_place_manifest_rejected(tmp_path: Path) -> None:
     c_map = {c.name: c for c in verdict.checks}
     assert c_map["source_hash"].ok is False
     assert c_map["source_hash"].detail == "manifest-schema"
+
+
+def test_verdict_artifact_hash_uses_verified_output_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The internal digest binds the one output read, never a manifest claim or reread."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["output_fingerprint"] = "0" * 64
+    man.write_text(json.dumps(manifest_data), encoding="utf-8")
+    expected = hashlib.sha256(out.read_bytes()).hexdigest()
+    original_read_bytes = Path.read_bytes
+    output_reads = 0
+
+    def _tracked_read_bytes(path: Path) -> bytes:
+        nonlocal output_reads
+        if path == out:
+            output_reads += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", _tracked_read_bytes)
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+
+    assert verdict.artifact_sha256 == expected
+    assert verdict.artifact_sha256 != manifest_data["output_fingerprint"]
+    assert output_reads == 1
+    assert "artifact_sha256" not in verdict.to_dict()
 
 
 def test_tampered_plan_fingerprint(tmp_path: Path) -> None:

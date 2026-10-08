@@ -55,11 +55,13 @@ def test_streams_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_streams_ambiguity_warning_on_stderr(capsys: pytest.CaptureFixture[str]) -> None:
-    """Ambiguity warning / hint goes to stderr, JSON report goes to stdout."""
+    """Unsupported-format status goes to stderr while the A0 report stays on stdout."""
     fixture = FIXTURES_DIR / "check_ambiguity" / "polyglot.json"
     code = main(["check", str(fixture), "--json"])
-    assert code == 1
+    assert code == 0
     captured = capsys.readouterr()
-    assert "specify --format" in captured.err
+    assert "unsupported" in captured.err.lower()
     data = json.loads(captured.out)
     assert data["schema_version"] == "sesslint.report/v1"
+    assert data["assurance"] == "A0"
+    assert data["findings"] == []

@@ -40,15 +40,21 @@ _ALLOWED_KEYS: Final = frozenset(
         "margin_min",
         "max_files",
         "max_bytes",
+        "max_file_bytes",
+        "max_findings_per_code",
+        "timestamp_skew_ms",
+        "fail_on_unsupported",
         "exclude",
         "ext",
     }
 )
 
 _STR_KEYS: Final = frozenset({"profile", "format", "policy", "fail_on"})
-_BOOL_KEYS: Final = frozenset({"skip_undetected"})
+_BOOL_KEYS: Final = frozenset({"skip_undetected", "fail_on_unsupported"})
 _FLOAT_KEYS: Final = frozenset({"confidence_min", "margin_min"})
-_INT_KEYS: Final = frozenset({"max_files", "max_bytes"})
+_INT_KEYS: Final = frozenset(
+    {"max_files", "max_bytes", "max_file_bytes", "max_findings_per_code", "timestamp_skew_ms"}
+)
 _LIST_KEYS: Final = frozenset({"select", "ignore", "exclude", "ext"})
 
 _ENUM_VALUES: Final = {
@@ -134,7 +140,11 @@ def _validate_keys(cfg: dict[str, Any], source: Path) -> dict[str, Any]:
                 raise ConfigError(f"Config key {key!r} must be a number in {source}")
             value = float(value)
         elif key in _INT_KEYS:
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < (0 if key == "timestamp_skew_ms" else 1)
+            ):
                 raise ConfigError(f"Config key {key!r} must be a positive integer in {source}")
         elif key in _LIST_KEYS:
             if not isinstance(value, list) or not all(

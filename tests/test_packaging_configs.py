@@ -207,6 +207,7 @@ def test_release_workflow_binaries_job_matrix() -> None:
     assert "scripts/package.py" in block, "binaries must run scripts/package.py"
     assert "actions/upload-artifact@" in block, "binaries must retain verified assets"
     assert "github_stage.py" in blocks["github-draft"]
+    assert "--generate-notes" in blocks["github-draft"]
 
 
 def test_release_workflow_binaries_smoke_test() -> None:

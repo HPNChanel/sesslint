@@ -101,7 +101,9 @@ def run_all_checks(
                 skipped_checks.append(_gate_skip(ap, "rule disabled by profile"))
                 already_skipped_checks.add(ap)
     else:
-        adapter_rules = ("SL001", "SL002", "SL009", "SL301", "SL302")
+        adapter_rules: tuple[str, ...] = ("SL001", "SL002", "SL009", "SL301", "SL302")
+        if adapter in ("claude-code-jsonl", "codex-rollout"):
+            adapter_rules += ("SL306",)
         for ar in adapter_rules:
             if ar not in already_skipped_checks:
                 if ar in enabled:
@@ -111,6 +113,16 @@ def run_all_checks(
                     already_skipped_checks.add(ar)
 
     is_empty_input = len(events) == 0
+    if "SL306" not in performed_checks and "SL306" not in already_skipped_checks:
+        skipped_checks.append(
+            CoverageSkip(
+                check="SL306",
+                reason="adapter-not-applicable",
+                detail="unknown metadata advisory applies to Claude and Codex only",
+            )
+            if "SL306" in enabled
+            else _gate_skip("SL306", "rule disabled by profile")
+        )
     has_version_abort = any(s.reason == "version-gated" for s in adapter_skips)
     has_cap_abort = any(s.reason == "cap-exceeded" for s in adapter_skips)
 
@@ -282,18 +294,21 @@ def run_all_checks(
                     context=context,
                 )
             )
-            if "SL203" in enabled and context.adapter_id == "codex-rollout":
-                # codex-rollout never emits checkpoint-kind events, so the
-                # compaction-boundary trigger is structurally unsatisfiable
-                # and SL201/SL202 cannot fire (no run_state) — the check is
-                # inapplicable on this adapter, not merely silent.
+            if (
+                "SL203" in enabled
+                and not context.compaction_checkpoint_capable
+                and not any(f.code == "SL203" for f in findings)
+            ):
+                # Native streams expose no checkpoint mechanism. A library
+                # caller can nevertheless supply explicit checkpoint loss;
+                # an emitted SL203 must remain recorded as performed.
                 performed_checks.discard("SL203")
                 skipped_checks.append(
                     CoverageSkip(
                         check="SL203",
                         reason="adapter-not-applicable",
                         detail=(
-                            "codex-rollout has no checkpoint mechanism — "
+                            f"{context.adapter_id} exposes no checkpoint mechanism — "
                             "continuation after compaction is vendor-normal"
                         ),
                     )

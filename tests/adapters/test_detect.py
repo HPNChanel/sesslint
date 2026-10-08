@@ -486,14 +486,15 @@ def test_cli_smoke_invalid_format(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_cli_smoke_ambiguous_auto(capsys: pytest.CaptureFixture[str]) -> None:
-    """CLI check on ambiguous file exits non-zero with finding."""
+    """CLI check on ambiguous input is unsupported without a fabricated finding."""
     ambiguous_fixture = FIXTURES_DIR / "ambiguous.json"
     exit_code = main(["check", str(ambiguous_fixture)])
-    assert exit_code == 1
+    assert exit_code == 0
 
     captured = capsys.readouterr()
-    assert "SL302" in captured.err
-    assert "ambiguous_format" in captured.err
+    assert "unsupported" in captured.err.lower()
+    assert "healthy" not in captured.out.lower()
+    assert main(["check", str(ambiguous_fixture), "--fail-on-unsupported"]) == 1
 
 
 def test_cli_smoke_explicit_override_canonical(capsys: pytest.CaptureFixture[str]) -> None:
@@ -518,7 +519,8 @@ def test_cli_smoke_explicit_override_before_check_honored(
 ) -> None:
     """CLI with --format BEFORE sub-command is honored and not clobbered by subparser defaults."""
     ambiguous_fixture = FIXTURES_DIR / "ambiguous.json"
-    # ambiguous.json auto-detects as tie (exit 1), but with explicit openai-agents
+    # The fixture has genuine type + items signals for two adapters (tie).
+    # An explicit openai-agents override selects the requested interpretation.
     # it resolves cleanly
     exit_code = main(
         [

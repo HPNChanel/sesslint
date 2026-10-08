@@ -40,8 +40,8 @@ from typing import Any
 import pytest
 
 from sesslint.canonical import SessionEvent
-from sesslint.checks.checkpoint import check_checkpoint
-from sesslint.codes import SL002, SL003, SL004, SL104, SL203, Repairability, Severity
+from sesslint.checks.runner import run_all_checks
+from sesslint.codes import SL002, SL004, SL203, Repairability, Severity
 from sesslint.finding import SourceRef, make_finding
 from sesslint.policy.abstention import (
     AffectedRegion,
@@ -55,6 +55,8 @@ from sesslint.repair import (
     execute,
     plan,
 )
+from sesslint.repair.errors import RepairRefused
+from sesslint.repair.executor import load_source_for_format
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
     PLAN_VERSION,
@@ -100,6 +102,35 @@ def _write_session_file(tmp_path: Path, filename: str, events: list[SessionEvent
         for ev in events:
             fh.write(json.dumps(ev.to_canonical_dict()) + "\n")
     return target
+
+
+def _source_derived_plan(source_path: Path, *, policy: str = "conservative") -> RepairPlan:
+    """Plan from the exact canonical bytes the public executor will re-check."""
+    source_bytes = source_path.read_bytes()
+    _, loaded_events, stream_findings = load_source_for_format(
+        source_path, "canonical", data=source_bytes
+    )
+    findings = list(stream_findings) + list(
+        run_all_checks(
+            loaded_events,
+            profile="neutral",
+            source_path=source_path.name,
+            adapter="canonical",
+        )
+    )
+    return plan(
+        findings,
+        loaded_events,
+        policy=policy,
+        source_hash=hashlib.sha256(source_bytes).hexdigest(),
+        input_format="canonical",
+    )
+
+
+def _append_torn_terminal_record(source_path: Path, prefix: bytes) -> None:
+    """Append a proven torn JSON object prefix without a terminating newline."""
+    with source_path.open("ab") as fh:
+        fh.write(prefix)
 
 
 # ===========================================================================
@@ -516,7 +547,7 @@ def test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair(tmp_path: 
             payload={"output": "files", "side_effects": "possible"},
         ),
         SessionEvent(
-            id="m1a",
+            id="m1",
             parent_id="r-bash",
             seq=3,
             ts="2026-09-05T12:00:03Z",
@@ -525,7 +556,7 @@ def test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair(tmp_path: 
             payload={"text": "hello"},
         ),
         SessionEvent(
-            id="m1b",
+            id="m1",
             parent_id="r-bash",
             seq=4,
             ts="2026-09-05T12:00:03Z",
@@ -534,25 +565,15 @@ def test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair(tmp_path: 
             payload={"text": "hello"},
         ),
     ]
-    findings = [
-        make_finding(
-            code=SL003,
-            severity=Severity.WARNING,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Duplicate message at index 3",
-            source=SourceRef(path="session.json", line=4, record_id="m1a"),
-            evidence={"index": 3, "duplicate_index": 4},
-        )
-    ]
-
     source_p = _write_session_file(tmp_path, "scen1_source.jsonl", events)
     output_p = tmp_path / "scen1_output.jsonl"
 
-    # Planner must succeed
-    source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
-    p = plan(findings, events, policy="conservative", source_hash=source_h)
-    assert len(p.steps) == 1
-    assert p.steps[0].recipe == "identical-duplicate-collapse"
+    # Planner must use the current source findings, including the actual SL003.
+    p = _source_derived_plan(source_p)
+    assert [step.recipe for step in p.steps] == [
+        "identical-duplicate-collapse",
+        "seq-renumber",
+    ]
 
     assert len(p.blocked) == 0
 
@@ -562,11 +583,13 @@ def test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair(tmp_path: 
         plan=p,
         output_path=output_p,
         policy="conservative",
-        source_events=events,
     )
     assert output_p.is_file()
     assert manifest.input_fingerprint == p.source_hash
-    assert manifest.actions[0].kind == "identical-duplicate-collapse"
+    assert [action.kind for action in manifest.actions] == [
+        "identical-duplicate-collapse",
+        "seq-renumber",
+    ]
 
 
 def test_scenario_2_dangling_call_in_truncated_region(tmp_path: Path) -> None:
@@ -618,7 +641,7 @@ def test_scenario_2_dangling_call_in_truncated_region(tmp_path: Path) -> None:
             repairability=Repairability.DETERMINISTIC,
             message_template="Torn terminal record at index 3",
             source=SourceRef(path="session.json", line=4, record_id="c-dangle"),
-            evidence={"cut_index": 3, "target_index": 3},
+            evidence={"cut_index": 3, "target_index": 3, "unterminated": True},
         )
     ]
 
@@ -632,7 +655,8 @@ def test_scenario_2_dangling_call_in_truncated_region(tmp_path: Path) -> None:
     assert len(p.blocked) == 1
     assert p.blocked[0].reason == "side-effect-scope-unproven"
 
-    # Executor must refuse crafted plan attempting this step
+    # Public executor must reject the fabricated plan; a matching digest is
+    # insufficient when the current source has no derivable SL002 step.
     crafted_step = PlanStep(
         seq=0,
         recipe="torn-terminal-record-discard",
@@ -655,13 +679,12 @@ def test_scenario_2_dangling_call_in_truncated_region(tmp_path: Path) -> None:
         fingerprint=compute_plan_fingerprint(crafted_plan.to_dict()),
     )
 
-    with pytest.raises(Abstained, match="side-effect-scope-unproven"):
+    with pytest.raises(RepairRefused, match="derives for this source now"):
         execute(
             source_path=source_p,
             plan=crafted_plan,
             output_path=output_p,
             policy="conservative",
-            source_events=events,
         )
     assert not output_p.exists()
 
@@ -728,7 +751,7 @@ def test_scenario_3_unknown_side_effects_on_relink_target(tmp_path: Path) -> Non
     assert len(p.blocked) == 1
     assert p.blocked[0].reason == "side-effect-scope-unproven"
 
-    # Executor must refuse crafted plan attempting this step
+    # Public executor must reject the fabricated plan before recipe application.
     crafted_step = PlanStep(
         seq=0,
         recipe="proven-unique-parent-restore",
@@ -751,13 +774,12 @@ def test_scenario_3_unknown_side_effects_on_relink_target(tmp_path: Path) -> Non
         fingerprint=compute_plan_fingerprint(crafted_plan.to_dict()),
     )
 
-    with pytest.raises(Abstained, match="side-effect-scope-unproven"):
+    with pytest.raises(RepairRefused, match="derives for this source now"):
         execute(
             source_path=source_p,
             plan=crafted_plan,
             output_path=output_p,
             policy="conservative",
-            source_events=events,
         )
     assert not output_p.exists()
 
@@ -800,7 +822,7 @@ def test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin(tmp_
             payload={"output": "ok"},
         ),
         SessionEvent(
-            id="m-dup-1",
+            id="m-dup",
             parent_id="r-unk-outside",
             seq=3,
             ts="2026-09-05T12:00:03Z",
@@ -809,7 +831,7 @@ def test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin(tmp_
             payload={"text": "repeat"},
         ),
         SessionEvent(
-            id="m-dup-2",
+            id="m-dup",
             parent_id="r-unk-outside",
             seq=4,
             ts="2026-09-05T12:00:03Z",
@@ -818,32 +840,21 @@ def test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin(tmp_
             payload={"text": "repeat"},
         ),
     ]
-    findings = [
-        make_finding(
-            code=SL003,
-            severity=Severity.WARNING,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Duplicate at index 3",
-            source=SourceRef(path="session.json", line=4, record_id="m-dup-1"),
-            evidence={"index": 3, "duplicate_index": 4},
-        )
-    ]
-
     source_p = _write_session_file(tmp_path, "scen4_source.jsonl", events)
     output_p = tmp_path / "scen4_output.jsonl"
-    source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
 
     # Step A: Outside boundary -> must repair!
-    p = plan(findings, events, policy="conservative", source_hash=source_h)
-    assert len(p.steps) == 1
-    assert p.steps[0].recipe == "identical-duplicate-collapse"
+    p = _source_derived_plan(source_p)
+    assert [step.recipe for step in p.steps] == [
+        "identical-duplicate-collapse",
+        "seq-renumber",
+    ]
 
     execute(
         source_path=source_p,
         plan=p,
         output_path=output_p,
         policy="conservative",
-        source_events=events,
     )
     assert output_p.is_file()
 
@@ -854,9 +865,14 @@ def test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin(tmp_
         repairability=Repairability.DETERMINISTIC,
         message_template="Torn terminal record including index 1",
         source=SourceRef(path="session.json", line=2, record_id="c-unk-outside"),
-        evidence={"cut_index": 1, "target_index": 1},
+        evidence={"cut_index": 1, "target_index": 1, "unterminated": True},
     )
-    p_pin = plan([finding_boundary], events, policy="conservative", source_hash=source_h)
+    p_pin = plan(
+        [finding_boundary],
+        events,
+        policy="conservative",
+        source_hash=hashlib.sha256(source_p.read_bytes()).hexdigest(),
+    )
     assert len(p_pin.steps) == 0
     assert p_pin.blocked[0].reason == "side-effect-scope-unproven"
 
@@ -902,7 +918,7 @@ def test_scenario_5_sl203_anywhere_global_refusal_unchanged(tmp_path: Path) -> N
             payload={"output": "ok", "side_effects": "none"},
         ),
         SessionEvent(
-            id="m-dup-1",
+            id="m-dup",
             parent_id="r1",
             seq=4,
             ts="2026-09-05T12:00:04Z",
@@ -911,7 +927,7 @@ def test_scenario_5_sl203_anywhere_global_refusal_unchanged(tmp_path: Path) -> N
             payload={"text": "repeat"},
         ),
         SessionEvent(
-            id="m-dup-2",
+            id="m-dup",
             parent_id="r1",
             seq=5,
             ts="2026-09-05T12:00:04Z",
@@ -920,25 +936,11 @@ def test_scenario_5_sl203_anywhere_global_refusal_unchanged(tmp_path: Path) -> N
             payload={"text": "repeat"},
         ),
     ]
-    findings = [
-        make_finding(
-            code=SL003,
-            severity=Severity.WARNING,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Duplicate message",
-            source=SourceRef(path="session.json", line=5, record_id="m-dup-1"),
-            evidence={"index": 4, "duplicate_index": 5},
-        ),
-    ]
-    findings.extend(check_checkpoint(events))
-    assert any(f.code == SL203 for f in findings)
-
     source_p = _write_session_file(tmp_path, "scen5_source.jsonl", events)
     output_p = tmp_path / "scen5_output.jsonl"
-    source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
+    p = _source_derived_plan(source_p)
 
     # Planner must block ALL findings with SL203-refusal globally
-    p = plan(findings, events, policy="conservative", source_hash=source_h)
     assert len(p.steps) == 0
     assert all(b.reason == "SL203-refusal" for b in p.blocked)
 
@@ -948,7 +950,6 @@ def test_scenario_5_sl203_anywhere_global_refusal_unchanged(tmp_path: Path) -> N
             plan=p,
             output_path=output_p,
             policy="conservative",
-            source_events=events,
         )
     assert not output_p.exists()
 
@@ -1026,37 +1027,18 @@ def test_positive_e2e_realistic_tool_session_repaired(tmp_path: Path) -> None:
             kind="message",
             payload={"text": "I have patched test_app.py."},
         ),
-        # Incomplete/torn terminal message record (process was killed mid-write)
-        SessionEvent(
-            id="msg-torn",
-            parent_id="msg-summary",
-            seq=6,
-            ts="2026-09-05T12:00:06Z",
-            actor="assistant",
-            kind="message",
-            payload={"text": "Now re-running... [truncated"},
-        ),
-    ]
-
-    findings = [
-        make_finding(
-            code=SL002,
-            severity=Severity.ERROR,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Torn terminal record at index 6",
-            source=SourceRef(path="session.json", line=7, record_id="msg-torn"),
-            evidence={"cut_index": 6, "target_index": 6},
-        )
     ]
 
     source_p = _write_session_file(tmp_path, "tool_session_source.jsonl", events)
+    _append_torn_terminal_record(source_p, b'{"id":"msg-torn"')
     output_p = tmp_path / "tool_session_repaired.jsonl"
-    source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
 
     # Plan under default conservative policy
-    plan_result = plan(findings, events, policy="conservative", source_hash=source_h)
-    assert len(plan_result.steps) == 1
-    assert plan_result.steps[0].recipe == "torn-terminal-record-discard"
+    plan_result = _source_derived_plan(source_p)
+    assert [step.recipe for step in plan_result.steps] == [
+        "torn-terminal-record-discard",
+        "seq-renumber",
+    ]
     assert len(plan_result.blocked) == 0
 
     # Execute repair
@@ -1065,15 +1047,18 @@ def test_positive_e2e_realistic_tool_session_repaired(tmp_path: Path) -> None:
         plan=plan_result,
         output_path=output_p,
         policy="conservative",
-        source_events=events,
     )
 
     assert output_p.is_file()
     assert (tmp_path / "tool_session_repaired.jsonl.manifest.json").is_file()
-    assert manifest.input_fingerprint == source_h
+    assert manifest.input_fingerprint == hashlib.sha256(source_p.read_bytes()).hexdigest()
     assert manifest.policy == "conservative"
-    assert len(manifest.actions) == 1
-    assert manifest.actions[0].kind == "torn-terminal-record-discard"
+    assert sorted(action.kind for action in manifest.actions) == sorted(
+        [
+            "torn-terminal-record-discard",
+            "seq-renumber",
+        ]
+    )
 
     # Repaired output has exactly 6 events (torn record discarded, bash and write_file preserved)
     output_lines = [
@@ -1151,15 +1136,16 @@ def test_parent_restore_disjoint_from_intermediate_mutating_tool(tmp_path: Path)
     assert p.steps[0].recipe == "proven-unique-parent-restore"
     assert len(p.blocked) == 0
 
-    manifest = execute(
-        source_path=source_p,
-        plan=p,
-        output_path=output_p,
-        policy="conservative",
-        source_events=events,
-    )
-    assert output_p.is_file()
-    assert manifest.actions[0].kind == "proven-unique-parent-restore"
+    # This intentionally unreachable SL004 recipe path remains a planner/scope
+    # unit test. The public executor must refuse its fabricated plan.
+    with pytest.raises(RepairRefused, match="derives for this source now"):
+        execute(
+            source_path=source_p,
+            plan=p,
+            output_path=output_p,
+            policy="conservative",
+        )
+    assert not output_p.exists()
 
 
 def test_duplicate_projection_removal_disjoint_from_intermediate_mutating_tool(
@@ -1218,30 +1204,21 @@ def test_duplicate_projection_removal_disjoint_from_intermediate_mutating_tool(
             payload={"output": "file_data"},
         ),
     ]
-    finding = make_finding(
-        code=SL104,
-        severity=Severity.WARNING,
-        repairability=Repairability.DETERMINISTIC,
-        message_template="Duplicate tool projection at index 4",
-        source=SourceRef(path="session.json", line=5, record_id="r1_dup"),
-        evidence={"correlation_id": "corr-read", "target_index": 4},
-    )
-
     source_p = _write_session_file(tmp_path, "dup_proj_inter_source.jsonl", events)
     output_p = tmp_path / "dup_proj_inter_out.jsonl"
-    source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
 
-    p = plan([finding], events, policy="conservative", source_hash=source_h)
-    assert len(p.steps) == 1
-    assert p.steps[0].recipe == "duplicate-projection-removal"
-    assert len(p.blocked) == 0
+    p = _source_derived_plan(source_p)
+    assert [step.recipe for step in p.steps] == [
+        "duplicate-projection-removal",
+        "seq-renumber",
+    ]
+    assert all(blocked.code == "SL007" for blocked in p.blocked)
 
     manifest = execute(
         source_path=source_p,
         plan=p,
         output_path=output_p,
         policy="conservative",
-        source_events=events,
     )
     assert output_p.is_file()
     assert manifest.actions[0].kind == "duplicate-projection-removal"
@@ -1251,7 +1228,7 @@ def test_multistep_conservative_repair_no_index_drift_in_executor(tmp_path: Path
     """Sequential conservative repair steps execute cleanly without coordinate drift."""
     events = [
         SessionEvent(
-            id="m0",
+            id="dup1",
             parent_id=None,
             seq=0,
             ts="2026-09-05T12:00:00Z",
@@ -1260,17 +1237,17 @@ def test_multistep_conservative_repair_no_index_drift_in_executor(tmp_path: Path
             payload={"text": "dup1"},
         ),
         SessionEvent(
-            id="m1",
-            parent_id="m0",
+            id="dup1",
+            parent_id=None,
             seq=1,
-            ts="2026-09-05T12:00:01Z",
+            ts="2026-09-05T12:00:00Z",
             actor="user",
             kind="message",
             payload={"text": "dup1"},
         ),
         SessionEvent(
             id="m_safe",
-            parent_id="m1",
+            parent_id="dup1",
             seq=2,
             ts="2026-09-05T12:00:02Z",
             actor="assistant",
@@ -1298,7 +1275,7 @@ def test_multistep_conservative_repair_no_index_drift_in_executor(tmp_path: Path
             payload={"output": "ok", "side_effects": "possible"},
         ),
         SessionEvent(
-            id="m2",
+            id="dup2",
             parent_id="r1",
             seq=5,
             ts="2026-09-05T12:00:05Z",
@@ -1307,51 +1284,34 @@ def test_multistep_conservative_repair_no_index_drift_in_executor(tmp_path: Path
             payload={"text": "dup2"},
         ),
         SessionEvent(
-            id="m3",
-            parent_id="m2",
+            id="dup2",
+            parent_id="r1",
             seq=6,
-            ts="2026-09-05T12:00:06Z",
+            ts="2026-09-05T12:00:05Z",
             actor="assistant",
             kind="message",
             payload={"text": "dup2"},
         ),
     ]
 
-    findings = [
-        make_finding(
-            code=SL003,
-            severity=Severity.WARNING,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Duplicate 1",
-            source=SourceRef(path="session.json", line=2, record_id="m0"),
-            evidence={"index": 0, "duplicate_index": 1},
-        ),
-        make_finding(
-            code=SL003,
-            severity=Severity.WARNING,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Duplicate 2",
-            source=SourceRef(path="session.json", line=7, record_id="m2"),
-            evidence={"index": 5, "duplicate_index": 6},
-        ),
-    ]
-
     source_p = _write_session_file(tmp_path, "multistep_drift_source.jsonl", events)
     output_p = tmp_path / "multistep_drift_out.jsonl"
-    source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
 
-    p = plan(findings, events, policy="conservative", source_hash=source_h)
-    assert len(p.steps) == 2
+    p = _source_derived_plan(source_p)
+    assert [step.recipe for step in p.steps] == [
+        "identical-duplicate-collapse",
+        "identical-duplicate-collapse",
+        "seq-renumber",
+    ]
 
     manifest = execute(
         source_path=source_p,
         plan=p,
         output_path=output_p,
         policy="conservative",
-        source_events=events,
     )
     assert output_p.is_file()
-    assert len(manifest.actions) == 2
+    assert len(manifest.actions) == 3
 
 
 def test_recipe_without_affected_region_keeps_global_gating(tmp_path: Path) -> None:
@@ -1414,7 +1374,7 @@ def test_recipe_without_affected_region_keeps_global_gating(tmp_path: Path) -> N
     assert len(p.blocked) == 1
     assert p.blocked[0].reason == "side-effect-abstention"
 
-    # Executor must also refuse crafted plan with side-effect abstention
+    # B20 rejects the fabricated step before a recipe can rely on global gating.
     source_p = _write_session_file(tmp_path, "unproven_source.jsonl", events_with_tools)
     output_p = tmp_path / "unproven_out.jsonl"
     source_h = hashlib.sha256(source_p.read_bytes()).hexdigest()
@@ -1440,13 +1400,12 @@ def test_recipe_without_affected_region_keeps_global_gating(tmp_path: Path) -> N
         fingerprint=compute_plan_fingerprint(crafted_plan.to_dict()),
     )
 
-    with pytest.raises(Abstained, match="side-effect abstention"):
+    with pytest.raises(RepairRefused, match="derives for this source now"):
         execute(
             source_path=source_p,
             plan=crafted_plan,
             output_path=output_p,
             policy="conservative",
-            source_events=events_with_tools,
         )
     assert not output_p.exists()
 

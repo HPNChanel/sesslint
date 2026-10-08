@@ -454,12 +454,13 @@ class TestVersionAndUnknowns:
         )
         assert any(f.code == SL301 for f in findings)
 
-    def test_unknown_envelope_type_sl302(self) -> None:
+    def test_unknown_non_linking_envelope_type_is_advisory(self) -> None:
         _, findings = load_codex_rollout(FIXTURES / "unknown_type.jsonl")
-        sl302 = [f for f in findings if f.code == SL302]
-        assert sl302
-        assert sl302[0].evidence["field_path"] == "type"
-        assert sl302[0].evidence["type_value"] == "mystery_envelope"
+        advisory = [f for f in findings if f.code == "SL306"]
+        assert len(advisory) == 1
+        assert advisory[0].severity == "info"
+        assert advisory[0].evidence["type_value"] == "mystery_envelope"
+        assert not any(f.code == SL302 for f in findings)
 
     def test_unknown_payload_type_sl302(self) -> None:
         _, findings = load_codex_rollout(FIXTURES / "unknown_payload_type.jsonl")
@@ -513,9 +514,19 @@ class TestHostileInput:
         assert events[-1].parent_id is None
 
     def test_nul_byte_rejected(self) -> None:
+        # Newline-terminated: corruption, never a torn append (B17).
         data = _jsonl(_env(0, "session_meta", {})) + b'{"ordinal":1,"payload":\x00}\n'
         _, findings = load_codex_rollout(data)
-        assert any(f.code == SL002 and "NUL" in f.message for f in findings)
+        assert any(f.code == SL001 and "NUL" in f.message for f in findings)
+        assert not any(f.code == SL002 for f in findings)
+
+    def test_nul_padded_torn_tail_is_sl002(self) -> None:
+        # A crash can leave NUL padding after a cut-off append (B17).
+        data = _jsonl(_env(0, "session_meta", {})) + b'{"ordinal":1,"pay' + b"\x00" * 8
+        _, findings = load_codex_rollout(data)
+        torn = [f for f in findings if f.code == SL002]
+        assert len(torn) == 1
+        assert torn[0].evidence["unterminated"] is True
 
     def test_invalid_utf8(self) -> None:
         data = _jsonl(_env(0, "session_meta", {})) + b"\xff\xfe\n"

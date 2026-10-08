@@ -66,6 +66,7 @@ from sesslint.io import (
     decode_json_dupaware,
     dup_key_findings,
     extract_record_id,
+    is_torn_append,
 )
 
 # CanonicalEvent alias for specification conformance
@@ -425,10 +426,21 @@ def dump_canonical(
     return "\n".join(lines).encode("utf-8") + b"\n"
 
 
+_PLAIN_RECORD_ID = re.compile(
+    r"(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"|(?:evt[-_]|event-|e)[0-9]{1,20})\Z",
+    re.ASCII,
+)
+
+
 def _safe_rec_id(val: Any) -> str | None:
     """Return sanitized record_id string for SourceRef, or None if invalid/control-chars."""
     if not isinstance(val, str):
         return None
+    # Only UUIDs and numeric event identifiers bypass the content guard.
+    # General ASCII ids may still contain API tokens and must use the guard.
+    if _PLAIN_RECORD_ID.fullmatch(val):
+        return val
     stripped = val.strip()
     if not stripped or stripped != val:
         return None
@@ -1614,11 +1626,12 @@ def _load_canonical(
                 )
                 ev_raw, ev_dup_keys, ev_dups_truncated = record_decoder.decode(ev_str)
             except UnicodeDecodeError as err:
-                code = SL002 if is_terminal else SL001
-                rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
+                torn = is_terminal and is_torn_append(raw_data[ev_byte_offset:ev_byte_end])
+                code = SL002 if torn else SL001
+                rep = Repairability.DETERMINISTIC if torn else Repairability.MANUAL
                 msg = (
                     "Torn terminal record on line {line} for record {record_id}"
-                    if is_terminal
+                    if torn
                     else "Invalid UTF-8 encoding on line {line} for record {record_id}"
                 )
                 add_finding(
@@ -1634,16 +1647,18 @@ def _load_canonical(
                             "record_ordinal": ev_ordinal,
                             "reason": "invalid_utf8",
                             "detail": str(err),
+                            **({"unterminated": True} if torn else {}),
                         },
                     )
                 )
                 continue
             except (json.JSONDecodeError, ValueError) as err:
-                code = SL002 if is_terminal else SL001
-                rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
+                torn = is_terminal and is_torn_append(raw_data[ev_byte_offset:ev_byte_end])
+                code = SL002 if torn else SL001
+                rep = Repairability.DETERMINISTIC if torn else Repairability.MANUAL
                 msg = (
                     "Torn terminal record on line {line} for record {record_id}"
-                    if is_terminal
+                    if torn
                     else "Malformed record on line {line} for record {record_id}"
                 )
                 add_finding(
@@ -1659,6 +1674,7 @@ def _load_canonical(
                             "record_ordinal": ev_ordinal,
                             "reason": "malformed_json",
                             "detail": str(err),
+                            **({"unterminated": True} if torn else {}),
                         },
                     )
                 )
@@ -1676,19 +1692,13 @@ def _load_canonical(
                     add_finding(dup_finding)
 
             if not isinstance(ev_raw, dict):
-                code = SL002 if is_terminal else SL001
-                rep = Repairability.DETERMINISTIC if is_terminal else Repairability.MANUAL
-                msg = (
-                    "Torn terminal record on line {line} for record {record_id}"
-                    if is_terminal
-                    else "Event record on line {line} must be an object"
-                )
+                # A complete JSON value is never a torn append (B17): SL001.
                 add_finding(
                     make_finding(
-                        code=code,
+                        code=SL001,
                         severity=Severity.ERROR,
-                        repairability=rep,
-                        message_template=msg,
+                        repairability=Repairability.MANUAL,
+                        message_template="Event record on line {line} must be an object",
                         source=SourceRef(path=path_str, line=line_no, record_id=None),
                         evidence={
                             "byte_offset": ev_byte_offset,
@@ -1704,7 +1714,7 @@ def _load_canonical(
             # payload. Its payload root is exactly one level below the record;
             # retain the whole-record walk for every other shape (T-10).
             common = _common_event(ev_raw, validated_timestamps)
-            depth_ok = (
+            depth_ok = ev_str.count("{") + ev_str.count("[") <= effective_limits.max_depth or (
                 check_nesting_depth(common.payload, effective_limits.max_depth - 1)
                 if common is not None
                 else check_nesting_depth(ev_raw, effective_limits.max_depth)

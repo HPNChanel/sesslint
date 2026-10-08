@@ -18,6 +18,7 @@ from sesslint._version import get_version_info
 from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
 from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
 from sesslint.adapters.codex_rollout import SUPPORTED_CODEX_ROLLOUT_VERSIONS
+from sesslint.adapters.detect import SUPPORTED_FORMATS, VALID_FORMAT_OPTIONS
 from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
 from sesslint.api import build_internal_error_envelope, validate_session
 from sesslint.errors import SesslintError
@@ -112,7 +113,7 @@ def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
         elif r.verdict == "unsupported":
             tag_color = yellow
             raw_tag = "[UNSUPPORTED]"
-            detail = " (unsupported version)"
+            detail = f" ({r.skipped_reason or 'unsupported version'})"
         elif r.verdict == "unreadable":
             tag_color = red
             raw_tag = "[UNREADABLE]"
@@ -253,6 +254,15 @@ def _apply_config(args: argparse.Namespace, cfg: Mapping[str, Any]) -> None:
     """
     if getattr(args, "fail_on", None) is None:
         args.fail_on = cfg.get("fail_on", "error")
+    for key, default in (
+        ("max_file_bytes", 100 * 1024 * 1024),
+        ("timestamp_skew_ms", 2000),
+        ("max_findings_per_code", 20),
+    ):
+        if getattr(args, key, None) is None:
+            setattr(args, key, cfg.get(key, default))
+    if not getattr(args, "fail_on_unsupported", False):
+        args.fail_on_unsupported = cfg.get("fail_on_unsupported", False)
     if getattr(args, "max_files", None) is None:
         args.max_files = cfg.get("max_files", 10000)
     if getattr(args, "max_bytes", None) is None:
@@ -305,7 +315,7 @@ def _ndjson_progress_cb(args: argparse.Namespace) -> Any:
     return _cb
 
 
-def _read_stdin_bytes() -> bytes:
+def _read_stdin_bytes(max_file_bytes: int | None = None) -> bytes:
     """Slurp stdin once into a bounded buffer (ux T-06).
 
     Reads at most ``DEFAULT_MAX_FILE_BYTES + 1`` bytes so callers detect
@@ -314,7 +324,10 @@ def _read_stdin_bytes() -> bytes:
     """
     from sesslint.io import DEFAULT_MAX_FILE_BYTES
 
-    return sys.stdin.buffer.read(DEFAULT_MAX_FILE_BYTES + 1)
+    limit = DEFAULT_MAX_FILE_BYTES if max_file_bytes is None else max_file_bytes
+    if limit <= 0:
+        raise ValueError("max_file_bytes must be positive")
+    return sys.stdin.buffer.read(limit + 1)
 
 
 def _add_seal_args(sub: argparse.ArgumentParser) -> None:
@@ -350,6 +363,10 @@ def _add_seal_args(sub: argparse.ArgumentParser) -> None:
 def _check_seal_verdict(report: Any) -> str:
     """Derive the seal verdict vocabulary for a check report — mirrors the
     scan bucket classification (SL301->unsupported, errors->invalid)."""
+    if report.limitation.startswith("Unsupported:"):
+        return "unsupported"
+    if report.limitation.startswith("Skipped:"):
+        return "skipped"
     codes = report.counts.by_code
     if codes.get("SL301"):
         return "unsupported"
@@ -366,6 +383,7 @@ def _maybe_append_seal(
     verdict: str,
     codes: Mapping[str, int],
     report_bytes: bytes,
+    artifact_sha256: str | None = None,
 ) -> int | None:
     """Append one seal-ledger line when ``--seal`` was passed.
 
@@ -380,10 +398,10 @@ def _maybe_append_seal(
     from sesslint.report import minimize_path
 
     try:
-        if artifact_bytes is not None:
+        if artifact_sha256 is not None and artifact_sha256 != "0" * 64:
+            file_sha = artifact_sha256
+        elif artifact_bytes is not None:
             file_sha = seal_mod.sha256_bytes(artifact_bytes)
-        elif artifact_path is not None:
-            file_sha = seal_mod.sha256_file(artifact_path)
         else:
             raise seal_mod.SealError("no artifact bytes or path to seal")
         entry_path = (
@@ -424,7 +442,7 @@ def _emit_check_report(
     _write_baseline_arg(args, report.findings)
 
     # --skip-undetected: detection-failed files are skipped, not failed
-    if getattr(args, "skip_undetected", False) and report.coverage.adapter.get("id") == "unknown":
+    if getattr(args, "skip_undetected", False) and report.limitation.startswith("Unsupported:"):
         skip_fmt = _output_format(args)
         if skip_fmt == "json":
             # Valid empty-state payload keeps `| jq` pipelines alive —
@@ -459,6 +477,17 @@ def _emit_check_report(
         has_error = has_error or report.counts.by_severity.get("warning", 0) > 0
     exit_code = 1 if has_error else 0
 
+    if report.limitation.startswith("Unsupported:"):
+        exit_code = int(getattr(args, "fail_on_unsupported", False))
+        print(
+            "unsupported (format-undetected): use sesslint formats to inspect supported inputs",
+            file=sys.stderr,
+        )
+    elif report.limitation.startswith("Skipped:"):
+        print(
+            "skipped (file-too-large): increase --max-file-bytes to inspect this file",
+            file=sys.stderr,
+        )
     # If format detection failed or was ambiguous, emit actionable hints on stderr
     has_detection_or_version_failure = False
     for f in report.findings:
@@ -484,7 +513,9 @@ def _emit_check_report(
             has_detection_or_version_failure = True
             print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
 
-    if has_detection_or_version_failure:
+    if has_detection_or_version_failure and (
+        display_path == "<stdin>" or Path(display_path).suffix.lower() in (".json", ".jsonl")
+    ):
         if display_path == "<stdin>":
             print(
                 "hint: save the stream to a file, then run 'sesslint bundle <file>' "
@@ -587,7 +618,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help=argparse.SUPPRESS,
     )
@@ -649,7 +680,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -882,7 +913,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1040,6 +1071,49 @@ def create_parser() -> argparse.ArgumentParser:
         help="Disable ANSI color styling",
     )
 
+    for input_parser in (check_parser, scan_parser):
+        input_parser.add_argument(
+            "--max-file-bytes",
+            type=int,
+            default=None,
+            help="Skip files above this byte limit (default: 104857600)",
+        )
+        input_parser.add_argument(
+            "--timestamp-skew-ms",
+            type=int,
+            default=None,
+            help="Allowed backwards timestamp skew in milliseconds (default: 2000)",
+        )
+        input_parser.add_argument(
+            "--fail-on-unsupported",
+            action="store_true",
+            help="Exit 1 for unsupported formats as well as invalid inputs",
+        )
+    scan_parser.add_argument(
+        "--max-findings-per-code",
+        type=int,
+        default=None,
+        help="Maximum displayed samples per code per file (default: 20)",
+    )
+    scan_parser.add_argument(
+        "--newest",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Inspect the N most recently modified session files",
+    )
+    scan_parser.add_argument(
+        "--since",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Inspect files modified on/after this absolute UTC date",
+    )
+    scan_parser.add_argument(
+        "--include-archived",
+        action="store_true",
+        help="Include Codex archived_sessions during agent discovery",
+    )
+
     # repair
     repair_parser = subparsers.add_parser(
         "repair",
@@ -1084,7 +1158,7 @@ def create_parser() -> argparse.ArgumentParser:
             "Render the structural repair preview (sesslint.preview/v1): "
             "content-free delta rows per plan step, then exit without "
             "writing. Incompatible with --output/--plan-out/--apply-plan/"
-            "batch modes. *(next release)*"
+            "batch modes."
         ),
     )
     repair_parser.add_argument(
@@ -1095,7 +1169,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     repair_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1136,7 +1210,7 @@ def create_parser() -> argparse.ArgumentParser:
             "Apply a previously exported plan JSON (sesslint.plan/v1) without "
             "re-planning. The plan is authoritative: --policy/--profile/--format "
             "overrides are refused, and execution still re-validates the plan "
-            "fingerprint and source binding. *(next release)*"
+            "fingerprint and source binding."
         ),
     )
     repair_parser.add_argument(
@@ -1148,7 +1222,7 @@ def create_parser() -> argparse.ArgumentParser:
             "Export the computed repair plan (sesslint.plan/v1) to PATH for "
             "review or later --apply-plan. Plan-only when --output is absent; "
             "with --output the exported plan is executed in the same run. "
-            "*(next release)*"
+            ""
         ),
     )
     repair_parser.add_argument(
@@ -1159,7 +1233,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Batch-repair every eligible session file under DIR (eligibility "
             "= planner computes steps with zero blocked findings). Outputs "
-            "mirror DIR's structure under --output-dir. *(next release)*"
+            "mirror DIR's structure under --output-dir."
         ),
     )
     repair_parser.add_argument(
@@ -1170,7 +1244,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Batch-repair files listed in a sesslint scan JSON report; only "
             "'~/'-minimized and absolute paths resolve — '.._<hash>' entries "
-            "are reported skipped. *(next release)*"
+            "are reported skipped."
         ),
     )
     repair_parser.add_argument(
@@ -1179,14 +1253,14 @@ def create_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=None,
         metavar="FILE",
-        help="Batch-repair an explicit file list into --output-dir. *(next release)*",
+        help="Batch-repair an explicit file list into --output-dir.",
     )
     repair_parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
         metavar="DIR",
-        help="Output root for batch repair modes (mirrors input structure). *(next release)*",
+        help="Output root for batch repair modes (mirrors input structure).",
     )
     repair_parser.add_argument(
         "--manifest-dir",
@@ -1196,7 +1270,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Manifest root for batch modes; manifests are named "
             "<sha8-of-source-path>.manifest.json. Default: adjacent to each "
-            "output. *(next release)*"
+            "output."
         ),
     )
     repair_parser.add_argument(
@@ -1363,7 +1437,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     bundle_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1419,7 +1493,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1444,9 +1518,9 @@ def create_parser() -> argparse.ArgumentParser:
     # baseline
     baseline_parser = subparsers.add_parser(
         "baseline",
-        help="[read-only] Upgrade a v1 baseline to the path-normalized v2 format.",
+        help="[writes: output file] Upgrade a v1 baseline to the path-normalized v2 format.",
         description=(
-            "[read-only] Baseline maintenance: --upgrade rewrites a "
+            "[writes: output file] Baseline maintenance: --upgrade rewrites a "
             "sesslint.baseline/v1 file as v2 (path-normalized keys). With "
             "--source, findings are reproduced to verify entries; without it "
             "every entry migrates 'unverified' (still matchable via the v1 leg)."
@@ -1476,7 +1550,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     baseline_parser.add_argument(
         "--format",
-        choices=["auto", "canonical", "claude-code-jsonl", "openai-agents", "codex-rollout"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default="auto",
         help="Input format override for --source (default: auto)",
     )
@@ -1500,21 +1574,21 @@ def create_parser() -> argparse.ArgumentParser:
     diff_parser.add_argument("b", type=Path, help="Path to the second session file")
     diff_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default="auto",
         help="Session format adapter for both inputs (default: auto)",
     )
     diff_parser.add_argument(
         "--format-a",
         dest="format_a",
-        choices=["claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(SUPPORTED_FORMATS),
         default=None,
         help="Format override for input A only",
     )
     diff_parser.add_argument(
         "--format-b",
         dest="format_b",
-        choices=["claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(SUPPORTED_FORMATS),
         default=None,
         help="Format override for input B only",
     )
@@ -1562,7 +1636,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     stats_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default="auto",
         help="Session format adapter for all inputs (default: auto)",
     )
@@ -1646,7 +1720,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default="auto",
         help="Session format adapter for all inputs (default: auto)",
     )
@@ -1719,6 +1793,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Emit sesslint.hook-result/v1 JSON instead of the one-line form",
     )
     hook_parser.add_argument(
+        "--output",
+        choices=["text", "claude-json"],
+        default="text",
+        help="Output format; claude-json emits a content-free systemMessage envelope",
+    )
+    hook_parser.add_argument(
         "--fail-on",
         choices=["never", "error", "warning"],
         default=None,
@@ -1734,7 +1814,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     hook_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=sorted(VALID_FORMAT_OPTIONS),
         default=None,
         help="Session format adapter (default: auto-detect)",
     )
@@ -1786,19 +1866,19 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 "versions_supported": sorted(SUPPORTED_CANONICAL_VERSIONS),
             },
             {
-                "default_profile": "claude-strict",
+                "default_profile": "neutral",
                 "description": "Claude Code JSONL session logs adapter",
                 "name": "claude-code-jsonl",
                 "versions_supported": sorted(SUPPORTED_CLAUDE_VERSIONS),
             },
             {
-                "default_profile": "openai-strict",
+                "default_profile": "neutral",
                 "description": "OpenAI Agents SDK item-export adapter",
                 "name": "openai-agents",
                 "versions_supported": sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS),
             },
             {
-                "default_profile": "openai-strict",
+                "default_profile": "neutral",
                 "description": "Codex CLI/Desktop rollout-*.jsonl adapter",
                 "name": "codex-rollout",
                 "versions_supported": sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS),
@@ -1883,6 +1963,11 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             "follow_symlinks": getattr(args, "follow_symlinks", False),
             "max_files": getattr(args, "max_files", 10000),
             "max_bytes": getattr(args, "max_bytes", 1024 * 1024 * 1024),
+            "max_file_bytes": args.max_file_bytes,
+            "timestamp_skew_ms": args.timestamp_skew_ms,
+            "max_findings_per_code": args.max_findings_per_code,
+            "newest": args.newest,
+            "since": args.since,
             "format": getattr(args, "format", "auto"),
             "profile": getattr(args, "profile", "neutral"),
             "confidence_min": getattr(args, "confidence_min", None),
@@ -1923,7 +2008,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             from sesslint.scan import FileResult, ScanReport, ScanTotals
 
             requested = ("claude", "codex") if agent == "all" else (agent,)
-            roots = discover_session_roots(requested)
+            roots = discover_session_roots(requested, include_archived=args.include_archived)
 
             merged_files: list[FileResult] = []
             totals = ScanTotals()
@@ -1940,7 +2025,10 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             try:
                 for root in roots:
                     if root.exists:
-                        rep = check_dir(root.path, **scan_kwargs)
+                        rep = check_dir(
+                            root.path,
+                            **{**scan_kwargs, "vendor_layout": root.agent, "skip_undetected": True},
+                        )
                         merged_files.extend(rep.files)
                         totals = _acc_totals(totals, rep.totals)
                     else:
@@ -1971,11 +2059,11 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 from sesslint.io import DEFAULT_MAX_FILE_BYTES
                 from sesslint.scan import scan_bytes
 
-                stdin_data = _read_stdin_bytes()
                 try:
+                    stdin_data = _read_stdin_bytes(args.max_file_bytes)
                     scan_rep = scan_bytes(
                         stdin_data,
-                        max_input_bytes=DEFAULT_MAX_FILE_BYTES,
+                        max_input_bytes=args.max_file_bytes,
                         format=scan_kwargs["format"],
                         profile=scan_kwargs["profile"],
                         confidence_min=scan_kwargs["confidence_min"],
@@ -1985,6 +2073,9 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                         select=scan_kwargs["select"],
                         ignore=scan_kwargs["ignore"],
                         baseline=scan_kwargs["baseline"],
+                        max_file_bytes=args.max_file_bytes,
+                        timestamp_skew_ms=args.timestamp_skew_ms,
+                        max_findings_per_code=args.max_findings_per_code,
                     )
                 except (ValueError, KeyError) as err:
                     err_msg = err.args[0] if err.args else str(err)
@@ -2040,7 +2131,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         warn_total = sum(f.warning_count for f in scan_rep.files)
         if (
             scan_rep.totals.invalid > 0
-            or scan_rep.totals.unsupported > 0
+            or (getattr(args, "fail_on_unsupported", False) and scan_rep.totals.unsupported > 0)
             or scan_rep.totals.unreadable > 0
             or (getattr(args, "fail_on", "error") == "warning" and warn_total > 0)
         ):
@@ -2104,7 +2195,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             warn_total = sum(f.warning_count for f in scan_rep.files)
             if (
                 scan_rep.totals.invalid > 0
-                or scan_rep.totals.unsupported > 0
+                or (getattr(args, "fail_on_unsupported", False) and scan_rep.totals.unsupported > 0)
                 or scan_rep.totals.unreadable > 0
                 or (getattr(args, "fail_on", "error") == "warning" and warn_total > 0)
             ):
@@ -2133,16 +2224,16 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     file=sys.stderr,
                 )
                 return 2
-            stdin_data = _read_stdin_bytes()
             from sesslint.api import check_bytes
             from sesslint.io import DEFAULT_MAX_FILE_BYTES
 
             format_opt = getattr(args, "format", "auto")
             profile_opt = getattr(args, "profile", "neutral")
             try:
+                stdin_data = _read_stdin_bytes(args.max_file_bytes)
                 report = check_bytes(
                     stdin_data,
-                    max_input_bytes=DEFAULT_MAX_FILE_BYTES,
+                    max_input_bytes=args.max_file_bytes,
                     format=format_opt if format_opt != "auto" else None,
                     profile=profile_opt,
                     confidence_min=getattr(args, "confidence_min", None),
@@ -2151,6 +2242,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     select=_rule_codes_arg(args, "select"),
                     ignore=_rule_codes_arg(args, "ignore"),
                     baseline=check_baseline,
+                    max_file_bytes=args.max_file_bytes,
+                    timestamp_skew_ms=args.timestamp_skew_ms,
                 )
             except (ValueError, KeyError) as err:
                 if "not permitted by profile" in str(err):
@@ -2219,6 +2312,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                         select=_rule_codes_arg(args, "select"),
                         ignore=_rule_codes_arg(args, "ignore"),
                         baseline=check_baseline,
+                        max_file_bytes=args.max_file_bytes,
+                        timestamp_skew_ms=args.timestamp_skew_ms,
                         exclude=getattr(args, "exclude", None),
                         ext=getattr(args, "ext", None),
                     )
@@ -2278,6 +2373,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     select=_rule_codes_arg(args, "select"),
                     ignore=_rule_codes_arg(args, "ignore"),
                     baseline=check_baseline,
+                    max_file_bytes=args.max_file_bytes,
+                    timestamp_skew_ms=args.timestamp_skew_ms,
                     exclude=getattr(args, "exclude", None),
                     ext=getattr(args, "ext", None),
                 )
@@ -2309,6 +2406,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     select=_rule_codes_arg(args, "select"),
                     ignore=_rule_codes_arg(args, "ignore"),
                     baseline=check_baseline,
+                    max_file_bytes=args.max_file_bytes,
+                    timestamp_skew_ms=args.timestamp_skew_ms,
                 )
             except (ValueError, KeyError) as err:
                 if "not permitted by profile" in str(err):
@@ -2328,6 +2427,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             seal_rc = _maybe_append_seal(
                 args,
                 tool="check",
+                artifact_sha256=report.source_fingerprint,
                 artifact_bytes=None,
                 artifact_path=target_path,
                 verdict=_check_seal_verdict(report),
@@ -2427,7 +2527,9 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             format=None if fmt in (None, "auto") else fmt,
             fail_on=getattr(args, "fail_on", None),
         )
-        if getattr(args, "json", False):
+        if getattr(args, "output", None) == "claude-json":
+            print(hook_result.to_claude_json())
+        elif getattr(args, "json", False):
             print(hook_result.to_json())
         else:
             print(hook_result.line())
@@ -2860,9 +2962,16 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 try:
                     from sesslint.atomic import atomic_write_text
 
+                    # Never let the plan document replace the session it
+                    # describes, nor the repaired output about to be written (B18).
+                    plan_refuse: list[Path] = [src_path]
+                    if args.output is not None:
+                        plan_refuse.append(Path(args.output))
                     atomic_write_text(
                         Path(args.plan_out),
                         json.dumps(plan_obj.to_dict(), indent=2, sort_keys=True) + chr(10),
+                        refuse_paths=plan_refuse,
+                        overwrite=False,
                     )
                 except OSError as err:
                     print(f"Error writing plan to {args.plan_out}: {err}", file=sys.stderr)
@@ -2960,6 +3069,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 seal_rc = _maybe_append_seal(
                     args,
                     tool="repair",
+                    artifact_sha256=manifest.output_fingerprint,
                     artifact_bytes=None,
                     artifact_path=args.output,
                     verdict="repaired",
@@ -3050,6 +3160,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             seal_rc = _maybe_append_seal(
                 args,
                 tool="verify",
+                artifact_sha256=verdict.artifact_sha256,
                 artifact_bytes=None,
                 artifact_path=Path(repaired_target),
                 verdict="ok" if verdict.ok else "failed",
@@ -3155,7 +3266,10 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             try:
                 from sesslint.atomic import atomic_write_text
 
-                atomic_write_text(out_path, bundle_json)
+                # The bundle must never replace the session it describes (B18).
+                atomic_write_text(
+                    out_path, bundle_json, refuse_paths=[target_bundle_path], overwrite=False
+                )
             except Exception as err:
                 print(f"Error writing bundle to {out_path}: {err}", file=sys.stderr)
                 return 2
@@ -3264,7 +3378,9 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return 2
 
         if args.output is not None:
-            args.output.write_text(doc, encoding="utf-8", newline="\n")
+            from sesslint.atomic import atomic_write_text
+
+            atomic_write_text(args.output, doc)
             print(
                 f"upgraded baseline: {verified} verified, {unverified} unverified -> {args.output}",
                 file=sys.stderr,

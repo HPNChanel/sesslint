@@ -23,9 +23,10 @@ def test_exit_code_0_matrix(tmp_path: Path) -> None:
 
 
 def test_exit_code_1_matrix(tmp_path: Path) -> None:
-    """Exit code 1 is returned when findings (error/fatal) or ambiguity exist."""
+    """Exit code 1 is returned for defects and optionally unsupported input."""
     ambig_fixture = FIXTURES_DIR / "check_ambiguity" / "polyglot.json"
-    assert main(["check", str(ambig_fixture)]) == 1
+    assert main(["check", str(ambig_fixture)]) == 0
+    assert main(["check", str(ambig_fixture), "--fail-on-unsupported"]) == 1
 
     corrupt = tmp_path / "corrupt.jsonl"
     corrupt.write_text('{"id":"1","type":"unknown_bogus"}\n', encoding="utf-8")

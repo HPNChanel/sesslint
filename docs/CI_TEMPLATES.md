@@ -93,6 +93,12 @@ workflows:
 
 Every action input maps to the identical CLI flag:
 
+The action passes input values through environment variables and builds a Python
+argument list. File inputs must resolve inside `GITHUB_WORKSPACE`; choices such
+as `fail-on` and `output-format` are validated before SessLint runs. A failing
+fixture must return exit code 1 in CI; an installation or usage failure does not
+satisfy that check.
+
 | Action input | CLI flag | Template default |
 | --- | --- | --- |
 | `path` | positional `PATH` | `sessions/` — point at your tree |

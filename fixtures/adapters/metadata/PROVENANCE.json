@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "origin": "synthetic",
+  "seed": 42,
+  "description": "Hand-authored record shapes for Wave 1 compatibility regressions; no real transcripts or identifiers.",
+  "schema_version": 1
+}

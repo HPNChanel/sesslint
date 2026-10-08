@@ -154,8 +154,8 @@ def test_plan_repeatability() -> None:
 def test_canonical_json_rejects_non_string_keys() -> None:
     """canonical_json_bytes and repeat_hash reject non-string keys with SchemaError (P0-08)."""
     bad_dict = {1: "a", 2: "b"}
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         canonical_json_bytes(bad_dict)
 
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         repeat_hash(bad_dict)

@@ -109,7 +109,7 @@ class ScanCache:
                 ")"
             )
             self._ok = True
-        except (sqlite3.Error, OSError):
+        except (sqlite3.Error, OSError, ValueError, RecursionError):
             self._db = None
 
     @property
@@ -126,14 +126,14 @@ class ScanCache:
                 f"SELECT file_sha256, result FROM {SCHEMA_TABLE} WHERE path=? AND analysis_fp=?",
                 (path, analysis_fp),
             ).fetchone()
-        except sqlite3.Error:
+        except (sqlite3.Error, ValueError, RecursionError):
             self._ok = False
             return None
         if row is None or row[0] != file_sha256:
             return None
         try:
             data = json.loads(row[1])
-        except (json.JSONDecodeError, TypeError):
+        except (TypeError, ValueError, RecursionError):
             return None
         return data if isinstance(data, dict) else None
 
@@ -148,7 +148,7 @@ class ScanCache:
                 (path, analysis_fp, file_sha256, json.dumps(result, sort_keys=True)),
             )
             self._db.commit()
-        except (sqlite3.Error, TypeError, ValueError):
+        except (sqlite3.Error, TypeError, ValueError, RecursionError):
             self._ok = False
 
     def close(self) -> None:
@@ -156,7 +156,7 @@ class ScanCache:
         if self._db is not None:
             try:
                 self._db.close()
-            except sqlite3.Error:
+            except (sqlite3.Error, ValueError, RecursionError):
                 pass
             self._db = None
         self._ok = False

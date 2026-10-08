@@ -11,6 +11,17 @@ site_description: >-
 repo_url: https://github.com/HPNChanel/sesslint
 docs_dir: docs
 
+# Maintainer-local evidence and task state are not part of the public site.
+# These mirror the private/generated documents excluded by .gitignore.
+exclude_docs: |
+  /reviews/
+  /ai/
+  /COMPLETION_*.md
+  /DELIVERY_*.md
+  /RELEASE_*.generated.md
+  /SANDBOX_*.md
+  /WINDOWS_ACCEPTANCE.md
+
 theme:
   name: material
   features:
@@ -23,10 +34,8 @@ theme:
 plugins:
   - search
 
-# The docs/ tree contains legitimate repository-internal links that escape
-# docs_dir (../src/..., ../tests/..., ../.github/...) — correct on GitHub,
-# unresolvable inside the site. They stay warnings (not errors, not
-# silently ignored) so genuinely broken in-site links still surface.
+# Repository links outside docs_dir use absolute GitHub URLs so the strict
+# build can reject every broken in-site link without suppressing warnings.
 validation:
   links:
     absolute_links: warn

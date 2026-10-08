@@ -1,0 +1,4 @@
+{"payload":{"id":"synthetic-thread"},"timestamp":"2026-10-08T00:00:00Z","type":"session_meta"}
+{"payload":{"arguments":"{}","call_id":"synthetic-call","id":"synthetic-call-event","name":"read_file","type":"function_call"},"timestamp":"2026-10-08T00:00:01Z","type":"response_item"}
+{"ordinal":2,"payload":{"acceptance_order":1,"call_id":"synthetic-call","questions":["synthetic"],"turn_id":"synthetic-turn","type":"verified_answer"},"timestamp":"2026-10-08T00:00:02Z","type":"retained_context"}
+{"payload":{"call_id":"synthetic-call","id":"synthetic-result-event","output":"synthetic","type":"function_call_output"},"timestamp":"2026-10-08T00:00:03Z","type":"response_item"}

@@ -49,6 +49,7 @@ from sesslint.codes import (
     SL303,
     SL304,
     SL305,
+    SL306,
     SL401,
     SL402,
 )
@@ -337,6 +338,14 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
             "to the replay vocabulary's expected value after backup - "
             "SessLint performs no rewrite"
         ),
+    ),
+    SL306: RefusalRationale(
+        code=SL306,
+        rationale=(
+            "unrecognized metadata is advisory; its semantics are not a basis "
+            "for rewriting or discarding a vendor record"
+        ),
+        demand_citation="FR-021",
     ),
     SL401: RefusalRationale(
         code=SL401,
