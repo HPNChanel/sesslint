@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-doctor \- [read\-only] Environment diagnostics for support reports.
 .SH SYNOPSIS
-.B sesslint doctor [\-\-agent {claude,codex,all}] [\-\-no\-quick\-checks] [\-\-output\-format {human,json}] [\-\-json]
+.B sesslint doctor [\-\-agent {claude,codex,all}] [\-\-no\-quick\-checks] [\-f | \-\-format {human,json}] [\-\-json]
 .SH DESCRIPTION
 [read\-only] Report what SessLint sees on this machine: tool and adapter versions, resolved config file, agent session roots, bounded quick verdicts. Counts only — never file names.
 .SH OPTIONS
@@ -13,11 +13,11 @@ Restrict diagnostics to one agent (default: all) Choices: claude, codex, all.
 .B \-\-no\-quick\-checks
 Skip the bounded per\-file check pass (counts only)
 .TP
-.B \-\-output\-format {human,json}
+.B \-f {human,json}, \-\-format {human,json}
 Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
-Emit sesslint.doctor/v1 JSON (shortcut for \-\-output\-format json)
+Emit sesslint.doctor/v1 JSON (shortcut for \-\-format json)
 .SH EXIT STATUS
 .TP
 .B 0
@@ -35,7 +35,7 @@ or live-DB path refusal.
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

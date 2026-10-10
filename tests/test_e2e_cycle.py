@@ -128,7 +128,7 @@ def test_e2e_cli_full_cycle(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert "1 warning(s)" in captured1.out or "SL003" in captured1.out
 
     # 2. CLI Repair
-    exit_repair = main(["repair", str(src), "--out", str(out)])
+    exit_repair = main(["repair", str(src), "--output", str(out)])
     assert exit_repair == 0
     capsys.readouterr()
     assert out.is_file()
@@ -183,7 +183,7 @@ def test_e2e_vendor_format_writeback(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert any(f.code == "SL002" for f in rep.findings)
 
     # Repair emits a vendor-format artifact (emit=auto -> write-back)
-    exit_code = main(["repair", str(claude_file), "--out", str(out_file)])
+    exit_code = main(["repair", str(claude_file), "--output", str(out_file)])
     assert exit_code == 0
     capsys.readouterr()
     assert out_file.exists()

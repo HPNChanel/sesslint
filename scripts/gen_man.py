@@ -73,6 +73,7 @@ class _Command:
     description: str
     positionals: tuple[_Positional, ...]
     options: tuple[_Option, ...]
+    aliases: tuple[str, ...] = ()
 
 
 def _clean(raw: object) -> str:
@@ -149,7 +150,17 @@ def harvest(parser: argparse.ArgumentParser) -> tuple[_Command, ...]:
         choices_obj = getattr(action, "choices", None)
         if not isinstance(action, argparse._SubParsersAction) or not isinstance(choices_obj, dict):
             continue
+        # argparse stores one pseudo-action per add_parser call under the
+        # canonical name; aliases share the parser object and have no
+        # pseudo-action, so they dedupe by parser identity.
+        canonical_names = {pseudo.dest for pseudo in action._choices_actions}
+        aliases_by_id: dict[int, list[str]] = {}
         for name in sorted(choices_obj):
+            if name not in canonical_names:
+                aliases_by_id.setdefault(id(choices_obj[name]), []).append(name)
+        for name in sorted(choices_obj):
+            if name not in canonical_names:
+                continue
             sub = choices_obj[name]
             # argparse stores add_parser(help=...) on the action's choices
             # pseudo-actions; pull the per-subcommand help text from there.
@@ -166,6 +177,7 @@ def harvest(parser: argparse.ArgumentParser) -> tuple[_Command, ...]:
                     description=cmd.description or help_str,
                     positionals=cmd.positionals,
                     options=cmd.options,
+                    aliases=tuple(sorted(aliases_by_id.get(id(sub), ()))),
                 )
             )
     return tuple(commands)
@@ -222,8 +234,10 @@ def _emit_command(cmd: _Command, version: str, all_names: tuple[str, ...]) -> st
         ".SH SYNOPSIS",
         ".B " + _esc(" ".join(_synopsis_parts(cmd))),
     ]
-    if cmd.description:
+    if cmd.description or cmd.aliases:
         lines += [".SH DESCRIPTION", _esc(cmd.description)]
+        for alias in cmd.aliases:
+            lines.append(_esc(f"'{PROG} {alias}' is an alias for '{PROG} {cmd.name}'."))
     if cmd.positionals:
         lines.append(".SH ARGUMENTS")
         for pos in cmd.positionals:

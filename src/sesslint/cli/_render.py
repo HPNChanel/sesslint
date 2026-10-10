@@ -179,7 +179,7 @@ def _emit_check_report(
     if report.limitation.startswith("Unsupported:"):
         exit_code = int(getattr(args, "fail_on_unsupported", False))
         print(
-            "unsupported (format-undetected): use sesslint formats to inspect supported inputs",
+            "unsupported (format-undetected): use sesslint doctor to inspect supported inputs",
             file=sys.stderr,
         )
     elif report.limitation.startswith("Skipped:"):
@@ -196,8 +196,8 @@ def _emit_check_report(
                 reason = f.evidence.get("reason")
                 if reason in ("tie", "low-confidence", "empty"):
                     print(
-                        "Format detection ambiguous. Please specify --format explicitly "
-                        "(see sesslint formats).",
+                        "Format detection ambiguous. Please specify --adapter explicitly "
+                        "(see sesslint doctor).",
                         file=sys.stderr,
                     )
                     confidences = f.evidence.get("confidences")

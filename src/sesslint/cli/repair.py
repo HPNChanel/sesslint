@@ -16,8 +16,8 @@ from sesslint.cli._common import (
 )
 from sesslint.cli._options import (
     _add_seal_args,
+    add_adapter_option,
     add_config_option,
-    add_format_option,
     add_policy_option,
     add_profile_option,
     add_progress_json_option,
@@ -45,16 +45,16 @@ def configure(
     sub.add_argument(
         "path",
         type=Path,
-        nargs="?",
+        nargs="*",
         default=None,
-        help="Path to source session file. '-' reads the source from stdin "
-        "(max 100 MB; still requires --output unless --dry-run). Omit when "
-        "using --batch/--from-scan/--files",
+        help="Path(s) to source session file(s) or directories. Directories "
+        "and multiple paths batch-repair into --output-dir (mirroring input "
+        "structure). '-' reads the source from stdin (max 100 MB; still "
+        "requires --output unless --dry-run).",
     )
     sub.add_argument(
-        "--output",
-        "--out",
         "-o",
+        "--output",
         type=Path,
         default=None,
         dest="output",
@@ -78,7 +78,7 @@ def configure(
         ),
     )
     add_policy_option(sub)
-    add_format_option(sub)
+    add_adapter_option(sub)
     sub.add_argument(
         "--emit",
         choices=["auto", "canonical", "vendor"],
@@ -105,7 +105,7 @@ def configure(
         dest="plan",
         help=(
             "Apply a previously exported plan JSON (sesslint.plan/v1) without "
-            "re-planning. The plan is authoritative: --policy/--profile/--format "
+            "re-planning. The plan is authoritative: --policy/--profile/--adapter "
             "overrides are refused, and execution still re-validates the plan "
             "fingerprint and source binding."
         ),
@@ -123,17 +123,6 @@ def configure(
         ),
     )
     sub.add_argument(
-        "--batch",
-        type=Path,
-        default=None,
-        metavar="DIR",
-        help=(
-            "Batch-repair every eligible session file under DIR (eligibility "
-            "= planner computes steps with zero blocked findings). Outputs "
-            "mirror DIR's structure under --output-dir."
-        ),
-    )
-    sub.add_argument(
         "--from-scan",
         type=Path,
         default=None,
@@ -143,14 +132,6 @@ def configure(
             "'~/'-minimized and absolute paths resolve — '.._<hash>' entries "
             "are reported skipped."
         ),
-    )
-    sub.add_argument(
-        "--files",
-        type=Path,
-        nargs="+",
-        default=None,
-        metavar="FILE",
-        help="Batch-repair an explicit file list into --output-dir.",
     )
     sub.add_argument(
         "--output-dir",
@@ -177,12 +158,6 @@ def configure(
         help="Acknowledge tool side-effects for salvage policy",
     )
     sub.add_argument(
-        "--salvage-unsupported",
-        action="store_true",
-        default=False,
-        help="[Deprecated] Use '--policy salvage' instead",
-    )
-    sub.add_argument(
         "--include-content",
         action="store_true",
         default=argparse.SUPPRESS,
@@ -204,7 +179,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             for flag, attr in (
                 ("--policy", "policy"),
                 ("--profile", "profile"),
-                ("--format", "format"),
+                ("--adapter", "adapter"),
             )
             if getattr(args, attr, None) is not None
         ]
@@ -232,13 +207,16 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         return 2
     _apply_config(args, cli_cfg)
 
-    if getattr(args, "salvage_unsupported", False):
-        print(
-            "Error: The --salvage-unsupported flag has been deprecated and removed. "
-            "Please use '--policy salvage' instead.",
-            file=sys.stderr,
-        )
-        return 2
+    src_paths: list[Path] = list(getattr(args, "path", None) or [])
+    # Batch mode: multiple positionals, any directory positional, or
+    # --from-scan (repair-engine T-02). A lone '-' is the stdin single-file
+    # path, never batch.
+    _path_targets = [p for p in src_paths if str(p) != "-"]
+    _is_batch = (
+        getattr(args, "from_scan", None) is not None
+        or len(_path_targets) > 1
+        or any(p.is_dir() for p in _path_targets)
+    )
 
     # --preview conflicts (repair-engine T-03): preview writes nothing, so
     # every write-implying or foreign-plan flag is a usage error.
@@ -250,11 +228,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             _preview_conflicts.append("--apply-plan/--plan")
         if getattr(args, "plan_out", None) is not None:
             _preview_conflicts.append("--plan-out")
-        if (
-            getattr(args, "batch", None) is not None
-            or getattr(args, "from_scan", None) is not None
-            or getattr(args, "files", None)
-        ):
+        if _is_batch:
             _preview_conflicts.append("batch modes")
         if getattr(args, "emit", "auto") != "auto":
             _preview_conflicts.append("--emit")
@@ -266,28 +240,21 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             )
             return 2
 
-    # Batch repair modes (repair-engine T-02): --batch/--from-scan/--files
-    # drive per-file plan eligibility under a shared output root. Validated
-    # before the single-file flow (batch never stages stdin and uses
-    # --output-dir, not --output).
-    _batch_modes = [m for m in (args.batch, args.from_scan, args.files) if m]
-    if _batch_modes:
+    # Batch repair (repair-engine T-02): directories and multi-path
+    # positionals plus --from-scan drive per-file plan eligibility under a
+    # shared output root. Validated before the single-file flow (batch
+    # never stages stdin and uses --output-dir, not --output).
+    if _is_batch:
+        if any(str(p) == "-" for p in src_paths):
+            print(
+                "Error: '-' (stdin) cannot be combined with other repair inputs.",
+                file=sys.stderr,
+            )
+            return 2
         if getattr(args, "seal", None) is not None:
             print(
                 "Error: --seal applies to single-file repair only "
                 "(batch modes produce no single subject artifact).",
-                file=sys.stderr,
-            )
-            return 2
-        if len(_batch_modes) > 1:
-            print(
-                "Error: --batch, --from-scan, and --files are mutually exclusive.",
-                file=sys.stderr,
-            )
-            return 2
-        if args.path is not None:
-            print(
-                "Error: positional path cannot be combined with batch modes.",
                 file=sys.stderr,
             )
             return 2
@@ -320,27 +287,28 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         batch_files: list[Path] = []
         unresolvable: list[str] = []
         common_root: Path | None = None
-        if args.batch is not None:
-            root_dir = Path(args.batch)
-            if not root_dir.is_dir():
-                print(f"Error: batch source is not a directory: {root_dir}", file=sys.stderr)
-                return 2
-            batch_files, _special = iter_batch_files([root_dir], max_files=DEFAULT_MAX_FILES)
-            common_root = root_dir
-        elif args.from_scan is not None:
+        dir_paths = [p for p in _path_targets if p.is_dir()]
+        if len(_path_targets) == 1 and dir_paths:
+            common_root = dir_paths[0]
+        for p in _path_targets:
+            if p.is_dir():
+                walked, _special = iter_batch_files([p], max_files=DEFAULT_MAX_FILES)
+                batch_files.extend(walked)
+            else:
+                batch_files.append(p)
+        if getattr(args, "from_scan", None) is not None:
             try:
-                batch_files, unresolvable = resolve_scan_report_files(args.from_scan)
+                scan_files, unresolvable = resolve_scan_report_files(args.from_scan)
             except (OSError, ValueError, KeyError) as err:
                 print(f"Error: cannot read scan report: {err}", file=sys.stderr)
                 return 2
-        else:
-            batch_files = [Path(f) for f in (args.files or [])]
+            batch_files.extend(scan_files)
 
         batch_policy: Literal["conservative", "salvage"] = (
             "salvage" if getattr(args, "policy", "conservative") == "salvage" else "conservative"
         )
         batch_profile = getattr(args, "profile", "neutral")
-        batch_format = getattr(args, "format", "auto")
+        batch_format = getattr(args, "adapter", "auto")
 
         from sesslint.profiles.profile import get_profile as _get_profile
 
@@ -381,10 +349,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             print(batch_report.render_human())
         return 0 if batch_report.refused == 0 and batch_report.skipped == 0 else 1
 
-    if args.path is None:
+    if not src_paths:
         print(
-            "Error: repair requires a source path, or a batch source "
-            "(--batch/--from-scan/--files).",
+            "Error: repair requires a source path, or batch inputs "
+            "(multiple paths, directories, or --from-scan with --output-dir).",
             file=sys.stderr,
         )
         return 2
@@ -413,8 +381,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     # projection) applies unchanged. The staged file is deleted before
     # the command returns.
     stdin_tmp: Any = None
-    src_path: Path = args.path
-    if str(args.path) == "-":
+    src_path: Path = src_paths[0]
+    if str(src_path) == "-":
         import tempfile
 
         from sesslint.io import DEFAULT_MAX_FILE_BYTES
@@ -445,7 +413,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     )
     profile_opt = getattr(args, "profile", "neutral")
     ack_side_effects = getattr(args, "acknowledge_side_effects", False)
-    format_opt = getattr(args, "format", "auto")
+    format_opt = getattr(args, "adapter", "auto")
 
     from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
     from sesslint.profiles.profile import get_profile

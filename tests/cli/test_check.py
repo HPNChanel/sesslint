@@ -52,14 +52,14 @@ def test_check_finding_exit1(capsys: pytest.CaptureFixture[str], tmp_path: Path)
     )
 
     # Human mode
-    code = main(["check", str(bad_session), "--format", "claude-code-jsonl"])
+    code = main(["check", str(bad_session), "--adapter", "claude-code-jsonl"])
     assert code == 1
     captured = capsys.readouterr()
     assert "Integrity check failed" in captured.out
     assert "SL101" in captured.out
 
     # JSON mode
-    code_json = main(["check", str(bad_session), "--format", "claude-code-jsonl", "--json"])
+    code_json = main(["check", str(bad_session), "--adapter", "claude-code-jsonl", "--json"])
     assert code_json == 1
     captured_json = capsys.readouterr()
     data = json.loads(captured_json.out)
@@ -90,13 +90,10 @@ def test_check_ambiguity_fail_closed(capsys: pytest.CaptureFixture[str]) -> None
     assert data["coverage"]["performed"] == []
 
 
-def test_check_directory_rejected(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
-    """Directory passed to check without recursive exits 2 with error."""
+def test_check_directory_accepted(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    """Directory passed to check is scanned recursively (no -r needed)."""
     code = main(["check", str(tmp_path)])
-    assert code == 2
-    captured = capsys.readouterr()
-    assert "directory" in captured.err.lower()
-    assert "--recursive" in captured.err
+    assert code == 0
 
 
 def test_check_nonexistent_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -143,7 +140,7 @@ def test_check_json_repro_binds_coverage_values(capsys: pytest.CaptureFixture[st
 def test_check_json_repro_manual_format(capsys: pytest.CaptureFixture[str]) -> None:
     """Explicit --format reports detection method=manual with null confidence."""
     fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
-    code = main(["check", str(fixture), "--format", "claude-code-jsonl", "--json"])
+    code = main(["check", str(fixture), "--adapter", "claude-code-jsonl", "--json"])
     assert code == 0
     data = json.loads(capsys.readouterr().out)
 

@@ -18,7 +18,7 @@ def test_guidance_on_actual_findings(code: str, fmt: str, capsys) -> None:
         )
     )
     command = "scan" if code == "SL402" else "check"
-    main([command, str(Path("fixtures") / golden["input"]), "--output-format", fmt])
+    main([command, str(Path("fixtures") / golden["input"]), "--format", fmt])
     output = capsys.readouterr().out
     assert code in output
     if fmt == "sarif":

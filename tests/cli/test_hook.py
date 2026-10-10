@@ -49,7 +49,7 @@ def _run_cli(*argv: str, stdin: bytes) -> subprocess.CompletedProcess[bytes]:
 
 def test_claude_json_cli_envelope() -> None:
     result = _run_cli(
-        "hook", "--event", "SessionStart", "--output", "claude-json", stdin=_payload(CLEAN)
+        "hook", "--event", "SessionStart", "--format", "claude-json", stdin=_payload(CLEAN)
     )
     assert result.returncode == 0
     message = json.loads(result.stdout)

@@ -503,7 +503,7 @@ def test_cli_smoke_explicit_override_canonical(capsys: pytest.CaptureFixture[str
     exit_code = main(
         [
             "check",
-            "--format",
+            "--adapter",
             "canonical",
             str(canonical_fixture),
         ]
@@ -517,16 +517,16 @@ def test_cli_smoke_explicit_override_canonical(capsys: pytest.CaptureFixture[str
 def test_cli_smoke_explicit_override_before_check_honored(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """CLI with --format BEFORE sub-command is honored and not clobbered by subparser defaults."""
+    """CLI with --adapter BEFORE the path is honored and not clobbered by defaults."""
     ambiguous_fixture = FIXTURES_DIR / "ambiguous.json"
     # The fixture has genuine type + items signals for two adapters (tie).
     # An explicit openai-agents override selects the requested interpretation.
     # it resolves cleanly
     exit_code = main(
         [
-            "--format",
-            "openai-agents",
             "check",
+            "--adapter",
+            "openai-agents",
             str(ambiguous_fixture),
         ]
     )
@@ -544,7 +544,7 @@ def test_cli_smoke_explicit_override_after_path_honored(
         [
             "check",
             str(ambiguous_fixture),
-            "--format",
+            "--adapter",
             "openai-agents",
         ]
     )

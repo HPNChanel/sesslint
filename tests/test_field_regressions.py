@@ -280,7 +280,7 @@ def test_check_sarif_skip_undetected_emits_sarif(
 ) -> None:
     f = tmp_path / "package.json"
     f.write_text('{"name":"x"}\n', encoding="utf-8")
-    rc = main(["check", str(f), "--output-format", "sarif", "--skip-undetected"])
+    rc = main(["check", str(f), "--format", "sarif", "--skip-undetected"])
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert payload["version"] == "2.1.0"

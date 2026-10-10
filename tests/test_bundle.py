@@ -191,7 +191,7 @@ class TestBundleCLI:
     def test_bundle_out_file(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """sesslint bundle <path> --out <file> writes bundle JSON to specified destination."""
         out_file = tmp_path / "bundle_output.json"
-        code = main(["bundle", str(HEALTHY_CANONICAL), "--out", str(out_file)])
+        code = main(["bundle", str(HEALTHY_CANONICAL), "--output", str(out_file)])
         assert code == 0
         captured = capsys.readouterr()
         assert "Diagnostic bundle written to" in captured.out
@@ -208,7 +208,7 @@ class TestBundleCLI:
         src = tmp_path / "session.jsonl"
         src.write_bytes(HEALTHY_CANONICAL.read_bytes())
         before = src.read_bytes()
-        code = main(["bundle", str(src), "--out", str(src)])
+        code = main(["bundle", str(src), "--output", str(src)])
         assert code == 2
         assert src.read_bytes() == before
         assert "Error writing bundle" in capsys.readouterr().err
@@ -304,7 +304,7 @@ class TestBundleShareAdvisory:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Non-strict bundle of a seeded file: advisory on stderr, exit 0."""
-        code = main(["bundle", str(self.SEEDED), "--format", "canonical", "--json"])
+        code = main(["bundle", str(self.SEEDED), "--adapter", "canonical", "--json"])
         assert code == 0
         captured = capsys.readouterr()
         assert "share_advisory: source contains secret-shaped material" in captured.err
@@ -320,7 +320,7 @@ class TestBundleShareAdvisory:
             [
                 "bundle",
                 str(self.SEEDED),
-                "--format",
+                "--adapter",
                 "canonical",
                 "--strict-share",
                 "-o",
@@ -340,7 +340,7 @@ class TestBundleShareAdvisory:
             [
                 "bundle",
                 str(self.CLEAN),
-                "--format",
+                "--adapter",
                 "canonical",
                 "--strict-share",
                 "-o",
@@ -454,7 +454,7 @@ class TestBundleIntegration:
         assert "attach the output to an adapter request" in captured_check.err
 
         # 2. sesslint bundle: succeeds with code 0 and records version_evidence
-        bundle_code = main(["bundle", str(unsupported_session), "--format", "canonical"])
+        bundle_code = main(["bundle", str(unsupported_session), "--adapter", "canonical"])
         assert bundle_code == 0
         captured_bundle = capsys.readouterr()
         bundle_data = json.loads(captured_bundle.out)

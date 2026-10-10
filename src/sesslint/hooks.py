@@ -1,6 +1,6 @@
 """Agent hook snippet builders (integrations T-02).
 
-Print-only generators: ``sesslint init-hooks`` emits ready-to-merge JSON
+Print-only generators: ``sesslint hook --init`` emits ready-to-merge JSON
 blocks for the documented hook recipes. The command **never writes agent
 configuration** — that is a permanent design invariant, not a deferral.
 There is no ``--install``/``--write`` flag and there never will be.
@@ -32,7 +32,7 @@ _CLAUDE_SESSIONSTART_BLOCK: dict[str, Any] = {
                     {
                         "type": "command",
                         "command": (
-                            "sesslint hook --event SessionStart --output claude-json || true"
+                            "sesslint hook --event SessionStart --format claude-json || true"
                         ),
                     }
                 ],
@@ -107,7 +107,7 @@ _CODEX_NOTE = (
     "contract `sesslint hook` reads. Snippets are not emitted yet: "
     "matcher values, the 1s SessionEnd timeout, and the /hooks "
     "trust-review flow need recipe-level verification first. Interim "
-    "coverage for Codex session roots: `sesslint scan --agent codex`."
+    "coverage for Codex session roots: `sesslint check --agent codex`."
 )
 
 VALID_AGENTS: tuple[str, ...] = ("claude", "codex", "all")

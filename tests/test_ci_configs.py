@@ -381,7 +381,7 @@ def test_template_pins_version_and_invocation(platform: str) -> None:
     )
     assert re.search(r"sesslint (scan|check) ", block), f"{platform}: no check/scan invocation"
     assert "--fail-on" in block, f"{platform}: missing --fail-on"
-    assert "--output-format" in block, f"{platform}: missing --output-format"
+    assert "--format" in block, f"{platform}: missing --format"
 
 
 def test_template_required_keys_per_platform() -> None:

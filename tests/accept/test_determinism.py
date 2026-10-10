@@ -54,7 +54,7 @@ def test_pythonhashseed_independence() -> None:
             "sesslint",
             "check",
             str(FIXTURE_PATH),
-            "--format",
+            "--adapter",
             "canonical",
             "--json",
         ]

@@ -10,7 +10,7 @@ from typing import Final
 from sesslint.cli._common import _handle_internal_error
 from sesslint.cli._options import (
     _validate_unit_interval_float,
-    add_format_option,
+    add_adapter_option,
     add_profile_option,
 )
 
@@ -33,9 +33,8 @@ def configure(
         help="Path to session file (.json or .jsonl)",
     )
     sub.add_argument(
-        "--output",
-        "--out",
         "-o",
+        "--output",
         type=Path,
         default=None,
         dest="output",
@@ -47,7 +46,7 @@ def configure(
         default=False,
         help="Output bundle as JSON to stdout",
     )
-    add_format_option(sub)
+    add_adapter_option(sub)
     add_profile_option(sub)
     sub.add_argument(
         "--confidence-min",
@@ -88,7 +87,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
     from sesslint.api import build_bundle
 
-    format_opt = getattr(args, "format", "auto")
+    format_opt = getattr(args, "adapter", "auto")
     profile_opt = getattr(args, "profile", "neutral")
 
     try:

@@ -215,14 +215,14 @@ runs:
         if write_baseline is not None and not write_baseline.parent.is_dir():
             raise SystemExit("write-baseline parent directory must exist")
 
-        command = [sys.executable, "-m", "sesslint.cli", "check", str(target), "--profile", profile]
+        command = [sys.executable, "-m", "sesslint", "check", str(target), "--profile", profile]
         command.extend(["--fail-on", fail_on])
         if output_format == "sarif":
-            command.extend(["--output-format", "sarif"])
+            command.extend(["--format", "sarif"])
         else:
             command.append("--json")
         if format_name != "auto":
-            command.extend(["--format", format_name])
+            command.extend(["--adapter", format_name])
         if select:
             command.extend(["--select", select])
         if ignore:
@@ -239,8 +239,6 @@ runs:
             command.append("--skip-undetected")
         if config is not None:
             command.extend(["--config", str(config)])
-        if target.is_dir():
-            command.append("--recursive")
 
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
         cli_exit = completed.returncode

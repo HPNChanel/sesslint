@@ -23,9 +23,9 @@ ordinal, record id), and the allowlisted evidence subset.
 Loading returns the union of v1 fingerprints and v2 keys as one opaque set;
 matching checks the v1 fingerprint and the v2 key of every finding (exact v2
 key first, legacy v1 fingerprint second — v1 baselines keep working).
-``--write-baseline`` always emits v2. ``sesslint baseline --upgrade``
-rewrites a v1 baseline as v2: entries reproduced by a re-check of ``--source``
-become verified v2 keys; the rest are carried as ``migrated: "unverified"``
+``--write-baseline`` always emits v2. ``upgrade_baseline`` rewrites a v1
+baseline as v2: entries reproduced by a re-check of the source become
+verified v2 keys; the rest are carried as ``migrated: "unverified"``
 v1 keys which still match through the v1 leg.
 
 Missing/unreadable baseline files and malformed entries fail closed — a

@@ -264,51 +264,6 @@ def test_upgrade_deterministic(tmp_path: Path) -> None:
     assert upgrade_baseline(v1, None)[0] == upgrade_baseline(v1, None)[0]
 
 
-def test_cli_baseline_upgrade(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    fps = [f.fingerprint for f in _findings()]
-    v1 = _v1_file(tmp_path / "v1.json", fps)
-    out = tmp_path / "v2.json"
-    code = main(
-        [
-            "baseline",
-            "--upgrade",
-            str(v1),
-            "--source",
-            str(CORRUPT),
-            "--output",
-            str(out),
-        ]
-    )
-    assert code == 0
-    assert "verified" in capsys.readouterr().err
-    doc = json.loads(out.read_text(encoding="utf-8"))
-    assert doc["schema_version"] == BASELINE_SCHEMA_VERSION_V2
-    assert doc["entries"][0]["migrated"] == "verified"
-    # upgraded baseline suppresses like the original
-    code2 = main(["check", str(CORRUPT), "--baseline", str(out), "--json"])
-    data = json.loads(capsys.readouterr().out)
-    assert data["counts"]["by_code"].get("SL101", 0) == 0
-    assert code2 == 0
-
-
-def test_cli_baseline_upgrade_to_stdout(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
-    v1 = _v1_file(tmp_path / "v1.json", ["deadbeefdeadbeef"])
-    code = main(["baseline", "--upgrade", str(v1)])
-    out = capsys.readouterr().out
-    assert code == 0
-    doc = json.loads(out)
-    assert doc["entries"][0]["migrated"] == "unverified"
-
-
-def test_cli_baseline_upgrade_missing_source_fails(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    v1 = _v1_file(tmp_path / "v1.json", ["deadbeefdeadbeef"])
-    code = main(["baseline", "--upgrade", str(v1), "--source", str(tmp_path / "nope.jsonl")])
-    assert code == 2
-    assert "not found" in capsys.readouterr().err.lower()
-
-
 def test_check_missing_baseline_fails(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["check", str(CORRUPT), "--baseline", "nope.json"])
     assert code == 2

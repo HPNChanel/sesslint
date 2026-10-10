@@ -154,7 +154,7 @@ def test_scan_html_summary_and_truncation() -> None:
 def test_cli_check_html(fmt: str, capsys: pytest.CaptureFixture[str]) -> None:
     from sesslint.cli import main
 
-    code = main(["check", "fixtures/cli/check_basic/healthy.jsonl", "--output-format", fmt])
+    code = main(["check", "fixtures/cli/check_basic/healthy.jsonl", "--format", fmt])
     out = capsys.readouterr().out
     assert code == 0
     assert out.startswith("<!DOCTYPE html>")
@@ -164,7 +164,7 @@ def test_cli_check_html(fmt: str, capsys: pytest.CaptureFixture[str]) -> None:
 def test_cli_scan_html(capsys: pytest.CaptureFixture[str]) -> None:
     from sesslint.cli import main
 
-    main(["scan", "fixtures/scan/linkage/chain", "--output-format", "html"])
+    main(["scan", "fixtures/scan/linkage/chain", "--format", "html"])
     out = capsys.readouterr().out
     assert out.startswith("<!DOCTYPE html>")
     assert "Scan report" in out

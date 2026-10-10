@@ -78,7 +78,7 @@ def test_parity_check_file_ambiguity(capsys: pytest.CaptureFixture[str]) -> None
 
 
 def test_parity_check_dir_recursive(capsys: pytest.CaptureFixture[str]) -> None:
-    """api.check_dir produces identical ScanReport data to CLI check --recursive --json."""
+    """api.check_dir produces identical ScanReport data to CLI check --json on a dir."""
     mixed_dir = SCAN_FIXTURES / "mixed"
 
     # Library call
@@ -86,10 +86,13 @@ def test_parity_check_dir_recursive(capsys: pytest.CaptureFixture[str]) -> None:
     lib_json = json.loads(lib_scan.to_json())
 
     # CLI call
-    code = main(["check", str(mixed_dir), "--recursive", "--json"])
+    code = main(["check", str(mixed_dir), "--json"])
     assert code == 1
     cli_out = capsys.readouterr().out
     cli_json = json.loads(cli_out)
+    # The CLI attaches a presentation-layer "summary" (ux T-08) that the
+    # library report deliberately lacks; parity covers the data plane.
+    assert cli_json.pop("summary") is not None
 
     assert lib_json == cli_json
 
@@ -179,27 +182,28 @@ def test_check_detection_failure_json_shape(capsys: pytest.CaptureFixture[str]) 
     assert data["coverage"]["performed"] == []
 
 
-def test_check_policy_flag_rejected(capsys: pytest.CaptureFixture[str]) -> None:
-    """Passing --policy to 'check' command errors with exit code 2 and guidance."""
-    fixture = CLI_FIXTURES / "check_basic" / "healthy.jsonl"
-    code = main(["check", str(fixture), "--policy", "conservative"])
-    assert code == 2
+def _run_cli(argv: list[str]) -> int:
+    try:
+        return main(argv)
+    except SystemExit as exc:
+        return int(exc.code) if exc.code is not None else 0
 
-    err = capsys.readouterr().err
-    assert "Error: The --policy option is only valid for 'repair', not 'check'." in err
+
+def test_check_policy_flag_rejected(capsys: pytest.CaptureFixture[str]) -> None:
+    """Passing --policy to 'check' errors with exit code 2 (flag is repair-only)."""
+    fixture = CLI_FIXTURES / "check_basic" / "healthy.jsonl"
+    code = _run_cli(["check", str(fixture), "--policy", "conservative"])
+    assert code == 2
 
 
 def test_repair_salvage_unsupported_flag_rejected(capsys: pytest.CaptureFixture[str]) -> None:
-    """Passing deprecated --salvage-unsupported to 'repair' errors with exit code 2 and guidance."""
+    """Passing removed --salvage-unsupported to 'repair' exits 2 with a hint."""
     fixture = CLI_FIXTURES / "check_basic" / "healthy.jsonl"
-    code = main(["repair", str(fixture), "--salvage-unsupported"])
+    code = _run_cli(["repair", str(fixture), "--salvage-unsupported"])
     assert code == 2
 
     err = capsys.readouterr().err
-    assert (
-        "Error: The --salvage-unsupported flag has been deprecated and removed. "
-        "Please use '--policy salvage' instead."
-    ) in err
+    assert "--policy salvage" in err
 
 
 def test_parity_scan_command(capsys: pytest.CaptureFixture[str]) -> None:
@@ -219,15 +223,16 @@ def test_parity_scan_command(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli_json == lib_json
 
 
-def test_parity_validate_session(capsys: pytest.CaptureFixture[str]) -> None:
-    """api.validate_session returns Session object matching CLI validate-session output."""
+def test_parity_check_canonical(capsys: pytest.CaptureFixture[str]) -> None:
+    """api.validate_session loads the session that check --adapter canonical accepts."""
     fixture = FIXTURES_ROOT / "canonical" / "minimal.json"
     session = api.validate_session(fixture)
+    assert session.header.session_id
 
-    code = main(["validate-session", str(fixture)])
+    code = main(["check", "--adapter", "canonical", str(fixture)])
     assert code == 0
     out = capsys.readouterr().out
-    assert f"Valid session: {session.header.session_id} ({len(session.events)} events)" in out
+    assert "Valid canonical session" in out
 
 
 def test_parity_check_unified_dispatcher() -> None:

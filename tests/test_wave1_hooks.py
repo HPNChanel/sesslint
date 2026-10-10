@@ -93,7 +93,7 @@ def test_claude_templates_have_no_write_or_loopback_shell_constructs() -> None:
         for hook in entry["hooks"]
     ]
 
-    assert any("--event SessionStart --output claude-json" in command for command in commands)
+    assert any("--event SessionStart --format claude-json" in command for command in commands)
     assert all(
         ">" not in command and "tee " not in command and "--output-file" not in command
         for command in commands

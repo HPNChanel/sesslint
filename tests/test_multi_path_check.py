@@ -60,16 +60,13 @@ def test_multi_path_missing_path_fails(capsys: pytest.CaptureFixture[str]) -> No
     assert "not found" in capsys.readouterr().err.lower()
 
 
-def test_multi_path_dir_requires_recursive(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_multi_path_dir_accepted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["check", str(HEALTHY), str(tmp_path)])
-    assert code == 2
-    assert "directory" in capsys.readouterr().err.lower()
+    assert code == 0
 
 
 def test_multi_path_dir_with_recursive(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["check", "-r", str(HEALTHY), str(tmp_path), "--json"])
+    code = main(["check", str(HEALTHY), str(tmp_path), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert data["totals"]["total"] >= 1
     assert code in (0, 1)

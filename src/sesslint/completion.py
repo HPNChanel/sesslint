@@ -45,6 +45,7 @@ class _Command:
 
     name: str
     flags: tuple[_Flag, ...] = ()
+    aliases: tuple[str, ...] = ()
 
 
 def _clean_help(raw: object) -> str:
@@ -55,13 +56,26 @@ def _clean_help(raw: object) -> str:
 
 
 def _harvest_parser(parser: argparse.ArgumentParser) -> tuple[_Command, ...]:
-    """Harvest subcommands and flags from a live argparse parser."""
+    """Harvest subcommands and flags from a live argparse parser.
+
+    Aliased subparsers (``add_parser(name, aliases=[...])``) share one parser
+    object; only the canonical name has a ``_choices_actions`` entry. Aliases
+    are attached to the canonical command so they complete identically
+    without duplicating entries.
+    """
     commands: list[_Command] = []
     for action in parser._actions:
         choices_obj = getattr(action, "choices", None)
         if not isinstance(action, argparse._SubParsersAction) or not isinstance(choices_obj, dict):
             continue
+        canonical_names = {pseudo.dest for pseudo in action._choices_actions}
+        aliases_by_id: dict[int, list[str]] = {}
         for name in sorted(choices_obj.keys()):
+            if name not in canonical_names:
+                aliases_by_id.setdefault(id(choices_obj[name]), []).append(name)
+        for name in sorted(choices_obj.keys()):
+            if name not in canonical_names:
+                continue
             sub = choices_obj[name]
             flags: list[_Flag] = []
             for sub_action in sub._actions:
@@ -89,13 +103,24 @@ def _harvest_parser(parser: argparse.ArgumentParser) -> tuple[_Command, ...]:
                         help=_clean_help(sub_action.help),
                     )
                 )
-            commands.append(_Command(name=name, flags=tuple(flags)))
+            commands.append(
+                _Command(
+                    name=name,
+                    flags=tuple(flags),
+                    aliases=tuple(sorted(aliases_by_id.get(id(sub), ()))),
+                )
+            )
     return tuple(commands)
+
+
+def _command_words(commands: tuple[_Command, ...]) -> list[str]:
+    """All completable command words: canonical names plus aliases."""
+    return sorted(word for c in commands for word in (c.name, *c.aliases))
 
 
 def _bash_script(commands: tuple[_Command, ...]) -> str:
     """Render a bash completion script."""
-    names = " ".join(c.name for c in commands)
+    names = " ".join(_command_words(commands))
     case_blocks: list[str] = []
     for cmd in commands:
         flag_words = " ".join(o for f in cmd.flags for o in f.options)
@@ -109,7 +134,8 @@ def _bash_script(commands: tuple[_Command, ...]) -> str:
                     f'                    {opt}) COMPREPLY=( $(compgen -W "{values}"'
                     f' -- "$cur") ); return 0 ;;'
                 )
-        block = f'            {cmd.name})\n                opts="{flag_words}"'
+        pattern = "|".join((cmd.name, *cmd.aliases))
+        block = f'            {pattern})\n                opts="{flag_words}"'
         if choice_cases:
             joined_cases = "\n".join(choice_cases)
             block += f'\n                case "$prev" in\n{joined_cases}\n                esac'
@@ -146,7 +172,12 @@ complete -F _{PROG}_complete {PROG}
 
 def _zsh_script(commands: tuple[_Command, ...]) -> str:
     """Render a zsh completion script."""
-    names = " ".join(f"'{c.name}:sesslint {c.name} command'" for c in commands)
+    names = " ".join(
+        [
+            *(f"'{c.name}:sesslint {c.name} command'" for c in commands),
+            *(f"'{a}:alias for sesslint {c.name}'" for c in commands for a in c.aliases),
+        ]
+    )
     case_blocks: list[str] = []
     for cmd in commands:
         specs: list[str] = []
@@ -164,7 +195,8 @@ def _zsh_script(commands: tuple[_Command, ...]) -> str:
                 else:
                     specs.append(f"'{opt}[{safe_help}]'")
         joined = " ".join(specs)
-        case_blocks.append(f"      {cmd.name}) _arguments -s {joined} ;;")
+        pattern = "|".join((cmd.name, *cmd.aliases))
+        case_blocks.append(f"      {pattern}) _arguments -s {joined} ;;")
     cases = "\n".join(case_blocks)
     return f"""#compdef {PROG}
 # {PROG} completion (zsh) - generated at runtime; do not edit.
@@ -187,12 +219,13 @@ _{PROG}
 
 def _fish_script(commands: tuple[_Command, ...]) -> str:
     """Render a fish completion script."""
-    names = " ".join(c.name for c in commands)
+    names = " ".join(_command_words(commands))
     lines = [
         f"# {PROG} completion (fish) - generated at runtime; do not edit.",
         f'complete -c {PROG} -n "__fish_use_subcommand" -a "{names}"',
     ]
     for cmd in commands:
+        seen_words = " ".join((cmd.name, *cmd.aliases))
         for flag in cmd.flags:
             lines.append(f"# {cmd.name} {' '.join(flag.options)}")
             desc = flag.help.replace("'", "")
@@ -203,7 +236,7 @@ def _fish_script(commands: tuple[_Command, ...]) -> str:
                     opt_part = f"-s {opt[1:]}"
                 parts = [
                     f"complete -c {PROG}",
-                    f'-n "__fish_seen_subcommand_from {cmd.name}"',
+                    f'-n "__fish_seen_subcommand_from {seen_words}"',
                     opt_part,
                 ]
                 if flag.choices:
@@ -228,25 +261,27 @@ def _powershell_script(commands: tuple[_Command, ...]) -> str:
     subcommand names, flags, and choice values. Compatible with Windows
     PowerShell 5.1 and pwsh 7 — the common ``-Native`` completer subset.
     """
-    names = ", ".join(_ps_quote(c.name) for c in commands)
+    names = ", ".join(_ps_quote(w) for w in _command_words(commands))
     flag_rows: list[str] = []
     choice_rows: list[str] = []
     help_rows: list[str] = []
     for cmd in commands:
         opts = [o for f in cmd.flags for o in f.options]
-        flag_rows.append(f"    {_ps_quote(cmd.name)} = @({', '.join(_ps_quote(o) for o in opts)})")
+        for word in (cmd.name, *cmd.aliases):
+            flag_rows.append(f"    {_ps_quote(word)} = @({', '.join(_ps_quote(o) for o in opts)})")
         for flag in cmd.flags:
             for opt in flag.options:
-                if flag.choices:
-                    vals = ", ".join(_ps_quote(v) for v in flag.choices)
-                    choice_rows.append(f"    {_ps_quote(cmd.name + ' ' + opt)} = @({vals})")
-                if flag.help:
-                    help_rows.append(
-                        f"    {_ps_quote(cmd.name + ' ' + opt)} = {_ps_quote(flag.help)}"
-                    )
-    flags_table = "\n".join(flag_rows)
-    choices_table = "\n".join(choice_rows)
-    help_table = "\n".join(help_rows)
+                for word in (cmd.name, *cmd.aliases):
+                    if flag.choices:
+                        vals = ", ".join(_ps_quote(v) for v in flag.choices)
+                        choice_rows.append(f"    {_ps_quote(word + ' ' + opt)} = @({vals})")
+                    if flag.help:
+                        help_rows.append(
+                            f"    {_ps_quote(word + ' ' + opt)} = {_ps_quote(flag.help)}"
+                        )
+    flags_table = "\n".join(sorted(flag_rows))
+    choices_table = "\n".join(sorted(choice_rows))
+    help_table = "\n".join(sorted(help_rows))
     return f"""# {PROG} completion (powershell) - generated at runtime; do not edit.
 # Install: paste this script into your $PROFILE, or run:
 #   sesslint completion powershell >> $PROFILE

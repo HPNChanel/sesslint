@@ -43,7 +43,7 @@ def test_claude_print_matches_documented_recipes() -> None:
     entry = ss["hooks"]["SessionStart"][0]
     assert entry["matcher"] == "resume|compact|fork"
     assert entry["hooks"][0]["command"] == (
-        "sesslint hook --event SessionStart --output claude-json || true"
+        "sesslint hook --event SessionStart --format claude-json || true"
     )
     assert pc["hooks"]["PreCompact"][0]["matcher"] == "auto|manual"
     assert pc["hooks"]["PreCompact"][0]["hooks"][0]["command"] == (
@@ -112,12 +112,12 @@ def test_json_shape_is_deterministic() -> None:
 
 
 def test_cli_print_and_json_modes() -> None:
-    res = _run_cli("init-hooks", "--agent", "claude", "--print")
+    res = _run_cli("hook", "--init", "--agent", "claude")
     assert res.returncode == 0
     assert "SessionStart" in res.stdout and "PreCompact" in res.stdout
     assert "PostCompact" in res.stdout and "SessionEnd" in res.stdout
 
-    res = _run_cli("init-hooks", "--agent", "codex", "--json")
+    res = _run_cli("hook", "--init", "--agent", "codex", "--json")
     assert res.returncode == 0
     d = json.loads(res.stdout)
     assert d["agent"] == "codex" and d["files"] == []
@@ -126,7 +126,7 @@ def test_cli_print_and_json_modes() -> None:
 
 def test_command_writes_nothing(tmp_path: Path) -> None:
     """Print-only contract: zero files created or modified under cwd."""
-    res = _run_cli("init-hooks", "--agent", "all", "--print", cwd=tmp_path)
+    res = _run_cli("hook", "--init", "--agent", "all", cwd=tmp_path)
     assert res.returncode == 0
     assert list(tmp_path.iterdir()) == []
     # No stray files anywhere new under the working tree.

@@ -56,13 +56,12 @@ def test_batch_dir_repairs_only_eligible(tmp_path: Path) -> None:
 
 
 def test_batch_cli_mirrors_structure_and_manifest_dir(tmp_path: Path) -> None:
-    """--batch mirrors input tree; --manifest-dir gets sha8-named manifests."""
+    """A directory positional mirrors input tree; --manifest-dir gets manifests."""
     tree = _tree(tmp_path)
     out_dir, man_dir = tmp_path / "out", tmp_path / "man"
     code = main(
         [
             "repair",
-            "--batch",
             str(tree),
             "--output-dir",
             str(out_dir),
@@ -87,20 +86,19 @@ def test_batch_cli_all_eligible_exit_zero(
     tree = tmp_path / "in"
     tree.mkdir()
     shutil.copyfile(BASIC_SRC, tree / "a.jsonl")
-    code = main(["repair", "--batch", str(tree), "--output-dir", str(tmp_path / "out")])
+    code = main(["repair", str(tree), "--output-dir", str(tmp_path / "out")])
     assert code == 0
     out = capsys.readouterr().out
     assert "1 repaired" in out
 
 
 def test_batch_files_mode_flat(tmp_path: Path) -> None:
-    """--files writes flat outputs with adjacent manifests by default."""
+    """Multiple file positionals write flat outputs with adjacent manifests."""
     tree = _tree(tmp_path)
     out_dir = tmp_path / "of"
     code = main(
         [
             "repair",
-            "--files",
             str(tree / "a.jsonl"),
             str(tree / "sub" / "b.jsonl"),
             "--output-dir",
@@ -116,10 +114,10 @@ def test_batch_files_mode_flat(tmp_path: Path) -> None:
 def test_batch_dry_run_preview_no_writes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--batch --dry-run reports eligibility without writing anything."""
+    """Directory batch --dry-run reports eligibility without writing anything."""
     tree = _tree(tmp_path)
     out_dir = tmp_path / "od"
-    code = main(["repair", "--batch", str(tree), "--output-dir", str(out_dir), "--dry-run"])
+    code = main(["repair", str(tree), "--output-dir", str(out_dir), "--dry-run"])
     assert code == 1  # clean+garbage skipped -> partial
     assert not out_dir.exists()
     out = capsys.readouterr().out
@@ -130,13 +128,6 @@ def test_batch_from_scan_report(tmp_path: Path) -> None:
     """--from-scan resolves ~/ paths; unresolvable minimized entries are skipped."""
     tree = _tree(tmp_path)
     rep = tmp_path / "scan.json"
-    code = (
-        main(
-            ["scan", str(tree), "--json", "--output-format", "json"],
-        )
-        if False
-        else None
-    )
     # Build a synthetic scan report: one resolvable absolute path + one .._hash entry.
     rep.write_text(
         json.dumps(
@@ -201,7 +192,7 @@ def test_batch_deterministic(tmp_path: Path) -> None:
 def test_batch_json_summary_shape(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """--json emits sesslint.batch-repair/v1 with counts and rows."""
     tree = _tree(tmp_path)
-    code = main(["repair", "--batch", str(tree), "--output-dir", str(tmp_path / "oj"), "--json"])
+    code = main(["repair", str(tree), "--output-dir", str(tmp_path / "oj"), "--json"])
     assert code == 1
     doc = json.loads(capsys.readouterr().out)
     assert doc["version"] == "sesslint.batch-repair/v1"
@@ -214,10 +205,11 @@ def test_batch_json_summary_shape(tmp_path: Path, capsys: pytest.CaptureFixture[
 @pytest.mark.parametrize(
     "argv,frag",
     [
-        (["repair", "--batch", "d", "--files", "f", "--output-dir", "o"], "mutually exclusive"),
-        (["repair", "--files", "f", "--output-dir", "o", "--output", "x"], "--output-dir"),
-        (["repair", "--batch", "d"], "--output-dir"),
-        (["repair", "--batch", "d", "--output-dir", "o", "--plan-out", "p"], "single-file"),
+        (["repair", "-", "--from-scan", "s.json", "--output-dir", "o"], "cannot be combined"),
+        (["repair", "f1", "f2", "--output-dir", "o", "--output", "x"], "--output-dir"),
+        (["repair", "f1", "f2"], "--output-dir"),
+        (["repair", "d", "e", "--output-dir", "o", "--plan-out", "p"], "single-file"),
+        (["repair", "d", "e", "--output-dir", "o", "--seal", "s"], "single-file"),
     ],
 )
 def test_batch_usage_errors(
@@ -233,6 +225,14 @@ def test_repair_no_source_is_usage_error(capsys: pytest.CaptureFixture[str]) -> 
     """Bare `repair` with neither path nor batch source is a usage error."""
     assert main(["repair"]) == 2
     assert "source path" in capsys.readouterr().err
+
+
+def test_repair_multi_path_without_output_dir_is_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`repair a.jsonl b.jsonl` without --output-dir exits 2."""
+    assert main(["repair", "a.jsonl", "b.jsonl"]) == 2
+    assert "--output-dir" in capsys.readouterr().err
 
 
 def test_batch_report_counts(tmp_path: Path) -> None:

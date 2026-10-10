@@ -75,7 +75,7 @@
       "args": [
         "check",
         "examples/repairable.jsonl",
-        "--output-format",
+        "--format",
         "human"
       ],
       "exit_codes": [
@@ -91,7 +91,7 @@
       "args": [
         "check",
         "examples/repairable.jsonl",
-        "--output-format",
+        "--format",
         "sarif"
       ],
       "exit_codes": [
@@ -107,7 +107,7 @@
       "args": [
         "check",
         "examples/repairable.jsonl",
-        "--output-format",
+        "--format",
         "html"
       ],
       "exit_codes": [
@@ -123,7 +123,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "human"
       ],
       "exit_codes": [
@@ -139,7 +139,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "json"
       ],
       "exit_codes": [
@@ -155,7 +155,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "sarif"
       ],
       "exit_codes": [
@@ -171,7 +171,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "html"
       ],
       "exit_codes": [
@@ -344,7 +344,7 @@
       "args": [
         "check",
         "examples/claude.jsonl",
-        "--format",
+        "--adapter",
         "claude-code-jsonl",
         "--profile",
         "neutral",
@@ -363,7 +363,7 @@
       "args": [
         "check",
         "examples/claude.jsonl",
-        "--format",
+        "--adapter",
         "claude-code-jsonl",
         "--profile",
         "claude-strict",
@@ -382,7 +382,7 @@
       "args": [
         "check",
         "examples/claude.jsonl",
-        "--format",
+        "--adapter",
         "claude-code-jsonl",
         "--profile",
         "openai-strict",
@@ -397,7 +397,7 @@
       "args": [
         "check",
         "examples/codex.jsonl",
-        "--format",
+        "--adapter",
         "codex-rollout",
         "--profile",
         "neutral",
@@ -416,7 +416,7 @@
       "args": [
         "check",
         "examples/codex.jsonl",
-        "--format",
+        "--adapter",
         "codex-rollout",
         "--profile",
         "claude-strict",
@@ -431,7 +431,7 @@
       "args": [
         "check",
         "examples/codex.jsonl",
-        "--format",
+        "--adapter",
         "codex-rollout",
         "--profile",
         "openai-strict",
@@ -450,7 +450,7 @@
       "args": [
         "check",
         "examples/openai.json",
-        "--format",
+        "--adapter",
         "openai-agents",
         "--profile",
         "neutral",
@@ -469,7 +469,7 @@
       "args": [
         "check",
         "examples/openai.json",
-        "--format",
+        "--adapter",
         "openai-agents",
         "--profile",
         "claude-strict",
@@ -484,7 +484,7 @@
       "args": [
         "check",
         "examples/openai.json",
-        "--format",
+        "--adapter",
         "openai-agents",
         "--profile",
         "openai-strict",

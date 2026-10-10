@@ -1,6 +1,6 @@
 """Self-contained HTML report rendering (ux-reporting T-01).
 
-``check``/``scan --output-format html`` emit a single ``.html`` document a
+``sesslint check --format html`` emits a single ``.html`` document a
 human can open and share — the shareable artifact for "show my maintainer
 what broke" without pasting terminal text.
 

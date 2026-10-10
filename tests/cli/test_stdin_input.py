@@ -170,7 +170,7 @@ def test_cli_check_stdin_format_override(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _feed_stdin(monkeypatch, CODEX_HEALTHY.read_bytes())
-    code = main(["check", "-", "--format", "codex-rollout"])
+    code = main(["check", "-", "--adapter", "codex-rollout"])
     assert code == 0
     assert "Valid Codex rollout session" in capsys.readouterr().out
 
@@ -198,8 +198,7 @@ def test_cli_scan_stdin_healthy(
     code = main(["scan", "-"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "<stdin>" in out
-    assert "healthy=1" in out
+    assert "healthy" in out
 
 
 def test_cli_scan_stdin_garbage(
@@ -207,13 +206,12 @@ def test_cli_scan_stdin_garbage(
 ) -> None:
     _feed_stdin(monkeypatch, b"garbage")
     code = main(["scan", "-", "--json"])
-    doc = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    doc = json.loads(captured.out)
     assert code == 0
-    assert doc["root_path"] == "<stdin>"
-    assert doc["totals"]["invalid"] == 0
-    assert doc["totals"]["unsupported"] == 1
-    assert doc["files"][0]["verdict"] == "unsupported"
-    assert "findings" not in doc["files"][0]
+    assert doc["schema_version"] == "sesslint.report/v1"
+    assert doc["session_id"] == "stdin"
+    assert "unsupported" in captured.err.lower()
 
     _feed_stdin(monkeypatch, b"garbage")
     assert main(["scan", "-", "--fail-on-unsupported"]) == 1

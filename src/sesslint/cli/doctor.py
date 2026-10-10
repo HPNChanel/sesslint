@@ -6,7 +6,6 @@ import argparse
 from typing import Final
 
 from sesslint.cli._common import _output_format
-from sesslint.cli._options import add_output_format_option
 
 NAME: Final[str] = "doctor"
 
@@ -36,12 +35,20 @@ def configure(
         default=False,
         help="Skip the bounded per-file check pass (counts only)",
     )
-    add_output_format_option(sub)
-    sub.add_argument(
+    out_group = sub.add_mutually_exclusive_group()
+    out_group.add_argument(
+        "-f",
+        "--format",
+        dest="output_format",
+        choices=["human", "json"],
+        default=None,
+        help="Output format (default: human)",
+    )
+    out_group.add_argument(
         "--json",
         action="store_true",
         default=False,
-        help="Emit sesslint.doctor/v1 JSON (shortcut for --output-format json)",
+        help="Emit sesslint.doctor/v1 JSON (shortcut for --format json)",
     )
     return sub
 

@@ -966,7 +966,7 @@ def test_verify_cli_with_real_manifest(tmp_path: Path, capsys: pytest.CaptureFix
     src.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # 1. Repair via CLI
-    code_rep = main(["repair", str(src), "--out", str(out)])
+    code_rep = main(["repair", str(src), "--output", str(out)])
     assert code_rep == 0
     capsys.readouterr()  # Clear repair stdout
     manifest_p = Path(f"{out}.manifest.json")

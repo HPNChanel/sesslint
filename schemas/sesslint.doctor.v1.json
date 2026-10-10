@@ -7,6 +7,7 @@
   "required": [
     "adapters",
     "config_path",
+    "reader_limits",
     "roots",
     "schema_version",
     "tool_version"
@@ -19,11 +20,42 @@
       "type": "string"
     },
     "adapters": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "array",
-        "items": {"type": "string"}
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "default_profile",
+          "description",
+          "versions_supported"
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "default_profile": {"type": "string"},
+          "description": {"type": "string"},
+          "versions_supported": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "additionalProperties": false
       }
+    },
+    "reader_limits": {
+      "type": "object",
+      "required": [
+        "max_line_bytes",
+        "max_depth",
+        "max_file_bytes",
+        "max_records"
+      ],
+      "properties": {
+        "max_line_bytes": {"type": "integer", "minimum": 1},
+        "max_depth": {"type": "integer", "minimum": 1},
+        "max_file_bytes": {"type": "integer", "minimum": 1},
+        "max_records": {"type": ["integer", "null"], "minimum": 1}
+      },
+      "additionalProperties": false
     },
     "config_path": {
       "type": ["string", "null"]

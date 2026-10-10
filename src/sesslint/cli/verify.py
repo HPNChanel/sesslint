@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final
 
 from sesslint.cli._common import _handle_internal_error, should_color
-from sesslint.cli._options import _add_seal_args
+from sesslint.cli._options import _add_seal_args, add_color_options
 from sesslint.cli._seal import _maybe_append_seal
 
 NAME: Final[str] = "verify"
@@ -71,29 +71,12 @@ def configure(
         default=False,
         help="Output verify verdict as JSON to stdout",
     )
-    sub.add_argument(
-        "--color",
-        choices=["auto", "always", "never"],
-        default=argparse.SUPPRESS,
-        help="Control colored output in human report mode",
-    )
-    sub.add_argument(
-        "--no-color",
-        action="store_true",
-        default=argparse.SUPPRESS,
-        help="Disable ANSI color styling",
-    )
+    add_color_options(sub)
     sub.add_argument(
         "--acknowledge-side-effects",
         action="store_true",
         default=False,
         help="Acknowledge tool side-effects for salvage policy during verify idempotence check",
-    )
-    sub.add_argument(
-        "--include-content",
-        action="store_true",
-        default=argparse.SUPPRESS,
-        help="Embed raw transcript content (warning: emits raw sensitive data)",
     )
     _add_seal_args(sub)
     return sub

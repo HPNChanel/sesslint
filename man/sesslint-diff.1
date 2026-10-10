@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-diff \- [read\-only] Structurally diff two session files.
 .SH SYNOPSIS
-.B sesslint diff [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-format\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-format\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-output\-format {human,json}] [\-\-json] A B
+.B sesslint diff [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-adapter\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-adapter\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-f | \-\-format {human,json}] [\-\-json] A B
 .SH DESCRIPTION
 [read\-only] Compare two session files by event identity (not text diff): added/removed events, kind changes, parent relinks, sequence reorders, content changes (hash only).
 .SH ARGUMENTS
@@ -14,20 +14,20 @@ Path to the first session file
 Path to the second session file
 .SH OPTIONS
 .TP
-.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
 Session format adapter for both inputs (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
-.B \-\-format\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
-Format override for input A only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
+.B \-\-adapter\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Adapter override for input A only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
-.B \-\-format\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
-Format override for input B only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
+.B \-\-adapter\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Adapter override for input B only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
-.B \-\-output\-format {human,json}
+.B \-f {human,json}, \-\-format {human,json}
 Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
-Emit sesslint.diff/v1 JSON (shortcut for \-\-output\-format json)
+Emit sesslint.diff/v1 JSON (shortcut for \-\-format json)
 .SH EXIT STATUS
 .TP
 .B 0
@@ -45,7 +45,7 @@ or live-DB path refusal.
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

@@ -94,7 +94,7 @@ def _write_baseline_arg(args: argparse.Namespace, findings: Iterable[Finding]) -
 
 
 def _output_format(args: argparse.Namespace) -> str:
-    """Resolve the effective output format: --json wins, else --output-format."""
+    """Resolve the effective output format: --json wins, else --format."""
     if getattr(args, "json", False):
         return "json"
     return getattr(args, "output_format", None) or "human"
@@ -122,8 +122,8 @@ def _apply_config(args: argparse.Namespace, cfg: Mapping[str, Any]) -> None:
         args.max_files = cfg.get("max_files", 10000)
     if getattr(args, "max_bytes", None) is None:
         args.max_bytes = cfg.get("max_bytes", 1024 * 1024 * 1024)
-    if getattr(args, "format", None) is None:
-        args.format = cfg.get("format", "auto")
+    if getattr(args, "adapter", None) is None:
+        args.adapter = cfg.get("adapter", "auto")
     if getattr(args, "profile", None) is None:
         args.profile = cfg.get("profile", "neutral")
     if getattr(args, "confidence_min", None) is None:

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (0.5.0 breaking CLI)
+
+- `scan` is now an alias of `check`; directory inputs are always recursive
+  (`-r`/`--recursive` removed). `--adapter` selects the input adapter;
+  `-f`/`--format` selects the output format (replacing `--output-format`).
+- Removed commands `validate-session`, `baseline`, `formats` and `init-hooks`
+  exit 2 with migration hints (`check --adapter canonical`, check baseline
+  flags, `doctor`, `hook --init`). Removed flags likewise exit 2 with hints.
+- `repair` takes positional paths for batch mode with `--output-dir`; the
+  `--batch`, `--files`, `--out` and `--salvage-unsupported` flags are removed.
+- The `format` config key is renamed to `adapter`; the old key raises a
+  `ConfigError` explaining the rename.
+
 ### Added
 
 - Read-only `triage` CLI/API and `sesslint.triage/v1`: shared source snapshot,

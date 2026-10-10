@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-triage \- [read\-only] Diagnose a session and explain the next steps.
 .SH SYNOPSIS
-.B sesslint triage [\-\-agent {claude,codex}] [\-\-latest] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy {conservative,salvage}] [\-\-state\-copy STATE_COPY] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-output\-format {human,json}] [\-\-json] [PATH]
+.B sesslint triage [\-\-agent {claude,codex}] [\-\-latest] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy {conservative,salvage}] [\-\-state\-copy STATE_COPY] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-include\-content] [\-f | \-\-format {human,json}] [\-\-json] [PATH]
 .SH DESCRIPTION
 Content\-free evidence and repair previews; never repairs or resumes.
 .SH ARGUMENTS
@@ -16,7 +16,7 @@ Choices: claude, codex.
 .TP
 .B \-\-latest
 .TP
-.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
 Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-profile PROFILE
@@ -30,8 +30,11 @@ Optional closed Codex registry copy outside live agent storage (no WAL).
 .B \-\-max\-file\-bytes MAX_FILE_BYTES
 Default: 104857600.
 .TP
-.B \-\-output\-format {human,json}
-Choices: human, json.
+.B \-\-include\-content
+[Invalid for triage] Triage never emits transcript content.
+.TP
+.B \-f {human,json}, \-\-format {human,json}
+Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
 .SH EXIT STATUS
@@ -51,7 +54,7 @@ or live-DB path refusal.
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

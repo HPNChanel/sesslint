@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final
 
 from sesslint.cli._common import _handle_internal_error
-from sesslint.cli._options import add_format_option
+from sesslint.cli._options import add_adapter_option
 
 NAME: Final[str] = "export"
 
@@ -31,15 +31,14 @@ def configure(
         help="Path to session file (.json or .jsonl)",
     )
     sub.add_argument(
-        "--output",
-        "--out",
         "-o",
+        "--output",
         type=Path,
         default=None,
         dest="output",
         help="Path to output canonical file (required)",
     )
-    add_format_option(sub)
+    add_adapter_option(sub)
     sub.add_argument(
         "--json",
         action="store_true",
@@ -63,7 +62,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         summary = api.export_file(
             source_path=args.path,
             output_path=args.output,
-            format=getattr(args, "format", "auto"),
+            format=getattr(args, "adapter", "auto"),
         )
     except ExportRefused as err:
         print(f"Export refused [{err.code}]: {err}", file=sys.stderr)

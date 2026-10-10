@@ -1,4 +1,4 @@
-"""SessLint command line interface."""
+"""SessLint command-line interface — parser construction and dispatch."""
 
 from __future__ import annotations
 
@@ -6,16 +6,20 @@ import argparse
 import io
 import sys
 from collections.abc import Sequence
+from typing import Final
 
 from sesslint import __version__, api
-from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
-from sesslint.cli._common import FORMAT_DISPLAY_NAMES, _handle_internal_error, should_color
-from sesslint.cli._options import add_policy_option
-from sesslint.cli._registry import COMMANDS
+from sesslint.cli._common import (
+    FORMAT_DISPLAY_NAMES,
+    _handle_internal_error,
+    should_color,
+)
+from sesslint.cli._options import add_color_options
+from sesslint.cli._registry import COMMANDS, REMOVED_COMMANDS, REMOVED_FLAGS, build_dispatch
 from sesslint.cli._render import format_scan_report_human
 from sesslint.progress import OperationCancelled
 
-__all__ = [
+__all__: Final = [
     "FORMAT_DISPLAY_NAMES",
     "_handle_internal_error",
     "create_parser",
@@ -25,11 +29,12 @@ __all__ = [
     "should_color",
 ]
 
+# Test-facing monkeypatch alias for the canonical session reader (v0.4.x name).
 load_session_file = api.validate_session
 
 
 def create_parser() -> argparse.ArgumentParser:
-    """Create the argument parser for sesslint CLI."""
+    """Build the top-level argparse parser."""
     parser = argparse.ArgumentParser(
         prog="sesslint",
         description=(
@@ -45,51 +50,54 @@ def create_parser() -> argparse.ArgumentParser:
             "  - sesslint makes no semantic or side-effect safety claims"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {__version__}",
+        version=f"sesslint {__version__}",
     )
-    parser.add_argument(
-        "--include-content",
-        action="store_true",
-        default=False,
-        help="Embed raw transcript content in reports (warning: emits raw sensitive data)",
-    )
-
-    parser.add_argument(
-        "--format",
-        choices=sorted(VALID_FORMAT_OPTIONS),
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--profile",
-        default=argparse.SUPPRESS,
-        help="Replay validation profile (default: neutral)",
-    )
-    add_policy_option(parser)
-    parser.add_argument(
-        "--color",
-        choices=["auto", "always", "never"],
-        default="auto",
-        help="Control colored terminal output (default: auto)",
-    )
-    parser.add_argument(
-        "--no-color",
-        action="store_true",
-        help="Disable ANSI color styling (equivalent to NO_COLOR=1)",
-    )
-
-    subparsers = parser.add_subparsers(dest="command")
+    add_color_options(parser, root=True)
+    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     for command in COMMANDS:
         command.configure(subparsers)
-
+    # Prefix matching would resurrect removed flags (e.g. --out -> --output).
+    seen: set[int] = set()
+    for sub in subparsers.choices.values():
+        if id(sub) not in seen:
+            seen.add(id(sub))
+            sub.allow_abbrev = False
     return parser
 
 
-_COMMANDS_BY_NAME = {command.name: command for command in COMMANDS}
+def _removed_command_hint(argv: Sequence[str]) -> str | None:
+    """Return a removal hint for the first non-dash token, if it names a removed command."""
+    for token in argv:
+        if token.startswith("-"):
+            continue
+        replacement = REMOVED_COMMANDS.get(token)
+        if replacement is None:
+            return None
+        return f"Error: '{token}' was removed in 0.5.0; use: {replacement}"
+    return None
+
+
+def _removed_flag_hint(argv: Sequence[str]) -> str | None:
+    """Return a hint line for the first removed flag in argv, else None."""
+    from sesslint.adapters import VALID_FORMAT_OPTIONS
+
+    for index, token in enumerate(argv):
+        flag, sep, _value = token.partition("=")
+        if (
+            flag == "--format"
+            and not sep
+            and index + 1 < len(argv)
+            and argv[index + 1] in VALID_FORMAT_OPTIONS
+        ):
+            return "hint: '--format' now selects the output format; use '--adapter <name>'"
+        if flag in REMOVED_FLAGS:
+            return f"hint: '{flag}' was removed in 0.5.0; use {REMOVED_FLAGS[flag]}"
+    return None
 
 
 def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
@@ -100,22 +108,12 @@ def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         )
         sys.stderr.flush()
 
-    # --policy only takes effect on 'repair'; warn instead of silently ignoring
-    # (e.g. 'sesslint --policy salvage check' reads as if it applies).
-    if (
-        getattr(args, "command", None) not in (None, "repair", "triage")
-        and getattr(args, "policy", None) is not None
-    ):
-        sys.stderr.write(
-            f"WARNING: --policy has no effect on '{args.command}' (it only applies to 'repair')\n"
-        )
-        sys.stderr.flush()
-
     if args.command is None:
         parser.print_help(sys.stdout)
         return 2
 
-    command = _COMMANDS_BY_NAME.get(args.command)
+    dispatch = build_dispatch()
+    command = dispatch.get(str(args.command))
     if command is not None:
         return command.run(args, parser)
     return 0
@@ -130,8 +128,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
+
+    argv_tokens: Sequence[str] = list(argv) if argv is not None else sys.argv[1:]
+
+    # Removed-surface compatibility hints (pre-parse, pure). Command hints
+    # replace argparse output entirely; flag hints precede argparse's own
+    # usage error (exit 2 either way).
+    cmd_hint = _removed_command_hint(argv_tokens)
+    if cmd_hint is not None:
+        print(cmd_hint, file=sys.stderr)
+        return 2
+    flag_hint = _removed_flag_hint(argv_tokens)
+    if flag_hint is not None:
+        print(flag_hint, file=sys.stderr)
+
     parser = create_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_tokens)
 
     try:
         return _dispatch(args, parser)

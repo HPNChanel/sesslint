@@ -30,7 +30,7 @@ _PYPROJECT_SECTION: Final = ("tool", "sesslint")
 _ALLOWED_KEYS: Final = frozenset(
     {
         "profile",
-        "format",
+        "adapter",
         "policy",
         "fail_on",
         "select",
@@ -49,7 +49,7 @@ _ALLOWED_KEYS: Final = frozenset(
     }
 )
 
-_STR_KEYS: Final = frozenset({"profile", "format", "policy", "fail_on"})
+_STR_KEYS: Final = frozenset({"profile", "adapter", "policy", "fail_on"})
 _BOOL_KEYS: Final = frozenset({"skip_undetected", "fail_on_unsupported"})
 _FLOAT_KEYS: Final = frozenset({"confidence_min", "margin_min"})
 _INT_KEYS: Final = frozenset(
@@ -60,7 +60,7 @@ _LIST_KEYS: Final = frozenset({"select", "ignore", "exclude", "ext"})
 _ENUM_VALUES: Final = {
     "fail_on": ("error", "warning"),
     "policy": ("conservative", "salvage"),
-    "format": tuple(sorted(VALID_FORMATS)),
+    "adapter": tuple(sorted(VALID_FORMATS)),
 }
 
 
@@ -113,6 +113,10 @@ def find_config_file(start: Path) -> Path | None:
 
 
 def _validate_keys(cfg: dict[str, Any], source: Path) -> dict[str, Any]:
+    if "format" in cfg:
+        raise ConfigError(
+            f"Config key 'format' was renamed to 'adapter' in 0.5.0; rename the key in {source}"
+        )
     unknown = sorted(set(cfg) - _ALLOWED_KEYS)
     if unknown:
         raise ConfigError(

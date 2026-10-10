@@ -1,27 +1,31 @@
 .TH SESSLINT-CHECK 1 "" "SessLint 0.4.1" "SessLint Manual"
 .SH NAME
-sesslint-check \- [read\-only] Check a session file with auto\-detection.
+sesslint-check \- [read\-only] Check session artifacts (files, directories, or agent session roots).
 .SH SYNOPSIS
-.B sesslint check [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy CHECK_POLICY] [\-\-recursive | \-r] [\-\-follow\-symlinks] [\-\-max\-files MAX_FILES] [\-\-max\-bytes MAX_BYTES] [\-\-json] [\-\-output\-format {human,json,sarif,html}] [\-\-progress\-json] [\-\-color {auto,always,never}] [\-\-no\-color] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-skip\-undetected] [\-\-fail\-on {error,warning}] [\-\-config PATH] [\-\-select CODES] [\-\-ignore CODES] [\-\-baseline PATH] [\-\-write\-baseline PATH] [\-\-exclude GLOB] [\-\-ext EXT] [\-\-include\-content] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-timestamp\-skew\-ms TIMESTAMP_SKEW_MS] [\-\-fail\-on\-unsupported] PATH...
+.B sesslint check [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-agent {claude,codex,all}] [\-\-latest] [\-\-include\-archived] [\-\-follow\-symlinks] [\-\-max\-files MAX_FILES] [\-\-max\-bytes MAX_BYTES] [\-\-json] [\-f | \-\-format {human,json,sarif,html}] [\-\-progress\-json] [\-\-top N] [\-\-group\-by {code,none}] [\-\-jobs N] [\-\-incremental] [\-\-cache\-dir DIR] [\-\-color {auto,always,never}] [\-\-no\-color] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-skip\-undetected] [\-\-fail\-on {error,warning}] [\-\-config PATH] [\-\-select CODES] [\-\-ignore CODES] [\-\-baseline PATH] [\-\-write\-baseline PATH] [\-\-exclude GLOB] [\-\-ext EXT] [\-\-include\-content] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-timestamp\-skew\-ms TIMESTAMP_SKEW_MS] [\-\-fail\-on\-unsupported] [\-\-max\-findings\-per\-code MAX_FINDINGS_PER_CODE] [\-\-newest N] [\-\-since YYYY\-MM\-DD] PATH...
 .SH DESCRIPTION
-[read\-only] Check a session file for structural defects, causal breaks, and schema violations.
+[read\-only] Check session artifacts for structural defects, causal breaks, and schema violations. Positional targets may be files, directories (scanned recursively), or '\-' to read one session file from stdin. 'scan' is an alias for this command.
+\&'sesslint scan' is an alias for 'sesslint check'.
 .SH ARGUMENTS
 .TP
 .B PATH
-Path(s) to session file(s) (.json or .jsonl) or directories. Multiple paths produce one aggregated scan report. '\-' reads one session artifact from stdin (max 100 MB).
+Path(s) to session file(s) (.json or .jsonl) or directories. Multiple paths produce one aggregated scan report. '\-' reads one session artifact from stdin (max 100 MB). Omit PATH only when using \-\-agent.
 .SH OPTIONS
 .TP
-.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
 Session format adapter (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-profile PROFILE
 Replay validation profile (default: neutral)
 .TP
-.B \-\-policy CHECK_POLICY
-[Invalid for check] Repair policy is only applicable to 'repair'
+.B \-\-agent {claude,codex,all}
+Scan well\-known session roots for an agent runtime ($CLAUDE_CONFIG_DIR/projects or ~/.claude/projects; $CODEX_HOME/sessions or ~/.codex/sessions). Explicit PATH overrides. Choices: claude, codex, all.
 .TP
-.B \-\-recursive, \-r
-Recursively scan directory trees for session artifacts
+.B \-\-latest
+Check only the newest primary ledger for \-\-agent claude|codex
+.TP
+.B \-\-include\-archived
+Include Codex archived_sessions during agent discovery
 .TP
 .B \-\-follow\-symlinks
 [lossy: follows links] Follow directory symlinks during recursive scanning
@@ -35,14 +39,29 @@ Maximum cumulative bytes to read during recursive scan (default: 1GB)
 .B \-\-json
 Output check report as a single canonical JSON document to stdout
 .TP
-.B \-\-output\-format {human,json,sarif,html}
+.B \-f {human,json,sarif,html}, \-\-format {human,json,sarif,html}
 Output format (default: human; \-\-json is equivalent to 'json') Choices: human, json, sarif, html.
 .TP
 .B \-\-progress\-json
 Emit NDJSON progress events to stderr (stdout stays the result channel)
 .TP
+.B \-\-top N
+Show up to N worst files in the report summary (default: 10; 0 disables the worst\-files view) Default: 10.
+.TP
+.B \-\-group\-by {code,none}
+Summary grouping: 'code' aggregates findings by rule code (default), 'none' disables Choices: code, none. Default: code.
+.TP
+.B \-\-jobs N
+Parallel worker processes for per\-file analysis (default: 1 = sequential; 'auto' or 0 = CPU count). Report output is identical for any N; only wall time changes. Ignored for single\-file input. Default: 1.
+.TP
+.B \-\-incremental
+Reuse cached per\-file results when content is provably unchanged (sqlite cache; findings/verdicts identical, hits marked 'cache: hit')
+.TP
+.B \-\-cache\-dir DIR
+Override the incremental cache directory (default: SESSLINT_CACHE_DIR or platform cache location)
+.TP
 .B \-\-color {auto,always,never}
-Control colored output in human report mode (default: auto) Choices: auto, always, never.
+Control colored terminal output (default: auto) Choices: auto, always, never.
 .TP
 .B \-\-no\-color
 Disable ANSI color styling
@@ -100,6 +119,15 @@ Allowed backwards timestamp skew in milliseconds (default: 2000)
 .TP
 .B \-\-fail\-on\-unsupported
 Exit 1 for unsupported formats as well as invalid inputs
+.TP
+.B \-\-max\-findings\-per\-code MAX_FINDINGS_PER_CODE
+Maximum displayed samples per code per file (default: 20)
+.TP
+.B \-\-newest N
+Inspect the N most recently modified session files
+.TP
+.B \-\-since YYYY\-MM\-DD
+Inspect files modified on/after this absolute UTC date
 .SH EXIT STATUS
 .TP
 .B 0
@@ -117,7 +145,7 @@ or live-DB path refusal.
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-completion(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-completion(1), sesslint\-diff(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

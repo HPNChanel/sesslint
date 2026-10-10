@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-bundle \- [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .SH SYNOPSIS
-.B sesslint bundle [\-\-output | \-\-out | \-o OUTPUT] [\-\-json] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-strict\-share] PATH
+.B sesslint bundle [\-o | \-\-output OUTPUT] [\-\-json] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-strict\-share] PATH
 .SH DESCRIPTION
 [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .SH ARGUMENTS
@@ -11,13 +11,13 @@ sesslint-bundle \- [read\-only] Generate a privacy\-safe diagnostic support bund
 Path to session file (.json or .jsonl)
 .SH OPTIONS
 .TP
-.B \-\-output OUTPUT, \-\-out OUTPUT, \-o OUTPUT
+.B \-o OUTPUT, \-\-output OUTPUT
 Path to output bundle JSON file
 .TP
 .B \-\-json
 Output bundle as JSON to stdout
 .TP
-.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
 Session format adapter (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
 .B \-\-profile PROFILE
@@ -48,7 +48,7 @@ or live-DB path refusal.
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-check(1), sesslint\-completion(1).
+sesslint(1), sesslint\-check(1), sesslint\-completion(1), sesslint\-diff(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

@@ -27,7 +27,7 @@ def configure(
     sub.add_argument("path", type=Path, nargs="?")
     sub.add_argument("--agent", choices=["claude", "codex"])
     sub.add_argument("--latest", action="store_true")
-    sub.add_argument("--format", choices=sorted(VALID_FORMAT_OPTIONS), default=argparse.SUPPRESS)
+    sub.add_argument("--adapter", choices=sorted(VALID_FORMAT_OPTIONS), default=argparse.SUPPRESS)
     sub.add_argument("--profile", default=argparse.SUPPRESS)
     sub.add_argument(
         "--policy",
@@ -43,8 +43,22 @@ def configure(
     sub.add_argument(
         "--max-file-bytes", type=_validate_positive_int, default=DEFAULT_MAX_FILE_BYTES
     )
-    sub.add_argument("--output-format", choices=["human", "json"])
-    sub.add_argument("--json", action="store_true")
+    sub.add_argument(
+        "--include-content",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="[Invalid for triage] Triage never emits transcript content.",
+    )
+    out_group = sub.add_mutually_exclusive_group()
+    out_group.add_argument(
+        "-f",
+        "--format",
+        dest="output_format",
+        choices=["human", "json"],
+        default=None,
+        help="Output format (default: human)",
+    )
+    out_group.add_argument("--json", action="store_true")
     return sub
 
 
@@ -65,7 +79,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         target = path if path is not None else latest_session(args.agent)
         triage_result = triage(
             target,
-            format=getattr(args, "format", None),
+            format=getattr(args, "adapter", None),
             profile=getattr(args, "profile", "neutral"),
             policy=getattr(args, "policy", "conservative"),
             state_copy=args.state_copy,

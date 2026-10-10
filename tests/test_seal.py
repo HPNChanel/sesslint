@@ -259,7 +259,7 @@ def test_empty_ledger_verifies_zero(tmp_path: Path) -> None:
 
 def test_cli_check_seal_appends(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     ledger = tmp_path / "ledger.jsonl"
-    code = main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+    code = main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     assert code == 0
     assert "sealed: seq 1" in capsys.readouterr().err
     entries = _lines(ledger)
@@ -273,7 +273,7 @@ def test_cli_check_seal_appends(tmp_path: Path, capsys: pytest.CaptureFixture[st
 
 def test_cli_check_seal_invalid_verdict(tmp_path: Path) -> None:
     ledger = tmp_path / "ledger.jsonl"
-    code = main(["check", str(DANGLING), "--format", "codex-rollout", "--seal", str(ledger)])
+    code = main(["check", str(DANGLING), "--adapter", "codex-rollout", "--seal", str(ledger)])
     assert code == 1  # finding still fails the command
     e = _lines(ledger)[0]
     assert e["verdict"] == "invalid"
@@ -283,7 +283,7 @@ def test_cli_check_seal_invalid_verdict(tmp_path: Path) -> None:
 def test_cli_check_seal_chain_grows(tmp_path: Path) -> None:
     ledger = tmp_path / "ledger.jsonl"
     for _ in range(2):
-        main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+        main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     entries = _lines(ledger)
     assert [e["seq"] for e in entries] == [1, 2]
     assert entries[1]["prev_sha256"] == entries[0]["entry_sha256"]
@@ -295,7 +295,7 @@ def test_cli_check_seal_no_path(tmp_path: Path) -> None:
         [
             "check",
             str(HEALTHY),
-            "--format",
+            "--adapter",
             "codex-rollout",
             "--seal",
             str(ledger),
@@ -311,8 +311,7 @@ def test_cli_check_seal_refuses_dir(tmp_path: Path) -> None:
         [
             "check",
             str(CODEX),
-            "-r",
-            "--format",
+            "--adapter",
             "codex-rollout",
             "--seal",
             str(ledger),
@@ -329,7 +328,7 @@ def test_cli_check_seal_refuses_multi_path(tmp_path: Path) -> None:
             "check",
             str(HEALTHY),
             str(DANGLING),
-            "--format",
+            "--adapter",
             "codex-rollout",
             "--seal",
             str(ledger),
@@ -341,9 +340,9 @@ def test_cli_check_seal_refuses_multi_path(tmp_path: Path) -> None:
 
 def test_cli_check_seal_refuses_divergent_ledger(tmp_path: Path) -> None:
     ledger = tmp_path / "ledger.jsonl"
-    main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     ledger.write_text(ledger.read_text().replace("healthy", "invalid"))
-    code = main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+    code = main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     assert code == 2
     assert len(_lines(ledger)) == 1  # never extended
 
@@ -352,7 +351,7 @@ def test_cli_check_seal_deterministic_modulo_clock(tmp_path: Path) -> None:
     a = tmp_path / "a.jsonl"
     b = tmp_path / "b.jsonl"
     for led in (a, b):
-        main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(led)])
+        main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(led)])
     ea, eb = _lines(a)[0], _lines(b)[0]
     for k in set(ea) | set(eb):
         if k not in ("sealed_at", "entry_sha256"):  # entry hash covers the clock
@@ -373,7 +372,7 @@ def test_cli_check_seal_stdin_omits_path(tmp_path: Path, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(sys, "stdin", _FakeStdin())
     ledger = tmp_path / "ledger.jsonl"
-    code = main(["check", "-", "--format", "codex-rollout", "--seal", str(ledger)])
+    code = main(["check", "-", "--adapter", "codex-rollout", "--seal", str(ledger)])
     assert code == 0
     e = _lines(ledger)[0]
     assert e["file_sha256"] == seal.sha256_bytes(data)
@@ -388,7 +387,7 @@ def test_cli_check_seal_content_free(tmp_path: Path) -> None:
         '{"actor":"user","id":"e1","kind":"message","parent_id":null,'
         f'"payload":{{"text":"{secret}"}},"seq":0,"ts":"2026-09-06T00:00:00Z"}}\n'
     )
-    main(["check", str(bad), "--format", "canonical", "--seal", str(ledger)])
+    main(["check", str(bad), "--adapter", "canonical", "--seal", str(ledger)])
     text = ledger.read_text()
     assert secret not in text
     assert "healthy_min" not in text  # unrelated paths never leak
@@ -399,7 +398,7 @@ def test_cli_check_seal_content_free(tmp_path: Path) -> None:
 
 def test_cli_seal_verify_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     ledger = tmp_path / "ledger.jsonl"
-    main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     capsys.readouterr()
     code = main(["seal", "--verify", str(ledger)])
     assert code == 0
@@ -408,7 +407,7 @@ def test_cli_seal_verify_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
 
 def test_cli_seal_verify_divergence(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     ledger = tmp_path / "ledger.jsonl"
-    main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     ledger.write_text(ledger.read_text().replace("healthy", "invalid"))
     code = main(["seal", "--verify", str(ledger)])
     assert code == 1
@@ -417,7 +416,7 @@ def test_cli_seal_verify_divergence(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 def test_cli_seal_verify_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     ledger = tmp_path / "ledger.jsonl"
-    main(["check", str(HEALTHY), "--format", "codex-rollout", "--seal", str(ledger)])
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
     capsys.readouterr()
     code = main(["seal", "--verify", str(ledger), "--json"])
     assert code == 0
@@ -465,7 +464,7 @@ def test_cli_repair_seal(tmp_path: Path) -> None:
     src = REPAIR_FIXTURES / "basic" / "source.jsonl"
     out = tmp_path / "repaired.jsonl"
     ledger = tmp_path / "ledger.jsonl"
-    code = main(["repair", str(src), "--out", str(out), "--seal", str(ledger)])
+    code = main(["repair", str(src), "--output", str(out), "--seal", str(ledger)])
     assert code == 0
     e = _lines(ledger)[0]
     assert e["tool"] == "repair" and e["verdict"] == "repaired"
@@ -482,7 +481,7 @@ def test_cli_repair_seal_refuses_dry_run(tmp_path: Path) -> None:
         [
             "repair",
             str(src),
-            "--out",
+            "--output",
             str(tmp_path / "out.jsonl"),
             "--dry-run",
             "--seal",
@@ -523,7 +522,6 @@ def test_cli_repair_seal_refuses_batch(tmp_path: Path) -> None:
     code = main(
         [
             "repair",
-            "--batch",
             str(REPAIR_FIXTURES / "basic"),
             "--output-dir",
             str(tmp_path / "out"),

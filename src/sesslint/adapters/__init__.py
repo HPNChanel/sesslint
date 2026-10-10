@@ -60,6 +60,44 @@ from sesslint.adapters.synthetic import (
     synthetic_event_id,
 )
 
+
+def supported_adapters() -> list[dict[str, object]]:
+    """Return supported-adapter metadata rows (name, profile, description, versions)."""
+    from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
+    from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
+    from sesslint.adapters.codex_rollout import SUPPORTED_CODEX_ROLLOUT_VERSIONS
+    from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
+
+    return [
+        {
+            "name": "canonical",
+            "default_profile": "neutral",
+            "description": (
+                "sesslint.session/v1 canonical JSONL (SessLint's own interchange format)"
+            ),
+            "versions_supported": sorted(SUPPORTED_CANONICAL_VERSIONS),
+        },
+        {
+            "name": "claude-code-jsonl",
+            "default_profile": "claude-strict",
+            "description": "Claude Code JSONL (per-turn records incl. snapshots/hooks)",
+            "versions_supported": sorted(SUPPORTED_CLAUDE_VERSIONS),
+        },
+        {
+            "name": "codex-rollout",
+            "default_profile": "openai-strict",
+            "description": "Codex rollout/session_meta + response_item records",
+            "versions_supported": sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS),
+        },
+        {
+            "name": "openai-agents",
+            "default_profile": "openai-strict",
+            "description": "OpenAI Agents SDK session export (session + item arrays)",
+            "versions_supported": sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS),
+        },
+    ]
+
+
 __all__ = [
     "CONFIDENCE_MIN",
     "CanonicalEvent",
@@ -97,6 +135,7 @@ __all__ = [
     "project_run_state",
     "resolve_format",
     "safe_discriminator",
+    "supported_adapters",
     "safe_type_value",
     "synthetic_event_id",
     "to_source_block",

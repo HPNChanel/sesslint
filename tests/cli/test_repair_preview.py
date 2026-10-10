@@ -89,7 +89,7 @@ def test_preview_deterministic(tmp_path: Path) -> None:
         ["--output", "o.jsonl"],
         ["--plan-out", "p.json"],
         ["--emit", "canonical"],
-        ["--files", "x"],
+        ["--apply-plan", "p.json"],
     ],
 )
 def test_preview_conflicts_exit_2(

@@ -41,7 +41,7 @@ def _write_jsonl(path: Path, recs: list[dict[str, object]]) -> Path:
 def test_diff_identical_exit_0(tmp_path: Path) -> None:
     a = _write_jsonl(tmp_path / "a.jsonl", _claude_records(4))
     b = _write_jsonl(tmp_path / "b.jsonl", _claude_records(4))
-    assert main(["diff", str(a), str(b), "--format", "claude-code-jsonl"]) == 0
+    assert main(["diff", str(a), str(b), "--adapter", "claude-code-jsonl"]) == 0
 
 
 def test_diff_self_exit_0() -> None:
@@ -141,7 +141,7 @@ def test_diff_content_changed(tmp_path: Path) -> None:
 def test_diff_json_output_schema(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     a = _write_jsonl(tmp_path / "a.jsonl", _claude_records(3))
     b = _write_jsonl(tmp_path / "b.jsonl", _claude_records(4))
-    rc = main(["diff", str(a), str(b), "--format", "claude-code-jsonl", "--json"])
+    rc = main(["diff", str(a), str(b), "--adapter", "claude-code-jsonl", "--json"])
     assert rc == 1
     out = json.loads(capsys.readouterr().out)
     assert out["schema_version"] == DIFF_SCHEMA_VERSION
@@ -215,7 +215,7 @@ def test_diff_no_payload_in_output(tmp_path: Path, capsys: pytest.CaptureFixture
     recs_b = [dict(r, message="SECRET_PAYLOAD_XYZ") for r in recs_a]
     a = _write_jsonl(tmp_path / "a.jsonl", recs_a)
     b = _write_jsonl(tmp_path / "b.jsonl", recs_b)
-    main(["diff", str(a), str(b), "--format", "claude-code-jsonl"])
+    main(["diff", str(a), str(b), "--adapter", "claude-code-jsonl"])
     out = capsys.readouterr().out
     assert "SECRET_PAYLOAD_XYZ" not in out
     assert "text 1" not in out

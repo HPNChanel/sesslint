@@ -33,14 +33,14 @@ def test_default_mode_never_leaks_seeded_secret(capsys: pytest.CaptureFixture[st
     claude_fixture = FIXTURES_DIR / "claude_secret.jsonl"
 
     # 1. Human check mode
-    code = main(["check", str(claude_fixture), "--format", "claude-code-jsonl"])
+    code = main(["check", str(claude_fixture), "--adapter", "claude-code-jsonl"])
     assert code == 0
     captured = capsys.readouterr()
     assert token not in captured.out
     assert token not in captured.err
 
     # 2. JSON check mode
-    code_json = main(["check", str(claude_fixture), "--format", "claude-code-jsonl", "--json"])
+    code_json = main(["check", str(claude_fixture), "--adapter", "claude-code-jsonl", "--json"])
     assert code_json == 0
     captured_json = capsys.readouterr()
     assert token not in captured_json.out
@@ -134,7 +134,7 @@ def test_include_content_embeds_token_and_adds_warnings(
         [
             "check",
             str(claude_fixture),
-            "--format",
+            "--adapter",
             "claude-code-jsonl",
             "--json",
             "--include-content",
@@ -179,7 +179,7 @@ def test_failing_fixture_with_unknown_critical_secret_does_not_leak(
     }
     fixture.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-    code = main(["check", str(fixture), "--format", "claude-code-jsonl", "--json"])
+    code = main(["check", str(fixture), "--adapter", "claude-code-jsonl", "--json"])
     assert code == 1  # Failing session
     captured = capsys.readouterr()
 
@@ -205,7 +205,7 @@ def test_remediation_and_span_path_minimize_absolute_paths_on_failing_fixture(
     # Write an invalid record causing SL001
     abs_fixture.write_text('{"invalid_json": true\n', encoding="utf-8")
 
-    code = main(["check", str(abs_fixture), "--format", "canonical", "--json"])
+    code = main(["check", str(abs_fixture), "--adapter", "canonical", "--json"])
     assert code == 1
     captured = capsys.readouterr()
 
@@ -245,14 +245,14 @@ def test_secret_seed_zero_leak_on_failing_openai(
     fixture.write_text(json.dumps(content), encoding="utf-8")
 
     # 1. JSON check mode
-    code_json = main(["check", str(fixture), "--format", "openai-agents", "--json"])
+    code_json = main(["check", str(fixture), "--adapter", "openai-agents", "--json"])
     assert code_json == 1
     captured_json = capsys.readouterr()
     assert secret_token not in captured_json.out
     assert secret_token not in captured_json.err
 
     # 2. Human check mode
-    code_human = main(["check", str(fixture), "--format", "openai-agents"])
+    code_human = main(["check", str(fixture), "--adapter", "openai-agents"])
     assert code_human == 1
     captured_human = capsys.readouterr()
     assert secret_token not in captured_human.out
@@ -283,14 +283,14 @@ def test_secret_seed_zero_leak_on_failing_canonical(
     fixture.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # 1. JSON check mode
-    code_json = main(["check", str(fixture), "--format", "canonical", "--json"])
+    code_json = main(["check", str(fixture), "--adapter", "canonical", "--json"])
     assert code_json == 1
     captured_json = capsys.readouterr()
     assert secret_token not in captured_json.out
     assert secret_token not in captured_json.err
 
     # 2. Human check mode
-    code_human = main(["check", str(fixture), "--format", "canonical"])
+    code_human = main(["check", str(fixture), "--adapter", "canonical"])
     assert code_human == 1
     captured_human = capsys.readouterr()
     assert secret_token not in captured_human.out
@@ -324,14 +324,19 @@ def test_secret_seed_zero_leak_in_scan_directory(
     f2.write_text(f'{{"invalid": "{secret_token}"\n', encoding="utf-8")
 
     # 1. JSON scan mode
-    code_json = main(["check", str(scan_dir), "--recursive", "--json"])
+    code_json = main(["check", str(scan_dir), "--json"])
     assert code_json == 1
     captured_json = capsys.readouterr()
     assert secret_token not in captured_json.out
     assert secret_token not in captured_json.err
 
     # 2. Human scan mode
-    code_human = main(["check", str(scan_dir), "--recursive"])
+    code_human = main(
+        [
+            "check",
+            str(scan_dir),
+        ]
+    )
     assert code_human == 1
     captured_human = capsys.readouterr()
     assert secret_token not in captured_human.out

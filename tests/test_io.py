@@ -742,16 +742,16 @@ class TestIterEventsEdgeCases:
 
 
 class TestCliScanLimits:
-    """CLI test for scan --show-limits."""
+    """CLI test for reader limits reported by sesslint doctor."""
 
-    def test_cli_scan_show_limits(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_cli_doctor_reader_limits(self, capsys: pytest.CaptureFixture[str]) -> None:
         from sesslint.cli import main as cli_main
 
-        exit_code = cli_main(["scan", "--show-limits"])
+        exit_code = cli_main(["doctor"])
         assert exit_code == 0
         captured = capsys.readouterr()
-        assert "ReaderLimits" in captured.out
-        assert "max_line_bytes=8388608" in captured.out
+        assert "reader limits:" in captured.out
+        assert "max_line_bytes: 8388608" in captured.out
 
     def test_cli_scan_no_flags_prints_help(self, capsys: pytest.CaptureFixture[str]) -> None:
         from sesslint.cli import main as cli_main

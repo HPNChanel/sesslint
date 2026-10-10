@@ -380,7 +380,7 @@ def test_registry_auxiliary_tables_bounded(
         ["triage", "--latest"],
         ["triage", "--agent", "codex"],
         ["triage", "file", "--latest", "--agent", "codex"],
-        ["--include-content", "triage", "file"],
+        ["triage", "file", "--include-content"],
     ],
 )
 def test_cli_usage_refused(argv: list[str]) -> None:

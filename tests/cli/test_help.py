@@ -15,7 +15,7 @@ def test_top_level_help(capsys: pytest.CaptureFixture[str]) -> None:
     captured = capsys.readouterr()
     assert "sesslint" in captured.out
     assert "check" in captured.out
-    assert "formats" in captured.out
+    assert "doctor" in captured.out
     assert "version" in captured.out
     assert "repair" in captured.out
     assert "verify" in captured.out
@@ -34,9 +34,9 @@ def test_subcommand_read_write_annotations(capsys: pytest.CaptureFixture[str]) -
     out = capsys.readouterr().out
     assert "[read-only]" in out
 
-    # formats
+    # doctor
     with pytest.raises(SystemExit):
-        main(["formats", "--help"])
+        main(["doctor", "--help"])
     out = capsys.readouterr().out
     assert "[read-only]" in out
 

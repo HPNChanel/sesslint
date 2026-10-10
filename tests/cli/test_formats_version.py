@@ -1,4 +1,4 @@
-"""Tests for sesslint formats and version commands (TASK-023)."""
+"""Tests for sesslint doctor (adapter info) and version commands (TASK-023)."""
 
 from __future__ import annotations
 
@@ -10,27 +10,28 @@ from sesslint._version import CLI_VERSION, get_version_info
 from sesslint.cli import main
 
 
-def test_formats_human(capsys: pytest.CaptureFixture[str]) -> None:
-    """formats command in human mode prints table with header and all 3 adapters."""
-    code = main(["formats"])
+def test_doctor_human_lists_adapters(capsys: pytest.CaptureFixture[str]) -> None:
+    """doctor in human mode prints an adapters section with all 4 adapters."""
+    code = main(["doctor"])
     assert code == 0
     captured = capsys.readouterr()
-    assert "NAME" in captured.out
-    assert "DEFAULT PROFILE" in captured.out
+    assert "adapters:" in captured.out
     assert "canonical" in captured.out
     assert "claude-code-jsonl" in captured.out
+    assert "codex-rollout" in captured.out
     assert "openai-agents" in captured.out
     assert captured.err == ""
 
 
-def test_formats_json(capsys: pytest.CaptureFixture[str]) -> None:
-    """formats --json returns JSON array of adapter metadata."""
-    code = main(["formats", "--json"])
+def test_doctor_json_adapter_metadata(capsys: pytest.CaptureFixture[str]) -> None:
+    """doctor --json returns adapter metadata objects."""
+    code = main(["doctor", "--json"])
     assert code == 0
     captured = capsys.readouterr()
     assert captured.err == ""
 
-    items = json.loads(captured.out)
+    data = json.loads(captured.out)
+    items = data["adapters"]
     assert isinstance(items, list)
     assert len(items) == 4
 
@@ -76,11 +77,11 @@ def test_version_json(capsys: pytest.CaptureFixture[str]) -> None:
     assert "profiles" in data
 
 
-def test_formats_adapters_subset_of_version(capsys: pytest.CaptureFixture[str]) -> None:
-    """Adapter names from formats --json are a subset of version adapters keys."""
-    main(["formats", "--json"])
-    formats_items = json.loads(capsys.readouterr().out)
-    format_names = {item["name"] for item in formats_items}
+def test_doctor_adapters_subset_of_version(capsys: pytest.CaptureFixture[str]) -> None:
+    """Adapter names from doctor --json are a subset of version adapters keys."""
+    main(["doctor", "--json"])
+    doctor_data = json.loads(capsys.readouterr().out)
+    format_names = {item["name"] for item in doctor_data["adapters"]}
 
     main(["version", "--json"])
     version_data = json.loads(capsys.readouterr().out)

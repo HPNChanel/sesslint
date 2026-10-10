@@ -190,78 +190,78 @@ def test_unknown_nested_payload_keys_permitted() -> None:
     assert event.payload["nested_dict"]["foo"] == "bar"
 
 
-def test_cli_validate_session_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
-    """Verify CLI validate-session exit codes and outputs for valid and invalid fixtures."""
-    min_valid = str(FIXTURES_DIR / "minimal-valid.jsonl")
+def test_cli_check_canonical_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify check --adapter canonical exit codes and outputs for session fixtures."""
+    healthy = str(REPO_ROOT / "fixtures" / "canonical" / "minimal.json")
     wrong_ver = str(FIXTURES_DIR / "wrong-version.jsonl")
     unk_field = str(FIXTURES_DIR / "unknown-top-level-field.jsonl")
 
     # Positive test
-    exit_code = main(["validate-session", min_valid])
+    exit_code = main(["check", "--adapter", "canonical", healthy])
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "Valid session: sess_min_001" in captured.out
+    assert "Valid canonical session" in captured.out
 
-    # Wrong version negative test
-    exit_code = main(["validate-session", wrong_ver])
-    assert exit_code != 0
+    # Wrong version is reported as an SL001 malformed-record finding.
+    exit_code = main(["check", "--adapter", "canonical", wrong_ver])
+    assert exit_code == 1
     captured = capsys.readouterr()
-    assert "VERSION" in captured.err
-    assert "SL301" in captured.err
+    assert "SL001" in captured.out
 
-    # Unknown field negative test
-    exit_code = main(["validate-session", unk_field])
-    assert exit_code != 0
+    # Unknown top-level fields are tolerated by check; strict schema
+    # validation remains available via api.validate_session (SL302).
+    exit_code = main(["check", "--adapter", "canonical", unk_field])
+    assert exit_code == 0
     captured = capsys.readouterr()
-    assert "UNKNOWN_FIELD" in captured.err
-    assert "SL302" in captured.err
+    assert "healthy" in captured.out
 
 
-def test_cli_subprocess_validate_session() -> None:
-    """Verify python -m sesslint validate-session via subprocess across all fixtures."""
-    min_valid = str(FIXTURES_DIR / "minimal-valid.jsonl")
+def test_cli_subprocess_check_canonical() -> None:
+    """Verify python -m sesslint check --adapter canonical via subprocess."""
+    healthy = str(REPO_ROOT / "fixtures" / "canonical" / "minimal.json")
     wrong_ver = str(FIXTURES_DIR / "wrong-version.jsonl")
 
     res_valid = subprocess.run(
-        [sys.executable, "-m", "sesslint", "validate-session", min_valid],
+        [sys.executable, "-m", "sesslint", "check", "--adapter", "canonical", healthy],
         capture_output=True,
         text=True,
         check=False,
     )
     assert res_valid.returncode == 0
-    assert "sess_min_001" in res_valid.stdout
+    assert "Valid canonical session" in res_valid.stdout
 
     res_wrong = subprocess.run(
-        [sys.executable, "-m", "sesslint", "validate-session", wrong_ver],
+        [sys.executable, "-m", "sesslint", "check", "--adapter", "canonical", wrong_ver],
         capture_output=True,
         text=True,
         check=False,
     )
     assert res_wrong.returncode != 0
-    assert "SL301" in res_wrong.stderr or "VERSION" in res_wrong.stderr
+    assert "SL001" in res_wrong.stdout
 
 
-def test_cli_validate_session_missing_file(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_check_canonical_missing_file(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI returns exit code 2 on missing file."""
-    exit_code = main(["validate-session", "non_existent_file.jsonl"])
+    exit_code = main(["check", "--adapter", "canonical", "non_existent_file.jsonl"])
     assert exit_code == 2
     captured = capsys.readouterr()
     assert "Error:" in captured.err
 
 
-def test_cli_validate_session_unexpected_error(
+def test_cli_check_canonical_unexpected_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Verify CLI handles unexpected exceptions gracefully and returns exit code 2."""
 
-    def _mock_raise(_path: Path) -> None:
+    def _mock_raise(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("Unexpected boom")
 
-    monkeypatch.setattr("sesslint.cli.load_session_file", _mock_raise)
-    exit_code = main(["validate-session", "some_file.jsonl"])
+    monkeypatch.setattr("sesslint.api.check_file", _mock_raise)
+    healthy = str(REPO_ROOT / "fixtures" / "canonical" / "minimal.json")
+    exit_code = main(["check", "--adapter", "canonical", healthy])
     assert exit_code == 2
     captured = capsys.readouterr()
-    assert "Unexpected error: Unexpected boom" in captured.err
+    assert "Unexpected boom" in captured.err
 
 
 def test_jsonl_header_and_event_lines_satisfy_schema() -> None:

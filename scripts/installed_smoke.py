@@ -45,7 +45,7 @@ for module, names in {{
         assert schema["$schema"] and schema["$id"]
         loaded.append(name)
 schema_files = sorted(get_session_schema_path().parent.glob("*.json"))
-assert len(schema_files) == 16
+assert len(schema_files) == 17
 assert all(isinstance(json.loads(p.read_text(encoding="utf-8")), dict) for p in schema_files)
 source = Path("examples/repairable.jsonl")
 plan = api.plan_repair(source)

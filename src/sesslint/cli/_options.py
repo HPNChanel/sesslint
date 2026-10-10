@@ -63,18 +63,38 @@ def _add_seal_args(sub: argparse.ArgumentParser) -> None:
     )
 
 
-def add_format_option(sub: argparse.ArgumentParser) -> None:
-    """Shared ``--format`` declaration (check/scan/repair/bundle/export)."""
+def add_adapter_option(sub: argparse.ArgumentParser) -> None:
+    """Shared ``--adapter`` declaration (check/repair/bundle/export)."""
     sub.add_argument(
-        "--format",
+        "--adapter",
         choices=sorted(VALID_FORMAT_OPTIONS),
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
 
 
+def add_color_options(sub: argparse.ArgumentParser, *, root: bool = False) -> None:
+    """Shared ``--color``/``--no-color`` pair.
+
+    ``root=True`` gives the root parser concrete defaults; subcommands use
+    ``argparse.SUPPRESS`` so an unset flag falls through to the root value.
+    """
+    sub.add_argument(
+        "--color",
+        choices=["auto", "always", "never"],
+        default="auto" if root else argparse.SUPPRESS,
+        help="Control colored terminal output (default: auto)",
+    )
+    sub.add_argument(
+        "--no-color",
+        action="store_true",
+        default=False if root else argparse.SUPPRESS,
+        help="Disable ANSI color styling" + (" (equivalent to NO_COLOR=1)" if root else ""),
+    )
+
+
 def add_profile_option(sub: argparse.ArgumentParser) -> None:
-    """Shared ``--profile`` declaration (check/scan/repair/bundle)."""
+    """Shared ``--profile`` declaration (check/repair/bundle)."""
     sub.add_argument(
         "--profile",
         default=argparse.SUPPRESS,
@@ -214,9 +234,14 @@ def add_progress_json_option(sub: argparse.ArgumentParser) -> None:
 
 
 def add_output_format_option(sub: argparse.ArgumentParser) -> None:
-    """Shared ``--output-format`` human/json declaration (diff/stats/doctor)."""
+    """Shared ``-f``/``--format`` human/json declaration (diff/stats/doctor/triage).
+
+    ``dest`` stays ``output_format`` so ``_output_format`` keeps working.
+    """
     sub.add_argument(
-        "--output-format",
+        "-f",
+        "--format",
+        dest="output_format",
         choices=["human", "json"],
         default=None,
         help="Output format (default: human)",

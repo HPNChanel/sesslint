@@ -15,9 +15,9 @@
         "openai-strict"
       ]
     },
-    "format": {
+    "adapter": {
       "type": "string",
-      "description": "Input ledger format; 'auto' sniffs the first lines.",
+      "description": "Input ledger adapter; 'auto' sniffs the first lines.",
       "enum": [
         "auto",
         "canonical",

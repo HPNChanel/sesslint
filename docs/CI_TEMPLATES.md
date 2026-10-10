@@ -12,8 +12,9 @@ Conventions shared by every template below:
   `latest`; bump deliberately.
 - **Exit codes**: `0` clean · `1` findings at or above `--fail-on`
   threshold · `2` usage/I-O error. CI steps fail naturally on `1`.
-- **Flags**: `--fail-on error|warning`, `--output-format human|json|sarif|html`,
-  `--profile`, `--format`, `--select`, `--ignore`, `--baseline`,
+<!-- next-release -->
+- **Flags**: `--fail-on error|warning`, `--format human|json|sarif|html`,
+  `--profile`, `--adapter`, `--select`, `--ignore`, `--baseline`,
   `--exclude`, `--ext`, `--skip-undetected`, `--config` — same surface as
   the GitHub action inputs (parity table below).
 - **Reports**: JSON/SARIF are emitted on stdout — redirect to a file and
@@ -30,7 +31,7 @@ sesslint-check:
   image: python:3.12-slim
   script:
     - pip install sesslint==0.4.1  # next release
-    - sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
+    - sesslint check sessions/ --format json --fail-on error > sesslint-report.json
   artifacts:
     when: always
     paths:
@@ -38,8 +39,8 @@ sesslint-check:
     expire_in: 30 days
 ```
 
-Notes: `scan` on a directory walks the tree with the standard exclusions;
-add `--skip-undetected` if the tree mixes non-session files.
+Notes: `check` on a directory walks the tree recursively with the standard
+exclusions; add `--skip-undetected` if the tree mixes non-session files.
 
 ## Azure Pipelines
 
@@ -51,7 +52,7 @@ steps:
       versionSpec: "3.12"
   - script: |
       pip install sesslint==0.4.1  # next release
-      sesslint scan sessions/ --output-format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
+      sesslint check sessions/ --format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
     displayName: "Run SessLint integrity scan"
   - task: PublishBuildArtifacts@1
     inputs:
@@ -61,7 +62,7 @@ steps:
 ```
 
 For SARIF-based code scanning surfaces (e.g. a SARIF results tab
-extension), switch the invocation to `--output-format sarif` and publish
+extension), switch the invocation to `--format sarif` and publish
 that file instead.
 
 ## CircleCI
@@ -80,7 +81,7 @@ jobs:
           command: pip install sesslint==0.4.1  # next release
       - run:
           name: "Run integrity scan"
-          command: sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
+          command: sesslint check sessions/ --format json --fail-on error > sesslint-report.json
       - store_artifacts:
           path: sesslint-report.json
 workflows:
@@ -93,6 +94,7 @@ workflows:
 
 Every action input maps to the identical CLI flag:
 
+<!-- next-release -->
 The action passes input values through environment variables and builds a Python
 argument list. File inputs must resolve inside `GITHUB_WORKSPACE`; choices such
 as `fail-on` and `output-format` are validated before SessLint runs. A failing
@@ -103,7 +105,7 @@ satisfy that check.
 | --- | --- | --- |
 | `path` | positional `PATH` | `sessions/` — point at your tree |
 | `profile` | `--profile` | `neutral` |
-| `format` | `--format` | `auto` |
+| `format` | `--adapter` | `auto` |
 | `fail-on` | `--fail-on` | `error` |
 | `select` | `--select` | — |
 | `ignore` | `--ignore` | — |
@@ -113,7 +115,7 @@ satisfy that check.
 | `ext` | `--ext` | — |
 | `skip-undetected` | `--skip-undetected` | — |
 | `config` | `--config` | — |
-| `output-format` | `--output-format` | `json` (redirect to artifact) |
+| `output-format` | `--format` | `json` (redirect to artifact) |
 | `package` / `source-ref` | install line | `sesslint==0.4.1` | (next release)
 | `python-version` | runner image | `3.12` |
-| `sarif` output | `--output-format sarif` | redirect to artifact file |
+| `sarif` output | `--format sarif` | redirect to artifact file |

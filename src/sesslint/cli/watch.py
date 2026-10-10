@@ -44,7 +44,7 @@ def configure(
         help="Poll interval in seconds (default: 2.0, min: 0.05)",
     )
     sub.add_argument(
-        "--format",
+        "--adapter",
         choices=sorted(VALID_FORMAT_OPTIONS),
         default="auto",
         help="Session format adapter for all inputs (default: auto)",
@@ -97,7 +97,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
             print(format_transition(t), flush=True)
 
-    shared_fmt = getattr(args, "format", "auto")
+    shared_fmt = getattr(args, "adapter", "auto")
     try:
         watch(
             watch_paths,

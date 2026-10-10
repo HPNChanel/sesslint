@@ -189,7 +189,7 @@ def test_apply_plan_dry_run_validates_only(
     assert list(tmp_path.glob("*.manifest.json")) == []
 
 
-@pytest.mark.parametrize("flag", ["--policy", "--profile", "--format"])
+@pytest.mark.parametrize("flag", ["--policy", "--profile", "--adapter"])
 def test_apply_plan_refuses_overrides(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], flag: str
 ) -> None:
@@ -198,7 +198,7 @@ def test_apply_plan_refuses_overrides(
     plan_path = tmp_path / "plan.json"
     assert main(["repair", str(src), "--plan-out", str(plan_path)]) == 0
 
-    value = {"--policy": "salvage", "--profile": "strict", "--format": "canonical"}[flag]
+    value = {"--policy": "salvage", "--profile": "strict", "--adapter": "canonical"}[flag]
     code = main(
         [
             "repair",

@@ -8,23 +8,19 @@ from sesslint.cli import create_parser, main
 from sesslint.completion import COMPLETION_SHELLS, generate_completion
 
 PINNED_COMMANDS = (
-    "baseline",
     "bundle",
     "check",
     "completion",
     "diff",
     "doctor",
     "export",
-    "formats",
     "hook",
-    "init-hooks",
     "mcp",
     "repair",
     "scan",
     "seal",
     "stats",
     "triage",
-    "validate-session",
     "verify",
     "version",
     "watch",
@@ -60,7 +56,7 @@ def test_every_live_subcommand_covered() -> None:
 def test_flags_and_choices_present() -> None:
     for shell in COMPLETION_SHELLS:
         script = generate_completion(shell)
-        for flag in ("--format", "--profile", "--json", "--output", "--policy"):
+        for flag in ("--adapter", "--format", "--profile", "--json", "--output", "--policy"):
             assert flag in script
         for choice in (
             "claude-code-jsonl",
@@ -95,7 +91,8 @@ def test_powershell_script_shape() -> None:
     assert "$sesslintFlagMap" in script
     assert "$sesslintChoiceMap" in script
     assert "'check' = @(" in script
-    assert "'check --format' = @('auto'" in script
+    assert "'scan' = @(" in script
+    assert "'check --adapter' = @('auto'" in script
     # --profile enum values come from the live profile registry
     assert "'check --profile' = @('claude-strict', 'neutral', 'openai-strict')" in script
     # graceful fallback for pre-backport Windows PowerShell 5.1 builds
@@ -108,8 +105,8 @@ def test_powershell_script_is_deterministic_sorted() -> None:
     flag_rows = [ln for ln in lines if ln.startswith("    '") and " = @(" in ln]
     keys = [ln.split(" = @(")[0] for ln in flag_rows]
     # map rows are emitted in sorted command order; within a command,
-    # flag options are sorted
-    cmd_order = [k for k in keys if "--" not in k]
+    # flag options are sorted (keys with " -" are command+flag rows)
+    cmd_order = [k for k in keys if " -" not in k]
     assert cmd_order == sorted(cmd_order)
 
 
@@ -140,7 +137,7 @@ def test_zsh_completion_escapes_brackets() -> None:
     zsh_script = generate_completion("zsh")
     # Brackets inside descriptions must be escaped to avoid syntax errors in zsh _arguments
     assert "\\[lossy\\: follows links\\]" in zsh_script
-    assert "\\[Invalid for check\\]" in zsh_script
+    assert "\\[tool.sesslint\\]" in zsh_script
 
 
 def test_cli_completion_all_supported_shells(capsys: pytest.CaptureFixture[str]) -> None:
