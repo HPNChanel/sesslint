@@ -34,6 +34,7 @@ from pathlib import Path
 REPO_HINT = "sesslint"
 VERSION_FILE = "src/sesslint/_version.py"
 CLI_FILE = "src/sesslint/cli.py"
+CLI_PKG_DIR = "src/sesslint/cli"
 HOOK_MANIFEST = ".pre-commit-hooks.yaml"
 
 SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[.\-+][0-9A-Za-z.\-]+)?$")
@@ -108,6 +109,34 @@ def git_show(root: Path, ref: str, path: str) -> str | None:
         return _git(root, "show", f"{ref}:{path}")
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
+
+def cli_source_at_ref(root: Path, ref: str) -> str | None:
+    """Return the CLI source at ``ref`` — single-file ``cli.py`` or the
+    ``cli/`` package (concatenated ``*.py``, sorted for determinism)."""
+    src = git_show(root, ref, CLI_FILE)
+    if src is not None:
+        return src
+    try:
+        names = _git(root, "ls-tree", "-r", "--name-only", ref, "--", CLI_PKG_DIR)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    parts = [
+        git_show(root, ref, name)
+        for name in sorted(names.splitlines())
+        if name.endswith(".py")
+    ]
+    text = "\n".join(p for p in parts if p is not None)
+    return text or None
+
+
+def cli_source_worktree(root: Path) -> str:
+    """Return the worktree CLI source — ``cli/`` package when present, else
+    the legacy single-file ``cli.py``."""
+    pkg = root / CLI_PKG_DIR
+    if pkg.is_dir():
+        return "\n".join(p.read_text(encoding="utf-8") for p in sorted(pkg.glob("*.py")))
+    return (root / CLI_FILE).read_text(encoding="utf-8")
 
 
 def dev_version(root: Path) -> str:
@@ -226,12 +255,15 @@ def evaluate(
     )
     tag_flags: set[str] | None = None
     if latest:
-        src = git_show(root, f"v{'.'.join(map(str, latest))}", CLI_FILE)
+        src = cli_source_at_ref(root, f"v{'.'.join(map(str, latest))}")
         if src is None:
-            rep.advisories.append(f"cannot read {CLI_FILE} at latest tag; flag skew check skipped")
+            rep.advisories.append(
+                f"cannot read {CLI_FILE} or {CLI_PKG_DIR}/ at latest tag; "
+                "flag skew check skipped"
+            )
         else:
             tag_flags = cli_flags(src)
-    wt_flags = cli_flags((root / CLI_FILE).read_text(encoding="utf-8"))
+    wt_flags = cli_flags(cli_source_worktree(root))
     post_tag = wt_flags - tag_flags if tag_flags is not None else set()
     if latest is None:
         rep.advisories.append("no git tags found; treating refs equal to dev version as valid")
