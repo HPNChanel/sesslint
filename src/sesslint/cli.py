@@ -23,6 +23,7 @@ from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
 from sesslint.api import build_internal_error_envelope, validate_session
 from sesslint.errors import SesslintError
 from sesslint.finding import Finding
+from sesslint.io import DEFAULT_MAX_FILE_BYTES
 from sesslint.progress import OperationCancelled
 
 load_session_file = validate_session
@@ -1653,6 +1654,36 @@ def create_parser() -> argparse.ArgumentParser:
         help="Emit sesslint.stats/v1 JSON (shortcut for --output-format json)",
     )
 
+    # triage: compose checking and previews without executing any action.
+    triage_parser = subparsers.add_parser(
+        "triage",
+        help="[read-only] Diagnose a session and explain the next steps.",
+        description="Content-free evidence and repair previews; never repairs or resumes.",
+    )
+    triage_parser.add_argument("path", type=Path, nargs="?")
+    triage_parser.add_argument("--agent", choices=["claude", "codex"])
+    triage_parser.add_argument("--latest", action="store_true")
+    triage_parser.add_argument(
+        "--format", choices=sorted(VALID_FORMAT_OPTIONS), default=argparse.SUPPRESS
+    )
+    triage_parser.add_argument("--profile", default=argparse.SUPPRESS)
+    triage_parser.add_argument(
+        "--policy",
+        choices=["conservative", "salvage"],
+        default=argparse.SUPPRESS,
+        help="Explicit salvage opt-in compares both policies; never acknowledges side effects.",
+    )
+    triage_parser.add_argument(
+        "--state-copy",
+        type=Path,
+        help="Optional closed Codex registry copy outside live agent storage (no WAL).",
+    )
+    triage_parser.add_argument(
+        "--max-file-bytes", type=_validate_positive_int, default=DEFAULT_MAX_FILE_BYTES
+    )
+    triage_parser.add_argument("--output-format", choices=["human", "json"])
+    triage_parser.add_argument("--json", action="store_true")
+
     # doctor
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -1845,7 +1876,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
     # --policy only takes effect on 'repair'; warn instead of silently ignoring
     # (e.g. 'sesslint --policy salvage check' reads as if it applies).
     if (
-        getattr(args, "command", None) not in (None, "repair")
+        getattr(args, "command", None) not in (None, "repair", "triage")
         and getattr(args, "policy", None) is not None
     ):
         sys.stderr.write(
@@ -2539,6 +2570,39 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         from sesslint.mcp_server import serve
 
         return serve(sys.stdin.buffer, sys.stdout.buffer)
+
+    if args.command == "triage":
+        from sesslint.discovery import latest_session
+        from sesslint.triage import triage
+
+        path = args.path
+        if (path is None and not (args.latest and args.agent)) or (
+            path is not None and (args.latest or args.agent is not None)
+        ):
+            print("Error: choose a file OR --agent claude|codex --latest.", file=sys.stderr)
+            return 2
+        if getattr(args, "include_content", False):
+            print("Error: triage does not support --include-content.", file=sys.stderr)
+            return 2
+        try:
+            target = path if path is not None else latest_session(args.agent)
+            triage_result = triage(
+                target,
+                format=getattr(args, "format", None),
+                profile=getattr(args, "profile", "neutral"),
+                policy=getattr(args, "policy", "conservative"),
+                state_copy=args.state_copy,
+                max_file_bytes=args.max_file_bytes,
+            )
+        except (OSError, ValueError, KeyError):
+            print("Error: triage input/discovery/options could not be resolved.", file=sys.stderr)
+            return 2
+        print(
+            triage_result.to_json()
+            if _output_format(args) == "json"
+            else triage_result.render_human()
+        )
+        return triage_result.exit_code
 
     if args.command == "doctor":
         from sesslint.doctor import doctor_report

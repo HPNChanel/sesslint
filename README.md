@@ -1,7 +1,7 @@
 <h1 align="center">SessLint</h1>
 
 <p align="center">
-  <strong>Offline, vendor-neutral session-integrity checker and conservative repair engine for tool-using AI agents.</strong>
+  <strong>Find what broke in an agent session, what remains verifiable, and what to do next.</strong>
 </p>
 
 <p align="center">
@@ -29,6 +29,20 @@
 > [starter-kit walkthrough](docs/STARTER_KIT.md).
 
 ## Table of Contents
+
+<!-- next-release -->
+
+**Start with session triage (next release):**
+
+```console
+sesslint triage session.jsonl
+sesslint triage --agent codex --latest
+```
+
+Read-only, offline and content-free. Triage combines existing checks and repair
+previews, explains missing evidence, and suggests at most three next steps.
+It never repairs or resumes automatically. See the [triage walkthrough](docs/TRIAGE.md)
+for repairable, refused and unsupported cases.
 
 - [The Anatomy of Agent Session Failure](#the-anatomy-of-agent-session-failure)
 - [Why SessLint? (The Value Proposition)](#why-sesslint-the-value-proposition)

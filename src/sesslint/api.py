@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
@@ -73,6 +73,7 @@ from sesslint.scan import (
 )
 from sesslint.source import fingerprint_bytes, fingerprint_file
 from sesslint.stats import SessionStats
+from sesslint.triage import TriageReport, triage
 from sesslint.verify import Verdict
 from sesslint.verify import verify as verify_artifacts
 
@@ -196,6 +197,8 @@ def _check_impl(
     baseline: Collection[str] | None,
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
     timestamp_skew_ms: int | None = None,
+    _capture_events: Callable[[str, list[SessionEvent]], None] | None = None,
+    _oversized_snapshot: bool = False,
 ) -> Report:
     """Shared check pipeline for file and in-memory byte sources (ux T-06).
 
@@ -231,7 +234,10 @@ def _check_impl(
     deselected = deselected_rules(profile, select=select, ignore=ignore)
 
     # B27: parsing, findings and the seal digest refer to this one bounded snapshot.
-    if data is None:
+    if _oversized_snapshot:
+        data = b""
+        oversized = True
+    elif data is None:
         if target_path.stat().st_size > max_file_bytes:
             data = b""  # Do not allocate or hash an oversized uninspected artifact.
             oversized = True
@@ -404,6 +410,8 @@ def _check_impl(
     events, loaded_findings = load_events_for_format(
         load_source, resolved_fmt, limits=ReaderLimits(max_file_bytes=max_file_bytes)
     )
+    if _capture_events is not None:
+        _capture_events(resolved_fmt, events)
     adapter_findings.extend(loaded_findings)
     # An empty/whitespace-only file is not a valid session of any format —
     # a forced --format must not let it report healthy. (Auto-detect already
@@ -1375,6 +1383,8 @@ def discover_session_roots(
 
 
 __all__ = [
+    "TriageReport",
+    "triage",
     "BatchRepairReport",
     "Bundle",
     "CancellationToken",

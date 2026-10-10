@@ -1,0 +1,61 @@
+.TH SESSLINT-TRIAGE 1 "" "SessLint 0.4.1" "SessLint Manual"
+.SH NAME
+sesslint-triage \- [read\-only] Diagnose a session and explain the next steps.
+.SH SYNOPSIS
+.B sesslint triage [\-\-agent {claude,codex}] [\-\-latest] [\-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy {conservative,salvage}] [\-\-state\-copy STATE_COPY] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-output\-format {human,json}] [\-\-json] [PATH]
+.SH DESCRIPTION
+Content\-free evidence and repair previews; never repairs or resumes.
+.SH ARGUMENTS
+.TP
+.B PATH
+Required argument.
+.SH OPTIONS
+.TP
+.B \-\-agent {claude,codex}
+Choices: claude, codex.
+.TP
+.B \-\-latest
+.TP
+.B \-\-format {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
+.TP
+.B \-\-profile PROFILE
+.TP
+.B \-\-policy {conservative,salvage}
+Explicit salvage opt\-in compares both policies; never acknowledges side effects. Choices: conservative, salvage.
+.TP
+.B \-\-state\-copy STATE_COPY
+Optional closed Codex registry copy outside live agent storage (no WAL).
+.TP
+.B \-\-max\-file\-bytes MAX_FILE_BYTES
+Default: 104857600.
+.TP
+.B \-\-output\-format {human,json}
+Choices: human, json.
+.TP
+.B \-\-json
+.SH EXIT STATUS
+.TP
+.B 0
+Success — clean check, or repair executed, validated, and manifested.
+.TP
+.B 1
+Finding / refusal — diagnostic errors found, repair plan blocked, or
+execution refused (TOCTOU, SL203).
+.TP
+.B 2
+Operational error — CLI syntax error, file not found, permission denied,
+or live-DB path refusal.
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

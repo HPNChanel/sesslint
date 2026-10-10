@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Read-only `triage` CLI/API and `sesslint.triage/v1`: shared source snapshot,
+  content-free guidance, bounded findings and structural impact, missing-evidence
+  explanations, explicit conservative/salvage preview comparison, primary-session
+  discovery and optional closed Codex registry-copy comparison.
+
+- Three-month OSS roadmap with explicit external-use, recovery and repeat-use
+  targets; historical DV counters and commercial-demand tracking stay separate.
+
 - SL306 groups unknown, non-linking Claude/Codex metadata as informational findings.
   Unknown records carrying identity, links or semantic fields still fail closed.
 - Scan selectors `--newest` and `--since`, per-file byte limits, bounded finding

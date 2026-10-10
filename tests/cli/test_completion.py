@@ -23,6 +23,7 @@ PINNED_COMMANDS = (
     "scan",
     "seal",
     "stats",
+    "triage",
     "validate-session",
     "verify",
     "version",

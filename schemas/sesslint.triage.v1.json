@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.triage.v1.json",
+  "title": "SessLint Triage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool_version", "status", "source_sha256", "adapter", "profile", "assurance", "coverage", "findings", "finding_count", "by_code", "findings_truncated", "previews", "impact", "native_state", "missing_evidence", "next_actions", "limitation"],
+  "properties": {
+    "schema_version": {"const": "sesslint.triage/v1"},
+    "tool_version": {"type": "string"},
+    "status": {"enum": ["checked", "needs-attention", "blocked", "unsupported", "skipped", "unreadable", "unstable"]},
+    "source_sha256": {"anyOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+    "adapter": {"enum": ["unknown", "canonical", "claude-code-jsonl", "codex-rollout", "openai-agents"]},
+    "profile": {"type": "string"},
+    "assurance": {"enum": ["A0", "A1", "A2", "A3", "A4"]},
+    "coverage": {
+      "type": "object", "additionalProperties": false, "required": ["performed", "skipped"],
+      "properties": {
+        "adapter": {"$ref": "#/$defs/version"},
+        "profile": {"$ref": "#/$defs/version"},
+        "performed": {"type": "array", "items": {"type": "string"}},
+        "skipped": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["check", "reason"],
+          "properties": {"check": {"type": "string"}, "reason": {"type": "string"}, "detail": {"type": "string"}}
+        }}
+      }
+    },
+    "findings": {"type": "array", "maxItems": 100, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "severity", "repairability", "title", "source_line"],
+      "properties": {
+        "code": {"$ref": "#/$defs/code"},
+        "severity": {"enum": ["info", "warning", "error", "fatal"]},
+        "repairability": {"type": "string"},
+        "title": {"type": "string"}, "source_line": {"$ref": "#/$defs/line"}
+      }
+    }},
+    "finding_count": {"$ref": "#/$defs/count"},
+    "by_code": {"$ref": "#/$defs/counts"},
+    "findings_truncated": {"type": "boolean"},
+    "previews": {"type": "array", "maxItems": 2, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy", "plan_fingerprint", "source_sha256", "step_count", "blocked_count", "blocked_codes", "kept_events", "lost_records", "loss_by_class", "steps", "applied"],
+      "properties": {
+        "policy": {"enum": ["conservative", "salvage"]},
+        "plan_fingerprint": {"$ref": "#/$defs/hash"}, "source_sha256": {"$ref": "#/$defs/hash"},
+        "step_count": {"$ref": "#/$defs/count"}, "blocked_count": {"$ref": "#/$defs/count"},
+        "blocked_codes": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "kept_events": {"$ref": "#/$defs/count"}, "lost_records": {"$ref": "#/$defs/count"},
+        "loss_by_class": {"$ref": "#/$defs/counts"},
+        "steps": {"type": "array", "maxItems": 256, "items": {
+          "type": "object", "additionalProperties": false, "required": ["action", "code", "recipe", "source_line"],
+          "properties": {"action": {"type": "string"}, "code": {"$ref": "#/$defs/code"}, "recipe": {"type": "string"}, "source_line": {"$ref": "#/$defs/line"}}
+        }},
+        "applied": {"const": false}
+      }
+    }},
+    "impact": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "unverified"}}},
+      {"type": "object", "additionalProperties": false,
+       "required": ["status", "parsed_events", "affected_events", "outside_mapped_impact", "source_lines", "source_lines_truncated", "unmapped_by_code", "limitation"],
+       "properties": {
+         "status": {"const": "mapped"}, "parsed_events": {"$ref": "#/$defs/count"},
+         "affected_events": {"$ref": "#/$defs/count"}, "outside_mapped_impact": {"$ref": "#/$defs/count"},
+         "source_lines": {"type": "array", "maxItems": 100, "items": {"type": "integer", "minimum": 1}},
+         "source_lines_truncated": {"type": "boolean"}, "unmapped_by_code": {"$ref": "#/$defs/counts"},
+         "limitation": {"type": "string"}
+       }}
+    ]},
+    "native_state": {"type": "object", "additionalProperties": false, "required": ["status", "detail"],
+      "properties": {"status": {"enum": ["not-provided", "unverified", "membership-matches", "membership-mismatch"]}, "detail": {"type": "string"}}},
+    "missing_evidence": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["code", "detail"],
+      "properties": {"code": {"type": "string"}, "detail": {"type": "string"}}
+    }},
+    "next_actions": {"type": "array", "minItems": 1, "maxItems": 3, "items": {
+      "type": "object", "additionalProperties": false, "required": ["id", "detail", "command"],
+      "properties": {"id": {"type": "string"}, "detail": {"type": "string"}, "command": {"type": "string"}}
+    }},
+    "limitation": {"type": "string"}
+  },
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "counts": {"type": "object", "additionalProperties": {"$ref": "#/$defs/count"}},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "code": {"type": "string", "pattern": "^SL[0-9]{3}$"},
+    "line": {"type": ["integer", "null"], "minimum": 1},
+    "version": {"type": "object", "additionalProperties": false, "required": ["id", "version"],
+      "properties": {"id": {"type": "string"}, "version": {"type": "string"}, "name": {"type": "string"}}}
+  }
+}

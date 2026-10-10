@@ -9,6 +9,13 @@ conservative repair engine for AI agent session ledgers. Python ≥ 3.11,
 stdlib-only at runtime (`src/sesslint`), packaged with hatchling, released to
 PyPI + GitHub Releases + PyInstaller binaries.
 
+# Shared Agent Policy
+
+Before beginning any task, read and follow
+`AGENT_MAIN.md` as the universal engineering policy.
+
+Preserve all additional project-specific instructions.
+
 ## Hard invariants — never violate these
 
 - **Zero runtime dependencies**: `project.dependencies` in `pyproject.toml`

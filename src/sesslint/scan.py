@@ -1259,17 +1259,9 @@ def scan_path(
                 st = target_st
 
             if vendor_layout is not None:
-                parts = entry_p.relative_to(target).parts
-                if vendor_layout == "claude":
-                    allowed = (len(parts) == 2 and entry_p.suffix == ".jsonl") or (
-                        len(parts) == 4
-                        and parts[-2] == "subagents"
-                        and entry_p.name.startswith("agent-")
-                        and entry_p.suffix == ".jsonl"
-                    )
-                else:
-                    allowed = entry_p.name.startswith("rollout-") and entry_p.suffix == ".jsonl"
-                if not allowed:
+                from sesslint.discovery import candidate_in_layout
+
+                if not candidate_in_layout(entry_p, target, vendor_layout):
                     continue
 
             # Hardlink / repeat path deduplication
