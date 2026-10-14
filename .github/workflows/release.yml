@@ -29,8 +29,8 @@ jobs:
     needs: quality
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Validate tag and commit epoch
@@ -51,7 +51,7 @@ jobs:
         run: python scripts/restore_release_artifact.py --repo "${{ github.repository }}" --run-id "${{ github.run_id }}" --name "python-assets" --target "dist" --attempt "${{ github.run_attempt }}" --job "Build Python assets" --step "Build twice and smoke installed wheel and sdist" --commit "$GITHUB_SHA" --version "${GITHUB_REF_NAME#v}" --receipt "${{ runner.temp }}/restore-python.json" >> "$GITHUB_OUTPUT"
       - name: Retain restore diagnostics
         if: always() && github.run_attempt > 1
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: restore-python-${{ github.run_attempt }}
           path: ${{ runner.temp }}/restore-python.json
@@ -71,7 +71,7 @@ jobs:
       - name: Verify restored or newly built bytes
         run: python scripts/release_artifacts.py verify --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA"
       - if: steps.reuse.outputs.restored != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: python-assets
           path: dist/
@@ -95,11 +95,11 @@ jobs:
           - runner: macos-latest
             os: macos
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: python-assets
           path: python-assets
@@ -112,7 +112,7 @@ jobs:
         run: python scripts/restore_release_artifact.py --repo "${{ github.repository }}" --run-id "${{ github.run_id }}" --name "binary-${{ matrix.os }}" --target "dist/bin" --attempt "${{ github.run_attempt }}" --job "Build binary (${{ matrix.os }})" --step "Build native binary and exercise installed journey" --commit "$GITHUB_SHA" --version "${GITHUB_REF_NAME#v}" --receipt "${{ runner.temp }}/restore-binary-${{ matrix.os }}.json" >> "$GITHUB_OUTPUT"
       - name: Retain restore diagnostics
         if: always() && github.run_attempt > 1
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: restore-binary-${{ matrix.os }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/restore-binary-${{ matrix.os }}.json
@@ -145,7 +145,7 @@ jobs:
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/smoke-windows-powershell.json" -Destination dist/bin/
       - name: Retain Windows acceptance diagnostics
         if: always() && matrix.os == 'windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: windows-acceptance-logs-${{ github.run_attempt }}
           path: |
@@ -153,7 +153,7 @@ jobs:
             ${{ runner.temp }}/smoke-windows-powershell.json.logs/
           if-no-files-found: warn
       - if: steps.reuse.outputs.restored != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: binary-${{ matrix.os }}
           path: dist/bin/
@@ -170,7 +170,7 @@ jobs:
     outputs:
       artifact-subjects: ${{ steps.subjects.outputs.subjects }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Restore complete signed set on retry
         id: reuse
         if: github.run_attempt > 1
@@ -180,18 +180,18 @@ jobs:
         run: python scripts/restore_release_artifact.py --repo "${{ github.repository }}" --run-id "${{ github.run_id }}" --name "release-dist" --target "dist" --attempt "${{ github.run_attempt }}" --job "Assemble signed assets" --step "Bind every asset and sign the complete set" --commit "$GITHUB_SHA" --version "${GITHUB_REF_NAME#v}" --receipt "${{ runner.temp }}/restore-assemble.json" >> "$GITHUB_OUTPUT"
       - name: Retain restore diagnostics
         if: always() && github.run_attempt > 1
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: restore-assemble-${{ github.run_attempt }}
           path: ${{ runner.temp }}/restore-assemble.json
           if-no-files-found: warn
       - if: steps.reuse.outputs.restored != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: python-assets
           path: dist
       - if: steps.reuse.outputs.restored != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: binary-*
           merge-multiple: true
@@ -217,7 +217,7 @@ jobs:
         id: subjects
         run: echo "subjects=$(cd dist && sha256sum -- * | base64 -w0)" >> "$GITHUB_OUTPUT"
       - if: steps.reuse.outputs.restored != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-dist
           path: dist/
@@ -231,8 +231,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-dist
           path: dist
@@ -268,7 +268,7 @@ jobs:
     if: always() && needs.assemble.result == 'success' && needs.github-draft.result == 'success' && (needs.provenance.result == 'success' || needs.provenance.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-dist
           path: dist
@@ -289,8 +289,8 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-dist
           path: dist
@@ -311,8 +311,8 @@ jobs:
     needs: pypi-publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-dist
           path: dist
@@ -322,7 +322,7 @@ jobs:
           python scripts/published_verify.py --version "${GITHUB_REF_NAME#v}" --target public-pypi
           cp "dist/sesslint-${GITHUB_REF_NAME#v}-starter-kit.zip" public-pypi/
           python scripts/smoke_distributions.py --directory public-pypi --version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: published-pypi-receipts
           path: public-pypi/smoke-*.json
@@ -342,8 +342,8 @@ jobs:
     needs: github-promote
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-dist
           path: dist
@@ -357,7 +357,7 @@ jobs:
           python scripts/release_artifacts.py verify --directory public-github --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --complete
           test -f public-github/sesslint-provenance.intoto.jsonl
           python scripts/smoke_distributions.py --directory public-github --version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: published-github-receipts
           path: public-github/smoke-*.json
