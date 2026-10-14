@@ -49,8 +49,8 @@ dev = [
 # above MUST stay empty (zero runtime deps is a hard project invariant).
 packaging = [
     "pyinstaller>=6",
-    "build==1.2.2.post1",
-    "hatchling==1.27.0",
+    "build==1.6.1",
+    "hatchling==1.32.4",
 ]
 # Dev-time ONLY: scoped mutation testing (qa-infra T-02). POSIX-only tool
 # (mutmut 3 needs os.fork — run under WSL/Linux/macOS/CI, never native
