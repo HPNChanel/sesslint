@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Human `check` output no longer prints a plain `Valid … session` line on the
+  same run as `healthy with warnings`. Warning-only runs keep the report
+  verdict (`Session is healthy with warnings`); clean runs still say `Valid`.
+  Exit codes and finding semantics are unchanged.
 - A config file that sets both `select` and `ignore` now fails closed with a
   `ConfigError` naming that file (exit 2). Previously `ignore` was silently
   dropped and `sesslint check` exited 0 with no warning.
