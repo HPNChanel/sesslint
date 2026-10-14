@@ -701,7 +701,7 @@ invalid values fail closed with exit 2.
 profile = "neutral"            # neutral | claude-strict | openai-strict
 format = "auto"                # auto | canonical | claude | claude-code-jsonl | codex | codex-rollout | openai | openai-agents
 fail_on = "error"              # error | warning
-ignore = ["SL107"]             # list of rule codes; use select = [...] to allow-list instead
+ignore = ["SL107"]             # rule codes to skip; mutually exclusive with select
 policy = "conservative"        # repair only: conservative | salvage
 exclude = ["vendor/*", "*.log"]
 ext = ["jsonl"]

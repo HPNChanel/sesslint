@@ -2,8 +2,8 @@
 
 Discovery walks upward from the cwd (``sesslint.toml`` > ``.sesslint.toml`` >
 ``pyproject.toml`` carrying ``[tool.sesslint]``); explicit CLI options always
-beat config values; unknown keys, bad types, and unreadable explicit paths
-fail closed.
+beat config values; unknown keys, bad types, a file that sets both ``select``
+and ``ignore``, and unreadable explicit paths fail closed.
 """
 
 from __future__ import annotations
@@ -124,6 +124,65 @@ def test_cli_explicit_config_path(
     data = json.loads(capsys.readouterr().out)
     assert data["counts"]["by_code"].get("SL101", 0) == 0
     assert code == 0
+
+
+def test_select_and_ignore_together_rejected(tmp_path: Path) -> None:
+    """Both keys are a usage error; the message names the config file."""
+    cfg_path = tmp_path / "sesslint.toml"
+    cfg_path.write_text('select = ["SL001"]\nignore = ["SL002"]\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="mutually exclusive") as exc:
+        load_config(start=tmp_path)
+    message = str(exc.value)
+    assert str(cfg_path) in message
+    assert "select" in message and "ignore" in message
+
+
+def test_cli_select_and_ignore_config_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``sesslint check`` must not succeed when the config sets both keys."""
+    cfg_path = tmp_path / "sesslint.toml"
+    cfg_path.write_text('select = ["SL001"]\nignore = ["SL002"]\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code = main(["check", str(CORRUPT)])
+    err = capsys.readouterr().err
+    assert code != 0
+    assert code == 2
+    assert str(cfg_path) in err
+    assert "select" in err and "ignore" in err
+
+
+def test_cli_config_only_select_still_applies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "sesslint.toml").write_text('select = ["SL101"]\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code = main(["check", str(CORRUPT), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["counts"]["by_code"] == {"SL101": 1}
+    assert code == 1
+
+
+def test_cli_config_only_ignore_still_applies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "sesslint.toml").write_text('ignore = ["SL101"]\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code = main(["check", str(CORRUPT), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["counts"]["by_code"].get("SL101", 0) == 0
+    assert code == 0
+
+
+def test_cli_config_neither_select_nor_ignore_unchanged(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "sesslint.toml").write_text('fail_on = "error"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code = main(["check", str(CORRUPT), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["counts"]["by_code"].get("SL101", 0) == 1
+    assert code == 1
 
 
 def test_cli_bad_config_exits_2(

@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A config file that sets both `select` and `ignore` now fails closed with a
+  `ConfigError` naming that file (exit 2). Previously `ignore` was silently
+  dropped and `sesslint check` exited 0 with no warning.
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.
 - Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction

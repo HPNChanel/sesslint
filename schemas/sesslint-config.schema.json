@@ -2,9 +2,16 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/HPNChanel/sesslint/main/schemas/sesslint-config.schema.json",
   "title": "sesslint-config/v1",
-  "description": "SessLint configuration: sesslint.toml, .sesslint.toml, or [tool.sesslint] in pyproject.toml. Mirrors the fail-closed key validation in sesslint.config — unknown keys are rejected.",
+  "description": "SessLint configuration: sesslint.toml, .sesslint.toml, or [tool.sesslint] in pyproject.toml. Mirrors the fail-closed key validation in sesslint.config — unknown keys are rejected, and select and ignore cannot both be set.",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "not": {
+        "required": ["select", "ignore"]
+      }
+    }
+  ],
   "properties": {
     "profile": {
       "type": "string",
@@ -37,12 +44,12 @@
     },
     "select": {
       "type": "array",
-      "description": "Rule codes to include (allow-list); when set, only these run.",
+      "description": "Rule codes to include (allow-list); when set, only these run. Mutually exclusive with ignore.",
       "items": {"type": "string", "pattern": "\\S"}
     },
     "ignore": {
       "type": "array",
-      "description": "Rule codes to suppress from the report.",
+      "description": "Rule codes to suppress from the report. Mutually exclusive with select.",
       "items": {"type": "string", "pattern": "\\S"}
     },
     "skip_undetected": {
