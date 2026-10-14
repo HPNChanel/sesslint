@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Directory scans with `jobs` > 1 start their worker pool with an explicit
+  `spawn` context. The previous pool inherited the POSIX default (`fork` on
+  Python 3.13), which warns and can deadlock when `scan_path` is called from
+  a process that already has threads. Report bytes stay identical to `jobs=1`.
 - Config discovery fails closed when a `pyproject.toml` contains the literal
   marker `[tool.sesslint` but cannot be parsed, instead of silently using a
   parent config. The error names that file and the parse error (CLI exit 2).
