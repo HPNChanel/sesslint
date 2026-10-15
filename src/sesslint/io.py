@@ -283,21 +283,93 @@ _STRICT_JSON_DECODER: Final[json.JSONDecoder] = json.JSONDecoder(
 _SURROGATE_CHAR: Final[re.Pattern[str]] = re.compile(r"[\ud800-\udfff]")
 
 
-def _object_has_lone_surrogate(obj: Any) -> bool:
-    """Return True when ``obj`` contains an unpaired UTF-16 surrogate character."""
+class LoneSurrogateError(ValueError):
+    """Unpaired UTF-16 surrogate inside a decoded JSON string (AC-03).
+
+    ``escapes`` lists the distinct code points as ASCII ``\\uXXXX`` text,
+    lowest first. The exception text stays ``lone surrogate in JSON string``
+    so evidence copied from ``str(err)`` does not grow a payload.
+    """
+
+    escapes: tuple[str, ...]
+
+    def __init__(self, escapes: tuple[str, ...]) -> None:
+        self.escapes = escapes
+        super().__init__("lone surrogate in JSON string")
+
+
+def _lone_surrogate_escapes(obj: Any) -> tuple[str, ...]:
+    """Distinct unpaired surrogates in ``obj``, as ``\\uXXXX`` text, lowest first."""
+    found: set[str] = set()
     stack: list[Any] = [obj]
     while stack:
         current = stack.pop()
         current_type = type(current)
         if current_type is str:
-            if _SURROGATE_CHAR.search(current) is not None:
-                return True
+            if _SURROGATE_CHAR.search(current) is None:
+                continue
+            for ch in current:
+                code = ord(ch)
+                if 0xD800 <= code <= 0xDFFF:
+                    found.add(f"\\u{code:04x}")
         elif current_type is dict:
             stack.extend(current.values())
             stack.extend(current)
         elif current_type is list:
             stack.extend(current)
-    return False
+    if not found:
+        return ()
+    return tuple(sorted(found))
+
+
+def _surrogate_why_list(escapes: tuple[str, ...]) -> str:
+    """Join surrogate escapes so the rendered Why line stays within 500 characters."""
+    # Worst rendered line number is far below 12 digits; reserve that width.
+    fixed = len(
+        "Line 123456789012 contains a lone UTF-16 surrogate () "
+        "and cannot be decoded as a session record"
+    )
+    budget = 500 - fixed
+    parts: list[str] = []
+    used = 0
+    for esc in escapes:
+        extra = len(esc) if not parts else len(esc) + 2
+        if used + extra > budget:
+            break
+        parts.append(esc)
+        used += extra
+    hidden = len(escapes) - len(parts)
+    if hidden == 0:
+        return ", ".join(parts)
+    tail = f", and {hidden} more"
+    while parts and used + len(tail) > budget:
+        removed = parts.pop()
+        used -= len(removed)
+        if parts:
+            used -= 2
+        hidden += 1
+        tail = f", and {hidden} more"
+    if not parts:
+        return f"{hidden} code points"
+    return ", ".join(parts) + tail
+
+
+def decode_error_message_template(err: BaseException, *, terminal: bool) -> str:
+    """SL001/SL002 message template for one JSON decode failure (AC-03).
+
+    A lone surrogate names the code point. Every other failure keeps the
+    torn-terminal or malformed-record wording.
+    """
+    if isinstance(err, LoneSurrogateError) and err.escapes:
+        shown = _surrogate_why_list(err.escapes)
+        return (
+            "Line {line} contains a lone UTF-16 surrogate ("
+            + shown
+            + ") and cannot be decoded as a session record"
+        )
+    if terminal:
+        return "Torn terminal record on line {line} for record {record_id}"
+    return "Malformed record on line {line} for record {record_id}"
 
 
 def _reject_lone_surrogates(text: str, obj: Any) -> None:
@@ -314,8 +386,9 @@ def _reject_lone_surrogates(text: str, obj: Any) -> None:
     """
     if "\\u" not in text and "\\U" not in text:
         return
-    if _object_has_lone_surrogate(obj):
-        raise ValueError("lone surrogate in JSON string")
+    escapes = _lone_surrogate_escapes(obj)
+    if escapes:
+        raise LoneSurrogateError(escapes)
 
 
 def check_nesting_depth(obj: Any, max_depth: int) -> bool:
@@ -761,14 +834,10 @@ def _process_line(
             source=source,
             evidence=coord_evidence,
         )
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = decode_error_message_template(err, terminal=is_terminal)
         return make_finding(
             code=code,
             message_template=msg_template,

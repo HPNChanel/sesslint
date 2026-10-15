@@ -16,7 +16,22 @@ import pytest
 from sesslint.api import check_file
 from sesslint.cli import main
 from sesslint.errors import SchemaError
-from sesslint.io import _DuplicateAwareDecoder, decode_json_dupaware
+from sesslint.io import (
+    LoneSurrogateError,
+    _DuplicateAwareDecoder,
+    decode_error_message_template,
+    decode_json_dupaware,
+)
+
+_SURROGATE_WHY = (
+    "Line {line} contains a lone UTF-16 surrogate ({escapes}) "
+    "and cannot be decoded as a session record"
+)
+
+
+def _surrogate_why(line: int, escapes: str = "\\ud800") -> str:
+    return _SURROGATE_WHY.format(line=line, escapes=escapes)
+
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "cli" / "check_basic"
 HEALTHY = FIXTURES / "healthy.jsonl"
@@ -48,18 +63,49 @@ def _claude_line(message: str, *, record_id: str = "msg_01", parent: str | None 
 
 def test_decode_rejects_lone_surrogate_and_keeps_pairs() -> None:
     """The strict decoder rejects unpaired surrogates and accepts real pairs."""
-    with pytest.raises(ValueError, match="lone surrogate"):
+    with pytest.raises(LoneSurrogateError, match="lone surrogate") as high:
         decode_json_dupaware('{"text":"\\ud800"}')
-    with pytest.raises(ValueError, match="lone surrogate"):
+    assert high.value.escapes == ("\\ud800",)
+    with pytest.raises(LoneSurrogateError, match="lone surrogate") as low:
         decode_json_dupaware('{"text":"\\udc00"}')
-    with pytest.raises(ValueError, match="lone surrogate"):
-        _DuplicateAwareDecoder().decode('{"text":"\\udfff"}')
+    assert low.value.escapes == ("\\udc00",)
+    with pytest.raises(LoneSurrogateError, match="lone surrogate") as both:
+        _DuplicateAwareDecoder().decode('{"text":"\\udfff\\ud800"}')
+    assert both.value.escapes == ("\\ud800", "\\udfff")
 
     paired, _dups, _trunc = decode_json_dupaware('{"text":"\\ud83d\\ude00"}')
     assert paired["text"] == "\U0001f600"
 
     literal, _dups, _trunc = decode_json_dupaware('{"text":"\\\\ud800"}')
     assert literal["text"] == "\\ud800"
+
+
+def test_decode_error_template_names_only_lone_surrogates() -> None:
+    """Surrogate Why text is specific; other decode failures keep the old sentence."""
+    with pytest.raises(LoneSurrogateError) as caught:
+        decode_json_dupaware('{"text":"\\udfff\\ud800"}')
+    template = decode_error_message_template(caught.value, terminal=True)
+    assert template == (
+        "Line {line} contains a lone UTF-16 surrogate (\\ud800, \\udfff) "
+        "and cannot be decoded as a session record"
+    )
+    torn = decode_error_message_template(json.JSONDecodeError("bad", "doc", 0), terminal=True)
+    assert torn == "Torn terminal record on line {line} for record {record_id}"
+    malformed = decode_error_message_template(ValueError("Out-of-range float: 1"), terminal=False)
+    assert malformed == "Malformed record on line {line} for record {record_id}"
+
+
+def test_many_surrogates_keep_the_why_line_bounded() -> None:
+    """A line with many unpaired surrogates still renders a bounded Why sentence."""
+    chars = "".join(chr(0xD800 + i) for i in range(80))
+    text = json.dumps({"text": chars}, ensure_ascii=True)
+    with pytest.raises(LoneSurrogateError) as caught:
+        decode_json_dupaware(text)
+    rendered = decode_error_message_template(caught.value, terminal=False).format(line="1")
+    assert len(rendered) <= 500
+    assert rendered.startswith("Line 1 contains a lone UTF-16 surrogate (\\ud800")
+    assert rendered.endswith("and cannot be decoded as a session record")
+    assert " more" in rendered
 
 
 def test_lone_surrogate_line_is_a_finding(
@@ -77,6 +123,8 @@ def test_lone_surrogate_line_is_a_finding(
     assert any(f.code == "SL001" for f in report.findings)
     assert all(SENTINEL not in f.message for f in report.findings)
 
+    assert any(f.message == _surrogate_why(1) for f in report.findings)
+
     code, out, err = _run(["check", str(path)], capsys)
     assert code == 1
     assert "Traceback" not in out
@@ -84,9 +132,10 @@ def test_lone_surrogate_line_is_a_finding(
     assert "Canonical serialization" not in err
     assert "Validation error" not in err
     assert "Malformed record" in out
+    assert _surrogate_why(1) in out
     assert SENTINEL not in out
     assert SENTINEL not in err
-    assert "\\ud800" not in out
+    assert "\ud800" not in out
 
 
 def test_terminal_lone_surrogate_is_a_finding(
@@ -99,9 +148,24 @@ def test_terminal_lone_surrogate_is_a_finding(
     assert code == 1
     data = json.loads(out)
     assert data["schema_version"] == "sesslint.report/v1"
-    assert any(f["code"] in {"SL001", "SL002"} for f in data["findings"])
+    finding = next(f for f in data["findings"] if f["code"] in {"SL001", "SL002"})
+    assert finding["code"] == "SL002"
+    assert set(finding) == {
+        "code",
+        "evidence",
+        "fingerprint",
+        "remediation",
+        "repairability",
+        "severity",
+        "span",
+    }
     assert SENTINEL not in out
     assert "Traceback" not in err
+
+    human_code, human, _herr = _run(["check", str(path)], capsys)
+    assert human_code == 1
+    assert _surrogate_why(1) in human
+    assert "Torn terminal record on line" not in human
 
 
 def test_canonical_event_lone_surrogate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -127,6 +191,34 @@ def test_canonical_event_lone_surrogate(tmp_path: Path, capsys: pytest.CaptureFi
     assert any(f["code"] == "SL001" for f in data["findings"])
     assert SENTINEL not in out
     assert "Canonical serialization" not in err
+    human_code, human, _herr = _run(["check", str(path), "--format", "canonical"], capsys)
+    assert human_code == 1
+    assert _surrogate_why(2) in human
+
+
+def test_ordinary_torn_and_malformed_keep_their_why(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A truncated append and a broken mid-file line keep the previous Why text."""
+    torn = tmp_path / "torn.jsonl"
+    torn.write_text(_claude_line("ok") + '\n{"id":"msg_02","mess\n', encoding="utf-8")
+    code, out, _err = _run(["check", str(torn)], capsys)
+    assert code == 1
+    assert "Torn terminal record on line 2 for record" in out
+    assert "lone UTF-16 surrogate" not in out
+
+    malformed = tmp_path / "mid.jsonl"
+    malformed.write_text(
+        _claude_line("ok")
+        + '\n{"id":"msg_mid"\n'
+        + _claude_line("later", record_id="msg_03", parent="msg_01")
+        + "\n",
+        encoding="utf-8",
+    )
+    code, out, _err = _run(["check", str(malformed)], capsys)
+    assert code == 1
+    assert "Malformed record on line 2 for record" in out
+    assert "lone UTF-16 surrogate" not in out
 
 
 def test_paired_surrogate_and_literal_escape_stay_healthy(
