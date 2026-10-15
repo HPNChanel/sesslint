@@ -83,6 +83,38 @@ def test_parallel_mixed_fixture_matches_sequential() -> None:
     assert seq.totals.total >= 4
 
 
+def test_parallel_fixtures_tree_byte_identical_to_sequential() -> None:
+    """jobs>1 report bytes match jobs=1 across the synthetic fixtures tree."""
+    seq = scan_path(FIXTURES_DIR, recursive=True, jobs=1)
+    par = scan_path(FIXTURES_DIR, recursive=True, jobs=4)
+    assert seq.to_json() == par.to_json()
+    assert seq.totals.total == par.totals.total
+    assert seq.totals.total > 0
+
+
+def test_parallel_pool_start_method_is_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker pool must pass an explicit spawn context, never the fork default."""
+    import concurrent.futures
+    from multiprocessing.context import BaseContext
+
+    real = concurrent.futures.ProcessPoolExecutor
+    seen: list[str] = []
+
+    def _factory(*args: object, **kwargs: object) -> concurrent.futures.ProcessPoolExecutor:
+        ctx = kwargs.get("mp_context")
+        assert isinstance(ctx, BaseContext)
+        seen.append(ctx.get_start_method())
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", _factory)
+    tree = _build_tree(tmp_path / "tree", copies=2)
+    report = scan_path(tree, recursive=True, jobs=2)
+    assert seen == ["spawn"]
+    assert report.totals.total >= 1
+
+
 def test_parallel_progress_emits_in_file_order(tmp_path: Path) -> None:
     tree = _build_tree(tmp_path / "tree", copies=6)
     items: list[str | None] = []
