@@ -676,14 +676,15 @@ sesslint bundle <path> [OPTIONS]
 
 ### Exit Codes
 
-SessLint implements predictable, POSIX-compliant exit code semantics:
+SessLint implements predictable, POSIX-compliant exit code semantics.
+For `check`: an internal tool error exits 2, a session with findings exits 1, a clean session exits 0.
 
-| Exit Code | Meaning               | Condition                                                                                     |
-| :-------: | :-------------------- | :-------------------------------------------------------------------------------------------- |
-|    `0`    | **Success**           | Clean check, or repair successfully executed, validated, and manifested.                      |
-|    `1`    | **Finding / Refusal** | Diagnostic errors found, repair plan blocked, or execution refused (TOCTOU, `SL203`).         |
-|    `2`    | **Operational Error** | CLI syntax error, file not found, permission denied, or live DB path refusal.                 |
-|   `130`   | **Cancelled**         | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up. |
+| Exit Code | Meaning                 | Condition                                                                                                      |
+| :-------: | :---------------------- | :------------------------------------------------------------------------------------------------------------- |
+|    `0`    | **Clean session**       | A clean session exits 0. Repair that was executed, validated, and manifested also exits 0.                     |
+|    `1`    | **Findings**            | A session with findings exits 1. Repair refusal (TOCTOU, `SL203`) also exits 1.                                |
+|    `2`    | **Internal tool error** | An internal tool error exits 2. Usage errors, missing files, permission errors, and live DB refusal also exit 2. |
+|   `130`   | **Cancelled**           | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up.                  |
 
 ---
 

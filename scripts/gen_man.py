@@ -23,20 +23,24 @@ from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sesslint.cli import CHECK_EXIT_CONTRACT  # noqa: E402
+
 PROG: Final[str] = "sesslint"
 
-_EXIT_STATUS: Final[str] = """.SH EXIT STATUS
+# Same sentence as ``sesslint --help`` and the README (AC-02 / FR-098).
+_EXIT_STATUS: Final[str] = f""".SH EXIT STATUS
+{CHECK_EXIT_CONTRACT}.
 .TP
 .B 0
-Success — clean check, or repair executed, validated, and manifested.
+A clean session exits 0. Also: repair executed, validated, and manifested.
 .TP
 .B 1
-Finding / refusal — diagnostic errors found, repair plan blocked, or
-execution refused (TOCTOU, SL203).
+A session with findings exits 1. Also: repair plan blocked, or execution
+refused (TOCTOU, SL203).
 .TP
 .B 2
-Operational error — CLI syntax error, file not found, permission denied,
-or live-DB path refusal.
+An internal tool error exits 2. Also: CLI syntax error, file not found,
+permission denied, or live-DB path refusal.
 .TP
 .B 130
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;

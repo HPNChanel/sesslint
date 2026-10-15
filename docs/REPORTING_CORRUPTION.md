@@ -19,8 +19,7 @@ sesslint check ~/.claude/projects/<slug>/<session>.jsonl
 
 The report lists findings by rule code (`SL101` orphan tool call, `SL004`
 missing parent, …), severity, and affected record ordinals — not message
-content. Exit code `0` means structurally clean; `1` means findings; `2`
-means the file could not be read or detected.
+content. For `sesslint check`, an internal tool error exits 2, a session with findings exits 1, a clean session exits 0.
 
 Don't know where your sessions live? `sesslint scan --agent claude`
 (or `codex`, `all`) auto-discovers the well-known roots and triages every file.

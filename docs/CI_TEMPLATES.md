@@ -10,8 +10,9 @@ Conventions shared by every template below:
 
 - **Pinned install**: `pip install sesslint==X.Y.Z` — never a floating
   `latest`; bump deliberately.
-- **Exit codes**: `0` clean · `1` findings at or above `--fail-on`
-  threshold · `2` usage/I-O error. CI steps fail naturally on `1`.
+- **Exit codes**: an internal tool error exits 2, a session with findings exits 1, a clean session exits 0.
+  Exit 1 applies to findings at or above `--fail-on` (default `error`).
+  Usage and I/O errors also exit 2. CI steps fail naturally on `1`.
 - **Flags**: `--fail-on error|warning`, `--output-format human|json|sarif|html`,
   `--profile`, `--format`, `--select`, `--ignore`, `--baseline`,
   `--exclude`, `--ext`, `--skip-undetected`, `--config` — same surface as

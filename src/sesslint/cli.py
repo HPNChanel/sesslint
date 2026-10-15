@@ -33,6 +33,12 @@ FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "openai-agents": "OpenAI Agents",
 }
 
+# AC-02 / FR-098. User-facing docs (``--help``, README, man pages) must state
+# this sentence verbatim: clean → 0, findings → 1, internal tool error → 2.
+CHECK_EXIT_CONTRACT: Final[str] = (
+    "an internal tool error exits 2, a session with findings exits 1, a clean session exits 0"
+)
+
 
 def _handle_internal_error(err: Exception, args: argparse.Namespace | None = None) -> int:
     """Handle unexpected internal operational errors per FR-097, FR-098, FR-099.
@@ -564,9 +570,13 @@ def create_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Exit codes:\n"
-            "  0  Healthy session / verification passed / dry-run plan generated\n"
-            "  1  Integrity findings detected / verification failed / repair refused\n"
-            "  2  Usage error / invalid flag combination / I/O failure\n\n"
+            f"  {CHECK_EXIT_CONTRACT}.\n"
+            "  0  a clean session exits 0\n"
+            "     (also verification passed / dry-run plan generated)\n"
+            "  1  a session with findings exits 1\n"
+            "     (also verification failed / repair refused)\n"
+            "  2  an internal tool error exits 2\n"
+            "     (also usage error / invalid flags / I/O failure)\n\n"
             "Important Notes:\n"
             "  - redaction is best-effort minimization, not a completeness guarantee\n"
             "  - sesslint makes no semantic or side-effect safety claims"
@@ -634,7 +644,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="[read-only] Check a session file with auto-detection.",
         description=(
             "[read-only] Check a session file for structural defects, causal breaks, "
-            "and schema violations."
+            f"and schema violations. {CHECK_EXIT_CONTRACT}."
         ),
     )
     check_parser.add_argument(

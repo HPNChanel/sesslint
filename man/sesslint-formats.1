@@ -10,17 +10,18 @@ sesslint-formats \- [read\-only] List supported session format adapters.
 .B \-\-json
 Output supported formats as JSON array
 .SH EXIT STATUS
+an internal tool error exits 2, a session with findings exits 1, a clean session exits 0.
 .TP
 .B 0
-Success — clean check, or repair executed, validated, and manifested.
+A clean session exits 0. Also: repair executed, validated, and manifested.
 .TP
 .B 1
-Finding / refusal — diagnostic errors found, repair plan blocked, or
-execution refused (TOCTOU, SL203).
+A session with findings exits 1. Also: repair plan blocked, or execution
+refused (TOCTOU, SL203).
 .TP
 .B 2
-Operational error — CLI syntax error, file not found, permission denied,
-or live-DB path refusal.
+An internal tool error exits 2. Also: CLI syntax error, file not found,
+permission denied, or live-DB path refusal.
 .TP
 .B 130
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
