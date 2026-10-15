@@ -540,7 +540,15 @@ def _emit_check_report(
             )
         )
         return exit_code
-    from sesslint.report import render_human
+    from sesslint.report import EMPTY_INPUT_MESSAGE, finding_is_empty_input, render_human
+
+    # Zero-length / whitespace-only input is not malformed content. Print one
+    # standalone line and do not suggest a repair command (the per-line
+    # salvage recipe cannot run on a file with no records).
+    empty_findings = list(report.findings)
+    if empty_findings and all(finding_is_empty_input(f) for f in empty_findings):
+        print(EMPTY_INPUT_MESSAGE)
+        return 1
 
     use_color = should_color(args, sys.stdout)
     human_text = render_human(

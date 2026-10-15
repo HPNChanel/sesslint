@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `check` on an empty or whitespace-only file exits 1 with a standalone
+  empty-input message and does not suggest a repair command. Malformed
+  content still reports its own message and repair hint.
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.
 - Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction
