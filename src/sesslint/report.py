@@ -1921,6 +1921,26 @@ def build_repro_metadata(
     )
 
 
+# Standalone refusal for a file with no records. Distinct from the
+# malformed-record message: empty or whitespace-only input is not invalid
+# content, and no repair command applies.
+EMPTY_INPUT_MESSAGE: Final[str] = "Empty input: file contains no session records"
+
+
+def finding_is_empty_input(f: Finding) -> bool:
+    """Return True when ``f`` records zero-length or whitespace-only input.
+
+    Empty input fails closed as SL001, but it is not a malformed record.
+    Per-line salvage commands do not apply and must not be suggested.
+    """
+    evidence = f.evidence
+    if not isinstance(evidence, Mapping):
+        return False
+    if evidence.get("reason") == "empty_input":
+        return True
+    return evidence.get("detail") == "empty-or-whitespace-only input"
+
+
 def get_finding_remediation(
     f: Finding,
     *,
@@ -1936,7 +1956,13 @@ def get_finding_remediation(
     ``for_operator=True`` renders the hint path in copy-paste usable form
     (``hint_path``) for terminal output; the default ``False`` keeps the
     privacy-minimized form used inside shareable report artifacts.
+
+    Empty input is refused without a repair command: the salvage hint for
+    per-line malformed records exits 2 on a file that has no records.
     """
+    if finding_is_empty_input(f):
+        return f"{EMPTY_INPUT_MESSAGE}; automated repair refused"
+
     from sesslint.codes import Repairability
     from sesslint.repair.refusals import refusal_rationale_for
 
@@ -2186,6 +2212,10 @@ def render_human(
                 from sesslint.repair.refusals import refusal_rationale_for
 
                 for f in sorted(report.findings, key=finding_report_sort_key):
+                    # Empty input has no applicable salvage command. Offering
+                    # the per-line malformed-record recipe exits 2.
+                    if finding_is_empty_input(f):
+                        continue
                     entry = refusal_rationale_for(f.code)
                     if entry is not None and entry.salvage_path is not None:
                         p = hint_path(f.source.path, home=home)
