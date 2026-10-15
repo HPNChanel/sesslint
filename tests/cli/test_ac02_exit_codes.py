@@ -1,8 +1,9 @@
 """AC-02 exit-code contract (FR-098).
 
-An internal tool error exits 2, a session with findings exits 1, a clean
-session exits 0. User-facing docs must state that sentence verbatim, and the
-observed ``check`` codes must match it. ``NO_COLOR`` changes styling only.
+Per-code lines, in order: a clean session exits 0, a session with findings
+exits 1, an internal tool error exits 2. User-facing docs must use those
+phrases. ``--help`` has no summary sentence above the list. ``NO_COLOR``
+changes styling only.
 """
 
 from __future__ import annotations
@@ -13,14 +14,25 @@ from unittest.mock import patch
 
 import pytest
 
-from sesslint.cli import CHECK_EXIT_CONTRACT, main
+from sesslint.cli import CHECK_EXIT_LINES, CHECK_EXIT_NOTES, main
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = REPO_ROOT / "fixtures" / "cli"
 HEALTHY = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
 
-# Verbatim AC-02 sentence. Docs, ``--help``, and man pages must contain it.
-AC02_CONTRACT = (
+# Per-code phrases, in order 0, 1, 2. Docs must state these exactly.
+AC02_LINES = (
+    "0  a clean session exits 0",
+    "1  a session with findings exits 1",
+    "2  an internal tool error exits 2",
+)
+AC02_NOTES = (
+    "(also verification passed / dry-run plan generated)",
+    "(also verification failed / repair refused)",
+    "(also usage error / invalid flags / I/O failure)",
+)
+# Removed from ``--help``. Docs must not bring it back as a summary line.
+AC02_SUMMARY = (
     "an internal tool error exits 2, a session with findings exits 1, a clean session exits 0"
 )
 
@@ -53,9 +65,11 @@ def _run(argv: list[str]) -> int:
         return int(code) if isinstance(code, int) else 0
 
 
-def test_contract_constant_is_the_ac02_sentence() -> None:
-    """The CLI constant is the sentence the docs are required to state."""
-    assert CHECK_EXIT_CONTRACT == AC02_CONTRACT
+def test_contract_constant_is_the_per_code_lines() -> None:
+    """The CLI constants are the per-code lines and notes, in order 0, 1, 2."""
+    assert CHECK_EXIT_LINES == AC02_LINES
+    assert CHECK_EXIT_NOTES == AC02_NOTES
+    assert AC02_SUMMARY not in "\n".join(CHECK_EXIT_LINES)
 
 
 def test_clean_session_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
@@ -128,34 +142,44 @@ def test_no_color_keeps_exit_codes_and_strips_ansi(
     assert ANSI_ESCAPE.search(internal_out.err) is None
 
 
+def _assert_per_code_wording(text: str, where: str) -> None:
+    """Phrases and notes appear in order 0, 1, 2, with no summary sentence."""
+    positions: list[int] = []
+    for line, note in zip(AC02_LINES, AC02_NOTES, strict=True):
+        phrase = line.split("  ", 1)[1]
+        assert phrase in text, f"{where} missing {phrase!r}"
+        assert note in text, f"{where} missing {note!r}"
+        positions.append(text.index(phrase))
+    assert positions == sorted(positions), f"{where} per-code lines are out of order"
+    assert AC02_SUMMARY not in text, f"{where} still has the summary sentence"
+
+
 def test_docs_state_ac02_contract_exactly() -> None:
     """README, CI docs, the corruption guide, and every man page state AC-02."""
     for path in DOC_PATHS:
         text = path.read_text(encoding="utf-8")
-        assert AC02_CONTRACT in text, f"{path.relative_to(REPO_ROOT)} must state AC-02 exactly"
+        _assert_per_code_wording(text, str(path.relative_to(REPO_ROOT)))
 
     man_pages = sorted((REPO_ROOT / "man").glob("*.1"))
     assert man_pages, "man/ pages missing"
     for page in man_pages:
         text = page.read_text(encoding="utf-8")
-        assert AC02_CONTRACT in text, f"{page.name} must state AC-02 exactly"
+        _assert_per_code_wording(text, page.name)
 
 
 def test_cli_help_states_ac02_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """``sesslint --help`` and ``sesslint check --help`` state the contract."""
+    """``sesslint --help`` lists codes 0, 1, 2 and has no summary sentence."""
     with pytest.raises(SystemExit) as top:
         main(["--help"])
     assert top.value.code == 0
     top_out = capsys.readouterr().out
-    assert AC02_CONTRACT in top_out
     assert "Exit codes:" in top_out
-
-    with pytest.raises(SystemExit) as check_help:
-        main(["check", "--help"])
-    assert check_help.value.code == 0
-    check_out = capsys.readouterr().out
-    # Help wrapping may insert newlines; the words must still state the contract.
-    assert AC02_CONTRACT in " ".join(check_out.split())
+    section = top_out.split("Exit codes:\n", 1)[1].split("Important Notes:", 1)[0]
+    expected = "".join(
+        f"  {line}\n     {note}\n" for line, note in zip(AC02_LINES, AC02_NOTES, strict=True)
+    )
+    assert section == expected + "\n"
+    assert AC02_SUMMARY not in top_out
 
 
 def test_documented_codes_match_observed_behavior(
@@ -185,6 +209,7 @@ def test_documented_codes_match_observed_behavior(
         "an internal tool error exits": 2,
     }
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    joined = "\n".join(AC02_LINES)
     for phrase, code in observed.items():
         assert f"{phrase} {code}" in readme
-        assert f"{phrase} {code}" in AC02_CONTRACT
+        assert f"{phrase} {code}" in joined

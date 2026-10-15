@@ -22,18 +22,18 @@ Input format override for \-\-source (default: auto) Choices: auto, canonical, c
 .B \-\-profile PROFILE
 Validation profile for \-\-source re\-check (default: neutral) Default: neutral.
 .SH EXIT STATUS
-an internal tool error exits 2, a session with findings exits 1, a clean session exits 0.
 .TP
 .B 0
-A clean session exits 0. Also: repair executed, validated, and manifested.
+a clean session exits 0
+(also verification passed / dry-run plan generated)
 .TP
 .B 1
-A session with findings exits 1. Also: repair plan blocked, or execution
-refused (TOCTOU, SL203).
+a session with findings exits 1
+(also verification failed / repair refused)
 .TP
 .B 2
-An internal tool error exits 2. Also: CLI syntax error, file not found,
-permission denied, or live-DB path refusal.
+an internal tool error exits 2
+(also usage error / invalid flags / I/O failure)
 .TP
 .B 130
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;

@@ -33,10 +33,18 @@ FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "openai-agents": "OpenAI Agents",
 }
 
-# AC-02 / FR-098. User-facing docs (``--help``, README, man pages) must state
-# this sentence verbatim: clean → 0, findings → 1, internal tool error → 2.
-CHECK_EXIT_CONTRACT: Final[str] = (
-    "an internal tool error exits 2, a session with findings exits 1, a clean session exits 0"
+# AC-02 / FR-098. Per-code lines, in order 0, 1, 2. ``--help``, the README,
+# man pages, the CI template, and the corruption guide must use these phrases.
+# There is no summary sentence above the list.
+CHECK_EXIT_LINES: Final[tuple[str, ...]] = (
+    "0  a clean session exits 0",
+    "1  a session with findings exits 1",
+    "2  an internal tool error exits 2",
+)
+CHECK_EXIT_NOTES: Final[tuple[str, ...]] = (
+    "(also verification passed / dry-run plan generated)",
+    "(also verification failed / repair refused)",
+    "(also usage error / invalid flags / I/O failure)",
 )
 
 
@@ -570,13 +578,11 @@ def create_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Exit codes:\n"
-            f"  {CHECK_EXIT_CONTRACT}.\n"
-            "  0  a clean session exits 0\n"
-            "     (also verification passed / dry-run plan generated)\n"
-            "  1  a session with findings exits 1\n"
-            "     (also verification failed / repair refused)\n"
-            "  2  an internal tool error exits 2\n"
-            "     (also usage error / invalid flags / I/O failure)\n\n"
+            + "".join(
+                f"  {line}\n     {note}\n"
+                for line, note in zip(CHECK_EXIT_LINES, CHECK_EXIT_NOTES, strict=True)
+            )
+            + "\n"
             "Important Notes:\n"
             "  - redaction is best-effort minimization, not a completeness guarantee\n"
             "  - sesslint makes no semantic or side-effect safety claims"
@@ -644,7 +650,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="[read-only] Check a session file with auto-detection.",
         description=(
             "[read-only] Check a session file for structural defects, causal breaks, "
-            f"and schema violations. {CHECK_EXIT_CONTRACT}."
+            "and schema violations."
         ),
     )
     check_parser.add_argument(

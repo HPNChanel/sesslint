@@ -677,14 +677,13 @@ sesslint bundle <path> [OPTIONS]
 ### Exit Codes
 
 SessLint implements predictable, POSIX-compliant exit code semantics.
-For `check`: an internal tool error exits 2, a session with findings exits 1, a clean session exits 0.
 
-| Exit Code | Meaning                 | Condition                                                                                                      |
-| :-------: | :---------------------- | :------------------------------------------------------------------------------------------------------------- |
-|    `0`    | **Clean session**       | A clean session exits 0. Repair that was executed, validated, and manifested also exits 0.                     |
-|    `1`    | **Findings**            | A session with findings exits 1. Repair refusal (TOCTOU, `SL203`) also exits 1.                                |
-|    `2`    | **Internal tool error** | An internal tool error exits 2. Usage errors, missing files, permission errors, and live DB refusal also exit 2. |
-|   `130`   | **Cancelled**           | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up.                  |
+| Exit Code | Meaning                 | Condition                                                                              |
+| :-------: | :---------------------- | :------------------------------------------------------------------------------------- |
+|    `0`    | **Clean session**       | a clean session exits 0 (also verification passed / dry-run plan generated)           |
+|    `1`    | **Findings**            | a session with findings exits 1 (also verification failed / repair refused)           |
+|    `2`    | **Internal tool error** | an internal tool error exits 2 (also usage error / invalid flags / I/O failure)       |
+|   `130`   | **Cancelled**           | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up. |
 
 ---
 
