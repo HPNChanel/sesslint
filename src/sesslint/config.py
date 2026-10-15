@@ -10,8 +10,9 @@ Resolution order for each supported option:
 3. Built-in defaults.
 
 Configuration is loaded with the stdlib ``tomllib`` only — no runtime
-dependency. Unknown keys, wrong types, and unreadable explicit config paths
-fail closed with a usage error rather than being silently ignored.
+dependency. Unknown keys, wrong types, a file that sets both ``select`` and
+``ignore``, and unreadable explicit config paths fail closed with a usage
+error rather than being silently ignored.
 """
 
 from __future__ import annotations
@@ -113,6 +114,10 @@ def _validate_keys(cfg: dict[str, Any], source: Path) -> dict[str, Any]:
             f"Unknown sesslint config key(s) {unknown} in {source}. "
             f"Allowed keys: {sorted(_ALLOWED_KEYS)}"
         )
+    # Presence, not truthiness: an empty list is still the key being set.
+    # CLI apply uses if/elif and would otherwise drop ``ignore`` silently.
+    if "select" in cfg and "ignore" in cfg:
+        raise ConfigError(f"Config keys 'select' and 'ignore' are mutually exclusive in {source}")
     out: dict[str, Any] = {}
     for key, value in cfg.items():
         if key in _STR_KEYS:
@@ -165,7 +170,7 @@ def load_config(
 
     Raises:
         ConfigError: explicit path missing/unreadable, TOML parse failure,
-            or invalid keys/values.
+            invalid keys/values, or both ``select`` and ``ignore`` set.
     """
     if explicit is not None:
         if explicit.is_dir():

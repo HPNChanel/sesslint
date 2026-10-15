@@ -268,7 +268,8 @@ def _apply_config(args: argparse.Namespace, cfg: Mapping[str, Any]) -> None:
     if not getattr(args, "skip_undetected", False) and cfg.get("skip_undetected"):
         args.skip_undetected = True
     # select/ignore share one axis: an explicit CLI choice overrides the whole
-    # config axis (a config file that sets both is rejected downstream).
+    # config axis. A file that sets both keys is rejected by config validation
+    # before this function runs, so at most one of the two is present here.
     if _rule_codes_arg(args, "select") is None and _rule_codes_arg(args, "ignore") is None:
         if cfg.get("select"):
             args.select = ",".join(cfg["select"])
