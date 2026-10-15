@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Config discovery fails closed when a `pyproject.toml` contains the literal
+  marker `[tool.sesslint` but cannot be parsed, instead of silently using a
+  parent config. The error names that file and the parse error (CLI exit 2).
+  A `pyproject.toml` with no sesslint marker is still skipped when it is
+  unreadable or invalid, so an unrelated syntax error does not hide a parent
+  `sesslint.toml`.
 - Human `check` output no longer prints a plain `Valid … session` line on the
   same run as `healthy with warnings`. Warning-only runs keep the report
   verdict (`Session is healthy with warnings`); clean runs still say `Valid`.

@@ -693,7 +693,11 @@ SessLint reads project defaults from `[tool.sesslint]` in `sesslint.toml`,
 `.sesslint.toml`, or `pyproject.toml`, discovered by walking upward from the
 working directory (ruff-style). Explicit `--config PATH` overrides discovery.
 Precedence is **CLI flag > config file > built-in default**; unknown keys and
-invalid values fail closed with exit 2.
+invalid values fail closed with exit 2. A `pyproject.toml` that contains the
+literal marker `[tool.sesslint` but is not valid TOML or UTF-8 also fails
+closed (exit 2) and is never replaced by a parent config. A `pyproject.toml`
+with no `[tool.sesslint` marker is not a sesslint config: if that file is
+unreadable or fails to parse, discovery skips it and keeps walking.
 
 ```toml
 #:schema https://raw.githubusercontent.com/HPNChanel/sesslint/main/schemas/sesslint-config.schema.json
