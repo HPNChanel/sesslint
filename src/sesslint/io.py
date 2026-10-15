@@ -322,51 +322,23 @@ def _lone_surrogate_escapes(obj: Any) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
-def _surrogate_why_list(escapes: tuple[str, ...]) -> str:
-    """Join surrogate escapes so the rendered Why line stays within 500 characters."""
-    # Worst rendered line number is far below 12 digits; reserve that width.
-    fixed = len(
-        "Line 123456789012 contains a lone UTF-16 surrogate () "
-        "and cannot be decoded as a session record"
-    )
-    budget = 500 - fixed
-    parts: list[str] = []
-    used = 0
-    for esc in escapes:
-        extra = len(esc) if not parts else len(esc) + 2
-        if used + extra > budget:
-            break
-        parts.append(esc)
-        used += extra
-    hidden = len(escapes) - len(parts)
-    if hidden == 0:
-        return ", ".join(parts)
-    tail = f", and {hidden} more"
-    while parts and used + len(tail) > budget:
-        removed = parts.pop()
-        used -= len(removed)
-        if parts:
-            used -= 2
-        hidden += 1
-        tail = f", and {hidden} more"
-    if not parts:
-        return f"{hidden} code points"
-    return ", ".join(parts) + tail
+# Fixed Why sentence. ``\\ud800`` is the example in the wording, not the
+# code point that was found. Titles stay "Malformed record" / "Torn terminal
+# record"; only this sentence changes.
+_LONE_SURROGATE_WHY: Final[str] = (
+    "line {line} contains an invalid Unicode character (lone surrogate, e.g. \\ud800), "
+    "so it cannot be parsed as a session record. The file was not truncated."
+)
 
 
 def decode_error_message_template(err: BaseException, *, terminal: bool) -> str:
     """SL001/SL002 message template for one JSON decode failure (AC-03).
 
-    A lone surrogate names the code point. Every other failure keeps the
-    torn-terminal or malformed-record wording.
+    A lone surrogate uses one fixed Why sentence on every line. Every other
+    failure keeps the torn-terminal or malformed-record wording.
     """
     if isinstance(err, LoneSurrogateError) and err.escapes:
-        shown = _surrogate_why_list(err.escapes)
-        return (
-            "Line {line} contains a lone UTF-16 surrogate ("
-            + shown
-            + ") and cannot be decoded as a session record"
-        )
+        return _LONE_SURROGATE_WHY
     if terminal:
         return "Torn terminal record on line {line} for record {record_id}"
     return "Malformed record on line {line} for record {record_id}"
