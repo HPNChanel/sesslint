@@ -550,7 +550,13 @@ def _emit_check_report(
         adapter=format_display,
         profile=report.coverage.profile.get("id", profile_opt),
     )
-    if not has_error:
+    # render_human owns the summary verdict: "Session is healthy",
+    # "Session is healthy with warnings", or "Integrity check failed".
+    # A plain "Valid" line is only coherent when that verdict is healthy.
+    # Warning-only runs already say "healthy with warnings" (UX-02);
+    # printing "Valid" as well contradicts it. Exit code stays on has_error.
+    warning_count = report.counts.by_severity.get("warning", 0)
+    if not has_error and warning_count == 0:
         print(f"Valid {format_display} session")
     print(human_text)
     return exit_code
