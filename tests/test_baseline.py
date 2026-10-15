@@ -11,7 +11,9 @@ Missing or malformed baselines fail closed.
 
 from __future__ import annotations
 
+import builtins
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -360,3 +362,138 @@ def test_baseline_flags_mutually_exclusive() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["check", str(CORRUPT), "--baseline", "a.json", "--write-baseline", "b.json"])
     assert exc.value.code == 2
+
+
+def _combined(capsys: pytest.CaptureFixture[str]) -> tuple[str, str, str]:
+    captured = capsys.readouterr()
+    return captured.out, captured.err, captured.out + captured.err
+
+
+def _assert_no_read_only_wording(text: str) -> None:
+    lowered = text.lower()
+    assert "[read-only]" not in text
+    assert "read-only" not in lowered
+    assert "read only" not in lowered
+
+
+def test_baseline_without_write_shows_read_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No --upgrade and no --output: read-only label, and no files created."""
+    monkeypatch.chdir(tmp_path)
+    code = main(["baseline"])
+    out, err, text = _combined(capsys)
+    assert code == 0
+    assert "[read-only]" in text
+    assert err == ""
+    assert not any(tmp_path.iterdir())
+    assert "writing" not in out.lower()
+
+
+def test_baseline_upgrade_does_not_show_read_only_and_announces_write(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--upgrade writes the v2 document and says so, without a read-only label."""
+    v1 = _v1_file(tmp_path / "v1.json", ["deadbeefdeadbeef"])
+    code = main(["baseline", "--upgrade", str(v1)])
+    out, err, text = _combined(capsys)
+    assert code == 0
+    _assert_no_read_only_wording(text)
+    assert "[writes:" in err
+    assert "writing upgraded baseline" in err
+    assert "stdout" in err
+    assert "0 verified" in err
+    assert "1 unverified" in err
+    doc = json.loads(out)
+    assert doc["schema_version"] == BASELINE_SCHEMA_VERSION_V2
+    assert doc["entries"][0]["migrated"] == "unverified"
+
+
+def test_baseline_output_does_not_show_read_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--output is a file write, so the run must not call itself read-only."""
+    v1 = _v1_file(tmp_path / "v1.json", ["deadbeefdeadbeef"])
+    dest = tmp_path / "v2.json"
+    code = main(["baseline", "--upgrade", str(v1), "--output", str(dest)])
+    out, err, text = _combined(capsys)
+    assert code == 0
+    _assert_no_read_only_wording(text)
+    assert "[writes:" in err
+    assert "writing upgraded baseline" in err
+    assert str(dest) in err
+    assert out == ""
+    doc = json.loads(dest.read_text(encoding="utf-8"))
+    assert doc["schema_version"] == BASELINE_SCHEMA_VERSION_V2
+
+
+def test_baseline_output_alone_does_not_show_read_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--output without --upgrade is still a write path: no read-only label, no file."""
+    dest = tmp_path / "out.json"
+    code = main(["baseline", "--output", str(dest)])
+    _out, _err, text = _combined(capsys)
+    assert code == 2
+    _assert_no_read_only_wording(text)
+    assert "[writes:" in text
+    assert not dest.exists()
+
+
+def test_upgrade_stdout_announces_before_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stdout upgrades announce on stderr before the v2 document is written."""
+    v1 = _v1_file(tmp_path / "v1.json", ["aabbccddeeff0011"])
+    order: list[str] = []
+    real_write = sys.stdout.write
+
+    def tracking_stdout(data: str) -> int:
+        if data.lstrip().startswith("{"):
+            assert order == ["announce"]
+            order.append("stdout")
+        return real_write(data)
+
+    real_print = builtins.print
+
+    def tracking_print(*args: object, **kwargs: object) -> None:
+        text = " ".join(str(arg) for arg in args)
+        if "writing upgraded baseline" in text and "to stdout" in text:
+            order.append("announce")
+        real_print(*args, **kwargs)
+
+    monkeypatch.setattr(sys.stdout, "write", tracking_stdout)
+    monkeypatch.setattr("builtins.print", tracking_print)
+    code = main(["baseline", "--upgrade", str(v1)])
+    assert code == 0
+    assert order == ["announce", "stdout"]
+
+
+def test_upgrade_never_writes_silently(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The write announcement is printed before any upgraded bytes hit the disk."""
+    v1 = _v1_file(tmp_path / "v1.json", ["deadbeefdeadbeef"])
+    dest = tmp_path / "v2.json"
+    order: list[str] = []
+    real_write = Path.write_text
+
+    def tracking_write(self: Path, *args: object, **kwargs: object) -> int:
+        if self == dest:
+            assert order == ["announce"]
+            order.append("write")
+        return real_write(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    real_print = builtins.print
+
+    def tracking_print(*args: object, **kwargs: object) -> None:
+        text = " ".join(str(arg) for arg in args)
+        if "writing upgraded baseline" in text and str(dest) in text:
+            order.append("announce")
+        real_print(*args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", tracking_write)
+    monkeypatch.setattr("builtins.print", tracking_print)
+    code = main(["baseline", "--upgrade", str(v1), "--output", str(dest)])
+    assert code == 0
+    assert order == ["announce", "write"]
+    assert dest.is_file()
+    assert "sesslint.baseline/v2" in dest.read_text(encoding="utf-8")

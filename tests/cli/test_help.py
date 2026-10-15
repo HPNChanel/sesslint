@@ -57,3 +57,25 @@ def test_subcommand_read_write_annotations(capsys: pytest.CaptureFixture[str]) -
         main(["verify", "--help"])
     out = capsys.readouterr().out
     assert "[read-only]" in out
+
+    # baseline documents a write. --upgrade / --output must not be labeled read-only.
+    with pytest.raises(SystemExit):
+        main(["baseline", "--help"])
+    out = capsys.readouterr().out
+    assert "[read-only]" not in out
+    assert "read-only" not in out.lower()
+    assert "[writes:" in out
+
+    with pytest.raises(SystemExit):
+        main(["baseline", "--upgrade", "legacy.json", "--help"])
+    out = capsys.readouterr().out
+    assert "[read-only]" not in out
+    assert "read-only" not in out.lower()
+    assert "[writes:" in out
+
+    with pytest.raises(SystemExit):
+        main(["baseline", "--output", "upgraded.json", "--help"])
+    out = capsys.readouterr().out
+    assert "[read-only]" not in out
+    assert "read-only" not in out.lower()
+    assert "[writes:" in out

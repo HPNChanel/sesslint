@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sesslint baseline` no longer labels itself `[read-only]` when `--upgrade`
+  or `--output` will write. A run with neither flag prints `[read-only]` and
+  writes nothing; `--upgrade` announces the destination before writing the
+  upgraded baseline (stdout or `--output`).
+
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.
 - Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction

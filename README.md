@@ -739,11 +739,14 @@ the immediate parent directory itself changes the file role and does _not_
 match (documented residual ambiguity — re-baseline after such moves). v1
 baseline files still load and suppress via their raw fingerprints, unchanged.
 
-`sesslint baseline --upgrade OLD.json` rewrites a v1 baseline
-as v2: with `--source SESSION_OR_DIR`, findings are reproduced to verify
-entries (`migrated: "verified"`); without it every entry migrates
-`"unverified"` and still matches through the legacy v1 leg. Output goes to
-`--output PATH` or stdout.
+`sesslint baseline` with neither `--upgrade` nor `--output` prints
+`[read-only]` and writes nothing. `sesslint baseline --upgrade OLD.json`
+rewrites a v1 baseline as v2 and announces that write (and the destination)
+before any upgraded bytes are emitted: with `--source SESSION_OR_DIR`,
+findings are reproduced to verify entries (`migrated: "verified"`); without
+it every entry migrates `"unverified"` and still matches through the legacy
+v1 leg. Output goes to `--output PATH` or stdout. When `--upgrade` or
+`--output` is set, the banner names that write.
 
 ```bash
 sesslint baseline --upgrade .sesslint-baseline.json --source sessions/ -o .sesslint-baseline-v2.json
