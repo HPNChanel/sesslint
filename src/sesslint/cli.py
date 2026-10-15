@@ -237,6 +237,18 @@ def _write_baseline_arg(args: argparse.Namespace, findings: Iterable[Finding]) -
     print(f"wrote baseline: {count} fingerprint(s) -> {path}", file=sys.stderr)
 
 
+def baseline_action_label(*, upgrade: object | None, output: object | None) -> str:
+    """Mode label for one ``sesslint baseline`` invocation (AC-08).
+
+    ``[read-only]`` only when neither ``--upgrade`` nor ``--output`` will
+    write. Any write path uses a writes label so the banner matches the
+    bytes that are about to be emitted.
+    """
+    if upgrade is None and output is None:
+        return "[read-only]"
+    return "[writes: upgraded baseline]"
+
+
 def _output_format(args: argparse.Namespace) -> str:
     """Resolve the effective output format: --json wins, else --output-format."""
     if getattr(args, "json", False):
@@ -1442,20 +1454,29 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # baseline
+    # Help documents the write: --upgrade / --output emit a v2 baseline.
+    # The runtime banner is conditional (baseline_action_label) and says
+    # [read-only] only when neither flag is set.
     baseline_parser = subparsers.add_parser(
         "baseline",
-        help="[read-only] Upgrade a v1 baseline to the path-normalized v2 format.",
+        help=(
+            "[writes: upgraded baseline to --output or stdout] "
+            "Upgrade a v1 baseline to the path-normalized v2 format."
+        ),
         description=(
-            "[read-only] Baseline maintenance: --upgrade rewrites a "
-            "sesslint.baseline/v1 file as v2 (path-normalized keys). With "
-            "--source, findings are reproduced to verify entries; without it "
-            "every entry migrates 'unverified' (still matchable via the v1 leg)."
+            "[writes: upgraded baseline to --output or stdout] "
+            "Baseline maintenance: --upgrade rewrites a "
+            "sesslint.baseline/v1 file as v2 (path-normalized keys) and announces "
+            "the destination before writing. With --source, findings are reproduced "
+            "to verify entries; without it every entry migrates 'unverified' "
+            "(still matchable via the v1 leg). With neither --upgrade nor --output, "
+            "nothing is written."
         ),
     )
     baseline_parser.add_argument(
         "--upgrade",
-        required=True,
         type=Path,
+        default=None,
         metavar="FILE",
         help="Baseline file to upgrade (must be sesslint.baseline/v1)",
     )
@@ -3221,6 +3242,17 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
     if args.command == "baseline":
         from sesslint.baseline import BaselineError, upgrade_baseline
 
+        label = baseline_action_label(upgrade=args.upgrade, output=args.output)
+        if args.upgrade is None and args.output is None:
+            print(f"{label} baseline: no files will be written")
+            return 0
+        if args.upgrade is None:
+            print(
+                f"{label} --output is a write path but --upgrade was not given; nothing written",
+                file=sys.stderr,
+            )
+            return 2
+
         findings: Any = None
         if args.source is not None:
             source_p: Path = args.source
@@ -3263,18 +3295,18 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             print(f"Error: {err}", file=sys.stderr)
             return 2
 
+        destination = "stdout" if args.output is None else str(args.output)
+        # Announce before any upgraded bytes are emitted (AC-08).
+        print(
+            f"{label} writing upgraded baseline "
+            f"({verified} verified, {unverified} unverified) to {destination}",
+            file=sys.stderr,
+            flush=True,
+        )
         if args.output is not None:
             args.output.write_text(doc, encoding="utf-8", newline="\n")
-            print(
-                f"upgraded baseline: {verified} verified, {unverified} unverified -> {args.output}",
-                file=sys.stderr,
-            )
         else:
             sys.stdout.write(doc)
-            print(
-                f"upgraded baseline: {verified} verified, {unverified} unverified",
-                file=sys.stderr,
-            )
         return 0
 
     return 0

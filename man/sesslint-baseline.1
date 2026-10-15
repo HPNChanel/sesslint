@@ -1,10 +1,10 @@
 .TH SESSLINT-BASELINE 1 "" "SessLint 0.4.1" "SessLint Manual"
 .SH NAME
-sesslint-baseline \- [read\-only] Upgrade a v1 baseline to the path\-normalized v2 format.
+sesslint-baseline \- [writes: upgraded baseline to \-\-output or stdout] Upgrade a v1 baseline to the path\-normalized v2 format.
 .SH SYNOPSIS
-.B sesslint baseline \-\-upgrade FILE [\-\-source PATH] [\-\-output | \-o PATH] [\-\-format {auto,canonical,claude\-code\-jsonl,openai\-agents,codex\-rollout}] [\-\-profile PROFILE]
+.B sesslint baseline [\-\-upgrade FILE] [\-\-source PATH] [\-\-output | \-o PATH] [\-\-format {auto,canonical,claude\-code\-jsonl,openai\-agents,codex\-rollout}] [\-\-profile PROFILE]
 .SH DESCRIPTION
-[read\-only] Baseline maintenance: \-\-upgrade rewrites a sesslint.baseline/v1 file as v2 (path\-normalized keys). With \-\-source, findings are reproduced to verify entries; without it every entry migrates 'unverified' (still matchable via the v1 leg).
+[writes: upgraded baseline to \-\-output or stdout] Baseline maintenance: \-\-upgrade rewrites a sesslint.baseline/v1 file as v2 (path\-normalized keys) and announces the destination before writing. With \-\-source, findings are reproduced to verify entries; without it every entry migrates 'unverified' (still matchable via the v1 leg). With neither \-\-upgrade nor \-\-output, nothing is written.
 .SH OPTIONS
 .TP
 .B \-\-upgrade FILE
