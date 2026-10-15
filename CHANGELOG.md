@@ -63,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `check` exit codes are stated per code, in order: `0` a clean session
+  exits 0, `1` a session with findings exits 1, `2` an internal tool error
+  exits 2 (`--help`, README, man pages).
 - Prepare 0.4.1 with API/schema v1 and existing exit codes. Publication remains
   a separate action; local tags and local evidence do not establish a release.
 - GHCR and package-manager templates are prepared channels only.
