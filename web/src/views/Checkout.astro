@@ -1,0 +1,204 @@
+---
+// Order summary. Static page: the order comes from the query string and is
+// priced in the browser by the same quote() used on /pricing. Collects no
+// personal data. Goes live once PUBLIC_CHECKOUT_* URLs are set at build.
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import { href, t, type Lang } from "../i18n";
+import { checkoutLinks, isLive } from "../lib/checkout";
+import { REPO_URL } from "../lib/repo";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+const links = checkoutLinks(import.meta.env as unknown as Record<string, string | undefined>);
+const live = isLive(links);
+const strings = {
+  names: d.pricing.names,
+  credit: d.pricing.credit,
+  reasons: d.checkout.reasons,
+  billTo: d.pricing.billTo,
+  giftTo: d.pricing.giftTo,
+  you: d.pricing.you,
+  recipient: d.pricing.recipient,
+};
+---
+
+<Base lang={lang} route="/checkout" title={d.checkout.title} section="CHECKOUT" noindex>
+  <PageHead kicker="checkout --dry-run" title={d.checkout.title} />
+  <div class="wrap grid">
+    <section class="order card" aria-labelledby="order-title" data-order data-strings={JSON.stringify(strings)} data-links={JSON.stringify(links)}>
+      <h2 class="mono order-title" id="order-title">{d.checkout.lede}</h2>
+      <dl class="rows mono">
+        <div class="row"><dt data-o-billto>{d.pricing.billTo}</dt><dd data-o-who>{d.pricing.you}</dd></div>
+        <div class="row head"><dt>{d.pricing.item}</dt><dd>{d.pricing.amount}</dd></div>
+        <div class="row"><dt data-o-item>SessLint Max</dt><dd class="tnum" data-o-item-amt>$49.00</dd></div>
+        <div class="row credit" data-o-credit hidden><dt data-o-credit-label></dt><dd class="tnum" data-o-credit-amt></dd></div>
+        <div class="row total"><dt>{d.pricing.total}</dt><dd class="tnum" data-o-due>$49.00</dd></div>
+      </dl>
+      <p class="invalid" data-o-invalid hidden><span class="err mono">{d.checkout.invalid}</span> <span data-o-reason></span></p>
+      {live ? (
+        <a class="btn btn-primary proceed" data-o-proceed href="#">{d.checkout.proceed} →</a>
+      ) : (
+        <button class="btn proceed" type="button" disabled aria-describedby="not-live">{d.checkout.proceed}</button>
+      )}
+      <p class="mono back"><a href={href(lang, "/pricing")} data-o-back>← {d.checkout.back}</a></p>
+    </section>
+
+    {!live && (
+      <aside class="notice" id="not-live" role="note">
+        <p class="kicker">{d.checkout.notLive}</p>
+        <p>{d.checkout.notLiveBody}</p>
+        <a class="btn" href={`${REPO_URL}/releases`}>{d.checkout.watch} ↗</a>
+      </aside>
+    )}
+  </div>
+</Base>
+
+<script>
+  import { isTierId, quote, usd } from "../lib/pricing";
+
+  const el = document.querySelector<HTMLElement>("[data-order]");
+  if (el) {
+    const S = JSON.parse(el.dataset.strings ?? "{}") as {
+      names: Record<string, string>;
+      credit: string;
+      reasons: Record<string, string>;
+      billTo: string;
+      giftTo: string;
+      you: string;
+      recipient: string;
+    };
+    const links = JSON.parse(el.dataset.links ?? "{}") as Record<string, string>;
+    const qs = new URLSearchParams(location.search);
+    const tierQ = qs.get("tier");
+    const ownQ = qs.get("own");
+    const tier = isTierId(tierQ) ? tierQ : "max";
+    const owned = isTierId(ownQ) ? ownQ : "free";
+    const gift = qs.get("gift") === "1";
+    const q = quote(tier, owned, gift);
+    const $ = (s: string) => el.querySelector<HTMLElement>(s);
+
+    const set = (s: string, v: string) => {
+      const n = $(s);
+      if (n) n.textContent = v;
+    };
+    set("[data-o-item]", `SessLint ${S.names[tier] ?? tier}${gift ? " 🎁" : ""}`);
+    set("[data-o-item-amt]", usd(q.listCents));
+    set("[data-o-due]", usd(q.allowed ? q.dueCents : 0));
+    set("[data-o-billto]", gift ? S.giftTo : S.billTo);
+    set("[data-o-who]", gift ? S.recipient : S.you);
+    const credit = $("[data-o-credit]");
+    if (credit && q.creditCents > 0) {
+      credit.hidden = false;
+      set("[data-o-credit-label]", `${S.names[owned] ?? owned} (${S.credit})`);
+      set("[data-o-credit-amt]", usd(-q.creditCents));
+    }
+    const invalid = $("[data-o-invalid]");
+    if (invalid && !q.allowed) {
+      invalid.hidden = false;
+      set("[data-o-reason]", S.reasons[q.reason] ?? "");
+    }
+    const proceed = el.querySelector<HTMLAnchorElement>("a[data-o-proceed]");
+    if (proceed) {
+      const url = q.allowed && q.sku ? links[q.sku] : undefined;
+      if (url) proceed.href = url;
+      else {
+        proceed.removeAttribute("href");
+        proceed.setAttribute("aria-disabled", "true");
+      }
+    }
+    const back = el.querySelector<HTMLAnchorElement>("[data-o-back]");
+    if (back) {
+      const p = new URLSearchParams();
+      if (owned !== "free") p.set("own", owned);
+      if (gift) p.set("gift", "1");
+      if (p.size) back.href = `${back.pathname}?${p.toString()}`;
+    }
+  }
+</script>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
+    gap: var(--s-6);
+    align-items: start;
+  }
+  .order {
+    display: grid;
+    gap: var(--s-5);
+    background: var(--raised);
+    box-shadow: var(--shadow);
+  }
+  .order-title {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .rows {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    font-size: 0.88rem;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-4);
+  }
+  .row dd {
+    margin: 0;
+  }
+  .row[hidden] {
+    display: none;
+  }
+  .row.head {
+    margin-top: var(--s-2);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+  }
+  .row.credit {
+    color: var(--pass);
+  }
+  .row.total {
+    margin-top: var(--s-2);
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--fg);
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .invalid {
+    font-size: 0.9rem;
+  }
+  .proceed {
+    width: 100%;
+    padding-block: 10px;
+    white-space: normal;
+    text-align: center;
+  }
+  .back {
+    font-size: 0.82rem;
+  }
+  .notice {
+    display: grid;
+    gap: var(--s-4);
+    justify-items: start;
+    padding: var(--s-5);
+    border: 1px dashed var(--warn);
+    border-radius: var(--radius);
+    background: var(--warn-soft);
+  }
+  .notice p:not(.kicker) {
+    color: var(--dim);
+    max-width: 52ch;
+  }
+  @media (max-width: 860px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

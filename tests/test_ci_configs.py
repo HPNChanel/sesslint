@@ -240,6 +240,17 @@ def test_release_workflow_required_dag() -> None:
     assert jobs["published-verify"]["needs"] == "github-promote"
 
 
+def test_release_workflow_refreshes_site_after_public_release() -> None:
+    """The Pages site rebuilds only once the release is verified public."""
+    import yaml
+
+    jobs = yaml.safe_load(_release_content())["jobs"]
+    refresh = jobs["refresh-site"]
+    assert refresh["needs"] == "published-verify"
+    assert refresh["permissions"] == {"actions": "write"}
+    assert "gh workflow run docs.yml --ref main" in refresh["steps"][0]["run"]
+
+
 def test_release_workflow_tag_version_and_exact_commit_validation() -> None:
     blocks = _job_blocks(_release_content())
     assert "_version.py" in blocks["build"] and "Tag/version mismatch" in blocks["build"]

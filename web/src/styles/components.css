@@ -1,0 +1,382 @@
+@layer components {
+  /* Sections ------------------------------------------------------------ */
+  .section {
+    padding-block: clamp(56px, 9vw, 112px);
+    border-top: 1px solid var(--line);
+  }
+
+  .section-head {
+    display: grid;
+    gap: var(--s-3);
+    max-width: 760px;
+    margin-bottom: clamp(32px, 5vw, 56px);
+  }
+
+  .section-head p {
+    color: var(--dim);
+    font-size: var(--step-1);
+    max-width: var(--measure);
+  }
+
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    letter-spacing: 0.04em;
+    color: var(--mute);
+  }
+
+  .kicker::before {
+    content: "## ";
+    color: var(--pass);
+  }
+
+  /* Buttons ------------------------------------------------------------- */
+  .btn {
+    --btn-bg: transparent;
+    --btn-fg: var(--fg);
+    --btn-bd: var(--line-strong);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-2);
+    min-height: 44px;
+    padding: 0 var(--s-5);
+    border: 1px solid var(--btn-bd);
+    border-radius: var(--radius);
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.15s var(--ease);
+  }
+
+  .btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow);
+  }
+
+  .btn:active {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-primary {
+    --btn-bg: var(--pass);
+    --btn-fg: var(--pass-ink);
+    --btn-bd: var(--pass);
+  }
+
+  .btn[aria-disabled="true"],
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Chips and badges ---------------------------------------------------- */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+
+  .badge-coming {
+    display: inline-block;
+    padding: 0 6px;
+    border: 1px dashed var(--warn);
+    border-radius: var(--radius);
+    color: var(--warn);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    line-height: 1.6;
+    letter-spacing: 0.03em;
+    vertical-align: 0.15em;
+    white-space: nowrap;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--pass);
+    flex: none;
+  }
+
+  /* Command line -------------------------------------------------------- */
+  .cmd {
+    display: flex;
+    align-items: stretch;
+    max-width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--raised);
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    overflow: hidden;
+  }
+
+  .cmd code {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 0;
+    background: none;
+    white-space: pre;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .cmd code::before {
+    content: "$ ";
+    color: var(--pass);
+    user-select: none;
+  }
+
+  /* Terminal ------------------------------------------------------------ */
+  .term {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--term-bg);
+    color: var(--term-fg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .term-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: 6px 12px;
+    border-bottom: 1px solid #262c28;
+    background: #0e1210;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--term-mute);
+  }
+
+  .term-bar b {
+    color: #0b0d0c;
+    background: var(--term-pass);
+    padding: 0 6px;
+    font-weight: 600;
+  }
+
+  .term-body {
+    margin: 0;
+    padding: 16px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .term .p {
+    color: var(--term-pass);
+  }
+
+  .term .w {
+    color: var(--term-warn);
+  }
+
+  .term .e {
+    color: var(--term-err);
+  }
+
+  .term .i {
+    color: var(--term-info);
+  }
+
+  .term .m {
+    color: var(--term-mute);
+  }
+
+  .term .c {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* Cards --------------------------------------------------------------- */
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: var(--s-5);
+  }
+
+  .grid-auto {
+    display: grid;
+    gap: var(--s-4);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  }
+
+  /* Page header (man-page style) --------------------------------------- */
+  .page-head {
+    padding-block: clamp(40px, 7vw, 88px) clamp(32px, 5vw, 56px);
+  }
+
+  .page-head h1 {
+    margin-top: var(--s-4);
+  }
+
+  .page-head .lede {
+    margin-top: var(--s-4);
+    max-width: 62ch;
+    color: var(--dim);
+    font-size: var(--step-1);
+  }
+
+  /* Tables -------------------------------------------------------------- */
+  .table-wrap {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow-x: auto;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--step--1);
+  }
+
+  .table th,
+  .table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .table thead th {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 0.74rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--mute);
+    background: var(--sunken);
+  }
+
+  .table tr:last-child td {
+    border-bottom: 0;
+  }
+
+  /* Segmented control (radiogroup) ------------------------------------- */
+  .seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--raised);
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+  }
+
+  .seg label {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 14px;
+    cursor: pointer;
+    color: var(--dim);
+  }
+
+  .seg label + label {
+    border-left: 1px solid var(--line);
+  }
+
+  .seg input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .seg label:has(input:checked) {
+    background: var(--fg);
+    color: var(--bg);
+  }
+
+  .seg label:has(input:focus-visible) {
+    outline: 2px solid var(--info);
+    outline-offset: 2px;
+  }
+
+  /* Switch -------------------------------------------------------------- */
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-3);
+    min-height: 40px;
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    cursor: pointer;
+  }
+
+  .switch input {
+    appearance: none;
+    position: relative;
+    width: 40px;
+    height: 22px;
+    margin: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 11px;
+    background: var(--sunken);
+    cursor: pointer;
+    transition: background 0.15s var(--ease);
+  }
+
+  .switch input::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--mute);
+    transition: transform 0.18s var(--ease), background 0.18s var(--ease);
+  }
+
+  .switch input:checked {
+    background: var(--pass-soft);
+    border-color: var(--pass);
+  }
+
+  .switch input:checked::after {
+    transform: translateX(18px);
+    background: var(--pass);
+  }
+
+  /* Prose (rendered markdown) ------------------------------------------ */
+  .prose code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .prose strong {
+    font-weight: 600;
+  }
+
+  .prose a {
+    color: var(--info);
+  }
+}

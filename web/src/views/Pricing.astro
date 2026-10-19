@@ -1,0 +1,404 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Receipt from "../components/Receipt.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { href, t, type Lang } from "../i18n";
+import { FEATURES, TIERS, TIER_ORDER, type Feature } from "../data/tiers";
+import { usdShort } from "../lib/pricing";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+const groups = ["core", "plus", "max", "license"] as const;
+const cell = (f: Feature, tier: (typeof TIER_ORDER)[number]) => {
+  const v = f.value[tier];
+  if (v === true) return { kind: "yes", text: "✓" };
+  if (v === false) return { kind: "no", text: "—" };
+  return { kind: "text", text: v[lang] };
+};
+const site = Astro.site ?? new URL("https://hpnchanel.github.io");
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "SessLint",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Linux, macOS, Windows",
+  url: new URL(href(lang, "/"), site).toString(),
+  offers: TIER_ORDER.map((id) => ({
+    "@type": "Offer",
+    name: `SessLint ${d.pricing.names[id]}`,
+    price: (TIERS[id].priceCents / 100).toFixed(2),
+    priceCurrency: "USD",
+  })),
+};
+const labels = {
+  buy: d.pricing.buy,
+  upgrade: d.pricing.upgrade,
+  gift: d.pricing.buyGift,
+  owned: d.pricing.owned,
+  covered: d.pricing.covered,
+  free: d.pricing.getFree,
+  billTo: d.pricing.billTo,
+  giftTo: d.pricing.giftTo,
+  you: d.pricing.you,
+  recipient: d.pricing.recipient,
+};
+---
+
+<Base lang={lang} route="/pricing" title={d.pricing.title} description={d.pricing.lede} section="PRICING" jsonLd={jsonLd}>
+  <PageHead kicker="pricing --one-time --usd" title={d.pricing.title} lede={d.pricing.lede} />
+
+  <div class="wrap">
+    <div class="controls" data-pricing-controls data-labels={JSON.stringify(labels)} data-checkout={href(lang, "/checkout")} data-download={href(lang, "/download")}>
+      <fieldset class="own">
+        <legend class="mono">{d.pricing.own}:</legend>
+        <div class="seg" role="radiogroup" aria-label={d.pricing.own}>
+          <label><input type="radio" name="own" value="free" checked />{d.pricing.ownNone}</label>
+          <label><input type="radio" name="own" value="plus" />{d.pricing.names.plus}</label>
+          <label><input type="radio" name="own" value="max" />{d.pricing.names.max}</label>
+        </div>
+      </fieldset>
+      <label class="switch">
+        <input type="checkbox" name="gift" role="switch" aria-describedby="gift-hint" />
+        <span>{d.pricing.gift} 🎁</span>
+      </label>
+      <p class="hint mute" id="gift-hint">{d.pricing.giftHint}</p>
+    </div>
+
+    <div class="receipts" data-receipts>
+      {TIER_ORDER.map((id) => <Receipt lang={lang} tier={id} />)}
+    </div>
+
+    <ul class="promises mono">
+      {d.pricing.promises.map((p) => <li><span class="pass" aria-hidden="true">✓</span> {p}</li>)}
+    </ul>
+
+    <aside class="math card">
+      <p class="kicker">{d.pricing.upgradeMathTitle}</p>
+      <p class="math-eq mono tnum" aria-hidden="true">
+        <span>{usdShort(TIERS.max.priceCents)}</span><span class="mute">−</span><span>{usdShort(TIERS.plus.priceCents)}</span><span class="mute">=</span><span class="pass">{usdShort(TIERS.max.priceCents - TIERS.plus.priceCents)}</span>
+      </p>
+      <p class="dim">{d.pricing.upgradeMath}</p>
+    </aside>
+  </div>
+
+  <section class="section wrap" aria-labelledby="compare-title">
+    <SectionHead kicker="pricing --compare" title={d.pricing.compare} id="compare-title" />
+    <div class="table-wrap">
+      <table class="table compare">
+        <thead>
+          <tr>
+            <th scope="col">{d.pricing.feature}</th>
+            {TIER_ORDER.map((id) => (
+              <th scope="col" class:list={{ hl: id === "max" }}>
+                {d.pricing.names[id]} <span class="mute tnum">{usdShort(TIERS[id].priceCents)}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {groups.map((g) => (
+          <tbody>
+            <tr class="grp"><th scope="colgroup" colspan="4">{d.pricing.groups[g]}</th></tr>
+            {FEATURES.filter((f) => f.group === g).map((f) => (
+              <tr>
+                <th scope="row">
+                  {f.label[lang]} {f.status === "coming" && <span class="badge-coming">{d.common.coming}</span>}
+                </th>
+                {TIER_ORDER.map((id) => {
+                  const c = cell(f, id);
+                  return (
+                    <td data-label={d.pricing.names[id]} class:list={[`c-${c.kind}`, { hl: id === "max" }]}>
+                      {c.kind === "yes" ? <><span aria-hidden="true">✓</span><span class="sr-only">{d.common.included}</span></> : c.kind === "no" ? <><span aria-hidden="true">—</span><span class="sr-only">{d.common.notIncluded}</span></> : c.text}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  </section>
+
+  <section class="section wrap faq-wrap" aria-labelledby="faq-title">
+    <SectionHead kicker="pricing --faq" title={d.pricing.faqTitle} id="faq-title" />
+    <div class="faq">
+      {d.pricing.faq.map((f) => (
+        <details>
+          <summary>{f.q}</summary>
+          <p>{f.a}</p>
+        </details>
+      ))}
+    </div>
+  </section>
+</Base>
+
+<script>
+  import { isTierId, quote, usd, usdShort } from "../lib/pricing";
+  import type { TierId } from "../data/tiers";
+
+  const controls = document.querySelector<HTMLElement>("[data-pricing-controls]");
+  if (controls) {
+    const L = JSON.parse(controls.dataset.labels ?? "{}") as Record<string, string>;
+    const checkout = controls.dataset.checkout ?? "/checkout";
+    const download = controls.dataset.download ?? "/download";
+    const giftBox = controls.querySelector<HTMLInputElement>("input[name=gift]");
+    const STORE = "sl-owned";
+
+    const read = (): { owned: TierId; gift: boolean } => {
+      const qs = new URLSearchParams(location.search);
+      let owned: string | null = qs.get("own");
+      if (!owned) {
+        try {
+          owned = localStorage.getItem(STORE);
+        } catch {
+          owned = null;
+        }
+      }
+      return { owned: isTierId(owned) ? owned : "free", gift: qs.get("gift") === "1" };
+    };
+
+    const render = () => {
+      const owned = (controls.querySelector<HTMLInputElement>("input[name=own]:checked")?.value ?? "free") as TierId;
+      const gift = giftBox?.checked ?? false;
+      for (const card of document.querySelectorAll<HTMLElement>("[data-receipt]")) {
+        const tier = card.dataset.receipt as TierId;
+        const q = quote(tier, owned, gift);
+        const $ = <T extends HTMLElement>(s: string) => card.querySelector<T>(s);
+        const big = $("[data-r-big]");
+        const list = $("[data-r-list]");
+        const credit = $("[data-r-credit]");
+        const creditAmt = $("[data-r-credit-amt]");
+        const due = $("[data-r-due]");
+        const who = $("[data-r-who]");
+        const billto = $("[data-r-billto]");
+        const cta = $<HTMLAnchorElement>("[data-r-cta]");
+
+        const showCredit = q.allowed && q.creditCents > 0;
+        if (big) big.textContent = usdShort(showCredit ? q.dueCents : q.listCents);
+        if (list) list.hidden = !showCredit;
+        if (credit) credit.hidden = !showCredit;
+        if (creditAmt) creditAmt.textContent = usd(-q.creditCents);
+        if (due) due.textContent = usd(q.allowed ? q.dueCents : 0);
+        if (who) who.textContent = gift && tier !== "free" ? L.recipient ?? "" : L.you ?? "";
+        if (billto) billto.textContent = gift && tier !== "free" ? L.giftTo ?? "" : L.billTo ?? "";
+        card.classList.toggle("is-owned", q.reason === "already-owned");
+        card.classList.toggle("is-dim", tier === "free" && gift);
+
+        if (!cta) continue;
+        cta.removeAttribute("aria-disabled");
+        if (tier === "free") {
+          cta.textContent = owned === "free" ? (L.free ?? "") : (L.covered ?? "");
+          cta.href = download;
+        } else if (!q.allowed) {
+          cta.textContent = tier === owned ? (L.owned ?? "") : (L.covered ?? "");
+          cta.setAttribute("aria-disabled", "true");
+          cta.removeAttribute("href");
+        } else {
+          cta.textContent = gift ? (L.gift ?? "") : q.creditCents > 0 ? `${L.upgrade} · ${usd(q.dueCents)}` : (L.buy ?? "");
+          const qs = new URLSearchParams({ tier });
+          if (!gift && owned !== "free") qs.set("own", owned);
+          if (gift) qs.set("gift", "1");
+          cta.href = `${checkout}?${qs.toString()}`;
+        }
+      }
+
+      const qs = new URLSearchParams(location.search);
+      if (owned === "free") qs.delete("own");
+      else qs.set("own", owned);
+      if (gift) qs.set("gift", "1");
+      else qs.delete("gift");
+      const s = qs.toString();
+      history.replaceState(null, "", `${location.pathname}${s ? `?${s}` : ""}${location.hash}`);
+      try {
+        localStorage.setItem(STORE, owned);
+      } catch {
+        /* per-viewer convenience only */
+      }
+    };
+
+    const init = read();
+    const radio = controls.querySelector<HTMLInputElement>(`input[name=own][value=${init.owned}]`);
+    if (radio) radio.checked = true;
+    if (giftBox) giftBox.checked = init.gift;
+    controls.addEventListener("change", render);
+    render();
+  }
+</script>
+
+<style>
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-3) var(--s-6);
+    padding: var(--s-4) var(--s-5);
+    margin-bottom: var(--s-7);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .own {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .own legend {
+    float: left;
+    font-size: 0.86rem;
+    color: var(--dim);
+  }
+  .hint {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+  }
+  .receipts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-6);
+    align-items: stretch;
+  }
+  .receipts :global(.is-owned) {
+    opacity: 0.72;
+  }
+  .receipts :global(.is-dim) {
+    opacity: 0.5;
+  }
+  .promises {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--s-2) var(--s-6);
+    margin: var(--s-7) 0 0;
+    padding: var(--s-4) 0;
+    border-block: 1px dashed var(--line-strong);
+    list-style: none;
+    font-size: 0.82rem;
+  }
+  .math {
+    display: grid;
+    gap: var(--s-2);
+    max-width: 560px;
+    margin: var(--s-7) auto 0;
+    text-align: center;
+  }
+  .math-eq {
+    display: flex;
+    justify-content: center;
+    gap: var(--s-3);
+    font-size: var(--step-3);
+    font-weight: 500;
+  }
+  .compare th[scope="row"] {
+    font-weight: 400;
+  }
+  .compare td {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .compare .c-yes {
+    color: var(--pass);
+    font-weight: 600;
+  }
+  .compare .c-no {
+    color: var(--mute);
+  }
+  .compare .hl {
+    background: var(--pass-soft);
+  }
+  .compare .hl .mute,
+  .compare thead .hl {
+    color: var(--dim);
+  }
+  .compare .grp th {
+    padding-top: var(--s-5);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--pass);
+    background: transparent;
+  }
+  .faq {
+    display: grid;
+    gap: 0;
+    max-width: 820px;
+    border-top: 1px solid var(--line);
+  }
+  .faq details {
+    border-bottom: 1px solid var(--line);
+  }
+  .faq summary {
+    display: flex;
+    gap: var(--s-3);
+    padding: var(--s-4) 0;
+    cursor: pointer;
+    font-weight: 500;
+    list-style: none;
+  }
+  .faq summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq summary::before {
+    content: "?";
+    flex: none;
+    width: 1.2em;
+    font-family: var(--font-mono);
+    color: var(--info);
+  }
+  .faq details[open] summary::before {
+    content: "↳";
+  }
+  .faq p {
+    padding: 0 0 var(--s-5) calc(1.2em + var(--s-3));
+    color: var(--dim);
+    max-width: 68ch;
+  }
+  @media (max-width: 980px) {
+    .receipts {
+      grid-template-columns: 1fr;
+      max-width: 460px;
+      margin-inline: auto;
+    }
+  }
+  @media (max-width: 640px) {
+    .compare thead {
+      display: none;
+    }
+    .compare,
+    .compare tbody,
+    .compare tr,
+    .compare th,
+    .compare td {
+      display: block;
+      width: 100%;
+    }
+    .compare tr {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .compare tr th,
+    .compare tr td {
+      padding: 2px 0;
+      border: 0;
+    }
+    .compare td {
+      display: flex;
+      justify-content: space-between;
+      white-space: normal;
+    }
+    .compare td::before {
+      content: attr(data-label);
+      color: var(--mute);
+    }
+    .compare .hl {
+      background: none;
+    }
+  }
+</style>

@@ -71,6 +71,25 @@ def test_workflow_trigger_scoped_to_docs() -> None:
     assert "workflow_dispatch" in wf[True]
 
 
+def test_workflow_builds_landing_with_docs_under_subpath() -> None:
+    # One Pages artifact: Astro site at /, mkdocs at /docs/.
+    wf = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    steps = wf["jobs"]["build"]["steps"]
+    runs = "\n".join(s.get("run", "") for s in steps)
+    assert "npm ci" in runs and "npm run build" in runs
+    assert "mkdocs build --site-dir web/dist/docs" in runs
+    upload = next(s for s in steps if "upload-pages-artifact" in s.get("uses", ""))
+    assert upload["with"]["path"] == "web/dist"
+    cfg = yaml.safe_load(MKDOCS_YML.read_text(encoding="utf-8"))
+    assert cfg["site_url"].endswith("/docs/")
+
+
+def test_workflow_pull_requests_never_deploy() -> None:
+    wf = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    assert "pull_request" in wf[True]
+    assert wf["jobs"]["deploy"]["if"] == "github.event_name != 'pull_request'"
+
+
 def test_mkdocs_build_produces_site() -> None:
     # Local smoke evidence: site/index.html + sitemap exist after
     # `mkdocs build`. Skipped when site/ absent (CI builds fresh anyway).

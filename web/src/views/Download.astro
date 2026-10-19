@@ -1,0 +1,412 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import CopyCmd from "../components/CopyCmd.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { href, t, type Lang } from "../i18n";
+import { released } from "../lib/changelog";
+import { fallbackRelease, githubReleases, humanSize, type Asset } from "../lib/releases";
+import { REPO_SLUG, REPO_URL } from "../lib/repo";
+import { site } from "../lib/site";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+const facts = site();
+const gh = await githubReleases();
+const rel = gh[0] ?? fallbackRelease(facts.latest?.version ?? facts.packageVersion);
+const others = gh.length ? gh.slice(1) : released(facts.releases).slice(1).map((r) => fallbackRelease(r.version));
+
+const sigs = new Map(rel.assets.filter((a) => a.kind === "signature").map((a) => [a.name.replace(/\.(sigstore\.json|asc)$/, ""), a]));
+const main = rel.assets.filter((a) => a.kind !== "signature");
+const kinds = ["binary", "kit", "checksum", "provenance", "other"] as const;
+const binaries = main.filter((a): a is Asset & { os: "linux" | "macos" | "windows" } => a.kind === "binary" && a.os !== undefined);
+const osOrder = ["linux", "macos", "windows"] as const;
+
+const binCmd = (a: Asset) =>
+  a.os === "windows"
+    ? `Invoke-WebRequest ${a.url} -OutFile sesslint.exe`
+    : `curl -fsSLo sesslint ${a.url} && chmod +x sesslint`;
+
+const first = binaries[0];
+const verifyAsset = first?.name ?? "sesslint-<version>-<os>-<arch>";
+const verify = [
+  "sha256sum -c sha256sums.txt --ignore-missing",
+  `cosign verify-blob --bundle "${verifyAsset}.sigstore.json" --certificate-identity "${REPO_URL}/.github/workflows/release.yml@refs/tags/${rel.tag}" --certificate-oidc-issuer https://token.actions.githubusercontent.com "${verifyAsset}"`,
+  `slsa-verifier verify-artifact "${verifyAsset}" --provenance-path sesslint-provenance.intoto.jsonl --source-uri github.com/${REPO_SLUG} --source-tag ${rel.tag}`,
+];
+
+const tabs = [
+  { id: "pipx", cmd: "pipx install sesslint", note: d.download.pipxNote, rec: true },
+  { id: "uv", cmd: "uv tool install sesslint", note: d.download.uvNote, rec: false },
+  { id: "pip", cmd: "python -m pip install sesslint", note: d.download.pipNote, rec: false },
+  { id: "binary", cmd: "", note: d.download.binaryNote, rec: false },
+  { id: "docker", cmd: "docker run --rm -v \"$PWD:/w\" ghcr.io/hpnchanel/sesslint check /w", note: d.download.dockerNote, rec: false, coming: true },
+] as const;
+
+const channels = [
+  { name: "Homebrew", cmd: "brew install sesslint" },
+  { name: "Scoop", cmd: "scoop install sesslint" },
+  { name: "winget", cmd: "winget install HPNChanel.Sesslint" },
+  { name: "AUR", cmd: "yay -S sesslint" },
+  { name: "GHCR", cmd: "docker pull ghcr.io/hpnchanel/sesslint" },
+];
+---
+
+<Base lang={lang} route="/download" title={d.download.title} description={d.download.lede} section="DOWNLOAD">
+  <PageHead kicker={`download --tag ${rel.tag}`} title={d.download.title} lede={d.download.lede}>
+    <p class="mono tag-line">
+      <span class="chip"><span class="dot" aria-hidden="true"></span>{rel.tag}</span>
+      {rel.publishedAt && <span class="mute">{d.changelog.released} <time datetime={rel.publishedAt.slice(0, 10)} data-ago={lang}>{rel.publishedAt.slice(0, 10)}</time></span>}
+      <a href={href(lang, `/changelog/${rel.version}`)}>{d.nav.changelog} →</a>
+    </p>
+  </PageHead>
+
+  <div class="wrap">
+    <sl-install class="install" data-default="pipx">
+      <div class="detected mono" data-detected hidden>
+        <span class="mute">{d.download.detected}:</span> <b data-detected-name></b>
+      </div>
+      <div class="tablist" role="tablist" aria-label="Install method">
+        {tabs.map((tb, i) => (
+          <button type="button" role="tab" id={`tab-${tb.id}`} aria-controls={`panel-${tb.id}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1} data-tab={tb.id}>
+            {d.download.tabs[tb.id]}
+            {tb.rec && <span class="rec">{d.common.recommended}</span>}
+            {"coming" in tb && <span class="badge-coming">{d.common.coming}</span>}
+          </button>
+        ))}
+      </div>
+      {tabs.map((tb, i) => (
+        <div class="panel" role="tabpanel" id={`panel-${tb.id}`} aria-labelledby={`tab-${tb.id}`} hidden={i !== 0} tabindex="0">
+          <p class="dim note">{tb.note}</p>
+          {tb.id === "binary" ? (
+            <div class="bins">
+              {osOrder.map((os) => {
+                const a = binaries.find((b) => b.os === os);
+                return a ? (
+                  <div class="bin" data-os={os}>
+                    <p class="mono bin-name">
+                      <span class="os">{d.download.os[os]}</span> <span class="mute">{a.arch}</span>
+                      <span class="rec-os" hidden>{d.download.recommendedFor} {d.download.os[os]}</span>
+                    </p>
+                    <CopyCmd lang={lang} cmd={binCmd(a)} />
+                    <p class="mono small"><a href={a.url}>{a.name}</a> <span class="mute">{humanSize(a.size)}</span></p>
+                  </div>
+                ) : null;
+              })}
+            </div>
+          ) : (
+            <CopyCmd lang={lang} cmd={tb.cmd} />
+          )}
+          {tb.id !== "binary" && tb.id !== "docker" && <CopyCmd lang={lang} cmd="sesslint check --agent claude" class="then" />}
+        </div>
+      ))}
+    </sl-install>
+  </div>
+
+  <section class="section wrap" aria-labelledby="assets-title">
+    <SectionHead kicker={`gh release view ${rel.tag}`} title={d.download.assets} id="assets-title" />
+    {rel.source === "fallback" && <p class="mono mute small offline">{d.download.offline}</p>}
+    <div class="table-wrap">
+      <table class="table assets">
+        <thead>
+          <tr><th scope="col">{d.download.asset}</th><th scope="col">{d.download.size}</th><th scope="col">{d.download.sha}</th><th scope="col">{d.download.sig}</th></tr>
+        </thead>
+        {kinds.map((k) => {
+          const rows = main.filter((a) => a.kind === k);
+          return rows.length ? (
+            <tbody>
+              <tr class="grp"><th scope="colgroup" colspan="4">{d.download.kinds[k]}</th></tr>
+              {rows.map((a) => {
+                const sig = sigs.get(a.name);
+                return (
+                  <tr>
+                    <th scope="row" class="mono"><a href={a.url}>{a.name}</a></th>
+                    <td class="mono tnum">{humanSize(a.size)}</td>
+                    <td class="mono sha">
+                      {a.sha256 ? (
+                        <button type="button" class="sha-btn" data-copy={a.sha256} data-copied={d.common.copied} data-copy-failed={d.common.copyFailed} title={a.sha256}>
+                          <span data-copy-label>{a.sha256.slice(0, 16)}…</span>
+                        </button>
+                      ) : (
+                        <span class="mute">{d.download.noSha}</span>
+                      )}
+                    </td>
+                    <td class="mono">{sig ? <a href={sig.url}>.sigstore.json</a> : <span class="mute">—</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ) : null;
+        })}
+      </table>
+    </div>
+    <p class="mono small links">
+      <a href={rel.url}>{rel.tag} on GitHub ↗</a>
+      <a href={`${REPO_URL}/releases`}>{d.download.allReleases} ↗</a>
+    </p>
+    {others.length > 0 && (
+      <details class="older">
+        <summary class="mono">{d.download.older} ({others.length})</summary>
+        <ul class="mono">
+          {others.map((o) => <li><a href={o.url}>{o.tag}</a> {o.publishedAt && <span class="mute">{o.publishedAt.slice(0, 10)}</span>}</li>)}
+        </ul>
+      </details>
+    )}
+  </section>
+
+  <section class="section wrap" aria-labelledby="verify-title">
+    <SectionHead kicker="verify --before-run" title={d.download.verifyTitle} lede={d.download.verifyLede} id="verify-title" />
+    <ol class="steps">
+      {verify.map((cmd, i) => (
+        <li>
+          <p class="mono step-title"><span class="pass">{String(i + 1).padStart(2, "0")}</span> {d.download.verifySteps[i]}</p>
+          <CopyCmd lang={lang} cmd={cmd} />
+        </li>
+      ))}
+    </ol>
+    <p class="dim small">PowerShell: <code>Get-FileHash -Algorithm SHA256 .\sesslint-*.exe</code></p>
+  </section>
+
+  <section class="section wrap" aria-labelledby="channels-title">
+    <SectionHead kicker="channels --status" title={d.download.channels} lede={d.download.channelsLede} id="channels-title" />
+    <ul class="channels">
+      {channels.map((c) => (
+        <li class="card">
+          <p class="mono"><b>{c.name}</b> <span class="badge-coming">{d.common.coming}</span></p>
+          <code class="mute">{c.cmd}</code>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Base>
+
+<script>
+  import { detectPlatform } from "../scripts/platform";
+
+  class Install extends HTMLElement {
+    connectedCallback() {
+      const tabs = Array.from(this.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+      const select = (tab: HTMLButtonElement, focus = false) => {
+        for (const t of tabs) {
+          const on = t === tab;
+          t.setAttribute("aria-selected", String(on));
+          t.tabIndex = on ? 0 : -1;
+          const panel = this.querySelector<HTMLElement>(`#${t.getAttribute("aria-controls")}`);
+          if (panel) panel.hidden = !on;
+        }
+        if (focus) tab.focus();
+      };
+      for (const t of tabs) {
+        t.addEventListener("click", () => select(t));
+        t.addEventListener("keydown", (e) => {
+          const i = tabs.indexOf(t);
+          const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+          if (next === null) return;
+          e.preventDefault();
+          const tab = tabs[(next + tabs.length) % tabs.length];
+          if (tab) select(tab, true);
+        });
+      }
+
+      void detectPlatform().then((p) => {
+        if (!p) return;
+        const bin = this.querySelector<HTMLElement>(`.bin[data-os=${p.os}]`);
+        const box = this.querySelector<HTMLElement>("[data-detected]");
+        const name = this.querySelector<HTMLElement>("[data-detected-name]");
+        if (box && name) {
+          name.textContent = `${p.label}${p.arch ? ` · ${p.arch}` : ""}`;
+          box.hidden = false;
+        }
+        if (bin) {
+          bin.classList.add("is-rec");
+          bin.parentElement?.prepend(bin);
+          const rec = bin.querySelector<HTMLElement>(".rec-os");
+          if (rec) rec.hidden = false;
+        }
+      });
+    }
+  }
+  if (!customElements.get("sl-install")) customElements.define("sl-install", Install);
+</script>
+
+<style>
+  .tag-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-4);
+    margin-top: var(--s-5);
+    font-size: 0.84rem;
+  }
+  .install {
+    display: block;
+    min-width: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .detected {
+    padding: 10px 16px;
+    border-bottom: 1px dashed var(--line);
+    font-size: 0.8rem;
+  }
+  .detected b {
+    color: var(--pass);
+  }
+  .tablist {
+    display: flex;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+  }
+  [role="tab"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 0 18px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    color: var(--dim);
+  }
+  [role="tab"][aria-selected="true"] {
+    color: var(--fg);
+    background: var(--raised);
+    box-shadow: inset 0 -2px 0 var(--pass);
+  }
+  .rec {
+    font-size: 0.66rem;
+    color: var(--pass);
+    border: 1px solid var(--pass);
+    padding: 0 4px;
+  }
+  .panel,
+  .bins,
+  .bin {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .panel {
+    display: grid;
+    gap: var(--s-3);
+    padding: var(--s-5);
+  }
+  .panel[hidden] {
+    display: none;
+  }
+  .note {
+    font-size: 0.9rem;
+  }
+  .panel :global(.then) {
+    opacity: 0.8;
+  }
+  .bins {
+    display: grid;
+    gap: var(--s-4);
+  }
+  .bin {
+    display: grid;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  .bin.is-rec {
+    border-color: var(--pass);
+    background: var(--pass-soft);
+  }
+  .bin-name {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    align-items: baseline;
+  }
+  .os {
+    font-weight: 600;
+  }
+  .rec-os {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: var(--pass);
+  }
+  .small {
+    font-size: 0.8rem;
+  }
+  .offline {
+    margin-bottom: var(--s-3);
+  }
+  .assets th[scope="row"] {
+    font-weight: 400;
+    word-break: break-all;
+  }
+  .assets .grp th {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--pass);
+    background: transparent;
+  }
+  .sha-btn {
+    padding: 2px 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--sunken);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-5);
+    margin-top: var(--s-4);
+  }
+  .older {
+    margin-top: var(--s-4);
+  }
+  .older summary {
+    cursor: pointer;
+    font-size: 0.86rem;
+  }
+  .older ul {
+    margin: var(--s-3) 0 0;
+    padding-left: 1.2em;
+    font-size: 0.84rem;
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-5);
+    margin: 0 0 var(--s-4);
+    padding: 0;
+    list-style: none;
+  }
+  .step-title {
+    margin-bottom: var(--s-2);
+    font-size: 0.88rem;
+  }
+  .channels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: var(--s-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .channels li {
+    display: grid;
+    gap: var(--s-2);
+  }
+  .channels code {
+    white-space: normal;
+  }
+  @media (max-width: 640px) {
+    .assets td:nth-child(3),
+    .assets th:nth-child(3) {
+      display: none;
+    }
+  }
+</style>

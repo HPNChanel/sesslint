@@ -1,0 +1,105 @@
+---
+// GitHub Pages serves this for any unknown path. Suggestions are ranked in
+// the browser against the real route list (edit distance on the first segment).
+import Base from "../layouts/Base.astro";
+import { asset, href, t } from "../i18n";
+
+const d = t("en");
+const routes = ["/", "/download", "/pricing", "/changelog", "/rules", "/docs/"];
+const known = routes.map((r) => ({ route: r, en: r === "/docs/" ? asset(r) : href("en", r), vi: r === "/docs/" ? null : href("vi", r) }));
+---
+
+<Base lang="en" route="/404" title={d.notFound.title} section="ERROR" noindex>
+  <section class="wrap nf" aria-labelledby="nf-title">
+    <div class="term">
+      <div class="term-bar"><b>sesslint</b><span class="e">exit 2</span></div>
+      <div class="term-body" data-nf data-routes={JSON.stringify(known)}>
+        <p class="ln"><span class="p" aria-hidden="true">❯ </span>sesslint open <span data-nf-path>/…</span></p>
+        <h1 class="ln e" id="nf-title">sesslint: {d.notFound.error} '<span data-nf-path>/…</span>' (exit 2)</h1>
+        <p class="ln m">{d.notFound.hint}</p>
+        <ul class="ln sugg" data-nf-sugg>
+          {known.slice(0, 4).map((k) => <li>  <a href={k.en}>{k.route}</a></li>)}
+        </ul>
+        <p class="ln m">Try ⌘K / Ctrl+K to search pages and SL codes.</p>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<script>
+  type Known = { route: string; en: string; vi: string | null };
+  const box = document.querySelector<HTMLElement>("[data-nf]");
+  if (box) {
+    const base = (import.meta.env.BASE_URL as string).replace(/\/$/, "");
+    const path = decodeURIComponent(location.pathname).replace(base, "") || "/";
+    for (const el of document.querySelectorAll("[data-nf-path]")) el.textContent = path;
+    const vi = path.startsWith("/vi/") || path === "/vi";
+    const seg = path.replace(/^\/vi/, "").split("/").filter(Boolean)[0] ?? "";
+    const dist = (a: string, b: string) => {
+      const m = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+      for (let j = 1; j <= b.length; j++) (m[0] as number[])[j] = j;
+      for (let i = 1; i <= a.length; i++)
+        for (let j = 1; j <= b.length; j++) {
+          const row = m[i] as number[];
+          const prev = m[i - 1] as number[];
+          row[j] = Math.min((prev[j] ?? 0) + 1, (row[j - 1] ?? 0) + 1, (prev[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+      return (m[a.length] as number[])[b.length] ?? 0;
+    };
+    const known = JSON.parse(box.dataset.routes ?? "[]") as Known[];
+    const ranked = known
+      .map((k) => ({ k, score: dist(seg.toLowerCase(), k.route.replace(/\//g, "")) }))
+      .sort((x, y) => x.score - y.score)
+      .slice(0, 3);
+    const list = box.querySelector<HTMLElement>("[data-nf-sugg]");
+    if (list) {
+      list.replaceChildren(
+        ...ranked.map(({ k }) => {
+          const li = document.createElement("li");
+          const a = document.createElement("a");
+          a.href = (vi && k.vi) || k.en;
+          a.textContent = (vi && k.vi ? "/vi" : "") + k.route;
+          li.append("  ", a);
+          return li;
+        }),
+      );
+    }
+  }
+</script>
+
+<style>
+  .nf {
+    padding-block: var(--s-8);
+  }
+  .term {
+    max-width: 760px;
+  }
+  .term-bar {
+    justify-content: space-between;
+  }
+  .term-bar .e {
+    color: var(--term-err);
+  }
+  .term-body {
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+  .ln {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  h1.ln {
+    font-family: var(--font-mono);
+    font-size: inherit;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .sugg {
+    list-style: none;
+    padding: 0;
+  }
+  .sugg a {
+    color: var(--term-info);
+  }
+</style>

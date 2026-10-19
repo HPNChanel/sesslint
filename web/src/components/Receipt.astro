@@ -1,0 +1,247 @@
+---
+// A tier rendered as a thermal-printer receipt. Server-rendered for the
+// "first purchase" case; the pricing script re-prices it live.
+import { href, t, type Lang } from "../i18n";
+import { FEATURES, RECEIPT_LINES, TIERS, type TierId } from "../data/tiers";
+import { sha256, shortHash } from "../lib/hash";
+import { quote, usd, usdShort } from "../lib/pricing";
+
+type Props = { lang: Lang; tier: TierId; compact?: boolean };
+const { lang, tier, compact = false } = Astro.props;
+const d = t(lang);
+const tierData = TIERS[tier];
+const q = quote(tier);
+const name = d.pricing.names[tier];
+const prev = tier === "max" ? "plus" : tier === "plus" ? "free" : null;
+const lines = RECEIPT_LINES[tier].map((id) => FEATURES.find((f) => f.id === id)).filter((f) => f !== undefined);
+const machinesVal = FEATURES.find((f) => f.id === "machines")?.value[tier];
+const machines = tierData.machines !== null && typeof machinesVal === "object" ? machinesVal[lang] : null;
+const digest = sha256(JSON.stringify({ tier: tierData, lines: RECEIPT_LINES[tier] }));
+const cta =
+  tier === "free"
+    ? { label: d.pricing.getFree, url: href(lang, "/download") }
+    : { label: d.pricing.buy, url: `${href(lang, "/checkout")}?tier=${tier}` };
+---
+
+<article class:list={["receipt", `t-${tier}`, { compact }]} data-receipt={tier} aria-labelledby={`r-${tier}-name`}>
+  {tier === "max" && <span class="stamp mono" aria-hidden="true">{d.pricing.stamp[0]}<br />{d.pricing.stamp[1]}</span>}
+  <header class="r-head">
+    <p class="r-brand mono"><span class="caret" aria-hidden="true"></span>SESSLINT</p>
+    <h3 class="r-name" id={`r-${tier}-name`}>{name}</h3>
+    <p class="r-tag">{d.pricing.taglines[tier]}</p>
+    <p class="r-price">
+      <s class="r-list mono tnum" data-r-list hidden>{usdShort(q.listCents)}</s>
+      <span class="r-big tnum" data-r-big>{usdShort(q.listCents)}</span>
+      <span class="r-per mono">{tier === "free" ? d.common.forever : d.common.oneTime}</span>
+    </p>
+  </header>
+
+  {!compact && (
+    <div class="r-rows mono" aria-label={d.pricing.total}>
+      <p class="row"><span data-r-billto>{d.pricing.billTo}</span><span class="fill" aria-hidden="true"></span><span data-r-who>{d.pricing.you}</span></p>
+      <p class="row head"><span>{d.pricing.item}</span><span class="fill" aria-hidden="true"></span><span>{d.pricing.amount}</span></p>
+      <p class="row"><span>SessLint {name}</span><span class="fill" aria-hidden="true"></span><span class="tnum" data-r-item>{usd(q.listCents)}</span></p>
+      <p class="row credit" data-r-credit hidden><span>{d.pricing.names.plus} ({d.pricing.credit})</span><span class="fill" aria-hidden="true"></span><span class="tnum" data-r-credit-amt></span></p>
+      <p class="row total"><span>{d.pricing.total}</span><span class="fill" aria-hidden="true"></span><span class="tnum" data-r-due>{usd(tier === "free" ? 0 : q.dueCents)}</span></p>
+    </div>
+  )}
+
+  <div class="r-inc">
+    <p class="mono r-inc-title">{d.pricing.includes}</p>
+    <ul>
+      {prev && <li class="everything">{d.pricing.everythingIn} {d.pricing.names[prev]}</li>}
+      {lines.map((f) => (
+        <li>
+          {f.label[lang]}
+          {f.status === "coming" && <span class="badge-coming">{d.common.coming}</span>}
+        </li>
+      ))}
+      {machines && <li>{machines}</li>}
+    </ul>
+  </div>
+
+  <div class="r-cta">
+    <a class:list={["btn", { "btn-primary": tier === "max" }]} href={cta.url} data-r-cta>{cta.label}</a>
+  </div>
+
+  {!compact && (
+    <footer class="r-foot mono">
+      <span>sha256:{shortHash(digest, 16)}</span>
+      <span class="mute">{d.pricing.displayHash}</span>
+    </footer>
+  )}
+</article>
+
+<style>
+  .receipt {
+    --zig: 10px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-5);
+    padding: calc(var(--s-6) + 4px) var(--s-5) calc(var(--s-6) + 4px);
+    background: var(--raised);
+    color: var(--fg);
+    filter: drop-shadow(4px 4px 0 var(--line-strong));
+    /* perforated top and bottom edges */
+    -webkit-mask:
+      conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--zig) 51% repeat-x,
+      conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--zig) 51% repeat-x;
+    mask:
+      conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--zig) 51% repeat-x,
+      conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--zig) 51% repeat-x;
+  }
+  .t-max {
+    outline: 2px solid var(--pass);
+    outline-offset: -8px;
+  }
+  .stamp {
+    position: absolute;
+    top: 28px;
+    right: 18px;
+    padding: 4px 8px;
+    border: 2px solid var(--pass);
+    border-radius: 3px;
+    color: var(--pass);
+    font-size: 0.62rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    text-align: center;
+    transform: rotate(8deg);
+  }
+  .r-head {
+    display: grid;
+    gap: var(--s-2);
+    padding-bottom: var(--s-4);
+    border-bottom: 1px dashed var(--line-strong);
+  }
+  .r-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    color: var(--mute);
+  }
+  .caret {
+    width: 5px;
+    height: 12px;
+    background: var(--pass);
+  }
+  .r-name {
+    font-family: var(--font-display);
+    font-size: var(--step-3);
+    font-weight: 450;
+    letter-spacing: -0.02em;
+  }
+  .r-tag {
+    color: var(--dim);
+    font-size: 0.92rem;
+    min-height: 2.9em;
+  }
+  .r-price {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+  }
+  .r-big {
+    font-family: var(--font-mono);
+    font-size: var(--step-4);
+    font-weight: 500;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+  .r-list {
+    font-size: var(--step-1);
+    color: var(--mute);
+  }
+  .r-per {
+    font-size: 0.78rem;
+    color: var(--mute);
+  }
+  .r-rows {
+    display: grid;
+    gap: 4px;
+    font-size: 0.8rem;
+  }
+  .row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .row .fill {
+    flex: 1;
+    border-bottom: 1px dotted var(--line-strong);
+    transform: translateY(-3px);
+  }
+  .row.head {
+    margin-top: var(--s-2);
+    color: var(--mute);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+  }
+  .row.credit {
+    color: var(--pass);
+  }
+  .row[hidden] {
+    display: none;
+  }
+  .row.total {
+    margin-top: var(--s-2);
+    padding-top: var(--s-2);
+    border-top: 1px solid var(--fg);
+    font-weight: 600;
+    font-size: 0.86rem;
+  }
+  .r-inc-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+  }
+  .r-inc ul {
+    display: grid;
+    gap: 6px;
+    margin: var(--s-2) 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+  }
+  .r-inc li {
+    position: relative;
+    padding-left: 1.4em;
+  }
+  .r-inc li::before {
+    content: "+";
+    position: absolute;
+    left: 0;
+    font-family: var(--font-mono);
+    color: var(--pass);
+  }
+  .r-inc .everything {
+    font-weight: 600;
+  }
+  .r-cta {
+    margin-top: auto;
+  }
+  .r-cta .btn {
+    width: 100%;
+  }
+  .r-foot {
+    display: grid;
+    gap: 2px;
+    padding-top: var(--s-3);
+    border-top: 1px dashed var(--line-strong);
+    font-size: 0.66rem;
+    color: var(--dim);
+    overflow-wrap: anywhere;
+  }
+  .compact {
+    gap: var(--s-4);
+  }
+  .compact .r-inc li:nth-child(n + 5) {
+    display: none;
+  }
+</style>

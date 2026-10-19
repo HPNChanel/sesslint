@@ -1,0 +1,330 @@
+---
+// Detector catalog, generated from docs/codes/SL*.md and docs/recipes/*.md at
+// build time, so the page cannot drift from the shipped rule set.
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { asset, t, type Lang } from "../i18n";
+import { DETECTOR_GROUPS, detectors, recipeInfo } from "../lib/repo";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+const all = detectors();
+const recipes = recipeInfo();
+const groups = DETECTOR_GROUPS.map((g) => ({ ...g, items: all.filter((x) => x.group === g.id) })).filter((g) => g.items.length);
+const sev = (s: string) => (s === "warning" ? "warning" : s === "fatal" ? "fatal" : "error");
+const sevClass = { fatal: "err", error: "err", warning: "warn" } as const;
+const repairLabel = (r: string) => d.rules.repair[r as keyof typeof d.rules.repair] ?? r;
+const byCode = new Map<string, string[]>();
+for (const r of recipes) for (const c of r.codes) byCode.set(c, [...(byCode.get(c) ?? []), r.id]);
+const policies = [
+  { id: "conservative", title: d.rules.conservative, lede: d.rules.conservativeLede, items: recipes.filter((r) => !r.salvage) },
+  { id: "salvage", title: d.rules.salvage, lede: d.rules.salvageLede, items: recipes.filter((r) => r.salvage) },
+];
+---
+
+<Base lang={lang} route="/rules" title={d.rules.title} description={d.rules.lede} section="RULES">
+  <PageHead kicker={`sesslint explain --list  # ${all.length} ${d.rules.count}`} title={d.rules.title} lede={d.rules.lede} />
+
+  <div class="wrap">
+    <div class="tools">
+      <label class="search">
+        <span class="sr-only">{d.rules.search}</span>
+        <span class="mono mute" aria-hidden="true">grep</span>
+        <input type="search" data-rule-search placeholder={d.rules.search} autocomplete="off" spellcheck="false" />
+      </label>
+      <p class="mono legend" aria-label={d.rules.legend}>
+        <span><i class="sw err" aria-hidden="true"></i>{d.rules.severity.error} / {d.rules.severity.fatal}</span>
+        <span><i class="sw warn" aria-hidden="true"></i>{d.rules.severity.warning}</span>
+        <output class="mute" data-rule-count aria-live="polite">{all.length}/{all.length}</output>
+      </p>
+    </div>
+
+    <nav class="jump mono" aria-label={d.rules.title}>
+      {groups.map((g) => <a href={`#g-${g.id}`}>{d.rules.groups[g.id as keyof typeof d.rules.groups]} <span class="mute">{g.items.length}</span></a>)}
+    </nav>
+
+    {groups.map((g) => (
+      <section class="group" id={`g-${g.id}`} data-rule-group aria-labelledby={`h-${g.id}`}>
+        <h2 class="mono gh" id={`h-${g.id}`}>
+          <span>{d.rules.groups[g.id as keyof typeof d.rules.groups]}</span>
+          <span class="mute range">SL{String(g.range[0]).padStart(3, "0")}–SL{String(g.range[1]).padStart(3, "0")}</span>
+        </h2>
+        <ul class="rules">
+          {g.items.map((r) => {
+            const s = sev(r.severity);
+            const fixes = byCode.get(r.code) ?? [];
+            return (
+              <li class={`rule sev-${s}`} id={r.code} data-rule data-search={`${r.code} ${r.title} ${fixes.join(" ")}`.toLowerCase()}>
+                <a class="rule-link" href={asset(`/docs/codes/${r.code}/`)}>
+                  <span class="mono code">{r.code}</span>
+                  <span class="title">{r.title}</span>
+                </a>
+                <p class="mono meta">
+                  <span class={sevClass[s]}>{d.rules.severity[s]}</span>
+                  <span class="mute">·</span>
+                  <span class="dim">{repairLabel(r.repairability)}</span>
+                  <a class="anchor mute" href={`#${r.code}`} aria-label={`${d.changelog.permalink}: ${r.code}`}>#</a>
+                </p>
+                {fixes.length > 0 && (
+                  <p class="mono fixes">
+                    <span class="mute">{d.rules.handles}:</span>{" "}
+                    {fixes.map((f, i) => <>{i > 0 && ", "}<a href={`#r-${f}`}>{f}</a></>)}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    ))}
+    <p class="empty mono" data-rule-empty hidden>{d.rules.noMatch}</p>
+  </div>
+
+  <section class="section wrap" aria-labelledby="recipes-title">
+    <SectionHead kicker={`sesslint repair --plan  # ${recipes.length}`} title={d.rules.recipes} lede={d.rules.recipesLede} id="recipes-title" />
+    <div class="policies">
+      {policies.map((p) => (
+        <div class={`policy policy-${p.id}`}>
+          <h3>{p.title} <span class="mute">({p.items.length})</span></h3>
+          <p class="dim">{p.lede}</p>
+          <ul class="recipes">
+            {p.items.map((r) => (
+              <li id={`r-${r.id}`}>
+                <a class="mono" href={asset(`/docs/recipes/${r.id}/`)}>{r.id}</a>
+                <span class="mono codes">
+                  {r.codes.map((c) => <a href={`#${c}`}>{c}</a>)}
+                  {r.lossy && <span class="lossy">{d.rules.lossy}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </section>
+</Base>
+
+<script>
+  const input = document.querySelector<HTMLInputElement>("[data-rule-search]");
+  const rules = Array.from(document.querySelectorAll<HTMLElement>("[data-rule]"));
+  const groups = Array.from(document.querySelectorAll<HTMLElement>("[data-rule-group]"));
+  const count = document.querySelector<HTMLOutputElement>("[data-rule-count]");
+  const empty = document.querySelector<HTMLElement>("[data-rule-empty]");
+  const apply = () => {
+    const q = (input?.value ?? "").trim().toLowerCase();
+    let shown = 0;
+    for (const r of rules) {
+      const ok = !q || (r.dataset.search ?? "").includes(q);
+      r.hidden = !ok;
+      if (ok) shown++;
+    }
+    for (const g of groups) g.hidden = !g.querySelector("[data-rule]:not([hidden])");
+    if (count) count.value = `${shown}/${rules.length}`;
+    if (empty) empty.hidden = shown > 0;
+  };
+  input?.addEventListener("input", apply);
+  const q = new URLSearchParams(location.search).get("q");
+  if (input && q) {
+    input.value = q;
+    apply();
+  }
+</script>
+
+<style>
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--s-4);
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: 1 1 320px;
+    max-width: 480px;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .search input {
+    flex: 1;
+    min-height: 44px;
+    border: 0;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--fg);
+    outline: none;
+  }
+  .search:focus-within {
+    outline: 2px solid var(--info);
+    outline-offset: 2px;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+    align-items: center;
+    font-size: 0.78rem;
+  }
+  .sw {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 2px;
+  }
+  .sw.err {
+    background: var(--err);
+  }
+  .sw.warn {
+    background: var(--warn);
+  }
+  .jump {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-5);
+    padding: var(--s-3) 0 var(--s-5);
+    border-bottom: 1px dashed var(--line);
+    font-size: 0.8rem;
+  }
+  .group {
+    padding-top: var(--s-6);
+    scroll-margin-top: 80px;
+  }
+  .group[hidden] {
+    display: none;
+  }
+  .gh {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s-2);
+    margin-bottom: var(--s-4);
+    font-family: var(--font-mono);
+    font-size: var(--step-0);
+    font-weight: 600;
+  }
+  .range {
+    font-weight: 400;
+    font-size: 0.78rem;
+  }
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--line);
+    background: var(--line);
+  }
+  .rule {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    background: var(--surface);
+    box-shadow: inset 3px 0 0 var(--err);
+    scroll-margin-top: 96px;
+  }
+  .rule.sev-warning {
+    box-shadow: inset 3px 0 0 var(--warn);
+  }
+  .rule[hidden] {
+    display: none;
+  }
+  .rule:target {
+    background: var(--raised);
+    outline: 2px solid var(--info);
+    outline-offset: -2px;
+  }
+  .rule-link {
+    display: grid;
+    gap: 2px;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .rule-link:hover .title {
+    text-decoration: underline;
+  }
+  .code {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--info);
+  }
+  .title {
+    font-size: 0.98rem;
+    line-height: 1.35;
+  }
+  .meta,
+  .fixes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 0.74rem;
+  }
+  .fixes {
+    display: block;
+  }
+  .anchor {
+    margin-left: auto;
+    text-decoration: none;
+  }
+  .empty {
+    padding: var(--s-6) 0;
+  }
+  .policies {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: var(--s-5);
+  }
+  .policy {
+    padding: var(--s-5);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .policy-salvage {
+    border-style: dashed;
+    border-color: var(--warn);
+  }
+  .policy h3 {
+    margin-bottom: var(--s-2);
+  }
+  .recipes {
+    display: grid;
+    gap: 0;
+    margin: var(--s-4) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .recipes li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s-2);
+    padding: 10px 0;
+    border-top: 1px dashed var(--line);
+    font-size: 0.86rem;
+    scroll-margin-top: 96px;
+  }
+  .recipes li:target {
+    background: var(--raised);
+  }
+  .codes {
+    display: flex;
+    gap: 8px;
+    font-size: 0.76rem;
+  }
+  .lossy {
+    color: var(--warn);
+  }
+</style>

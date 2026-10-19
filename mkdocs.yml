@@ -8,6 +8,8 @@ site_name: SessLint
 site_description: >-
   Offline, zero-dependency session-integrity checker and conservative
   repair engine for AI agent session ledgers.
+# Served under /docs/ of the Pages site; the Astro landing site in web/ owns /.
+site_url: https://hpnchanel.github.io/sesslint/docs/
 repo_url: https://github.com/HPNChanel/sesslint
 docs_dir: docs
 

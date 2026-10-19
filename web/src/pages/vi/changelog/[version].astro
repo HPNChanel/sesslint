@@ -1,0 +1,9 @@
+---
+import Release from "../../../views/Release.astro";
+import { releasePaths } from "../../../lib/paths";
+
+export const getStaticPaths = releasePaths;
+const { release } = Astro.props;
+---
+
+<Release lang="vi" release={release} />

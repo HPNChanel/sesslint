@@ -1,0 +1,43 @@
+---
+import { t, type Lang } from "../i18n";
+
+type Props = { lang: Lang; cmd: string; label?: string; class?: string };
+const { lang, cmd, label, class: cls } = Astro.props;
+const d = t(lang);
+---
+
+<div class:list={["cmd", cls]}>
+  {cmd.length > 44 ? <code tabindex="0">{cmd}</code> : <code>{cmd}</code>}
+  <button
+    type="button"
+    class="copy"
+    data-copy={cmd}
+    data-copied={d.common.copied}
+    data-copy-failed={d.common.copyFailed}
+    aria-label={label ?? `${d.common.copy}: ${cmd}`}
+  >
+    <span data-copy-label>{d.common.copy}</span>
+  </button>
+</div>
+
+<style>
+  .copy {
+    flex: none;
+    min-width: 72px;
+    padding: 0 14px;
+    border: 0;
+    border-left: 1px solid var(--line);
+    background: var(--sunken);
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    white-space: nowrap;
+  }
+  .copy:hover {
+    color: var(--fg);
+  }
+  .copy:global(.is-copied) {
+    background: var(--pass-soft);
+    color: var(--pass);
+  }
+</style>

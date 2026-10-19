@@ -361,3 +361,17 @@ jobs:
         with:
           name: published-github-receipts
           path: public-github/smoke-*.json
+
+  # The release was promoted with GITHUB_TOKEN, which never fires `release`
+  # events for other workflows; workflow_dispatch is the permitted exception.
+  # Rebuild the Pages site so its changelog and download page show the release.
+  refresh-site:
+    needs: published-verify
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the site build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref main --repo "${{ github.repository }}"

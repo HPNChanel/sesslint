@@ -1,0 +1,218 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import LedgerBlock from "../components/LedgerBlock.astro";
+import LiveRelease from "../components/LiveRelease.astro";
+import { asset, t, type Lang } from "../i18n";
+import { released } from "../lib/changelog";
+import { site } from "../lib/site";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+const { releases, latest } = site();
+const total = released(releases).length;
+const filters = [
+  { id: "all", label: d.changelog.all },
+  { id: "added", label: d.changelog.kinds.Added },
+  { id: "changed", label: d.changelog.kinds.Changed },
+  { id: "fixed", label: d.changelog.kinds.Fixed },
+  { id: "breaking", label: d.changelog.breaking },
+];
+---
+
+<Base lang={lang} route="/changelog" title={d.changelog.title} description={d.changelog.lede} section="CHANGELOG">
+  <LiveRelease lang={lang} current={latest?.version ?? "0.0.0"} />
+  <PageHead kicker="changelog --ledger" title={d.changelog.title} lede={d.changelog.lede}>
+    <div class="feeds mono">
+      <span class="mute">{d.changelog.feeds}:</span>
+      <a href={asset("/changelog.xml")}>atom</a>
+      <a href={asset("/changelog.json")}>json</a>
+      <a href="https://github.com/HPNChanel/sesslint/releases">github releases ↗</a>
+    </div>
+  </PageHead>
+
+  <div class="wrap layout">
+    <aside class="side" aria-label={d.changelog.filter}>
+      <div class="side-inner">
+        <fieldset class="filters">
+          <legend class="kicker">{d.changelog.filter}</legend>
+          <div class="seg seg-col">
+            {filters.map((f, i) => (
+              <label><input type="radio" name="cl-filter" value={f.id} checked={i === 0} data-cl-filter />{f.label}</label>
+            ))}
+          </div>
+        </fieldset>
+        <label class="search">
+          <span class="sr-only">{d.changelog.search}</span>
+          <input type="search" placeholder={d.changelog.search} data-cl-search />
+        </label>
+        <p class="mono mute count" aria-live="polite" data-cl-count></p>
+        <nav class="toc mono" aria-label="Versions">
+          <ul>
+            {releases.map((r) => (
+              <li><a href={`#${r.unreleased ? "unreleased" : `v${r.version}`}`}>{r.unreleased ? d.changelog.unreleased : `v${r.version}`}</a></li>
+            ))}
+          </ul>
+        </nav>
+        <p class="note">{d.changelog.hashNote}</p>
+        {lang !== "en" && <p class="note">{d.changelog.contentNote}</p>}
+      </div>
+    </aside>
+
+    <div class="ledger" data-cl-root data-entries-label={d.changelog.entries}>
+      {releases.map((r) => (
+        <LedgerBlock lang={lang} release={r} index={r.unreleased ? total + 1 : total - released(releases).indexOf(r)} />
+      ))}
+      <p class="mono empty" hidden data-cl-empty>{d.changelog.noMatch}</p>
+      <div class="genesis mono" aria-hidden="true">#000 genesis · 0000000000000000…</div>
+    </div>
+  </div>
+</Base>
+
+<script>
+  const root = document.querySelector<HTMLElement>("[data-cl-root]");
+  const search = document.querySelector<HTMLInputElement>("[data-cl-search]");
+  const count = document.querySelector<HTMLElement>("[data-cl-count]");
+  const empty = document.querySelector<HTMLElement>("[data-cl-empty]");
+  if (root && search && count && empty) {
+    const entries = Array.from(root.querySelectorAll<HTMLElement>("[data-entry]"));
+    const sections = Array.from(root.querySelectorAll<HTMLElement>("[data-section]"));
+    const blocks = Array.from(root.querySelectorAll<HTMLElement>("[data-block]"));
+    const label = root.dataset.entriesLabel ?? "entries";
+    let timer = 0;
+
+    const apply = () => {
+      const kind = document.querySelector<HTMLInputElement>("[data-cl-filter]:checked")?.value ?? "all";
+      const terms = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const e of entries) {
+        const okKind = kind === "all" || (kind === "breaking" ? e.dataset.breaking === "true" : e.dataset.kind === kind);
+        const s = e.dataset.search ?? "";
+        const ok = okKind && terms.every((t) => s.includes(t));
+        e.hidden = !ok;
+        if (ok) shown++;
+        // Searching opens matching entries so the hit is visible.
+        const det = e.querySelector("details");
+        if (det) det.open = ok && terms.length > 0;
+      }
+      for (const s of sections) s.hidden = !s.querySelector("[data-entry]:not([hidden])");
+      for (const b of blocks) b.hidden = !b.querySelector("[data-entry]:not([hidden])");
+      count.textContent = `${shown} / ${entries.length} ${label}`;
+      empty.hidden = shown > 0;
+    };
+
+    for (const r of document.querySelectorAll("[data-cl-filter]")) r.addEventListener("change", apply);
+    search.addEventListener("input", () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(apply, 120);
+    });
+    apply();
+  }
+</script>
+
+<style>
+  .feeds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+    margin-top: var(--s-5);
+    font-size: 0.82rem;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: var(--s-6);
+    align-items: start;
+  }
+  .side-inner {
+    position: sticky;
+    top: 96px;
+    display: grid;
+    gap: var(--s-4);
+  }
+  .filters {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: grid;
+    gap: var(--s-2);
+  }
+  .seg-col {
+    display: grid;
+  }
+  .seg-col :global(label + label) {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .search input {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--raised);
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+  }
+  .count {
+    font-size: 0.76rem;
+    margin: 0;
+  }
+  .toc ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 2px;
+    font-size: 0.82rem;
+  }
+  .toc a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    color: var(--dim);
+    text-decoration: none;
+  }
+  .toc a:hover {
+    color: var(--fg);
+  }
+  .note {
+    font-size: 0.78rem;
+    color: var(--mute);
+  }
+  .ledger {
+    min-width: 0;
+  }
+  .ledger :global([data-block][hidden]) {
+    display: none;
+  }
+  .empty {
+    padding: var(--s-5);
+    color: var(--err);
+  }
+  .genesis {
+    padding-left: 8px;
+    font-size: 0.72rem;
+    color: var(--mute);
+  }
+  @media (max-width: 900px) {
+    .layout {
+      grid-template-columns: 1fr;
+    }
+    .side-inner {
+      position: static;
+    }
+    .seg-col {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .seg-col :global(label + label) {
+      border-top: 0;
+      border-left: 1px solid var(--line);
+    }
+    .toc {
+      display: none;
+    }
+  }
+</style>

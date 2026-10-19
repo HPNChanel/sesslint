@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Project website in `web/` (Astro, static, English + Vietnamese): landing
+  page, portable-binary downloads with Sigstore/SLSA verify steps, a rule
+  catalog, one-time pricing (Free / Plus / Max, upgrades credit the tier
+  already owned), and a changelog generated from this file with Atom/JSON
+  feeds. The Pages workflow now serves it at `/` with the mkdocs docs under
+  `/docs/`, and releases trigger a rebuild. The site is never shipped in the
+  wheel or sdist and sets no cookies or analytics.
+
 ## [0.5.0] - 2026-10-19
 
 ### Changed (0.5.0 breaking CLI)

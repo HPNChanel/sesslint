@@ -1,0 +1,159 @@
+---
+import { asset, href, t, type Lang } from "../i18n";
+import { REPO_URL } from "../lib/repo";
+import { site } from "../lib/site";
+
+type Props = { lang: Lang; route: string };
+const { lang } = Astro.props;
+const d = t(lang);
+const { latest, build } = site();
+
+const cols = [
+  {
+    title: d.footer.product,
+    links: [
+      { label: d.nav.download, url: href(lang, "/download") },
+      { label: d.nav.pricing, url: href(lang, "/pricing") },
+      { label: d.nav.changelog, url: href(lang, "/changelog") },
+      { label: d.nav.rules, url: href(lang, "/rules") },
+    ],
+  },
+  {
+    title: d.footer.resources,
+    links: [
+      { label: d.nav.docs, url: asset("/docs/") },
+      { label: "PyPI", url: "https://pypi.org/project/sesslint/" },
+      { label: d.footer.feeds, url: asset("/changelog.xml") },
+    ],
+  },
+  {
+    title: d.footer.project,
+    links: [
+      { label: d.nav.github, url: REPO_URL },
+      { label: d.footer.security, url: `${REPO_URL}/blob/main/SECURITY.md` },
+      { label: d.footer.contributing, url: `${REPO_URL}/blob/main/CONTRIBUTING.md` },
+      { label: d.footer.roadmap, url: `${REPO_URL}/blob/main/ROADMAP.md` },
+    ],
+  },
+];
+---
+
+<footer class="foot">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <p class="mono foot-logo"><span class="caret" aria-hidden="true"></span>sesslint</p>
+      <p class="dim">{d.footer.license}</p>
+      <p class="mute">{d.footer.privacy}</p>
+    </div>
+    {cols.map((c) => (
+      <nav aria-label={c.title}>
+        <p class="kicker">{c.title}</p>
+        <ul>
+          {c.links.map((l) => <li><a href={l.url}>{l.label}</a></li>)}
+        </ul>
+      </nav>
+    ))}
+  </div>
+  <div class="tmux mono">
+    <div class="wrap tmux-row">
+      <span class="seg-a"><span class="dot" aria-hidden="true"></span> exit 0</span>
+      <span>v{latest?.version ?? "0.0.0"}</span>
+      <span class="hide-sm">{d.footer.built} {build}</span>
+      <span class="hide-sm">{lang}</span>
+      <span class="push hide-sm" data-theme-label>auto</span>
+      <span class="mute">© SessLint · Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .foot {
+    margin-top: var(--s-9);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .foot-grid {
+    display: grid;
+    grid-template-columns: 2fr repeat(3, 1fr);
+    gap: var(--s-6);
+    padding-block: var(--s-7);
+  }
+  .foot-brand {
+    display: grid;
+    gap: var(--s-2);
+    align-content: start;
+    max-width: 36ch;
+    font-size: var(--step--1);
+  }
+  .foot-logo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .caret {
+    width: 8px;
+    height: 18px;
+    background: var(--pass);
+  }
+  ul {
+    margin: var(--s-3) 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 6px;
+    font-size: var(--step--1);
+  }
+  ul a {
+    color: var(--dim);
+    text-decoration: none;
+  }
+  ul a:hover {
+    color: var(--fg);
+    text-decoration: underline;
+  }
+  .tmux {
+    background: var(--fg);
+    color: var(--bg);
+    font-size: 0.74rem;
+  }
+  .tmux-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--s-4);
+    align-items: center;
+    min-height: 28px;
+  }
+  .tmux .mute {
+    color: color-mix(in srgb, var(--bg) 70%, var(--fg));
+  }
+  .seg-a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: calc(-1 * var(--s-3));
+    padding: 0 var(--s-3);
+    background: var(--pass);
+    color: var(--pass-ink);
+    font-weight: 600;
+    min-height: 28px;
+  }
+  .seg-a .dot {
+    background: var(--pass-ink);
+  }
+  .push {
+    margin-left: auto;
+  }
+  @media (max-width: 760px) {
+    .foot-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .foot-brand {
+      grid-column: 1 / -1;
+    }
+    .hide-sm {
+      display: none;
+    }
+  }
+</style>

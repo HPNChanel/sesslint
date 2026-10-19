@@ -1,0 +1,667 @@
+---
+import Base from "../layouts/Base.astro";
+import CopyCmd from "../components/CopyCmd.astro";
+import SectionHead from "../components/SectionHead.astro";
+import Replay from "../components/Replay.astro";
+import LedgerBlock from "../components/LedgerBlock.astro";
+import LiveRelease from "../components/LiveRelease.astro";
+import Receipt from "../components/Receipt.astro";
+import demo from "../data/demo.json";
+import { TIER_ORDER, TIERS } from "../data/tiers";
+import { href, t, type Lang } from "../i18n";
+import { released } from "../lib/changelog";
+import { DETECTOR_GROUPS, REPO_URL, commands, detectors, recipes } from "../lib/repo";
+import { site } from "../lib/site";
+import { termLines } from "../lib/term";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+const h = d.home;
+const facts = site();
+const rel = released(facts.releases);
+const latest = facts.latest;
+const rules = detectors();
+const groups = DETECTOR_GROUPS.map((g) => ({ ...g, items: rules.filter((r) => r.group === g.id) })).filter((g) => g.items.length);
+const nRecipes = recipes().length;
+const nCommands = commands().length;
+const recent = rel.slice(0, 3);
+
+const pipeIds = ["check", "triage", "repair", "verify", "seal"] as const;
+const pipe = pipeIds.map((id) => ({ id, ...h.pipe[id], step: demo.steps[id], lines: termLines(demo.steps[id].out, 110) }));
+const refuse = { ...demo.steps.refuse, lines: termLines(demo.steps.refuse.out, 110) };
+const blob = (p: string) => `${REPO_URL}/${p.includes(".") ? "blob" : "tree"}/main/${p}`;
+
+const site_ = Astro.site ?? new URL("https://hpnchanel.github.io");
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "SessLint",
+  description: d.meta.description,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Linux, macOS, Windows",
+  softwareVersion: latest?.version ?? facts.packageVersion,
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  url: new URL(href(lang, "/"), site_).toString(),
+  codeRepository: REPO_URL,
+  offers: TIER_ORDER.map((id) => ({
+    "@type": "Offer",
+    name: `SessLint ${d.pricing.names[id]}`,
+    price: (TIERS[id].priceCents / 100).toFixed(2),
+    priceCurrency: "USD",
+  })),
+};
+---
+
+<Base lang={lang} route="/" jsonLd={jsonLd}>
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="hero-title">
+      <p class="kicker">{h.eyebrow}</p>
+      <h1 id="hero-title">
+        {h.title}
+        <span class="sub">{h.titleSub}</span>
+      </h1>
+    </div>
+    <div class="hero-side">
+      <p class="lede">{h.lede}</p>
+      <div class="hero-cta">
+        <CopyCmd lang={lang} cmd="pipx install sesslint" />
+        <a class="btn" href={href(lang, "/download")}>{h.ctaDownload} →</a>
+      </div>
+      <ul class="trust mono" aria-label="Facts">
+        {h.trust.map((x) => <li><span class="pass" aria-hidden="true">✓</span> {x}</li>)}
+      </ul>
+    </div>
+    <div class="hero-demo">
+      <Replay lang={lang} />
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="dies-title">
+    <SectionHead kicker={h.diesKicker} title={h.diesTitle} lede={h.diesLede} id="dies-title" />
+    <ol class="dies">
+      {h.dies.map((x, i) => (
+        <li class="die">
+          <p class="mono die-n"><span class="mute">case {String(i + 1).padStart(2, "0")}</span> <a class="err" href={`${href(lang, "/rules")}#${x.code}`}>{x.code}</a></p>
+          <h3>{x.title}</h3>
+          <p class="dim">{x.body}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="section wrap" aria-labelledby="pipe-title">
+    <SectionHead kicker={h.pipeKicker} title={h.pipeTitle} lede={h.pipeLede} id="pipe-title" />
+    <sl-tabs class="pipe">
+      <div class="pipe-tabs mono" role="tablist" aria-label={h.pipeTitle}>
+        {pipe.map((p, i) => (
+          <>
+            {i > 0 && <span class="bar" aria-hidden="true">|</span>}
+            <button type="button" role="tab" id={`pt-${p.id}`} aria-controls={`pp-${p.id}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>
+              {p.label}
+            </button>
+          </>
+        ))}
+      </div>
+      {pipe.map((p, i) => (
+        <div class="pipe-panel" role="tabpanel" id={`pp-${p.id}`} aria-labelledby={`pt-${p.id}`} hidden={i !== 0} tabindex="0">
+          <p class="pipe-desc">{p.desc}</p>
+          <div class="term">
+            <div class="term-bar"><b>~/agent-sessions</b><span class:list={["exit-chip", p.step.exit === 0 ? "ok" : "bad"]}>exit {p.step.exit}</span></div>
+            <div class="term-body" tabindex="0" role="region" aria-label={p.step.cmd}>
+              <p class="ln c"><span class="p" aria-hidden="true">❯ </span>{p.step.cmd}</p>
+              {p.lines.map((l) => <p class:list={["ln", l.tone]}>{l.text || " "}</p>)}
+            </div>
+          </div>
+        </div>
+      ))}
+    </sl-tabs>
+  </section>
+
+  <section class="section fail" aria-labelledby="fail-title">
+    <div class="wrap fail-grid">
+      <div>
+        <SectionHead kicker={h.failKicker} title={h.failTitle} lede={h.failLede} id="fail-title" />
+        <ul class="fail-points">
+          {h.failPoints.map((x) => <li>{x}</li>)}
+        </ul>
+        <p class="mono"><a href={`${href(lang, "/rules")}#SL203`}>SL203 →</a></p>
+      </div>
+      <div class="term refuse">
+        <div class="term-bar"><b>~/agent-sessions</b><span class="exit-chip bad">exit {refuse.exit}</span></div>
+        <div class="term-body" tabindex="0" role="region" aria-label={refuse.cmd}>
+          <p class="ln c"><span class="p" aria-hidden="true">❯ </span>{refuse.cmd}</p>
+          {refuse.lines.map((l) => <p class:list={["ln", l.tone]}>{l.text || " "}</p>)}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="map-title">
+    <SectionHead kicker={h.mapKicker} title={`${rules.length} ${h.mapTitle}`} lede={h.mapLede} id="map-title" />
+    <div class="map">
+      {groups.map((g) => (
+        <div class="map-group">
+          <p class="mono map-label">{d.rules.groups[g.id as keyof typeof d.rules.groups]} <span class="mute">{g.items.length}</span></p>
+          <ul class="cells">
+            {g.items.map((r) => (
+              <li>
+                <a class:list={["cell", r.severity === "warning" ? "warn" : "err"]} href={`${href(lang, "/rules")}#${r.code}`} title={`${r.code}: ${r.title}`}>
+                  <span class="sr-only">{r.code}: {r.title}</span>
+                  <span aria-hidden="true">{r.code.slice(2)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+    <p class="mono map-foot">
+      <span>{rules.length} detectors</span><span class="mute">·</span>
+      <span>{nRecipes} recipes</span><span class="mute">·</span>
+      <span>{nCommands} commands</span>
+      <a href={href(lang, "/rules")}>{d.common.viewAll} →</a>
+    </p>
+  </section>
+
+  <section class="section wrap" aria-labelledby="works-title">
+    <SectionHead kicker={h.worksKicker} title={h.worksTitle} id="works-title" />
+    <ul class="works">
+      {h.works.map((w) => (
+        <li>
+          <p class="mono w-name">{w.name}</p>
+          <p class="dim">{w.note}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section class="section wrap never-grid" aria-labelledby="never-title">
+    <SectionHead kicker={h.neverKicker} title={h.neverTitle} lede={h.neverLede} id="never-title" />
+    <div class="term never">
+      <div class="term-bar"><b>pytest -q</b><span class="exit-chip ok">exit 0</span></div>
+      <ul class="term-body">
+        {h.never.map((n) => (
+          <li class="ln">
+            <span class="p">PASSED</span> <a href={blob(n.test)}>{n.test}</a><span class="m">::</span><span>never {n.rule}</span>
+          </li>
+        ))}
+        <li class="ln p">{h.never.length} passed</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="assurance-title">
+    <SectionHead kicker={h.assuranceKicker} title={h.assuranceTitle} id="assurance-title" />
+    <ol class="meter">
+      {h.assurance.map((a, i) => (
+        <li class:list={["lvl", `l${i}`, { here: a.level === "A2" }]}>
+          <span class="bar-seg" aria-hidden="true"></span>
+          <p class="mono"><b>{a.level}</b> {a.name}</p>
+          <p class="dim">{a.desc}</p>
+          {a.level === "A2" && <p class="mono here-tag">← check session.jsonl</p>}
+        </li>
+      ))}
+    </ol>
+    <p class="mute small">{h.assuranceNote}</p>
+  </section>
+
+  <section class="section wrap" aria-labelledby="ledger-title">
+    <SectionHead kicker={h.ledgerKicker} title={h.ledgerTitle} id="ledger-title" />
+    <LiveRelease lang={lang} current={latest?.version ?? "0.0.0"} />
+    <div class="ledger">
+      {recent.map((r, i) => <LedgerBlock lang={lang} release={r} index={rel.length - i} headingLevel={3} preview={4} />)}
+    </div>
+    <p class="mono"><a href={href(lang, "/changelog")}>{d.common.viewAll} ({rel.length}) →</a></p>
+  </section>
+
+  <section class="section wrap" aria-labelledby="price-title">
+    <SectionHead kicker={h.pricingKicker} title={h.pricingTitle} lede={h.pricingLede} id="price-title" />
+    <div class="receipts">
+      {TIER_ORDER.map((id) => <Receipt lang={lang} tier={id} compact />)}
+    </div>
+    <p class="mono"><a href={href(lang, "/pricing")}>{d.pricing.compare} →</a></p>
+  </section>
+
+  <section class="final" aria-labelledby="final-title">
+    <div class="wrap final-inner">
+      <h2 id="final-title">{h.finalTitle}</h2>
+      <p class="dim">{h.finalLede}</p>
+      <div class="final-cmds">
+        <CopyCmd lang={lang} cmd="pipx install sesslint" />
+        <CopyCmd lang={lang} cmd="sesslint check --agent claude" />
+      </div>
+      <p class="final-links mono">
+        <a class="btn btn-primary" href={href(lang, "/download")}>{d.nav.download}</a>
+        <a class="btn" href={REPO_URL}>{d.nav.github} ↗</a>
+      </p>
+    </div>
+  </section>
+</Base>
+
+<script>
+  import "../scripts/tabs";
+</script>
+
+<style>
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: var(--s-6) var(--s-7);
+    align-items: end;
+    padding-block: var(--s-8) var(--s-7);
+  }
+  .hero h1 {
+    font-size: var(--step-4);
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    margin: var(--s-3) 0 var(--s-5);
+  }
+  .hero h1 .sub {
+    display: block;
+    margin-top: var(--s-3);
+    font-size: 0.5em;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--dim);
+  }
+  .hero h1 {
+    margin-bottom: 0;
+  }
+  .lede {
+    max-width: 56ch;
+    font-size: var(--step-0);
+    line-height: 1.55;
+    color: var(--dim);
+  }
+  .hero-cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    margin: var(--s-5) 0 var(--s-4);
+  }
+  .hero-cta :global(.cmd) {
+    flex: 1 1 280px;
+    max-width: 360px;
+  }
+  .trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-5);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.78rem;
+    color: var(--dim);
+  }
+  .hero-demo {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .dies {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--fg);
+  }
+  .die {
+    padding: var(--s-5) var(--s-5) var(--s-5) 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .die + .die {
+    padding-left: var(--s-5);
+    border-left: 1px dashed var(--line);
+  }
+  .die-n {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    margin-bottom: var(--s-4);
+  }
+  .die h3 {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    font-weight: 500;
+    line-height: 1.15;
+    margin-bottom: var(--s-3);
+  }
+
+  .pipe {
+    display: block;
+  }
+  .pipe-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0;
+    margin-bottom: var(--s-4);
+    font-size: var(--step-1);
+  }
+  .pipe-tabs .bar {
+    padding: 0 6px;
+    color: var(--mute);
+  }
+  .pipe-tabs [role="tab"] {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    font-family: var(--font-mono);
+    font-size: inherit;
+    color: var(--dim);
+  }
+  .pipe-tabs [role="tab"][aria-selected="true"] {
+    border-color: var(--fg);
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .pipe-panel {
+    display: grid;
+    gap: var(--s-4);
+  }
+  .pipe-panel[hidden] {
+    display: none;
+  }
+  .pipe-desc {
+    max-width: 60ch;
+    color: var(--dim);
+  }
+  .term-bar {
+    justify-content: space-between;
+  }
+  .term-bar b {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .exit-chip {
+    flex: none;
+    padding: 0 6px;
+    border: 1px solid;
+    font-size: 0.7rem;
+  }
+  .exit-chip.ok {
+    color: var(--term-pass);
+  }
+  .exit-chip.bad {
+    color: var(--term-err);
+  }
+  .term-body {
+    max-height: 380px;
+    overflow: auto;
+    font-size: 0.76rem;
+    line-height: 1.55;
+  }
+  .ln {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .fail {
+    border-block: 1px solid var(--line);
+    background:
+      repeating-linear-gradient(-45deg, transparent 0 14px, color-mix(in srgb, var(--err) 5%, transparent) 14px 15px),
+      var(--surface);
+  }
+  .fail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: var(--s-7);
+    align-items: start;
+  }
+  .fail-points {
+    display: grid;
+    gap: var(--s-3);
+    margin: 0 0 var(--s-5);
+    padding: 0;
+    list-style: none;
+  }
+  .fail-points li {
+    padding-left: 1.6em;
+    text-indent: -1.6em;
+  }
+  .fail-points li::before {
+    content: "✗ ";
+    font-family: var(--font-mono);
+    color: var(--err);
+    padding-right: 0.5em;
+  }
+  .refuse {
+    box-shadow: 6px 6px 0 var(--err);
+  }
+
+  .map {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+    gap: var(--s-5);
+  }
+  .map-label {
+    font-size: 0.74rem;
+    margin-bottom: var(--s-2);
+    color: var(--dim);
+  }
+  .cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cell {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-decoration: none;
+    transition: transform 0.15s var(--ease);
+  }
+  .cell.err {
+    color: var(--err);
+    border-color: color-mix(in srgb, var(--err) 60%, transparent);
+    background: var(--err-soft);
+  }
+  .cell.warn {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 60%, transparent);
+    background: var(--warn-soft);
+  }
+  .cell:hover,
+  .cell:focus-visible {
+    transform: translate(-2px, -2px);
+    box-shadow: 2px 2px 0 currentColor;
+  }
+  .map-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    margin-top: var(--s-5);
+    font-size: 0.84rem;
+  }
+  .map-foot a {
+    margin-left: auto;
+  }
+
+  .works {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--line);
+    background: var(--line);
+  }
+  .works li {
+    padding: var(--s-5);
+    background: var(--surface);
+  }
+  .w-name {
+    font-weight: 600;
+    margin-bottom: var(--s-2);
+  }
+  .works .dim {
+    font-size: 0.9rem;
+  }
+
+  .never-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: var(--s-7);
+    align-items: center;
+  }
+  .never .term-body {
+    margin: 0;
+    list-style: none;
+    font-size: 0.8rem;
+  }
+  .never a {
+    color: var(--term-info);
+  }
+
+  .meter {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--s-2);
+    margin: 0 0 var(--s-4);
+    padding: 0;
+    list-style: none;
+  }
+  .lvl {
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+  }
+  .bar-seg {
+    height: 10px;
+    border: 1px solid var(--line-strong);
+  }
+  .l0 .bar-seg {
+    background: var(--err);
+  }
+  .l1 .bar-seg {
+    background: color-mix(in srgb, var(--err) 50%, var(--warn));
+  }
+  .l2 .bar-seg {
+    background: var(--warn);
+  }
+  .l3 .bar-seg {
+    background: color-mix(in srgb, var(--warn) 40%, var(--pass));
+  }
+  .l4 .bar-seg {
+    background: var(--pass);
+  }
+  .lvl .dim {
+    font-size: 0.86rem;
+  }
+  .here .bar-seg {
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
+  }
+  .here-tag {
+    font-size: 0.72rem;
+    color: var(--info);
+  }
+  .small {
+    font-size: 0.84rem;
+  }
+
+  .ledger {
+    display: grid;
+    gap: var(--s-4);
+    margin-bottom: var(--s-4);
+  }
+
+  .receipts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-5);
+    align-items: start;
+    margin-bottom: var(--s-5);
+  }
+
+  .final {
+    /* Always a dark terminal band: remap tokens so shared components follow. */
+    --bg: var(--term-bg);
+    --fg: var(--term-fg);
+    --dim: var(--term-mute);
+    --pass: var(--term-pass);
+    --pass-ink: #0b0d0c;
+    --raised: color-mix(in srgb, var(--term-fg) 6%, var(--term-bg));
+    --sunken: var(--term-bg);
+    --surface: var(--term-bg);
+    --line: color-mix(in srgb, var(--term-fg) 16%, transparent);
+    --line-strong: color-mix(in srgb, var(--term-fg) 30%, transparent);
+    color-scheme: dark;
+    padding-block: var(--s-9);
+    border-top: 1px solid var(--line);
+    background: var(--term-bg);
+    color: var(--term-fg);
+  }
+  .final-inner {
+    display: grid;
+    justify-items: start;
+    gap: var(--s-4);
+  }
+  .final h2 {
+    font-size: var(--step-3);
+    color: var(--term-fg);
+    max-width: 22ch;
+  }
+  .final .dim {
+    color: var(--term-mute);
+  }
+  .final-cmds {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-2);
+    width: min(100%, 520px);
+  }
+  .final-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+  }
+
+  @media (max-width: 1000px) {
+    .hero,
+    .fail-grid,
+    .never-grid {
+      grid-template-columns: 1fr;
+    }
+    .hero {
+      padding-block: var(--s-6);
+    }
+    .receipts {
+      grid-template-columns: 1fr;
+      max-width: 460px;
+    }
+  }
+  @media (max-width: 860px) {
+    .works {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    .works {
+      grid-template-columns: 1fr;
+    }
+    .meter {
+      grid-template-columns: 1fr;
+    }
+    .die + .die {
+      padding-left: 0;
+      border-left: 0;
+    }
+  }
+</style>
