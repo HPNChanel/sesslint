@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "mcp"
 
@@ -24,7 +27,7 @@ def configure(
     )
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.mcp_server import serve
 
     return serve(sys.stdin.buffer, sys.stdout.buffer)

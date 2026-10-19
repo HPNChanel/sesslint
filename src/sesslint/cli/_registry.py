@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 from sesslint.cli import (
     bundle,
@@ -32,7 +35,7 @@ class Command:
     configure: Callable[
         [argparse._SubParsersAction[argparse.ArgumentParser]], argparse.ArgumentParser
     ]
-    run: Callable[[argparse.Namespace, argparse.ArgumentParser], int]
+    run: Callable[[CliContext, argparse.Namespace, argparse.ArgumentParser], int]
     aliases: tuple[str, ...] = ()
 
 

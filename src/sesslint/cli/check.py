@@ -5,14 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from sesslint import __version__
 from sesslint.cli._common import (
-    _apply_config,
     _handle_internal_error,
     _load_baseline_arg,
-    _ndjson_progress_cb,
     _output_format,
     _read_stdin_bytes,
     _rule_codes_arg,
@@ -30,14 +28,19 @@ from sesslint.cli._options import (
     add_fail_on_option,
     add_profile_option,
     add_progress_json_option,
+    add_report_output_option,
     add_rule_selection_options,
     add_walk_filter_options,
     add_walk_options,
 )
+from sesslint.cli._output import emit_text
 from sesslint.cli._render import _emit_check_report, format_scan_report_human
 from sesslint.cli._scan_args import build_scan_kwargs
 from sesslint.cli._seal import _check_seal_verdict, _maybe_append_seal
 from sesslint.errors import SesslintError
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "check"
 ALIASES: Final[tuple[str, ...]] = ("scan",)
@@ -122,6 +125,7 @@ def configure(
         default=None,
         help="Output format (default: human; --json is equivalent to 'json')",
     )
+    add_report_output_option(sub)
     add_progress_json_option(sub)
     sub.add_argument(
         "--top",
@@ -213,16 +217,7 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    from sesslint.config import ConfigError, load_config
-
-    try:
-        cli_cfg = load_config(explicit=getattr(args, "config", None))
-    except ConfigError as err:
-        print(f"Error: {err}", file=sys.stderr)
-        return 2
-    _apply_config(args, cli_cfg)
-
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     agent = getattr(args, "agent", None)
     target_paths: list[Path] = list(getattr(args, "path", None) or [])
 
@@ -230,53 +225,66 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     # continues down the ordinary single-file path (scan-triage T-09).
     if getattr(args, "latest", False):
         if agent not in ("claude", "codex"):
-            print(
-                "Error: --latest requires --agent claude or --agent codex.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: --latest requires --agent claude or --agent codex.")
             return 2
         if target_paths:
-            print(
-                "Error: positional paths cannot be combined with --latest.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: positional paths cannot be combined with --latest.")
             return 2
         from sesslint.discovery import latest_session
 
         try:
             target_paths = [latest_session(agent)]
         except (OSError, FileNotFoundError) as err:
-            print(f"Error: {err}", file=sys.stderr)
+            ctx.error(f"Error: {err}")
             return 2
         agent = None
 
     if agent is not None and target_paths:
-        print(
-            "Warning: explicit PATH overrides --agent; scanning PATH only.",
-            file=sys.stderr,
-        )
+        ctx.warn("Warning: explicit PATH overrides --agent; scanning PATH only.")
         agent = None
 
     if agent is None and not target_paths:
         parser.print_help(sys.stderr)
         return 2
 
+    progress_cb = ctx.progress_callback(args)
     try:
-        check_baseline = _load_baseline_arg(args)
-        scan_kwargs = build_scan_kwargs(args, baseline=check_baseline)
-    except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
-        return 2
+        try:
+            check_baseline = _load_baseline_arg(args)
+            scan_kwargs = build_scan_kwargs(
+                ctx, args, baseline=check_baseline, progress_cb=progress_cb
+            )
+        except ValueError as err:
+            ctx.error(f"Error: {err}")
+            return 2
+        return _run(
+            ctx, args, parser, agent, target_paths, scan_kwargs, check_baseline, progress_cb
+        )
+    finally:
+        finish = getattr(progress_cb, "finish", None)
+        if callable(finish):
+            finish()
 
+
+def _run(
+    ctx: CliContext,
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    agent: str | None,
+    target_paths: list[Path],
+    scan_kwargs: dict[str, Any],
+    check_baseline: frozenset[str] | None,
+    progress_cb: Any,
+) -> int:
     def _emit_scan_rep(scan_rep: Any) -> int:
-        _write_baseline_arg(args, [f for fr in scan_rep.files for f in fr.findings])
+        _write_baseline_arg(ctx, args, [f for fr in scan_rep.files for f in fr.findings])
 
         # Attach the aggregated summary view (ux T-08): by-code grouping and
         # top-N worst files. Pure presentation — findings are unchanged.
         top_n = getattr(args, "top", 10)
         group_by = getattr(args, "group_by", "code")
         if top_n is not None and top_n < 0:
-            print(f"Error: --top must be >= 0, got {top_n}", file=sys.stderr)
+            ctx.error(f"Error: --top must be >= 0, got {top_n}")
             return 2
         if group_by != "none" or (top_n or 0) > 0:
             import dataclasses
@@ -287,20 +295,39 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 scan_rep, summary=aggregate_scan(scan_rep.files, top=top_n, group_by=group_by)
             )
 
+        summary = f"{scan_rep.totals.total} file(s)"
         out_fmt = _output_format(args)
         if out_fmt == "json":
-            print(scan_rep.to_json())
+            emit_text(ctx, args, scan_rep.to_json(), inputs=target_paths, summary=summary)
         elif out_fmt == "sarif":
             from sesslint.sarif import scan_report_sarif
 
-            print(scan_report_sarif(scan_rep, tool_version=__version__))
+            emit_text(
+                ctx,
+                args,
+                scan_report_sarif(scan_rep, tool_version=__version__),
+                inputs=target_paths,
+                summary=summary,
+            )
         elif out_fmt == "html":
             from sesslint.html_report import scan_report_html
 
-            print(scan_report_html(scan_rep, tool_version=__version__))
+            emit_text(
+                ctx,
+                args,
+                scan_report_html(scan_rep, tool_version=__version__),
+                inputs=target_paths,
+                summary=summary,
+            )
         else:
             use_color = should_color(args, sys.stdout)
-            print(format_scan_report_human(scan_rep, color=use_color))
+            emit_text(
+                ctx,
+                args,
+                format_scan_report_human(scan_rep, color=use_color),
+                inputs=target_paths,
+                summary=summary,
+            )
         warn_total = sum(f.warning_count for f in scan_rep.files)
         if (
             scan_rep.totals.invalid > 0
@@ -315,10 +342,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     # have no single subject artifact, so refuse rather than seal a
     # partial picture (evidence-assurance T-01).
     if getattr(args, "seal", None) is not None and (agent is not None or len(target_paths) != 1):
-        print(
+        ctx.error(
             "Error: --seal applies to single-file checks only "
-            "(one artifact per line; scans are not sealed).",
-            file=sys.stderr,
+            "(one artifact per line; scans are not sealed)."
         )
         return 2
 
@@ -367,7 +393,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                     totals = _acc_totals(totals, ScanTotals(skipped=1))
         except (ValueError, KeyError) as err:
             err_msg = err.args[0] if err.args else str(err)
-            print(f"Error: {err_msg}", file=sys.stderr)
+            ctx.error(f"Error: {err_msg}")
             return 2
 
         root_str = ";".join(minimize_path(r.path) for r in roots)
@@ -378,10 +404,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     # combined with filesystem paths — one stream is one virtual file.
     if any(str(p) == "-" for p in target_paths):
         if len(target_paths) > 1:
-            print(
-                "Error: '-' (stdin) cannot be combined with other paths.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: '-' (stdin) cannot be combined with other paths.")
             return 2
         from sesslint.api import check_bytes
 
@@ -396,7 +419,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 profile=profile_opt,
                 confidence_min=getattr(args, "confidence_min", None),
                 margin_min=getattr(args, "margin_min", None),
-                progress_cb=_ndjson_progress_cb(args),
+                progress_cb=progress_cb,
                 select=_rule_codes_arg(args, "select"),
                 ignore=_rule_codes_arg(args, "ignore"),
                 baseline=check_baseline,
@@ -405,16 +428,17 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             )
         except (ValueError, KeyError) as err:
             if "not permitted by profile" in str(err):
-                print(str(err), file=sys.stderr)
+                ctx.error(str(err))
                 return 2
             parser.error(str(err))
         except SesslintError as err:
-            print(f"Validation error [{err.code}]: {err}", file=sys.stderr)
+            ctx.error(f"Validation error [{err.code}]: {err}")
             return 1
         except Exception as err:
             return _handle_internal_error(err, args)
 
         rc = _emit_check_report(
+            ctx,
             report,
             args,
             display_path="<stdin>",
@@ -424,6 +448,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         from sesslint.report import render_json as _render_check_json
 
         seal_rc = _maybe_append_seal(
+            ctx,
             args,
             tool="check",
             artifact_bytes=stdin_data,
@@ -439,7 +464,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if len(target_paths) > 1:
         for p in target_paths:
             if not p.exists() and not p.is_symlink():
-                print(f"Error: Path not found: {p}", file=sys.stderr)
+                ctx.error(f"Error: Path not found: {p}")
                 return 2
 
         from sesslint.report import minimize_path
@@ -452,7 +477,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 rep = scan_path(p, **scan_kwargs)
             except (ValueError, KeyError) as err:
                 err_msg = err.args[0] if err.args else str(err)
-                print(f"Error: {err_msg}", file=sys.stderr)
+                ctx.error(f"Error: {err_msg}")
                 return 2
             multi_files.extend(rep.files)
             t = rep.totals
@@ -474,10 +499,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     target_path: Path = target_paths[0]
     if target_path.is_dir():
         if getattr(args, "seal", None) is not None:
-            print(
+            ctx.error(
                 "Error: --seal applies to single-file checks only "
-                "(one artifact per line; directory scans are not sealed).",
-                file=sys.stderr,
+                "(one artifact per line; directory scans are not sealed)."
             )
             return 2
 
@@ -487,17 +511,17 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             scan_rep = check_dir(target_path, **scan_kwargs)
         except (ValueError, KeyError) as err:
             err_msg = err.args[0] if err.args else str(err)
-            print(f"Error: {err_msg}", file=sys.stderr)
+            ctx.error(f"Error: {err_msg}")
             return 2
 
         return _emit_scan_rep(scan_rep)
 
     if not target_path.exists():
-        print(f"Error: Path not found: {target_path}", file=sys.stderr)
+        ctx.error(f"Error: Path not found: {target_path}")
         return 2
 
     if scan_kwargs["jobs"] > 1:
-        print("Note: --jobs is ignored for single-file input.", file=sys.stderr)
+        ctx.info("Note: --jobs is ignored for single-file input.")
 
     format_opt = getattr(args, "adapter", "auto")
     profile_opt = getattr(args, "profile", "neutral")
@@ -512,7 +536,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 profile=profile_opt,
                 confidence_min=getattr(args, "confidence_min", None),
                 margin_min=getattr(args, "margin_min", None),
-                progress_cb=_ndjson_progress_cb(args),
+                progress_cb=progress_cb,
                 select=_rule_codes_arg(args, "select"),
                 ignore=_rule_codes_arg(args, "ignore"),
                 baseline=check_baseline,
@@ -521,20 +545,23 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             )
         except (ValueError, KeyError) as err:
             if "not permitted by profile" in str(err):
-                print(str(err), file=sys.stderr)
+                ctx.error(str(err))
                 return 2
             parser.error(str(err))
 
         rc = _emit_check_report(
+            ctx,
             report,
             args,
             display_path=str(target_path),
             format_opt=format_opt,
             profile_opt=profile_opt,
+            inputs=(target_path,),
         )
         from sesslint.report import render_json as _render_check_json
 
         seal_rc = _maybe_append_seal(
+            ctx,
             args,
             tool="check",
             artifact_sha256=report.source_fingerprint,
@@ -547,10 +574,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         return seal_rc if seal_rc is not None else rc
 
     except SesslintError as err:
-        print(f"Validation error [{err.code}]: {err}", file=sys.stderr)
+        ctx.error(f"Validation error [{err.code}]: {err}")
         return 1
     except FileNotFoundError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     except Exception as err:
         return _handle_internal_error(err, args)

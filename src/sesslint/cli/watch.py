@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "watch"
 
@@ -58,7 +60,7 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     import json as _json
 
     from sesslint.api import discover_session_roots
@@ -69,22 +71,19 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     watch_paths: list[Path] = list(getattr(args, "path", []) or [])
     if agent is not None:
         if watch_paths:
-            print(
-                "Error: --agent cannot be combined with explicit paths.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: --agent cannot be combined with explicit paths.")
             return 2
         agents = None if agent == "all" else [agent]
         watch_paths = [Path(r.path) for r in discover_session_roots(agents) if r.exists]
         if not watch_paths:
-            print(f"Error: no existing session roots found for agent '{agent}'.", file=sys.stderr)
+            ctx.error(f"Error: no existing session roots found for agent '{agent}'.")
             return 2
     if not watch_paths:
-        print("Error: watch requires at least one path or --agent.", file=sys.stderr)
+        ctx.error("Error: watch requires at least one path or --agent.")
         return 2
     for wp in watch_paths:
         if not wp.exists():
-            print(f"Error: Path not found: {wp}", file=sys.stderr)
+            ctx.error(f"Error: Path not found: {wp}")
             return 2
 
     use_json = getattr(args, "json", False)
@@ -108,7 +107,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     except OperationCancelled:
         return 0
     except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     except KeyboardInterrupt:
         return 0

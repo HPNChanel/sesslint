@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-seal \- [read\-only] Verify a tamper\-evident seal ledger's hash chain.
 .SH SYNOPSIS
-.B sesslint seal \-\-verify LEDGER [\-\-json]
+.B sesslint seal \-\-verify LEDGER [\-\-json] [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] Re\-walk a seal ledger produced by check/verify/repair \-\-seal and report the first chain divergence (edited, dropped, reordered, or truncated lines). The ledger is a tamper\-evident record of SessLint verdicts — self\-verifying, no keys or trusted clock.
 .SH OPTIONS
@@ -12,6 +12,12 @@ Ledger JSONL file to re\-walk and verify
 .TP
 .B \-\-json
 Output the verification result as JSON to stdout
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

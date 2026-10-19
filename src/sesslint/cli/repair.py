@@ -4,16 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
-from sesslint.cli._common import (
-    _apply_config,
-    _handle_internal_error,
-    _ndjson_progress_cb,
-    _read_stdin_bytes,
-)
+from sesslint.cli._common import _handle_internal_error, _read_stdin_bytes
 from sesslint.cli._options import (
     _add_seal_args,
     add_adapter_option,
@@ -24,6 +18,9 @@ from sesslint.cli._options import (
 )
 from sesslint.cli._seal import _maybe_append_seal
 from sesslint.errors import SesslintError
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "repair"
 
@@ -168,44 +165,29 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     # Plan-authoritative conflicts (repair-engine T-01): applying an
-    # exported plan forbids execution-shaping overrides — checked on raw
-    # argparse attrs before config folding so config values don't
-    # false-positive here.
+    # exported plan forbids execution-shaping CLI overrides — env and
+    # config-file values are folded silently, never refused (T-01).
+    progress_cb = ctx.progress_callback(args)
     if getattr(args, "plan", None) is not None:
         _plan_overrides = [
-            flag
-            for flag, attr in (
-                ("--policy", "policy"),
-                ("--profile", "profile"),
-                ("--adapter", "adapter"),
-            )
-            if getattr(args, attr, None) is not None
+            f"--{name}"
+            for name in ("policy", "profile", "adapter")
+            if ctx.settings.get(name) is not None and ctx.settings[name].source == "cli"
         ]
         if _plan_overrides:
-            print(
+            ctx.error(
                 "Error: --apply-plan is authoritative for the exported plan; "
-                "remove override(s): " + ", ".join(_plan_overrides),
-                file=sys.stderr,
+                "remove override(s): " + ", ".join(_plan_overrides)
             )
             return 2
         if getattr(args, "plan_out", None) is not None:
-            print(
+            ctx.error(
                 "Error: --plan-out cannot be combined with --apply-plan "
-                "(no plan is recomputed to export).",
-                file=sys.stderr,
+                "(no plan is recomputed to export)."
             )
             return 2
-
-    from sesslint.config import ConfigError, load_config
-
-    try:
-        cli_cfg = load_config(explicit=getattr(args, "config", None))
-    except ConfigError as err:
-        print(f"Error: {err}", file=sys.stderr)
-        return 2
-    _apply_config(args, cli_cfg)
 
     src_paths: list[Path] = list(getattr(args, "path", None) or [])
     # Batch mode: multiple positionals, any directory positional, or
@@ -233,10 +215,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         if getattr(args, "emit", "auto") != "auto":
             _preview_conflicts.append("--emit")
         if _preview_conflicts:
-            print(
+            ctx.error(
                 "Error: --preview writes nothing; incompatible with "
-                + ", ".join(_preview_conflicts),
-                file=sys.stderr,
+                + ", ".join(_preview_conflicts)
             )
             return 2
 
@@ -246,33 +227,27 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     # never stages stdin and uses --output-dir, not --output).
     if _is_batch:
         if any(str(p) == "-" for p in src_paths):
-            print(
-                "Error: '-' (stdin) cannot be combined with other repair inputs.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: '-' (stdin) cannot be combined with other repair inputs.")
             return 2
         if getattr(args, "seal", None) is not None:
-            print(
+            ctx.error(
                 "Error: --seal applies to single-file repair only "
-                "(batch modes produce no single subject artifact).",
-                file=sys.stderr,
+                "(batch modes produce no single subject artifact)."
             )
             return 2
         if args.output is not None:
-            print(
-                "Error: --output applies to single-file repair; batch modes use --output-dir.",
-                file=sys.stderr,
+            ctx.error(
+                "Error: --output applies to single-file repair; batch modes use --output-dir."
             )
             return 2
         if getattr(args, "plan", None) is not None or getattr(args, "plan_out", None) is not None:
-            print(
+            ctx.error(
                 "Error: --apply-plan/--plan-out are single-file options; "
-                "batch computes plans internally per file.",
-                file=sys.stderr,
+                "batch computes plans internally per file."
             )
             return 2
         if getattr(args, "output_dir", None) is None:
-            print("Error: batch repair requires --output-dir.", file=sys.stderr)
+            ctx.error("Error: batch repair requires --output-dir.")
             return 2
 
         from sesslint.batch import (
@@ -300,7 +275,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             try:
                 scan_files, unresolvable = resolve_scan_report_files(args.from_scan)
             except (OSError, ValueError, KeyError) as err:
-                print(f"Error: cannot read scan report: {err}", file=sys.stderr)
+                ctx.error(f"Error: cannot read scan report: {err}")
                 return 2
             batch_files.extend(scan_files)
 
@@ -316,7 +291,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             _get_profile(batch_profile)
         except (KeyError, ValueError) as err:
             err_msg = err.args[0] if err.args else str(err)
-            print(f"Error: {err_msg}", file=sys.stderr)
+            ctx.error(f"Error: {err_msg}")
             return 2
 
         try:
@@ -331,7 +306,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 acknowledge_side_effects=getattr(args, "acknowledge_side_effects", False),
                 emit=getattr(args, "emit", "auto"),
                 dry_run=bool(args.dry_run),
-                progress_cb=_ndjson_progress_cb(args),
+                progress_cb=progress_cb,
             )
         except Exception as err:
             return _handle_internal_error(err, args)
@@ -350,10 +325,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         return 0 if batch_report.refused == 0 and batch_report.skipped == 0 else 1
 
     if not src_paths:
-        print(
+        ctx.error(
             "Error: repair requires a source path, or batch inputs "
-            "(multiple paths, directories, or --from-scan with --output-dir).",
-            file=sys.stderr,
+            "(multiple paths, directories, or --from-scan with --output-dir)."
         )
         return 2
 
@@ -362,16 +336,14 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         getattr(args, "plan_out", None) is not None and args.output is None
     )
     if getattr(args, "seal", None) is not None and (plan_only or getattr(args, "preview", False)):
-        print(
+        ctx.error(
             "Error: --seal requires a completed repair — incompatible with "
-            "--dry-run, plan-only export, or --preview (nothing is produced).",
-            file=sys.stderr,
+            "--dry-run, plan-only export, or --preview (nothing is produced)."
         )
         return 2
     if not plan_only and not getattr(args, "preview", False) and args.output is None:
-        print(
-            "Error: --output is required unless --dry-run, --plan-out, or --preview is specified.",
-            file=sys.stderr,
+        ctx.error(
+            "Error: --output is required unless --dry-run, --plan-out, or --preview is specified."
         )
         return 2
 
@@ -389,9 +361,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
         stdin_data = _read_stdin_bytes()
         if len(stdin_data) > DEFAULT_MAX_FILE_BYTES:
-            print(
-                f"Error: stdin exceeds maximum supported size ({DEFAULT_MAX_FILE_BYTES} bytes).",
-                file=sys.stderr,
+            ctx.error(
+                f"Error: stdin exceeds maximum supported size ({DEFAULT_MAX_FILE_BYTES} bytes)."
             )
             return 2
         stdin_tmp = tempfile.TemporaryDirectory(prefix="sesslint-stdin-")
@@ -399,13 +370,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         src_path.write_bytes(stdin_data)
 
     if src_path.is_dir():
-        print(
-            f"Error: repair operates on a single session file, not a directory: {src_path}",
-            file=sys.stderr,
-        )
+        ctx.error(f"Error: repair operates on a single session file, not a directory: {src_path}")
         return 2
     if not src_path.is_file():
-        print(f"Error: Source file not found: {src_path}", file=sys.stderr)
+        ctx.error(f"Error: Source file not found: {src_path}")
         return 2
 
     policy_opt: Literal["conservative", "salvage"] = (
@@ -419,7 +387,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.profiles.profile import get_profile
 
     if format_opt not in VALID_FORMAT_OPTIONS:
-        print(f"Error: Unsupported format option: {format_opt}", file=sys.stderr)
+        ctx.error(f"Error: Unsupported format option: {format_opt}")
         return 2
 
     # Vendor formats are supported via drop-only line-verbatim write-back
@@ -430,7 +398,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         get_profile(profile_opt)
     except (KeyError, ValueError) as err:
         err_msg = err.args[0] if err.args else str(err)
-        print(f"Error: {err_msg}", file=sys.stderr)
+        ctx.error(f"Error: {err_msg}")
         return 2
 
     if getattr(args, "preview", False):
@@ -447,14 +415,14 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 acknowledge_side_effects=ack_side_effects,
             )
         except (FileNotFoundError, OSError) as err:
-            print(f"File error: {err}", file=sys.stderr)
+            ctx.error(f"File error: {err}")
             return 2
         except (ValueError, KeyError) as err:
             err_msg = err.args[0] if err.args else str(err)
-            print(f"Error: {err_msg}", file=sys.stderr)
+            ctx.error(f"Error: {err_msg}")
             return 2
         except SesslintError as err:
-            print(f"Error: {err}", file=sys.stderr)
+            ctx.error(f"Error: {err}")
             return 2
         except Exception as err:
             return _handle_internal_error(err, args)
@@ -504,7 +472,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                     overwrite=False,
                 )
             except OSError as err:
-                print(f"Error writing plan to {args.plan_out}: {err}", file=sys.stderr)
+                ctx.error(f"Error writing plan to {args.plan_out}: {err}")
                 return 2
             if plan_only:
                 if not getattr(args, "json", False):
@@ -517,7 +485,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                     output_path=args.output,
                     acknowledge_side_effects=ack_side_effects,
                     emit=getattr(args, "emit", "auto"),
-                    progress_cb=_ndjson_progress_cb(args),
+                    progress_cb=progress_cb,
                 )
         elif getattr(args, "plan", None) is not None:
             # Plan-authoritative apply: policy/profile derive from the
@@ -529,7 +497,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 acknowledge_side_effects=ack_side_effects,
                 emit=getattr(args, "emit", "auto"),
                 dry_run=plan_only,
-                progress_cb=_ndjson_progress_cb(args),
+                progress_cb=progress_cb,
             )
         else:
             plan_obj, manifest = api.repair(
@@ -541,7 +509,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 dry_run=plan_only,
                 acknowledge_side_effects=ack_side_effects,
                 emit=getattr(args, "emit", "auto"),
-                progress_cb=_ndjson_progress_cb(args),
+                progress_cb=progress_cb,
             )
 
         if plan_only:
@@ -565,7 +533,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 print(f"Output fingerprint: {manifest.output_fingerprint}")
                 print(f"Idempotency key: {manifest.idempotency_key}")
                 if manifest.declared_loss:
-                    print(
+                    ctx.error(
                         "Declared loss: "
                         + ", ".join(manifest.declared_loss)
                         + " (salvage repair — see manifest for detail)"
@@ -581,22 +549,19 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 except Exception:
                     _src_fmt = None
                 if is_vendor_format(_src_fmt):
-                    print(
+                    ctx.info(
                         f"Note: output is canonical sesslint format, not "
                         f"{_src_fmt}; it cannot be placed back into the "
-                        "vendor session store.",
-                        file=sys.stderr,
+                        "vendor session store."
                     )
         if getattr(args, "seal", None) is not None and manifest is None:
             # The plan-only paths returned earlier; reaching here without
             # a manifest means no outcome artifact exists to seal.
-            print(
-                "Error: --seal requires a completed repair with a manifest.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: --seal requires a completed repair with a manifest.")
             return 2
         if manifest is not None:
             seal_rc = _maybe_append_seal(
+                ctx,
                 args,
                 tool="repair",
                 artifact_sha256=manifest.output_fingerprint,
@@ -613,7 +578,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         # Vendor-format refusal (auto-detected inside api.repair) is a usage
         # error, preserving the exit-2 contract previously produced by the
         # removed CLI pre-sniff.
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     except (
         PlanTampered,
@@ -640,24 +605,27 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             )
         else:
             err_code = getattr(err, "code", type(err).__name__)
-            print(f"Repair refused [{err_code}]: {err}", file=sys.stderr)
+            ctx.error(f"Repair refused [{err_code}]: {err}")
         return 1
     except (ValueError, KeyError) as err:
         # Invalid or undetectable input is a usage error, not an internal
         # fault (e.g. source parses as neither canonical nor vendor).
         err_msg = err.args[0] if err.args else str(err)
-        print(f"Error: {err_msg}", file=sys.stderr)
+        ctx.error(f"Error: {err_msg}")
         return 2
     except FileNotFoundError as err:
-        print(f"File error: {err}", file=sys.stderr)
+        ctx.error(f"File error: {err}")
         return 2
     except SesslintError as err:
         # Schema/adapter failures on the source artifact are input
         # problems, not internal faults.
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     except Exception as err:
         return _handle_internal_error(err, args)
     finally:
+        finish = getattr(progress_cb, "finish", None)
+        if callable(finish):
+            finish()
         if stdin_tmp is not None:
             stdin_tmp.cleanup()

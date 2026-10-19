@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-doctor \- [read\-only] Environment diagnostics for support reports.
 .SH SYNOPSIS
-.B sesslint doctor [\-\-agent {claude,codex,all}] [\-\-no\-quick\-checks] [\-f | \-\-format {human,json}] [\-\-json]
+.B sesslint doctor [\-\-agent {claude,codex,all}] [\-\-no\-quick\-checks] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] Report what SessLint sees on this machine: tool and adapter versions, resolved config file, agent session roots, bounded quick verdicts. Counts only — never file names.
 .SH OPTIONS
@@ -18,6 +18,15 @@ Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
 Emit sesslint.doctor/v1 JSON (shortcut for \-\-format json)
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

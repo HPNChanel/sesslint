@@ -5,13 +5,20 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Collection
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sesslint.cli._common import _ndjson_progress_cb, _rule_codes_arg
+from sesslint.cli._common import _rule_codes_arg
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 
 def build_scan_kwargs(
-    args: argparse.Namespace, *, baseline: Collection[str] | None
+    ctx: CliContext,
+    args: argparse.Namespace,
+    *,
+    baseline: Collection[str] | None,
+    progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Assemble the shared ``check_dir``/``scan_path`` kwargs for ``check``.
 
@@ -33,7 +40,7 @@ def build_scan_kwargs(
         "profile": getattr(args, "profile", "neutral"),
         "confidence_min": getattr(args, "confidence_min", None),
         "margin_min": getattr(args, "margin_min", None),
-        "progress_cb": _ndjson_progress_cb(args),
+        "progress_cb": progress_cb if progress_cb is not None else ctx.progress_callback(args),
         "skip_undetected": getattr(args, "skip_undetected", False),
         "select": _rule_codes_arg(args, "select"),
         "ignore": _rule_codes_arg(args, "ignore"),

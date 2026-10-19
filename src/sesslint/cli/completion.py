@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "completion"
 
@@ -25,12 +27,12 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.completion import generate_completion
 
     try:
         print(generate_completion(args.shell).rstrip("\n"))
     except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     return 0

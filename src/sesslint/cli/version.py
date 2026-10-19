@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint._version import get_version_info
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "version"
 
@@ -27,7 +30,7 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     info = get_version_info()
     if getattr(args, "json", False):
         print(json.dumps(info, indent=2, sort_keys=True))

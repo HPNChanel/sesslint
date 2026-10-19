@@ -2,13 +2,19 @@
 .SH NAME
 sesslint-version \- [read\-only] Display detailed component and schema version information.
 .SH SYNOPSIS
-.B sesslint version [\-\-json]
+.B sesslint version [\-\-json] [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] Display detailed component and schema version information.
 .SH OPTIONS
 .TP
 .B \-\-json
 Output version details as JSON object
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

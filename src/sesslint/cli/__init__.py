@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import io
 import sys
+import time
 from collections.abc import Sequence
 from typing import Final
 
@@ -14,7 +15,9 @@ from sesslint.cli._common import (
     _handle_internal_error,
     should_color,
 )
-from sesslint.cli._options import add_color_options
+from sesslint.cli._context import CliContext, build_context
+from sesslint.cli._errors import CliError
+from sesslint.cli._options import add_color_options, add_verbosity_options
 from sesslint.cli._registry import COMMANDS, REMOVED_COMMANDS, REMOVED_FLAGS, build_dispatch
 from sesslint.cli._render import format_scan_report_human
 from sesslint.progress import OperationCancelled
@@ -62,11 +65,16 @@ def create_parser() -> argparse.ArgumentParser:
     for command in COMMANDS:
         command.configure(subparsers)
     # Prefix matching would resurrect removed flags (e.g. --out -> --output).
+    # -q/-v land on every subparser: the commands that call
+    # add_color_options already have them via add_verbosity_options.
     seen: set[int] = set()
     for sub in subparsers.choices.values():
-        if id(sub) not in seen:
-            seen.add(id(sub))
-            sub.allow_abbrev = False
+        if id(sub) in seen:
+            continue
+        seen.add(id(sub))
+        sub.allow_abbrev = False
+        if not any("-q" in action.option_strings for action in sub._actions):
+            add_verbosity_options(sub)
     return parser
 
 
@@ -100,23 +108,45 @@ def _removed_flag_hint(argv: Sequence[str]) -> str | None:
     return None
 
 
+def _verbose_settings(ctx: CliContext) -> None:
+    """Emit ``debug:`` provenance lines for non-default settings (-v)."""
+    ctx.debug(f"config file: {ctx.config_path if ctx.config_path is not None else 'none'}")
+    for name, setting in ctx.settings.items():
+        if setting.source != "default":
+            ctx.debug(f"{name} = {setting.value}  ({setting.source})")
+
+
 def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Dispatch parsed CLI command and return exit code."""
-    if getattr(args, "include_content", False):
-        sys.stderr.write(
-            "WARNING: --include-content embeds raw transcript content; do not share output\n"
-        )
-        sys.stderr.flush()
-
     if args.command is None:
         parser.print_help(sys.stdout)
         return 2
 
-    dispatch = build_dispatch()
-    command = dispatch.get(str(args.command))
-    if command is not None:
-        return command.run(args, parser)
-    return 0
+    ctx: CliContext | None = None
+    try:
+        ctx = build_context(args, parser)
+
+        if getattr(args, "include_content", False):
+            ctx.warn(
+                "WARNING: --include-content embeds raw transcript content; do not share output"
+            )
+
+        dispatch = build_dispatch()
+        command = dispatch.get(str(args.command))
+        if command is None:
+            return 0
+        start = time.monotonic()
+        _verbose_settings(ctx)
+        try:
+            return command.run(ctx, args, parser)
+        finally:
+            ctx.debug(f"elapsed {time.monotonic() - start:.2f}s")
+    except CliError as err:
+        if ctx is not None:
+            ctx.error(err.message)
+        else:
+            print(err.message, file=sys.stderr)
+        return err.exit_code
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -158,5 +188,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except FileNotFoundError as err:
         print(f"Error: {err}", file=sys.stderr)
         return 2
+    except CliError as err:
+        print(err.message, file=sys.stderr)
+        return err.exit_code
     except Exception as err:
         return _handle_internal_error(err, args)

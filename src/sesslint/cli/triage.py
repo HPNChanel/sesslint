@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
 from sesslint.cli._common import _output_format
-from sesslint.cli._options import _validate_positive_int
+from sesslint.cli._options import _validate_positive_int, add_report_output_option
+from sesslint.cli._output import emit_text
 from sesslint.io import DEFAULT_MAX_FILE_BYTES
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "triage"
 
@@ -59,10 +62,11 @@ def configure(
         help="Output format (default: human)",
     )
     out_group.add_argument("--json", action="store_true")
+    add_report_output_option(sub)
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.discovery import latest_session
     from sesslint.triage import triage
 
@@ -70,10 +74,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if (path is None and not (args.latest and args.agent)) or (
         path is not None and (args.latest or args.agent is not None)
     ):
-        print("Error: choose a file OR --agent claude|codex --latest.", file=sys.stderr)
+        ctx.error("Error: choose a file OR --agent claude|codex --latest.")
         return 2
     if getattr(args, "include_content", False):
-        print("Error: triage does not support --include-content.", file=sys.stderr)
+        ctx.error("Error: triage does not support --include-content.")
         return 2
     try:
         target = path if path is not None else latest_session(args.agent)
@@ -86,9 +90,13 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             max_file_bytes=args.max_file_bytes,
         )
     except (OSError, ValueError, KeyError):
-        print("Error: triage input/discovery/options could not be resolved.", file=sys.stderr)
+        ctx.error("Error: triage input/discovery/options could not be resolved.")
         return 2
-    print(
-        triage_result.to_json() if _output_format(args) == "json" else triage_result.render_human()
+    emit_text(
+        ctx,
+        args,
+        triage_result.to_json() if _output_format(args) == "json" else triage_result.render_human(),
+        inputs=(target,),
+        summary=f"{triage_result.finding_count} finding(s)",
     )
     return triage_result.exit_code

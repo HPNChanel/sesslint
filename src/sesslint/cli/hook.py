@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "hook"
 
@@ -90,7 +93,7 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     out_fmt = "json" if getattr(args, "json", False) else getattr(args, "output_format", None)
 
     if getattr(args, "init", False):

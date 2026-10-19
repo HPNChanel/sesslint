@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-bundle \- [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .SH SYNOPSIS
-.B sesslint bundle [\-o | \-\-output OUTPUT] [\-\-json] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-strict\-share] PATH
+.B sesslint bundle [\-o | \-\-output OUTPUT] [\-\-json] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-confidence\-min CONFIDENCE_MIN] [\-\-margin\-min MARGIN_MIN] [\-\-strict\-share] [\-q | \-\-quiet] [\-v | \-\-verbose] PATH
 .SH DESCRIPTION
 [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .SH ARGUMENTS
@@ -31,6 +31,12 @@ Minimum margin threshold between top candidates for auto\-detection
 .TP
 .B \-\-strict\-share
 Exit 1 without writing output when the source file contains secret\-shaped material (SL009 share_advisory present)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

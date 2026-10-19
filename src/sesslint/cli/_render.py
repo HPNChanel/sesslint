@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sesslint import __version__
 from sesslint.cli._common import (
@@ -15,6 +16,10 @@ from sesslint.cli._common import (
     _write_baseline_arg,
     should_color,
 )
+from sesslint.cli._output import emit_text
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 
 def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
@@ -126,19 +131,22 @@ def format_scan_report_human(scan_report: Any, color: bool = False) -> str:
 
 
 def _emit_check_report(
+    ctx: CliContext,
     report: Any,
     args: argparse.Namespace,
     *,
     display_path: str,
     format_opt: str,
     profile_opt: str,
+    inputs: Sequence[Path] = (),
 ) -> int:
     """Shared check-report emission for file and stdin sources (ux T-06).
 
     ``display_path`` is the path shown in skip/hint messages — ``<stdin>``
-    for piped input.
+    for piped input. ``inputs`` are the source paths ``-o`` must not clobber.
     """
-    _write_baseline_arg(args, report.findings)
+    _write_baseline_arg(ctx, args, report.findings)
+    summary = f"{report.counts.total} finding(s)"
 
     # --skip-undetected: detection-failed files are skipped, not failed
     if getattr(args, "skip_undetected", False) and report.limitation.startswith("Unsupported:"):
@@ -148,7 +156,9 @@ def _emit_check_report(
             # an empty stdout would strand JSON consumers.
             from sesslint.report import minimize_path
 
-            print(
+            emit_text(
+                ctx,
+                args,
                 json.dumps(
                     {
                         "findings": [],
@@ -158,14 +168,22 @@ def _emit_check_report(
                         "skipped_reason": "format-undetected",
                     },
                     sort_keys=True,
-                )
+                ),
+                inputs=inputs,
+                summary="0 finding(s)",
             )
         elif skip_fmt == "sarif":
             from sesslint.sarif import render_sarif
 
-            print(render_sarif((), tool_version=__version__))
+            emit_text(
+                ctx,
+                args,
+                render_sarif((), tool_version=__version__),
+                inputs=inputs,
+                summary="0 finding(s)",
+            )
         else:
-            print(f"skipped (format-undetected): {display_path}", file=sys.stderr)
+            ctx.info(f"skipped (format-undetected): {display_path}")
         return 0
 
     has_error = (
@@ -178,15 +196,9 @@ def _emit_check_report(
 
     if report.limitation.startswith("Unsupported:"):
         exit_code = int(getattr(args, "fail_on_unsupported", False))
-        print(
-            "unsupported (format-undetected): use sesslint doctor to inspect supported inputs",
-            file=sys.stderr,
-        )
+        ctx.info("unsupported (format-undetected): use sesslint doctor to inspect supported inputs")
     elif report.limitation.startswith("Skipped:"):
-        print(
-            "skipped (file-too-large): increase --max-file-bytes to inspect this file",
-            file=sys.stderr,
-        )
+        ctx.info("skipped (file-too-large): increase --max-file-bytes to inspect this file")
     # If format detection failed or was ambiguous, emit actionable hints on stderr
     has_detection_or_version_failure = False
     for f in report.findings:
@@ -195,38 +207,32 @@ def _emit_check_report(
             if isinstance(f.evidence, dict):
                 reason = f.evidence.get("reason")
                 if reason in ("tie", "low-confidence", "empty"):
-                    print(
+                    ctx.warn(
                         "Format detection ambiguous. Please specify --adapter explicitly "
-                        "(see sesslint doctor).",
-                        file=sys.stderr,
+                        "(see sesslint doctor)."
                     )
                     confidences = f.evidence.get("confidences")
                     if confidences and isinstance(confidences, dict):
                         sorted_conf = dict(sorted(confidences.items()))
-                        print(
-                            f"Candidate confidences: {sorted_conf}",
-                            file=sys.stderr,
-                        )
-            print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
+                        ctx.warn(f"Candidate confidences: {sorted_conf}")
+            ctx.warn(f"Format detection error [{f.code}]: {f.message}")
         elif f.code == "SL301":
             has_detection_or_version_failure = True
-            print(f"Format detection error [{f.code}]: {f.message}", file=sys.stderr)
+            ctx.warn(f"Format detection error [{f.code}]: {f.message}")
 
     if has_detection_or_version_failure and (
         display_path == "<stdin>" or Path(display_path).suffix.lower() in (".json", ".jsonl")
     ):
         if display_path == "<stdin>":
-            print(
+            ctx.warn(
                 "hint: save the stream to a file, then run 'sesslint bundle <file>' "
-                "and attach the output to an adapter request",
-                file=sys.stderr,
+                "and attach the output to an adapter request"
             )
         else:
             target_disp = display_path.replace("\\", "/")
-            print(
+            ctx.warn(
                 f"hint: run 'sesslint bundle {target_disp}' "
-                "and attach the output to an adapter request",
-                file=sys.stderr,
+                "and attach the output to an adapter request"
             )
 
     adapter_id = report.coverage.adapter.get("id", "canonical")
@@ -246,28 +252,42 @@ def _emit_check_report(
             detection_method="manual" if format_opt != "auto" else "auto",
             detection_confidence=None,
         )
-        print(
+        emit_text(
+            ctx,
+            args,
             render_json(
                 report,
                 include_content=getattr(args, "include_content", False),
                 repro=repro_meta,
-            )
+            ),
+            inputs=inputs,
+            summary=summary,
         )
         return exit_code
     if single_out_fmt == "sarif":
         from sesslint.sarif import render_sarif
 
-        print(render_sarif(report.findings, tool_version=report.tool_version))
+        emit_text(
+            ctx,
+            args,
+            render_sarif(report.findings, tool_version=report.tool_version),
+            inputs=inputs,
+            summary=summary,
+        )
         return exit_code
     if single_out_fmt == "html":
         from sesslint.html_report import render_html
 
-        print(
+        emit_text(
+            ctx,
+            args,
             render_html(
                 report,
                 adapter=format_display,
                 profile=report.coverage.profile.get("id", profile_opt),
-            )
+            ),
+            inputs=inputs,
+            summary=summary,
         )
         return exit_code
     from sesslint.report import render_human
@@ -279,7 +299,7 @@ def _emit_check_report(
         adapter=format_display,
         profile=report.coverage.profile.get("id", profile_opt),
     )
-    if not has_error:
-        print(f"Valid {format_display} session")
-    print(human_text)
+    if not has_error and not ctx.quiet:
+        human_text = f"Valid {format_display} session\n" + human_text
+    emit_text(ctx, args, human_text, inputs=inputs, summary=summary)
     return exit_code

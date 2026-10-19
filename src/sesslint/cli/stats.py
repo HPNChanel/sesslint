@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
 from sesslint.cli._common import _output_format
+from sesslint.cli._options import add_report_output_option
+from sesslint.cli._output import emit_text
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "stats"
 
@@ -58,10 +62,11 @@ def configure(
         default=False,
         help="Emit sesslint.stats/v1 JSON (shortcut for --format json)",
     )
+    add_report_output_option(sub)
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.api import discover_session_roots
     from sesslint.stats import stats_paths
 
@@ -69,19 +74,16 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     arg_paths: list[Path] = list(getattr(args, "path", []) or [])
     if agent is not None:
         if arg_paths:
-            print(
-                "Error: --agent cannot be combined with explicit paths.",
-                file=sys.stderr,
-            )
+            ctx.error("Error: --agent cannot be combined with explicit paths.")
             return 2
         agents = None if agent == "all" else [agent]
         root_paths = [r.path for r in discover_session_roots(agents) if r.exists]
         if not root_paths:
-            print(f"Error: no existing session roots found for agent '{agent}'.", file=sys.stderr)
+            ctx.error(f"Error: no existing session roots found for agent '{agent}'.")
             return 2
         arg_paths = [Path(rp) for rp in root_paths]
     if not arg_paths:
-        print("Error: stats requires at least one path or --agent.", file=sys.stderr)
+        ctx.error("Error: stats requires at least one path or --agent.")
         return 2
     shared_fmt = getattr(args, "adapter", "auto")
     try:
@@ -91,11 +93,12 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             format=None if shared_fmt in (None, "auto") else shared_fmt,
         )
     except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
 
+    summary = f"{result.files_total} file(s)"
     if _output_format(args) == "json":
-        print(result.to_json())
+        emit_text(ctx, args, result.to_json(), inputs=arg_paths, summary=summary)
     else:
-        print(result.render_human())
+        emit_text(ctx, args, result.render_human(), inputs=arg_paths, summary=summary)
     return 0

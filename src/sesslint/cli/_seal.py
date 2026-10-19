@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 
 def _check_seal_verdict(report: Any) -> str:
@@ -24,6 +26,7 @@ def _check_seal_verdict(report: Any) -> str:
 
 
 def _maybe_append_seal(
+    ctx: CliContext,
     args: argparse.Namespace,
     *,
     tool: str,
@@ -69,7 +72,7 @@ def _maybe_append_seal(
             genesis_of=getattr(args, "seal_genesis_of", None),
         )
     except (seal_mod.SealError, OSError) as err:
-        print(f"Error: seal failed: {err}", file=sys.stderr)
+        ctx.error(f"Error: seal failed: {err}")
         return 2
-    print(f"sealed: seq {entry['seq']} -> {ledger}", file=sys.stderr)
+    ctx.info(f"sealed: seq {entry['seq']} -> {ledger}")
     return None

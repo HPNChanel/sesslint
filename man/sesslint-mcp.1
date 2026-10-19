@@ -2,9 +2,16 @@
 .SH NAME
 sesslint-mcp \- [read\-only] Run a Model Context Protocol server over stdio.
 .SH SYNOPSIS
-.B sesslint mcp
+.B sesslint mcp [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] MCP stdio server (protocol 2025\-06\-18, newline\-delimited JSON\-RPC): exposes sesslint_check / sesslint_precheck / sesslint_scan tools so agents can call checks natively. Long\-running process — EOF or Ctrl+C exits cleanly.
+.SH OPTIONS
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

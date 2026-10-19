@@ -441,7 +441,7 @@ def test_cli_verify_seal(tmp_path: Path) -> None:
             str(d / "source.jsonl"),
             "--plan",
             str(d / "plan.json"),
-            "--output",
+            "--repaired",
             str(d / "output.jsonl"),
             "--manifest",
             str(d / "manifest.json"),

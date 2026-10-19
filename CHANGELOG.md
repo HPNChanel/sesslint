@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Global `-q`/`--quiet` and `-v`/`--verbose` flags: quiet suppresses
+  non-error stderr diagnostics and the `Valid ... session` banner; verbose
+  prints `debug:` settings provenance and elapsed time. JSON/SARIF/HTML
+  stdout bytes are unaffected.
+- `-o`/`--output FILE` on `check`, `triage`, `stats`, `diff`, `doctor` and
+  `verify`: writes the report atomically (overwriting existing report files)
+  and prints a `wrote FILE (...)` summary; `--output` may not be an input
+  path.
+- `SESSLINT_CONFIG`, `SESSLINT_PROFILE`, `SESSLINT_ADAPTER` and
+  `SESSLINT_FORMAT` environment variables, resolved CLI > env > config >
+  default per setting (`-v` shows provenance).
+- Interactive single-line TTY progress on stderr for `check`/`repair`
+  (counts only, stdout untouched), disabled by `--no-progress` or `--quiet`.
+- `verify` report output gained `-o`/`--output`; the hidden legacy repaired-
+  path flag is now `--repaired` (`--output` selects report output).
+
 - Read-only `triage` CLI/API and `sesslint.triage/v1`: shared source snapshot,
   content-free guidance, bounded findings and structural impact, missing-evidence
   explanations, explicit conservative/salvage preview comparison, primary-session

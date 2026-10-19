@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-stats \- [read\-only] Aggregate content\-free statistics over session files.
 .SH SYNOPSIS
-.B sesslint stats [\-\-agent {claude,codex,all}] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-f | \-\-format {human,json}] [\-\-json] PATH...
+.B sesslint stats [\-\-agent {claude,codex,all}] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose] PATH...
 .SH DESCRIPTION
 [read\-only] Aggregate statistics over session files or directories: event counts by kind/actor, tool\-call volume per hashed tool name, compactions, checkpoints, size percentiles.
 .SH ARGUMENTS
@@ -22,6 +22,15 @@ Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
 Emit sesslint.stats/v1 JSON (shortcut for \-\-format json)
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-repair \- [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file.
 .SH SYNOPSIS
-.B sesslint repair [\-o | \-\-output OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-from\-scan REPORT.json] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-include\-content] [\-\-config PATH] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] PATH...
+.B sesslint repair [\-o | \-\-output OUTPUT] [\-\-dry\-run] [\-\-preview] [\-\-policy {conservative,salvage}] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-emit {auto,canonical,vendor}] [\-\-profile PROFILE] [\-\-json] [\-\-progress\-json] [\-\-no\-progress] [\-\-plan | \-\-apply\-plan PLAN] [\-\-plan\-out PLAN_OUT] [\-\-from\-scan REPORT.json] [\-\-output\-dir DIR] [\-\-manifest\-dir DIR] [\-\-acknowledge\-side\-effects] [\-\-include\-content] [\-\-config PATH] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [\-q | \-\-quiet] [\-v | \-\-verbose] PATH...
 .SH DESCRIPTION
 [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file with atomic execution.
 .SH ARGUMENTS
@@ -38,6 +38,9 @@ Output manifest or plan in JSON format
 .B \-\-progress\-json
 Emit NDJSON progress events to stderr (stdout stays the result channel)
 .TP
+.B \-\-no\-progress
+Disable interactive progress output on stderr
+.TP
 .B \-\-plan PLAN, \-\-apply\-plan PLAN
 Apply a previously exported plan JSON (sesslint.plan/v1) without re\-planning. The plan is authoritative: \-\-policy/\-\-profile/\-\-adapter overrides are refused, and execution still re\-validates the plan fingerprint and source binding.
 .TP
@@ -70,6 +73,12 @@ Omit the artifact path from the seal line (multi\-machine ledgers)
 .TP
 .B \-\-seal\-genesis\-of HEX
 Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

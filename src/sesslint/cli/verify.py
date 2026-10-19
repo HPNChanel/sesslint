@@ -5,11 +5,15 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _handle_internal_error, should_color
-from sesslint.cli._options import _add_seal_args, add_color_options
+from sesslint.cli._options import _add_seal_args, add_color_options, add_report_output_option
+from sesslint.cli._output import emit_text
 from sesslint.cli._seal import _maybe_append_seal
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "verify"
 
@@ -47,12 +51,13 @@ def configure(
         help=argparse.SUPPRESS,
     )
     sub.add_argument(
-        "--output",
+        "--repaired",
         type=Path,
         default=None,
-        dest="output_flag",
+        dest="repaired_flag",
         help=argparse.SUPPRESS,
     )
+    add_report_output_option(sub)
     sub.add_argument(
         "--manifest",
         type=Path,
@@ -82,9 +87,9 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     source_target = args.source or getattr(args, "source_flag", None)
-    repaired_target = args.repaired or getattr(args, "output_flag", None)
+    repaired_target = args.repaired or getattr(args, "repaired_flag", None)
 
     if source_target is None or repaired_target is None:
         parser.error("sesslint verify requires both source and repaired session paths.")
@@ -101,13 +106,25 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             acknowledge_side_effects=getattr(args, "acknowledge_side_effects", False),
         )
         use_json = getattr(args, "json", False)
-        is_legacy_flags = args.source is None and getattr(args, "source_flag", None) is not None
+        is_legacy_flags = args.source is None and (
+            getattr(args, "source_flag", None) is not None
+            or getattr(args, "repaired_flag", None) is not None
+        )
+        summary = "ok" if verdict.ok else "verification failed"
+        inputs = tuple(p for p in (Path(source_target), Path(repaired_target)) if p is not None)
         if use_json or is_legacy_flags:
-            print(verdict.to_json())
+            emit_text(ctx, args, verdict.to_json(), inputs=inputs, summary=summary)
         else:
             use_color = should_color(args, sys.stdout)
-            print(render_verify_human(verdict, color=use_color))
+            emit_text(
+                ctx,
+                args,
+                render_verify_human(verdict, color=use_color),
+                inputs=inputs,
+                summary=summary,
+            )
         seal_rc = _maybe_append_seal(
+            ctx,
             args,
             tool="verify",
             artifact_sha256=verdict.artifact_sha256,
@@ -121,7 +138,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             return seal_rc
         return 0 if verdict.ok else 1
     except (FileNotFoundError, OSError) as err:
-        print(f"Verify I/O error: {err}", file=sys.stderr)
+        ctx.error(f"Verify I/O error: {err}")
         return 2
     except Exception as err:
         return _handle_internal_error(err, args)

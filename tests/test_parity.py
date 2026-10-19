@@ -117,7 +117,7 @@ def test_parity_verify_command(capsys: pytest.CaptureFixture[str]) -> None:
             str(src),
             "--plan",
             str(plan),
-            "--output",
+            "--repaired",
             str(out),
             "--manifest",
             str(man),

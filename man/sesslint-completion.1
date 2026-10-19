@@ -2,13 +2,20 @@
 .SH NAME
 sesslint-completion \- [read\-only] Print shell completion script.
 .SH SYNOPSIS
-.B sesslint completion {bash,zsh,fish,powershell}
+.B sesslint completion [\-q | \-\-quiet] [\-v | \-\-verbose] {bash,zsh,fish,powershell}
 .SH DESCRIPTION
 [read\-only] Print a shell completion script generated from the live parser.
 .SH ARGUMENTS
 .TP
 .B {bash,zsh,fish,powershell}
 Shell dialect (bash, zsh, fish, powershell)
+.SH OPTIONS
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-hook \- [read\-only] Agent hook entrypoint: reads one hook payload from stdin and checks the transcript.
 .SH SYNOPSIS
-.B sesslint hook [\-\-event NAME] [\-\-init] [\-\-agent {claude,codex,all}] [\-f | \-\-format {text,json,claude\-json}] [\-\-json] [\-\-fail\-on {never,error,warning}] [\-\-profile PROFILE] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}]
+.B sesslint hook [\-\-event NAME] [\-\-init] [\-\-agent {claude,codex,all}] [\-f | \-\-format {text,json,claude\-json}] [\-\-json] [\-\-fail\-on {never,error,warning}] [\-\-profile PROFILE] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] Reads one JSON hook payload from stdin (Claude Code contract: session_id, transcript_path, cwd, hook_event_name), resolves the transcript file, and runs the event\-appropriate integrity check. Prints one content\-free line and exits 0 (advisory) — or 1 when \-\-fail\-on gates on findings. Exit 2 is never emitted: hook checks never block the agent. \-\-init prints ready\-to\-merge hook snippets (never writes config).
 .SH OPTIONS
@@ -30,6 +30,12 @@ Validation profile (default: neutral)
 .TP
 .B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
 Session format adapter (default: auto\-detect) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "seal"
 
@@ -42,13 +44,13 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.seal import SealError, verify_ledger
 
     try:
         entries_ok, divergence = verify_ledger(args.verify)
     except SealError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     if getattr(args, "json", False):
         print(
@@ -64,9 +66,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     elif divergence is None:
         print(f"ok: {entries_ok} sealed entries")
     else:
-        print(
+        ctx.error(
             f"divergence at line {divergence['line']}: "
-            f"{divergence['kind']} — {divergence['detail']}",
-            file=sys.stderr,
+            f"{divergence['kind']} — {divergence['detail']}"
         )
     return 0 if divergence is None else 1

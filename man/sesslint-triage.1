@@ -2,7 +2,7 @@
 .SH NAME
 sesslint-triage \- [read\-only] Diagnose a session and explain the next steps.
 .SH SYNOPSIS
-.B sesslint triage [\-\-agent {claude,codex}] [\-\-latest] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy {conservative,salvage}] [\-\-state\-copy STATE_COPY] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-include\-content] [\-f | \-\-format {human,json}] [\-\-json] [PATH]
+.B sesslint triage [\-\-agent {claude,codex}] [\-\-latest] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy {conservative,salvage}] [\-\-state\-copy STATE_COPY] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-include\-content] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose] [PATH]
 .SH DESCRIPTION
 Content\-free evidence and repair previews; never repairs or resumes.
 .SH ARGUMENTS
@@ -37,6 +37,15 @@ Default: 104857600.
 Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0

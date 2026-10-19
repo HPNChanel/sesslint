@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import SUPPORTED_FORMATS, VALID_FORMAT_OPTIONS
 from sesslint.cli._common import _output_format
+from sesslint.cli._options import add_report_output_option
+from sesslint.cli._output import emit_text
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "diff"
 
@@ -62,10 +66,11 @@ def configure(
         default=False,
         help="Emit sesslint.diff/v1 JSON (shortcut for --format json)",
     )
+    add_report_output_option(sub)
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.diff import DiffInputError, diff_sessions
 
     shared_fmt = getattr(args, "adapter", "auto")
@@ -78,14 +83,15 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             format_b=getattr(args, "adapter_b", None) or shared,
         )
     except DiffInputError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
 
+    summary = "identical" if diff_result.identical else "differences found"
     if _output_format(args) == "json":
-        print(diff_result.to_json())
+        emit_text(ctx, args, diff_result.to_json(), inputs=(args.a, args.b), summary=summary)
     else:
-        print(diff_result.render_human())
+        emit_text(ctx, args, diff_result.render_human(), inputs=(args.a, args.b), summary=summary)
     return 0 if diff_result.identical else 1

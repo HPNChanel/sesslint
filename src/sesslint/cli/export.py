@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _handle_internal_error
 from sesslint.cli._options import add_adapter_option
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "export"
 
@@ -47,12 +49,12 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.output is None:
-        print("Error: --output is required for export.", file=sys.stderr)
+        ctx.error("Error: --output is required for export.")
         return 2
     if not args.path.is_file():
-        print(f"Error: Source file not found: {args.path}", file=sys.stderr)
+        ctx.error(f"Error: Source file not found: {args.path}")
         return 2
 
     from sesslint import api
@@ -65,10 +67,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             format=getattr(args, "adapter", "auto"),
         )
     except ExportRefused as err:
-        print(f"Export refused [{err.code}]: {err}", file=sys.stderr)
+        ctx.error(f"Export refused [{err.code}]: {err}")
         return 1
     except FileNotFoundError as err:
-        print(f"File error: {err}", file=sys.stderr)
+        ctx.error(f"File error: {err}")
         return 2
     except Exception as err:
         return _handle_internal_error(err, args)

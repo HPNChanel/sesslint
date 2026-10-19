@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import argparse
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _output_format
+from sesslint.cli._options import add_report_output_option
+from sesslint.cli._output import emit_text
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "doctor"
 
@@ -50,10 +55,11 @@ def configure(
         default=False,
         help="Emit sesslint.doctor/v1 JSON (shortcut for --format json)",
     )
+    add_report_output_option(sub)
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from sesslint.doctor import doctor_report
 
     agent = getattr(args, "agent", None)
@@ -63,7 +69,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         quick_checks=not getattr(args, "no_quick_checks", False),
     )
     if _output_format(args) == "json":
-        print(diag.to_json())
+        emit_text(ctx, args, diag.to_json(), summary="doctor report")
     else:
-        print(diag.render_human())
+        emit_text(ctx, args, diag.render_human(), summary="doctor report")
     return 0

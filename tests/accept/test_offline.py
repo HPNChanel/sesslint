@@ -91,7 +91,7 @@ def test_offline_repair_and_verify_commands(
             str(REPAIRABLE_SESSION),
             "--plan",
             str(plan_file),
-            "--output",
+            "--repaired",
             str(out_file),
             "--manifest",
             str(manifest_file),

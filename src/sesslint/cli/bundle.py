@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _handle_internal_error
 from sesslint.cli._options import (
@@ -13,6 +12,9 @@ from sesslint.cli._options import (
     add_adapter_option,
     add_profile_option,
 )
+
+if TYPE_CHECKING:
+    from sesslint.cli._context import CliContext
 
 NAME: Final[str] = "bundle"
 
@@ -72,16 +74,15 @@ def configure(
     return sub
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     target_bundle_path: Path = args.path
     if not target_bundle_path.exists():
-        print(f"Error: Path not found: {target_bundle_path}", file=sys.stderr)
+        ctx.error(f"Error: Path not found: {target_bundle_path}")
         return 2
     if target_bundle_path.is_dir():
-        print(
+        ctx.error(
             "Error: Path is a directory. "
-            f"Bundle requires a single session file: {target_bundle_path}",
-            file=sys.stderr,
+            f"Bundle requires a single session file: {target_bundle_path}"
         )
         return 2
 
@@ -100,11 +101,11 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         )
     except (ValueError, KeyError) as err:
         if "not permitted by profile" in str(err):
-            print(str(err), file=sys.stderr)
+            ctx.error(str(err))
             return 2
         parser.error(str(err))
     except FileNotFoundError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        ctx.error(f"Error: {err}")
         return 2
     except Exception as err:
         return _handle_internal_error(err, args)
@@ -116,12 +117,11 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if bundle.share_advisory is not None:
         adv = bundle.share_advisory
         fams = ", ".join(str(x) for x in adv.get("families", ()))
-        print(
+        ctx.warn(
             f"share_advisory: source contains secret-shaped material "
             f"({adv.get('finding_count', 0)} finding(s); families: {fams}) - "
             "rotate affected credentials before sharing the source file "
-            "(docs/codes/SL009.md)",
-            file=sys.stderr,
+            "(docs/codes/SL009.md)"
         )
         if getattr(args, "strict_share", False):
             return 1
@@ -138,7 +138,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 out_path, bundle_json, refuse_paths=[target_bundle_path], overwrite=False
             )
         except Exception as err:
-            print(f"Error writing bundle to {out_path}: {err}", file=sys.stderr)
+            ctx.error(f"Error writing bundle to {out_path}: {err}")
             return 2
 
         if getattr(args, "json", False):

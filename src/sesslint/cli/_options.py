@@ -74,7 +74,7 @@ def add_adapter_option(sub: argparse.ArgumentParser) -> None:
 
 
 def add_color_options(sub: argparse.ArgumentParser, *, root: bool = False) -> None:
-    """Shared ``--color``/``--no-color`` pair.
+    """Shared ``--color``/``--no-color``/``-q``/``-v`` global flags.
 
     ``root=True`` gives the root parser concrete defaults; subcommands use
     ``argparse.SUPPRESS`` so an unset flag falls through to the root value.
@@ -90,6 +90,44 @@ def add_color_options(sub: argparse.ArgumentParser, *, root: bool = False) -> No
         action="store_true",
         default=False if root else argparse.SUPPRESS,
         help="Disable ANSI color styling" + (" (equivalent to NO_COLOR=1)" if root else ""),
+    )
+    add_verbosity_options(sub, root=root)
+
+
+def add_verbosity_options(sub: argparse.ArgumentParser, *, root: bool = False) -> None:
+    """Shared ``-q/--quiet``/``-v/--verbose`` pair (every parser)."""
+    sub.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False if root else argparse.SUPPRESS,
+        help="Suppress non-error stderr output",
+    )
+    sub.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False if root else argparse.SUPPRESS,
+        help="Print debug diagnostics (settings provenance, elapsed) to stderr",
+    )
+
+
+def add_report_output_option(sub: argparse.ArgumentParser) -> None:
+    """Shared ``-o/--output FILE`` for report-producing commands.
+
+    The report bytes stdout would have received are written atomically to
+    FILE instead; existing report files are overwritten.
+    """
+    sub.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help=(
+            "Write the report to FILE instead of stdout "
+            "(existing report files are overwritten atomically)"
+        ),
     )
 
 
@@ -225,11 +263,16 @@ def add_walk_options(sub: argparse.ArgumentParser) -> None:
 
 
 def add_progress_json_option(sub: argparse.ArgumentParser) -> None:
-    """Shared ``--progress-json`` declaration (check/scan/repair)."""
+    """Shared ``--progress-json``/``--no-progress`` pair (check/scan/repair)."""
     sub.add_argument(
         "--progress-json",
         action="store_true",
         help="Emit NDJSON progress events to stderr (stdout stays the result channel)",
+    )
+    sub.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable interactive progress output on stderr",
     )
 
 
