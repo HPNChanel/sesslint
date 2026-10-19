@@ -33,6 +33,20 @@ FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "openai-agents": "OpenAI Agents",
 }
 
+# AC-02 / FR-098. Per-code lines, in order 0, 1, 2. ``--help``, the README,
+# man pages, the CI template, and the corruption guide must use these phrases.
+# There is no summary sentence above the list.
+CHECK_EXIT_LINES: Final[tuple[str, ...]] = (
+    "0  a clean session exits 0",
+    "1  a session with findings exits 1",
+    "2  an internal tool error exits 2",
+)
+CHECK_EXIT_NOTES: Final[tuple[str, ...]] = (
+    "(also verification passed / dry-run plan generated)",
+    "(also verification failed / repair refused)",
+    "(also usage error / invalid flags / I/O failure)",
+)
+
 
 def _handle_internal_error(err: Exception, args: argparse.Namespace | None = None) -> int:
     """Handle unexpected internal operational errors per FR-097, FR-098, FR-099.
@@ -571,9 +585,11 @@ def create_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Exit codes:\n"
-            "  0  Healthy session / verification passed / dry-run plan generated\n"
-            "  1  Integrity findings detected / verification failed / repair refused\n"
-            "  2  Usage error / invalid flag combination / I/O failure\n\n"
+            + "".join(
+                f"  {line}\n     {note}\n"
+                for line, note in zip(CHECK_EXIT_LINES, CHECK_EXIT_NOTES, strict=True)
+            )
+            + "\n"
             "Important Notes:\n"
             "  - redaction is best-effort minimization, not a completeness guarantee\n"
             "  - sesslint makes no semantic or side-effect safety claims"

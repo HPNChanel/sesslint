@@ -676,14 +676,14 @@ sesslint bundle <path> [OPTIONS]
 
 ### Exit Codes
 
-SessLint implements predictable, POSIX-compliant exit code semantics:
+SessLint implements predictable, POSIX-compliant exit code semantics.
 
-| Exit Code | Meaning               | Condition                                                                                     |
-| :-------: | :-------------------- | :-------------------------------------------------------------------------------------------- |
-|    `0`    | **Success**           | Clean check, or repair successfully executed, validated, and manifested.                      |
-|    `1`    | **Finding / Refusal** | Diagnostic errors found, repair plan blocked, or execution refused (TOCTOU, `SL203`).         |
-|    `2`    | **Operational Error** | CLI syntax error, file not found, permission denied, or live DB path refusal.                 |
-|   `130`   | **Cancelled**         | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up. |
+| Exit Code | Meaning                 | Condition                                                                              |
+| :-------: | :---------------------- | :------------------------------------------------------------------------------------- |
+|    `0`    | **Clean session**       | a clean session exits 0 (also verification passed / dry-run plan generated)           |
+|    `1`    | **Findings**            | a session with findings exits 1 (also verification failed / repair refused)           |
+|    `2`    | **Internal tool error** | an internal tool error exits 2 (also usage error / invalid flags / I/O failure)       |
+|   `130`   | **Cancelled**           | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up. |
 
 ---
 
