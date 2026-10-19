@@ -6,6 +6,15 @@
 # The changelog page is generated from CHANGELOG.md and the download page from
 # the GitHub Releases API at build time; release.yml dispatches this workflow
 # after a release is public, so the site tracks releases without a manual push.
+#
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   SITE_URL               public URL; unset = https://hpnchanel.github.io/sesslint.
+#                          For a custom domain set e.g. https://sesslint.example
+#                          and add the same domain under Settings → Pages.
+#   PUBLIC_CHECKOUT_PLUS, PUBLIC_CHECKOUT_MAX, PUBLIC_CHECKOUT_GIFT_PLUS,
+#   PUBLIC_CHECKOUT_GIFT_MAX, PUBLIC_CHECKOUT_CODE_PARAM
+#                          hosted checkout links; unset = "payments open soon".
+#                          See web/README.md.
 name: docs
 
 on:
@@ -44,6 +53,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SITE_URL: ${{ vars.SITE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -88,10 +99,20 @@ jobs:
         env:
           # Read-only: lists public release assets for the download page.
           GITHUB_TOKEN: ${{ github.token }}
+          PUBLIC_CHECKOUT_PLUS: ${{ vars.PUBLIC_CHECKOUT_PLUS }}
+          PUBLIC_CHECKOUT_MAX: ${{ vars.PUBLIC_CHECKOUT_MAX }}
+          PUBLIC_CHECKOUT_GIFT_PLUS: ${{ vars.PUBLIC_CHECKOUT_GIFT_PLUS }}
+          PUBLIC_CHECKOUT_GIFT_MAX: ${{ vars.PUBLIC_CHECKOUT_GIFT_MAX }}
+          PUBLIC_CHECKOUT_CODE_PARAM: ${{ vars.PUBLIC_CHECKOUT_CODE_PARAM }}
         run: npm run build
 
       - name: Build docs site under /docs/
-        run: uv run mkdocs build --site-dir web/dist/docs
+        working-directory: web
+        run: npm run docs
+
+      - name: Check every internal link
+        working-directory: web
+        run: npm run links
 
       - name: End-to-end and accessibility tests
         working-directory: web

@@ -16,9 +16,14 @@ export const HTML_LANG: Record<Lang, string> = { en: "en", vi: "vi" };
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-/** Absolute site path for `path` ("/pricing") in `lang`, honouring the base. */
+/**
+ * Absolute site path for `path` ("/pricing") in `lang`, honouring the base.
+ * Page paths get the trailing slash GitHub Pages serves them at ("/pricing/"),
+ * so links, canonicals and the sitemap agree and no link costs a redirect.
+ */
 export function href(lang: Lang, path = "/"): string {
-  const clean = path.startsWith("/") ? path : `/${path}`;
+  const abs = path.startsWith("/") ? path : `/${path}`;
+  const clean = abs.endsWith("/") || /\.[a-z0-9]+$/i.test(abs) ? abs : `${abs}/`;
   const localized = lang === "en" ? clean : `/vi${clean === "/" ? "/" : clean}`;
   return `${BASE}${localized}`;
 }
@@ -26,6 +31,11 @@ export function href(lang: Lang, path = "/"): string {
 /** Base-relative URL for a non-localized asset or route (feeds, docs). */
 export function asset(path: string): string {
   return `${BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/** Absolute URL for a base-prefixed path from href()/asset(), on the configured site. */
+export function absolute(path: string): string {
+  return new URL(path, import.meta.env.SITE).toString();
 }
 
 /** Strip base and locale prefix: "/sesslint/vi/pricing/" → "/pricing/". */

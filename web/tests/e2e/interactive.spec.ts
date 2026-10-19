@@ -56,7 +56,7 @@ test("replay reaches the verified state, and reduced motion shows it immediately
   const ctx = await browser.newContext({ reducedMotion: "reduce" });
   const still = await ctx.newPage();
   await still.route("https://api.github.com/**", (r) => r.fulfill({ json: {} }));
-  await still.goto("/sesslint/");
+  await still.goto(page.url());
   await expect(still.locator("sl-replay")).toHaveAttribute("data-state", "verify");
   await expect(still.locator("sl-replay [data-play]")).toBeHidden();
   await ctx.close();

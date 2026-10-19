@@ -45,6 +45,6 @@ test("theme toggle persists across navigation", async ({ page }) => {
 test("language switch keeps the current page", async ({ page }) => {
   await page.goto("pricing/");
   await page.locator("a[hreflang=vi]").first().click();
-  await expect(page).toHaveURL(/\/sesslint\/vi\/pricing\/?$/);
+  await expect(page).toHaveURL(/\/vi\/pricing\/?$/);
   await expect(page.locator("html")).toHaveAttribute("lang", "vi");
 });

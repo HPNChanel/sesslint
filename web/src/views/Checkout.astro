@@ -2,17 +2,19 @@
 // Order summary. Static page: the order comes from the query string and is
 // priced in the browser by the same quote() used on /pricing. Collects no
 // personal data. Goes live once PUBLIC_CHECKOUT_* URLs are set at build.
+// Upgrades need the single-use code from the Plus receipt email (?code=…);
+// it is forwarded to the provider, which validates and redeems it.
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import { href, t, type Lang } from "../i18n";
-import { checkoutLinks, isLive } from "../lib/checkout";
+import { checkoutConfig, isLive } from "../lib/checkout";
 import { REPO_URL } from "../lib/repo";
 
 type Props = { lang: Lang };
 const { lang } = Astro.props;
 const d = t(lang);
-const links = checkoutLinks(import.meta.env as unknown as Record<string, string | undefined>);
-const live = isLive(links);
+const cfg = checkoutConfig(import.meta.env as unknown as Record<string, string | undefined>);
+const live = isLive(cfg);
 const strings = {
   names: d.pricing.names,
   credit: d.pricing.credit,
@@ -21,13 +23,16 @@ const strings = {
   giftTo: d.pricing.giftTo,
   you: d.pricing.you,
   recipient: d.pricing.recipient,
+  codeNeed: d.checkout.codeNeed,
+  codeBad: d.checkout.codeBad,
+  codeOk: d.checkout.codeOk,
 };
 ---
 
 <Base lang={lang} route="/checkout" title={d.checkout.title} section="CHECKOUT" noindex>
   <PageHead kicker="checkout --dry-run" title={d.checkout.title} />
   <div class="wrap grid">
-    <section class="order card" aria-labelledby="order-title" data-order data-strings={JSON.stringify(strings)} data-links={JSON.stringify(links)}>
+    <section class="order card" aria-labelledby="order-title" data-order data-strings={JSON.stringify(strings)} data-config={JSON.stringify(cfg)}>
       <h2 class="mono order-title" id="order-title">{d.checkout.lede}</h2>
       <dl class="rows mono">
         <div class="row"><dt data-o-billto>{d.pricing.billTo}</dt><dd data-o-who>{d.pricing.you}</dd></div>
@@ -36,6 +41,23 @@ const strings = {
         <div class="row credit" data-o-credit hidden><dt data-o-credit-label></dt><dd class="tnum" data-o-credit-amt></dd></div>
         <div class="row total"><dt>{d.pricing.total}</dt><dd class="tnum" data-o-due>$49.00</dd></div>
       </dl>
+      <div class="code" data-o-code hidden>
+        <label class="mono code-label" for="upgrade-code">{d.checkout.codeLabel}</label>
+        <input
+          id="upgrade-code"
+          class="mono code-input"
+          type="text"
+          data-o-code-input
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          maxlength="24"
+          placeholder="SLUP XXXX XXXX XXXX"
+          aria-describedby="code-status code-hint"
+        />
+        <p class="mono code-status" id="code-status" aria-live="polite" data-o-code-status></p>
+        <p class="code-hint" id="code-hint">{d.checkout.codeHint}</p>
+      </div>
       <p class="invalid" data-o-invalid hidden><span class="err mono">{d.checkout.invalid}</span> <span data-o-reason></span></p>
       {live ? (
         <a class="btn btn-primary proceed" data-o-proceed href="#">{d.checkout.proceed} →</a>
@@ -57,6 +79,7 @@ const strings = {
 
 <script>
   import { isTierId, quote, usd } from "../lib/pricing";
+  import { formatCode, isUpgrade, normalizeCode, resolveCheckout, type CheckoutConfig } from "../lib/checkout";
 
   const el = document.querySelector<HTMLElement>("[data-order]");
   if (el) {
@@ -68,8 +91,11 @@ const strings = {
       giftTo: string;
       you: string;
       recipient: string;
+      codeNeed: string;
+      codeBad: string;
+      codeOk: string;
     };
-    const links = JSON.parse(el.dataset.links ?? "{}") as Record<string, string>;
+    const cfg = JSON.parse(el.dataset.config ?? "{}") as CheckoutConfig;
     const qs = new URLSearchParams(location.search);
     const tierQ = qs.get("tier");
     const ownQ = qs.get("own");
@@ -99,15 +125,44 @@ const strings = {
       invalid.hidden = false;
       set("[data-o-reason]", S.reasons[q.reason] ?? "");
     }
+
     const proceed = el.querySelector<HTMLAnchorElement>("a[data-o-proceed]");
-    if (proceed) {
-      const url = q.allowed && q.sku ? links[q.sku] : undefined;
-      if (url) proceed.href = url;
-      else {
+    const box = $("[data-o-code]");
+    const input = el.querySelector<HTMLInputElement>("[data-o-code-input]");
+    const status = $("[data-o-code-status]");
+    const upgrade = isUpgrade(q);
+
+    const update = () => {
+      const r = resolveCheckout(q, cfg, input?.value ?? null);
+      if (status && upgrade) {
+        const msg =
+          r.kind === "bad-code" ? S.codeBad : r.kind === "need-code" ? S.codeNeed : S.codeOk.replace("{amount}", usd(q.creditCents));
+        status.textContent = msg;
+        status.dataset.state = r.kind === "bad-code" ? "e" : r.kind === "need-code" ? "" : "p";
+        input?.setAttribute("aria-invalid", String(r.kind === "bad-code"));
+      }
+      if (!proceed) return;
+      if (r.kind === "ready") {
+        proceed.href = r.url;
+        proceed.removeAttribute("aria-disabled");
+      } else {
         proceed.removeAttribute("href");
         proceed.setAttribute("aria-disabled", "true");
       }
+    };
+
+    if (box && input && upgrade) {
+      box.hidden = false;
+      const fromLink = qs.get("code");
+      if (fromLink) input.value = formatCode(normalizeCode(fromLink));
+      input.addEventListener("input", update);
+      input.addEventListener("blur", () => {
+        const n = normalizeCode(input.value);
+        if (n) input.value = formatCode(n);
+      });
     }
+    update();
+
     const back = el.querySelector<HTMLAnchorElement>("[data-o-back]");
     if (back) {
       const p = new URLSearchParams();
@@ -173,6 +228,50 @@ const strings = {
   }
   .invalid {
     font-size: 0.9rem;
+  }
+  .code {
+    display: grid;
+    gap: var(--s-2);
+    padding-top: var(--s-4);
+    border-top: 1px dashed var(--line);
+  }
+  .code[hidden] {
+    display: none;
+  }
+  .code-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .code-input {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    font: 500 1rem/1.4 var(--font-mono);
+    letter-spacing: 0.06em;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+  }
+  .code-input[aria-invalid="true"] {
+    border-color: var(--err);
+  }
+  .code-status {
+    min-height: 1.4em;
+    font-size: 0.82rem;
+    color: var(--dim);
+  }
+  .code-status[data-state="p"] {
+    color: var(--pass);
+  }
+  .code-status[data-state="e"] {
+    color: var(--err);
+  }
+  .code-hint {
+    font-size: 0.82rem;
+    color: var(--dim);
   }
   .proceed {
     width: 100%;

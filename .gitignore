@@ -75,3 +75,6 @@ agent_tasks/
 /docs/RELEASE_*.generated.md
 /docs/SANDBOX_*.md
 /docs/WINDOWS_ACCEPTANCE.md
+
+# Throwaway mkdocs override written by web/scripts/build_docs.mjs
+/.mkdocs.site.yml

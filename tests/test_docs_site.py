@@ -77,7 +77,9 @@ def test_workflow_builds_landing_with_docs_under_subpath() -> None:
     steps = wf["jobs"]["build"]["steps"]
     runs = "\n".join(s.get("run", "") for s in steps)
     assert "npm ci" in runs and "npm run build" in runs
-    assert "mkdocs build --site-dir web/dist/docs" in runs
+    assert "npm run docs" in runs and "npm run links" in runs
+    script = (REPO_ROOT / "web" / "scripts" / "build_docs.mjs").read_text(encoding="utf-8")
+    assert '"--site-dir", "web/dist/docs"' in script
     upload = next(s for s in steps if "upload-pages-artifact" in s.get("uses", ""))
     assert upload["with"]["path"] == "web/dist"
     cfg = yaml.safe_load(MKDOCS_YML.read_text(encoding="utf-8"))

@@ -21,7 +21,11 @@ export type Quote = {
   lines: Line[];
   allowed: boolean;
   reason: "ok" | "free" | "already-owned" | "not-giftable";
-  /** Checkout SKU, e.g. "max", "upgrade_plus_max", "gift_plus". */
+  /**
+   * Checkout SKU, e.g. "max", "upgrade_plus_max", "gift_plus". Upgrade SKUs
+   * have no link of their own: checkout.ts sends them to the target tier's
+   * checkout with the buyer's single-use upgrade code.
+   */
   sku: string | null;
 };
 

@@ -33,12 +33,12 @@ Review assurance/coverage and validate resume in the originating application.
 
 Publication status is determined by the public release and downloaded receipts,
 not this notes file or a local Git tag. During preparation, see
-[current completion evidence](COMPLETION_0.4.1.md) and the historical
-[initial delivery evidence](DELIVERY_0.4.1.md). Only Windows artifacts have been
+the maintainer-local completion evidence (`COMPLETION_0.4.1.md`) and the
+historical delivery evidence (`DELIVERY_0.4.1.md`). Only Windows artifacts have been
 tested locally. New adapters, desktop, native S2/S3,
 GHCR and package-manager activation remain outside this patch's release scope.
 
-The Windows delivery also includes a [portable acceptance kit](WINDOWS_ACCEPTANCE.md)
+The Windows delivery also includes a portable acceptance kit (`WINDOWS_ACCEPTANCE.md`)
 whose PowerShell runner needs no Python. It preserves failure logs and separates
 functional PASS from clean-machine qualification. The release pipeline verifies
 that its package and receipt match the exact EXE and starter-kit hashes.

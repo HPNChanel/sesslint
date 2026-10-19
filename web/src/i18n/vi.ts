@@ -233,7 +233,7 @@ export const vi: Dict = {
     groups: { core: "Lõi mã nguồn mở", plus: "Gói Plus", max: "Gói Max", license: "License" },
     feature: "Tính năng",
     upgradeMathTitle: "Cách tính tiền nâng cấp",
-    upgradeMath: "Bạn trả giá gói mới trừ đi số tiền đã trả. Plus → Max là $49 − $9 = $40.",
+    upgradeMath: "Bạn trả giá gói mới trừ đi số tiền đã trả. Plus → Max là $49 − $9 = $40, dùng mã nâng cấp một lần có trong email biên nhận Plus.",
     faqTitle: "Câu hỏi thường gặp",
     faq: [
       {
@@ -246,7 +246,7 @@ export const vi: Dict = {
       },
       {
         q: "Nâng cấp tính tiền thế nào?",
-        a: "Số tiền đã trả được khấu trừ. Plus → Max chỉ $40, không phải $49. Chọn “Tôi đã có: Plus” ở trên để xem giá của bạn.",
+        a: "Email biên nhận Plus có kèm một mã nâng cấp dùng một lần. Mở link nâng cấp trong email đó, hoặc chọn “Tôi đã có: Plus” ở trên rồi dán mã khi thanh toán: Max khi đó chỉ $40 thay vì $49. Mã này là cách chúng tôi biết bạn đã có Plus, nên không cần tài khoản hay đăng nhập.",
       },
       {
         q: "Mua quà tặng thế nào?",
@@ -285,6 +285,11 @@ export const vi: Dict = {
       ok: "",
     },
     proceed: "Tiếp tục tới trang thanh toán an toàn",
+    codeLabel: "Mã nâng cấp",
+    codeHint: "Mỗi email biên nhận Plus có một mã nâng cấp dùng một lần. Mã chứng minh bạn đã có Plus, và phần khấu trừ chỉ dùng được một lần. Mất email? Hãy trả lời email biên nhận Plus, chúng tôi sẽ gửi lại mã.",
+    codeNeed: "Nhập mã nâng cấp trong email biên nhận Plus để tiếp tục.",
+    codeBad: "Đây không phải mã nâng cấp SessLint. Mã bắt đầu bằng SLUP và có 16 ký tự.",
+    codeOk: "Mã đúng định dạng. Trang thanh toán sẽ kiểm tra mã và khấu trừ {amount} cho bạn.",
   },
   changelog: {
     title: "Changelog",

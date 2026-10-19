@@ -1,6 +1,6 @@
 import { test as base, expect } from "@playwright/test";
 
-/** Every page, both locales. Paths are relative to the /sesslint/ base. */
+/** Every page, both locales. Paths are relative to the site base. */
 export const ROUTES = ["", "download/", "pricing/", "checkout/?tier=max&own=plus", "changelog/", "rules/"] as const;
 export const ALL = ROUTES.flatMap((r) => [r, `vi/${r}`]);
 

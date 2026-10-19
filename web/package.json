@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "demo": "uv run --project .. python scripts/capture_demo.py",
-    "og": "node scripts/render_og.mjs"
+    "og": "node scripts/render_og.mjs",
+    "links": "node scripts/check_links.mjs",
+    "docs": "node scripts/build_docs.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "3.7.4",

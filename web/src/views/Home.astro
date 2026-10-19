@@ -8,7 +8,7 @@ import LiveRelease from "../components/LiveRelease.astro";
 import Receipt from "../components/Receipt.astro";
 import demo from "../data/demo.json";
 import { TIER_ORDER, TIERS } from "../data/tiers";
-import { href, t, type Lang } from "../i18n";
+import { absolute, href, t, type Lang } from "../i18n";
 import { released } from "../lib/changelog";
 import { DETECTOR_GROUPS, REPO_URL, commands, detectors, recipes } from "../lib/repo";
 import { site } from "../lib/site";
@@ -32,7 +32,6 @@ const pipe = pipeIds.map((id) => ({ id, ...h.pipe[id], step: demo.steps[id], lin
 const refuse = { ...demo.steps.refuse, lines: termLines(demo.steps.refuse.out, 110) };
 const blob = (p: string) => `${REPO_URL}/${p.includes(".") ? "blob" : "tree"}/main/${p}`;
 
-const site_ = Astro.site ?? new URL("https://hpnchanel.github.io");
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -42,7 +41,7 @@ const jsonLd = {
   operatingSystem: "Linux, macOS, Windows",
   softwareVersion: latest?.version ?? facts.packageVersion,
   license: "https://www.apache.org/licenses/LICENSE-2.0",
-  url: new URL(href(lang, "/"), site_).toString(),
+  url: absolute(href(lang, "/")),
   codeRepository: REPO_URL,
   offers: TIER_ORDER.map((id) => ({
     "@type": "Offer",

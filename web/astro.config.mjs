@@ -1,11 +1,10 @@
 // SessLint marketing site. Static output only: no server, no adapters.
-// SITE_URL / SITE_BASE let the same build target GitHub Pages
-// (https://hpnchanel.github.io/sesslint) or a custom domain later.
+// SITE_URL (see site.config.mjs) targets GitHub Pages or a custom domain.
 import { defineConfig } from "astro/config";
 import sitemap from "@astrojs/sitemap";
+import { siteLocation } from "./site.config.mjs";
 
-const site = process.env.SITE_URL ?? "https://hpnchanel.github.io";
-const base = process.env.SITE_BASE ?? "/sesslint";
+const { origin: site, base } = siteLocation();
 
 export default defineConfig({
   site,

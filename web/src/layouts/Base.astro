@@ -12,7 +12,7 @@ import "../styles/components.css";
 import StatusBar from "../components/StatusBar.astro";
 import StatusLine from "../components/StatusLine.astro";
 import CommandPalette from "../components/CommandPalette.astro";
-import { HTML_LANG, LANGS, href, routeOf, t, type Lang } from "../i18n";
+import { HTML_LANG, LANGS, absolute, asset, href, routeOf, t, type Lang } from "../i18n";
 
 type Props = {
   lang: Lang;
@@ -30,9 +30,8 @@ const { lang, title, description, route, section, jsonLd, noindex = false } = As
 const d = t(lang);
 const fullTitle = title ? `${title} · SessLint` : d.meta.title;
 const desc = description ?? d.meta.description;
-const site = Astro.site ?? new URL("https://hpnchanel.github.io");
-const canonical = new URL(href(lang, route), site).toString();
-const og = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/og.png`, site).toString();
+const canonical = absolute(href(lang, route));
+const og = absolute(asset("/og.png"));
 const current = routeOf(Astro.url.pathname);
 ---
 
@@ -43,11 +42,15 @@ const current = routeOf(Astro.url.pathname);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
     <meta name="description" content={desc} />
-    <link rel="canonical" href={canonical} />
-    {LANGS.map((l) => <link rel="alternate" hreflang={HTML_LANG[l]} href={new URL(href(l, route), site).toString()} />)}
-    <link rel="alternate" hreflang="x-default" href={new URL(href("en", route), site).toString()} />
-    <link rel="alternate" type="application/atom+xml" title="SessLint changelog" href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/changelog.xml`} />
-    <link rel="icon" href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/favicon.svg`} type="image/svg+xml" />
+    {!noindex && (
+      <>
+        <link rel="canonical" href={canonical} />
+        {LANGS.map((l) => <link rel="alternate" hreflang={HTML_LANG[l]} href={absolute(href(l, route))} />)}
+        <link rel="alternate" hreflang="x-default" href={absolute(href("en", route))} />
+      </>
+    )}
+    <link rel="alternate" type="application/atom+xml" title="SessLint changelog" href={asset("/changelog.xml")} />
+    <link rel="icon" href={asset("/favicon.svg")} type="image/svg+xml" />
     <meta name="theme-color" content="#0b0d0c" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f4f1e8" media="(prefers-color-scheme: light)" />
     {noindex && <meta name="robots" content="noindex" />}

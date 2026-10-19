@@ -46,7 +46,7 @@ Preserve all additional project-specific instructions.
 | `fixtures/` | Synthetic test fixtures, each with `PROVENANCE.json` |
 | `bench/` | Performance probes (`perf_250k.py` contract: 250k events / 100 MB) |
 | `packaging/`, `scripts/` | PyInstaller spec + `package.py` (build-time only, never shipped) |
-| `web/` | Static marketing site (Astro; landing, download, pricing, changelog from `CHANGELOG.md`). Node tooling only, never shipped, not runtime — gates: `npm run check`, `npm test`, `npm run build`, `npm run test:e2e` |
+| `web/` | Static marketing site (Astro; landing, download, pricing, changelog from `CHANGELOG.md`). Node tooling only, never shipped, not runtime — gates: `npm run check`, `npm test`, `npm run build`, `npm run docs`, `npm run links`, `npm run test:e2e`; see `web/README.md` |
 
 ## Required gates (all must pass)
 

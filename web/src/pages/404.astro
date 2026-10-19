@@ -1,6 +1,8 @@
 ---
 // GitHub Pages serves this for any unknown path. Suggestions are ranked in
 // the browser against the real route list (edit distance on the first segment).
+// 404.html answers every unknown path, so it has no URL of its own: route "/"
+// keeps the language switch pointing at a real page.
 import Base from "../layouts/Base.astro";
 import { asset, href, t } from "../i18n";
 
@@ -9,7 +11,7 @@ const routes = ["/", "/download", "/pricing", "/changelog", "/rules", "/docs/"];
 const known = routes.map((r) => ({ route: r, en: r === "/docs/" ? asset(r) : href("en", r), vi: r === "/docs/" ? null : href("vi", r) }));
 ---
 
-<Base lang="en" route="/404" title={d.notFound.title} section="ERROR" noindex>
+<Base lang="en" route="/" title={d.notFound.title} section="ERROR" noindex>
   <section class="wrap nf" aria-labelledby="nf-title">
     <div class="term">
       <div class="term-bar"><b>sesslint</b><span class="e">exit 2</span></div>

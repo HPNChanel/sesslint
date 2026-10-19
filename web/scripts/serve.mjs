@@ -1,13 +1,15 @@
 // Minimal static server for e2e: serves dist/ under the site base the way
 // GitHub Pages does (directory index.html, 404.html with status 404).
+// Serves under the SITE_URL path (site.config.mjs), "/" for a custom domain.
 // Usage: node scripts/serve.mjs [port]
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { siteLocation } from "../site.config.mjs";
 
 const root = fileURLToPath(new URL("../dist/", import.meta.url));
-const base = (process.env.SITE_BASE ?? "/sesslint").replace(/\/$/, "");
+const base = siteLocation().prefix;
 const port = Number(process.argv[2] ?? 4322);
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -33,7 +35,7 @@ function resolve(urlPath) {
 
 createServer((req, res) => {
   const path = new URL(req.url ?? "/", "http://x").pathname;
-  if (path === base) {
+  if (base && path === base) {
     res.writeHead(301, { Location: `${base}/` }).end();
     return;
   }

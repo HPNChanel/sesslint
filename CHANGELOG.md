@@ -11,11 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Project website in `web/` (Astro, static, English + Vietnamese): landing
   page, portable-binary downloads with Sigstore/SLSA verify steps, a rule
-  catalog, one-time pricing (Free / Plus / Max, upgrades credit the tier
-  already owned), and a changelog generated from this file with Atom/JSON
-  feeds. The Pages workflow now serves it at `/` with the mkdocs docs under
-  `/docs/`, and releases trigger a rebuild. The site is never shipped in the
-  wheel or sdist and sets no cookies or analytics.
+  catalog, one-time pricing (Free / Plus / Max), and a changelog generated
+  from this file with Atom/JSON feeds. Plus → Max upgrades cost the
+  difference and are proven by a single-use upgrade code from the Plus
+  receipt, so no account is needed. The Pages workflow now serves the site at
+  `/` with the mkdocs docs under `/docs/`, checks every internal link, and
+  rebuilds after each release; a `SITE_URL` repository variable moves it to a
+  custom domain. The site is never shipped in the wheel or sdist and sets no
+  cookies or analytics.
+
+### Fixed
+
+- `docs/RELEASE_0.4.1.md` no longer links to maintainer-local evidence files
+  that are not published, which were broken links on the docs site.
 
 ## [0.5.0] - 2026-10-19
 

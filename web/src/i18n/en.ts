@@ -230,7 +230,7 @@ export const en = {
     groups: { core: "Open-source core", plus: "Plus pack", max: "Max pack", license: "License" },
     feature: "Feature",
     upgradeMathTitle: "Upgrade math",
-    upgradeMath: "You pay the new tier minus what you already paid. Plus → Max costs $49 − $9 = $40.",
+    upgradeMath: "You pay the new tier minus what you already paid. Plus → Max costs $49 − $9 = $40, using the single-use upgrade code from your Plus receipt email.",
     faqTitle: "Questions",
     faq: [
       {
@@ -243,7 +243,7 @@ export const en = {
       },
       {
         q: "How does upgrading work?",
-        a: "Your previous purchase counts as credit. Plus → Max costs $40, not $49. Pick “I already own: Plus” above to see your price.",
+        a: "Your Plus receipt email includes a single-use upgrade code. Open the upgrade link in that email, or pick “I already own: Plus” above and paste the code at checkout: Max then costs $40, not $49. The code is how we know you own Plus, so there is no account to sign in to.",
       },
       {
         q: "How do gifts work?",
@@ -282,6 +282,11 @@ export const en = {
       ok: "",
     },
     proceed: "Continue to secure checkout",
+    codeLabel: "Upgrade code",
+    codeHint: "Every Plus receipt email carries a single-use upgrade code. It proves you own Plus, and the credit can be used once. Lost the email? Reply to your Plus receipt and we will resend it.",
+    codeNeed: "Enter the upgrade code from your Plus receipt to continue.",
+    codeBad: "That is not a SessLint upgrade code. It starts with SLUP and has 16 characters.",
+    codeOk: "Format looks right. The payment page checks the code and applies your {amount} credit.",
   },
   changelog: {
     title: "Changelog",

@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Receipt from "../components/Receipt.astro";
 import SectionHead from "../components/SectionHead.astro";
-import { href, t, type Lang } from "../i18n";
+import { absolute, href, t, type Lang } from "../i18n";
 import { FEATURES, TIERS, TIER_ORDER, type Feature } from "../data/tiers";
 import { usdShort } from "../lib/pricing";
 
@@ -17,14 +17,13 @@ const cell = (f: Feature, tier: (typeof TIER_ORDER)[number]) => {
   if (v === false) return { kind: "no", text: "—" };
   return { kind: "text", text: v[lang] };
 };
-const site = Astro.site ?? new URL("https://hpnchanel.github.io");
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "SessLint",
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Linux, macOS, Windows",
-  url: new URL(href(lang, "/"), site).toString(),
+  url: absolute(href(lang, "/")),
   offers: TIER_ORDER.map((id) => ({
     "@type": "Offer",
     name: `SessLint ${d.pricing.names[id]}`,
@@ -200,6 +199,9 @@ const labels = {
           const qs = new URLSearchParams({ tier });
           if (!gift && owned !== "free") qs.set("own", owned);
           if (gift) qs.set("gift", "1");
+          // An upgrade link from a Plus receipt may land here first; keep its code.
+          const code = new URLSearchParams(location.search).get("code");
+          if (code && !gift && q.creditCents > 0) qs.set("code", code);
           cta.href = `${checkout}?${qs.toString()}`;
         }
       }
