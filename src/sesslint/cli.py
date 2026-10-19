@@ -11,7 +11,7 @@ import secrets
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, TextIO, cast
 
 from sesslint import __version__
 from sesslint._version import get_version_info
@@ -32,6 +32,20 @@ FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "codex-rollout": "Codex rollout",
     "openai-agents": "OpenAI Agents",
 }
+
+# AC-02 / FR-098. Per-code lines, in order 0, 1, 2. ``--help``, the README,
+# man pages, the CI template, and the corruption guide must use these phrases.
+# There is no summary sentence above the list.
+CHECK_EXIT_LINES: Final[tuple[str, ...]] = (
+    "0  a clean session exits 0",
+    "1  a session with findings exits 1",
+    "2  an internal tool error exits 2",
+)
+CHECK_EXIT_NOTES: Final[tuple[str, ...]] = (
+    "(also verification passed / dry-run plan generated)",
+    "(also verification failed / repair refused)",
+    "(also usage error / invalid flags / I/O failure)",
+)
 
 
 def _handle_internal_error(err: Exception, args: argparse.Namespace | None = None) -> int:
@@ -571,9 +585,11 @@ def create_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Exit codes:\n"
-            "  0  Healthy session / verification passed / dry-run plan generated\n"
-            "  1  Integrity findings detected / verification failed / repair refused\n"
-            "  2  Usage error / invalid flag combination / I/O failure\n\n"
+            + "".join(
+                f"  {line}\n     {note}\n"
+                for line, note in zip(CHECK_EXIT_LINES, CHECK_EXIT_NOTES, strict=True)
+            )
+            + "\n"
             "Important Notes:\n"
             "  - redaction is best-effort minimization, not a completeness guarantee\n"
             "  - sesslint makes no semantic or side-effect safety claims"
@@ -3292,6 +3308,107 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
     return 0
 
 
+class _CountingStream(io.TextIOBase):
+    """Count text written to a wrapped stream (AC-03 JSON error guard)."""
+
+    def __init__(self, raw: TextIO) -> None:
+        super().__init__()
+        self.raw = raw
+        self.chunks: list[str] = []
+
+    def write(self, s: str) -> int:
+        self.chunks.append(s)
+        written = self.raw.write(s)
+        return len(s) if not isinstance(written, int) else written
+
+    def flush(self) -> None:
+        self.raw.flush()
+
+    def isatty(self) -> bool:
+        return self.raw.isatty()
+
+    def fileno(self) -> int:
+        return self.raw.fileno()
+
+    def writable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return False
+
+    def nonempty(self) -> bool:
+        return bool("".join(self.chunks).strip())
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.raw, name)
+
+
+class _TeeStream(io.TextIOBase):
+    """Forward writes while retaining a copy for the JSON error envelope."""
+
+    def __init__(self, raw: TextIO) -> None:
+        super().__init__()
+        self.raw = raw
+        self.chunks: list[str] = []
+
+    def write(self, s: str) -> int:
+        self.chunks.append(s)
+        written = self.raw.write(s)
+        return len(s) if not isinstance(written, int) else written
+
+    def flush(self) -> None:
+        self.raw.flush()
+
+    def isatty(self) -> bool:
+        return self.raw.isatty()
+
+    def fileno(self) -> int:
+        return self.raw.fileno()
+
+    def writable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return False
+
+    def text(self) -> str:
+        return "".join(self.chunks)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.raw, name)
+
+
+def _argv_wants_json(argv: Sequence[str]) -> bool:
+    """True when the raw argv selects JSON stdout (``--json`` or ``--output-format json``)."""
+    for index, token in enumerate(argv):
+        if token == "--json":
+            return True
+        if token == "--output-format=json":
+            return True
+        if token == "--output-format" and index + 1 < len(argv) and argv[index + 1] == "json":
+            return True
+    return False
+
+
+def _json_error_line(message: str) -> str:
+    """One ASCII JSON object for an operational CLI failure (AC-03)."""
+    safe = message.encode("utf-8", errors="backslashreplace").decode("utf-8")
+    return json.dumps(
+        {"code": "ERROR", "message": safe, "verdict": "error"},
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+
+
+def _system_exit_code(exc: SystemExit) -> int:
+    status = exc.code
+    if status is None:
+        return 0
+    if isinstance(status, int):
+        return status
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point returning exit code with top-level safety guarantees."""
     # T-12: redirected Windows streams otherwise use the legacy ANSI code page.
@@ -3302,23 +3419,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
     parser = create_parser()
-    args = parser.parse_args(argv)
-
+    raw = list(sys.argv[1:] if argv is None else argv)
+    wants_json = _argv_wants_json(raw)
+    previous_out = sys.stdout
+    previous_err = sys.stderr
+    counter: _CountingStream | None = None
+    tee: _TeeStream | None = None
+    code = 2
     try:
-        return _dispatch_command(args, parser)
-    except KeyboardInterrupt:
-        print("Operation cancelled by user", file=sys.stderr)
-        return 130
-    except OperationCancelled:
-        # Cooperative cancellation keeps the same CLI exit semantics as
-        # Ctrl+C (DW-T-13): cleanup already ran inside the callee.
-        print("Operation cancelled", file=sys.stderr)
-        return 130
-    except FileNotFoundError as err:
-        print(f"Error: {err}", file=sys.stderr)
-        return 2
-    except Exception as err:
-        return _handle_internal_error(err, args)
+        if wants_json:
+            counter = _CountingStream(previous_out)
+            tee = _TeeStream(previous_err)
+            sys.stdout = cast(TextIO, counter)
+            sys.stderr = cast(TextIO, tee)
+        try:
+            args = parser.parse_args(raw)
+            try:
+                code = _dispatch_command(args, parser)
+            except KeyboardInterrupt:
+                print("Operation cancelled by user", file=sys.stderr)
+                code = 130
+            except OperationCancelled:
+                # Cooperative cancellation keeps the same CLI exit semantics as
+                # Ctrl+C (DW-T-13): cleanup already ran inside the callee.
+                print("Operation cancelled", file=sys.stderr)
+                code = 130
+            except FileNotFoundError as err:
+                print(f"Error: {err}", file=sys.stderr)
+                code = 2
+            except Exception as err:
+                code = _handle_internal_error(err, args)
+        except SystemExit as exc:
+            code = _system_exit_code(exc)
+            raise
+        return code
+    finally:
+        if counter is not None and tee is not None:
+            sys.stdout = previous_out
+            sys.stderr = previous_err
+            # AC-03: a --json consumer must be able to json.loads(stdout) on
+            # every error exit. Cancellation (130) stays stderr-only so an
+            # interrupted run is never a complete document. Branches that
+            # already wrote a report or an internal-error envelope are left
+            # untouched.
+            if code not in (0, 130) and not counter.nonempty():
+                message = tee.text().strip() or "command failed"
+                print(_json_error_line(message), file=previous_out)
 
 
 if __name__ == "__main__":
