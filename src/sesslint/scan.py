@@ -726,8 +726,10 @@ def _scan_single_source(
 #
 # Worker pool contract: the parent resolves the file list and all caps during
 # the sequential walk; workers only run _scan_single_file and return wire
-# payloads. Results merge in submission order and the final report sorts by
-# path, so output bytes are identical to jobs=1.
+# payloads. The pool is created with an explicit spawn context (see the
+# dispatch site) so it never inherits the POSIX fork default. Results merge
+# in submission order and the final report sorts by path, so output bytes
+# are identical to jobs=1.
 _WORKER_KWARGS: dict[str, Any] | None = None
 
 
@@ -813,9 +815,12 @@ def scan_path(
     is an extension allowlist (``.jsonl``/``jsonl``) applied to files only;
     non-matching files are out of scope and never probed. Both filters apply
     to directory walks only, never to an explicitly named path.
-    ``jobs`` > 1 dispatches per-file analysis to a worker pool while the walk,
-    caps, and merge stay in the parent — report bytes are identical to
-    ``jobs=1``. Single-file input always runs inline regardless of ``jobs``.
+    ``jobs`` > 1 dispatches per-file analysis to a ``spawn`` worker pool while
+    the walk, caps, and merge stay in the parent — report bytes are identical
+    to ``jobs=1``. The start method is explicit so a caller that already has
+    threads cannot inherit the POSIX ``fork`` default (fork through 3.13,
+    forkserver in 3.14). Single-file input always runs inline regardless of
+    ``jobs``.
     ``incremental`` enables an opt-in sqlite result cache (perf-scale T-02):
     files whose content hash and analysis fingerprint match a stored row
     replay their cached result with ``cache_hit=True`` instead of
@@ -1293,6 +1298,7 @@ def scan_path(
     if pending_files:
         # Lazy import: multiprocessing pulls in socket — importing it eagerly
         # would load network modules at `import sesslint` time (test_no_network_imports).
+        import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
 
         worker_cfg: dict[str, Any] = {
@@ -1307,8 +1313,15 @@ def scan_path(
         }
         paths = [str(p) for p, _, _ in pending_files]
         chunk = max(1, min(256, len(paths) // (jobs * 8) or 1))
+        # Spawn, not the POSIX default. fork (the default through 3.13) copies
+        # the parent address space and can deadlock when scan_path(jobs>1) runs
+        # inside an already-threaded process — an MCP server, a file watcher,
+        # or an IDE. Python 3.14 changes that default to forkserver; pinning
+        # spawn keeps one safe method on every platform, including Windows.
+        # The initializer's config is a plain dict, so the worker pickles.
         pool = ProcessPoolExecutor(
             max_workers=jobs,
+            mp_context=multiprocessing.get_context("spawn"),
             initializer=_init_scan_worker,
             initargs=(worker_cfg,),
         )
