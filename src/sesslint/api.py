@@ -1172,6 +1172,10 @@ def doctor_report(
     session-root diagnostics (existence, bounded file counts, newest mtime,
     quick verdicts on the newest files). Counts and timestamps only —
     never file names or payloads.
+
+    Raises:
+        ConfigError: the nearest ``pyproject.toml`` contains
+            ``[tool.sesslint`` but cannot be parsed.
     """
     from sesslint.doctor import doctor_report as _doctor_report
 

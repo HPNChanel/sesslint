@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes nothing; `--upgrade` announces the destination before writing the
   upgraded baseline (stdout or `--output`).
 
+- A JSONL record containing a lone Unicode surrogate (for example `\ud800`)
+  is reported as SL001 or SL002 instead of aborting the check. Titles stay
+  `Malformed record` and `Torn terminal record`. The Why line is `line N
+  contains an invalid Unicode character (lone surrogate, e.g. \ud800), so it
+  cannot be parsed as a session record. The file was not truncated.` Other
+  malformed and torn records keep their existing wording. With `--json`,
+  every error exit — including a missing input file — writes one JSON object
+  to stdout.
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.
 - Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction
@@ -65,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `check` exit codes are stated per code, in order: `0` a clean session
+  exits 0, `1` a session with findings exits 1, `2` an internal tool error
+  exits 2 (`--help`, README, man pages).
 - Prepare 0.4.1 with API/schema v1 and existing exit codes. Publication remains
   a separate action; local tags and local evidence do not establish a release.
 - GHCR and package-manager templates are prepared channels only.

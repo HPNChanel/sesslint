@@ -91,6 +91,7 @@ from sesslint.io import (
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
+    decode_error_message_template,
     decode_json_dupaware,
     dup_key_findings,
     extract_record_id,
@@ -1207,13 +1208,9 @@ def _process_jsonl_line(
             )
         )
         return seen_version_sl301, False, None
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = decode_error_message_template(err, terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,

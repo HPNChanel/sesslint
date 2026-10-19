@@ -2248,7 +2248,9 @@ def render_human(
             # SL001 tail enrichment (detector-depth T-01): quantify the
             # vendor-invisible tail on the first malformed record. "may be" —
             # stop-at-first-error loader behavior varies by vendor version.
-            if f.code == "SL001" and f.evidence is not None:
+            # A lone surrogate keeps its approved Why sentence verbatim.
+            surrogate_why = "lone surrogate, e.g." in (f.message_template or "")
+            if f.code == "SL001" and not surrogate_why and f.evidence is not None:
                 f_rec = f.evidence.get("following_complete_records")
                 f_by = f.evidence.get("following_bytes")
                 if (

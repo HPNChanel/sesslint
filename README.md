@@ -676,14 +676,14 @@ sesslint bundle <path> [OPTIONS]
 
 ### Exit Codes
 
-SessLint implements predictable, POSIX-compliant exit code semantics:
+SessLint implements predictable, POSIX-compliant exit code semantics.
 
-| Exit Code | Meaning               | Condition                                                                                     |
-| :-------: | :-------------------- | :-------------------------------------------------------------------------------------------- |
-|    `0`    | **Success**           | Clean check, or repair successfully executed, validated, and manifested.                      |
-|    `1`    | **Finding / Refusal** | Diagnostic errors found, repair plan blocked, or execution refused (TOCTOU, `SL203`).         |
-|    `2`    | **Operational Error** | CLI syntax error, file not found, permission denied, or live DB path refusal.                 |
-|   `130`   | **Cancelled**         | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up. |
+| Exit Code | Meaning                 | Condition                                                                              |
+| :-------: | :---------------------- | :------------------------------------------------------------------------------------- |
+|    `0`    | **Clean session**       | a clean session exits 0 (also verification passed / dry-run plan generated)           |
+|    `1`    | **Findings**            | a session with findings exits 1 (also verification failed / repair refused)           |
+|    `2`    | **Internal tool error** | an internal tool error exits 2 (also usage error / invalid flags / I/O failure)       |
+|   `130`   | **Cancelled**           | Interrupted via Ctrl+C or a cooperative cancellation request; partial outputs are cleaned up. |
 
 ---
 
@@ -693,7 +693,11 @@ SessLint reads project defaults from `[tool.sesslint]` in `sesslint.toml`,
 `.sesslint.toml`, or `pyproject.toml`, discovered by walking upward from the
 working directory (ruff-style). Explicit `--config PATH` overrides discovery.
 Precedence is **CLI flag > config file > built-in default**; unknown keys and
-invalid values fail closed with exit 2.
+invalid values fail closed with exit 2. A `pyproject.toml` that contains the
+literal marker `[tool.sesslint` but is not valid TOML or UTF-8 also fails
+closed (exit 2) and is never replaced by a parent config. A `pyproject.toml`
+with no `[tool.sesslint` marker is not a sesslint config: if that file is
+unreadable or fails to parse, discovery skips it and keeps walking.
 
 ```toml
 #:schema https://raw.githubusercontent.com/HPNChanel/sesslint/main/schemas/sesslint-config.schema.json
@@ -701,7 +705,7 @@ invalid values fail closed with exit 2.
 profile = "neutral"            # neutral | claude-strict | openai-strict
 format = "auto"                # auto | canonical | claude | claude-code-jsonl | codex | codex-rollout | openai | openai-agents
 fail_on = "error"              # error | warning
-ignore = ["SL107"]             # list of rule codes; use select = [...] to allow-list instead
+ignore = ["SL107"]             # rule codes to skip; mutually exclusive with select
 policy = "conservative"        # repair only: conservative | salvage
 exclude = ["vendor/*", "*.log"]
 ext = ["jsonl"]
