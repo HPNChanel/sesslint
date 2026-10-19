@@ -37,6 +37,10 @@ function Optional($Object, [string]$Name, $Default) {
 }
 function Field($Object, [string]$Name) {
     foreach ($part in $Name.Split('.')) {
+        if ($Object -is [System.Array]) {
+            $Object = $Object[[int]$part]
+            continue
+        }
         $property = $Object.PSObject.Properties[$part]
         if ($null -eq $property) { throw "Missing result field: $Name" }
         $Object = $property.Value
@@ -45,6 +49,13 @@ function Field($Object, [string]$Name) {
 }
 function Json($Value) { return ConvertTo-Json -InputObject $Value -Depth 100 -Compress }
 function Require([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
+function Snapshot([string]$Root) {
+    return (@(Get-ChildItem -LiteralPath $Root -Recurse -Force | Sort-Object FullName | ForEach-Object {
+        $relative = $_.FullName.Substring($Root.Length)
+        if ($_.PSIsContainer) { 'D ' + $relative }
+        else { 'F ' + $relative + ' ' + (Hash $_.FullName) + ' ' + $_.LastWriteTimeUtc.Ticks }
+    }) -join "`n")
+}
 function Quote-Argument([string]$Value) {
     # Windows CommandLineToArgvW quoting, including quotes and trailing backslashes.
     return '"' + [regex]::Replace([regex]::Replace($Value, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'
@@ -54,7 +65,7 @@ try {
     $manifest = Read-Json (Join-Path $PackageRoot 'windows-acceptance.json')
     Require ($manifest.schema_version -eq 1) 'Unsupported package manifest.'
     Require ($manifest.version -match '^\d+\.\d+\.\d+$') 'Invalid package version.'
-    foreach ($required in @($manifest.binary, $manifest.starter_kit, 'Test-SessLint.ps1', 'START_HERE.md', 'kit/VERSION', 'kit/smoke-contract.json', 'kit/LICENSE', 'kit/NOTICE', 'kit/QUICKSTART.md', 'kit/VERIFYING.md')) {
+    foreach ($required in @($manifest.binary, $manifest.starter_kit, 'Test-SessLint.ps1', 'START_HERE.md', 'kit/VERSION', 'kit/smoke-contract.json', 'kit/LICENSE', 'kit/NOTICE', 'kit/QUICKSTART.md', 'kit/VERIFYING.md', 'kit/TRIAGE.md', 'kit/examples/unsupported.txt')) {
         Require ($null -ne $manifest.files.PSObject.Properties[$required]) ('Missing checksum entry: ' + $required)
     }
     foreach ($entry in $manifest.files.PSObject.Properties) {
@@ -87,8 +98,8 @@ try {
     $relocated = Join-Path $work $manifest.binary
     [IO.File]::Copy($binary, $relocated, $false)
     $contract = Read-Json (Join-Path $work 'smoke-contract.json')
-    Require ($contract.schema_version -eq 1 -and $contract.cases.Count -eq 32) 'Invalid smoke contract.'
-    Require (@($contract.cases.id | Select-Object -Unique).Count -eq 32) 'Duplicate case IDs.'
+    Require ($contract.schema_version -eq 1 -and $contract.cases.Count -eq 40) 'Invalid smoke contract.'
+    Require (@($contract.cases.id | Select-Object -Unique).Count -eq 40) 'Duplicate case IDs.'
     $receipt.contract_sha256 = Hash (Join-Path $work 'smoke-contract.json')
     foreach ($copy in $contract.copies) {
         $target = Inside $work $copy[1]
@@ -107,6 +118,8 @@ try {
     foreach ($original in $contract.cases) {
         $case = (Json $original).Replace('{work}', $work.Replace('\','/')).Replace('{version}', $manifest.version) | ConvertFrom-Json
         Require ($case.id -match '^[a-z0-9-]+$') 'Invalid case ID.'
+        $noWrites = Optional $case 'no_writes' $false
+        $unchanged = if ($noWrites) { Snapshot $work } else { $null }
         $info = New-Object Diagnostics.ProcessStartInfo
         $info.FileName = $relocated
         $info.Arguments = (@($case.args | ForEach-Object { Quote-Argument $_ }) -join ' ')
@@ -119,7 +132,7 @@ try {
         $info.StandardOutputEncoding = $utf8
         $info.StandardErrorEncoding = $utf8
         foreach ($key in @($info.EnvironmentVariables.Keys)) {
-            if ($key -match '^(PYTHON|COVERAGE)') { $info.EnvironmentVariables.Remove($key) }
+            if ($key -match '^(PYTHON|COVERAGE|SESSLINT_)') { $info.EnvironmentVariables.Remove($key) }
         }
         foreach ($key in $isolated.Keys) { $info.EnvironmentVariables[$key] = $isolated[$key] }
         $info.EnvironmentVariables['PATH'] = Join-Path $env:SystemRoot 'System32'
@@ -174,13 +187,14 @@ try {
             foreach ($response in $responses) { Require ($null -ne $response.PSObject.Properties['result'] -and $null -eq $response.PSObject.Properties['error']) 'MCP request failed.' }
             Require ($responses[-1].result.isError -eq $false) 'MCP check failed.'
         }
+        if ($noWrites) { Require ((Snapshot $work) -ceq $unchanged) ('Command wrote to work directory: ' + $case.id) }
         $outputs[$case.id] = $output
         $receipt.checks += [ordered]@{ id = $case.id; command = $case.args; exit_code = $exitCode }
     }
     foreach ($name in $before.Keys) { Require ((Hash (Inside $work ('examples/' + $name))) -ceq $before[$name]) 'Source mutated.' }
     $receipt.source_immutable = $true
     $receipt.status = 'PASS'
-    Write-Output 'PASS: 32 CLI cases; clean-machine qualification requires separate evidence.'
+    Write-Output 'PASS: 40 CLI cases; clean-machine qualification requires separate evidence.'
 }
 catch {
     $receipt.error = $_.Exception.Message

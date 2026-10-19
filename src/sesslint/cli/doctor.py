@@ -60,14 +60,19 @@ def configure(
 
 
 def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    from sesslint.config import ConfigError
     from sesslint.doctor import doctor_report
 
     agent = getattr(args, "agent", None)
     agents = None if agent in (None, "all") else [agent]
-    diag = doctor_report(
-        agents=agents,
-        quick_checks=not getattr(args, "no_quick_checks", False),
-    )
+    try:
+        diag = doctor_report(
+            agents=agents,
+            quick_checks=not getattr(args, "no_quick_checks", False),
+        )
+    except ConfigError as err:
+        ctx.error(f"Error: {err}")
+        return 2
     if _output_format(args) == "json":
         emit_text(ctx, args, diag.to_json(), summary="doctor report")
     else:

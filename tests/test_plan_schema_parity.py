@@ -50,5 +50,6 @@ def test_all_schemas_are_valid_draft_202012() -> None:
 
     paths = sorted((SOURCE.parents[3] / "schemas").glob("*.json"))
     assert len(paths) == 17
+    assert "sesslint.triage.v1.json" in {path.name for path in paths}
     for path in paths:
         Draft202012Validator.check_schema(json.loads(path.read_text(encoding="utf-8")))

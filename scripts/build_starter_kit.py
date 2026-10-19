@@ -23,10 +23,12 @@ def build(target: Path, version: str) -> None:
     files: dict[str, bytes] = {
         "QUICKSTART.md": (ROOT / "docs/STARTER_KIT.md").read_bytes(),
         "VERIFYING.md": (ROOT / "docs/VERIFYING.md").read_bytes(),
+        "TRIAGE.md": (ROOT / "docs/TRIAGE.md").read_bytes(),
         "LICENSE": (ROOT / "LICENSE").read_bytes(),
         "NOTICE": (ROOT / "NOTICE").read_bytes(),
         "smoke-contract.json": (ROOT / "scripts/smoke_contract.json").read_bytes(),
         "VERSION": (version + "\n").encode(),
+        "examples/unsupported.txt": b"Synthetic unsupported artifact for offline triage.\n",
         "examples/PROVENANCE.json": json.dumps(
             {
                 "origin": "synthetic",
@@ -39,9 +41,25 @@ def build(target: Path, version: str) -> None:
         + b"\n",
         "examples/expected.json": json.dumps(
             {
-                "healthy.jsonl": {"check_exit": 0, "findings": []},
-                "repairable.jsonl": {"check_code": "SL003", "repair_exit": 0},
-                "refused.json": {"check_code": "SL203", "repair_creates_output": False},
+                "healthy.jsonl": {
+                    "check_exit": 0,
+                    "findings": [],
+                    "triage_status": "checked",
+                    "triage_exit": 0,
+                },
+                "repairable.jsonl": {
+                    "check_code": "SL003",
+                    "repair_exit": 0,
+                    "triage_status": "checked",
+                    "triage_exit": 0,
+                },
+                "refused.json": {
+                    "check_code": "SL203",
+                    "repair_creates_output": False,
+                    "triage_status": "blocked",
+                    "triage_exit": 1,
+                },
+                "unsupported.txt": {"triage_status": "unsupported", "triage_exit": 1},
             },
             indent=2,
             sort_keys=True,

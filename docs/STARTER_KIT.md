@@ -7,11 +7,11 @@ binary for your OS and CPU runs without a separately installed Python.
 
 ## Install and identify the version
 
-After publication, install `python -m pip install sesslint==0.4.1` (next release).
+After publication, install `python -m pip install sesslint==0.5.0` (next release).
 For a candidate, use the supplied wheel:
 
 ```text
-python -m pip install /path/to/sesslint-0.4.1-py3-none-any.whl
+python -m pip install /path/to/sesslint-0.5.0-py3-none-any.whl
 sesslint version --json
 ```
 
@@ -22,23 +22,41 @@ GHCR, Homebrew and Scoop templates are preparation only.
 PowerShell binary users can define a local wrapper with their actual filename:
 
 ```powershell
-function sesslint { & "$PWD\sesslint-0.4.1-windows-x86_64.exe" @args }
-Get-FileHash .\sesslint-0.4.1-windows-x86_64.exe -Algorithm SHA256
+$SessLint = (Resolve-Path .\sesslint-0.5.0-windows-x86_64.exe).Path
+function sesslint { & $SessLint @args }
+Get-FileHash $SessLint -Algorithm SHA256
 ```
 
 POSIX binary users can use a shell function (choose your OS/CPU asset):
 
 ```sh
-chmod +x ./sesslint-0.4.1-linux-x86_64
-sesslint() { ./sesslint-0.4.1-linux-x86_64 "$@"; }
-sha256sum ./sesslint-0.4.1-linux-x86_64
-# macOS: shasum -a 256 ./sesslint-0.4.1-macos-arm64
+chmod +x ./sesslint-0.5.0-linux-x86_64
+sesslint() { ./sesslint-0.5.0-linux-x86_64 "$@"; }
+sha256sum ./sesslint-0.5.0-linux-x86_64
+# macOS: shasum -a 256 ./sesslint-0.5.0-macos-arm64
 ```
 
 Sigstore bundles accompany release files. Verify them with cosign using the
 repository's release workflow identity and GitHub Actions OIDC issuer, as detailed
 in [VERIFYING.md](VERIFYING.md). Sigstore signing is distinct from Windows Authenticode or macOS
 notarization; do not assume the latter unless explicitly recorded for that asset.
+
+## Diagnose before repair
+
+See [TRIAGE.md](TRIAGE.md) for three synthetic walkthroughs covering healthy,
+repairable, refused and unsupported inputs. These commands do not apply a repair:
+
+```sh
+sesslint triage examples/healthy.jsonl --format json
+sesslint triage examples/repairable.jsonl --format json
+sesslint triage examples/refused.json --format json
+sesslint triage examples/unsupported.txt --format json
+```
+
+The first two return 0. The repairable fixture has warning SL003 and an unapplied
+two-step preview, so `checked` does not mean no warnings exist. Refused and
+unsupported return 1; the unsupported report has no repair previews. Repeating
+the same command over unchanged bytes produces the same JSON.
 
 ## Check, review a plan, repair a copy, verify
 
@@ -73,18 +91,26 @@ before removing persisted copies; this tool does not automatically redact it.
 
 ## Formats, profiles and reports
 
-`sesslint formats --json` lists supported formats. `version --json` lists profiles.
-Use `--format canonical`, `claude-code-jsonl`, `codex-rollout`, or `openai-agents`
+<!-- next-release -->
+
+`sesslint doctor --no-quick-checks --format json` lists supported adapters.
+`version --json` lists adapters and profiles.
+Use `--adapter canonical`, `claude-code-jsonl`, `codex-rollout`, or `openai-agents`
 to make detection explicit. Auto is the default. Profiles (`neutral`,
 `claude-strict`, `openai-strict`) tune validation; they cannot prove replay success.
 
 ```sh
-sesslint check examples/codex.jsonl --format codex-rollout --profile neutral --json
-sesslint check examples/claude.jsonl --format claude-code-jsonl --profile claude-strict --json
-sesslint check examples/openai.json --format openai-agents --profile openai-strict --json
-sesslint check examples/repairable.jsonl --output-format sarif
-sesslint check examples/repairable.jsonl --output-format html
+sesslint check examples/codex.jsonl --adapter codex-rollout --profile neutral --json
+sesslint check examples/claude.jsonl --adapter claude-code-jsonl --profile claude-strict --json
+sesslint check examples/openai.json --adapter openai-agents --profile openai-strict --json
+sesslint check examples/repairable.jsonl --format sarif
+sesslint check examples/repairable.jsonl --format html
 ```
+
+`--format` selects report output on commands that offer it; `repair` and
+`verify` use `--json` for their JSON output. `-o/--output` on a report command
+writes its report instead of printing the full document. For repair, it names
+the repaired session copy.
 
 Default reports exclude transcript payloads. Paths and structural identifiers may
 remain; review before sharing. Do not use `--include-content` with sensitive inputs.
@@ -100,6 +126,8 @@ from pathlib import Path
 from sesslint import api
 
 source = Path("examples/repairable.jsonl")
+triage = api.triage(source)
+assert all(not preview["applied"] for preview in triage.previews)
 report = api.check_file(source)
 plan = api.plan_repair(source)
 if plan.blocked:
@@ -117,14 +145,16 @@ exactly-once external effects, or guaranteed resume in another application.
 
 ## Automated Windows acceptance
 
-The separate `sesslint-0.4.1-acceptance-windows.zip` contains the EXE and a
+The separate `sesslint-0.5.0-acceptance-windows.zip` contains the EXE and a
 PowerShell 5.1+ runner. After verifying and extracting that package, run:
 
 ```powershell
 .\Test-SessLint.ps1 -PackageRoot . -ReceiptPath "$PWD\acceptance.json"
 ```
 
-All 32 CLI cases must pass and source hashes must remain unchanged. Receipts bind
+All 40 CLI cases must pass and source hashes must remain unchanged. Receipts bind
 the exact EXE/kit/contract hashes; logs and synthetic work files are retained.
+Eight cases cover the four triage outcomes and byte-identical repeats, including
+work-directory snapshots that reject source changes or added/removed artifacts.
 This uses no Python and changes no system settings. A functional PASS on a
 development machine does not establish clean-Windows or published-release proof.

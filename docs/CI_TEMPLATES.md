@@ -1,6 +1,6 @@
 # CI Templates
 
-These templates target 0.4.1 (next release). Select a published version before using them in production.
+These templates target 0.5.0 (next release). Select a published version before using them in production.
 
 Copy-paste pipeline snippets for platforms without a native SessLint
 action — GitLab CI, Azure Pipelines, CircleCI. GitHub users should use the
@@ -10,8 +10,10 @@ Conventions shared by every template below:
 
 - **Pinned install**: `pip install sesslint==X.Y.Z` — never a floating
   `latest`; bump deliberately.
-- **Exit codes**: `0` clean · `1` findings at or above `--fail-on`
-  threshold · `2` usage/I-O error. CI steps fail naturally on `1`.
+- **Exit codes**: `0` a clean session exits 0 (also verification passed / dry-run plan generated).
+  `1` a session with findings exits 1 (also verification failed / repair refused).
+  `2` an internal tool error exits 2 (also usage error / invalid flags / I/O failure).
+  CI steps fail naturally on `1`.
 <!-- next-release -->
 - **Flags**: `--fail-on error|warning`, `--format human|json|sarif|html`,
   `--profile`, `--adapter`, `--select`, `--ignore`, `--baseline`,
@@ -30,7 +32,7 @@ sesslint-check:
   stage: test
   image: python:3.12-slim
   script:
-    - pip install sesslint==0.4.1  # next release
+    - pip install sesslint==0.5.0  # next release
     - sesslint check sessions/ --format json --fail-on error > sesslint-report.json
   artifacts:
     when: always
@@ -51,7 +53,7 @@ steps:
     inputs:
       versionSpec: "3.12"
   - script: |
-      pip install sesslint==0.4.1  # next release
+      pip install sesslint==0.5.0  # next release
       sesslint check sessions/ --format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
     displayName: "Run SessLint integrity scan"
   - task: PublishBuildArtifacts@1
@@ -78,7 +80,7 @@ jobs:
       - checkout
       - run:
           name: "Install SessLint (pinned)"
-          command: pip install sesslint==0.4.1  # next release
+          command: pip install sesslint==0.5.0  # next release
       - run:
           name: "Run integrity scan"
           command: sesslint check sessions/ --format json --fail-on error > sesslint-report.json
@@ -116,6 +118,6 @@ satisfy that check.
 | `skip-undetected` | `--skip-undetected` | — |
 | `config` | `--config` | — |
 | `output-format` | `--format` | `json` (redirect to artifact) |
-| `package` / `source-ref` | install line | `sesslint==0.4.1` | (next release)
+| `package` / `source-ref` | install line | `sesslint==0.5.0` | (next release)
 | `python-version` | runner image | `3.12` |
 | `sarif` output | `--format sarif` | redirect to artifact file |

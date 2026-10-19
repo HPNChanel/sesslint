@@ -299,7 +299,7 @@ def _emit_check_report(
         adapter=format_display,
         profile=report.coverage.profile.get("id", profile_opt),
     )
-    if not has_error and not ctx.quiet:
+    if not has_error and report.counts.by_severity.get("warning", 0) == 0 and not ctx.quiet:
         human_text = f"Valid {format_display} session\n" + human_text
     emit_text(ctx, args, human_text, inputs=inputs, summary=summary)
     return exit_code

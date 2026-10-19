@@ -55,6 +55,7 @@ from sesslint.io import (
     _RawLine,
     check_nesting_depth,
     decode_defect_code,
+    decode_error_message_template,
     decode_json_dupaware,
     defect_evidence,
     dup_key_findings,
@@ -729,12 +730,12 @@ def _load_openai_agents_json(
         doc, dup_keys, dups_truncated = decode_json_dupaware(
             decoded_text.strip(), critical_keys=CRITICAL_KEYS
         )
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         finding = make_finding(
             code=SL001,
             severity=Severity.ERROR,
             repairability=Repairability.MANUAL,
-            message_template="Malformed record on line {line} for record {record_id}",
+            message_template=decode_error_message_template(err, terminal=False),
             source=SourceRef(path=path_str, line=1, record_id=None),
             evidence={"reason": "malformed_json"},
         )
@@ -1127,15 +1128,11 @@ def _process_jsonl_line(
             )
         )
         return
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         code = decode_defect_code(raw, is_terminal=is_terminal)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if code == SL002
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         findings.append(
             make_finding(
                 code=code,

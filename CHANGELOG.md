@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
 ### Changed (0.5.0 breaking CLI)
 
 - `scan` is now an alias of `check`; directory inputs are always recursive
@@ -54,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file carrying its edge count and maximum backwards delta.
 - Claude hook JSON output, resume/compact/fork recipes and explicit check budgets.
 - Transferable Windows acceptance ZIP and a PowerShell 5.1+ runner sharing all
-  32 CLI cases with Python smoke, with checksums and retained failure receipts.
+  40 CLI cases with Python smoke, with checksums and retained failure receipts.
 - An installed-wheel performance probe binding exact wheel/runtime/input bytes
   to three fresh, untraced process measurements.
 
@@ -68,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immutable retry checks and verification of public downloads on both channels.
 
 ### Fixed
+
+- Report and baseline destinations protect directory sources, auxiliary evidence,
+  config, registry copies and seal ledgers, including aliases and racing writes.
 
 - Modern Claude attachments, metadata and compaction links, plus Codex retained
   context, no longer generate false critical-record and adjacency findings.
@@ -104,6 +109,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at LF. Synthesized canonical headers derive their timestamp from the first
   source event and mark that provenance instead of inventing a fixed creation date.
 
+- Directory scans with `jobs` > 1 start their worker pool with an explicit
+  `spawn` context. The previous pool inherited the POSIX default (`fork` on
+  Python 3.13), which warns and can deadlock when `scan_path` is called from
+  a process that already has threads. Report bytes stay identical to `jobs=1`.
+- Config discovery fails closed when a `pyproject.toml` contains the literal
+  marker `[tool.sesslint` but cannot be parsed, instead of silently using a
+  parent config. The error names that file and the parse error (CLI exit 2).
+  A `pyproject.toml` with no sesslint marker is still skipped when it is
+  unreadable or invalid, so an unrelated syntax error does not hide a parent
+  `sesslint.toml`.
+- Human `check` output no longer prints a plain `Valid … session` line on the
+  same run as `healthy with warnings`. Warning-only runs keep the report
+  verdict (`Session is healthy with warnings`); clean runs still say `Valid`.
+  Exit codes and finding semantics are unchanged.
+- A config file that sets both `select` and `ignore` now fails closed with a
+  `ConfigError` naming that file (exit 2). Previously `ignore` was silently
+  dropped and `sesslint check` exited 0 with no warning.
+- A JSONL record containing a lone Unicode surrogate (for example `\ud800`)
+  is reported as SL001 or SL002 instead of aborting the check. Titles stay
+  `Malformed record` and `Torn terminal record`. The Why line is `line N
+  contains an invalid Unicode character (lone surrogate, e.g. \ud800), so it
+  cannot be parsed as a session record. The file was not truncated.` Other
+  malformed and torn records keep their existing wording. With `--json`,
+  every error exit — including a missing input file — writes one JSON object
+  to stdout.
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.
 - Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction
@@ -139,6 +169,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `check` exit codes are stated per code, in order: `0` a clean session
+  exits 0, `1` a session with findings exits 1, `2` an internal tool error
+  exits 2 (`--help`, README, man pages).
 - Prepare 0.4.1 with API/schema v1 and existing exit codes. Publication remains
   a separate action; local tags and local evidence do not establish a release.
 - GHCR and package-manager templates are prepared channels only.

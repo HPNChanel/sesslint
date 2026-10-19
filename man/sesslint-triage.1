@@ -1,4 +1,4 @@
-.TH SESSLINT-TRIAGE 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT-TRIAGE 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint-triage \- [read\-only] Diagnose a session and explain the next steps.
 .SH SYNOPSIS
@@ -49,15 +49,16 @@ Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0
-Success — clean check, or repair executed, validated, and manifested.
+a clean session exits 0
+(also verification passed / dry-run plan generated)
 .TP
 .B 1
-Finding / refusal — diagnostic errors found, repair plan blocked, or
-execution refused (TOCTOU, SL203).
+a session with findings exits 1
+(also verification failed / repair refused)
 .TP
 .B 2
-Operational error — CLI syntax error, file not found, permission denied,
-or live-DB path refusal.
+an internal tool error exits 2
+(also usage error / invalid flags / I/O failure)
 .TP
 .B 130
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;

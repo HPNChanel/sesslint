@@ -7,7 +7,7 @@ import io
 import sys
 import time
 from collections.abc import Sequence
-from typing import Final
+from typing import Final, TextIO, cast
 
 from sesslint import __version__, api
 from sesslint.cli._common import (
@@ -17,12 +17,15 @@ from sesslint.cli._common import (
 )
 from sesslint.cli._context import CliContext, build_context
 from sesslint.cli._errors import CliError
+from sesslint.cli._json_errors import TrackedStream, error_document, wants_json
 from sesslint.cli._options import add_color_options, add_verbosity_options
 from sesslint.cli._registry import COMMANDS, REMOVED_COMMANDS, REMOVED_FLAGS, build_dispatch
 from sesslint.cli._render import format_scan_report_human
 from sesslint.progress import OperationCancelled
 
 __all__: Final = [
+    "CHECK_EXIT_LINES",
+    "CHECK_EXIT_NOTES",
     "FORMAT_DISPLAY_NAMES",
     "_handle_internal_error",
     "create_parser",
@@ -35,6 +38,18 @@ __all__: Final = [
 # Test-facing monkeypatch alias for the canonical session reader (v0.4.x name).
 load_session_file = api.validate_session
 
+# AC-02 / FR-098: shared exact exit-code wording, in order 0, 1, 2.
+CHECK_EXIT_LINES: Final[tuple[str, ...]] = (
+    "0  a clean session exits 0",
+    "1  a session with findings exits 1",
+    "2  an internal tool error exits 2",
+)
+CHECK_EXIT_NOTES: Final[tuple[str, ...]] = (
+    "(also verification passed / dry-run plan generated)",
+    "(also verification failed / repair refused)",
+    "(also usage error / invalid flags / I/O failure)",
+)
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Build the top-level argparse parser."""
@@ -45,9 +60,11 @@ def create_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Exit codes:\n"
-            "  0  Healthy session / verification passed / dry-run plan generated\n"
-            "  1  Integrity findings detected / verification failed / repair refused\n"
-            "  2  Usage error / invalid flag combination / I/O failure\n\n"
+            + "".join(
+                f"  {line}\n     {note}\n"
+                for line, note in zip(CHECK_EXIT_LINES, CHECK_EXIT_NOTES, strict=True)
+            )
+            + "\n"
             "Important Notes:\n"
             "  - redaction is best-effort minimization, not a completeness guarantee\n"
             "  - sesslint makes no semantic or side-effect safety claims"
@@ -125,6 +142,9 @@ def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     ctx: CliContext | None = None
     try:
         ctx = build_context(args, parser)
+        from sesslint.cli._output import preflight_report_outputs
+
+        preflight_report_outputs(ctx, args)
 
         if getattr(args, "include_content", False):
             ctx.warn(
@@ -160,36 +180,54 @@ def main(argv: Sequence[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8")
 
     argv_tokens: Sequence[str] = list(argv) if argv is not None else sys.argv[1:]
-
-    # Removed-surface compatibility hints (pre-parse, pure). Command hints
-    # replace argparse output entirely; flag hints precede argparse's own
-    # usage error (exit 2 either way).
-    cmd_hint = _removed_command_hint(argv_tokens)
-    if cmd_hint is not None:
-        print(cmd_hint, file=sys.stderr)
-        return 2
-    flag_hint = _removed_flag_hint(argv_tokens)
-    if flag_hint is not None:
-        print(flag_hint, file=sys.stderr)
-
-    parser = create_parser()
-    args = parser.parse_args(argv_tokens)
-
+    previous_out, previous_err = sys.stdout, sys.stderr
+    output = TrackedStream(previous_out)
+    diagnostics = TrackedStream(previous_err, diagnostic_limit=8192)
+    args: argparse.Namespace | None = None
+    code = 2
     try:
-        return _dispatch(args, parser)
+        # Track stdout presence only; reports can be arbitrarily large. Stderr
+        # retains a bounded prefix for failures that otherwise have no document.
+        sys.stdout = cast(TextIO, output)
+        sys.stderr = cast(TextIO, diagnostics)
+        cmd_hint = _removed_command_hint(argv_tokens)
+        if cmd_hint is not None:
+            print(cmd_hint, file=sys.stderr)
+            return code
+        flag_hint = _removed_flag_hint(argv_tokens)
+        if flag_hint is not None:
+            print(flag_hint, file=sys.stderr)
+        parser = create_parser()
+        args = parser.parse_args(argv_tokens)
+        code = _dispatch(args, parser)
+        return code
+    except SystemExit as err:
+        code = err.code if isinstance(err.code, int) else (0 if err.code is None else 1)
+        raise
     except KeyboardInterrupt:
         print("Operation cancelled by user", file=sys.stderr)
-        return 130
+        code = 130
+        return code
     except OperationCancelled:
-        # Cooperative cancellation keeps the same CLI exit semantics as
-        # Ctrl+C (DW-T-13): cleanup already ran inside the callee.
         print("Operation cancelled", file=sys.stderr)
-        return 130
+        code = 130
+        return code
     except FileNotFoundError as err:
         print(f"Error: {err}", file=sys.stderr)
-        return 2
+        return code
     except CliError as err:
         print(err.message, file=sys.stderr)
-        return err.exit_code
+        code = err.exit_code
+        return code
     except Exception as err:
-        return _handle_internal_error(err, args)
+        # Never append a second document after a report was already emitted.
+        # Effective --format/env JSON must also select the internal envelope.
+        error_args = None if output.nonempty else args
+        if error_args is not None and wants_json(argv_tokens, args):
+            error_args.json = True
+        code = _handle_internal_error(err, error_args)
+        return code
+    finally:
+        sys.stdout, sys.stderr = previous_out, previous_err
+        if code not in (0, 130) and wants_json(argv_tokens, args) and not output.nonempty:
+            print(error_document(diagnostics.diagnostic() or "Command failed"), file=previous_out)

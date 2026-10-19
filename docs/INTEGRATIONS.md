@@ -33,7 +33,7 @@ are copy-paste recipes you own.
 > stops matching your runtime, treat it as community-verified and check the
 > upstream docs before filing an issue.
 
-> `sesslint init-hooks --agent claude --print` prints the
+> `sesslint hook --init --agent claude` prints the <!-- next-release -->
 > exact JSON blocks below ready to paste — it never writes your settings.
 
 Claude Code fires hooks at lifecycle points where SessLint adds value:
@@ -98,7 +98,7 @@ Contract:
 ### Recipes
 
 Add to `.claude/settings.json` (project) or `~/.claude/settings.json`
-(user). `sesslint init-hooks --agent claude --print` emits exactly these
+(user). `sesslint hook --init --agent claude` emits exactly these <!-- next-release -->
 blocks — every command is `sesslint hook --event <name> || true`, so
 there is nothing to substitute.
 

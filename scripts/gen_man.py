@@ -23,24 +23,30 @@ from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sesslint.cli import CHECK_EXIT_LINES, CHECK_EXIT_NOTES  # noqa: E402
+
 PROG: Final[str] = "sesslint"
 
-_EXIT_STATUS: Final[str] = """.SH EXIT STATUS
-.TP
-.B 0
-Success — clean check, or repair executed, validated, and manifested.
-.TP
-.B 1
-Finding / refusal — diagnostic errors found, repair plan blocked, or
-execution refused (TOCTOU, SL203).
-.TP
-.B 2
-Operational error — CLI syntax error, file not found, permission denied,
-or live-DB path refusal.
-.TP
-.B 130
-Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
-partial outputs are cleaned up."""
+
+def _render_exit_status() -> str:
+    """EXIT STATUS block using the same per-code phrases as ``sesslint --help``."""
+    parts = [".SH EXIT STATUS"]
+    for line, note in zip(CHECK_EXIT_LINES, CHECK_EXIT_NOTES, strict=True):
+        code, phrase = line.split("  ", 1)
+        parts.extend((".TP", f".B {code}", phrase, note))
+    parts.extend(
+        (
+            ".TP",
+            ".B 130",
+            "Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;",
+            "partial outputs are cleaned up.",
+        )
+    )
+    return "\n".join(parts)
+
+
+# Same per-code wording as ``sesslint --help`` and the README (AC-02 / FR-098).
+_EXIT_STATUS: Final[str] = _render_exit_status()
 
 _SEE_ALSO_TAIL: Final[str] = """Full documentation: the docs/ tree in the source repository
 (docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),

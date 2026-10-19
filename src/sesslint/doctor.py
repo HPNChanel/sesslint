@@ -389,6 +389,11 @@ def doctor_report(
     ``env``/``home`` are injectable for tests (forwarded to
     ``discover_session_roots``). ``quick_checks=False`` skips the
     bounded per-file check pass (counts only).
+
+    Raises:
+        ConfigError: the nearest ``pyproject.toml`` contains
+            ``[tool.sesslint`` but cannot be parsed. Discovery does not
+            substitute a parent config.
     """
     from sesslint.adapters import supported_adapters
     from sesslint.api import discover_session_roots

@@ -1,8 +1,8 @@
 # SessLint architecture
 
-SOURCE_VERIFIED from the runtime modules on 2026-10-08.
+SOURCE_VERIFIED from the runtime modules on 2026-10-19.
 
-`cli.py` and `api.py` expose the offline checker and repair workflow. Detection
+The `cli/` command package and `api.py` expose the offline checker and repair workflow. Detection
 and the four adapters under `adapters/` interpret canonical, Claude Code, Codex
 rollout and OpenAI Agents artifacts into `SessionEvent` objects. `io.py` enforces
 byte/record/depth limits and supplies physical coordinates for malformed input.
@@ -56,3 +56,9 @@ not a claim about live native resume. Repair vetting is unchanged.
 Preserve the distinctions between source-level checks, local installed-artifact
 acceptance, external OS/CI evidence and publication. A green source suite does
 not establish any of the latter states.
+
+The CLI dispatcher resolves CLI > environment > config > defaults before
+execution. `_output.py` preflights report and baseline destinations against
+all consumed sources, directory roots, auxiliary evidence and seal ledgers;
+atomic publication rechecks destinations. `_json_errors.py` bounds diagnostic
+capture and provides one JSON error document when no JSON has been emitted.

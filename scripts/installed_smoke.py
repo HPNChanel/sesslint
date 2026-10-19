@@ -25,7 +25,7 @@ def sha(path: Path) -> str:
 
 
 API_PROGRAM = """
-import importlib, json
+import hashlib, importlib, json
 from pathlib import Path
 from sesslint import api
 from sesslint.canonical import get_session_schema_path
@@ -46,7 +46,23 @@ for module, names in {{
         loaded.append(name)
 schema_files = sorted(get_session_schema_path().parent.glob("*.json"))
 assert len(schema_files) == 17
+assert "sesslint.triage.v1.json" in [p.name for p in schema_files]
 assert all(isinstance(json.loads(p.read_text(encoding="utf-8")), dict) for p in schema_files)
+def triage_snapshot():
+    return {{p: (hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_mtime_ns)
+             if p.is_file() else None for p in Path(".").rglob("*")}}
+triage_before = triage_snapshot()
+for name, status, exit_code in [
+    ("healthy.jsonl", "checked", 0), ("repairable.jsonl", "checked", 0),
+    ("refused.json", "blocked", 1), ("unsupported.txt", "unsupported", 1),
+]:
+    report = api.triage(Path("examples") / name)
+    assert isinstance(report, api.TriageReport)
+    assert report.status == status and report.exit_code == exit_code
+    assert report.to_dict()["schema_version"] == "sesslint.triage/v1"
+    assert all(not preview["applied"] for preview in report.previews)
+    assert report.to_json() == api.triage(Path("examples") / name).to_json()
+assert triage_before == triage_snapshot()
 source = Path("examples/repairable.jsonl")
 plan = api.plan_repair(source)
 assert plan.steps and not plan.blocked
@@ -55,7 +71,8 @@ assert manifest is not None
 verdict = api.verify(source, "api-output.jsonl", "api-output.jsonl.manifest.json")
 assert verdict.ok
 print(json.dumps({{
-    "schemas": loaded, "schema_files": [p.name for p in schema_files], "api": "PASS"
+    "schemas": loaded, "schema_files": [p.name for p in schema_files],
+    "api": "PASS", "triage": "PASS"
 }}))
 """
 
@@ -84,7 +101,11 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
                 if not target.is_relative_to(cwd):
                     raise ValueError("Unsafe starter kit path")
             archive.extractall(cwd)
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "COVERAGE"))}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith(("PYTHON", "COVERAGE", "SESSLINT_"))
+        }
         env.update(PYTHONUTF8="1", NO_COLOR="1")
         if python:
             command = [str(artifact), "-I", "-m", "sesslint"]
@@ -100,8 +121,8 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
             )
         # One declarative contract is consumed by Python and PowerShell (T-12).
         contract = json.loads((cwd / "smoke-contract.json").read_text(encoding="utf-8"))
-        assert contract["schema_version"] == 1 and len(contract["cases"]) == 32
-        assert len({case["id"] for case in contract["cases"]}) == 32
+        assert contract["schema_version"] == 1 and len(contract["cases"]) == 40
+        assert len({case["id"] for case in contract["cases"]}) == 40
         for source, destination in contract["copies"]:
             target = cwd / destination
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -133,12 +154,21 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
 
         def field(value, key):
             for part in key.split("."):
-                value = value[part]
+                value = value[int(part)] if isinstance(value, list) else value[part]
             return value
+
+        def snapshot():
+            return {
+                p.relative_to(cwd).as_posix(): (sha(p), p.stat().st_mtime_ns)
+                if p.is_file()
+                else None
+                for p in cwd.rglob("*")
+            }
 
         outputs = {}
         for original in contract["cases"]:
             case = expand(original)
+            unchanged = snapshot() if case.get("no_writes") else None
             stdin = "".join(json.dumps(item) + "\n" for item in case.get("stdin_jsonl", []))
             completed = subprocess.run(
                 command + case["args"],
@@ -178,6 +208,8 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
                 assert len(responses) == case["jsonl_success"]
                 assert all("result" in item and "error" not in item for item in responses)
                 assert responses[-1]["result"]["isError"] is False
+            if unchanged is not None:
+                assert snapshot() == unchanged, (case["id"], "triage wrote to work directory")
             outputs[case["id"]] = output
             receipt["checks"].append(
                 {"id": case["id"], "command": case["args"], "exit_code": completed.returncode}

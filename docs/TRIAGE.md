@@ -1,9 +1,7 @@
 # Diagnose a session and choose the next step
 
-<!-- next-release -->
-
-`sesslint triage` is a next-release, read-only CLI/API workflow. It checks one
-source snapshot, summarizes structural findings, maps their known descendants,
+`sesslint triage` is the read-only CLI/API workflow in SessLint 0.5.0. It checks
+one source snapshot, summarizes structural findings, maps their known descendants,
 and previews existing repair policies. It never repairs a file, resumes an
 agent, acknowledges side effects, or runs a suggested command.
 
@@ -14,7 +12,7 @@ agent, acknowledges side effects, or runs a suggested command.
 ```console
 sesslint triage session.jsonl
 sesslint triage --agent codex --latest
-sesslint triage --agent claude --latest --json
+sesslint triage --agent claude --latest --format json
 ```
 
 Use a file OR an agent with `--latest`. Latest selection uses existing vendor
@@ -28,7 +26,68 @@ Replace the literal `<source>` and output placeholders in command templates.
 Session selection is not proof that the chosen session is the one you intended;
 use an explicit path whenever that distinction matters.
 
-## Three outcomes
+## Three synthetic walkthroughs
+
+<!-- next-release -->
+
+Extract the starter kit and run these commands from the folder containing
+`examples/` and `VERSION`. Use the installed `sesslint` command or the portable
+Windows function shown in `START_HERE.md`. Every example is synthetic; no native
+session directory or registry copy is needed.
+
+`--format human|json` chooses output. `--adapter canonical|claude-code-jsonl|codex-rollout|openai-agents`
+selects the input adapter when detection needs an override. The Python API keeps
+its existing `format=` input-adapter argument.
+
+### 1. Inspect a healthy session
+
+```console
+sesslint triage examples/healthy.jsonl --format human
+sesslint triage examples/healthy.jsonl --format json
+```
+
+Both commands return 0. JSON reports `status: "checked"`, no findings and a
+conservative preview with zero steps. Running the JSON command again produces
+the same output bytes for unchanged source bytes and options.
+
+### 2. Preview a repairable warning without applying it
+
+<!-- next-release -->
+
+```console
+sesslint triage examples/repairable.jsonl --adapter canonical --format json
+sesslint repair examples/repairable.jsonl --adapter canonical --dry-run --json
+```
+
+Triage returns 0 and `checked` because this fixture has a warning, SL003, rather
+than a structural error. Its conservative preview proposes duplicate collapse
+and sequence normalization: two steps, zero blocked steps, `applied: false`.
+The dry-run also returns 0. Neither command creates a repaired file or manifest.
+Inspect the plan and loss before choosing the separate copy-repair and verify
+workflow in the starter kit's `QUICKSTART.md`.
+
+### 3. Recognize refusal and unsupported input
+
+<!-- next-release -->
+
+```console
+sesslint triage examples/refused.json --adapter canonical --format json
+sesslint triage examples/unsupported.txt --format json
+```
+
+Each command returns 1. The first reports `blocked`, SL203 and blocked conservative
+steps; no repair is applied. Establish external tool state separately. The second
+reports `unsupported`, assurance A0 and no previews. Neither result establishes
+that a session is safe to resume. Repeating either command produces identical
+JSON and leaves the examples unchanged.
+
+The shared installed smoke contract exercises these four states twice each,
+asserting exact exit codes and selected JSON fields, byte-identical repeated
+stdout, unchanged source bytes and timestamps, and no additions, removals or
+changes in the isolated working directory. This is local artifact acceptance;
+it does not establish native resume behavior or external OS acceptance.
+
+## Outcome interpretation
 
 | Situation | What triage says | What to do |
 | --- | --- | --- |
@@ -51,7 +110,7 @@ not semantic correctness or an authorization to cut a branch.
 ## Compare policies without applying them
 
 ```console
-sesslint triage session.jsonl --policy salvage --json
+sesslint triage session.jsonl --policy salvage --format json
 ```
 
 Conservative is the default. Explicit salvage selection displays both previews,
@@ -96,8 +155,9 @@ document = report.to_dict()
 
 `triage(path, *, format=None, profile="neutral", policy="conservative",
 state_copy=None, max_file_bytes=104857600)` returns `TriageReport`.
-Its schema is `sesslint.triage/v1`, shipped with the existing schemas. All
-existing API/report contracts remain unchanged. Output includes coverage,
+Its schema is `sesslint.triage/v1` (`schemas/sesslint.triage.v1.json`), shipped
+with the other 16 schemas. Existing API/report contracts remain unchanged.
+Output includes coverage,
 bounded finding rows, exact aggregate counts, previews, impact, missing evidence
 and at most three next actions. No wall clock or machine identity is serialized.
 

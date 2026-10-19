@@ -42,6 +42,154 @@
       }
     },
     {
+      "id": "triage-healthy",
+      "args": [
+        "triage",
+        "examples/healthy.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "checked",
+        "adapter": "claude-code-jsonl",
+        "finding_count": 0,
+        "previews.0.step_count": 0,
+        "previews.0.applied": false
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-healthy-repeat",
+      "args": [
+        "triage",
+        "examples/healthy.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdout_equals": "triage-healthy",
+      "no_writes": true
+    },
+    {
+      "id": "triage-repairable",
+      "args": [
+        "triage",
+        "examples/repairable.jsonl",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "checked",
+        "adapter": "canonical",
+        "by_code.SL003": 1,
+        "previews.0.step_count": 2,
+        "previews.0.blocked_count": 0,
+        "previews.0.applied": false
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-repairable-repeat",
+      "args": [
+        "triage",
+        "examples/repairable.jsonl",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdout_equals": "triage-repairable",
+      "no_writes": true
+    },
+    {
+      "id": "triage-refused",
+      "args": [
+        "triage",
+        "examples/refused.json",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "blocked",
+        "adapter": "canonical",
+        "by_code.SL203": 1,
+        "previews.0.step_count": 0,
+        "previews.0.blocked_count": 2,
+        "previews.0.applied": false
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-refused-repeat",
+      "args": [
+        "triage",
+        "examples/refused.json",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "stdout_equals": "triage-refused",
+      "no_writes": true
+    },
+    {
+      "id": "triage-unsupported",
+      "args": [
+        "triage",
+        "examples/unsupported.txt",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "unsupported",
+        "assurance": "A0",
+        "previews": []
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-unsupported-repeat",
+      "args": [
+        "triage",
+        "examples/unsupported.txt",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "stdout_equals": "triage-unsupported",
+      "no_writes": true
+    },
+    {
       "id": "healthy",
       "args": [
         "check",

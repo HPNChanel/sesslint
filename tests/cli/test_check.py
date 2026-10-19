@@ -138,7 +138,7 @@ def test_check_json_repro_binds_coverage_values(capsys: pytest.CaptureFixture[st
 
 
 def test_check_json_repro_manual_format(capsys: pytest.CaptureFixture[str]) -> None:
-    """Explicit --format reports detection method=manual with null confidence."""
+    """Explicit --adapter reports detection method=manual with null confidence."""
     fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
     code = main(["check", str(fixture), "--adapter", "claude-code-jsonl", "--json"])
     assert code == 0
@@ -146,3 +146,78 @@ def test_check_json_repro_manual_format(capsys: pytest.CaptureFixture[str]) -> N
 
     assert data["repro"]["detection"]["method"] == "manual"
     assert data["repro"]["detection"]["confidence"] is None
+
+
+def _plain_valid_session_lines(text: str) -> list[str]:
+    """Lines that label the run plainly Valid, with no warning qualifier."""
+    return [
+        line
+        for line in text.splitlines()
+        if line.startswith("Valid ") and line.endswith(" session")
+    ]
+
+
+def _status_lines_contradict(text: str) -> bool:
+    """True when a plain Valid line and 'healthy with warnings' share one run."""
+    return bool(_plain_valid_session_lines(text)) and "healthy with warnings" in text
+
+
+def test_clean_run_status_is_not_contradictory(capsys: pytest.CaptureFixture[str]) -> None:
+    """A finding-free check is Valid and healthy, and never says healthy with warnings."""
+    fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
+    code = main(["check", str(fixture), "--color", "never"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert not _status_lines_contradict(out)
+    assert _plain_valid_session_lines(out) == ["Valid Claude Code session"]
+    assert "Session is healthy" in out
+    assert "healthy with warnings" not in out
+    assert "verdict: healthy /" in out
+
+
+def test_warning_only_run_status_is_not_contradictory(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Warning-only output uses one status: healthy with warnings, not also plain Valid.
+
+    Exit code stays 0 (default fail-on is error). Identical duplicate ids are SL003 warnings.
+    """
+    src = tmp_path / "identical_duplicate.jsonl"
+    lines = [
+        '{"created_at":"2026-09-08T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"sess_warn_status"}',
+        '{"actor":"user","id":"evt_001","kind":"message","parent_id":null,"payload":{"text":"init"},"seq":0,"ts":"2026-09-08T12:00:00Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"dupe"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+        '{"actor":"assistant","id":"evt_002","kind":"message","parent_id":"evt_001","payload":{"text":"dupe"},"seq":1,"ts":"2026-09-08T12:00:01Z"}',
+    ]
+    src.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    code = main(["check", str(src), "--color", "never"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert not _status_lines_contradict(out)
+    assert _plain_valid_session_lines(out) == []
+    assert "healthy with warnings" in out
+    assert "Session is healthy with warnings" in out
+    assert "verdict: healthy with warnings" in out
+    assert "warnings: 1" in out
+    assert "SL003" in out
+
+
+def test_error_run_status_is_not_contradictory(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """An error run is an integrity failure, not Valid and not healthy with warnings."""
+    bad_session = tmp_path / "broken.jsonl"
+    bad_session.write_text(
+        '{"id":"msg_01","type":"user_message","message":"hi"}\n'
+        '{"id":"msg_02","parentId":"msg_01","type":"tool_result","toolUseId":"call_missing","content":"res"}\n',
+        encoding="utf-8",
+    )
+    code = main(["check", str(bad_session), "--adapter", "claude-code-jsonl", "--color", "never"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert not _status_lines_contradict(out)
+    assert _plain_valid_session_lines(out) == []
+    assert "healthy with warnings" not in out
+    assert "Integrity check failed" in out
+    assert "verdict: invalid" in out

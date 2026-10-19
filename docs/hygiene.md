@@ -82,7 +82,7 @@ one poll interval instead of a postmortem.
 
 ## SessionEnd hook (Claude Code)
 
-`sesslint init-hooks --agent claude` prints a `SessionEnd` recipe that
+`sesslint hook --init --agent claude` prints a `SessionEnd` recipe that <!-- next-release -->
 runs `sesslint hook --event SessionEnd` — which resolves
 `transcript_path` from the hook stdin payload and maps the event to
 `check --select SL009` — the moment the file stops growing. The recipe

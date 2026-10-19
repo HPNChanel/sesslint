@@ -34,7 +34,7 @@ def main() -> int:
             env = dict(os.environ, PIP_DISABLE_PIP_VERSION_CHECK="1")
             if kind == "sdist":
                 subprocess.run(
-                    [str(interpreter), "-m", "pip", "install", "hatchling==1.27.0"],
+                    [str(interpreter), "-m", "pip", "install", "hatchling==1.32.4"],
                     cwd=root,
                     env=env,
                     check=True,

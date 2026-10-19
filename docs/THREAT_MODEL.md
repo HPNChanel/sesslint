@@ -266,7 +266,7 @@ plan ──B5──> executor ──B6──> write        report ◄──┘
 | R-02 | `max_records` is opt-in (`None` default) | The common path is memory-bounded already (streaming + per-record isolation); the cap exists for hostile-scale inputs — callers guarding against floods should set it |
 | R-03 | Path minimization is one-way | `.._<hash>` minimized paths cannot be reversed to the original — designed so reports are shareable; debugging against a local copy uses real paths from the user's own invocation |
 | R-04 | Refusal outcomes can hide real damage | Fail-closed means some genuinely damaged sessions are refused rather than repaired; the alternative (guessed repair) destroys evidential value silently — see ADR-0002 |
-| R-05 | Baseline/suppression files are user-managed | A stale baseline can suppress fresh findings; baselines are explicit opt-in user artifacts (`sesslint baseline`), not auto-maintained state |
+| R-05 | Baseline/suppression files are user-managed | A stale baseline can suppress fresh findings; baselines are explicit opt-in user artifacts (`sesslint check --write-baseline`), not auto-maintained state |
 | R-06 | Denial-of-service via many files in one scan | Per-file bounds apply but aggregate cost scales with corpus size; mitigated by parallel-scan determinism and `--max-*` flags; unbounded corpus size is a caller responsibility |
 
 ## 8. Cross-references

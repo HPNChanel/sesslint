@@ -8,7 +8,7 @@ An unsigned local candidate is not a signed release.
 PowerShell:
 
 ```powershell
-Get-FileHash .\sesslint-0.4.1-windows-x86_64.exe -Algorithm SHA256
+Get-FileHash .\sesslint-0.5.0-windows-x86_64.exe -Algorithm SHA256
 ```
 
 Compare the complete hex digest with its filename's row in `sha256sums.txt`.

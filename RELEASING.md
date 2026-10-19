@@ -1,6 +1,6 @@
 # Releasing SessLint
 
-This checkout prepares **0.4.1 (next release)**. PyPI and GitHub Releases are
+This checkout prepares **0.5.0 (next release)**. PyPI and GitHub Releases are
 the required channels. Local tags, successful tests and a draft are distinct
 from a public release. Push, tag and publication require separate authorization.
 Never move an existing release tag or replace published bytes.
@@ -43,17 +43,17 @@ Actual platform receipts are required: a workflow definition is not a PASS.
 ## Build and installed acceptance
 
 Use the candidate commit's committer timestamp as `SOURCE_DATE_EPOCH`, not
-the wall clock. Pin `build==1.2.2.post1` and `hatchling==1.27.0`. Build into
+the wall clock. Pin `build==1.6.1` and `hatchling==1.32.4`. Build into
 two fresh directories; do not delete an earlier verified release set.
 
 ```bash
 export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
 python -m build --no-isolation --sdist --wheel --outdir dist/candidate
 python -m build --no-isolation --sdist --wheel --outdir dist/reproducible
-python scripts/release_artifacts.py compare --directory dist/candidate --target dist/reproducible --version 0.4.1
-python scripts/build_starter_kit.py --version 0.4.1 --output dist/candidate/sesslint-0.4.1-starter-kit.zip
-python scripts/build_man_archive.py --epoch "$SOURCE_DATE_EPOCH" --output dist/candidate/sesslint-0.4.1-man.tar.gz
-python scripts/smoke_distributions.py --directory dist/candidate --version 0.4.1
+python scripts/release_artifacts.py compare --directory dist/candidate --target dist/reproducible --version 0.5.0
+python scripts/build_starter_kit.py --version 0.5.0 --output dist/candidate/sesslint-0.5.0-starter-kit.zip
+python scripts/build_man_archive.py --epoch "$SOURCE_DATE_EPOCH" --output dist/candidate/sesslint-0.5.0-man.tar.gz
+python scripts/smoke_distributions.py --directory dist/candidate --version 0.5.0
 python scripts/package.py --outdir dist/bin
 ```
 
@@ -64,13 +64,17 @@ $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
 ```
 
 Run `scripts/installed_smoke.py --binary <native-artifact> --kit <starter-kit>
---version 0.4.1 --receipt <receipt.json>` on each required OS. It relocates the
+--version 0.5.0 --receipt <receipt.json>` on each required OS. It relocates the
 executable and examples outside the checkout to a path containing spaces and
 Unicode, removes Python from PATH on Windows, and checks the complete
 `check → dry-run/plan → repair/apply → verify` journey. It checks source
 immutability, idempotence, no output after refusal, adapters/profiles, report
-formats, hook and MCP. The Python-distribution runner also exercises public
-API calls and loads all 13 installed schema resources.
+formats, hook and MCP. The shared contract has 40 CLI cases, including four
+triage states and deterministic repeats with no work-directory writes. The
+Python-distribution runner also exercises public
+API calls, including triage, and loads all 17 installed schema resources.
+The starter kit includes `TRIAGE.md` and only synthetic inputs with provenance.
+For CLI/config changes, review [Migration to 0.5](docs/MIGRATING_0_5.md).
 
 Wheel/sdist include LICENSE/NOTICE; binaries bundle them with the schemas.
 The starter kit also contains licenses, schemas, rule/recipe documentation,
@@ -170,9 +174,9 @@ CLI/API release and are not advertised as already available.
 
 ## Windows transferable acceptance
 
-The Windows binary job builds `sesslint-0.4.1-acceptance-windows.zip` and runs
+The Windows binary job builds `sesslint-0.5.0-acceptance-windows.zip` and runs
 its PowerShell 5.1 driver. The complete-set gate binds that ZIP and
-`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 32-case
+`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 40-case
 contract. Its logs are retained even on failure.
 Clean-machine qualification remains separate; retest if release CI changes EXE bytes.
 

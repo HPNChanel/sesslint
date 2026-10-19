@@ -278,6 +278,90 @@ _STRICT_JSON_DECODER: Final[json.JSONDecoder] = json.JSONDecoder(
     parse_float=_strict_parse_float,
 )
 
+# Unpaired UTF-16 surrogates. A valid pair is one supplementary-plane character
+# after JSON decoding, so it never matches this class.
+_SURROGATE_CHAR: Final[re.Pattern[str]] = re.compile(r"[\ud800-\udfff]")
+
+
+class LoneSurrogateError(ValueError):
+    """Unpaired UTF-16 surrogate inside a decoded JSON string (AC-03).
+
+    ``escapes`` lists the distinct code points as ASCII ``\\uXXXX`` text,
+    lowest first. The exception text stays ``lone surrogate in JSON string``
+    so evidence copied from ``str(err)`` does not grow a payload.
+    """
+
+    escapes: tuple[str, ...]
+
+    def __init__(self, escapes: tuple[str, ...]) -> None:
+        self.escapes = escapes
+        super().__init__("lone surrogate in JSON string")
+
+
+def _lone_surrogate_escapes(obj: Any) -> tuple[str, ...]:
+    """Distinct unpaired surrogates in ``obj``, as ``\\uXXXX`` text, lowest first."""
+    found: set[str] = set()
+    stack: list[Any] = [obj]
+    while stack:
+        current = stack.pop()
+        current_type = type(current)
+        if current_type is str:
+            if _SURROGATE_CHAR.search(current) is None:
+                continue
+            for ch in current:
+                code = ord(ch)
+                if 0xD800 <= code <= 0xDFFF:
+                    found.add(f"\\u{code:04x}")
+        elif current_type is dict:
+            stack.extend(current.values())
+            stack.extend(current)
+        elif current_type is list:
+            stack.extend(current)
+    if not found:
+        return ()
+    return tuple(sorted(found))
+
+
+# Fixed Why sentence. ``\\ud800`` is the example in the wording, not the
+# code point that was found. Titles stay "Malformed record" / "Torn terminal
+# record"; only this sentence changes.
+_LONE_SURROGATE_WHY: Final[str] = (
+    "line {line} contains an invalid Unicode character (lone surrogate, e.g. \\ud800), "
+    "so it cannot be parsed as a session record. The file was not truncated."
+)
+
+
+def decode_error_message_template(err: BaseException, *, terminal: bool) -> str:
+    """SL001/SL002 message template for one JSON decode failure (AC-03).
+
+    A lone surrogate uses one fixed Why sentence on every line. Every other
+    failure keeps the torn-terminal or malformed-record wording.
+    """
+    if isinstance(err, LoneSurrogateError) and err.escapes:
+        return _LONE_SURROGATE_WHY
+    if terminal:
+        return "Torn terminal record on line {line} for record {record_id}"
+    return "Malformed record on line {line} for record {record_id}"
+
+
+def _reject_lone_surrogates(text: str, obj: Any) -> None:
+    """Reject JSON values that contain an unpaired UTF-16 surrogate (AC-03).
+
+    Python's ``json`` decoder accepts ``\\ud800`` and stores a lone surrogate
+    in the resulting ``str``. Those code points are not valid UTF-8, so a
+    later canonical hash raises ``UnicodeEncodeError`` and aborts the check.
+    Callers already map ``ValueError`` to an SL001/SL002 finding.
+
+    A well-formed pair (``\\ud800\\udc00``) decodes to one supplementary-plane
+    character and is left alone. Records with no ``\\u`` escape pay for a
+    single substring test — UTF-8 decoding cannot introduce a surrogate.
+    """
+    if "\\u" not in text and "\\U" not in text:
+        return
+    escapes = _lone_surrogate_escapes(obj)
+    if escapes:
+        raise LoneSurrogateError(escapes)
+
 
 def check_nesting_depth(obj: Any, max_depth: int) -> bool:
     """Iteratively verify that object nesting depth does not exceed max_depth.
@@ -393,6 +477,7 @@ def decode_json_dupaware(
         parse_float=_strict_parse_float,
         object_pairs_hook=hook,
     )
+    _reject_lone_surrogates(text, obj)
     if not marked:
         return obj, (), False
     return _collect_duplicate_keys(obj, marked, critical_keys, max_dup_keys)
@@ -431,6 +516,7 @@ class _DuplicateAwareDecoder:
             if text.startswith("\ufeff"):
                 raise json.JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)", text, 0)
             obj = self._decoder.decode(text)
+            _reject_lone_surrogates(text, obj)
             if not self._marked:
                 return obj, (), False
             return _collect_duplicate_keys(
@@ -895,15 +981,11 @@ def _process_line(
             source=source,
             evidence=coord_evidence,
         )
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         code = decode_defect_code(raw, is_terminal=is_terminal)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if code == SL002
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         return make_finding(
             code=code,
             message_template=msg_template,

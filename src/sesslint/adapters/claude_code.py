@@ -51,6 +51,7 @@ from sesslint.io import (
     _RawLine,
     check_nesting_depth,
     decode_defect_code,
+    decode_error_message_template,
     decode_json_dupaware,
     defect_evidence,
     dup_key_findings,
@@ -741,15 +742,11 @@ def _process_claude_line(
             )
         )
         return
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         code = decode_defect_code(raw, is_terminal=is_terminal)
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if code == SL002
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         findings.append(
             make_finding(
                 code=code,

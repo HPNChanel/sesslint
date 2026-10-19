@@ -63,6 +63,7 @@ from sesslint.io import (
     _DuplicateAwareDecoder,
     _validate_stream_coordinates,
     check_nesting_depth,
+    decode_error_message_template,
     decode_json_dupaware,
     dup_key_findings,
     extract_record_id,
@@ -1433,7 +1434,7 @@ def _load_canonical(
                 code=SL001,
                 severity=Severity.ERROR,
                 repairability=Repairability.MANUAL,
-                message_template="Malformed record on line {line} for record {record_id}",
+                message_template=decode_error_message_template(err, terminal=False),
                 source=SourceRef(path=path_str, line=hdr_line_no, record_id=None),
                 evidence={**hdr_coord_ev, "reason": "malformed_json", "detail": str(err)},
             )
@@ -1656,11 +1657,7 @@ def _load_canonical(
                 torn = is_terminal and is_torn_append(raw_data[ev_byte_offset:ev_byte_end])
                 code = SL002 if torn else SL001
                 rep = Repairability.DETERMINISTIC if torn else Repairability.MANUAL
-                msg = (
-                    "Torn terminal record on line {line} for record {record_id}"
-                    if torn
-                    else "Malformed record on line {line} for record {record_id}"
-                )
+                msg = decode_error_message_template(err, terminal=torn)
                 add_finding(
                     make_finding(
                         code=code,

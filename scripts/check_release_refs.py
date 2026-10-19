@@ -122,9 +122,7 @@ def cli_source_at_ref(root: Path, ref: str) -> str | None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
     parts = [
-        git_show(root, ref, name)
-        for name in sorted(names.splitlines())
-        if name.endswith(".py")
+        git_show(root, ref, name) for name in sorted(names.splitlines()) if name.endswith(".py")
     ]
     text = "\n".join(p for p in parts if p is not None)
     return text or None
@@ -258,8 +256,7 @@ def evaluate(
         src = cli_source_at_ref(root, f"v{'.'.join(map(str, latest))}")
         if src is None:
             rep.advisories.append(
-                f"cannot read {CLI_FILE} or {CLI_PKG_DIR}/ at latest tag; "
-                "flag skew check skipped"
+                f"cannot read {CLI_FILE} or {CLI_PKG_DIR}/ at latest tag; flag skew check skipped"
             )
         else:
             tag_flags = cli_flags(src)
