@@ -25,19 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Config discovery fails closed when a `pyproject.toml` contains the literal
-  marker `[tool.sesslint` but cannot be parsed, instead of silently using a
-  parent config. The error names that file and the parse error (CLI exit 2).
-  A `pyproject.toml` with no sesslint marker is still skipped when it is
-  unreadable or invalid, so an unrelated syntax error does not hide a parent
-  `sesslint.toml`.
-- Human `check` output no longer prints a plain `Valid … session` line on the
-  same run as `healthy with warnings`. Warning-only runs keep the report
-  verdict (`Session is healthy with warnings`); clean runs still say `Valid`.
-  Exit codes and finding semantics are unchanged.
-- A config file that sets both `select` and `ignore` now fails closed with a
-  `ConfigError` naming that file (exit 2). Previously `ignore` was silently
-  dropped and `sesslint check` exited 0 with no warning.
+- A JSONL record containing a lone Unicode surrogate (for example `\ud800`)
+  is reported as SL001 or SL002 instead of aborting the check. Titles stay
+  `Malformed record` and `Torn terminal record`. The Why line is `line N
+  contains an invalid Unicode character (lone surrogate, e.g. \ud800), so it
+  cannot be parsed as a session record. The file was not truncated.` Other
+  malformed and torn records keep their existing wording. With `--json`,
+  every error exit — including a missing input file — writes one JSON object
+  to stdout.
 - Release retries inspect prior-attempt step history and immutable artifact IDs;
   absent or deleted verified artifacts can no longer silently trigger rebuilds.
 - Strict decoder reuse, compact duplicate/ordering indexes and lazy compaction
