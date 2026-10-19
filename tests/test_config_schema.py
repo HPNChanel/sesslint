@@ -110,9 +110,14 @@ def test_empty_list_is_valid(key: str) -> None:
 
 
 def test_full_config_all_keys() -> None:
-    cfg = {key: _valid_value_for(key) for key in sorted(config._ALLOWED_KEYS)}
-    assert _config_accepts(cfg)
-    assert _schema_accepts(cfg)
+    """Every allowed key validates together except the select/ignore pair."""
+    base = {key: _valid_value_for(key) for key in sorted(config._ALLOWED_KEYS)}
+    for omitted in ("select", "ignore"):
+        cfg = {key: value for key, value in base.items() if key != omitted}
+        assert _config_accepts(cfg), omitted
+        assert _schema_accepts(cfg), omitted
+    assert not _config_accepts(base)
+    assert not _schema_accepts(base)
 
 
 def test_negative_float_is_valid_parity() -> None:

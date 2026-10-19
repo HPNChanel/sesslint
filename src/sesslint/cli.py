@@ -268,7 +268,8 @@ def _apply_config(args: argparse.Namespace, cfg: Mapping[str, Any]) -> None:
     if not getattr(args, "skip_undetected", False) and cfg.get("skip_undetected"):
         args.skip_undetected = True
     # select/ignore share one axis: an explicit CLI choice overrides the whole
-    # config axis (a config file that sets both is rejected downstream).
+    # config axis. A file that sets both keys is rejected by config validation
+    # before this function runs, so at most one of the two is present here.
     if _rule_codes_arg(args, "select") is None and _rule_codes_arg(args, "ignore") is None:
         if cfg.get("select"):
             args.select = ",".join(cfg["select"])
@@ -549,7 +550,13 @@ def _emit_check_report(
         adapter=format_display,
         profile=report.coverage.profile.get("id", profile_opt),
     )
-    if not has_error:
+    # render_human owns the summary verdict: "Session is healthy",
+    # "Session is healthy with warnings", or "Integrity check failed".
+    # A plain "Valid" line is only coherent when that verdict is healthy.
+    # Warning-only runs already say "healthy with warnings" (UX-02);
+    # printing "Valid" as well contradicts it. Exit code stays on has_error.
+    warning_count = report.counts.by_severity.get("warning", 0)
+    if not has_error and warning_count == 0:
         print(f"Valid {format_display} session")
     print(human_text)
     return exit_code
@@ -2439,14 +2446,19 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         return serve(sys.stdin.buffer, sys.stdout.buffer)
 
     if args.command == "doctor":
+        from sesslint.config import ConfigError
         from sesslint.doctor import doctor_report
 
         agent = getattr(args, "agent", None)
         agents = None if agent in (None, "all") else [agent]
-        diag = doctor_report(
-            agents=agents,
-            quick_checks=not getattr(args, "no_quick_checks", False),
-        )
+        try:
+            diag = doctor_report(
+                agents=agents,
+                quick_checks=not getattr(args, "no_quick_checks", False),
+            )
+        except ConfigError as err:
+            print(f"Error: {err}", file=sys.stderr)
+            return 2
         if _output_format(args) == "json":
             print(diag.to_json())
         else:
