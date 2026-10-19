@@ -109,9 +109,9 @@ def test_ci_workflow_uses_reviewed_action_pins_and_locked_tools() -> None:
     """CI action revisions and Python tool inputs must be independently reproducible."""
     content = CI_WORKFLOW.read_text(encoding="utf-8")
     expected_pins = {
-        "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
-        "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
-        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
         "astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081",
     }
     refs = set(re.findall(r"uses:\s*([^\s#]+)", content))
@@ -341,7 +341,7 @@ def test_package_metadata_consistency() -> None:
     assert re.search(r'^name\s*=\s*"sesslint"', pyproject, re.M)
     assert 'path = "src/sesslint/_version.py"' in pyproject
     m = re.search(r'__version__\s*=\s*"([^"]+)"', version_py)
-    assert m and m.group(1) == "0.4.1"
+    assert m and m.group(1) == "0.5.0"
     assert 'license = "Apache-2.0"' in pyproject
     assert 'requires-python = ">=3.11"' in pyproject
     assert 'readme = "README.md"' in pyproject

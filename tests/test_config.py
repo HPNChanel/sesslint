@@ -125,7 +125,12 @@ def test_malformed_pyproject_with_sesslint_marker_fails_closed(
     assert "Invalid TOML" in captured.err
     assert str(bad) in captured.err
     assert parse_error in captured.err
-    assert captured.out == ""
+    document = json.loads(captured.out)
+    assert document["code"] == "ERROR"
+    assert document["verdict"] == "error"
+    assert "Invalid TOML" in document["message"]
+    assert str(bad) in document["message"]
+    assert parse_error in document["message"]
 
 
 def test_malformed_pyproject_without_sesslint_marker_falls_back(tmp_path: Path) -> None:
