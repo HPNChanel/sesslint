@@ -352,7 +352,7 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
-The 0.5 CLI has 15 commands. `scan` remains an alias for `check`; directory
+The CLI has 16 commands. `scan` remains an alias for `check`; directory
 inputs are always recursive. See [Migration to 0.5](docs/MIGRATING_0_5.md) for
 removed command names and options.
 
@@ -362,6 +362,7 @@ removed command names and options.
 | `triage` | Explain structural evidence, missing evidence and unapplied repair previews | Optional report |
 | `repair` | Preview, export/apply a plan, or repair copies in a batch | Plan, repaired copy and manifest when requested |
 | `verify` | Verify repair hashes, manifest and idempotence | Optional report or seal |
+| `outcome` | Verify an outcome contract against exported source/target snapshots ([OutcomeGuard](docs/OUTCOME.md)) | Optional report |
 | `seal` | Verify a verdict ledger's hash chain | None |
 | `bundle` | Create a content-free support bundle and synthetic fixture skeleton | Optional bundle |
 | `export` | Convert a supported artifact to canonical format | Canonical output |

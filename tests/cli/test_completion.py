@@ -16,6 +16,7 @@ PINNED_COMMANDS = (
     "export",
     "hook",
     "mcp",
+    "outcome",
     "repair",
     "scan",
     "seal",
