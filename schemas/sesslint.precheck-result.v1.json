@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.precheck-result/v1",
+  "title": "SessLint Precheck Result Format v1",
+  "description": "Structured content of the `sesslint_precheck` MCP tool, mirroring `sesslint.precheck()` (DEV-015): the one-call gate outcome plus the `sesslint.report/v1` report whenever the check ran. The object has no schema field of its own; this schema documents its shape. Validate `report` against schemas/sesslint.report.v1.json.",
+  "type": "object",
+  "required": [
+    "exit_code",
+    "ok",
+    "reason"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "True iff exit_code is 0 (a clean session, or warning-severity findings only)."
+    },
+    "reason": {
+      "enum": ["clean", "findings-warning", "findings-error", "detection-failed", "io-error", "usage-error"]
+    },
+    "exit_code": {
+      "enum": [0, 1, 2]
+    },
+    "report": {
+      "type": "object",
+      "description": "The `sesslint.report/v1` report; absent when the check could not run (io-error, usage-error).",
+      "required": [
+        "schema_version"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "sesslint.report/v1"
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "exit_code": {
+          "const": 0
+        },
+        "reason": {
+          "enum": ["clean", "findings-warning"]
+        }
+      },
+      "required": [
+        "report"
+      ]
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 1
+        },
+        "reason": {
+          "enum": ["findings-error", "detection-failed"]
+        }
+      },
+      "required": [
+        "report"
+      ]
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        },
+        "reason": {
+          "enum": ["io-error", "usage-error"]
+        }
+      },
+      "not": {
+        "required": [
+          "report"
+        ]
+      }
+    }
+  ]
+}

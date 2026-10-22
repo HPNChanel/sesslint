@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hooks engine source at `rust-v0.163.0` but not yet against a live Codex
   build; tests run every emitted Windows command and keep the documented
   block in sync with the output.
+- JSON Schemas for four outputs that had none: `watch --json` lines
+  (`schemas/sesslint.watch-event.v1.json`), `hook --init --json`
+  (`schemas/sesslint.init-hooks.v1.json`), `version --json`
+  (`schemas/sesslint.version.v1.json`), and the `sesslint_precheck` MCP tool
+  result (`schemas/sesslint.precheck-result.v1.json`). A new test fails when
+  the runtime names a `sesslint.<name>/vN` schema id without a matching
+  schema file, or when a schema file is missing from the README table, and
+  validates the four new schemas against live output. The README schema
+  table now lists all 21 schemas.
 
 ### Fixed
 
@@ -54,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The MCP `sesslint_scan` tool description names the `unsupported` bucket
   (it said `undetected`), and `docs/SPEC.md` cites `compute_assurance` for
   assurance grades.
+- The `sesslint.hook-result/v1` schema's `reason` description now lists the
+  `budget-exceeded` and `format-undetected` skip reasons that `sesslint hook`
+  already emits; a test keeps the list in sync with the code.
 
 ## [0.5.0] - 2026-10-19
 

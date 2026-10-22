@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.version/v1",
+  "title": "SessLint Version Info Format v1",
+  "description": "Object printed by `sesslint version --json`: the CLI version, the schema identifiers this build uses for sessions, reports, and repair manifests, and the version of every adapter and validation profile. The object has no schema field of its own; this schema documents its shape.",
+  "type": "object",
+  "required": [
+    "adapters",
+    "cli",
+    "profiles",
+    "schema_manifest",
+    "schema_report",
+    "schema_session"
+  ],
+  "properties": {
+    "cli": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SessLint package version."
+    },
+    "schema_session": {
+      "type": "string",
+      "pattern": "^sesslint\\.session/v[0-9]+$"
+    },
+    "schema_report": {
+      "type": "string",
+      "pattern": "^sesslint\\.report/v[0-9]+$"
+    },
+    "schema_manifest": {
+      "type": "string",
+      "pattern": "^sesslint\\.repair-manifest/v[0-9]+$"
+    },
+    "adapters": {
+      "$ref": "#/$defs/versionMap",
+      "description": "Adapter name (e.g. `codex-rollout`) to adapter version."
+    },
+    "profiles": {
+      "$ref": "#/$defs/versionMap",
+      "description": "Validation profile name (e.g. `neutral`) to profile version."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "versionMap": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+      }
+    }
+  }
+}

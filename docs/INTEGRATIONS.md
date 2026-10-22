@@ -10,6 +10,8 @@ own JSON result remains available through `--json`; recipes stay advisory.
 `hook --init --agent codex` prints Codex `hooks.json` recipes for the same four
 events. They use the `systemMessage` envelope at SessionStart, PreCompact, and
 PostCompact, and give SessionEnd the three-second maximum Codex allows.
+`hook --init --json` prints the blocks as one `sesslint.init-hooks/v1`
+document (`schemas/sesslint.init-hooks.v1.json`).
 
 SessionStart skips transcripts above 128 KiB. SessionEnd limits its SL009 pass
 to 1 MiB, and other hook checks accept at most 8 MiB. A budget skip never means
@@ -338,7 +340,9 @@ sesslint watch --agent all --json >> ~/.local/state/sesslint-watch.ndjson
 ```
 
 Each verdict change prints one line — `healthy->invalid` with the rule codes
-— and stays quiet otherwise. Watch is a pure observer: it never writes to
+— and stays quiet otherwise. With `--json` each line is a
+`sesslint.watch-event/v1` object (`schemas/sesslint.watch-event.v1.json`).
+Watch is a pure observer: it never writes to
 watched directories, never installs hooks, and Ctrl+C exits cleanly. Poll
 cost scales with file count; narrow the scope with an explicit path or
 `--agent` when watching large roots.
@@ -370,7 +374,7 @@ protocol errors):
 | Tool | Returns |
 | ---- | ------- |
 | `sesslint_check` | `sesslint.report/v1` report (structured content) for one session file |
-| `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report |
+| `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report (`schemas/sesslint.precheck-result.v1.json`) |
 | `sesslint_scan` | `sesslint.scan-report/v1` 5-bucket aggregate for a file or directory tree |
 
 Each tool takes `path` (required), plus optional `profile` (`neutral`,

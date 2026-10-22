@@ -1306,6 +1306,17 @@ Formal versioned JSON Schemas are maintained in `schemas/`:
 | **Diff**            |  `v1`   | `schemas/sesslint.diff.v1.json`            | Structural diff output            |
 | **Stats**           |  `v1`   | `schemas/sesslint.stats.v1.json`           | Aggregate statistics output       |
 | **Doctor**          |  `v1`   | `schemas/sesslint.doctor.v1.json`          | Environment diagnostics output    |
+| **Repair Preview**  |  `v1`   | `schemas/sesslint.preview.v1.json`         | Structural repair preview         |
+| **Batch Repair**    |  `v1`   | `schemas/sesslint.batch-repair.v1.json`    | Batch repair run summary          |
+| **Seal Ledger**     |  `v1`   | `schemas/sesslint.seal-ledger.v1.json`     | Hash-chain ledger entry           |
+| **Baseline**        |  `v2`   | `schemas/sesslint.baseline.v2.json`        | Known-findings baseline           |
+| **Triage**          |  `v1`   | `schemas/sesslint.triage.v1.json`          | Next-action guidance report       |
+| **Hook Result**     |  `v1`   | `schemas/sesslint.hook-result.v1.json`     | `hook --json` result              |
+| **Init Hooks**      |  `v1`   | `schemas/sesslint.init-hooks.v1.json`      | `hook --init --json` snippets     |
+| **Watch Event**     |  `v1`   | `schemas/sesslint.watch-event.v1.json`     | `watch --json` NDJSON line        |
+| **Version**         |  `v1`   | `schemas/sesslint.version.v1.json`         | `version --json` output           |
+| **Precheck Result** |  `v1`   | `schemas/sesslint.precheck-result.v1.json` | `sesslint_precheck` MCP result    |
+| **Config**          |  `v1`   | `schemas/sesslint-config.schema.json`      | `sesslint.toml` configuration     |
 
 ---
 
