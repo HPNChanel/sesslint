@@ -258,7 +258,11 @@ class OutcomeReport:
 
 
 def _literal(value: object) -> str:
-    """A contract value in JSON text form; numbers keep every written digit (CON-03)."""
+    """A contract value in JSON text form (CON-03).
+
+    The value is exact, but not always its spelling: a float is re-spelled by
+    ``repr``, so ``1.50`` prints as ``1.5`` and ``1e2`` as ``100.0``.
+    """
     return json.dumps(value, ensure_ascii=True)
 
 

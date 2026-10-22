@@ -20,9 +20,8 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Final
 
-from sesslint.outcome.contract import Condition, Contract, Predicate, Scalar
+from sesslint.outcome.contract import Condition, Contract, Predicate, Scalar, int_text
 from sesslint.outcome.snapshot import (
-    EMPTY_NESTED,
     NonScalar,
     Record,
     Snapshot,
@@ -78,6 +77,9 @@ REASONS: Final[dict[str, str]] = {
     "value_absent": "the optional value is absent or null; pair with a required condition to "
     "demand it",
     "value_nested": "the value is nested and cannot be compared",
+    "value_undecidable": "the text looks like a number but does not read as one exactly "
+    "(surrounding whitespace, over 100 characters or an exponent over 6 digits), so it cannot "
+    "be matched against the contract's numbers",
     "type_ok": "the value has the declared kind",
     "type_mismatch": "the value does not have the declared kind",
     "value_allowed": "the value is in the allowed set",
@@ -175,6 +177,8 @@ _NUMBER_RE: Final = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-
 _INTEGER_RE: Final = re.compile(r"[+-]?[0-9]+")
 _MAX_NUMBER_TEXT: Final[int] = 100
 _PLAIN_INTEGER_LIMIT: Final[int] = 10**_MAX_NUMBER_TEXT
+# Decimal digit tuples (0-9) to ASCII text in one pass, without str() per digit.
+_DIGIT_CHARS: Final[bytes] = bytes.maketrans(bytes(range(10)), b"0123456789")
 
 
 class EvaluationError(ValueError):
@@ -281,20 +285,25 @@ def _number(value: Value | Scalar, *, typed: bool) -> int | Decimal | None:
     return None
 
 
+@lru_cache(maxsize=1024, typed=True)
 def _number_text(number: int | Decimal) -> str:
     """One exact spelling per numeric value, used for comparison and never output.
 
     Equal numbers get equal text (``12.50``, ``12.5`` and ``1.25e1`` all give
     ``12.5``) and different numbers different text. Integers of up to 100
     digits are written out; other magnitudes use ``repr``-style scientific
-    notation, so a large exponent never expands into a large string.
+    notation, so a large exponent never expands into a large string. Cached:
+    a value is spelled once while it is in use, and since equal values share
+    a spelling, a cache hit on an equal value is still the right answer.
+    ``Decimal`` digits never go through ``str(int)``, so Python's int/str
+    digit limit cannot change the result.
     """
     if isinstance(number, int) and -_PLAIN_INTEGER_LIMIT < number < _PLAIN_INTEGER_LIMIT:
         return str(number)
     sign, digit_tuple, exponent = Decimal(number).as_tuple()
     if not isinstance(exponent, int):
         return str(number)
-    digits = "".join(map(str, digit_tuple)).lstrip("0")
+    digits = bytes(digit_tuple).translate(_DIGIT_CHARS).decode("ascii").lstrip("0")
     if not digits:
         return "0"
     significant = digits.rstrip("0")
@@ -368,7 +377,11 @@ class _Matcher:
     a number (a typed JSON number, or CSV text that ``_csv_number`` accepts) by
     exact value, so CSV ``0012`` matches ``12``. Every other pair compares
     canonical text after normalization, and a contract string always compares
-    as text, so CSV ``0012`` does not match ``"12"``.
+    as text, so CSV ``0012`` does not match ``"12"``. One exception fails
+    closed (REC-07): CSV text that looks like a number but does not read as
+    one (``" 1"``, over 100 characters, an exponent over 6 digits) is
+    undecided against a contract that lists a number, unless it equals one of
+    the contract's other values as text.
     """
 
     steps: tuple[str, ...]
@@ -392,13 +405,24 @@ class _Matcher:
                 numbers.add(_number_text(number))
         return cls(tuple(steps), frozenset(numbers), frozenset(texts), frozenset(others))
 
-    def matches(self, value: Value, *, typed: bool) -> bool:
-        """True when ``value`` equals at least one contract value."""
-        text = _normalized(value, self.steps)
+    def matches(self, value: Value, *, typed: bool) -> bool | None:
+        """True when ``value`` equals a contract value, None when that cannot be decided."""
         number = _number(value, typed=typed)
-        if number is None:
-            return text in self.texts
-        return _number_text(number) in self.numbers or text in self.non_number_texts
+        if number is not None:
+            if _number_text(number) in self.numbers:
+                return True
+            return _normalized(value, self.steps) in self.non_number_texts
+        if _normalized(value, self.steps) in self.texts:
+            return True
+        if (
+            self.numbers
+            and not typed
+            and isinstance(value, str)
+            and _NUMBER_RE.fullmatch(value.strip()) is not None
+        ):
+            # A number _csv_number refuses: text inequality proves nothing.
+            return None
+        return False
 
 
 def _kind_ok(value: Value, kind: str, *, typed: bool) -> bool:
@@ -429,7 +453,8 @@ def _predicate(pred: Predicate, record: Record, ctx: _Context) -> bool | None:
     undecidable: a renamed or misspelled field must never read as "absent". An
     empty string, list or object counts as absent. Other operators are
     undecidable when the record lacks the field or nests it; numeric ones also
-    when the value is no number. Equality operators follow ``_Matcher``.
+    when the value is no number. Equality operators follow ``_Matcher``, so
+    they are also undecidable for CSV text that only looks like a number.
     """
     if pred.op in ("present", "absent"):
         if pred.field not in ctx.source_fields:
@@ -441,6 +466,8 @@ def _predicate(pred: Predicate, record: Record, ctx: _Context) -> bool | None:
     value = record[pred.field]
     if pred.op in ("eq", "ne", "in", "not_in"):
         match = ctx.matcher(pred).matches(value, typed=ctx.source_typed)
+        if match is None:
+            return None
         return match if pred.op in ("eq", "in") else not match
     number = _number(value, typed=ctx.source_typed)
     bound = _number(pred.value, typed=True)
@@ -476,7 +503,8 @@ def _key(record: Record, fields: Sequence[str]) -> tuple[tuple[str, ...] | None,
         value = record[name]
         if isinstance(value, bool) or not isinstance(value, (str, int)):
             return None, "key_invalid"
-        text = str(value)
+        # int_text: a long integer key reads the same whatever Python's digit limit.
+        text = int_text(value) if isinstance(value, int) else str(value)
         if not text:
             return None, "key_missing"
         try:
@@ -564,7 +592,9 @@ def _field_check(
                 results.append((VIOLATED, "field_absent", {"field": name}))
             elif value is None and not cond.allow_null:
                 results.append((VIOLATED, "field_null", {"field": name}))
-            elif (value == "" or value is EMPTY_NESTED) and not cond.allow_empty:
+            elif (
+                value == "" or (isinstance(value, NonScalar) and value.empty)
+            ) and not cond.allow_empty:
                 results.append((VIOLATED, "field_empty", {"field": name}))
             else:
                 results.append((VERIFIED, "field_present", {"field": name}))
@@ -596,12 +626,15 @@ def _field_check(
             ok = _kind_ok(value, cond.kind, typed=typed)
             results.append((VERIFIED if ok else VIOLATED, "type_ok" if ok else "type_mismatch", {}))
         elif cond.type in ("one_of", "route"):
-            ok = ctx.matcher(cond).matches(value, typed=typed)
+            allowed = ctx.matcher(cond).matches(value, typed=typed)
+            if allowed is None:
+                results.append((INCONCLUSIVE, "value_undecidable", {"field": name}))
+                continue
             if cond.type == "one_of":
-                reason = "value_allowed" if ok else "value_not_allowed"
+                reason = "value_allowed" if allowed else "value_not_allowed"
             else:
-                reason = "route_ok" if ok else "wrong_route"
-            results.append((VERIFIED if ok else VIOLATED, reason, {"field": name}))
+                reason = "route_ok" if allowed else "wrong_route"
+            results.append((VERIFIED if allowed else VIOLATED, reason, {"field": name}))
         elif cond.type == "range":
             number = _number(value, typed=typed)
             if number is None:
@@ -800,14 +833,34 @@ class _Group:
     rows: list[Record]
 
 
+def _identity(value: Value) -> tuple[str, str | None]:
+    """What source checks can tell apart in a value: its kind and canonical text.
+
+    ``"1"`` and ``1`` share text but not kind, and a JSON string never reads
+    as a number, so rows holding them can judge differently; they conflict
+    instead of letting row order pick the verdict (REC-04, AT-38). Equal
+    numbers (``100`` and ``1E2``) share an identity, as do two nested values
+    that are both empty or both non-empty (no check looks inside them).
+    """
+    if value is None:
+        return "null", None
+    if isinstance(value, NonScalar):
+        return "nested", "empty" if value.empty else "non-empty"
+    if isinstance(value, bool):
+        return "bool", _text(value)
+    if isinstance(value, (int, float, Decimal)):
+        return "number", _text(value)
+    return "str", value
+
+
 def _conflicting(rows: Sequence[Record], fields: frozenset[str]) -> bool:
+    """Rows sharing a key differ in a relevant field's presence or identity (REC-04)."""
     first = rows[0]
     for row in rows[1:]:
         for name in fields:
-            left, right = first.get(name), row.get(name)
-            if (name in first) != (name in row) or _text(left) != _text(right):
+            if (name in first) != (name in row):
                 return True
-            if (isinstance(left, NonScalar) or isinstance(right, NonScalar)) and left is not right:
+            if name in first and _identity(first[name]) != _identity(row[name]):
                 return True
     return False
 
@@ -924,7 +977,7 @@ def evaluate(
         target_typed=target.input_format != "csv",
         source_fields=source.fields,
     )
-    relevant = contract.relevant_source_fields()
+    relevant = contract.relevant_source_fields(include_key=False)
     for key, group in groups.items():
         items.append(_evaluate_item(contract, ctx, key, group, index.get(key, []), relevant))
 

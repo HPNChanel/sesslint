@@ -10,7 +10,7 @@ import pytest
 
 from sesslint.outcome import SnapshotError, load_snapshot, parse_instant
 from sesslint.outcome.snapshot import EMPTY_NESTED, NON_SCALAR
-from tests.outcome.helpers import ORDERS, at
+from tests.outcome.helpers import ORDERS, at, digit_limit
 from tests.utils.schema import assert_schema
 
 
@@ -211,3 +211,55 @@ def test_snapshot_number_exponents_are_bounded(tmp_path: Path, name: str, templa
     for literal in ("1e1000000", "-1E+0001000000", "2.5e-1000000"):
         with pytest.raises(SnapshotError, match="out of range"):
             first_number(literal)
+
+
+_LONG = "number is longer than 4300 characters, not counting its sign"
+
+
+@pytest.mark.parametrize("limit", [4300, 640, 0])
+@pytest.mark.parametrize(
+    ("name", "template", "where"),
+    [
+        ("t.json", '[{"n": 1}, {"n": NUMBER}]', "target snapshot record 2"),
+        ("t.jsonl", '{"n": 1}\n{"n": NUMBER}\n', "JSONL line 2"),
+    ],
+)
+def test_snapshot_numbers_may_have_4300_characters_whatever_the_digit_limit(
+    tmp_path: Path, name: str, template: str, where: str, limit: int
+) -> None:
+    """RULE-05, RULE-06, AT-38: the cap is OutcomeGuard's own, so every Python reads alike.
+
+    Before, a long decimal had no cap at all, and a long integer was reported
+    as "not strict JSON" at Python's own, environment-dependent digit limit.
+    """
+
+    def number(literal: str) -> object:
+        path = _write(tmp_path, name, template.replace("NUMBER", literal))
+        return load_snapshot(path, role="target").records[1]["n"]
+
+    ones = (10**4300 - 1) // 9
+    with digit_limit(limit):
+        assert number("1" * 4300) == ones
+        assert number("-" + "1" * 4300) == -ones
+        assert number("1." + "0" * 4298) == 1
+        for literal in ("1" * 4301, "-1" + "0" * 4300, "1." + "0" * 4299, "1e" + "0" * 4299):
+            with pytest.raises(SnapshotError) as info:
+                number(literal)
+            assert str(info.value) == f"{where} has a number out of range ({_LONG})"
+
+
+def test_number_errors_name_the_record_not_the_field_or_value(tmp_path: Path) -> None:
+    """EVD-04: content-free errors name a 1-based record position, never a key or a digit."""
+    secret = "9" * 4301
+    envelope = (
+        '{"schema_version": "sesslint.snapshot/v1", "records": '
+        f'[{{"a": 1}}, {{"secret_field": {secret}}}]}}'
+    )
+    with pytest.raises(SnapshotError) as info:
+        load_snapshot(_write(tmp_path, "s.json", envelope), role="source")
+    assert str(info.value) == f"source snapshot record 2 has a number out of range ({_LONG})"
+    # Outside the records nothing can be counted, so no position is named.
+    metadata = '{"schema_version": "sesslint.snapshot/v1", "demo": ' + secret + ', "records": []}'
+    with pytest.raises(SnapshotError) as info:
+        load_snapshot(_write(tmp_path, "s.json", metadata), role="source")
+    assert str(info.value) == f"source snapshot has a number out of range ({_LONG})"

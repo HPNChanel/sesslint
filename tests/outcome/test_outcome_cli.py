@@ -222,3 +222,70 @@ def test_tilde_paths_expand_for_every_outcome_input(
     assert doc["dimensions"]["session_integrity"]["status"] in {"findings", "no_findings"}
     assert main(["outcome", "~/contract.json", "--explain"]) == 0
     assert "Conditions:" in capsys.readouterr().out
+
+
+def test_snapshot_numbers_past_4300_characters_exit_two_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ITF-04: 4300 characters are read exactly; one more is an input error naming the record."""
+    contract = tmp_path / "c.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "sesslint.outcome-contract/v1",
+                "name": "c",
+                "version": "1",
+                "key": {"source": "id", "target": "ref"},
+                "eligibility": [{"field": "n", "op": "gt", "value": 0}],
+                "conditions": [{"id": "e", "type": "exists"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    target = tmp_path / "t.json"
+    target.write_text(
+        '{"schema_version": "sesslint.snapshot/v1", "completeness": "complete", '
+        '"observed_at": "2026-10-20T12:00:00Z", "records": [{"ref": "a"}]}',
+        encoding="utf-8",
+    )
+    source = tmp_path / "s.json"
+    argv = ["outcome", str(contract), "--source", str(source), "--target", str(target)]
+    argv += ["--source-completeness", "complete", "--json"]
+    source.write_text('[{"id": "a", "n": ' + "1" * 4300 + "}]", encoding="utf-8")
+    assert main(argv) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "VERIFIED"
+    source.write_text('[{"id": "a", "n": ' + "1" * 4301 + "}]", encoding="utf-8")
+    assert main(argv) == 2
+    captured = capsys.readouterr()
+    message = (
+        "Error: source snapshot: source snapshot record 1 has a number out of range "
+        "(number is longer than 4300 characters, not counting its sign)"
+    )
+    assert message in captured.err
+    # --json also prints the error as a JSON document; no digit of the value leaks.
+    assert json.loads(captured.out)["message"] == message
+    assert "1111" not in captured.out + captured.err
+
+
+def test_contract_numbers_past_4300_characters_exit_two_with_the_place_named(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ITF-04: the contract error says where the number is and why it is refused."""
+    bad = tmp_path / "c.json"
+    bad.write_text(
+        '{"schema_version": "sesslint.outcome-contract/v1", "name": "c", "version": "1", '
+        '"key": {"source": "order_id", "target": "order_id"}, "conditions": '
+        '[{"id": "r", "type": "range", "field": "x", "max": ' + "7" * 4301 + "}]}",
+        encoding="utf-8",
+    )
+    for argv in (
+        ["outcome", str(bad), "--explain"],
+        ["outcome", str(bad), "--source", SOURCE, "--target", TARGET],
+    ):
+        assert main(argv) == 2
+        err = capsys.readouterr().err
+        assert "Error: invalid outcome contract:" in err
+        assert (
+            "  - contract: conditions[0].max: number out of range; a JSON number may have at "
+            "most 4300 characters, not counting a minus sign"
+        ) in err

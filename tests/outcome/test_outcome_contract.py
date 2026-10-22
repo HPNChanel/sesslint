@@ -12,7 +12,7 @@ import pytest
 
 from sesslint._canonical_codec import canonical_json_bytes
 from sesslint.outcome import ContractError, contract_from_dict, explain_contract, load_contract
-from tests.outcome.helpers import ORDERS
+from tests.outcome.helpers import ORDERS, digit_limit
 from tests.utils.schema import assert_schema
 
 
@@ -278,10 +278,93 @@ def test_load_rejects_numbers_a_float_cannot_hold_exactly(tmp_path: Path, litera
     with pytest.raises(ContractError) as info:
         load_contract(path)
     assert info.value.problems == (
-        "contract: a number with a fraction or exponent must equal a 64-bit float exactly; "
-        "up to 15 significant digits are always safe for magnitudes from 1e-307 to 1e308, "
-        "and integers are exact at any size",
+        "contract: conditions[0].max: a number with a fraction or exponent must equal a 64-bit "
+        "float exactly; up to 15 significant digits are always safe for magnitudes from 1e-307 "
+        "to 1e308, and integers are exact up to 4300 digits",
     )
+
+
+_OUT_OF_RANGE = (
+    "number out of range; a JSON number may have at most 4300 characters, not counting a minus sign"
+)
+
+
+@pytest.mark.parametrize("limit", [4300, 640, 0])
+@pytest.mark.parametrize("literal", ["7" * 4300, "-" + "7" * 4300, "1." + "0" * 4298])
+def test_contract_numbers_may_have_4300_characters(
+    tmp_path: Path, literal: str, limit: int
+) -> None:
+    """RULE-06: ints and decimals of up to 4300 characters (a sign not counted) load."""
+    path = tmp_path / "c.json"
+    path.write_text(_range_contract_text(literal), encoding="utf-8")
+    with digit_limit(4300):
+        expected = load_contract(path).sha256
+    if limit and limit < 4300 and "." not in literal:
+        # The fingerprint writes integers through json, which honours a lowered
+        # limit: refused with the reason, never read differently.
+        with digit_limit(limit), pytest.raises(ContractError) as info:
+            load_contract(path)
+        assert info.value.problems == (
+            f"contract: conditions[0].max: number out of range; this Python converts integers "
+            f"of at most {limit} digits to text (sys.set_int_max_str_digits or "
+            "PYTHONINTMAXSTRDIGITS), so the contract cannot be fingerprinted",
+        )
+        return
+    with digit_limit(limit):
+        assert load_contract(path).sha256 == expected
+
+
+@pytest.mark.parametrize("limit", [4300, 640, 0])
+@pytest.mark.parametrize(
+    "literal", ["7" * 4301, "-" + "7" * 4301, "1." + "0" * 4299, "1e" + "0" * 4299]
+)
+def test_contract_numbers_over_4300_characters_are_out_of_range(
+    tmp_path: Path, literal: str, limit: int
+) -> None:
+    """RULE-06: the cap is OutcomeGuard's own, located, and the same in every environment.
+
+    Before, a 5000-digit integer read as "not valid strict UTF-8 JSON (ValueError)".
+    """
+    path = tmp_path / "c.json"
+    path.write_text(_range_contract_text(literal), encoding="utf-8")
+    with digit_limit(limit), pytest.raises(ContractError) as info:
+        load_contract(path)
+    assert info.value.problems == (f"contract: conditions[0].max: {_OUT_OF_RANGE}",)
+
+
+def test_out_of_range_numbers_are_located_inside_lists_and_branches(tmp_path: Path) -> None:
+    """RULE-04, RULE-06: the first refused number in document order is named."""
+    branch = {"id": "b", "type": "range", "field": "x", "min": 1}
+    raw = _raw(
+        eligibility=[{"field": "v", "op": "in", "values": ["a", 1]}],
+        conditions=[
+            {"id": "e", "type": "exists"},
+            {"id": "any", "type": "any_of", "conditions": [{"id": "a", "type": "exists"}, branch]},
+        ],
+    )
+    text = json.dumps(raw)
+    path = tmp_path / "c.json"
+    path.write_text(text.replace('"min": 1', '"min": ' + "9" * 4301), encoding="utf-8")
+    with pytest.raises(ContractError) as info:
+        load_contract(path)
+    assert info.value.problems == (f"contract: conditions[1].conditions[1].min: {_OUT_OF_RANGE}",)
+    path.write_text(text.replace('["a", 1]', '["a", 1e400]'), encoding="utf-8")
+    with pytest.raises(ContractError) as info:
+        load_contract(path)
+    assert info.value.problems[0].startswith("contract: eligibility[0].values[1]: a number with")
+
+
+def test_contract_dicts_are_held_to_the_same_integer_cap() -> None:
+    """RULE-06: a Python dict can hold any int; past 4300 digits it is refused, located."""
+    widest = 10**4300 - 1
+    spec = contract_from_dict(_raw(eligibility=[{"field": "v", "op": "gt", "value": widest}]))
+    assert spec.eligibility[0].value == widest
+    for value in (10**4300, -(10**4300)):
+        problems = _problems(_raw(eligibility=[{"field": "v", "op": "gt", "value": value}]))
+        assert problems == (
+            "contract: eligibility[0].value: number out of range; an integer may have at most "
+            "4300 digits",
+        )
 
 
 @pytest.mark.parametrize("literal", ["0.5", "0.1", "99999.99", "1e-05", "2.5E+3", "1.0", "-0.0"])
@@ -412,3 +495,69 @@ def test_non_string_keys_are_problems_at_every_level(over: dict[Any, Any], where
     problems = _problems(raw)
     for name in ("NoneType", "int", "tuple"):
         assert f"{where}: keys must be strings, not {name}" in problems, problems
+
+
+_WHEN = [{"field": "t", "op": "present"}]
+
+
+@pytest.mark.parametrize(
+    ("conditions", "where"),
+    [
+        ([{"id": "o", "type": "one_of", "field": "x", "values": ["a", None]}], "condition 'o'"),
+        (
+            [{"id": "r", "type": "route", "field": "q", "values": [None], "when": _WHEN}],
+            "condition 'r'",
+        ),
+        (
+            [
+                {
+                    "id": "any",
+                    "type": "any_of",
+                    "conditions": [
+                        {"id": "e", "type": "exists"},
+                        {"id": "o", "type": "one_of", "field": "x", "values": [None, 1]},
+                    ],
+                }
+            ],
+            "condition 'o'",
+        ),
+    ],
+    ids=["one_of", "route", "any_of-branch"],
+)
+def test_null_cannot_widen_one_of_or_route_values(
+    conditions: list[dict[str, Any]], where: str
+) -> None:
+    """CON-02, RULE-04, RULE-08: a null field never matches, so a listed null only misleads."""
+    raw = _raw(conditions=conditions)
+    assert _problems(raw) == (
+        f"{where}: 'values' cannot hold null: a null field never matches these values",
+    )
+    with pytest.raises(AssertionError, match="Schema violation"):
+        assert_schema(raw, "sesslint.outcome-contract.v1.json")
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        {"field": "t", "op": "eq", "value": None},
+        {"field": "t", "op": "ne", "value": None},
+        {"field": "t", "op": "in", "values": [None, 1]},
+        {"field": "t", "op": "not_in", "values": [None]},
+    ],
+)
+def test_predicates_may_still_name_null(predicate: dict[str, Any]) -> None:
+    """RULE-05: ``eq null`` matches a null field, so predicates and route ``when`` keep it."""
+    route = {"id": "r", "type": "route", "field": "q", "values": ["a"], "when": [predicate]}
+    raw = _raw(eligibility=[predicate], conditions=[{"id": "e", "type": "exists"}, route])
+    assert_schema(raw, "sesslint.outcome-contract.v1.json")
+    spec = contract_from_dict(raw)
+    assert spec.eligibility[0].op == predicate["op"]
+
+
+def test_key_fields_count_for_duplicates_only_when_a_check_reads_them() -> None:
+    """REC-04: duplicate rows are compared on the fields a check reads; keys match as text."""
+    spec = contract_from_dict(_raw(eligibility=[{"field": "v", "op": "gt", "value": 0}]))
+    assert spec.relevant_source_fields() == {"id", "v"}
+    assert spec.relevant_source_fields(include_key=False) == {"v"}
+    keyed = contract_from_dict(_raw(eligibility=[{"field": "id", "op": "gt", "value": 0}]))
+    assert keyed.relevant_source_fields(include_key=False) == {"id"}

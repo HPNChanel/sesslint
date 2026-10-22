@@ -5,9 +5,13 @@ optional due window and a closed set of condition types (RULE-01…RULE-08).
 Nothing in a contract is executed; unknown keys, types and operators are
 rejected so a typo can never silently weaken a check (fail closed).
 
-Numbers keep their written value: integers are exact at any size, and a
-number with a fraction or exponent must round-trip through a binary64 float
-(the contract is fingerprinted as written), otherwise it is rejected.
+Numbers keep their written value: integers of up to 4300 digits are exact,
+and a number with a fraction or exponent must round-trip through a binary64
+float (the contract is fingerprinted as written), otherwise it is rejected.
+The 4300-character cap on JSON numbers is OutcomeGuard's own, so Python's
+int/str digit limit (``PYTHONINTMAXSTRDIGITS``) never changes how a file is
+parsed. Only that limit lowered below 4300 digits can stop a longer integer
+from being fingerprinted, and the contract is then refused, never misread.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import hashlib
 import json
 import math
 import re
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -34,6 +39,13 @@ MAX_KEY_FIELDS: Final[int] = 8
 MAX_WITHIN_SECONDS: Final[int] = 10 * 366 * 24 * 3600
 # A snapshot holds at most 1,000,000 records, so a larger count bound is meaningless.
 MAX_COUNT_BOUND: Final[int] = 1_000_000
+# One cap for every JSON number OutcomeGuard reads, contract or snapshot. It is
+# checked before Python's own int/str digit limit could ever be reached.
+MAX_NUMBER_CHARS: Final[int] = 4300
+# Integer text converts in chunks below CPython's smallest allowed limit (640).
+_INT_CHUNK: Final[int] = 600
+_INT_CHUNK_SCALE: Final[int] = 10**_INT_CHUNK
+_INT_LIMIT: Final[int] = 10**MAX_NUMBER_CHARS
 
 CONDITION_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -162,9 +174,14 @@ class Contract:
             out.append("every decisive condition is an any_of branch")
         return tuple(out)
 
-    def relevant_source_fields(self) -> frozenset[str]:
-        """Source fields whose values influence a verdict (duplicate-row merging)."""
-        fields: set[str] = set(self.source_key)
+    def relevant_source_fields(self, *, include_key: bool = True) -> frozenset[str]:
+        """Source fields whose values influence a verdict (duplicate-row merging, REC-04).
+
+        ``include_key=False`` leaves out fields used only as the key: rows that
+        share a key already agree on its text, and a key's JSON type (``7`` or
+        ``"7"``) changes no verdict.
+        """
+        fields: set[str] = set(self.source_key) if include_key else set()
         fields.update(p.field for p in self.eligibility)
         if self.due is not None:
             fields.add(self.due.source_time_field)
@@ -194,6 +211,60 @@ class _Problems:
         self.items.append(f"{where}: {message}")
 
 
+class NumberRangeError(ValueError):
+    """A number too long, or with too large an exponent, to read the same everywhere."""
+
+
+_TOO_LONG: Final[str] = (
+    f"number out of range; a JSON number may have at most {MAX_NUMBER_CHARS} characters, "
+    "not counting a minus sign"
+)
+_INEXACT: Final[str] = (
+    "a number with a fraction or exponent must equal a 64-bit float exactly; up to 15 "
+    "significant digits are always safe for magnitudes from 1e-307 to 1e308, and integers "
+    f"are exact up to {MAX_NUMBER_CHARS} digits"
+)
+
+
+def check_number_length(text: str) -> None:
+    """Refuse number text over ``MAX_NUMBER_CHARS`` characters; a sign does not count."""
+    if len(text) - text.startswith(("-", "+")) > MAX_NUMBER_CHARS:
+        raise NumberRangeError(
+            f"number is longer than {MAX_NUMBER_CHARS} characters, not counting its sign"
+        )
+
+
+def exact_int(text: str) -> int:
+    """JSON ``parse_int`` hook: the exact integer, of at most ``MAX_NUMBER_CHARS`` digits.
+
+    Long text converts in chunks that stay below Python's int/str digit limit,
+    so ``PYTHONINTMAXSTRDIGITS`` and ``sys.set_int_max_str_digits`` never change
+    the result (RULE-05, RULE-06).
+    """
+    if len(text) <= _INT_CHUNK:
+        return int(text)
+    check_number_length(text)
+    digits = text.lstrip("+-")
+    head = len(digits) % _INT_CHUNK or _INT_CHUNK
+    value = int(digits[:head])
+    for start in range(head, len(digits), _INT_CHUNK):
+        value = value * _INT_CHUNK_SCALE + int(digits[start : start + _INT_CHUNK])
+    return -value if text.startswith("-") else value
+
+
+def int_text(value: int) -> str:
+    """Decimal text of an integer of any size, never limited by Python's digit limit."""
+    if -_INT_CHUNK_SCALE < value < _INT_CHUNK_SCALE:
+        return str(value)
+    rest = abs(value)
+    chunks: list[str] = []
+    while rest >= _INT_CHUNK_SCALE:
+        rest, low = divmod(rest, _INT_CHUNK_SCALE)
+        chunks.append(f"{low:0{_INT_CHUNK}d}")
+    chunks.append(str(rest))
+    return ("-" if value < 0 else "") + "".join(reversed(chunks))
+
+
 def _reject_constant(token: str) -> None:
     raise ValueError(f"non-finite number {token} is not allowed")
 
@@ -208,12 +279,119 @@ def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def parse_strict_json(text: str, *, parse_float: Callable[[str], Any] | None = None) -> Any:
-    """Parse JSON rejecting NaN/Infinity and duplicate object keys."""
+    """Parse JSON rejecting NaN/Infinity, duplicate object keys and over-long integers."""
     return json.loads(
         text,
+        parse_int=exact_int,
         parse_float=parse_float,
         parse_constant=_reject_constant,
         object_pairs_hook=_no_duplicate_keys,
+    )
+
+
+_REFUSED: Final = object()
+
+
+class _Pairs(list[tuple[str, Any]]):
+    """A JSON object as ``refused_number_path`` reads it: its pairs, duplicates kept."""
+
+
+def _first_path(doc: object, wanted: Callable[[object], bool]) -> tuple[str | int, ...] | None:
+    """Keys and indexes leading to the first node ``wanted`` accepts, in document order.
+
+    ``doc`` is a finite tree of dicts, lists and scalars, or of ``_Pairs``.
+    """
+    stack: list[tuple[tuple[str | int, ...], object]] = [((), doc)]
+    while stack:
+        path, node = stack.pop()
+        if wanted(node):
+            return path
+        children: list[tuple[Any, Any]]
+        if isinstance(node, _Pairs):
+            children = list(node)
+        elif isinstance(node, dict):
+            children = list(node.items())
+        elif isinstance(node, list):
+            children = list(enumerate(node))
+        else:
+            continue
+        stack.extend((path + (key,), value) for key, value in reversed(children))
+    return None
+
+
+def refused_number_path(
+    text: str, *, parse_float: Callable[[str], Any]
+) -> tuple[str | int, ...] | None:
+    """Where the first number that a strict read refuses sits in ``text``, or None.
+
+    Re-reads ``text`` with hooks that mark a refused number instead of raising,
+    only to say where a load error comes from. None when the text fails for
+    another reason before the number is reached.
+    """
+
+    def marking(hook: Callable[[str], Any]) -> Callable[[str], Any]:
+        def mark(token: str) -> Any:
+            try:
+                hook(token)
+            except ValueError:
+                return _REFUSED
+            return None
+
+        return mark
+
+    try:
+        doc = json.loads(
+            text,
+            parse_int=marking(exact_int),
+            parse_float=marking(parse_float),
+            parse_constant=lambda _token: None,
+            object_pairs_hook=_Pairs,
+        )
+    except (ValueError, RecursionError):
+        return None
+    return _first_path(doc, lambda node: node is _REFUSED)
+
+
+def _location(path: Sequence[str | int] | None) -> str:
+    """``contract: conditions[0].max`` for a path into the contract document."""
+    text = ""
+    for part in path or ():
+        if isinstance(part, str) and part.isidentifier():
+            text += f".{part}" if text else part
+        else:
+            text += f"[{part!r}]"
+    return f"contract: {text}" if text else "contract"
+
+
+def _overlong_int(node: object) -> bool:
+    """An integer of more than ``MAX_NUMBER_CHARS`` digits; only a Python dict can hold one."""
+    if isinstance(node, bool) or not isinstance(node, int):
+        return False
+    return not -_INT_LIMIT < node < _INT_LIMIT
+
+
+def _digit_limit_problem(raw: object) -> str | None:
+    """Explain a fingerprint failure caused by a lowered Python int/str digit limit.
+
+    The fingerprint writes integers through ``json``, which honours that limit.
+    Set below 4300 digits, it makes a longer contract integer impossible to
+    fingerprint, so the contract is refused rather than read differently.
+    """
+    limit = sys.get_int_max_str_digits()
+    if not limit or limit >= MAX_NUMBER_CHARS:
+        return None
+    bound = 10**limit
+
+    def too_long(node: object) -> bool:
+        return isinstance(node, int) and not isinstance(node, bool) and not -bound < node < bound
+
+    path = _first_path(raw, too_long)
+    if path is None:
+        return None
+    return (
+        f"{_location(path)}: number out of range; this Python converts integers of at most "
+        f"{limit} digits to text (sys.set_int_max_str_digits or PYTHONINTMAXSTRDIGITS), so "
+        "the contract cannot be fingerprinted"
     )
 
 
@@ -228,6 +406,7 @@ def _contract_float(text: str) -> float:
     literal such as ``9007199254740993.0``, ``0.1000000000000000001`` or
     ``1e400`` would silently become a different number and is rejected.
     """
+    check_number_length(text)
     value = float(text)
     try:
         exact = math.isfinite(value) and Decimal(repr(value)) == Decimal(text)
@@ -287,14 +466,31 @@ def _unknown_keys(
 
 
 def _values(
-    raw: Mapping[str, Any], where: str, problems: _Problems, *, key: str = "values"
+    raw: Mapping[str, Any],
+    where: str,
+    problems: _Problems,
+    *,
+    key: str = "values",
+    allow_null: bool = True,
 ) -> tuple[Scalar, ...]:
+    """A non-empty list of scalars; ``allow_null=False`` for ``one_of`` and ``route``.
+
+    A null field never matches a ``one_of`` or ``route`` value (it is absent or
+    the wrong route), so a null there could only make the check look wider than
+    it is and is refused (RULE-04, RULE-08).
+    """
     value = raw.get(key)
     if not isinstance(value, list) or not value or len(value) > MAX_VALUES:
         problems.add(where, f"'{key}' must be a non-empty list of at most {MAX_VALUES} values")
         return ()
     if not all(_is_scalar(item) for item in value):
-        problems.add(where, f"'{key}' may only hold strings, numbers, booleans or null")
+        kinds = (
+            "strings, numbers, booleans or null" if allow_null else "strings, numbers or booleans"
+        )
+        problems.add(where, f"'{key}' may only hold {kinds}")
+        return ()
+    if not allow_null and any(item is None for item in value):
+        problems.add(where, f"'{key}' cannot hold null: a null field never matches these values")
         return ()
     return tuple(value)
 
@@ -437,7 +633,7 @@ def _condition(
             problems.add(where, f"'kind' must be one of {sorted(VALUE_KINDS)}")
         fields["kind"] = raw.get("kind")
     elif ctype == "one_of":
-        fields["values"] = _values(raw, where, problems)
+        fields["values"] = _values(raw, where, problems, allow_null=False)
         fields["normalize"] = _normalize(raw, where, problems)
     elif ctype == "equals":
         fields["source_field"] = _field(raw, "source_field", where, problems)
@@ -451,7 +647,7 @@ def _condition(
         elif low is not None and high is not None and low > high:
             problems.add(where, "'min' must not exceed 'max'")
     elif ctype == "route":
-        fields["values"] = _values(raw, where, problems)
+        fields["values"] = _values(raw, where, problems, allow_null=False)
         fields["normalize"] = _normalize(raw, where, problems)
         fields["when"] = _predicates(raw.get("when"), f"{where} when", problems)
         if not fields["when"]:
@@ -570,6 +766,16 @@ def contract_from_dict(raw: object) -> Contract:
             seen.add(item.id)
     if problems.items or name is None or not isinstance(version, str):
         raise ContractError(problems.items or ["contract: incomplete"])
+    # Validated, so ``raw`` is now a finite tree. A file never holds a longer
+    # integer (``exact_int``); a Python dict may, and is held to the same cap.
+    overlong = _first_path(raw, _overlong_int)
+    if overlong is not None:
+        raise ContractError(
+            [
+                f"{_location(overlong)}: number out of range; an integer may have at most "
+                f"{MAX_NUMBER_CHARS} digits"
+            ]
+        )
     try:
         fingerprint = hashlib.sha256(canonical_json_bytes(raw)).hexdigest()
     except (SchemaError, ValueError, TypeError, RecursionError) as err:
@@ -578,7 +784,7 @@ def contract_from_dict(raw: object) -> Contract:
         if isinstance(cause, UnicodeError):
             problem = "contract: holds text that is not valid Unicode (e.g. a lone surrogate)"
         else:
-            problem = (
+            problem = _digit_limit_problem(raw) or (
                 f"contract: holds a value with no canonical JSON form ({type(cause).__name__})"
             )
         raise ContractError([problem]) from err
@@ -604,16 +810,17 @@ def load_contract(path: Path | str) -> Contract:
         raise ContractError(["contract: file exceeds 1 MiB"])
     try:
         text = data.decode("utf-8-sig")
-        raw = parse_strict_json(text, parse_float=_contract_float)
-    except _InexactNumber as err:
+    except UnicodeDecodeError as err:
         raise ContractError(
-            [
-                "contract: a number with a fraction or exponent must equal a 64-bit float "
-                "exactly; up to 15 significant digits are always safe for magnitudes from "
-                "1e-307 to 1e308, and integers are exact at any size"
-            ]
+            [f"contract: not valid strict UTF-8 JSON ({type(err).__name__})"]
         ) from err
-    except (UnicodeDecodeError, ValueError, RecursionError) as err:
+    try:
+        raw = parse_strict_json(text, parse_float=_contract_float)
+    except (NumberRangeError, _InexactNumber) as err:
+        where = _location(refused_number_path(text, parse_float=_contract_float))
+        message = _TOO_LONG if isinstance(err, NumberRangeError) else _INEXACT
+        raise ContractError([f"{where}: {message}"]) from err
+    except (ValueError, RecursionError) as err:
         raise ContractError(
             [f"contract: not valid strict UTF-8 JSON ({type(err).__name__})"]
         ) from err
