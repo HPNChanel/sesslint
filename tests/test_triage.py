@@ -108,7 +108,6 @@ def test_limit_and_unreadable_are_distinct(tmp_path: Path) -> None:
 def test_incomplete_coverage_never_checked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: str, status: str
 ) -> None:
-    import sesslint.triage as triage_module
     from sesslint.assessment import assess_source
     from sesslint.report import CoverageSkip
 
@@ -119,7 +118,7 @@ def test_incomplete_coverage_never_checked(
         skipped=(*assessment.report.coverage.skipped, CoverageSkip("graph", reason)),
     )
     assessment = replace(assessment, report=replace(assessment.report, coverage=coverage))
-    monkeypatch.setattr(triage_module, "assess_source", lambda *a, **kw: assessment)
+    monkeypatch.setattr("sesslint.triage.assess_source", lambda *a, **kw: assessment)
     report = triage(source)
     validate(report)
     assert report.status == status and report.assurance == "A0"

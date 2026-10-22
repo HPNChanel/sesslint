@@ -92,7 +92,8 @@ def test_parity_check_dir_recursive(capsys: pytest.CaptureFixture[str]) -> None:
     cli_json = json.loads(cli_out)
     # The CLI attaches a presentation-layer "summary" (ux T-08) that the
     # library report deliberately lacks; parity covers the data plane.
-    assert cli_json.pop("summary") is not None
+    summary = cli_json.pop("summary")
+    assert summary is not None
 
     assert lib_json == cli_json
 
@@ -219,7 +220,8 @@ def test_parity_scan_command(capsys: pytest.CaptureFixture[str]) -> None:
     cli_json = json.loads(cli_out)
     # The CLI attaches a presentation-layer "summary" (ux T-08) that the
     # library report deliberately lacks; parity covers the data plane.
-    assert cli_json.pop("summary") is not None
+    summary = cli_json.pop("summary")
+    assert summary is not None
     assert cli_json == lib_json
 
 

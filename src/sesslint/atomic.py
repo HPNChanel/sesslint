@@ -142,11 +142,11 @@ def atomic_write_bytes(
         else:
             _publish_exclusive(temp_path, dest_path)
             # POSIX hard-link publication retains the staging name; Windows
-            # rename consumes it. Cleanup failure must not undo publication.
+            # rename consumes it.
             try:
                 temp_path.unlink(missing_ok=True)
             except OSError:
-                pass
+                pass  # Cleanup failure must not undo publication.
             temp_path = None
 
         if sync_dir:

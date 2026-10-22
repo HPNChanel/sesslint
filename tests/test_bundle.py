@@ -525,12 +525,10 @@ def test_bundle_resolve_format_call_kwargs_match_embedded() -> None:
     """Capture kwargs reaching both resolve_format call sites and assert equality."""
     from unittest.mock import patch
 
-    import sesslint.adapters.detect as detect_mod
-    import sesslint.bundle as bundle_mod
+    from sesslint.adapters.detect import resolve_format_bytes as real_api_rf
+    from sesslint.bundle import resolve_format as real_bundle_rf
 
     seen: list[dict[str, Any]] = []
-    real_bundle_rf = bundle_mod.resolve_format
-    real_api_rf = detect_mod.resolve_format_bytes
 
     def spy_bundle(*args: Any, **kwargs: Any) -> Any:
         seen.append(dict(kwargs))
@@ -541,8 +539,8 @@ def test_bundle_resolve_format_call_kwargs_match_embedded() -> None:
         return real_api_rf(*args, **kwargs)
 
     with (
-        patch.object(bundle_mod, "resolve_format", spy_bundle),
-        patch.object(detect_mod, "resolve_format_bytes", spy_api),
+        patch("sesslint.bundle.resolve_format", spy_bundle),
+        patch("sesslint.adapters.detect.resolve_format_bytes", spy_api),
     ):
         build_bundle(HEALTHY_CANONICAL, confidence_min=0.70, margin_min=0.20)
 
