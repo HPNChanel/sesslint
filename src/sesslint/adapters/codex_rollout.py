@@ -13,10 +13,11 @@ Envelope ``type`` values seen in the wild: ``session_meta`` (header-like
 metadata), ``response_item`` (conversation items), ``event_msg`` (lifecycle
 signals), ``turn_context`` (per-turn run context), ``world_state``,
 ``inter_agent_communication_metadata``, ``token_usage_record`` (token usage
-metadata), and ``compacted`` (window compaction). Codex 0.163.0 also writes
-``realtime_item`` and ``security_risk_score`` sidecars, which its resume
-replay skips, and ``inter_agent_communication``, which it replays into
-model-visible history and which stays unmapped (SL302).
+metadata), ``retained_context`` (host-owned review facts), and ``compacted``
+(window compaction). Codex 0.163.0 also writes ``realtime_item`` and
+``security_risk_score`` sidecars, which its resume replay skips, and reads
+``inter_agent_communication``, which its resume replay feeds to the model as
+an ``agent_message``.
 
 ``response_item`` payloads carry their own ``type``: ``message``,
 ``agent_message``, ``reasoning``, ``function_call``, ``custom_tool_call``,
@@ -33,10 +34,13 @@ Guarantees:
   bounded structural markers (id/type/correlator only) for SL208.
 - Run-metadata records (``event_msg``, ``turn_context``, ``world_state``,
   ``session_meta``, ``inter_agent_communication_metadata``,
-  ``token_usage_record``, ``realtime_item``, ``security_risk_score``) are
-  kept as ``system``/``opaque`` events — preserved in DAG position without
-  pretending to be conversational content (unknown noncritical records may
-  be kept opaque, FR-021).
+  ``token_usage_record``, ``retained_context``, ``realtime_item``,
+  ``security_risk_score``) are kept as ``system``/``opaque`` events —
+  preserved in DAG position without pretending to be conversational content
+  (unknown noncritical records may be kept opaque, FR-021).
+- ``inter_agent_communication`` maps to a durable ``assistant``/``message``
+  event, like the ``agent_message`` its replay produces; a payload the
+  vendor's deserializer would reject fails closed with SL302.
 - Unknown envelope types and unknown ``response_item`` payload types route to
   SL302 with bounded discriminator evidence; missing/unsupported explicit
   format-version markers (``rollout_version``/``format_version``/
@@ -123,9 +127,9 @@ SUPPORTED_CODEX_ROLLOUT_VERSIONS: Final[frozenset[str]] = frozenset(
 # Envelope-level types that carry run/telemetry metadata rather than
 # conversational content. Mapped to system/opaque so they keep DAG position
 # without participating in identity/parentage/pairing semantics (FR-021).
-# ``inter_agent_communication`` is deliberately absent: Codex replays it into
-# model-visible history as a user-turn boundary, so it stays SL302 until it
-# is mapped (docs/VENDOR_DRIFT.md §9).
+# ``inter_agent_communication`` is absent: Codex replays it into
+# model-visible history, so it has its own message mapping below
+# (docs/VENDOR_DRIFT.md §9).
 ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "session_meta",
@@ -147,17 +151,25 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
 # durable record sequence the paginated resume path replays (SL206,
 # detector-depth T-03). ``session_meta`` is the durable thread header;
 # ``response_item`` carries conversation items; ``compacted`` is a durable
-# history rewrite. The remaining ENVELOPE_OPAQUE_TYPES families
-# (``event_msg``, ``turn_context``, ``world_state``,
-# ``inter_agent_communication_metadata``, ``token_usage_record``,
-# ``realtime_item``, ``security_risk_score``) are per-run telemetry —
-# present in the file but not part of the durable prefix. Unknown envelope
+# history rewrite; ``inter_agent_communication`` is replayed into model
+# history as an ``agent_message`` and kept by full-history forks. The
+# remaining ENVELOPE_OPAQUE_TYPES families (``event_msg``, ``turn_context``,
+# ``world_state``, ``inter_agent_communication_metadata``,
+# ``token_usage_record``, ``realtime_item``, ``security_risk_score``) are
+# per-run telemetry — present in the file but not part of the durable
+# prefix. ``retained_context`` is also non-durable although resume replay
+# reads it: replay records it in the separate retained-context review store,
+# never in model history ("sparse, model-invisible updates" written only by
+# the host), and both fork kinds drop it, so it is never part of an
+# inherited prefix. Being read by replay has never made a family durable
+# here (``turn_context`` and ``world_state`` are read too). Unknown envelope
 # types fail closed as non-durable.
 DURABLE_ENVELOPE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "session_meta",
         "response_item",
         "compacted",
+        "inter_agent_communication",
     }
 )
 
@@ -284,7 +296,8 @@ KNOWN_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
         "window_number",
         "replacement_history",
         "guardian_history",
-        # inter_agent_communication_metadata
+        # inter_agent_communication (+ its _metadata sidecar's trigger_turn)
+        "other_recipients",
         "trigger_turn",
         # version markers honored when present
         "rollout_version",
@@ -323,6 +336,9 @@ CRITICAL_KEYS: Final[frozenset[str]] = frozenset(
 _TIMESTAMP_ISO_REGEX: Final[re.Pattern[str]] = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$"
 )
+
+# One name segment of a Codex ``AgentPath`` (``validate_agent_name``, rust-v0.163.0).
+_AGENT_NAME_REGEX: Final[re.Pattern[str]] = re.compile(r"[a-z0-9_]+")
 
 
 def _safe_type_value(val: Any) -> str:
@@ -526,6 +542,74 @@ def _tool_input_payload(raw_input: Any) -> Any:
     if isinstance(raw_input, Mapping):
         return dict(raw_input)
     return {"value": raw_input}
+
+
+def _is_agent_path(value: Any) -> bool:
+    """Return True when ``value`` deserializes as a Codex ``AgentPath``.
+
+    Mirrors ``validate_absolute_path`` at rust-v0.163.0: ``/morpheus``, or
+    ``/root`` followed by ``/``-separated names made of lowercase ASCII
+    letters, digits and ``_``, none of them ``root``.
+    """
+    if value == "/morpheus":
+        return True
+    if not isinstance(value, str) or not value.startswith("/") or value.endswith("/"):
+        return False
+    root, *names = value[1:].split("/")
+    return root == "root" and all(
+        name != "root" and _AGENT_NAME_REGEX.fullmatch(name) is not None for name in names
+    )
+
+
+def _is_message_passthrough(value: Any) -> bool:
+    """Return True when ``value`` deserializes as Codex's
+    ``InternalChatMessageMetadataPassthrough`` at rust-v0.163.0: an object
+    whose ``turn_id`` is a string and whose ``create_time`` is a number,
+    each when present. Codex defaults or ignores its other keys.
+    """
+    if not isinstance(value, Mapping):
+        return False
+    turn_id = value.get("turn_id")
+    if turn_id is not None and not isinstance(turn_id, str):
+        return False
+    create_time = value.get("create_time")
+    return create_time is None or (
+        not isinstance(create_time, bool) and isinstance(create_time, (int, float))
+    )
+
+
+def _inter_agent_shape_error(payload: Any) -> str | None:
+    """Return the first field path that breaks Codex's InterAgentCommunication
+    shape, or None when the payload matches it.
+
+    Mirrors the serde contract at rust-v0.163.0 field by field: ``id`` and
+    ``encrypted_content`` are strings when present; ``author``,
+    ``recipient`` and every ``other_recipients`` entry are agent paths;
+    ``content`` is a string; ``trigger_turn`` is a bool; the passthrough
+    metadata matches its own contract when present. Unknown keys pass, as
+    they do for Codex. Only an object passes, so the check is never more
+    lenient than Codex. Codex skips a line that breaks the contract, so such
+    a record is never model-visible.
+    """
+    if not isinstance(payload, Mapping):
+        return "payload"
+    for key in ("id", "encrypted_content"):
+        if payload.get(key) is not None and not isinstance(payload.get(key), str):
+            return f"payload.{key}"
+    for key in ("author", "recipient"):
+        if not _is_agent_path(payload.get(key)):
+            return f"payload.{key}"
+    others = payload.get("other_recipients", [])
+    if not isinstance(others, list) or not all(_is_agent_path(path) for path in others):
+        return "payload.other_recipients"
+    if not isinstance(payload.get("content"), str):
+        return "payload.content"
+    if not isinstance(payload.get("trigger_turn"), bool):
+        return "payload.trigger_turn"
+    passthrough = payload.get("internal_chat_message_metadata_passthrough")
+    if passthrough is not None and not _is_message_passthrough(passthrough):
+        return "payload.internal_chat_message_metadata_passthrough"
+    return None
 
 
 def _version_field_name(envelope: Any, payload: Any) -> str:
@@ -930,6 +1014,43 @@ def _process_rollout_record(
                     codex_extra["guardian_items_truncated"] = True
         else:
             out_payload = {"summary": ""}
+    elif env_type == "inter_agent_communication":
+        # Codex 0.163.0 resume replay feeds this record to the model as an
+        # ``agent_message`` (``to_model_input_item``); the 0.163 live writer
+        # persists the same message as that ``response_item`` instead. Both
+        # encodings map alike: an assistant message carrying another agent's
+        # text, never user input. Codex also counts the record as a user-turn
+        # boundary for rollback; the canonical stream has no turn segments,
+        # so that stays unmodeled. Author and recipient are agent paths, not
+        # thread ids: they stay in the canonical payload and never become
+        # ``agent_id`` scope or SL401 links. No ``item_type`` marker: the
+        # record declares none, so SL208 has no vendor claim to compare.
+        bad_field = _inter_agent_shape_error(payload)
+        if bad_field is None and isinstance(payload, Mapping):
+            actor, kind = "assistant", "message"
+            out_payload = {
+                "content": payload["content"],
+                "role": actor,
+                "author": payload["author"],
+                "recipient": payload["recipient"],
+            }
+            # Field presence only — never the encrypted value. An encrypted
+            # message reaches the model as vendor framing plus ciphertext,
+            # neither of which is projected, so ``content`` stays as written.
+            codex_extra["has_encrypted_content"] = payload.get("encrypted_content") is not None
+        else:
+            _emit_sl302(
+                path_str=path_str,
+                line_number=line_number,
+                rec_id=rec_id_str,
+                field_path=bad_field or "payload",
+                type_value=env_type,
+                coord_ev=coord_ev,
+                findings=findings,
+            )
+            out_payload = {"type": env_type}
+            # Codex skips a line it cannot parse, so it is no durable history.
+            codex_extra["durable"] = False
     elif isinstance(env_type, str) and env_type in ENVELOPE_OPAQUE_TYPES:
         actor, kind = "system", "opaque"
         out_payload = {"type": env_type}
@@ -992,8 +1113,10 @@ def _process_rollout_record(
                     # durable sequence must cover (#40747 signature).
                     codex_extra["subagent_history_start_ordinal"] = _shso
         elif env_type == "retained_context" and isinstance(payload, Mapping):
-            # This is bookkeeping, not a response/tool result or durable replay
-            # item. Its call_id must never participate in tool pairing.
+            # Host-owned review bookkeeping, not a response/tool result or
+            # model history (see DURABLE_ENVELOPE_TYPES). Its call_id names
+            # the answered request_user_input call; it must never participate
+            # in tool pairing.
             for key in ("type", "turn_id"):
                 if isinstance(payload.get(key), str):
                     out_payload["subtype" if key == "type" else key] = payload[key]

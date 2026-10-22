@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validates the four new schemas against live output. The README schema
   table now lists all 21 schemas.
 
+### Changed
+
+- The `codex-rollout` adapter version is now `1.1.0`, because
+  `inter_agent_communication` records now map to messages (see Fixed).
+  Finding fingerprints from checks on Codex rollouts change with it, and so
+  do the repair plans and bundles that carry them. `sesslint.baseline/v2`
+  baselines still match, since their keys leave adapter versions out; a
+  legacy v1 baseline for Codex rollouts needs `--write-baseline` again.
+
 ### Fixed
 
 - `docs/RELEASE_0.4.1.md` no longer links to maintainer-local evidence files
@@ -66,17 +75,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `sesslint.hook-result/v1` schema's `reason` description now lists the
   `budget-exceeded` and `format-undetected` skip reasons that `sesslint hook`
   already emits; a test keeps the list in sync with the code.
-- Codex 0.163.0 rollouts no longer fail detection because of two new
-  envelope types. `realtime_item` (realtime presentation facts) and
+- Codex 0.163.0 rollouts no longer fail detection because of new envelope
+  types. `realtime_item` (realtime presentation facts) and
   `security_risk_score` (classifier scores Codex keeps out of model context)
   are now non-durable `system`/`opaque` events projected to their type name
   only; before, each raised `SL302`, so `check` exited 1 and `precheck` and
   `sesslint hook` reported `detection-failed`. The `security_risk_score`
   `call_id` never enters tool pairing. `inter_agent_communication`, which
-  Codex replays into model-visible history, still fails closed with `SL302`
-  until it has a real mapping. The shapes come from the `rust-v0.163.0`
-  rollout writer and replay source, re-created as synthetic fixtures;
-  `docs/VENDOR_DRIFT.md` §9 records the check and its limits.
+  Codex replays into model history as an agent message, now maps to a
+  durable `assistant`/`message` event shaped like the `agent_message` that
+  replay builds, and `SL206` counts it as durable history. Its author and
+  recipient agent paths stay in the payload and never become agent identity
+  or `SL401` links. A payload Codex itself cannot deserialize, a malformed
+  agent path included, still raises `SL302` and counts as non-durable.
+  `retained_context` stays non-durable, because Codex keeps it outside model
+  history. The shapes come from the `rust-v0.163.0` rollout writer and
+  replay source, re-created as synthetic fixtures; `docs/VENDOR_DRIFT.md` §9
+  records the check, the mapping decisions and their limits.
 
 ## [0.5.0] - 2026-10-19
 

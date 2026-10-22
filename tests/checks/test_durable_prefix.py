@@ -200,6 +200,35 @@ def test_claim_within_durable_coverage_silent(tmp_path: Path) -> None:
     assert [f.code for f in report.findings if f.code == "SL206"] == []
 
 
+def test_inter_agent_communication_holds_claimed_ordinal(tmp_path: Path) -> None:
+    # Codex 0.163 replays inter_agent_communication into model history and
+    # full-history forks keep it, so it counts toward durable coverage.
+    p = _rollout(
+        tmp_path,
+        [
+            (
+                0,
+                "session_meta",
+                {"session_id": "s", "subagent_history_start_ordinal": 3},
+            ),
+            (1, "response_item", _msg("m1", "user")),
+            (2, "response_item", _msg("m2")),
+            (
+                3,
+                "inter_agent_communication",
+                {
+                    "author": "/root",
+                    "content": "x",
+                    "recipient": "/root/worker",
+                    "trigger_turn": True,
+                },
+            ),
+        ],
+    )
+    report = check_file(p, format="codex-rollout")
+    assert [f.code for f in report.findings] == []
+
+
 def test_durable_gap_fires_once() -> None:
     report = check_file(GAP, format="codex-rollout")
     sl = [f for f in report.findings if f.code == "SL206"]

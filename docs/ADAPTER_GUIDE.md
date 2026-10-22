@@ -255,7 +255,7 @@ The table below tracks known open questions regarding upstream vendor formats. T
 | `claude-code-jsonl` | Summary / Compaction records | `SECONDARY_UNVERIFIED` | Monitored | Confirming whether Claude Code emits explicit checkpoint markers or relies on implicit turn drops. |
 | `openai-agents` | Compaction items in run items | `SECONDARY_UNVERIFIED` | Monitored | Schema verification for OpenAI Agents SDK memory condensation records. |
 | `openai-agents` | Multi-agent handoff delegation | `SECONDARY_UNVERIFIED` | Monitored | Conformance traces for `agent_handoff` items between distinct agent definitions. |
-| `codex-rollout` | Envelope `type` vocabulary expansion | `SECONDARY_UNVERIFIED` | Monitored | New envelope types beyond `session_meta`, `response_item`, `event_msg`, `turn_context`, `world_state`, `inter_agent_communication_metadata`, `compacted` route to SL302 by design. |
+| `codex-rollout` | Envelope `type` vocabulary expansion | `SECONDARY_UNVERIFIED` | Monitored | Envelope types outside `DURABLE_ENVELOPE_TYPES` and `ENVELOPE_OPAQUE_TYPES` in `src/sesslint/adapters/codex_rollout.py` route to SL302 by design; `docs/VENDOR_DRIFT.md` §9 records the 0.163.0 additions. |
 | `codex-rollout` | `response_item` payload-type expansion | `SECONDARY_UNVERIFIED` | Monitored | New payload types beyond the observed set route to SL302 by design. |
 | `codex-rollout` | Explicit format-version marker | `SECONDARY_UNVERIFIED` | Monitored | Wild rollouts carry no `rollout_version`/`format_version`; if upstream adds one, the SL301 supported-set must be revisited. `cli_version` is never version-gated. |
 | `codex-rollout` | Subagent history interleave (`subagent_history_start_ordinal`) | `SECONDARY_UNVERIFIED` | Pending Research | Evidence whether forked-agent records interleave in one stream or arrive as separate rollouts; linear-by-ordinal parentage is the current honest model. |
@@ -272,7 +272,9 @@ The table below tracks known open questions regarding upstream vendor formats. T
   (actor `assistant`); `function_call_output`/`custom_tool_call_output` →
   `tool_result` (actor `tool`, `correlation_id` = `call_id`); `message` →
   `message` with role disambiguation (`developer` → `system`);
-  `agent_message` → `assistant` `message`; `reasoning` → `assistant` `opaque`
+  `agent_message` and the `inter_agent_communication` envelope → `assistant`
+  `message` (author and recipient stay in the payload and never become
+  agent identity); `reasoning` → `assistant` `opaque`
   (encrypted content never projected); `compacted` → `compaction_boundary`;
   `session_meta`/`event_msg`/`turn_context`/`world_state`/
   `inter_agent_communication_metadata` → `system` `opaque` with identifier
