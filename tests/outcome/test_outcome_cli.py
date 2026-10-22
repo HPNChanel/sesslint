@@ -146,3 +146,79 @@ def test_cli_output_is_byte_stable(capsys: pytest.CaptureFixture[str]) -> None:
     first = capsys.readouterr().out
     main([*BASE, "--json"])
     assert capsys.readouterr().out == first
+
+
+# Review regressions before 0.5.0.
+
+
+@pytest.mark.parametrize(
+    ("name", "condition"),
+    [
+        ('"c"', '{"id": "n", "type": "count", "max": ' + str(10**400) + "}"),
+        ('"c' + chr(92) + 'ud800"', '{"id": "e", "type": "exists"}'),
+        ('"c"', '{"id": "r", "type": "range", "field": "x", "max": 9007199254740993.0}'),
+    ],
+    ids=["huge-count-bound", "lone-surrogate", "inexact-float"],
+)
+def test_malformed_contract_values_exit_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, condition: str
+) -> None:
+    bad = tmp_path / "c.json"
+    bad.write_text(
+        '{"schema_version": "sesslint.outcome-contract/v1", "name": '
+        + name
+        + ', "version": "1", "key": {"source": "order_id", "target": "order_id"},'
+        + ' "conditions": ['
+        + condition
+        + "]}",
+        encoding="utf-8",
+    )
+    for argv in (
+        ["outcome", str(bad), "--explain"],
+        ["outcome", str(bad), "--source", SOURCE, "--target", TARGET],
+    ):
+        assert main(argv) == 2
+        assert "invalid outcome contract" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("flags", [["--json"], ["-f", "json"], ["--format", "json"]])
+def test_explain_refuses_json_output(capsys: pytest.CaptureFixture[str], flags: list[str]) -> None:
+    """CON-03: explain is prose only; a requested JSON format is a usage error."""
+    assert main(["outcome", CONTRACT, "--explain", *flags]) == 2
+    assert "--explain prints plain text only" in capsys.readouterr().err
+
+
+def test_explain_ignores_a_json_default_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SESSLINT_FORMAT", "json")
+    assert main(["outcome", CONTRACT, "--explain"]) == 0
+    assert "Conditions:" in capsys.readouterr().out
+
+
+def test_tilde_paths_expand_for_every_outcome_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shells that keep '~' literal still reach the contract, snapshots and session."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    _copy(tmp_path, "contract.json", "source.csv", "target_complete.json")
+    session = tmp_path / "session.jsonl"
+    session.write_bytes((ROOT / "fixtures" / "sessions" / "minimal-valid.jsonl").read_bytes())
+    argv = [
+        "outcome",
+        "~/contract.json",
+        "--source",
+        "~/source.csv",
+        "--target",
+        "~/target_complete.json",
+        "--session",
+        "~/session.jsonl",
+        "--json",
+    ]
+    assert main(argv) == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["run_status"] == "completed"
+    assert doc["dimensions"]["session_integrity"]["status"] in {"findings", "no_findings"}
+    assert main(["outcome", "~/contract.json", "--explain"]) == 0
+    assert "Conditions:" in capsys.readouterr().out

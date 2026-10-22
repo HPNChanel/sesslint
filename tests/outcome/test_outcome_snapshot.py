@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from sesslint.outcome import SnapshotError, load_snapshot, parse_instant
-from sesslint.outcome.snapshot import NON_SCALAR
+from sesslint.outcome.snapshot import EMPTY_NESTED, NON_SCALAR
 from tests.outcome.helpers import ORDERS, at
 from tests.utils.schema import assert_schema
 
@@ -166,3 +167,47 @@ def test_snapshot_metadata_is_content_free() -> None:
         "demo",
     }
     assert meta["name"] == "target_complete.json"
+
+
+# Review regressions before 0.5.0: JSON Lines framing and exact numbers.
+
+
+def test_jsonl_ends_records_at_line_feeds_only(tmp_path: Path) -> None:
+    """U+2028, U+2029 and U+0085 are legal inside JSON strings and never split a record."""
+    note = "a" + chr(0x2028) + "b" + chr(0x2029) + "c" + chr(0x85) + "d"
+    text = '{"ref": "1", "note": "' + note + '"}\r\n' + "\r\n" + "  \t\n" + '{"ref": "2"}\n'
+    snap = load_snapshot(_write(tmp_path, "t.jsonl", text), role="target")
+    assert [r["ref"] for r in snap.records] == ["1", "2"]
+    assert snap.records[0]["note"] == note
+    with pytest.raises(SnapshotError, match="line 5"):
+        load_snapshot(_write(tmp_path, "t.jsonl", text + "{oops}\n"), role="target")
+    # A carriage return alone does not end a record.
+    with pytest.raises(SnapshotError, match="line 1"):
+        load_snapshot(_write(tmp_path, "t.jsonl", '{"ref": "1"}\r{"ref": "2"}\n'), role="target")
+
+
+def test_json_numbers_stay_exact_and_empty_nesting_is_marked(tmp_path: Path) -> None:
+    text = '[{"ref": "1", "a": 0.1, "b": 9007199254740993, "c": [], "d": {}, "e": [1], "f": 1E2}]'
+    record = load_snapshot(_write(tmp_path, "t.json", text), role="target").records[0]
+    assert type(record["a"]) is Decimal and record["a"] == Decimal("0.1")
+    assert type(record["b"]) is int and record["b"] == 2**53 + 1
+    assert record["c"] is EMPTY_NESTED and record["d"] is EMPTY_NESTED
+    assert record["e"] is NON_SCALAR
+    assert type(record["f"]) is Decimal and record["f"] == 100
+
+
+@pytest.mark.parametrize(
+    ("name", "template"),
+    [("t.json", '[{"n": NUMBER}]'), ("t.jsonl", '{"n": NUMBER}' + "\n")],
+)
+def test_snapshot_number_exponents_are_bounded(tmp_path: Path, name: str, template: str) -> None:
+    """Exponents over six digits would make exact comparison platform-dependent."""
+
+    def first_number(literal: str) -> object:
+        path = _write(tmp_path, name, template.replace("NUMBER", literal))
+        return load_snapshot(path, role="target").records[0]["n"]
+
+    assert first_number("1e999999") == Decimal("1e999999")
+    for literal in ("1e1000000", "-1E+0001000000", "2.5e-1000000"):
+        with pytest.raises(SnapshotError, match="out of range"):
+            first_number(literal)

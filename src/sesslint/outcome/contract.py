@@ -4,19 +4,26 @@ A contract is declarative data: a correlation key, eligibility predicates, an
 optional due window and a closed set of condition types (RULE-01…RULE-08).
 Nothing in a contract is executed; unknown keys, types and operators are
 rejected so a typo can never silently weaken a check (fail closed).
+
+Numbers keep their written value: integers are exact at any size, and a
+number with a fraction or exponent must round-trip through a binary64 float
+(the contract is fingerprinted as written), otherwise it is rejected.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
 from sesslint._canonical_codec import canonical_json_bytes
+from sesslint.errors import SchemaError
 
 CONTRACT_SCHEMA_VERSION: Final[str] = "sesslint.outcome-contract/v1"
 MAX_CONTRACT_BYTES: Final[int] = 1024 * 1024
@@ -25,6 +32,8 @@ MAX_PREDICATES: Final[int] = 32
 MAX_VALUES: Final[int] = 1000
 MAX_KEY_FIELDS: Final[int] = 8
 MAX_WITHIN_SECONDS: Final[int] = 10 * 366 * 24 * 3600
+# A snapshot holds at most 1,000,000 records, so a larger count bound is meaningless.
+MAX_COUNT_BOUND: Final[int] = 1_000_000
 
 CONDITION_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -49,7 +58,8 @@ VALUE_KINDS: Final[frozenset[str]] = frozenset(
 NORMALIZATIONS: Final[tuple[str, ...]] = ("trim", "casefold")
 DEADLINE_BASES: Final[frozenset[str]] = frozenset({"target_time", "observation"})
 
-_ID_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# Used with fullmatch: "$" would also accept a trailing newline.
+_ID_RE: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _MAX_FIELD_CHARS: Final[int] = 256
 _MAX_TEXT_CHARS: Final[int] = 2000
 
@@ -113,8 +123,9 @@ class Condition:
     values: tuple[Scalar, ...] = ()
     normalize: tuple[str, ...] = ()
     kind: str | None = None
-    minimum: float | None = None
-    maximum: float | None = None
+    # As written in the contract: int for count; int or finite float for range.
+    minimum: int | float | None = None
+    maximum: int | float | None = None
     allow_null: bool = False
     allow_empty: bool = False
     when: tuple[Predicate, ...] = ()
@@ -196,17 +207,50 @@ def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return out
 
 
-def parse_strict_json(text: str) -> Any:
+def parse_strict_json(text: str, *, parse_float: Callable[[str], Any] | None = None) -> Any:
     """Parse JSON rejecting NaN/Infinity and duplicate object keys."""
-    return json.loads(text, parse_constant=_reject_constant, object_pairs_hook=_no_duplicate_keys)
+    return json.loads(
+        text,
+        parse_float=parse_float,
+        parse_constant=_reject_constant,
+        object_pairs_hook=_no_duplicate_keys,
+    )
+
+
+class _InexactNumber(ValueError):
+    """A contract number that a binary64 float cannot hold exactly."""
+
+
+def _contract_float(text: str) -> float:
+    """``parse_float`` hook: accept a literal only if its float has the same value.
+
+    Contracts are fingerprinted as written, so non-integers stay floats; a
+    literal such as ``9007199254740993.0``, ``0.1000000000000000001`` or
+    ``1e400`` would silently become a different number and is rejected.
+    """
+    value = float(text)
+    try:
+        exact = math.isfinite(value) and Decimal(repr(value)) == Decimal(text)
+    except InvalidOperation:
+        exact = False
+    if not exact:
+        raise _InexactNumber("number does not equal a 64-bit float exactly")
+    return value
 
 
 def _is_scalar(value: object) -> bool:
-    return value is None or isinstance(value, (str, int, float, bool))
+    return value is None or isinstance(value, (str, bool)) or _is_number(value)
 
 
 def _is_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))
+
+
+def _one_of(value: object, allowed: frozenset[str]) -> bool:
+    """Membership that never raises: lists and objects are unhashable."""
+    return isinstance(value, str) and value in allowed
 
 
 def _field(raw: Mapping[str, Any], key: str, where: str, problems: _Problems) -> str | None:
@@ -228,9 +272,17 @@ def _text(raw: Mapping[str, Any], key: str, where: str, problems: _Problems) -> 
 
 
 def _unknown_keys(
-    raw: Mapping[str, Any], allowed: frozenset[str], where: str, problems: _Problems
+    raw: Mapping[Any, Any], allowed: frozenset[str], where: str, problems: _Problems
 ) -> None:
-    for key in sorted(set(raw) - allowed):
+    """Report keys outside ``allowed``; a non-string key is a problem, never a crash.
+
+    Decoded JSON always has string keys, but ``contract_from_dict`` also takes
+    Python dicts, whose keys may be of any type and need not sort together.
+    """
+    odd_types = sorted({type(key).__name__ for key in raw if not isinstance(key, str)})
+    for name in odd_types:
+        problems.add(where, f"keys must be strings, not {name}")
+    for key in sorted({key for key in raw if isinstance(key, str)} - allowed):
         problems.add(where, f"unknown key {key!r}")
 
 
@@ -266,7 +318,7 @@ def _predicate(raw: object, where: str, problems: _Problems) -> Predicate | None
         problems.add(where, "predicate must be an object")
         return None
     op = raw.get("op")
-    if op not in PREDICATE_OPS:
+    if not _one_of(op, PREDICATE_OPS):
         problems.add(where, f"'op' must be one of {sorted(PREDICATE_OPS)}")
         return None
     allowed = {"field", "op"}
@@ -304,17 +356,41 @@ def _predicates(raw: object, where: str, problems: _Problems) -> tuple[Predicate
     return tuple(p for p in out if p is not None)
 
 
-def _bound(raw: Mapping[str, Any], key: str, where: str, problems: _Problems) -> float | None:
+def _bound(raw: Mapping[str, Any], key: str, where: str, problems: _Problems) -> int | float | None:
+    """A range bound kept as written; the engine compares it exactly, never as a float."""
     if key not in raw or raw[key] is None:
         return None
-    if not _is_number(raw[key]):
-        problems.add(where, f"'{key}' must be a number")
+    value = raw[key]
+    if not _is_number(value):
+        problems.add(where, f"'{key}' must be a finite number")
         return None
-    try:
-        return float(raw[key])
-    except OverflowError:
-        problems.add(where, f"'{key}' is too large")
-        return None
+    return int(value) if isinstance(value, int) else float(value)
+
+
+def _count_bounds(
+    raw: Mapping[str, Any], where: str, problems: _Problems
+) -> tuple[int | None, int | None]:
+    """``count`` bounds: integers in 0..MAX_COUNT_BOUND; ``null`` is not a bound (RULE-02)."""
+    bounds: dict[str, int | None] = {"min": 1, "max": None}
+    valid = True
+    for name in ("min", "max"):
+        if name not in raw:
+            continue
+        value = raw[name]
+        if type(value) is not int or not 0 <= value <= MAX_COUNT_BOUND:
+            problems.add(where, f"'{name}' must be an integer from 0 to {MAX_COUNT_BOUND}")
+            valid = False
+        else:
+            bounds[name] = value
+    low, high = bounds["min"], bounds["max"]
+    if valid and low is not None:
+        if high is not None and low > high:
+            problems.add(where, "'min' must not exceed 'max'")
+        if low == 0 and high is None:
+            problems.add(where, "count with min 0 and no max can never be violated")
+        if high == 0:
+            problems.add(where, "'max' 0 asks for absence, which v1 cannot prove; omit it")
+    return low, high
 
 
 def _condition(
@@ -324,11 +400,11 @@ def _condition(
         problems.add(where, "condition must be an object")
         return None
     ctype = raw.get("type")
-    if ctype not in CONDITION_TYPES:
+    if not _one_of(ctype, CONDITION_TYPES):
         problems.add(where, f"'type' must be one of {sorted(CONDITION_TYPES)}")
         return None
     cond_id = raw.get("id")
-    if not isinstance(cond_id, str) or not _ID_RE.match(cond_id):
+    if not isinstance(cond_id, str) or not _ID_RE.fullmatch(cond_id):
         problems.add(where, "'id' must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}")
         cond_id = "?"
     where = f"condition {cond_id!r}"
@@ -348,18 +424,7 @@ def _condition(
     if ctype in ("required", "type", "one_of", "equals", "range", "route"):
         fields["field"] = _field(raw, "field", where, problems)
     if ctype == "count":
-        low, high = raw.get("min", 1), raw.get("max")
-        for name, bound in (("min", low), ("max", high)):
-            if bound is not None and (type(bound) is not int or bound < 0):
-                problems.add(where, f"'{name}' must be a non-negative integer")
-        if type(low) is int and type(high) is int and low > high:
-            problems.add(where, "'min' must not exceed 'max'")
-        if low == 0 and high is None:
-            problems.add(where, "count with min 0 and no max can never be violated")
-        if high == 0:
-            problems.add(where, "'max' 0 asks for absence, which v1 cannot prove; omit it")
-        fields["minimum"] = float(low) if type(low) is int else None
-        fields["maximum"] = float(high) if type(high) is int else None
+        fields["minimum"], fields["maximum"] = _count_bounds(raw, where, problems)
     elif ctype == "required":
         for flag in ("allow_null", "allow_empty"):
             value = raw.get(flag, False)
@@ -368,7 +433,7 @@ def _condition(
                 value = False
             fields[flag] = value
     elif ctype == "type":
-        if raw.get("kind") not in VALUE_KINDS:
+        if not _one_of(raw.get("kind"), VALUE_KINDS):
             problems.add(where, f"'kind' must be one of {sorted(VALUE_KINDS)}")
         fields["kind"] = raw.get("kind")
     elif ctype == "one_of":
@@ -393,7 +458,7 @@ def _condition(
             problems.add(where, "route needs at least one 'when' predicate")
     elif ctype == "on_time":
         basis = raw.get("basis")
-        if basis not in DEADLINE_BASES:
+        if not _one_of(basis, DEADLINE_BASES):
             problems.add(where, "'basis' must be 'target_time' or 'observation'")
         fields["basis"] = basis
         if basis == "target_time":
@@ -505,6 +570,18 @@ def contract_from_dict(raw: object) -> Contract:
             seen.add(item.id)
     if problems.items or name is None or not isinstance(version, str):
         raise ContractError(problems.items or ["contract: incomplete"])
+    try:
+        fingerprint = hashlib.sha256(canonical_json_bytes(raw)).hexdigest()
+    except (SchemaError, ValueError, TypeError, RecursionError) as err:
+        # e.g. a lone surrogate escape ("\ud800"): no canonical UTF-8 form exists.
+        cause = err.__cause__ if isinstance(err, SchemaError) else err
+        if isinstance(cause, UnicodeError):
+            problem = "contract: holds text that is not valid Unicode (e.g. a lone surrogate)"
+        else:
+            problem = (
+                f"contract: holds a value with no canonical JSON form ({type(cause).__name__})"
+            )
+        raise ContractError([problem]) from err
     return Contract(
         name=name,
         version=version,
@@ -514,7 +591,7 @@ def contract_from_dict(raw: object) -> Contract:
         eligibility=eligibility,
         due=due,
         conditions=conditions,
-        sha256=hashlib.sha256(canonical_json_bytes(raw)).hexdigest(),
+        sha256=fingerprint,
     )
 
 
@@ -527,7 +604,15 @@ def load_contract(path: Path | str) -> Contract:
         raise ContractError(["contract: file exceeds 1 MiB"])
     try:
         text = data.decode("utf-8-sig")
-        raw = parse_strict_json(text)
+        raw = parse_strict_json(text, parse_float=_contract_float)
+    except _InexactNumber as err:
+        raise ContractError(
+            [
+                "contract: a number with a fraction or exponent must equal a 64-bit float "
+                "exactly; up to 15 significant digits are always safe for magnitudes from "
+                "1e-307 to 1e308, and integers are exact at any size"
+            ]
+        ) from err
     except (UnicodeDecodeError, ValueError, RecursionError) as err:
         raise ContractError(
             [f"contract: not valid strict UTF-8 JSON ({type(err).__name__})"]

@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _output_format
-from sesslint.cli._options import _validate_positive_int, add_report_output_option
+from sesslint.cli._options import _validate_positive_int, add_report_output_option, cli_path
 from sesslint.cli._output import emit_text
 from sesslint.io import DEFAULT_MAX_FILE_BYTES
 
@@ -37,6 +36,17 @@ def _instant(text: str) -> datetime:
     return parsed
 
 
+def _explain_format_conflict(ctx: CliContext, args: argparse.Namespace) -> bool:
+    """True when ``--json``/``-f json`` was typed with ``--explain`` (text only).
+
+    ``SESSLINT_FORMAT`` is a default, not a request, so it does not count.
+    """
+    if _output_format(args) != "json":
+        return False
+    setting = ctx.settings.get("output_format")
+    return setting is None or setting.source == "cli"
+
+
 def configure(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
@@ -49,14 +59,14 @@ def configure(
             "proven only from a complete target snapshot observed after the deadline."
         ),
     )
-    sub.add_argument("contract", type=Path, help="sesslint.outcome-contract/v1 JSON file")
+    sub.add_argument("contract", type=cli_path, help="sesslint.outcome-contract/v1 JSON file")
     sub.add_argument(
         "--explain",
         action="store_true",
         help="Validate the contract and print what it checks; read no snapshots",
     )
-    sub.add_argument("--source", type=Path, help="Source snapshot (.csv/.json/.jsonl)")
-    sub.add_argument("--target", type=Path, help="Target snapshot (.csv/.json/.jsonl)")
+    sub.add_argument("--source", type=cli_path, help="Source snapshot (.csv/.json/.jsonl)")
+    sub.add_argument("--target", type=cli_path, help="Target snapshot (.csv/.json/.jsonl)")
     sub.add_argument(
         "--as-of",
         type=_instant,
@@ -84,7 +94,7 @@ def configure(
         )
     sub.add_argument(
         "--session",
-        type=Path,
+        type=cli_path,
         default=None,
         help="Session file you link to this run (user-asserted); checked, never modified",
     )
@@ -128,6 +138,9 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
         session_dimension,
     )
 
+    if args.explain and _explain_format_conflict(ctx, args):
+        ctx.error("Error: --explain prints plain text only; drop --json/--format json.")
+        return 2
     try:
         contract = load_contract(args.contract)
     except ContractError as err:

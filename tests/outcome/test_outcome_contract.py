@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from sesslint._canonical_codec import canonical_json_bytes
 from sesslint.outcome import ContractError, contract_from_dict, explain_contract, load_contract
 from tests.outcome.helpers import ORDERS
 from tests.utils.schema import assert_schema
@@ -192,3 +195,220 @@ def test_explain_is_deterministic_and_lists_every_condition() -> None:
         assert f"- {condition.id}:" in text
     assert "[advisory" in text
     assert "INCONCLUSIVE" in text
+
+
+# Review regressions before 0.5.0: bounds, exact numbers, malformed values never escape.
+
+
+@pytest.mark.parametrize("bound", ["min", "max"])
+@pytest.mark.parametrize("value", [None, 1.0, "1", True, -1, 1_000_001, 10**400, [1]])
+def test_count_bounds_must_be_integers_in_range(bound: str, value: object) -> None:
+    """RULE-02: ``"min": null`` is not "no lower bound", and huge bounds are refused."""
+    condition: dict[str, Any] = {"id": "n", "type": "count", "min": 1, "max": 2}
+    condition[bound] = value
+    problems = _problems(_raw(conditions=[condition]))
+    assert any(f"'{bound}' must be an integer from 0 to 1000000" in p for p in problems), problems
+
+
+def test_count_bounds_accept_the_documented_range() -> None:
+    raw = _raw(conditions=[{"id": "n", "type": "count", "min": 0, "max": 1_000_000}])
+    assert_schema(raw, "sesslint.outcome-contract.v1.json")
+    spec = contract_from_dict(raw)
+    assert (spec.conditions[0].minimum, spec.conditions[0].maximum) == (0, 1_000_000)
+
+
+@pytest.mark.parametrize("over", [{"min": None}, {"max": None}, {"max": 1_000_001}, {"min": -1}])
+def test_schema_refuses_the_same_count_bounds(over: dict[str, Any]) -> None:
+    raw = _raw(conditions=[{"id": "n", "type": "count", **over}])
+    assert _problems(raw)
+    with pytest.raises(AssertionError, match="Schema violation"):
+        assert_schema(raw, "sesslint.outcome-contract.v1.json")
+
+
+def test_load_turns_malformed_values_into_contract_errors(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    huge = _raw(conditions=[{"id": "n", "type": "count", "max": 10**400}])
+    path.write_text(json.dumps(huge), encoding="utf-8")
+    with pytest.raises(ContractError, match="from 0 to 1000000"):
+        load_contract(path)
+    # A lone surrogate escape decodes, but has no UTF-8 form to fingerprint.
+    escape = chr(92) + "ud800"
+    path.write_text(
+        json.dumps(_raw()).replace('"name": "c"', f'"name": "c{escape}"'), encoding="utf-8"
+    )
+    with pytest.raises(ContractError, match="not valid Unicode"):
+        load_contract(path)
+
+
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"name": "c" + chr(0xD800)},
+        {"description": chr(0xDFFF)},
+        {"conditions": [{"id": "e", "type": "exists", "description": "x" + chr(0xD800)}]},
+        {"conditions": [{"id": "o", "type": "one_of", "field": chr(0xDC00), "values": ["a"]}]},
+        {"eligibility": [{"field": "f", "op": "eq", "value": chr(0xD800)}]},
+    ],
+)
+def test_text_that_is_not_valid_unicode_is_a_contract_error(over: dict[str, Any]) -> None:
+    problems = _problems(_raw(**over))
+    assert problems == ("contract: holds text that is not valid Unicode (e.g. a lone surrogate)",)
+
+
+def _range_contract_text(literal: str) -> str:
+    text = json.dumps(_raw(conditions=[{"id": "r", "type": "range", "field": "x", "max": 7}]))
+    return text.replace('"max": 7', f'"max": {literal}')
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "9007199254740993.0",
+        "0.1000000000000000055511151231257827",
+        "123456789012345678.5",
+        "1e400",
+        "-1e400",
+        "1e-400",
+    ],
+)
+def test_load_rejects_numbers_a_float_cannot_hold_exactly(tmp_path: Path, literal: str) -> None:
+    """A rounded threshold would silently test a different number (RULE-06)."""
+    path = tmp_path / "c.json"
+    path.write_text(_range_contract_text(literal), encoding="utf-8")
+    with pytest.raises(ContractError) as info:
+        load_contract(path)
+    assert info.value.problems == (
+        "contract: a number with a fraction or exponent must equal a 64-bit float exactly; "
+        "up to 15 significant digits are always safe for magnitudes from 1e-307 to 1e308, "
+        "and integers are exact at any size",
+    )
+
+
+@pytest.mark.parametrize("literal", ["0.5", "0.1", "99999.99", "1e-05", "2.5E+3", "1.0", "-0.0"])
+def test_exact_float_literals_keep_their_fingerprint(tmp_path: Path, literal: str) -> None:
+    """Contracts are fingerprinted as written; exact parsing must not change the hash."""
+    text = _range_contract_text(literal)
+    path = tmp_path / "c.json"
+    path.write_text(text, encoding="utf-8")
+    expected = hashlib.sha256(canonical_json_bytes(json.loads(text))).hexdigest()
+    assert load_contract(path).sha256 == expected
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_non_finite_numbers_are_refused_everywhere(bad: float) -> None:
+    cases: list[tuple[dict[str, Any], str]] = [
+        ({"conditions": [{"id": "r", "type": "range", "field": "x", "max": bad}]}, "finite"),
+        ({"eligibility": [{"field": "x", "op": "gt", "value": bad}]}, "numeric 'value'"),
+        ({"eligibility": [{"field": "x", "op": "eq", "value": bad}]}, "scalar 'value'"),
+        (
+            {"conditions": [{"id": "o", "type": "one_of", "field": "x", "values": [bad]}]},
+            "may only hold",
+        ),
+    ]
+    for over, needle in cases:
+        problems = _problems(_raw(**over))
+        assert any(needle in p for p in problems), problems
+
+
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"conditions": [{"id": "x", "type": ["exists"]}]},
+        {"conditions": [{"id": "x", "type": {"exists": True}}]},
+        {"conditions": [{"id": "x", "type": "type", "field": "f", "kind": ["string"]}]},
+        {"eligibility": [{"field": "f", "op": ["eq"], "value": 1}]},
+        {
+            "due": {"source_time_field": "at", "within_seconds": 60},
+            "conditions": [
+                {"id": "e", "type": "exists"},
+                {"id": "t", "type": "on_time", "basis": {"observation": 1}},
+            ],
+        },
+    ],
+)
+def test_unhashable_vocabulary_values_are_problems_not_crashes(over: dict[str, Any]) -> None:
+    assert _problems(_raw(**over))
+
+
+@pytest.mark.parametrize("cond_id", ["abc\n", "a b", "-a"])
+def test_condition_ids_must_match_in_full(cond_id: str) -> None:
+    problems = _problems(_raw(conditions=[{"id": cond_id, "type": "exists"}]))
+    assert any("'id' must match" in p for p in problems), problems
+
+
+def test_explain_prints_numbers_exactly() -> None:
+    """CON-03: the restated contract shows each bound as written, never rounded."""
+    spec = contract_from_dict(
+        _raw(
+            conditions=[
+                {"id": "e", "type": "exists"},
+                {"id": "a", "type": "range", "field": "x", "max": 99999.99},
+                {"id": "b", "type": "range", "field": "y", "min": 0.5, "max": 123456789},
+                {"id": "c", "type": "range", "field": "z", "min": 12345678901234567890},
+            ],
+            eligibility=[{"field": "amount", "op": "gt", "value": 9007199254740993}],
+        )
+    )
+    text = explain_contract(spec)
+    for needle in (
+        "<= 99999.99",
+        ">= 0.5 and <= 123456789",
+        ">= 12345678901234567890",
+        "amount > 9007199254740993",
+    ):
+        assert needle in text, needle
+
+
+_ODD_KEYS: dict[Any, str] = {1: "x", None: "y", ("t",): "z"}
+
+
+@pytest.mark.parametrize(
+    ("over", "where"),
+    [
+        ({**_ODD_KEYS}, "contract"),
+        ({"key": {"source": "id", "target": "ref", **_ODD_KEYS}}, "key"),
+        ({"due": {"source_time_field": "at", "within_seconds": 60, **_ODD_KEYS}}, "due"),
+        ({"conditions": [{"id": "e", "type": "exists", **_ODD_KEYS}]}, "condition 'e'"),
+        (
+            {
+                "conditions": [
+                    {
+                        "id": "any",
+                        "type": "any_of",
+                        "conditions": [
+                            {"id": "b1", "type": "exists", **_ODD_KEYS},
+                            {"id": "b2", "type": "exists"},
+                        ],
+                    }
+                ]
+            },
+            "condition 'b1'",
+        ),
+        (
+            {"eligibility": [{"field": "f", "op": "eq", "value": 1, **_ODD_KEYS}]},
+            "eligibility[0]",
+        ),
+        (
+            {
+                "conditions": [
+                    {
+                        "id": "r",
+                        "type": "route",
+                        "field": "q",
+                        "values": ["a"],
+                        "when": [{"field": "f", "op": "present", **_ODD_KEYS}],
+                    }
+                ]
+            },
+            "condition 'r' when[0]",
+        ),
+    ],
+    ids=["top", "key", "due", "condition", "any_of-branch", "eligibility", "route-when"],
+)
+def test_non_string_keys_are_problems_at_every_level(over: dict[Any, Any], where: str) -> None:
+    """Python dicts may carry keys that are not strings and do not sort together."""
+    raw: dict[Any, Any] = _raw()
+    raw.update(over)
+    problems = _problems(raw)
+    for name in ("NoneType", "int", "tuple"):
+        assert f"{where}: keys must be strings, not {name}" in problems, problems
