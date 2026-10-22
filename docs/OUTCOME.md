@@ -1,5 +1,7 @@
 # Verify an outcome against a contract (OutcomeGuard)
 
+<!-- next-release: file -->
+
 `sesslint outcome` answers a different question from `sesslint check`. A clean
 session ledger shows the transcript is structurally sound. It does not show
 that the work produced the declared result at the target system. OutcomeGuard
@@ -19,7 +21,10 @@ sesslint outcome contract.json --source orders.csv --source-completeness complet
     --target-observed-at 2026-10-20T12:00:00Z --json -o outcome.json
 ```
 
-You can run the synthetic example in
+You can run the synthetic example offline. The starter kit ships it in
+`examples/outcome/` (contract, source CSV and a complete target snapshot). The
+repository holds the same scenario, with a raw JSONL target and the expected
+report, in
 [`fixtures/outcome/orders/`](https://github.com/HPNChanel/sesslint/tree/main/fixtures/outcome/orders).
 The orders and shipments in it are invented.
 

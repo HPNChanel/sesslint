@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -32,7 +33,7 @@ def test_portable_build_reproducibility_and_bound_members(tmp_path):
         for name, expected in manifest["files"].items():
             assert hashlib.sha256(archive.read(name)).hexdigest() == expected
         contract = json.loads(archive.read("kit/smoke-contract.json"))
-        assert len(contract["cases"]) == len({case["id"] for case in contract["cases"]}) == 40
+        assert len(contract["cases"]) == len({case["id"] for case in contract["cases"]}) == 42
         assert archive.read("kit/NOTICE") and archive.read("kit/LICENSE")
         assert archive.read("kit/TRIAGE.md")
         assert archive.read("kit/schemas/sesslint.triage.v1.json")
@@ -155,3 +156,133 @@ def test_powershell_refuses_package_before_running_binary(mutation, tmp_path):
     data = json.loads(receipt.read_text(encoding="utf-8"))
     assert data["status"] == "FAIL" and data["checks"] == []
     assert "work_directory" not in data  # Failed integrity check precedes relocation/startup.
+
+
+# ---------------------------------------------------------------------------
+# PowerShell driver: contract dates stay strings; paths resolve against $PWD
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DRIVER = REPO_ROOT / "scripts" / "Test-SessLint.ps1"
+CONTRACT = REPO_ROOT / "scripts" / "smoke_contract.json"
+
+JSON_PROBE = r"""
+function Json($Value) { return ConvertTo-Json -InputObject $Value -Depth 100 -Compress }
+$contract = [IO.File]::ReadAllText($args[0], [Text.Encoding]::UTF8) | ConvertFrom-Json @JsonParams
+$original = @($contract.cases | Where-Object { $_.id -eq 'outcome' })[0]
+$case = (Json $original).Replace('{work}', 'W') | ConvertFrom-Json @JsonParams
+$at = @($case.args)[[array]::IndexOf(@($case.args), '--as-of') + 1]
+Write-Output ('as_of=' + $at.GetType().Name + ':' + $at)
+"""
+
+
+def _shell(name: str) -> str:
+    if name == "powershell":
+        windows = Path(os.environ.get("SystemRoot", "C:/Windows"))
+        found = windows / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        path = str(found) if found.is_file() else None
+    else:
+        path = shutil.which("pwsh")
+    if path is None:
+        pytest.skip(f"{name} is not installed")
+    return path
+
+
+def _driver_text() -> str:
+    return DRIVER.read_text(encoding="utf-8")
+
+
+def _guard_block() -> str:
+    text = _driver_text()
+    return text[text.index("# BEGIN json-date-guard") : text.index("# END json-date-guard")]
+
+
+def test_every_driver_json_read_goes_through_the_date_guard() -> None:
+    text = _driver_text()
+    body = text[text.index("# END json-date-guard") :]
+    reads = [
+        line
+        for line in body.splitlines()
+        if "ConvertFrom-Json" in line and not line.lstrip().startswith("#")
+    ]
+    assert len(reads) >= 4
+    assert all("ConvertFrom-Json @JsonParams" in line for line in reads), reads
+    assert "-DateKind" not in body  # supplied only through the guarded splat
+    assert "'DateKind'" in _guard_block() and "exit 2" in _guard_block()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell and pwsh probes")
+@pytest.mark.parametrize("shell", ["powershell", "pwsh"])
+def test_driver_keeps_contract_dates_as_strings(shell, tmp_path):
+    expected = next(
+        case["args"][case["args"].index("--as-of") + 1]
+        for case in json.loads(CONTRACT.read_text(encoding="utf-8"))["cases"]
+        if case["id"] == "outcome"
+    )
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(_guard_block() + JSON_PROBE, encoding="utf-8", newline="\n")
+    result = subprocess.run(
+        [_shell(shell), "-NoProfile", "-NonInteractive", "-File", str(probe), str(CONTRACT)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode == 2 and "cannot run on PowerShell" in result.stderr:
+        pytest.skip("PowerShell 6.0 to 7.4: the driver refuses to run (checked below)")
+    assert result.returncode == 0, result.stderr
+    assert f"as_of=String:{expected}" in result.stdout, result.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell and pwsh probes")
+@pytest.mark.parametrize("shell", ["powershell", "pwsh"])
+def test_driver_refuses_powershell_that_cannot_keep_dates(shell, tmp_path):
+    # Simulate PowerShell 6.0-7.4 (ConvertFrom-Json without -DateKind) by renaming the probed
+    # parameter: Core must refuse with exit 2 and never reach the JSON reads; 5.1 never converts.
+    guard = _guard_block()
+    assert guard.count("ContainsKey('DateKind')") == 1
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(
+        guard.replace("ContainsKey('DateKind')", "ContainsKey('NoSuchParameter')") + JSON_PROBE,
+        encoding="utf-8",
+        newline="\n",
+    )
+    result = subprocess.run(
+        [_shell(shell), "-NoProfile", "-NonInteractive", "-File", str(probe), str(CONTRACT)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if shell == "powershell":
+        assert result.returncode == 0, result.stderr
+        assert "as_of=String:" in result.stdout
+    else:
+        assert result.returncode == 2, (result.returncode, result.stderr)
+        assert "5.1" in result.stderr and "7.5" in result.stderr
+        assert "as_of=" not in result.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell and pwsh probes")
+@pytest.mark.parametrize("shell", ["powershell", "pwsh"])
+def test_driver_resolves_relative_paths_against_the_callers_location(shell, tmp_path):
+    # Set-Location changes $PWD but not the process directory ([IO.Path]::GetFullPath uses that).
+    process_dir = tmp_path / "process dir"
+    caller_dir = tmp_path / "caller dir"
+    process_dir.mkdir()
+    caller_dir.mkdir()
+    command = (
+        f"Set-Location -LiteralPath '{caller_dir}'; "
+        f"& '{DRIVER}' -PackageRoot . -ReceiptPath 'receipt.json'"
+    )
+    result = subprocess.run(
+        [_shell(shell), "-NoProfile", "-NonInteractive", "-Command", command],
+        cwd=process_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode == 2 and "cannot run on PowerShell" in result.stderr:
+        pytest.skip("PowerShell 6.0 to 7.4: the driver refuses to run")
+    assert (caller_dir / "receipt.json").is_file(), result.stderr
+    assert not (process_dir / "receipt.json").exists()
+    data = json.loads((caller_dir / "receipt.json").read_text(encoding="utf-8"))
+    assert data["status"] == "FAIL" and data["checks"] == []  # empty folder: no manifest

@@ -1,14 +1,32 @@
-# T-12: offline Windows PowerShell 5.1+ acceptance. No Python or admin required.
+# T-12: offline Windows PowerShell 5.1 / PowerShell 7.5+ acceptance. No Python or admin required.
 [CmdletBinding()]
 param(
-    [string]$PackageRoot = $PSScriptRoot,
+    [string]$PackageRoot,
     [Parameter(Mandatory = $true)][string]$ReceiptPath
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$PackageRoot = [IO.Path]::GetFullPath($PackageRoot)
-$ReceiptPath = [IO.Path]::GetFullPath($ReceiptPath)
+# BEGIN json-date-guard
+# PowerShell 6+ turns ISO-8601 strings read by ConvertFrom-Json into [DateTime], which would change
+# the contract's --as-of arguments before they reach the CLI. -DateKind String (PowerShell 7.5+) keeps
+# them exactly as written; Windows PowerShell 5.1 never converts them. PowerShell 6.0-7.4 can do
+# neither, so refuse before touching anything instead of running the cases with altered arguments.
+$JsonParams = @{}
+if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $JsonParams['DateKind'] = 'String' }
+elseif ($PSVersionTable.PSVersion.Major -ge 6) {
+    [Console]::Error.WriteLine('Test-SessLint.ps1 cannot run on PowerShell ' + $PSVersionTable.PSVersion + ': its ConvertFrom-Json rewrites ISO-8601 strings in the smoke contract. Use Windows PowerShell 5.1 (powershell.exe) or PowerShell 7.5 or newer.')
+    exit 2
+}
+# END json-date-guard
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty inside a param() default under -File
+# (GetFullPath then fails with "path is not of a legal form"); resolve it in the body instead.
+if ([string]::IsNullOrEmpty($PackageRoot)) { $PackageRoot = $PSScriptRoot }
+if ([string]::IsNullOrEmpty($PackageRoot)) { throw 'Cannot determine the package folder; pass -PackageRoot.' }
+# Resolve against the caller's current location ($PWD), not the process directory that
+# [IO.Path]::GetFullPath uses; the two differ after Set-Location in an already open window.
+$PackageRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PackageRoot)
+$ReceiptPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReceiptPath)
 if (Test-Path -LiteralPath $ReceiptPath) { throw 'Receipt already exists; choose a new path.' }
 $logs = $ReceiptPath + '.logs'
 if (Test-Path -LiteralPath $logs) { throw 'Log directory already exists.' }
@@ -20,7 +38,7 @@ $receipt = [ordered]@{ schema_version = 1; status = 'FAIL'; driver = 'powershell
     clean_windows = 'UNVERIFIED'; source_immutable = $false }
 
 function Read-Json([string]$Path) {
-    return [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    return [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json @JsonParams
 }
 function Hash([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Inside([string]$Root, [string]$Relative) {
@@ -56,6 +74,12 @@ function Snapshot([string]$Root) {
         else { 'F ' + $relative + ' ' + (Hash $_.FullName) + ' ' + $_.LastWriteTimeUtc.Ticks }
     }) -join "`n")
 }
+function Example-Hash([string]$Root) {
+    # Every file below examples/, keyed by its relative path (examples/outcome/* included).
+    $hashes = @{}
+    Get-ChildItem -LiteralPath $Root -File -Recurse -Force | ForEach-Object { $hashes[$_.FullName.Substring($Root.Length)] = Hash $_.FullName }
+    return $hashes
+}
 function Quote-Argument([string]$Value) {
     # Windows CommandLineToArgvW quoting, including quotes and trailing backslashes.
     return '"' + [regex]::Replace([regex]::Replace($Value, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'
@@ -65,7 +89,7 @@ try {
     $manifest = Read-Json (Join-Path $PackageRoot 'windows-acceptance.json')
     Require ($manifest.schema_version -eq 1) 'Unsupported package manifest.'
     Require ($manifest.version -match '^\d+\.\d+\.\d+$') 'Invalid package version.'
-    foreach ($required in @($manifest.binary, $manifest.starter_kit, 'Test-SessLint.ps1', 'START_HERE.md', 'kit/VERSION', 'kit/smoke-contract.json', 'kit/LICENSE', 'kit/NOTICE', 'kit/QUICKSTART.md', 'kit/VERIFYING.md', 'kit/TRIAGE.md', 'kit/examples/unsupported.txt')) {
+    foreach ($required in @($manifest.binary, $manifest.starter_kit, 'Test-SessLint.ps1', 'START_HERE.md', 'kit/VERSION', 'kit/smoke-contract.json', 'kit/LICENSE', 'kit/NOTICE', 'kit/QUICKSTART.md', 'kit/VERIFYING.md', 'kit/TRIAGE.md', 'kit/OUTCOME.md', 'kit/examples/unsupported.txt', 'kit/examples/outcome/contract.json', 'kit/examples/outcome/source.csv', 'kit/examples/outcome/target_complete.json')) {
         Require ($null -ne $manifest.files.PSObject.Properties[$required]) ('Missing checksum entry: ' + $required)
     }
     foreach ($entry in $manifest.files.PSObject.Properties) {
@@ -98,16 +122,16 @@ try {
     $relocated = Join-Path $work $manifest.binary
     [IO.File]::Copy($binary, $relocated, $false)
     $contract = Read-Json (Join-Path $work 'smoke-contract.json')
-    Require ($contract.schema_version -eq 1 -and $contract.cases.Count -eq 40) 'Invalid smoke contract.'
-    Require (@($contract.cases.id | Select-Object -Unique).Count -eq 40) 'Duplicate case IDs.'
+    Require ($contract.schema_version -eq 1 -and $contract.cases.Count -eq 42) 'Invalid smoke contract.'
+    Require (@($contract.cases.id | Select-Object -Unique).Count -eq 42) 'Duplicate case IDs.'
     $receipt.contract_sha256 = Hash (Join-Path $work 'smoke-contract.json')
     foreach ($copy in $contract.copies) {
         $target = Inside $work $copy[1]
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
         [IO.File]::Copy((Inside $work $copy[0]), $target, $false)
     }
-    $before = @{}
-    Get-ChildItem -LiteralPath (Join-Path $work 'examples') -File | ForEach-Object { $before[$_.Name] = Hash $_.FullName }
+    $examples = Join-Path $work 'examples'
+    $before = Example-Hash $examples
     $isolated = @{}
     foreach ($key in @('HOME','USERPROFILE','CODEX_HOME','CLAUDE_CONFIG_DIR','APPDATA','LOCALAPPDATA','TEMP','TMP','XDG_CACHE_HOME')) {
         $path = Join-Path $work ('isolated/' + $key)
@@ -115,8 +139,9 @@ try {
         $isolated[$key] = $path
     }
     $outputs = @{}
+    $codepageWarned = $false
     foreach ($original in $contract.cases) {
-        $case = (Json $original).Replace('{work}', $work.Replace('\','/')).Replace('{version}', $manifest.version) | ConvertFrom-Json
+        $case = (Json $original).Replace('{work}', $work.Replace('\','/')).Replace('{version}', $manifest.version) | ConvertFrom-Json @JsonParams
         Require ($case.id -match '^[a-z0-9-]+$') 'Invalid case ID.'
         $noWrites = Optional $case 'no_writes' $false
         $unchanged = if ($noWrites) { Snapshot $work } else { $null }
@@ -139,15 +164,45 @@ try {
         $info.EnvironmentVariables['NO_COLOR'] = '1'
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $info
-        [void]$process.Start()
+        # Windows PowerShell 5.1 (.NET Framework) has no ProcessStartInfo.StandardInputEncoding:
+        # Process.Start builds StandardInput from the console input codepage. At codepage 65001
+        # that encoding carries a BOM and Start() itself flushes it into the child's stdin, which
+        # corrupts the first JSON-RPC line (-32700). Everything we send is ASCII (non-ASCII is
+        # \u-escaped), so for the duration of Start() switch to an ASCII-compatible codepage and
+        # restore the caller's afterwards.
+        $previousInputEncoding = $null
+        try {
+            try { $current = [Console]::InputEncoding } catch { $current = $null }  # no console attached: nothing to switch
+            if ($null -ne $current -and ($current.CodePage -eq 65001 -or $current.GetPreamble().Length -gt 0)) {
+                $previousInputEncoding = $current
+                try { [Console]::InputEncoding = [Text.Encoding]::GetEncoding(1252) }
+                catch {
+                    if (-not $codepageWarned) {
+                        $codepageWarned = $true
+                        Write-Warning 'Could not switch the console input code page away from UTF-8; the CLI may receive a byte-order mark at the start of stdin and MCP or hook cases may fail.'
+                    }
+                }
+            }
+            [void]$process.Start()
+        }
+        finally {
+            if ($null -ne $previousInputEncoding) {
+                try { [Console]::InputEncoding = $previousInputEncoding } catch { }
+            }
+        }
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
+        # Belt and braces: write BOM-free bytes straight to the child's stdin stream, and close that
+        # stream (not the StreamWriter, whose Close() can emit its preamble even for an empty input).
+        $stdin = $process.StandardInput.BaseStream
         foreach ($message in (Optional $case 'stdin_jsonl' @())) {
             # ASCII JSON is also valid UTF-8; avoids legacy console stdin codepages.
             $line = [regex]::Replace((Json $message), '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
-            $process.StandardInput.WriteLine($line)
+            $bytes = $utf8.GetBytes($line + "`n")
+            $stdin.Write($bytes, 0, $bytes.Length)
         }
-        $process.StandardInput.Close()
+        $stdin.Flush()
+        $stdin.Close()
         if (-not $process.WaitForExit(120000)) {
             # This PID was started by this runner; terminate its own descendants too.
             & (Join-Path $env:SystemRoot 'System32/taskkill.exe') /PID $process.Id /T /F | Out-Null
@@ -166,7 +221,7 @@ try {
         $equals = Optional $case 'json_equals' ([pscustomobject]@{})
         $sets = Optional $case 'json_sets' ([pscustomobject]@{})
         if (@($equals.PSObject.Properties).Count -or @($sets.PSObject.Properties).Count) {
-            $parsed = $output | ConvertFrom-Json
+            $parsed = $output | ConvertFrom-Json @JsonParams
             foreach ($entry in $equals.PSObject.Properties) {
                 Require ((Json (Field $parsed $entry.Name)) -ceq (Json $entry.Value)) ('JSON mismatch: ' + $case.id + '/' + $entry.Name)
             }
@@ -182,7 +237,7 @@ try {
         foreach ($pair in (Optional $case 'equal_files' @())) { Require ((Hash (Inside $work $pair[0])) -ceq (Hash (Inside $work $pair[1]))) 'Repair outputs differ.' }
         $count = Optional $case 'jsonl_success' $null
         if ($null -ne $count) {
-            $responses = @($output -split '\r?\n' | Where-Object { $_.Length } | ForEach-Object { $_ | ConvertFrom-Json })
+            $responses = @($output -split '\r?\n' | Where-Object { $_.Length } | ForEach-Object { $_ | ConvertFrom-Json @JsonParams })
             Require ($responses.Count -eq $count) 'MCP response count mismatch.'
             foreach ($response in $responses) { Require ($null -ne $response.PSObject.Properties['result'] -and $null -eq $response.PSObject.Properties['error']) 'MCP request failed.' }
             Require ($responses[-1].result.isError -eq $false) 'MCP check failed.'
@@ -191,10 +246,11 @@ try {
         $outputs[$case.id] = $output
         $receipt.checks += [ordered]@{ id = $case.id; command = $case.args; exit_code = $exitCode }
     }
-    foreach ($name in $before.Keys) { Require ((Hash (Inside $work ('examples/' + $name))) -ceq $before[$name]) 'Source mutated.' }
+    $after = Example-Hash $examples
+    foreach ($name in $before.Keys) { Require ($after.ContainsKey($name) -and $after[$name] -ceq $before[$name]) 'Source mutated.' }
     $receipt.source_immutable = $true
     $receipt.status = 'PASS'
-    Write-Output 'PASS: 40 CLI cases; clean-machine qualification requires separate evidence.'
+    Write-Output 'PASS: 42 CLI cases; clean-machine qualification requires separate evidence.'
 }
 catch {
     $receipt.error = $_.Exception.Message

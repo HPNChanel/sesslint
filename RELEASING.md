@@ -21,6 +21,15 @@ uv run python scripts/check_release_refs.py
 uv run python scripts/fixture_index.py --check
 ```
 
+`check_release_refs.py` compares documented flags with the CLI at the latest
+**final** release tag (`vX.Y.Z` at or below the development version; pre-release
+tags such as `v0.5.0-rc.1` are ignored). It exits 2 if that baseline cannot be
+resolved (no tags, shallow clone), so fetch tags first (`git fetch --tags`; CI
+checks out with `fetch-depth: 0`). `--allow-no-baseline` skips only the flag-skew
+check, for source archives that cannot carry tags; never use it for a release.
+A document that describes only an unreleased feature can carry a file-level
+next-release marker (see the script docstring).
+
 Coverage must remain at least 86%. The normative benchmark retains 250,000
 events / about 100 MB, a 15-second wall-time ceiling and peak RSS below 512 MB.
 It measures the CLI in a clean process outside tracing/coverage; optional
@@ -29,9 +38,9 @@ or relax thresholds to pass. Use `--record --host-tag <host>` only when adding
 an actual same-host measurement to the historical ledger.
 
 Check zero runtime dependencies, no egress/telemetry/dynamic evaluation,
-privacy, determinism, all 34 detector codes and all 13 recipe-level cases.
+privacy, determinism, all 35 detector codes and all 13 recipe-level cases.
 - [ ] All 13 repair recipes have synced documentation and positive/refusal tests.
-- [ ] All 34 detector codes have actual golden results and synced documentation.
+- [ ] All 35 detector codes have actual golden results and synced documentation.
 
 Keep SL203 fail-closed. Review [fixture navigation](fixtures/INDEX.md), the
 [adapter/profile matrix](docs/MATRIX.md) and the separate
@@ -69,10 +78,12 @@ executable and examples outside the checkout to a path containing spaces and
 Unicode, removes Python from PATH on Windows, and checks the complete
 `check → dry-run/plan → repair/apply → verify` journey. It checks source
 immutability, idempotence, no output after refusal, adapters/profiles, report
-formats, hook and MCP. The shared contract has 40 CLI cases, including four
-triage states and deterministic repeats with no work-directory writes. The
+formats, hook and MCP. The shared contract has 42 CLI cases, including four
+triage states, a synthetic OutcomeGuard run with an explicit `--as-of` *(next release)*, and
+deterministic repeats with no work-directory writes. The
 Python-distribution runner also exercises public
-API calls, including triage, and loads all 17 installed schema resources.
+API calls, including triage, and requires the installed schema resources to match
+the kit's `schemas/` directory name-for-name (no hard-coded count).
 The starter kit includes `TRIAGE.md` and only synthetic inputs with provenance.
 For CLI/config changes, review [Migration to 0.5](docs/MIGRATING_0_5.md).
 
@@ -176,7 +187,7 @@ CLI/API release and are not advertised as already available.
 
 The Windows binary job builds `sesslint-0.5.0-acceptance-windows.zip` and runs
 its PowerShell 5.1 driver. The complete-set gate binds that ZIP and
-`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 40-case
+`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 42-case
 contract. Its logs are retained even on failure.
 Clean-machine qualification remains separate; retest if release CI changes EXE bytes.
 

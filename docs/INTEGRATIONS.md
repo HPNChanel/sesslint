@@ -401,8 +401,8 @@ re-checked each release):
 
 | Runtime | Hook surface | Payload carries `transcript_path` | SessLint recipes |
 | :--- | :--- | :--- | :--- |
-| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`sesslint hook --init --agent claude`) |
-| Codex | `~/.codex/hooks.json`, `config.toml [hooks]` | Yes — all events | Emitted (`sesslint hook --init --agent codex`) <!-- next-release --> |
+| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`sesslint hook --init --agent claude`) *(next release)* |
+| Codex | `~/.codex/hooks.json`, `config.toml [hooks]` | Yes — all events | Emitted (`sesslint hook --init --agent codex`) *(next release)* |
 | Copilot CLI | `.github/hooks/*.json`, `~/.copilot/hooks/` | Only on `PreCompact`, `Stop`, `subagent*` events (PascalCase names → snake_case payload) | Not yet — needs the Copilot adapter first |
 | Gemini CLI | `settings.json` `hooks` | Yes — all events, but stdout must be JSON | Not yet — needs the Gemini adapter + `--json` contract check |
 | Cursor | `.cursor/hooks.json`, `~/.cursor/hooks.json` | Yes — all agent hooks | Not yet — needs the Cursor adapter first |

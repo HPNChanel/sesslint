@@ -621,7 +621,7 @@ For comprehensive compatibility matrix across formats and validation profiles, c
 
 ## Diagnostic Reason Codes (SL001–SL402)
 
-SessLint implements **34 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
+SessLint implements **35 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
 
 ### 1. Syntax & Framing
 
@@ -1313,7 +1313,7 @@ Formal versioned JSON Schemas are maintained in `schemas/`:
 | **Baseline**        |  `v2`   | `schemas/sesslint.baseline.v2.json`        | Known-findings baseline           |
 | **Triage**          |  `v1`   | `schemas/sesslint.triage.v1.json`          | Next-action guidance report       |
 | **Hook Result**     |  `v1`   | `schemas/sesslint.hook-result.v1.json`     | `hook --json` result              |
-| **Init Hooks**      |  `v1`   | `schemas/sesslint.init-hooks.v1.json`      | `hook --init --json` snippets     |
+| **Init Hooks**      |  `v1`   | `schemas/sesslint.init-hooks.v1.json`      | `hook --init --json` snippets *(next release)* |
 | **Watch Event**     |  `v1`   | `schemas/sesslint.watch-event.v1.json`     | `watch --json` NDJSON line        |
 | **Version**         |  `v1`   | `schemas/sesslint.version.v1.json`         | `version --json` output           |
 | **Precheck Result** |  `v1`   | `schemas/sesslint.precheck-result.v1.json` | `sesslint_precheck` MCP result    |

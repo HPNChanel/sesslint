@@ -10,7 +10,7 @@ The [starter kit](../docs/STARTER_KIT.md) provides runnable examples.
 ## Actual detector golden paths
 
 Nine legacy goldens exercise the reader and cover SL001/SL002. The rows below
-exercise public check_file/check_dir detection and cover all 34 codes.
+exercise public check_file/check_dir detection and cover all 35 codes.
 
 | Code | Execution | Input | Golden |
 | --- | --- | --- | --- |

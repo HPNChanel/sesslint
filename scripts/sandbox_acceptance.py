@@ -511,7 +511,13 @@ def run(args: argparse.Namespace) -> bool:
             observed.update(actual)
 
         check("golden/" + path.stem, golden)
-    check("detectors/34-codes", lambda: require(len(observed) == 34))
+    # The kit ships one docs/codes/SLxxx.md per registered code (gated against the
+    # registry by tests/test_rule_docs.py), so the corpus must trigger exactly that set.
+    documented = {p.stem for p in (work / "docs/codes").glob("SL*.md")}
+    check(
+        "detectors/all-documented-codes",
+        lambda: require(bool(documented) and observed == documented),
+    )
     after = {
         str(p.relative_to(work)): sha(p)
         for folder in ("examples", "fixtures")

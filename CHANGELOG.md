@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the runtime names a `sesslint.<name>/vN` schema id without a matching
   schema file, or when a schema file is missing from the README table, and
   validates the four new schemas against live output. The README schema
-  table now lists all 21 schemas.
+  table now lists every shipped schema.
 
 ### Changed
 
@@ -69,6 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Windows), so a printed `~/…` path also works in shells that pass `~`
   through literally, such as PowerShell, `cmd.exe` or a quoted argument.
   `-` and `~user` forms are left as they are.
+- The starter kit (all platforms) and the shared smoke contract cover
+  `sesslint outcome`: the kit ships `OUTCOME.md` and a synthetic
+  `examples/outcome/` contract with source and target snapshots (with a
+  provenance file that describes only those files), and the contract adds
+  `outcome` and `outcome-repeat` cases (explicit `--as-of`, exit 1
+  `VIOLATED`, stable report fields, no writes) to the Python smoke check and
+  to the Windows PowerShell driver, for 42 cases in all. The smoke checks'
+  source-immutability check now covers `examples/` recursively, so
+  `examples/outcome/` is included.
 
 ### Fixed
 
@@ -144,6 +153,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   history. The shapes come from the `rust-v0.163.0` rollout writer and
   replay source, re-created as synthetic fixtures; `docs/VENDOR_DRIFT.md` §9
   records the check, the mapping decisions and their limits.
+- The installed-wheel smoke check (`scripts/installed_smoke.py --python`)
+  compares the installed JSON Schemas with the starter kit's `schemas/`
+  folder instead of expecting 17, so every shipped schema is checked. The
+  installed-binary check has no schema comparison.
+- The sandbox acceptance check expects every SL code documented in the kit
+  instead of a fixed 34 (the registry has 35 since SL306), and
+  `scripts/fixture_index.py` takes the count from the registry.
+- `Test-SessLint.ps1`, run with `-File` and without `-PackageRoot`, no longer
+  fails under Windows PowerShell 5.1 with an illegal package path: the
+  default package folder is resolved in the script body, because
+  `$PSScriptRoot` is empty in a `param()` default under `-File`. A relative
+  `-PackageRoot` or `-ReceiptPath` now resolves against the caller's current
+  location, which differs from the process directory after `Set-Location`
+  in an open window. With a UTF-8 console input code page the runner no
+  longer feeds a byte-order mark into the CLI's stdin, and it warns if it
+  cannot switch the code page. It keeps the contract's ISO-8601 `--as-of`
+  strings as written on PowerShell 7.5+ (`ConvertFrom-Json -DateKind
+  String`) and refuses PowerShell 6.0 to 7.4, where the strings would turn
+  into dates; Windows PowerShell 5.1 is unchanged.
+- `scripts/check_release_refs.py` (maintainers) takes the highest final
+  release tag at or below the development version as its baseline and ignores
+  pre-release tags such as `v0.5.0-rc.1`, which made it skip the flag check
+  silently. It fails closed (exit 2) when no baseline or CLI source at the
+  baseline can be read, unless `--allow-no-baseline` is given. A
+  `<!-- next-release: file -->` marker, alone on its own line outside a code
+  block, covers a whole document; section and file markers no longer count
+  inside inline code, fenced blocks or the end of a line. Only the build
+  tooling command span (`python scripts/...`) is exempt from the flag check,
+  not the rest of its line. A missing or non-UTF-8 input file exits 2 instead
+  of crashing, PEP 440 pre-release versions such as `1.0.0rc1` are accepted
+  (their baseline is strictly below `1.0.0`), and a pre-release
+  `--latest-tag` is refused by name.
 
 ## [0.5.0] - 2026-10-19
 

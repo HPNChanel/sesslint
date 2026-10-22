@@ -82,6 +82,6 @@ synthetic complete JSON document. Watch and progress streams use NDJSON.
 
 Regenerate completion scripts with `sesslint completion SHELL`. Test wrappers
 against the [synthetic starter kit](STARTER_KIT.md), whose shared installed
-contract has 40 CLI cases, before pointing them at exported session copies.
+contract has 42 CLI cases, before pointing them at exported session copies.
 The [triage walkthrough](TRIAGE.md) covers healthy, repairable, refused and
 unsupported inputs without applying a repair.

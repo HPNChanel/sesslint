@@ -45,7 +45,13 @@ for module, names in {{
         assert schema["$schema"] and schema["$id"]
         loaded.append(name)
 schema_files = sorted(get_session_schema_path().parent.glob("*.json"))
-assert len(schema_files) == 17
+# The starter kit ships the repository ``schemas/`` directory verbatim, so the
+# installed resources must match it name-for-name; no hard-coded count to go stale.
+expected_schemas = sorted(p.name for p in Path("schemas").glob("*.json"))
+assert expected_schemas, "starter kit carries no schemas/"
+assert [p.name for p in schema_files] == expected_schemas, (
+    sorted(set(expected_schemas) ^ {{p.name for p in schema_files}})
+)
 assert "sesslint.triage.v1.json" in [p.name for p in schema_files]
 assert all(isinstance(json.loads(p.read_text(encoding="utf-8")), dict) for p in schema_files)
 def triage_snapshot():
@@ -121,13 +127,19 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
             )
         # One declarative contract is consumed by Python and PowerShell (T-12).
         contract = json.loads((cwd / "smoke-contract.json").read_text(encoding="utf-8"))
-        assert contract["schema_version"] == 1 and len(contract["cases"]) == 40
-        assert len({case["id"] for case in contract["cases"]}) == 40
+        assert contract["schema_version"] == 1 and len(contract["cases"]) == 42
+        assert len({case["id"] for case in contract["cases"]}) == 42
         for source, destination in contract["copies"]:
             target = cwd / destination
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(cwd / source, target)
-        before = {p.name: sha(p) for p in (cwd / "examples").iterdir() if p.is_file()}
+
+        def example_hashes() -> dict[str, str]:
+            # Every file below examples/ (examples/outcome/* included), keyed by relative path.
+            root = cwd / "examples"
+            return {p.relative_to(root).as_posix(): sha(p) for p in root.rglob("*") if p.is_file()}
+
+        before = example_hashes()
         for key in (
             "HOME",
             "USERPROFILE",
@@ -228,7 +240,7 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
             )
             assert completed.returncode == 0, completed.stderr
             receipt["api"] = json.loads(completed.stdout)
-        assert before == {p.name: sha(p) for p in (cwd / "examples").iterdir() if p.is_file()}
+        assert before == example_hashes()
         receipt["source_immutable"] = True
         receipt["status"] = "PASS"
     return receipt

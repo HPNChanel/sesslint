@@ -1,9 +1,10 @@
 # SessLint starter kit
 
-This kit is offline and contains synthetic examples, schemas, license notices,
-and a guide for every detector and repair recipe. Extract it to any folder.
-Run commands there. Python installations need Python 3.11 or newer; the native
-binary for your OS and CPU runs without a separately installed Python.
+This kit is offline and contains synthetic examples (including an OutcomeGuard
+contract), schemas, license notices, and a guide for every detector and repair
+recipe. Extract it to any folder. Run commands there. Python installations need
+Python 3.11 or newer; the native binary for your OS and CPU runs without a
+separately installed Python.
 
 ## Install and identify the version
 
@@ -57,6 +58,22 @@ The first two return 0. The repairable fixture has warning SL003 and an unapplie
 two-step preview, so `checked` does not mean no warnings exist. Refused and
 unsupported return 1; the unsupported report has no repair previews. Repeating
 the same command over unchanged bytes produces the same JSON.
+
+## Verify an outcome
+
+<!-- next-release -->
+
+[OUTCOME.md](OUTCOME.md) explains `sesslint outcome`. The kit carries an invented
+orders-to-shipments example in `examples/outcome/` (contract, source CSV and a
+complete target snapshot, with provenance). Pass an explicit evaluation instant;
+the command never reads the clock:
+
+```sh
+sesslint outcome examples/outcome/contract.json --source examples/outcome/source.csv --source-completeness complete --target examples/outcome/target_complete.json --as-of 2026-10-20T12:00:00Z --json
+```
+
+The outcome is `VIOLATED`, so the exit code is 1. The command is read-only and
+repeats byte-identically.
 
 ## Check, review a plan, repair a copy, verify
 
@@ -146,15 +163,17 @@ exactly-once external effects, or guaranteed resume in another application.
 ## Automated Windows acceptance
 
 The separate `sesslint-0.5.0-acceptance-windows.zip` contains the EXE and a
-PowerShell 5.1+ runner. After verifying and extracting that package, run:
+runner for Windows PowerShell 5.1 (`powershell.exe`) or PowerShell 7.5 or newer;
+PowerShell 6.0 to 7.4 are refused. After verifying and extracting that package, run:
 
 ```powershell
 .\Test-SessLint.ps1 -PackageRoot . -ReceiptPath "$PWD\acceptance.json"
 ```
 
-All 40 CLI cases must pass and source hashes must remain unchanged. Receipts bind
+All 42 CLI cases must pass and source hashes must remain unchanged. Receipts bind
 the exact EXE/kit/contract hashes; logs and synthetic work files are retained.
 Eight cases cover the four triage outcomes and byte-identical repeats, including
 work-directory snapshots that reject source changes or added/removed artifacts.
+Two more run the synthetic OutcomeGuard example and its byte-identical repeat.
 This uses no Python and changes no system settings. A functional PASS on a
 development machine does not establish clean-Windows or published-release proof.

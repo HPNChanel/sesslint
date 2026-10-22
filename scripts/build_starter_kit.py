@@ -17,6 +17,25 @@ EXAMPLES = {
     "codex.jsonl": "fixtures/adapters/codex/healthy_min.jsonl",
     "openai.json": "fixtures/openai_agents/items_basic.json",
 }
+# Synthetic OutcomeGuard orders-to-shipments example (see docs/OUTCOME.md); the
+# smoke contract's ``outcome`` cases run it with an explicit ``--as-of``. The kit ships only
+# these files; the repository fixture also has a raw JSONL target and an expected report.
+OUTCOME_EXAMPLES = ("contract.json", "source.csv", "target_complete.json")
+OUTCOME_FIXTURE = "fixtures/outcome/orders"
+OUTCOME_PROVENANCE_DESCRIPTION = (
+    "Synthetic OutcomeGuard orders-to-shipments scenario: one contract, a CSV source of "
+    "invented order ids, and the invented shipment records as a complete "
+    "sesslint.snapshot/v1 envelope."
+)
+
+
+def outcome_provenance() -> bytes:
+    """Kit provenance for ``examples/outcome``: the fixture's, describing only shipped files."""
+    provenance = json.loads((ROOT / OUTCOME_FIXTURE / "PROVENANCE.json").read_bytes())
+    if provenance.get("contains_real_data") is not False:
+        raise ValueError("Outcome example provenance must explicitly exclude real data")
+    provenance["description"] = OUTCOME_PROVENANCE_DESCRIPTION
+    return json.dumps(provenance, indent=2, sort_keys=True).encode() + b"\n"
 
 
 def build(target: Path, version: str) -> None:
@@ -24,6 +43,7 @@ def build(target: Path, version: str) -> None:
         "QUICKSTART.md": (ROOT / "docs/STARTER_KIT.md").read_bytes(),
         "VERIFYING.md": (ROOT / "docs/VERIFYING.md").read_bytes(),
         "TRIAGE.md": (ROOT / "docs/TRIAGE.md").read_bytes(),
+        "OUTCOME.md": (ROOT / "docs/OUTCOME.md").read_bytes(),
         "LICENSE": (ROOT / "LICENSE").read_bytes(),
         "NOTICE": (ROOT / "NOTICE").read_bytes(),
         "smoke-contract.json": (ROOT / "scripts/smoke_contract.json").read_bytes(),
@@ -69,6 +89,13 @@ def build(target: Path, version: str) -> None:
     files.update(
         {f"examples/{name}": (ROOT / source).read_bytes() for name, source in EXAMPLES.items()}
     )
+    files.update(
+        {
+            f"examples/outcome/{name}": (ROOT / OUTCOME_FIXTURE / name).read_bytes()
+            for name in OUTCOME_EXAMPLES
+        }
+    )
+    files["examples/outcome/PROVENANCE.json"] = outcome_provenance()
     for folder in ("schemas", "docs/codes", "docs/recipes"):
         for path in sorted((ROOT / folder).glob("*")):
             if path.is_file():

@@ -17,13 +17,14 @@ Quick start: [starter kit](STARTER_KIT.md).
 | [REPORTING_CORRUPTION.md](REPORTING_CORRUPTION.md) | The check → bundle → attach flow for filing privacy-safe upstream corruption reports. |
 | [INTEGRATIONS.md](INTEGRATIONS.md) | Agent runtime hook recipes (Claude Code `SessionStart`/`PreCompact`), the precheck gate contract, MCP server, and editor problem-matchers. |
 | [CI_TEMPLATES.md](CI_TEMPLATES.md) | Copy-paste pipeline templates for GitLab CI, Azure Pipelines, and CircleCI — pinned installs, flag parity with the GitHub action, artifact upload. |
+| [OUTCOME.md](OUTCOME.md) | OutcomeGuard (`sesslint outcome`): verify declared work against a target system snapshot using a contract, with the evidence rules for each verdict, exit codes and the synthetic orders-to-shipments example. |
 | [SPEC.md](SPEC.md) | Canonical event model — Spec v0.1: normative field/identity/ordering/hash semantics and assurance vocabulary with `file:symbol` enforcement cites. |
 | [adr/](adr/README.md) | Architecture decision records — why pinned invariants exist (fail-closed, identity, privacy, determinism). |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Structured threat model: assets, trust boundaries, per-boundary threats with enforcing-code citations, residual risks. |
 | [MUTATION_TESTING.md](MUTATION_TESTING.md) | Scoped mutmut protocol (qa-infra T-02): POSIX-only requirement, module scope, triage classes, baseline note. |
 | [hygiene.md](hygiene.md) | Transcript hygiene: SL009 persisted-secret detection surface, the rotate-don't-redact workflow, digest-based removal verification, and the `--fail-on warning` CI recipe. |
 | [seal.md](seal.md) | Seal ledger: append-only hash-chained record of check/verify/repair verdicts (`--seal` flags, `seal --verify`, divergence kinds, honesty boundary). |
-| [codes/](codes/README.md) | Per-code documentation for all 34 diagnostic reason codes (SL001–SL402), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
+| [codes/](codes/README.md) | Per-code documentation for all 35 diagnostic reason codes (SL001–SL402), including the A4 assurance ceiling and the closed coverage-skip vocabulary. |
 | [recipes/](recipes/README.md) | Per-recipe documentation for all 13 registered repair recipes. |
 
 ## Related References

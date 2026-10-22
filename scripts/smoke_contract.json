@@ -190,6 +190,62 @@
       "no_writes": true
     },
     {
+      "id": "outcome",
+      "args": [
+        "outcome",
+        "examples/outcome/contract.json",
+        "--source",
+        "examples/outcome/source.csv",
+        "--source-completeness",
+        "complete",
+        "--target",
+        "examples/outcome/target_complete.json",
+        "--as-of",
+        "2026-10-20T12:00:00Z",
+        "--json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.outcome-report/v1",
+        "run_status": "completed",
+        "outcome": "VIOLATED",
+        "evaluated_at": "2026-10-20T12:00:00Z",
+        "demo": false,
+        "contract.name": "orders-to-shipments",
+        "contract.sha256": "5a7b49f1e67e4ff0542044726313775703af5615a1c9d9d6d81a8f21aae6475b",
+        "coverage.counts.VERIFIED": 2,
+        "coverage.counts.VIOLATED": 4,
+        "coverage.counts.PENDING": 1,
+        "coverage.counts.NOT_APPLICABLE": 1,
+        "coverage.counts.INCONCLUSIVE": 0,
+        "coverage.counts.NOT_EVALUATED": 0
+      },
+      "no_writes": true
+    },
+    {
+      "id": "outcome-repeat",
+      "args": [
+        "outcome",
+        "examples/outcome/contract.json",
+        "--source",
+        "examples/outcome/source.csv",
+        "--source-completeness",
+        "complete",
+        "--target",
+        "examples/outcome/target_complete.json",
+        "--as-of",
+        "2026-10-20T12:00:00Z",
+        "--json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "stdout_equals": "outcome",
+      "no_writes": true
+    },
+    {
       "id": "healthy",
       "args": [
         "check",
