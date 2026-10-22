@@ -18,7 +18,9 @@ from sesslint.cli._errors import CliError
 if TYPE_CHECKING:
     from sesslint.cli._context import CliContext
 
-_REPORT_COMMANDS = frozenset({"check", "scan", "triage", "stats", "diff", "doctor", "verify"})
+_REPORT_COMMANDS = frozenset(
+    {"check", "scan", "triage", "outcome", "stats", "diff", "doctor", "verify"}
+)
 
 
 def _boundaries(
@@ -39,6 +41,9 @@ def _boundaries(
         "state_copy",
         "baseline",
         "seal",
+        "contract",
+        "target",
+        "session",
     ):
         value = getattr(args, name, None)
         values = value if isinstance(value, (tuple, list)) else (value,)

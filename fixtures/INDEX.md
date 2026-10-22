@@ -94,6 +94,7 @@ have their own rows. Corpus labels are synthetic expectations, not real-data acc
 | [hostile/duplicate_ids](hostile/duplicate_ids/) | 2 | [source](hostile/duplicate_ids/PROVENANCE.json) |
 | [manifests](manifests/) | 1 | [source](manifests/PROVENANCE.json) |
 | [openai_agents](openai_agents/) | 5 | [source](openai_agents/PROVENANCE.json) |
+| [outcome/orders](outcome/orders/) | 5 | [source](outcome/orders/PROVENANCE.json) |
 | [privacy](privacy/) | 1 | [source](privacy/PROVENANCE.json) |
 | [profiles](profiles/) | 4 | [source](profiles/PROVENANCE.json) |
 | [repair](repair/) | 16 | [source](repair/PROVENANCE.json) |
