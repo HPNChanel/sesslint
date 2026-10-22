@@ -1042,15 +1042,58 @@ def test_csv_text_that_only_looks_like_a_number_is_never_excluded(tmp_path: Path
     assert (report.outcome, report.exit_code) == ("INCONCLUSIVE", 1)
 
 
-def test_declared_trim_still_matches_a_padded_number(tmp_path: Path) -> None:
-    """RULE-04: with ``trim`` the padded text equals the number's text, so it is decided."""
+# 101 characters: numerically 1, but too long to read as a CSV number.
+_LONG_ONE = "1." + "0" * 99
+# The route verdict that matches each one_of verdict on the same value.
+_ROUTED = {
+    "value_allowed": ("VERIFIED", "route_ok"),
+    "value_not_allowed": ("VIOLATED", "wrong_route"),
+}
+
+
+@pytest.mark.parametrize(
+    ("cell", "values", "normalize", "expected"),
+    [
+        (" 3", [1, 2], ["trim"], ("VIOLATED", "value_not_allowed")),
+        (" 1.0", [1], ["trim"], ("VERIFIED", "value_allowed")),
+        (" 1", [1], ["trim"], ("VERIFIED", "value_allowed")),
+        (" 0012", [12], ["trim"], ("VERIFIED", "value_allowed")),
+        (" 0012", ["12"], ["trim"], ("VIOLATED", "value_not_allowed")),
+        (" 1", [1], [], ("INCONCLUSIVE", "value_undecidable")),
+        (" 3", [1, 2], ["casefold"], ("INCONCLUSIVE", "value_undecidable")),
+        (" " + _LONG_ONE, [1], ["trim"], ("INCONCLUSIVE", "value_undecidable")),
+        (" 1e9999999", [1], ["trim"], ("INCONCLUSIVE", "value_undecidable")),
+    ],
+)
+def test_declared_trim_reads_padded_csv_numbers(
+    tmp_path: Path,
+    cell: str,
+    values: list[Any],
+    normalize: list[str],
+    expected: tuple[str, str],
+) -> None:
+    """RULE-04, RULE-08, REC-07: ``trim`` strips CSV text before it is read as a number.
+
+    So padded numbers are decided. Without ``trim`` padded number text stays
+    undecided, and a contract string still compares as text.
+    """
+    pick: dict[str, Any] = {"id": "pick", "type": "one_of", "field": "code", "values": values}
+    route = {**pick, "id": "route", "type": "route", "when": [{"field": "id", "op": "present"}]}
+    spec = contract({**pick, "normalize": normalize}, {**route, "normalize": normalize})
+    target = _csv(tmp_path, "target", f"ref,code\na,{cell}\n")
+    entry = item(_report(spec, _csv(tmp_path, "source", "id\na\n"), target), "a")
+    assert cond(entry, "pick") == expected
+    assert cond(entry, "route") == _ROUTED.get(expected[1], expected)
+
+
+def test_trim_never_reads_a_json_string_as_a_number(tmp_path: Path) -> None:
+    """RULE-04: in a typed snapshot a JSON string compares as text, ``trim`` or not."""
     spec = contract(
-        {"id": "pick", "type": "one_of", "field": "code", "values": [12], "normalize": ["trim"]}
+        {"id": "pick", "type": "one_of", "field": "code", "values": [1], "normalize": ["trim"]}
     )
-    target = _csv(tmp_path, "target", "ref,code\na, 12\nb, 13\n")
-    report = _report(spec, _csv(tmp_path, "source", "id\na\nb\n"), target)
-    assert cond(item(report, "a"), "pick") == ("VERIFIED", "value_allowed")
-    assert cond(item(report, "b"), "pick") == ("INCONCLUSIVE", "value_undecidable")
+    target = _verbatim(tmp_path, "target", '[{"ref": "a", "code": " 1.0"}]')
+    report = _report(spec, _verbatim(tmp_path, "source", '[{"id": "a"}]'), target)
+    assert cond(item(report, "a"), "pick") == ("VIOLATED", "value_not_allowed")
 
 
 def test_json_strings_never_read_as_numbers(tmp_path: Path) -> None:
@@ -1068,6 +1111,87 @@ def test_json_strings_never_read_as_numbers(tmp_path: Path) -> None:
         "NOT_APPLICABLE",
         "VERIFIED",
     ]
+
+
+def _one_value(tmp_path: Path, role: str, kind: str, literal: str) -> Snapshot:
+    """Item ``a`` with field ``v`` written as a CSV cell or a JSON literal, unchanged."""
+    key = "id" if role == "source" else "ref"
+    if kind == "csv":
+        return _csv(tmp_path, role, f"{key},v\na,{literal}\n")
+    return _verbatim(tmp_path, role, f'[{{"{key}": "a", "v": {literal}}}]')
+
+
+# 102 digits, so its one exact spelling is over 100 characters and no CSV number.
+_BIG = "123456789" * 11 + "123"
+_EQUALS = {"id": "same", "type": "equals", "field": "v", "source_field": "v"}
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "normalize", "expected"),
+    [
+        (("csv", "0012"), ("json", "12"), [], ("VERIFIED", "values_match")),
+        (("csv", "abc"), ("json", "1"), [], ("VIOLATED", "values_differ")),
+        (("csv", "0012"), ("csv", "12"), [], ("VIOLATED", "values_differ")),
+        (("json", '"0012"'), ("json", '"12"'), [], ("VIOLATED", "values_differ")),
+        (("json", "12.5"), ("json", "12.50"), [], ("VERIFIED", "values_match")),
+        (("json", "1"), ("json", "2"), [], ("VIOLATED", "values_differ")),
+        (("csv", _LONG_ONE), ("json", "1"), [], ("INCONCLUSIVE", "value_undecidable")),
+        (("json", "1"), ("csv", _LONG_ONE), [], ("INCONCLUSIVE", "value_undecidable")),
+        (("csv", _LONG_ONE), ("json", "2"), [], ("INCONCLUSIVE", "value_undecidable")),
+        (("csv", "1e9999999"), ("json", "1"), [], ("INCONCLUSIVE", "value_undecidable")),
+        (("csv", " 1"), ("json", "1"), [], ("INCONCLUSIVE", "value_undecidable")),
+        (("csv", " 1.0"), ("json", "1"), ["trim"], ("VERIFIED", "values_match")),
+        (("csv", " 2"), ("json", "1"), ["trim"], ("VIOLATED", "values_differ")),
+        (("csv", " " + _LONG_ONE), ("json", "1"), ["trim"], ("INCONCLUSIVE", "value_undecidable")),
+        (("json", '" 1"'), ("json", "1"), [], ("VIOLATED", "values_differ")),
+        (("json", '"1"'), ("json", "1"), [], ("VERIFIED", "values_match")),
+        (("json", '"1.0"'), ("json", "1"), [], ("VIOLATED", "values_differ")),
+        (("csv", f"{_BIG[0]}.{_BIG[1:]}e+101"), ("json", _BIG), [], ("VERIFIED", "values_match")),
+    ],
+)
+def test_equals_never_claims_a_difference_it_cannot_read(
+    tmp_path: Path,
+    source: tuple[str, str],
+    target: tuple[str, str],
+    normalize: list[str],
+    expected: tuple[str, str],
+) -> None:
+    """RULE-05, REC-07: CSV number text that cannot be read never differs from a JSON number.
+
+    A declared ``trim`` strips CSV text before the number read. Text that
+    still looks like a number but does not read as one is undecided, unless
+    it equals the JSON number's exact spelling. A JSON string is never read
+    as a number, and two strings still compare as text.
+    """
+    spec = contract(EXISTS, {**_EQUALS, "normalize": normalize})
+    report = _report(
+        spec, _one_value(tmp_path, "source", *source), _one_value(tmp_path, "target", *target)
+    )
+    assert cond(item(report, "a"), "same") == expected
+
+
+@pytest.mark.parametrize(("allowed", "rc"), [("y", 1), ("x", 0)])
+def test_an_undecidable_equals_branch_never_changes_the_exit_code(
+    tmp_path: Path, allowed: str, rc: int
+) -> None:
+    """RULE-05, REC-07: an ``any_of`` with an ``equals`` branch keeps its exit code.
+
+    VIOLATED and INCONCLUSIVE both exit 1, so CSV text that cannot be read
+    exits exactly as text that differs: 1 when the other branch fails, and 0
+    when it verifies.
+    """
+    other = {"id": "code", "type": "one_of", "field": "code", "values": [allowed]}
+    spec = contract(EXISTS, {"id": "either", "type": "any_of", "conditions": [_EQUALS, other]})
+    target = _verbatim(tmp_path, "target", '[{"ref": "a", "v": 1, "code": "x"}]')
+    unread = _report(spec, _csv(tmp_path, "source", f"id,v\na,{_LONG_ONE}\n"), target)
+    differs = _report(spec, _csv(tmp_path, "source", "id,v\na,abc\n"), target)
+    if rc:
+        assert cond(item(unread, "a"), "either") == ("INCONCLUSIVE", "branches_undecided")
+        assert cond(item(differs, "a"), "either") == ("VIOLATED", "all_branches_violated")
+    else:
+        assert cond(item(unread, "a"), "either") == ("VERIFIED", "any_branch_verified")
+        assert cond(item(differs, "a"), "either") == ("VERIFIED", "any_branch_verified")
+    assert unread.exit_code == differs.exit_code == rc
 
 
 def _canonical(report: OutcomeReport) -> str:

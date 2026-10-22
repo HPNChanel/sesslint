@@ -151,7 +151,11 @@ and operators are rejected, so a typo can never weaken a check.
 `equals` compares values as text. The exception is a JSON number on either
 side, which compares numerically and exactly: CSV `12.50` equals JSON `12.5` and
 CSV `0.1` equals JSON `0.1`, but CSV `0012` does not equal the JSON string
-`"12"`.
+`"12"`. With `trim`, CSV ` 1.0` equals JSON `1`; without `trim`, CSV ` 1`
+against JSON `1` is `INCONCLUSIVE` (`value_undecidable`). A JSON string is never
+read as a number, so against a JSON number it compares as text with the
+number's one exact spelling: the string `"1"` equals the number `1`, but `"1.0"`
+does not. Add a `type` condition when the kind of value matters.
 
 The `eq`, `ne`, `in` and `not_in` predicates (in `eligibility` and route `when`)
 and the `values` of `one_of` and `route` follow the same rule. A contract
@@ -160,16 +164,20 @@ a JSON number, or CSV text that counts as a number (see below). So CSV `12.50`
 matches `12.5` and CSV `0012` matches `12`, but CSV `9007199254740993` does not
 match `9007199254740992`. Any other value compares as text, and a contract
 string always compares as text, so CSV `0012` does not match `"12"`.
-Normalization (`trim`, `casefold`) applies only to the text comparison. Keys
-still match exactly as text.
+Normalization (`trim`, `casefold`) applies to the text comparison, and `trim`
+also strips CSV text before it is read as a number: with `trim`, CSV ` 3` is
+the number 3, so it is not in `[1, 2]`. Predicates take no normalization, and
+neither do `type` and `range`, so CSV ` 3` is not a number for them. Keys still
+match exactly as text.
 
 One exception fails closed. CSV text that looks like a number but does not
-count as one (a leading or trailing space as in ` 12`, more than 100
-characters, or an exponent with more than 6 digits) cannot be decided against
-a contract whose values include a number, unless it matches a contract value
-as text. Unequal text would prove nothing, so such a value is `INCONCLUSIVE`:
-`eligibility_undecidable` in `eligibility`, `route_undecidable` in a route
-`when`, and `value_undecidable` for the `values` of `one_of` and `route`.
+count as one (a leading or trailing space as in ` 12` when `trim` is not
+declared, more than 100 characters, or an exponent with more than 6 digits)
+cannot be decided against a contract number or, in `equals`, against a JSON
+number. Unequal text would prove nothing, so unless it matches as text, such a
+value is `INCONCLUSIVE`: `eligibility_undecidable` in `eligibility`,
+`route_undecidable` in a route `when`, and `value_undecidable` for `equals` and
+for the `values` of `one_of` and `route`.
 
 CSV values are untyped text and are coerced strictly. A CSV number is plain
 ASCII decimal text of at most 100 characters: an optional sign, digits, an
@@ -307,7 +315,7 @@ Every verdict carries one of these stable codes.
 | `field_empty` | The field is an empty string, list or object. |
 | `value_absent` | The optional value is absent or null; pair with a required condition to demand it. |
 | `value_nested` | The value is nested and cannot be compared. |
-| `value_undecidable` | The text looks like a number but does not read as one exactly (surrounding whitespace, over 100 characters or an exponent over 6 digits), so it cannot be matched against the contract's numbers. |
+| `value_undecidable` | The text looks like a number but does not read as one exactly (surrounding whitespace without trim, over 100 characters or an exponent over 6 digits), so it cannot be compared with a number. |
 | `type_ok` | The value has the declared kind. |
 | `type_mismatch` | The value does not have the declared kind. |
 | `value_allowed` | The value is in the allowed set. |

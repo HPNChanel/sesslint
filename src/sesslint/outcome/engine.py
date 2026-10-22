@@ -78,8 +78,8 @@ REASONS: Final[dict[str, str]] = {
     "demand it",
     "value_nested": "the value is nested and cannot be compared",
     "value_undecidable": "the text looks like a number but does not read as one exactly "
-    "(surrounding whitespace, over 100 characters or an exponent over 6 digits), so it cannot "
-    "be matched against the contract's numbers",
+    "(surrounding whitespace without trim, over 100 characters or an exponent over 6 digits), "
+    "so it cannot be compared with a number",
     "type_ok": "the value has the declared kind",
     "type_mismatch": "the value does not have the declared kind",
     "value_allowed": "the value is in the allowed set",
@@ -349,22 +349,50 @@ def _normalized(value: Value | Scalar, steps: Sequence[str]) -> str | None:
     return text
 
 
-def _equal(source: Value, target: Value, steps: Sequence[str], ctx: _Context) -> bool:
+def _read_number(value: Value | Scalar, *, typed: bool, trim: bool) -> int | Decimal | None:
+    """``_number``, except that a declared ``trim`` strips CSV text before it is read."""
+    if trim and not typed and isinstance(value, str):
+        return _csv_number(value.strip())
+    return _number(value, typed=typed)
+
+
+def _looks_numeric(value: Value | Scalar, *, typed: bool) -> bool:
+    """CSV text in the number grammar once surrounding whitespace is stripped.
+
+    Asked only after ``_read_number`` refused the value, so True means text
+    that looks like a number but does not read as one (REC-07).
+    """
+    return not typed and isinstance(value, str) and _NUMBER_RE.fullmatch(value.strip()) is not None
+
+
+def _equal(source: Value, target: Value, steps: Sequence[str], ctx: _Context) -> bool | None:
     """Text equality, except that a typed JSON number compares numerically.
 
     CSV ``12.50`` and JSON ``12.5`` denote the same number, and so do CSV
-    ``0.1`` and JSON ``0.1``; the comparison is exact at any magnitude. Two
-    strings are still compared as text so codes such as ``0012`` and ``12``
-    stay distinct.
+    ``0.1`` and JSON ``0.1``; the comparison is exact. A declared ``trim``
+    strips CSV text before it is read as a number, so CSV `` 1.0`` equals JSON
+    ``1``. Two strings are still compared as text, so codes such as ``0012``
+    and ``12`` stay distinct. As in ``_Matcher``, a JSON number against CSV
+    text that looks like a number but does not read as one (padding without
+    ``trim``, over 100 characters, an exponent over 6 digits) is None unless
+    the texts are equal: unequal text proves nothing (REC-07).
     """
     json_number = any(
         isinstance(v, (int, float, Decimal)) and not isinstance(v, bool) for v in (source, target)
     )
     if json_number:
-        left = _number(source, typed=ctx.source_typed)
-        right = _number(target, typed=ctx.target_typed)
+        trim = "trim" in steps
+        left = _read_number(source, typed=ctx.source_typed, trim=trim)
+        right = _read_number(target, typed=ctx.target_typed, trim=trim)
         if left is not None and right is not None:
             return left == right
+        if _normalized(source, steps) == _normalized(target, steps):
+            return True
+        if (left is None and _looks_numeric(source, typed=ctx.source_typed)) or (
+            right is None and _looks_numeric(target, typed=ctx.target_typed)
+        ):
+            return None
+        return False
     return _normalized(source, steps) == _normalized(target, steps)
 
 
@@ -375,16 +403,19 @@ class _Matcher:
     ``eq``/``ne``/``in``/``not_in`` predicates, ``one_of`` and ``route`` use
     the ``equals`` rule: a contract number matches a record value that reads as
     a number (a typed JSON number, or CSV text that ``_csv_number`` accepts) by
-    exact value, so CSV ``0012`` matches ``12``. Every other pair compares
-    canonical text after normalization, and a contract string always compares
-    as text, so CSV ``0012`` does not match ``"12"``. One exception fails
-    closed (REC-07): CSV text that looks like a number but does not read as
-    one (``" 1"``, over 100 characters, an exponent over 6 digits) is
-    undecided against a contract that lists a number, unless it equals one of
-    the contract's other values as text.
+    exact value, so CSV ``0012`` matches ``12``. A declared ``trim`` strips CSV
+    text before it is read, so CSV ``" 1.0"`` matches ``1`` and ``" 3"`` is
+    decided against ``[1, 2]``. Every other pair compares canonical text after
+    normalization, and a contract string always compares as text, so CSV
+    ``0012`` does not match ``"12"``. One exception fails closed (REC-07): CSV
+    text that looks like a number but does not read as one (``" 1"`` without
+    ``trim``, over 100 characters, an exponent over 6 digits) is undecided
+    against a contract that lists a number, unless it equals one of the
+    contract's other values as text.
     """
 
     steps: tuple[str, ...]
+    trim: bool  # "trim" in steps: CSV text is stripped before it is read as a number
     numbers: frozenset[str]  # one exact spelling per contract number
     texts: frozenset[str | None]  # every contract value, as normalized text
     non_number_texts: frozenset[str | None]  # contract strings, booleans and null
@@ -403,23 +434,24 @@ class _Matcher:
                 others.add(text)
             else:
                 numbers.add(_number_text(number))
-        return cls(tuple(steps), frozenset(numbers), frozenset(texts), frozenset(others))
+        return cls(
+            tuple(steps),
+            "trim" in steps,
+            frozenset(numbers),
+            frozenset(texts),
+            frozenset(others),
+        )
 
     def matches(self, value: Value, *, typed: bool) -> bool | None:
         """True when ``value`` equals a contract value, None when that cannot be decided."""
-        number = _number(value, typed=typed)
+        number = _read_number(value, typed=typed, trim=self.trim)
         if number is not None:
             if _number_text(number) in self.numbers:
                 return True
             return _normalized(value, self.steps) in self.non_number_texts
         if _normalized(value, self.steps) in self.texts:
             return True
-        if (
-            self.numbers
-            and not typed
-            and isinstance(value, str)
-            and _NUMBER_RE.fullmatch(value.strip()) is not None
-        ):
+        if self.numbers and _looks_numeric(value, typed=typed):
             # A number _csv_number refuses: text inequality proves nothing.
             return None
         return False
@@ -607,10 +639,14 @@ def _field_check(
                 results.append((VIOLATED, "target_value_absent", {"field": name}))
             elif isinstance(value, NonScalar):
                 results.append((INCONCLUSIVE, "value_nested", {"field": name}))
-            elif _equal(source[cond.source_field], value, cond.normalize, ctx):
-                results.append((VERIFIED, "values_match", {"field": name}))
             else:
-                results.append((VIOLATED, "values_differ", {"field": name}))
+                same = _equal(source[cond.source_field], value, cond.normalize, ctx)
+                if same is None:
+                    results.append((INCONCLUSIVE, "value_undecidable", {"field": name}))
+                elif same:
+                    results.append((VERIFIED, "values_match", {"field": name}))
+                else:
+                    results.append((VIOLATED, "values_differ", {"field": name}))
             continue
         if not present or value is None:
             if cond.type == "route":
