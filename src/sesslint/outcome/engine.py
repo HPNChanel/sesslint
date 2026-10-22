@@ -4,6 +4,10 @@ Deterministic and offline: the evaluation instant is an input, never the wall
 clock. Every verdict is scoped to the supplied observations. Absence is proven
 only from a complete target snapshot observed at or after the deadline; any
 weaker evidence yields INCONCLUSIVE with the reason that blocked the proof.
+
+Numbers compare exactly (RULE-05, RULE-06): integers as ``int``, the rest as
+``Decimal`` — contract floats through their shortest ``repr`` — so no
+comparison is ever rounded through binary floating point.
 """
 
 from __future__ import annotations
@@ -12,14 +16,17 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal
+from functools import lru_cache
 from typing import Any, Final
 
-from sesslint.outcome.contract import Condition, Contract, Predicate, Scalar
+from sesslint.outcome.contract import Condition, Contract, Predicate, Scalar, int_text
 from sesslint.outcome.snapshot import (
-    NON_SCALAR,
+    NonScalar,
     Record,
     Snapshot,
     Value,
+    exact_decimal,
     format_instant,
     parse_instant,
 )
@@ -59,17 +66,20 @@ REASONS: Final[dict[str, str]] = {
     "proven",
     "target_stale": "the target snapshot was observed before the deadline",
     "target_observed_at_unknown": "the target snapshot has no observation time",
-    "target_unkeyed_rows": "some target rows have no usable key, so a missing record may be "
-    "hidden behind a broken mapping",
+    "target_unkeyed_rows": "some target rows have no usable key, so a missing or extra record "
+    "may be hidden behind a broken mapping",
     "no_target_record": "no matched target record to inspect",
     "field_not_in_snapshot": "the field does not occur anywhere in the snapshot (mapping changed?)",
     "field_present": "the field holds an accepted value",
     "field_absent": "the field is absent from the matched record",
     "field_null": "the field is null",
-    "field_empty": "the field is an empty string",
+    "field_empty": "the field is an empty string, list or object",
     "value_absent": "the optional value is absent or null; pair with a required condition to "
     "demand it",
     "value_nested": "the value is nested and cannot be compared",
+    "value_undecidable": "the text looks like a number but does not read as one exactly "
+    "(surrounding whitespace, over 100 characters or an exponent over 6 digits), so it cannot "
+    "be matched against the contract's numbers",
     "type_ok": "the value has the declared kind",
     "type_mismatch": "the value does not have the declared kind",
     "value_allowed": "the value is in the allowed set",
@@ -85,8 +95,13 @@ REASONS: Final[dict[str, str]] = {
     "route_undecidable": "a route predicate field is absent or not comparable",
     "route_ok": "the record is on the declared route",
     "wrong_route": "the record exists but is not on the declared route",
-    "completed_on_time": "the target completion time is at or before the deadline",
-    "late": "the target completion time is after the deadline",
+    "completed_on_time": "a target completion time between the source event and the "
+    "observation is at or before the deadline",
+    "late": "the deadline has passed and every target completion time is after it",
+    "completion_before_event": "the completion time, or the snapshot showing the record, is "
+    "before the source event time, so it cannot be this item's result",
+    "completion_after_observation": "the completion time is after the evaluation instant or the "
+    "target observation time, so it was not observed and cannot be judged",
     "late_unconfirmed": (
         "the visible completion is late, but an earlier record may be missing from an "
         "incomplete snapshot"
@@ -155,8 +170,15 @@ _PRIORITY: Final[dict[str, int]] = {
     NOT_EVALUATED: 4,
     NOT_APPLICABLE: 5,
 }
-_NUMBER_RE: Final = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
-_INTEGER_RE: Final = re.compile(r"^[+-]?\d+$")
+# ASCII only and used with fullmatch: "\d" accepts other scripts' digits and "$"
+# a trailing newline. One length cap serves every numeric reading of CSV text
+# (type integer/number, range, gt/gte/lt/lte, equals), so they always agree.
+_NUMBER_RE: Final = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_INTEGER_RE: Final = re.compile(r"[+-]?[0-9]+")
+_MAX_NUMBER_TEXT: Final[int] = 100
+_PLAIN_INTEGER_LIMIT: Final[int] = 10**_MAX_NUMBER_TEXT
+# Decimal digit tuples (0-9) to ASCII text in one pass, without str() per digit.
+_DIGIT_CHARS: Final[bytes] = bytes.maketrans(bytes(range(10)), b"0123456789")
 
 
 class EvaluationError(ValueError):
@@ -225,17 +247,95 @@ def worst(statuses: Iterable[str]) -> str | None:
     return min(statuses, key=_PRIORITY.__getitem__, default=None)
 
 
-def _text(value: Value) -> str | None:
-    """Canonical comparison text; integral numbers render without a fraction."""
-    if value is None or value is NON_SCALAR:
+@lru_cache(maxsize=1024, typed=True)
+def _exact_float(value: float) -> Decimal | None:
+    """A finite float as the exact decimal its shortest ``repr`` denotes."""
+    exact = Decimal(repr(value))
+    return exact if exact.is_finite() else None
+
+
+def _csv_number(text: str) -> int | Decimal | None:
+    """Exact number from plain ASCII decimal text of at most 100 characters, else None."""
+    if len(text) > _MAX_NUMBER_TEXT or _NUMBER_RE.fullmatch(text) is None:
+        return None
+    if _INTEGER_RE.fullmatch(text) is not None:
+        return int(text)
+    try:
+        return exact_decimal(text)
+    except ValueError:
+        return None
+
+
+def _number(value: Value | Scalar, *, typed: bool) -> int | Decimal | None:
+    """Exact numeric value, or None (RULE-05, RULE-06).
+
+    Text parses only in untyped (CSV) snapshots. Floats, which reach the engine
+    only from a contract, compare as the decimal they were written as.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, Decimal):
+        return value if value.is_finite() else None
+    if isinstance(value, float):
+        return _exact_float(value)
+    if isinstance(value, str) and not typed:
+        return _csv_number(value)
+    return None
+
+
+@lru_cache(maxsize=1024, typed=True)
+def _number_text(number: int | Decimal) -> str:
+    """One exact spelling per numeric value, used for comparison and never output.
+
+    Equal numbers get equal text (``12.50``, ``12.5`` and ``1.25e1`` all give
+    ``12.5``) and different numbers different text. Integers of up to 100
+    digits are written out; other magnitudes use ``repr``-style scientific
+    notation, so a large exponent never expands into a large string. Cached:
+    a value is spelled once while it is in use, and since equal values share
+    a spelling, a cache hit on an equal value is still the right answer.
+    ``Decimal`` digits never go through ``str(int)``, so Python's int/str
+    digit limit cannot change the result.
+    """
+    if isinstance(number, int) and -_PLAIN_INTEGER_LIMIT < number < _PLAIN_INTEGER_LIMIT:
+        return str(number)
+    sign, digit_tuple, exponent = Decimal(number).as_tuple()
+    if not isinstance(exponent, int):
+        return str(number)
+    digits = bytes(digit_tuple).translate(_DIGIT_CHARS).decode("ascii").lstrip("0")
+    if not digits:
+        return "0"
+    significant = digits.rstrip("0")
+    exponent += len(digits) - len(significant)
+    adjusted = exponent + len(significant) - 1
+    prefix = "-" if sign else ""
+    if exponent >= 0 and adjusted < _MAX_NUMBER_TEXT:
+        return prefix + significant + "0" * exponent
+    if exponent < 0 and adjusted >= -4:
+        point = len(significant) + exponent
+        if point > 0:
+            return f"{prefix}{significant[:point]}.{significant[point:]}"
+        return f"{prefix}0.{'0' * -point}{significant}"
+    mantissa = significant[0] + (f".{significant[1:]}" if len(significant) > 1 else "")
+    return f"{prefix}{mantissa}e{'-' if adjusted < 0 else '+'}{abs(adjusted):02d}"
+
+
+def _text(value: Value | Scalar) -> str | None:
+    """Canonical comparison text: every number in its one exact spelling."""
+    if value is None or isinstance(value, NonScalar):
         return None
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return str(int(value)) if value.is_integer() and abs(value) < 2**63 else repr(value)
+    if isinstance(value, (int, float, Decimal)):
+        number = _number(value, typed=True)
+        return str(value) if number is None else _number_text(number)
     return str(value)
+
+
+def _is_empty(value: Value) -> bool:
+    """Null, an empty string, or an empty list or object."""
+    return value is None or value == "" or (isinstance(value, NonScalar) and value.empty)
 
 
 def _normalized(value: Value | Scalar, steps: Sequence[str]) -> str | None:
@@ -249,33 +349,16 @@ def _normalized(value: Value | Scalar, steps: Sequence[str]) -> str | None:
     return text
 
 
-def _number(value: Value, *, typed: bool) -> float | None:
-    """Strict numeric coercion; strings parse only for untyped (CSV) snapshots."""
-    if isinstance(value, bool) or value is None or value is NON_SCALAR:
-        return None
-    try:
-        if isinstance(value, int):
-            # Exact: Python compares big integers with floats without overflow.
-            return value
-        if isinstance(value, float):
-            number = value
-        elif isinstance(value, str) and not typed and _NUMBER_RE.match(value):
-            number = float(value)
-        else:
-            return None
-    except OverflowError:
-        return None
-    return number if number == number and abs(number) != float("inf") else None
-
-
 def _equal(source: Value, target: Value, steps: Sequence[str], ctx: _Context) -> bool:
     """Text equality, except that a typed JSON number compares numerically.
 
-    CSV ``12.50`` and JSON ``12.5`` denote the same number; two strings are
-    still compared as text so codes such as ``0012`` and ``12`` stay distinct.
+    CSV ``12.50`` and JSON ``12.5`` denote the same number, and so do CSV
+    ``0.1`` and JSON ``0.1``; the comparison is exact at any magnitude. Two
+    strings are still compared as text so codes such as ``0012`` and ``12``
+    stay distinct.
     """
     json_number = any(
-        isinstance(v, (int, float)) and not isinstance(v, bool) for v in (source, target)
+        isinstance(v, (int, float, Decimal)) and not isinstance(v, bool) for v in (source, target)
     )
     if json_number:
         left = _number(source, typed=ctx.source_typed)
@@ -283,6 +366,63 @@ def _equal(source: Value, target: Value, steps: Sequence[str], ctx: _Context) ->
         if left is not None and right is not None:
             return left == right
     return _normalized(source, steps) == _normalized(target, steps)
+
+
+@dataclass(frozen=True, slots=True)
+class _Matcher:
+    """Contract values prepared for matching (RULE-04, RULE-05, RULE-08, REC-06).
+
+    ``eq``/``ne``/``in``/``not_in`` predicates, ``one_of`` and ``route`` use
+    the ``equals`` rule: a contract number matches a record value that reads as
+    a number (a typed JSON number, or CSV text that ``_csv_number`` accepts) by
+    exact value, so CSV ``0012`` matches ``12``. Every other pair compares
+    canonical text after normalization, and a contract string always compares
+    as text, so CSV ``0012`` does not match ``"12"``. One exception fails
+    closed (REC-07): CSV text that looks like a number but does not read as
+    one (``" 1"``, over 100 characters, an exponent over 6 digits) is
+    undecided against a contract that lists a number, unless it equals one of
+    the contract's other values as text.
+    """
+
+    steps: tuple[str, ...]
+    numbers: frozenset[str]  # one exact spelling per contract number
+    texts: frozenset[str | None]  # every contract value, as normalized text
+    non_number_texts: frozenset[str | None]  # contract strings, booleans and null
+
+    @classmethod
+    def build(cls, values: Sequence[Scalar], steps: Sequence[str]) -> _Matcher:
+        numbers: set[str] = set()
+        texts: set[str | None] = set()
+        others: set[str | None] = set()
+        for value in values:
+            text = _normalized(value, steps)
+            texts.add(text)
+            # typed=True: a contract string is never read as a number.
+            number = _number(value, typed=True)
+            if number is None:
+                others.add(text)
+            else:
+                numbers.add(_number_text(number))
+        return cls(tuple(steps), frozenset(numbers), frozenset(texts), frozenset(others))
+
+    def matches(self, value: Value, *, typed: bool) -> bool | None:
+        """True when ``value`` equals a contract value, None when that cannot be decided."""
+        number = _number(value, typed=typed)
+        if number is not None:
+            if _number_text(number) in self.numbers:
+                return True
+            return _normalized(value, self.steps) in self.non_number_texts
+        if _normalized(value, self.steps) in self.texts:
+            return True
+        if (
+            self.numbers
+            and not typed
+            and isinstance(value, str)
+            and _NUMBER_RE.fullmatch(value.strip()) is not None
+        ):
+            # A number _csv_number refuses: text inequality proves nothing.
+            return None
+        return False
 
 
 def _kind_ok(value: Value, kind: str, *, typed: bool) -> bool:
@@ -293,7 +433,8 @@ def _kind_ok(value: Value, kind: str, *, typed: bool) -> bool:
             return False
         if isinstance(value, int):
             return True
-        return isinstance(value, str) and not typed and bool(_INTEGER_RE.match(value))
+        # Same reader as "number" and range, so the two always agree on CSV text.
+        return isinstance(value, str) and not typed and isinstance(_csv_number(value), int)
     if kind == "number":
         return _number(value, typed=typed) is not None
     if kind == "boolean":
@@ -305,22 +446,33 @@ def _kind_ok(value: Value, kind: str, *, typed: bool) -> bool:
     return False
 
 
-def _predicate(pred: Predicate, record: Record, *, typed: bool) -> bool | None:
-    """True/False, or None when the field is absent or not comparable."""
+def _predicate(pred: Predicate, record: Record, ctx: _Context) -> bool | None:
+    """True/False for a source record, or None when the answer cannot be decided.
+
+    ``present`` and ``absent`` on a field that occurs in no source record are
+    undecidable: a renamed or misspelled field must never read as "absent". An
+    empty string, list or object counts as absent. Other operators are
+    undecidable when the record lacks the field or nests it; numeric ones also
+    when the value is no number. Equality operators follow ``_Matcher``, so
+    they are also undecidable for CSV text that only looks like a number.
+    """
     if pred.op in ("present", "absent"):
-        present = pred.field in record and record[pred.field] not in (None, "")
+        if pred.field not in ctx.source_fields:
+            return None
+        present = pred.field in record and not _is_empty(record[pred.field])
         return present if pred.op == "present" else not present
-    if pred.field not in record or record[pred.field] is NON_SCALAR:
+    if pred.field not in record or isinstance(record[pred.field], NonScalar):
         return None
     value = record[pred.field]
     if pred.op in ("eq", "ne", "in", "not_in"):
-        wanted = pred.values if pred.op in ("in", "not_in") else (pred.value,)
-        match = _text(value) in {_text(w) for w in wanted}
+        match = ctx.matcher(pred).matches(value, typed=ctx.source_typed)
+        if match is None:
+            return None
         return match if pred.op in ("eq", "in") else not match
-    number = _number(value, typed=typed)
-    if number is None or not isinstance(pred.value, (int, float)):
+    number = _number(value, typed=ctx.source_typed)
+    bound = _number(pred.value, typed=True)
+    if number is None or bound is None:
         return None
-    bound: float = pred.value
     return {
         "gt": number > bound,
         "gte": number >= bound,
@@ -330,12 +482,12 @@ def _predicate(pred: Predicate, record: Record, *, typed: bool) -> bool | None:
 
 
 def _all_predicates(
-    preds: Sequence[Predicate], record: Record, *, typed: bool
+    preds: Sequence[Predicate], record: Record, ctx: _Context
 ) -> tuple[bool | None, int]:
     """Conjunction: False wins over unknown; returns (result, deciding index)."""
     unknown = -1
     for index, pred in enumerate(preds):
-        result = _predicate(pred, record, typed=typed)
+        result = _predicate(pred, record, ctx)
         if result is False:
             return False, index
         if result is None and unknown < 0:
@@ -351,7 +503,8 @@ def _key(record: Record, fields: Sequence[str]) -> tuple[tuple[str, ...] | None,
         value = record[name]
         if isinstance(value, bool) or not isinstance(value, (str, int)):
             return None, "key_invalid"
-        text = str(value)
+        # int_text: a long integer key reads the same whatever Python's digit limit.
+        text = int_text(value) if isinstance(value, int) else str(value)
         if not text:
             return None, "key_missing"
         try:
@@ -370,14 +523,20 @@ class _Context:
     unkeyed_target_rows: int
     source_typed: bool
     target_typed: bool
-    _allowed: dict[str, frozenset[str | None]] = field(default_factory=dict)
+    source_fields: frozenset[str]
+    # Keyed by object identity: the contract keeps every owner alive for the run.
+    _matchers: dict[int, _Matcher] = field(default_factory=dict)
 
-    def allowed(self, cond: Condition) -> frozenset[str | None]:
-        """Normalized allowed values, computed once per condition."""
-        cached = self._allowed.get(cond.id)
+    def matcher(self, owner: Condition | Predicate) -> _Matcher:
+        """The owner's contract values prepared once per evaluation."""
+        cached = self._matchers.get(id(owner))
         if cached is None:
-            cached = frozenset(_normalized(v, cond.normalize) for v in cond.values)
-            self._allowed[cond.id] = cached
+            if isinstance(owner, Predicate):
+                wanted = owner.values if owner.op in ("in", "not_in") else (owner.value,)
+                cached = _Matcher.build(wanted, ())
+            else:
+                cached = _Matcher.build(owner.values, owner.normalize)
+            self._matchers[id(owner)] = cached
         return cached
 
 
@@ -433,7 +592,9 @@ def _field_check(
                 results.append((VIOLATED, "field_absent", {"field": name}))
             elif value is None and not cond.allow_null:
                 results.append((VIOLATED, "field_null", {"field": name}))
-            elif value == "" and not cond.allow_empty:
+            elif (
+                value == "" or (isinstance(value, NonScalar) and value.empty)
+            ) and not cond.allow_empty:
                 results.append((VIOLATED, "field_empty", {"field": name}))
             else:
                 results.append((VERIFIED, "field_present", {"field": name}))
@@ -444,7 +605,7 @@ def _field_check(
                 results.append((INCONCLUSIVE, "source_value_absent", {"field": cond.source_field}))
             elif not present or value is None:
                 results.append((VIOLATED, "target_value_absent", {"field": name}))
-            elif value is NON_SCALAR:
+            elif isinstance(value, NonScalar):
                 results.append((INCONCLUSIVE, "value_nested", {"field": name}))
             elif _equal(source[cond.source_field], value, cond.normalize, ctx):
                 results.append((VERIFIED, "values_match", {"field": name}))
@@ -457,7 +618,7 @@ def _field_check(
             else:
                 results.append((NOT_APPLICABLE, "value_absent", {"field": name}))
             continue
-        if value is NON_SCALAR:
+        if isinstance(value, NonScalar):
             results.append((INCONCLUSIVE, "value_nested", {"field": name}))
             continue
         if cond.type == "type":
@@ -465,19 +626,25 @@ def _field_check(
             ok = _kind_ok(value, cond.kind, typed=typed)
             results.append((VERIFIED if ok else VIOLATED, "type_ok" if ok else "type_mismatch", {}))
         elif cond.type in ("one_of", "route"):
-            ok = _normalized(value, cond.normalize) in ctx.allowed(cond)
+            allowed = ctx.matcher(cond).matches(value, typed=typed)
+            if allowed is None:
+                results.append((INCONCLUSIVE, "value_undecidable", {"field": name}))
+                continue
             if cond.type == "one_of":
-                reason = "value_allowed" if ok else "value_not_allowed"
+                reason = "value_allowed" if allowed else "value_not_allowed"
             else:
-                reason = "route_ok" if ok else "wrong_route"
-            results.append((VERIFIED if ok else VIOLATED, reason, {"field": name}))
+                reason = "route_ok" if allowed else "wrong_route"
+            results.append((VERIFIED if allowed else VIOLATED, reason, {"field": name}))
         elif cond.type == "range":
             number = _number(value, typed=typed)
             if number is None:
                 results.append((VIOLATED, "not_a_number", {"field": name}))
                 continue
-            low_ok = cond.minimum is None or number >= cond.minimum
-            high_ok = cond.maximum is None or number <= cond.maximum
+            # Exact comparison; a bound without an exact value never passes.
+            low = _number(cond.minimum, typed=True)
+            high = _number(cond.maximum, typed=True)
+            low_ok = cond.minimum is None or (low is not None and number >= low)
+            high_ok = cond.maximum is None or (high is not None and number <= high)
             ok = low_ok and high_ok
             results.append(
                 (
@@ -513,15 +680,12 @@ def _count_check(
     if matched >= max(low, 1) or (low == 0 and matched == 0 and high is not None):
         if high is None:
             return VERIFIED, "present", detail
-        return (
-            (VERIFIED, "count_within", detail)
-            if complete
-            else (
-                INCONCLUSIVE,
-                "upper_bound_unproven",
-                detail,
-            )
-        )
+        if not complete:
+            return INCONCLUSIVE, "upper_bound_unproven", detail
+        if ctx.unkeyed_target_rows:
+            # A keyless row may be one more record for this item (REC-07).
+            return INCONCLUSIVE, "target_unkeyed_rows", detail
+        return VERIFIED, "count_within", detail
     gate = _waiting(ctx, deadline, due_known)
     if gate is not None:
         return gate[0], gate[1], detail
@@ -538,16 +702,28 @@ def _on_time_check(
     deadline: datetime | None,
     due_known: bool,
 ) -> tuple[str, str, Mapping[str, Any]]:
+    """Timeliness (RULE-07): only a completion that could have been observed counts.
+
+    A completion time counts when it lies at or after the source event, at or
+    before the evaluation instant, and not after the target observation time.
+    A time outside that window cannot be this item's observed result, so it
+    never verifies and never proves lateness: the verdict is INCONCLUSIVE
+    (before the deadline, a time after the observation is merely PENDING).
+    ``late`` needs the deadline to have passed and every completion to count.
+    """
     if ctx.target.completeness == "unavailable":
         return INCONCLUSIVE, "target_unavailable", {}
-    if not due_known or deadline is None:
+    if not due_known or deadline is None or ctx.contract.due is None:
         return INCONCLUSIVE, "due_unknown", {}
+    started = deadline - timedelta(seconds=ctx.contract.due.within_seconds)
     detail: dict[str, Any] = {"deadline": format_instant(deadline), "basis": cond.basis}
     if records:
+        observed = ctx.target.observed_at
         if cond.basis == "observation":
-            observed = ctx.target.observed_at
             if observed is None:
                 return INCONCLUSIVE, "target_observed_at_unknown", detail
+            if observed < started:
+                return INCONCLUSIVE, "completion_before_event", detail
             if observed <= deadline:
                 return VERIFIED, "observed_on_time", detail
             return INCONCLUSIVE, "first_seen_after_deadline", detail
@@ -555,13 +731,19 @@ def _on_time_check(
         if cond.field not in ctx.target.fields:
             return INCONCLUSIVE, "field_not_in_snapshot", {**detail, "field": cond.field}
         times = [parse_instant(r.get(cond.field)) for r in records]
-        valid = [t for t in times if t is not None]
-        earliest = min(valid) if valid else None
-        if earliest is not None and earliest <= deadline:
+        limit = ctx.as_of if observed is None else min(ctx.as_of, observed)
+        counted = [t for t in times if t is not None and started <= t <= limit]
+        if any(t <= deadline for t in counted):
             return VERIFIED, "completed_on_time", detail
-        if earliest is None or len(valid) != len(times):
+        if any(t is not None and t < started for t in times):
+            return INCONCLUSIVE, "completion_before_event", detail
+        if None in times:
             return INCONCLUSIVE, "completion_time_unusable", detail
-        late_by = int((earliest - deadline).total_seconds())
+        if ctx.as_of < deadline:
+            return PENDING, "awaiting_due", detail
+        if len(counted) < len(times):
+            return INCONCLUSIVE, "completion_after_observation", detail
+        late_by = int((min(counted) - deadline).total_seconds())
         if ctx.target.completeness != "complete":
             # The earliest completion may sit in a record this snapshot does not show.
             return INCONCLUSIVE, "late_unconfirmed", {**detail, "late_by_seconds": late_by}
@@ -612,7 +794,7 @@ def _evaluate_condition(
             status, reason = NOT_APPLICABLE, "branches_not_applicable"
         return ConditionResult(cond.id, cond.type, status, reason, cond.advisory, {}, branches)
     if cond.type == "route":
-        applies, index = _all_predicates(cond.when, source, typed=ctx.source_typed)
+        applies, index = _all_predicates(cond.when, source, ctx)
         if applies is False:
             return done(NOT_APPLICABLE, "route_not_applicable")
         if applies is None:
@@ -651,13 +833,34 @@ class _Group:
     rows: list[Record]
 
 
+def _identity(value: Value) -> tuple[str, str | None]:
+    """What source checks can tell apart in a value: its kind and canonical text.
+
+    ``"1"`` and ``1`` share text but not kind, and a JSON string never reads
+    as a number, so rows holding them can judge differently; they conflict
+    instead of letting row order pick the verdict (REC-04, AT-38). Equal
+    numbers (``100`` and ``1E2``) share an identity, as do two nested values
+    that are both empty or both non-empty (no check looks inside them).
+    """
+    if value is None:
+        return "null", None
+    if isinstance(value, NonScalar):
+        return "nested", "empty" if value.empty else "non-empty"
+    if isinstance(value, bool):
+        return "bool", _text(value)
+    if isinstance(value, (int, float, Decimal)):
+        return "number", _text(value)
+    return "str", value
+
+
 def _conflicting(rows: Sequence[Record], fields: frozenset[str]) -> bool:
+    """Rows sharing a key differ in a relevant field's presence or identity (REC-04)."""
     first = rows[0]
     for row in rows[1:]:
         for name in fields:
-            if (name in first) != (name in row) or _text(first.get(name)) != _text(row.get(name)):
+            if (name in first) != (name in row):
                 return True
-            if (first.get(name) is NON_SCALAR) != (row.get(name) is NON_SCALAR):
+            if name in first and _identity(first[name]) != _identity(row[name]):
                 return True
     return False
 
@@ -693,7 +896,7 @@ def _evaluate_item(
     if len(group.rows) > 1 and _conflicting(group.rows, relevant):
         return item(INCONCLUSIVE, "source_conflict")
     record = group.rows[0]
-    eligible, pred_index = _all_predicates(contract.eligibility, record, typed=ctx.source_typed)
+    eligible, pred_index = _all_predicates(contract.eligibility, record, ctx)
     if eligible is not True:
         detail = {"predicate": pred_index, "field": contract.eligibility[pred_index].field}
         if eligible is False:
@@ -772,8 +975,9 @@ def evaluate(
         unkeyed_target_rows=unkeyed_target,
         source_typed=source.input_format != "csv",
         target_typed=target.input_format != "csv",
+        source_fields=source.fields,
     )
-    relevant = contract.relevant_source_fields()
+    relevant = contract.relevant_source_fields(include_key=False)
     for key, group in groups.items():
         items.append(_evaluate_item(contract, ctx, key, group, index.get(key, []), relevant))
 

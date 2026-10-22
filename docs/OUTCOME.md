@@ -51,11 +51,38 @@ Every verdict is limited to the supplied observations.
 
   If any is missing, the verdict is `INCONCLUSIVE` and names the missing proof,
   for example `target_incomplete` or `target_stale`.
-- **Upper bounds need a complete target.** Duplicates in a partial snapshot can
-  be paging artifacts, so they are reported as `duplicates_unconfirmed`, not
-  `too_many`.
+- **Upper bounds need a complete, fully keyed target.** Duplicates in a partial
+  snapshot can be paging artifacts, so they are reported as
+  `duplicates_unconfirmed`, not `too_many`. A count within `max` is confirmed
+  only when the snapshot is complete (else `upper_bound_unproven`) and every
+  target row has a usable key (else `target_unkeyed_rows`), because a keyless
+  row may be one more record for the item.
 - **Lateness needs a complete target.** A late completion in a partial snapshot
   is `late_unconfirmed`, because an earlier record may not be in the snapshot.
+  `late` also needs the deadline to have passed at the evaluation instant;
+  before that the item is `PENDING`.
+- **Completion times must be plausible.** With `basis: "target_time"`, a
+  completion time counts only if it is at or after the source event, at or
+  before the evaluation instant, and not after the target snapshot's
+  `observed_at`. A counted time at or before the deadline verifies. A time
+  before the source event cannot be this item's result
+  (`completion_before_event`), and a time after the observation was never
+  observed (`completion_after_observation`). Both are `INCONCLUSIVE`, never
+  `VERIFIED` and never `late`. With `basis: "observation"`, a target snapshot
+  observed before the source event gives `completion_before_event`.
+- **Numbers compare exactly.** Integers of up to 4300 digits compare exactly
+  and decimals compare as written, so CSV `0.1` equals JSON `0.1`, and
+  `9007199254740993` differs from `9007199254740992`. A contract number with a
+  fraction or exponent must equal a 64-bit float exactly (up to 15 significant
+  digits are always safe for magnitudes from 1e-307 to 1e308); otherwise the
+  contract is rejected, so write large bounds as integers. A JSON number in a
+  contract or snapshot may have at most 4300 characters, not counting a minus
+  sign, and a JSON snapshot number's exponent at most 6 digits. A longer
+  number makes the file invalid ("number out of range"), whatever
+  `PYTHONINTMAXSTRDIGITS` is set to. The one exception: if
+  `PYTHONINTMAXSTRDIGITS` (or `sys.set_int_max_str_digits`) lowers Python's
+  limit below 4300 digits, a contract integer longer than that limit cannot be
+  fingerprinted, so the contract is rejected.
 - **Unevaluated items never count as passes.** If an item could not be
   evaluated, for example because no target record exists and the contract has
   no `exists` or `count` condition, a run that would otherwise verify is
@@ -100,7 +127,11 @@ and operators are rejected, so a typo can never weaken a check.
 - `eligibility` is a list of predicates on the source record that must all
   hold:
   - An item that fails one is `NOT_APPLICABLE`.
-  - An item whose field is missing is `INCONCLUSIVE`.
+  - An item whose field is missing or cannot be compared is `INCONCLUSIVE`.
+  - `present` and `absent` treat null and an empty string, list or object as
+    absent. On a field that occurs in no source record they are undecidable
+    (`INCONCLUSIVE`), so a renamed or misspelled field never reads as absent.
+    Route `when` predicates follow the same rules (`route_undecidable`).
   - Operators: `eq`, `ne`, `in`, `not_in`, `gt`, `gte`, `lt`, `lte`,
     `present`, `absent`.
 - `due` sets the deadline to the source time field plus `within_seconds`.
@@ -112,24 +143,51 @@ and operators are rejected, so a typo can never weaken a check.
 | Type | Checks |
 | --- | --- |
 | `exists` | At least one matching target record exists. |
-| `count` | Between `min` and `max` matching records exist. `max: 0` is rejected because v1 cannot prove absence. |
-| `required` | The target field is present, non-null and non-empty. `allow_null` and `allow_empty` relax this. |
+| `count` | Between `min` and `max` matching records exist. `min` defaults to 1. Both are integers from 0 to 1,000,000, the snapshot record cap; `null` is rejected. `max: 0` is rejected because v1 cannot prove absence. |
+| `required` | The target field is present, non-null and non-empty. An empty string, list or object is empty. `allow_null` and `allow_empty` relax this. |
 | `type` | When present, the field has the declared `kind`: `string`, `integer`, `number`, `boolean` or `date-time`. |
-| `one_of` | When present, the field is in `values`, after the optional `normalize` steps (`trim`, `casefold`). |
+| `one_of` | When present, the field is in `values`, after the optional `normalize` steps (`trim`, `casefold`). `values` cannot hold `null`, because a null field is `value_absent` and never matches. |
 | `equals` | The target `field` equals the source `source_field`, after normalization. |
 | `range` | When present, the field is a number between `min` and `max`. |
-| `route` | When every `when` predicate holds on the source, the target field is in `values`. Routing is judged separately from existence. |
-| `on_time` | Needs `due`. `basis: "target_time"` compares the earliest completion time in `field` with the deadline. `basis: "observation"` accepts a record visible in a snapshot taken at or before the deadline. |
+| `route` | When every `when` predicate holds on the source, the target field is in `values`. Routing is judged separately from existence. `values` cannot hold `null`, because a null field is `wrong_route` and never matches. |
+| `on_time` | Needs `due`. `basis: "target_time"` checks that a completion time in `field` is at or before the deadline; only times from the source event up to the target observation count. `basis: "observation"` accepts a record visible in a snapshot taken at or before the deadline and not before the source event. |
 | `any_of` | At least one of two or more branch conditions verifies. Branches cannot contain another `any_of`. |
 
 `equals` compares values as text. The exception is a JSON number on either
-side, which compares numerically: CSV `12.50` equals JSON `12.5`, but CSV `0012`
-does not equal the JSON string `"12"`.
+side, which compares numerically and exactly: CSV `12.50` equals JSON `12.5` and
+CSV `0.1` equals JSON `0.1`, but CSV `0012` does not equal the JSON string
+`"12"`.
 
-CSV values are untyped text and are coerced strictly, so the CSV value `5`
-counts as a number. JSON values keep their types, so the JSON string `"5"` is
-not a number. Run `sesslint outcome contract.json --explain` to print exactly
-what a contract checks before you rely on it.
+The `eq`, `ne`, `in` and `not_in` predicates (in `eligibility` and route `when`)
+and the `values` of `one_of` and `route` follow the same rule. A contract
+number matches a record value by exact value when that value reads as a number:
+a JSON number, or CSV text that counts as a number (see below). So CSV `12.50`
+matches `12.5` and CSV `0012` matches `12`, but CSV `9007199254740993` does not
+match `9007199254740992`. Any other value compares as text, and a contract
+string always compares as text, so CSV `0012` does not match `"12"`.
+Normalization (`trim`, `casefold`) applies only to the text comparison. Keys
+still match exactly as text.
+
+One exception fails closed. CSV text that looks like a number but does not
+count as one (a leading or trailing space as in ` 12`, more than 100
+characters, or an exponent with more than 6 digits) cannot be decided against
+a contract whose values include a number, unless it matches a contract value
+as text. Unequal text would prove nothing, so such a value is `INCONCLUSIVE`:
+`eligibility_undecidable` in `eligibility`, `route_undecidable` in a route
+`when`, and `value_undecidable` for the `values` of `one_of` and `route`.
+
+CSV values are untyped text and are coerced strictly. A CSV number is plain
+ASCII decimal text of at most 100 characters: an optional sign, digits, an
+optional fraction and an optional exponent whose value has at most 6 digits.
+So the CSV value `5` counts as a number, but `1_000`, non-ASCII digits or a
+400-digit value do not. The same rule decides `type`, `range`, the numeric
+predicates and the number matching above. JSON values keep their types, so the
+JSON string `"5"` is not a number.
+
+Run `sesslint outcome contract.json --explain` to print exactly what a contract
+checks before you rely on it. `--explain` prints plain text only; combining it
+with `--json` or `--format json` is a usage error (exit `2`), and a
+`SESSLINT_FORMAT=json` default does not apply to it.
 
 ## Snapshots (`sesslint.snapshot/v1`)
 
@@ -160,6 +218,10 @@ A plain file cannot carry this metadata. Supply it with flags such as
 `--target-completeness`. If a flag contradicts the envelope, the command fails
 with an error. Snapshot size is capped by `--max-file-bytes`, and a snapshot can
 hold at most 1,000,000 records.
+
+In a `.jsonl` or `.ndjson` file, each record ends at a line feed (`\n`); a
+carriage return before it is ignored. Characters such as U+2028 inside a string
+never split a record.
 
 ## Report (`sesslint.outcome-report/v1`)
 
@@ -236,7 +298,7 @@ Every verdict carries one of these stable codes.
 | `target_incomplete` | The target snapshot is not declared complete, so absence cannot be proven. |
 | `target_stale` | The target snapshot was observed before the deadline. |
 | `target_observed_at_unknown` | The target snapshot has no observation time. |
-| `target_unkeyed_rows` | Some target rows have no usable key, so a missing record may be hidden behind a broken mapping. |
+| `target_unkeyed_rows` | Some target rows have no usable key, so a missing or extra record may be hidden behind a broken mapping. |
 | `no_target_record` | No matched target record to inspect. |
 
 ### Field checks
@@ -247,9 +309,10 @@ Every verdict carries one of these stable codes.
 | `field_present` | The field holds an accepted value. |
 | `field_absent` | The field is absent from the matched record. |
 | `field_null` | The field is null. |
-| `field_empty` | The field is an empty string. |
+| `field_empty` | The field is an empty string, list or object. |
 | `value_absent` | The optional value is absent or null; pair with a required condition to demand it. |
 | `value_nested` | The value is nested and cannot be compared. |
+| `value_undecidable` | The text looks like a number but does not read as one exactly (surrounding whitespace, over 100 characters or an exponent over 6 digits), so it cannot be matched against the contract's numbers. |
 | `type_ok` | The value has the declared kind. |
 | `type_mismatch` | The value does not have the declared kind. |
 | `value_allowed` | The value is in the allowed set. |
@@ -275,8 +338,10 @@ Every verdict carries one of these stable codes.
 
 | Code | Meaning |
 | --- | --- |
-| `completed_on_time` | The target completion time is at or before the deadline. |
-| `late` | The target completion time is after the deadline. |
+| `completed_on_time` | A target completion time between the source event and the observation is at or before the deadline. |
+| `late` | The deadline has passed and every target completion time is after it. |
+| `completion_before_event` | The completion time, or the snapshot showing the record, is before the source event time, so it cannot be this item's result. |
+| `completion_after_observation` | The completion time is after the evaluation instant or the target observation time, so it was not observed and cannot be judged. |
 | `late_unconfirmed` | The visible completion is late, but an earlier record may be missing from an incomplete snapshot. |
 | `not_completed_by_deadline` | No matching record in a complete snapshot observed at or after the deadline. |
 | `completion_time_unusable` | The target completion time is absent or has no UTC offset. |

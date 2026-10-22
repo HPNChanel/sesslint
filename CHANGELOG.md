@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dimension. Reports are content-free (`--hash-keys` for pseudonymous keys)
   and have JSON Schemas. Passing items list only their non-passing conditions
   unless `--all-conditions` is given. `--explain` restates a contract in plain
-  language.
+  language (text only).
   Exit 0 only for `VERIFIED`. See `docs/OUTCOME.md`.
 - Project website in `web/` (Astro, static, English + Vietnamese): landing
   page, portable-binary downloads with Sigstore/SLSA verify steps, a rule

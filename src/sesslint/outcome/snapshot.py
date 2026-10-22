@@ -4,6 +4,12 @@ A snapshot is one observation of a source or target system: its records plus
 the metadata that limits what it can prove — when it was observed, whether it
 is complete, and where it came from. Metadata is never inferred: a file with
 no declared completeness is ``unknown``, so absence cannot be proven from it.
+
+JSON numbers stay exact: integers are ``int`` and every other number is a
+``Decimal`` parsed from its text, so values beyond 2**53 and decimal fractions
+such as ``0.1`` are never rounded through binary floats (RULE-05, RULE-06).
+A JSON number may have at most 4300 characters (a sign not counted) and an
+exponent of at most 6 digits, whatever Python's int/str digit limit is set to.
 """
 
 from __future__ import annotations
@@ -14,42 +20,92 @@ import io
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
-from sesslint.outcome.contract import parse_strict_json
+from sesslint.outcome.contract import NumberRangeError as NumberRangeError
+from sesslint.outcome.contract import (
+    check_number_length,
+    parse_strict_json,
+    refused_number_path,
+)
 
 SNAPSHOT_SCHEMA_VERSION: Final[str] = "sesslint.snapshot/v1"
 COMPLETENESS: Final[tuple[str, ...]] = ("complete", "partial", "unknown", "unavailable")
 ORIGINS: Final[tuple[str, ...]] = ("target_system", "workflow_log", "user_file", "manual")
 MAX_RECORDS: Final[int] = 1_000_000
 DEFAULT_MAX_SNAPSHOT_BYTES: Final[int] = 100 * 1024 * 1024
+MAX_EXPONENT_DIGITS: Final[int] = 6
 _ENVELOPE_KEYS: Final = frozenset(
     {"schema_version", "observed_at", "completeness", "origin", "demo", "records"}
 )
+# JSON insignificant whitespace; str.strip() would also drop U+0085, U+2028 etc.
+_JSON_WHITESPACE: Final[str] = " \t\r\n"
 
 
 class NonScalar:
-    """Marker for nested values: present, but never compared or coerced."""
+    """Marker for nested values: present, but never compared or coerced.
 
-    _instance: NonScalar | None = None
+    An empty list or object (``.empty``; the loader uses ``EMPTY_NESTED``) is
+    empty for ``required`` and the ``present``/``absent`` predicates, like
+    ``""``. Code judges emptiness by ``.empty``, never by identity.
+    """
 
-    def __new__(cls) -> NonScalar:
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+    __slots__ = ("_empty",)
+
+    def __init__(self, *, empty: bool) -> None:
+        self._empty = empty
+
+    @property
+    def empty(self) -> bool:
+        """True for an empty list or object."""
+        return self._empty
 
     def __repr__(self) -> str:
-        return "NON_SCALAR"
+        return "EMPTY_NESTED" if self._empty else "NON_SCALAR"
 
 
-NON_SCALAR: Final = NonScalar()
-Value = str | int | float | bool | None | NonScalar
+NON_SCALAR: Final = NonScalar(empty=False)
+EMPTY_NESTED: Final = NonScalar(empty=True)
+Value = str | int | float | Decimal | bool | None | NonScalar
 Record = Mapping[str, Value]
 
 
 class SnapshotError(ValueError):
     """A snapshot could not be read or its metadata is contradictory."""
+
+
+def exact_decimal(text: str) -> Decimal:
+    """Parse decimal number text exactly (JSON ``parse_float`` hook, CSV coercion).
+
+    The text may have at most 4300 characters (a sign not counted) and an
+    explicit exponent of at most ``MAX_EXPONENT_DIGITS`` digits, so neither the
+    cost nor the result depends on the platform's decimal context limits.
+    """
+    check_number_length(text)
+    exponent = text.lower().partition("e")[2].lstrip("+-").lstrip("0")
+    if len(exponent) > MAX_EXPONENT_DIGITS:
+        raise NumberRangeError(f"number exponent exceeds {MAX_EXPONENT_DIGITS} digits")
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError) as err:
+        raise NumberRangeError("number is outside the supported range") from err
+
+
+def _number_error(text: str, role: str, err: NumberRangeError) -> SnapshotError:
+    """Name the record (1-based, as reports count rows) whose number is refused.
+
+    Only the position is named: field names and values stay out of errors.
+    """
+    path = refused_number_path(text, parse_float=exact_decimal) or ()
+    if path[:1] == ("records",):
+        path = path[1:]
+    if path and isinstance(path[0], int):
+        return SnapshotError(
+            f"{role} snapshot record {path[0] + 1} has a number out of range ({err})"
+        )
+    return SnapshotError(f"{role} snapshot has a number out of range ({err})")
 
 
 def parse_instant(value: object) -> datetime | None:
@@ -112,8 +168,10 @@ class Snapshot:
 def _scalarize(record: Mapping[str, Any]) -> dict[str, Value]:
     out: dict[str, Value] = {}
     for key, value in record.items():
-        if value is None or isinstance(value, (str, int, float, bool)):
+        if value is None or isinstance(value, (str, int, float, Decimal, bool)):
             out[key] = value
+        elif isinstance(value, (list, dict)) and not value:
+            out[key] = EMPTY_NESTED
         else:
             out[key] = NON_SCALAR
     return out
@@ -159,11 +217,16 @@ def _from_objects(items: object, where: str) -> tuple[list[dict[str, Value]], se
 
 def _from_jsonl(text: str) -> tuple[list[dict[str, Value]], set[str]]:
     items: list[object] = []
-    for line_no, line in enumerate(text.splitlines(), start=1):
-        if not line.strip():
+    # JSON Lines ends records with "\n" only (one trailing "\r" tolerated);
+    # str.splitlines() would also split inside strings at U+2028, U+0085 etc.
+    for line_no, raw_line in enumerate(text.split("\n"), start=1):
+        line = raw_line.removesuffix("\r")
+        if not line.strip(_JSON_WHITESPACE):
             continue
         try:
-            items.append(parse_strict_json(line))
+            items.append(parse_strict_json(line, parse_float=exact_decimal))
+        except NumberRangeError as err:
+            raise SnapshotError(f"JSONL line {line_no} has a number out of range ({err})") from err
         except (ValueError, RecursionError) as err:
             raise SnapshotError(f"JSONL line {line_no} is not strict JSON") from err
         if len(items) > MAX_RECORDS:
@@ -217,7 +280,9 @@ def load_snapshot(
         records, fields = _from_jsonl(text)
     elif suffix == ".json":
         try:
-            doc = parse_strict_json(text)
+            doc = parse_strict_json(text, parse_float=exact_decimal)
+        except NumberRangeError as err:
+            raise _number_error(text, role, err) from err
         except (ValueError, RecursionError) as err:
             raise SnapshotError(f"{role} snapshot is not strict JSON") from err
         if isinstance(doc, dict):

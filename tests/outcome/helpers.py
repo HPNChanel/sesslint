@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +31,17 @@ def at(text: str) -> datetime:
     value = parse_instant(text)
     assert value is not None
     return value
+
+
+@contextmanager
+def digit_limit(limit: int) -> Iterator[None]:
+    """Run with Python's int/str digit limit at ``limit`` (0: none), restoring it after."""
+    previous = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(limit)
+    try:
+        yield
+    finally:
+        sys.set_int_max_str_digits(previous)
 
 
 def contract(*conditions: dict[str, Any], **top: Any) -> Contract:

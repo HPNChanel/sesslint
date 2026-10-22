@@ -257,24 +257,30 @@ class OutcomeReport:
         return "\n".join(lines)
 
 
-def _describe_predicate(pred: Predicate) -> str:
-    def lit(value: object) -> str:
-        return json.dumps(value, ensure_ascii=True)
+def _literal(value: object) -> str:
+    """A contract value in JSON text form (CON-03).
 
+    The value is exact, but not always its spelling: a float is re-spelled by
+    ``repr``, so ``1.50`` prints as ``1.5`` and ``1e2`` as ``100.0``.
+    """
+    return json.dumps(value, ensure_ascii=True)
+
+
+def _describe_predicate(pred: Predicate) -> str:
     if pred.op == "present":
         return f"{pred.field} is present and non-empty"
     if pred.op == "absent":
         return f"{pred.field} is absent, null or empty"
     if pred.op in ("in", "not_in"):
-        joined = ", ".join(lit(v) for v in pred.values)
+        joined = ", ".join(_literal(v) for v in pred.values)
         return f"{pred.field} {'is' if pred.op == 'in' else 'is not'} one of {joined}"
     symbol = {"eq": "=", "ne": "!=", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[pred.op]
-    return f"{pred.field} {symbol} {lit(pred.value)}"
+    return f"{pred.field} {symbol} {_literal(pred.value)}"
 
 
 def _describe_condition(cond: Condition) -> str:
     norm = f" (after {', '.join(cond.normalize)})" if cond.normalize else ""
-    values = ", ".join(json.dumps(v, ensure_ascii=True) for v in cond.values)
+    values = ", ".join(_literal(v) for v in cond.values)
     if cond.type == "exists":
         text = "at least one matching target record exists"
     elif cond.type == "count":
@@ -299,18 +305,24 @@ def _describe_condition(cond: Condition) -> str:
     elif cond.type == "range":
         bounds = []
         if cond.minimum is not None:
-            bounds.append(f">= {cond.minimum:g}")
+            bounds.append(f">= {_literal(cond.minimum)}")
         if cond.maximum is not None:
-            bounds.append(f"<= {cond.maximum:g}")
+            bounds.append(f"<= {_literal(cond.maximum)}")
         text = f"target field {cond.field}, when present, is a number {' and '.join(bounds)}"
     elif cond.type == "route":
         when = " and ".join(_describe_predicate(p) for p in cond.when)
         text = f"when {when}: target field {cond.field} is one of {values}{norm}"
     elif cond.type == "on_time":
         if cond.basis == "target_time":
-            text = f"target completion time {cond.field} is at or before the deadline"
+            text = (
+                f"target completion time {cond.field} is at or before the deadline; only times "
+                "from the source event up to the target observation count"
+            )
         else:
-            text = "the record is visible in a target snapshot taken at or before the deadline"
+            text = (
+                "the record is visible in a target snapshot taken at or before the deadline "
+                "and not before the source event"
+            )
     else:
         text = "any one of: " + "; ".join(_describe_condition(c) for c in cond.conditions)
     if cond.disabled is not None:

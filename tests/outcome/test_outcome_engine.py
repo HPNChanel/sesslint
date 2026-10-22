@@ -12,14 +12,17 @@ import pytest
 
 from sesslint.outcome import (
     REASONS,
+    Contract,
     EvaluationError,
     OutcomeReport,
+    Snapshot,
     evaluate,
     load_contract,
     load_snapshot,
     session_dimension,
     verify_outcome,
 )
+from sesslint.outcome.snapshot import EMPTY_NESTED, NonScalar
 from tests.outcome.helpers import (
     DEADLINE,
     LATER,
@@ -29,6 +32,7 @@ from tests.outcome.helpers import (
     at,
     cond,
     contract,
+    digit_limit,
     due,
     item,
     run,
@@ -436,7 +440,9 @@ def test_at38_deterministic_regardless_of_record_order(tmp_path: Path) -> None:
     assert (
         first.to_json() == OutcomeReport(evaluate(spec, source, target, as_of=at(LATER))).to_json()
     )
-    records = list(target.records)
+    # Shuffle the file's own records: loaded values hold exact Decimal numbers.
+    records = json.loads((ORDERS / "target_complete.json").read_text(encoding="utf-8"))["records"]
+    assert len(records) == len(target.records)
     random.Random(7).shuffle(records)
     path = tmp_path / "shuffled.jsonl"
     path.write_bytes("".join(json.dumps(r) + "\n" for r in records).encode("utf-8"))
@@ -558,3 +564,650 @@ def test_default_detail_lists_only_non_passing_conditions(tmp_path: Path) -> Non
     assert doc["condition_summary"]["exists"]["VERIFIED"] == 2
     assert doc["condition_summary"]["adv"]["VIOLATED"] == 1
     assert_schema(doc, "sesslint.outcome-report.v1.json")
+
+
+# Review regressions before 0.5.0: presence, exact numbers, keyless rows, timeliness.
+
+
+def _csv(tmp_path: Path, role: str, text: str) -> Snapshot:
+    path = tmp_path / f"{role}.csv"
+    path.write_bytes(text.encode("utf-8"))
+    return load_snapshot(path, role=role, completeness="complete", observed_at=at(LATER))
+
+
+def _verbatim(tmp_path: Path, role: str, records: str) -> Snapshot:
+    """A complete envelope written as typed, so number literals reach the reader unchanged."""
+    path = tmp_path / f"{role}.json"
+    path.write_bytes(
+        (
+            '{"schema_version": "sesslint.snapshot/v1", "completeness": "complete", '
+            f'"observed_at": "{LATER}", "records": {records}}}'
+        ).encode()
+    )
+    return load_snapshot(path, role=role)
+
+
+def _report(spec: Contract, source: Snapshot, target: Snapshot) -> OutcomeReport:
+    return OutcomeReport(evaluate(spec, source, target, as_of=at(LATER)), all_conditions=True)
+
+
+@pytest.mark.parametrize("op", ["present", "absent"])
+def test_presence_of_an_unknown_field_is_undecidable(tmp_path: Path, op: str) -> None:
+    """A renamed or misspelled field never reads as "absent" (RULE-08, REC-07)."""
+    source = _src("a", tier="gold", region="EU")
+    target = [{"ref": "a", "queue": "vip"}]
+    route = {
+        "id": "route",
+        "type": "route",
+        "field": "queue",
+        "values": ["vip"],
+        "when": [{"field": "tierr", "op": op}],
+    }
+    report = run(tmp_path, contract(EXISTS, route), source, target)
+    assert cond(item(report, "a"), "route") == ("INCONCLUSIVE", "route_undecidable")
+    assert report.outcome == "INCONCLUSIVE"
+    gated = contract(EXISTS, eligibility=[{"field": "regionn", "op": op}])
+    entry = item(run(tmp_path, gated, source, target), "a")
+    assert (entry["status"], entry["reason"]) == ("INCONCLUSIVE", "eligibility_undecidable")
+
+
+@pytest.mark.parametrize(
+    ("fields", "present"),
+    [
+        ({}, False),
+        ({"tags": None}, False),
+        ({"tags": ""}, False),
+        ({"tags": []}, False),
+        ({"tags": {}}, False),
+        ({"tags": "x"}, True),
+        ({"tags": ["x"]}, True),
+        ({"tags": {"k": None}}, True),
+        ({"tags": 0}, True),
+        ({"tags": False}, True),
+    ],
+)
+def test_presence_treats_null_and_empty_values_as_absent(
+    tmp_path: Path, fields: dict[str, Any], present: bool
+) -> None:
+    """``present``/``absent`` agree with ``required``: empty text, list or object is empty."""
+    source = [*_src("a", **fields), *_src("b", tags=["y"])]
+    target = [{"ref": "a"}, {"ref": "b"}]
+    for op, eligible in (("present", present), ("absent", not present)):
+        spec = contract(EXISTS, eligibility=[{"field": "tags", "op": op}])
+        status = item(run(tmp_path, spec, source, target), "a")["status"]
+        assert status == ("VERIFIED" if eligible else "NOT_APPLICABLE"), op
+
+
+def test_eligibility_compares_large_integers_exactly(tmp_path: Path) -> None:
+    """2**53 + 1 is greater than 2**53; a float comparison calls them equal (RULE-06)."""
+    spec = contract(EXISTS, eligibility=[{"field": "n", "op": "gt", "value": 2**53}])
+    source = _csv(tmp_path, "source", f"id,n\na,{2**53 + 1}\nb,{2**53}\n")
+    report = _report(spec, source, _verbatim(tmp_path, "target", "[]"))
+    assert cond(item(report, "a"), "exists") == ("VIOLATED", "missing")
+    assert item(report, "b")["reason"] == "not_eligible"
+
+
+@pytest.mark.parametrize(
+    ("csv_text", "json_text", "reason"),
+    [
+        ("9007199254740993", "9007199254740992", "values_differ"),
+        ("1234567890123456789", "1234567890123456789", "values_match"),
+        ("0.1", "0.1", "values_match"),
+        ("12.50", "12.5", "values_match"),
+        ("1e2", "100", "values_match"),
+        ("-0", "0.0", "values_match"),
+        ("0.1000000000000000001", "0.1", "values_differ"),
+        ("100000000000000000000", "1e20", "values_match"),
+        ("100000000000000000001", "1e20", "values_differ"),
+    ],
+)
+def test_equals_is_exact_across_csv_and_json(
+    tmp_path: Path, csv_text: str, json_text: str, reason: str
+) -> None:
+    """RULE-05: CSV text and JSON numbers compare by exact value, never through a float."""
+    spec = contract(EXISTS, {"id": "eq", "type": "equals", "field": "amt", "source_field": "amt"})
+    source = _csv(tmp_path, "source", f"id,amt\na,{csv_text}\n")
+    target = _verbatim(tmp_path, "target", f'[{{"ref": "a", "amt": {json_text}}}]')
+    assert cond(item(_report(spec, source, target), "a"), "eq")[1] == reason
+
+
+def test_range_bounds_compare_exactly(tmp_path: Path) -> None:
+    big = 2**53 + 1
+    spec = contract(
+        {"id": "big", "type": "range", "field": "n", "min": big, "max": big},
+        {"id": "tenth", "type": "range", "field": "x", "max": 0.3},
+    )
+    target = _verbatim(
+        tmp_path,
+        "target",
+        f'[{{"ref": "a", "n": {big}, "x": 0.3}},'
+        f' {{"ref": "b", "n": {2**53}, "x": 0.30000000000000001}}]',
+    )
+    report = _report(spec, _csv(tmp_path, "source", "id\na\nb\n"), target)
+    assert cond(item(report, "a"), "big") == ("VERIFIED", "in_range")
+    assert cond(item(report, "a"), "tenth") == ("VERIFIED", "in_range")
+    assert cond(item(report, "b"), "big") == ("VIOLATED", "out_of_range")
+    assert cond(item(report, "b"), "tenth") == ("VIOLATED", "out_of_range")
+
+
+def test_one_of_matches_numbers_by_value_not_spelling(tmp_path: Path) -> None:
+    spec = contract({"id": "pick", "type": "one_of", "field": "v", "values": [1.5, 100]})
+    target = _verbatim(
+        tmp_path,
+        "target",
+        '[{"ref": "a", "v": 1.50}, {"ref": "b", "v": 1E2}, {"ref": "c", "v": "1.50"},'
+        ' {"ref": "d", "v": 100.0000000000000001}]',
+    )
+    report = _report(spec, _csv(tmp_path, "source", "id\na\nb\nc\nd\n"), target)
+    reasons = [cond(item(report, key), "pick")[1] for key in "abcd"]
+    assert reasons == ["value_allowed", "value_allowed", "value_not_allowed", "value_not_allowed"]
+
+
+def test_in_predicate_uses_one_spelling_per_number(tmp_path: Path) -> None:
+    spec = contract(EXISTS, eligibility=[{"field": "n", "op": "in", "values": [1e100, 0.1, -0.0]}])
+    source = _verbatim(
+        tmp_path,
+        "source",
+        '[{"id": "a", "n": 1E+100}, {"id": "b", "n": 0.10}, {"id": "c", "n": 0},'
+        ' {"id": "d", "n": 0.1000000000000000001}]',
+    )
+    target = _verbatim(
+        tmp_path, "target", '[{"ref": "a"}, {"ref": "b"}, {"ref": "c"}, {"ref": "d"}]'
+    )
+    statuses = [item(_report(spec, source, target), key)["status"] for key in "abcd"]
+    assert statuses == ["VERIFIED", "VERIFIED", "VERIFIED", "NOT_APPLICABLE"]
+
+
+def test_count_upper_bound_needs_every_target_row_keyed(tmp_path: Path) -> None:
+    """A keyless target row may be one more record for this item (RULE-02, REC-07)."""
+    keyless = [{"ref": "a"}, {"ref": None}, {"ref": ""}]
+    report = run(tmp_path, contract(ONE), _src("a"), keyless)
+    assert cond(item(report, "a"), "one") == ("INCONCLUSIVE", "target_unkeyed_rows")
+    assert report.outcome == "INCONCLUSIVE"
+    keyed = run(tmp_path, contract(ONE), _src("a"), [{"ref": "a"}, {"ref": "b"}])
+    assert cond(item(keyed, "a"), "one") == ("VERIFIED", "count_within")
+    # A lower bound alone is still proven by the keyed record.
+    floor = {"id": "floor", "type": "count", "min": 1}
+    report = run(tmp_path, contract(floor), _src("a"), keyless)
+    assert cond(item(report, "a"), "floor") == ("VERIFIED", "present")
+
+
+@pytest.mark.parametrize(
+    ("done_at", "expected"),
+    [
+        ("2026-10-19T08:30:00Z", ("INCONCLUSIVE", "completion_before_event")),
+        (T0, ("VERIFIED", "completed_on_time")),
+        ("2026-10-20T08:30:00Z", ("VERIFIED", "completed_on_time")),
+        (DEADLINE, ("VERIFIED", "completed_on_time")),
+        ("2026-10-20T10:00:00Z", ("VIOLATED", "late")),
+        ("2026-10-20T13:00:00Z", ("INCONCLUSIVE", "completion_after_observation")),
+        ("soon", ("INCONCLUSIVE", "completion_time_unusable")),
+    ],
+)
+def test_on_time_counts_only_completions_that_could_be_observed(
+    tmp_path: Path, done_at: str, expected: tuple[str, str]
+) -> None:
+    """RULE-07: a completion counts only between the source event and the observation."""
+    spec = contract(EXISTS, ON_TIME, due=due())
+    report = run(tmp_path, spec, _src("a"), [{"ref": "a", "done_at": done_at}])
+    assert cond(item(report, "a"), "on-time") == expected
+    assert_schema(report.to_dict(), "sesslint.outcome-report.v1.json")
+
+
+def test_completion_after_the_target_observation_proves_nothing(tmp_path: Path) -> None:
+    spec = contract(EXISTS, ON_TIME, due=due())
+    target = [{"ref": "a", "done_at": "2026-10-20T11:00:00Z"}]
+    meta = {"observed_at": "2026-10-20T10:00:00Z"}
+    report = run(tmp_path, spec, _src("a"), target, target_meta=meta)
+    assert cond(item(report, "a"), "on-time") == ("INCONCLUSIVE", "completion_after_observation")
+
+
+@pytest.mark.parametrize(
+    ("done_at", "expected"),
+    [
+        ("2026-10-20T10:00:00Z", ("PENDING", "awaiting_due")),
+        ("2026-10-20T08:15:00Z", ("VERIFIED", "completed_on_time")),
+    ],
+)
+def test_lateness_is_never_judged_before_the_deadline(
+    tmp_path: Path, done_at: str, expected: tuple[str, str]
+) -> None:
+    early = "2026-10-20T08:30:00Z"
+    report = run(
+        tmp_path,
+        contract(EXISTS, ON_TIME, due=due()),
+        _src("a"),
+        [{"ref": "a", "done_at": done_at}],
+        as_of=early,
+        source_meta={"observed_at": early},
+        target_meta={"observed_at": early},
+    )
+    assert cond(item(report, "a"), "on-time") == expected
+
+
+@pytest.mark.parametrize(
+    ("times", "expected"),
+    [
+        (
+            ("2026-10-19T08:30:00Z", "2026-10-20T08:30:00Z"),
+            ("VERIFIED", "completed_on_time"),
+        ),
+        (
+            ("2026-10-19T08:30:00Z", "2026-10-20T10:00:00Z"),
+            ("INCONCLUSIVE", "completion_before_event"),
+        ),
+        (
+            ("2026-10-20T10:00:00Z", "2026-10-20T13:00:00Z"),
+            ("INCONCLUSIVE", "completion_after_observation"),
+        ),
+        (
+            ("2026-10-20T11:00:00Z", "2026-10-20T10:00:00Z"),
+            ("VIOLATED", "late"),
+        ),
+    ],
+)
+def test_on_time_with_several_target_records(
+    tmp_path: Path, times: tuple[str, str], expected: tuple[str, str]
+) -> None:
+    spec = contract(EXISTS, ON_TIME, due=due())
+    report = run(tmp_path, spec, _src("a"), [{"ref": "a", "done_at": t} for t in times])
+    entry = item(report, "a")
+    assert cond(entry, "on-time") == expected
+    if expected[1] == "late":
+        detail = next(c["detail"] for c in entry["conditions"] if c["id"] == "on-time")
+        assert detail["late_by_seconds"] == 3600
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected"),
+    [
+        ("2026-10-20T07:00:00Z", ("INCONCLUSIVE", "completion_before_event")),
+        (T0, ("VERIFIED", "observed_on_time")),
+        (DEADLINE, ("VERIFIED", "observed_on_time")),
+        ("2026-10-20T10:00:00Z", ("INCONCLUSIVE", "first_seen_after_deadline")),
+    ],
+)
+def test_observation_basis_needs_a_snapshot_taken_after_the_event(
+    tmp_path: Path, observed: str, expected: tuple[str, str]
+) -> None:
+    seen = {"id": "seen", "type": "on_time", "basis": "observation"}
+    report = run(
+        tmp_path,
+        contract(EXISTS, seen, due=due()),
+        _src("a"),
+        [{"ref": "a"}],
+        target_meta={"observed_at": observed},
+    )
+    assert cond(item(report, "a"), "seen") == expected
+
+
+_NUMERIC_CHECKS = (
+    {"id": "int", "type": "type", "field": "n", "kind": "integer"},
+    {"id": "num", "type": "type", "field": "n", "kind": "number"},
+    {"id": "rng", "type": "range", "field": "n", "min": -1},
+)
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        chr(0x0665),
+        chr(0xFF15),
+        '"5\n"',
+        "5 ",
+        "1_000",
+        "0x10",
+        "1.2.3",
+        "NaN",
+        "Infinity",
+        "1" * 101,
+        "9" * 400,
+        "1e9999999",
+    ],
+)
+def test_csv_text_that_is_not_a_plain_number_is_never_numeric(tmp_path: Path, cell: str) -> None:
+    """One ASCII reader and one length cap decide type, range and predicates alike."""
+    target = _csv(tmp_path, "target", f"ref,n\na,{cell}\n")
+    source = _csv(tmp_path, "source", "id\na\n")
+    entry = item(_report(contract(*_NUMERIC_CHECKS), source, target), "a")
+    assert cond(entry, "int") == ("VIOLATED", "type_mismatch")
+    assert cond(entry, "num") == ("VIOLATED", "type_mismatch")
+    assert cond(entry, "rng") == ("VIOLATED", "not_a_number")
+
+
+@pytest.mark.parametrize("cell", ["9" * 400, chr(0x0665), "1_000"])
+def test_csv_predicates_use_the_same_number_reader(tmp_path: Path, cell: str) -> None:
+    spec = contract(EXISTS, eligibility=[{"field": "n", "op": "gte", "value": 0}])
+    source = _csv(tmp_path, "source", f"id,n\na,{cell}\n")
+    entry = item(_report(spec, source, _verbatim(tmp_path, "target", '[{"ref": "a"}]')), "a")
+    assert (entry["status"], entry["reason"]) == ("INCONCLUSIVE", "eligibility_undecidable")
+
+
+@pytest.mark.parametrize(
+    ("cell", "integer"),
+    [
+        ("+5", True),
+        ("007", True),
+        ("-0", True),
+        ("1" * 100, True),
+        ("1.5", False),
+        (".5", False),
+        ("5.", False),
+        ("1e3", False),
+        ("-2.5E-3", False),
+    ],
+)
+def test_csv_plain_numbers_are_numeric(tmp_path: Path, cell: str, integer: bool) -> None:
+    target = _csv(tmp_path, "target", f"ref,n\na,{cell}\n")
+    source = _csv(tmp_path, "source", "id\na\n")
+    entry = item(_report(contract(*_NUMERIC_CHECKS), source, target), "a")
+    assert cond(entry, "int")[0] == ("VERIFIED" if integer else "VIOLATED")
+    assert cond(entry, "num") == ("VERIFIED", "type_ok")
+    assert cond(entry, "rng") == ("VERIFIED", "in_range")
+
+
+@pytest.mark.parametrize(
+    ("value", "allow_empty", "expected"),
+    [
+        ([], False, ("VIOLATED", "field_empty")),
+        ({}, False, ("VIOLATED", "field_empty")),
+        ("", False, ("VIOLATED", "field_empty")),
+        ([], True, ("VERIFIED", "field_present")),
+        ({}, True, ("VERIFIED", "field_present")),
+        (["x"], False, ("VERIFIED", "field_present")),
+        ({"k": None}, False, ("VERIFIED", "field_present")),
+    ],
+)
+def test_required_treats_empty_lists_and_objects_as_empty(
+    tmp_path: Path, value: Any, allow_empty: bool, expected: tuple[str, str]
+) -> None:
+    spec = contract({"id": "tags", "type": "required", "field": "tags", "allow_empty": allow_empty})
+    report = run(tmp_path, spec, _src("a"), [{"ref": "a", "tags": value}])
+    assert cond(item(report, "a"), "tags") == expected
+
+
+# Equality outside `equals` follows the same rule: a contract number matches a value
+# that reads as a number by exact value; a contract string always compares as text.
+# CSV text that only looks like a number (padded, over 100 characters, a 7-digit
+# exponent) is undecided (None) against a contract number: unequal text proves nothing.
+_MATCHES = pytest.mark.parametrize(
+    ("cell", "value", "match"),
+    [
+        ("12.50", 12.5, True),
+        ("0012", 12, True),
+        ("0012", "12", False),
+        (str(2**53 + 1), 2**53, False),
+        ("0.1", 0.1, True),
+        ("1e1", 10, True),
+        ("12.5", "12.5", True),
+        ("12.50", "12.5", False),
+        (" 12", 12, None),
+        ("12 ", 12.0, None),
+        ("1." + "0" * 99, 1, None),
+        ("0e9999999", 0, None),
+        (" 12", " 12", True),
+        (" 12", "12", False),
+    ],
+)
+
+
+@_MATCHES
+def test_eligibility_equality_matches_numbers_by_value(
+    tmp_path: Path, cell: str, value: Any, match: bool | None
+) -> None:
+    """RULE-05, REC-06: CSV text that reads as a number meets a contract number exactly."""
+    source = _csv(tmp_path, "source", f"id,code\na,{cell}\n")
+    target = _verbatim(tmp_path, "target", '[{"ref": "a"}]')
+    for op, wanted in (("eq", value), ("ne", value), ("in", [value]), ("not_in", [value])):
+        key = "values" if op.endswith("in") else "value"
+        spec = contract(EXISTS, eligibility=[{"field": "code", "op": op, key: wanted}])
+        entry = item(_report(spec, source, target), "a")
+        if match is None:
+            assert (entry["status"], entry["reason"]) == (
+                "INCONCLUSIVE",
+                "eligibility_undecidable",
+            ), op
+            continue
+        eligible = match if op in ("eq", "in") else not match
+        assert entry["status"] == ("VERIFIED" if eligible else "NOT_APPLICABLE"), op
+
+
+@_MATCHES
+def test_route_matches_numbers_by_value(
+    tmp_path: Path, cell: str, value: Any, match: bool | None
+) -> None:
+    """RULE-08: both the ``when`` predicates and the routed ``values`` use the rule."""
+    spec = contract(
+        {
+            "id": "when",
+            "type": "route",
+            "field": "queue",
+            "values": ["vip"],
+            "when": [{"field": "tier", "op": "eq", "value": value}],
+        },
+        {
+            "id": "values",
+            "type": "route",
+            "field": "code",
+            "values": [value],
+            "when": [{"field": "tier", "op": "present"}],
+        },
+    )
+    source = _csv(tmp_path, "source", f"id,tier\na,{cell}\n")
+    target = _csv(tmp_path, "target", f"ref,queue,code\na,vip,{cell}\n")
+    entry = item(_report(spec, source, target), "a")
+    if match is None:
+        assert cond(entry, "when") == ("INCONCLUSIVE", "route_undecidable")
+        assert cond(entry, "values") == ("INCONCLUSIVE", "value_undecidable")
+        return
+    assert cond(entry, "when") == (
+        ("VERIFIED", "route_ok") if match else ("NOT_APPLICABLE", "route_not_applicable")
+    )
+    assert cond(entry, "values") == (
+        ("VERIFIED", "route_ok") if match else ("VIOLATED", "wrong_route")
+    )
+
+
+@_MATCHES
+def test_one_of_matches_numbers_by_value(
+    tmp_path: Path, cell: str, value: Any, match: bool | None
+) -> None:
+    """RULE-04: an allowed value list holds numbers by value and strings as text."""
+    spec = contract({"id": "pick", "type": "one_of", "field": "code", "values": ["n/a", value]})
+    target = _csv(tmp_path, "target", f"ref,code\na,{cell}\n")
+    entry = item(_report(spec, _csv(tmp_path, "source", "id\na\n"), target), "a")
+    if match is None:
+        assert cond(entry, "pick") == ("INCONCLUSIVE", "value_undecidable")
+        return
+    assert cond(entry, "pick") == (
+        ("VERIFIED", "value_allowed") if match else ("VIOLATED", "value_not_allowed")
+    )
+
+
+def test_csv_text_that_only_looks_like_a_number_is_never_excluded(tmp_path: Path) -> None:
+    """REC-06, REC-07: refused number text never fails ``eq`` silently and excludes an item.
+
+    Before, ``a`` and ``c`` were NOT_APPLICABLE, their missing target records went
+    unreported and the run was VERIFIED (exit 0).
+    """
+    spec = contract(EXISTS, eligibility=[{"field": "v", "op": "eq", "value": 1}])
+    long_one = "1." + "0" * 99
+    source = _csv(tmp_path, "source", f"id,v\na,{long_one}\nb,1\nc, 1\nd,0e9999999\n")
+    target = _verbatim(tmp_path, "target", '[{"ref": "b"}]')
+    report = _report(spec, source, target)
+    for key in "acd":
+        entry = item(report, key)
+        assert (entry["status"], entry["reason"]) == ("INCONCLUSIVE", "eligibility_undecidable")
+    assert item(report, "b")["status"] == "VERIFIED"
+    assert (report.outcome, report.exit_code) == ("INCONCLUSIVE", 1)
+
+
+def test_declared_trim_still_matches_a_padded_number(tmp_path: Path) -> None:
+    """RULE-04: with ``trim`` the padded text equals the number's text, so it is decided."""
+    spec = contract(
+        {"id": "pick", "type": "one_of", "field": "code", "values": [12], "normalize": ["trim"]}
+    )
+    target = _csv(tmp_path, "target", "ref,code\na, 12\nb, 13\n")
+    report = _report(spec, _csv(tmp_path, "source", "id\na\nb\n"), target)
+    assert cond(item(report, "a"), "pick") == ("VERIFIED", "value_allowed")
+    assert cond(item(report, "b"), "pick") == ("INCONCLUSIVE", "value_undecidable")
+
+
+def test_json_strings_never_read_as_numbers(tmp_path: Path) -> None:
+    """In a typed snapshot only JSON numbers are numbers; a JSON string compares as text."""
+    spec = contract(EXISTS, eligibility=[{"field": "code", "op": "eq", "value": 12.5}])
+    source = _verbatim(
+        tmp_path,
+        "source",
+        '[{"id": "a", "code": 12.50}, {"id": "b", "code": "12.50"}, {"id": "c", "code": "12.5"}]',
+    )
+    target = _verbatim(tmp_path, "target", '[{"ref": "a"}, {"ref": "b"}, {"ref": "c"}]')
+    report = _report(spec, source, target)
+    assert [item(report, key)["status"] for key in "abc"] == [
+        "VERIFIED",
+        "NOT_APPLICABLE",
+        "VERIFIED",
+    ]
+
+
+def _canonical(report: OutcomeReport) -> str:
+    """The report as canonical JSON, minus the source file hash (row order changes it)."""
+    doc = report.to_dict()
+    doc["observations"]["source"].pop("sha256")
+    return json.dumps(doc, sort_keys=True)
+
+
+@pytest.mark.parametrize(("text", "number"), [('"1"', "1"), ('"100"', "1E2")])
+def test_rows_that_differ_only_in_json_type_conflict_in_either_order(
+    tmp_path: Path, text: str, number: str
+) -> None:
+    """REC-04, AT-38: a JSON string never reads as a number, so the rows really differ.
+
+    Before, one order was INCONCLUSIVE and the reversed order VERIFIED (exit 0).
+    """
+    spec = contract(EXISTS, eligibility=[{"field": "v", "op": "gt", "value": 0}])
+    target = _verbatim(tmp_path, "target", '[{"ref": "a"}]')
+    rendered = []
+    for first, second in ((text, number), (number, text)):
+        rows = f'[{{"id": "a", "v": {first}}}, {{"id": "a", "v": {second}}}]'
+        report = _report(spec, _verbatim(tmp_path, "source", rows), target)
+        entry = item(report, "a")
+        assert (entry["status"], entry["reason"]) == ("INCONCLUSIVE", "source_conflict")
+        assert (report.outcome, report.exit_code) == ("INCONCLUSIVE", 1)
+        rendered.append(_canonical(report))
+    assert rendered[0] == rendered[1]
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "status"),
+    [
+        ("1", "1.0", "VERIFIED"),
+        ("100", "1E2", "VERIFIED"),
+        ('"x"', '"x"', "VERIFIED"),
+        ("true", "true", "VERIFIED"),
+        ("[1]", '{"k": 2}', "VERIFIED"),
+        ("[]", "{}", "NOT_APPLICABLE"),
+    ],
+)
+def test_rows_with_the_same_kind_and_value_still_merge(
+    tmp_path: Path, first: str, second: str, status: str
+) -> None:
+    """REC-04: equal numbers, and nested values alike in emptiness, are one retried item."""
+    spec = contract(EXISTS, eligibility=[{"field": "v", "op": "present"}])
+    target = _verbatim(tmp_path, "target", '[{"ref": "a"}]')
+    for one, two in ((first, second), (second, first)):
+        rows = f'[{{"id": "a", "v": {one}}}, {{"id": "a", "v": {two}}}]'
+        entry = item(_report(spec, _verbatim(tmp_path, "source", rows), target), "a")
+        assert (entry["status"], entry["source_rows"]) == (status, 2), (one, two)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("true", '"true"'), ("null", '""'), ("[]", '""'), ("[]", "[1]"), ("null", "[]")],
+)
+def test_rows_that_judge_differently_conflict(tmp_path: Path, first: str, second: str) -> None:
+    """REC-04: a boolean and its text, null and an empty value, empty and non-empty nesting."""
+    spec = contract(EXISTS, eligibility=[{"field": "v", "op": "present"}])
+    target = _verbatim(tmp_path, "target", '[{"ref": "a"}]')
+    for one, two in ((first, second), (second, first)):
+        rows = f'[{{"id": "a", "v": {one}}}, {{"id": "a", "v": {two}}}]'
+        entry = item(_report(spec, _verbatim(tmp_path, "source", rows), target), "a")
+        assert entry["reason"] == "source_conflict", (one, two)
+
+
+def test_integer_and_text_keys_still_name_one_item(tmp_path: Path) -> None:
+    """REC-01, REC-04: keys match as text, so ``7`` and ``"7"`` are one retried item."""
+    source = _verbatim(tmp_path, "source", '[{"id": 7}, {"id": "7"}]')
+    target = _verbatim(tmp_path, "target", '[{"ref": "7"}]')
+    entry = item(_report(contract(EXISTS), source, target), "7")
+    assert (entry["status"], entry["source_rows"]) == ("VERIFIED", 2)
+    # A key field that is also judged keeps its kind: "7" is no number for gt.
+    gated = contract(EXISTS, eligibility=[{"field": "id", "op": "gt", "value": 0}])
+    assert item(_report(gated, source, target), "7")["reason"] == "source_conflict"
+
+
+def _library_snapshot(role: str, records: list[dict[str, Any]]) -> Snapshot:
+    """A snapshot built in code, as a library caller may, not read from a file."""
+    return Snapshot(
+        role=role,
+        name=f"{role}.json",
+        sha256="0" * 64,
+        input_format="json",
+        records=tuple(records),
+        fields=frozenset(name for record in records for name in record),
+        observed_at=at(LATER),
+        completeness="complete",
+        origin="user_file",
+        demo=False,
+    )
+
+
+def test_empty_nesting_is_judged_by_its_flag_not_by_identity() -> None:
+    """RULE-03, REC-06: any empty NonScalar is empty for required, present and absent."""
+    fresh = NonScalar(empty=True)
+    assert fresh is not EMPTY_NESTED
+    spec = contract(
+        EXISTS,
+        {"id": "req", "type": "required", "field": "tags"},
+        eligibility=[{"field": "tags", "op": "absent"}],
+    )
+    rows = [{"id": "a", "tags": fresh}, {"id": "a", "tags": EMPTY_NESTED}]
+    source = _library_snapshot("source", rows)
+    target = _library_snapshot("target", [{"ref": "a", "tags": fresh}])
+    entry = item(_report(spec, source, target), "a")
+    # Both rows are empty: one retried item, eligible because "absent" holds.
+    assert (entry["status"], entry["source_rows"]) == ("VIOLATED", 2)
+    assert cond(entry, "req") == ("VIOLATED", "field_empty")
+
+
+@pytest.mark.parametrize("limit", [0, 640])
+def test_reports_do_not_depend_on_pythons_digit_limit(tmp_path: Path, limit: int) -> None:
+    """AT-38: 4300-character numbers read and compare alike under any int/str digit limit.
+
+    The key, the bound check and the duplicate-row check all handle integers
+    far past a lowered limit; ``v`` is one number spelled two ways (4298 digits
+    and the same plus ``.0``), so the two rows merge instead of conflicting.
+    """
+    digit = "7" if limit else "8"
+    digits = digit * 4300
+    spec = contract(
+        EXISTS,
+        {"id": "rng", "type": "range", "field": "n", "min": 0},
+        eligibility=[{"field": "v", "op": "gt", "value": 0}],
+    )
+
+    def render() -> str:
+        v = digit * 4298
+        rows = f'[{{"id": {digits}, "v": {v}}}, {{"id": {digits}, "v": {v}.0}}]'
+        source = _verbatim(tmp_path, "source", rows)
+        target = _verbatim(tmp_path, "target", f'[{{"ref": "{digits}", "n": -{digits}}}]')
+        report = _report(spec, source, target)
+        entry = item(report, digits)
+        assert (entry["status"], entry["source_rows"]) == ("VIOLATED", 2)
+        assert cond(entry, "rng") == ("VIOLATED", "out_of_range")
+        return report.to_json()
+
+    with digit_limit(limit):
+        lowered = render()
+    with digit_limit(4300):
+        assert lowered == render()
