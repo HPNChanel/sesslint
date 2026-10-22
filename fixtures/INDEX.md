@@ -59,7 +59,7 @@ have their own rows. Corpus labels are synthetic expectations, not real-data acc
 | --- | ---: | --- |
 | [.](./) | 1 | [source](./PROVENANCE.json) |
 | [adapters](adapters/) | 1 | [source](adapters/PROVENANCE.json) |
-| [adapters/codex](adapters/codex/) | 25 | [source](adapters/codex/PROVENANCE.json) |
+| [adapters/codex](adapters/codex/) | 27 | [source](adapters/codex/PROVENANCE.json) |
 | [adapters/metadata](adapters/metadata/) | 4 | [source](adapters/metadata/PROVENANCE.json) |
 | [bundle](bundle/) | 2 | [source](bundle/PROVENANCE.json) |
 | [canonical](canonical/) | 5 | [source](canonical/PROVENANCE.json) |

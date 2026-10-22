@@ -66,6 +66,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `sesslint.hook-result/v1` schema's `reason` description now lists the
   `budget-exceeded` and `format-undetected` skip reasons that `sesslint hook`
   already emits; a test keeps the list in sync with the code.
+- Codex 0.163.0 rollouts no longer fail detection because of two new
+  envelope types. `realtime_item` (realtime presentation facts) and
+  `security_risk_score` (classifier scores Codex keeps out of model context)
+  are now non-durable `system`/`opaque` events projected to their type name
+  only; before, each raised `SL302`, so `check` exited 1 and `precheck` and
+  `sesslint hook` reported `detection-failed`. The `security_risk_score`
+  `call_id` never enters tool pairing. `inter_agent_communication`, which
+  Codex replays into model-visible history, still fails closed with `SL302`
+  until it has a real mapping. The shapes come from the `rust-v0.163.0`
+  rollout writer and replay source, re-created as synthetic fixtures;
+  `docs/VENDOR_DRIFT.md` §9 records the check and its limits.
 
 ## [0.5.0] - 2026-10-19
 

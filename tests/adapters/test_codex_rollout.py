@@ -8,13 +8,15 @@ Validates:
   custom_tool_call (tool_call), function_call_output /
   custom_tool_call_output (tool_result).
 - Non-conversational envelopes (session_meta, event_msg, turn_context,
-  world_state, inter_agent_communication_metadata) map to system/opaque;
+  world_state, inter_agent_communication_metadata, and the Codex 0.163.0
+  realtime_item and security_risk_score sidecars) map to system/opaque;
   compacted maps to compaction_boundary.
 - call_id pairing preserved via correlation_id for SL101/SL102 detection.
 - Linear parentage derived from envelope ordinal continuity; dropped records
   break the chain honestly (SL006/SL007).
 - SL301 on explicit unsupported format-version markers; SL302 on unknown
-  envelope types, unknown payload types, and unknown critical fields.
+  envelope types (including Codex 0.163.0 inter_agent_communication), unknown
+  payload types, and unknown critical fields.
 - SL001/SL002 terminal-torn distinction, strict JSON, NUL, UTF-8, limits.
 - Synthetic IDs under sesslint:synthetic:codex_rollout namespace with
   collision guard.
@@ -29,6 +31,7 @@ from pathlib import Path
 
 import pytest
 
+from sesslint import precheck
 from sesslint.adapters.codex_rollout import (
     SQLITE_MAGIC,
     SUPPORTED_CODEX_ROLLOUT_VERSIONS,
@@ -492,6 +495,76 @@ class TestVersionAndUnknowns:
             _jsonl(_env(0, "session_meta", {"cli_version": "999.0.0-beta"}))
         )
         assert not any(f.code == SL301 for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Codex 0.163.0 envelope drift (docs/VENDOR_DRIFT.md §9)
+# ---------------------------------------------------------------------------
+
+
+class TestCodex0163Envelopes:
+    """Envelope types from the rust-v0.163.0 rollout writer, as synthetic records."""
+
+    SIDECARS = FIXTURES / "codex_0163_sidecars.jsonl"
+    INTER_AGENT = FIXTURES / "codex_0163_inter_agent.jsonl"
+
+    def test_sidecars_are_opaque_non_durable_and_content_free(self) -> None:
+        events, findings = load_codex_rollout(self.SIDECARS)
+        assert not findings
+        sidecars = [events[i] for i in (1, 2, 5, 7, 8)]
+        assert [e.payload for e in sidecars] == [
+            {"type": "realtime_item"},
+            {"type": "realtime_item"},
+            {"type": "security_risk_score"},
+            {"type": "realtime_item"},
+            {"type": "realtime_item"},
+        ]
+        for e in sidecars:
+            assert (e.actor, e.kind, e.correlation_id) == ("system", "opaque", None)
+            assert e.extra_fields["codex"]["durable"] is False
+
+    def test_security_risk_score_call_id_does_not_pair(self) -> None:
+        events, _ = load_codex_rollout(self.SIDECARS)
+        assert events[4].correlation_id == events[6].correlation_id
+        report = check_file(self.SIDECARS, format="codex-rollout", profile="openai-strict")
+        assert [f.code for f in report.findings] == []
+
+    def test_precheck_passes_sidecars_and_fails_closed_on_inter_agent(self) -> None:
+        sidecars = precheck(self.SIDECARS)
+        assert (sidecars.reason, sidecars.exit_code) == ("clean", 0)
+        inter_agent = precheck(self.INTER_AGENT)
+        assert (inter_agent.reason, inter_agent.exit_code) == ("detection-failed", 1)
+
+    def test_inter_agent_communication_stays_fail_closed(self) -> None:
+        # Codex replays inter_agent_communication into model-visible history as a
+        # user-turn boundary, so it must not be absorbed as opaque until it is mapped.
+        _, findings = load_codex_rollout(self.INTER_AGENT)
+        sl302 = [f for f in findings if f.code == SL302]
+        assert [f.evidence["type_value"] for f in sl302] == ["inter_agent_communication"]
+        blob = json.dumps([f.evidence for f in findings])
+        assert "canary" not in blob
+        assert "/root" not in blob
+
+    def test_compacted_0163_keys_are_tolerated(self) -> None:
+        events, findings = load_codex_rollout(
+            _jsonl(
+                _env(0, "session_meta", {}),
+                _env(
+                    1,
+                    "compacted",
+                    {
+                        "mcp_resource_origins": {},
+                        "message": "",
+                        "replacement_history": [],
+                        "replacement_history_metadata": [],
+                        "resume_metadata": {},
+                    },
+                ),
+                _item(2, "message", "m1", role="user"),
+            )
+        )
+        assert [e.kind for e in events] == ["opaque", "compaction_boundary", "message"]
+        assert not findings
 
 
 # ---------------------------------------------------------------------------

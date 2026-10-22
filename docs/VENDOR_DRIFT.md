@@ -126,3 +126,60 @@ tree (`~/.codex/sessions`, 776 files scanned):
 Posture: all observed drift is additive; nothing required un-blocking a
 fail-closed path. Responses follow §4 (opaque-set + key-table additions
 tracked as adapter tasks).
+
+## 9. Spec check: Codex 0.163.0 and Claude Code 2.1.30x (2026-10-22)
+
+A source-level check, not an inventory: no real session tree was scanned.
+The record shapes come from vendor source and release notes, were
+re-created as synthetic records, and were run through the adapters. A §2
+inventory over a local tree from each version is still needed to confirm
+what the tools actually write.
+
+### Codex 0.163.0
+
+Read from the rollout writer and resume-replay code at tag
+`rust-v0.163.0`:
+
+| Name | Drift class | What Codex does with it | Response |
+| --- | --- | --- | --- |
+| `realtime_item` | additive-type | Realtime presentation facts; never model-visible; resume replay skips it | Added to the opaque set as non-durable; it raised `SL302` before |
+| `security_risk_score` | additive-type | Classifier scores kept out of model context; resume replay skips it; its `call_id` names the scored call | Added to the opaque set as non-durable; the `call_id` never enters tool pairing; it raised `SL302` before |
+| `inter_agent_communication` | unknown critical shape | Replayed into model-visible history and counted as a user-turn boundary | Stays `SL302` (§4) until it is mapped |
+| `replacement_history_metadata`, `mcp_resource_origins`, `resume_metadata` on `compacted` | additive-key | Compaction and resume bookkeeping | Tolerated as non-critical unknown keys and not added to `KNOWN_PAYLOAD_KEYS`, like the §8 keys; a test pins this |
+
+- Fixtures: `fixtures/adapters/codex/codex_0163_sidecars.jsonl` and
+  `fixtures/adapters/codex/codex_0163_inter_agent.jsonl`, covered by
+  `TestCodex0163Envelopes` in `tests/adapters/test_codex_rollout.py`. The
+  conformance suite's families are per defect, not per record type, so the
+  type coverage sits in the adapter tests, as it did for
+  `retained_context`.
+- The change is projection-only, so `ADAPTER_VERSIONS["codex-rollout"]`
+  stays `1.0.0`.
+- Consequence: a rollout that contains `inter_agent_communication`, which
+  Codex multi-agent runs write, reports `SL302`. `check` exits 1, and
+  `precheck` and `sesslint hook` report `detection-failed`. That is the
+  intended fail-closed result until a mapping lands.
+
+### Claude Code 2.1.30x
+
+- Not verified. The 2.1.300 release notes say local transcripts now also
+  record each API request's system prompt, tools and parameters, but the
+  record shape is not public, so no faithful synthetic fixture can be
+  written.
+- What the adapter does depends on that shape. A new record `type` without
+  identity or content keys is kept opaque with an `SL306` info finding. One
+  that carries such keys (for example `message` or `content`) raises
+  `SL302` and fails closed. Extra keys on a known record are tolerated
+  unless they are critical.
+- Subagent transcripts under
+  `projects/<project>/<session>/subagents/agent-*.jsonl` are already
+  discovered.
+
+### Open items
+
+- Map `inter_agent_communication`: its actor and kind, whether it counts as
+  durable for `SL206`, and how it bounds turns and links agent identities.
+- Review `retained_context` durability: resume replay consumes it, but the
+  adapter treats it as non-durable.
+- Run the §2 inventory on a local Codex 0.163 tree and a Claude Code
+  2.1.30x tree, and record the result here.

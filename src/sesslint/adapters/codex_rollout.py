@@ -13,7 +13,10 @@ Envelope ``type`` values seen in the wild: ``session_meta`` (header-like
 metadata), ``response_item`` (conversation items), ``event_msg`` (lifecycle
 signals), ``turn_context`` (per-turn run context), ``world_state``,
 ``inter_agent_communication_metadata``, ``token_usage_record`` (token usage
-metadata), and ``compacted`` (window compaction).
+metadata), and ``compacted`` (window compaction). Codex 0.163.0 also writes
+``realtime_item`` and ``security_risk_score`` sidecars, which its resume
+replay skips, and ``inter_agent_communication``, which it replays into
+model-visible history and which stays unmapped (SL302).
 
 ``response_item`` payloads carry their own ``type``: ``message``,
 ``agent_message``, ``reasoning``, ``function_call``, ``custom_tool_call``,
@@ -30,9 +33,10 @@ Guarantees:
   bounded structural markers (id/type/correlator only) for SL208.
 - Run-metadata records (``event_msg``, ``turn_context``, ``world_state``,
   ``session_meta``, ``inter_agent_communication_metadata``,
-  ``token_usage_record``) are kept as ``system``/``opaque`` events — preserved
-  in DAG position without pretending to be conversational content (unknown
-  noncritical records may be kept opaque, FR-021).
+  ``token_usage_record``, ``realtime_item``, ``security_risk_score``) are
+  kept as ``system``/``opaque`` events — preserved in DAG position without
+  pretending to be conversational content (unknown noncritical records may
+  be kept opaque, FR-021).
 - Unknown envelope types and unknown ``response_item`` payload types route to
   SL302 with bounded discriminator evidence; missing/unsupported explicit
   format-version markers (``rollout_version``/``format_version``/
@@ -119,6 +123,9 @@ SUPPORTED_CODEX_ROLLOUT_VERSIONS: Final[frozenset[str]] = frozenset(
 # Envelope-level types that carry run/telemetry metadata rather than
 # conversational content. Mapped to system/opaque so they keep DAG position
 # without participating in identity/parentage/pairing semantics (FR-021).
+# ``inter_agent_communication`` is deliberately absent: Codex replays it into
+# model-visible history as a user-turn boundary, so it stays SL302 until it
+# is mapped (docs/VENDOR_DRIFT.md §9).
 ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "session_meta",
@@ -128,6 +135,11 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
         "inter_agent_communication_metadata",
         "token_usage_record",
         "retained_context",
+        # Codex 0.163.0 sidecars: never model-visible and skipped by resume
+        # replay. A security_risk_score call_id names the scored tool call; it
+        # is not a pairing edge.
+        "realtime_item",
+        "security_risk_score",
     }
 )
 
@@ -137,9 +149,10 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
 # ``response_item`` carries conversation items; ``compacted`` is a durable
 # history rewrite. The remaining ENVELOPE_OPAQUE_TYPES families
 # (``event_msg``, ``turn_context``, ``world_state``,
-# ``inter_agent_communication_metadata``, ``token_usage_record``) are
-# per-run telemetry — present in the file but not part of the durable
-# prefix. Unknown envelope types fail closed as non-durable.
+# ``inter_agent_communication_metadata``, ``token_usage_record``,
+# ``realtime_item``, ``security_risk_score``) are per-run telemetry —
+# present in the file but not part of the durable prefix. Unknown envelope
+# types fail closed as non-durable.
 DURABLE_ENVELOPE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "session_meta",
