@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuilds after each release; a `SITE_URL` repository variable moves it to a
   custom domain. The site is never shipped in the wheel or sdist and sets no
   cookies or analytics.
+- `sesslint hook --init --agent codex` now prints Codex `hooks.json` recipes
+  for SessionStart, PreCompact, PostCompact, and SessionEnd instead of a
+  "not emitted yet" note; `--agent all` prints the Claude Code and Codex
+  blocks together, with the merge note labelled per agent. SessionStart and
+  both compaction recipes use `--format claude-json`, because Codex adds
+  plain SessionStart output to model context and ignores plain compaction
+  output. The Codex SessionStart recipe matches `resume|fork` only, since
+  PostCompact already checks a compacted transcript. SessionEnd sets the
+  three-second maximum Codex allows. Each recipe carries a `commandWindows`
+  form without `|| true` for PowerShell and `cmd.exe`. Codex skips new hooks
+  until you trust them in `/hooks`. `docs/INTEGRATIONS.md` documents the
+  recipes, verified on 2026-10-22 against the Codex hooks reference and the
+  hooks engine source at `rust-v0.163.0` but not yet against a live Codex
+  build; tests run every emitted Windows command and keep the documented
+  block in sync with the output.
 
 ### Fixed
 

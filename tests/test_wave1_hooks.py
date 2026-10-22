@@ -82,18 +82,21 @@ def test_hook_check_never_writes_or_creates_a_loopback_artifact(tmp_path: Path) 
     assert list(tmp_path.iterdir()) == [transcript]
 
 
-def test_claude_templates_have_no_write_or_loopback_shell_constructs() -> None:
-    doc = init_hooks_doc("claude")
+def test_hook_templates_have_no_write_or_loopback_shell_constructs() -> None:
+    doc = init_hooks_doc("all")
     commands = [
-        hook["command"]
+        hook[key]
         for file in doc.files
         if file.merge_block is not None
         for entries in file.merge_block["hooks"].values()
         for entry in entries
         for hook in entry["hooks"]
+        for key in ("command", "commandWindows")
+        if key in hook
     ]
 
     assert any("--event SessionStart --format claude-json" in command for command in commands)
+    assert sum("--event SessionStart" in command for command in commands) == 3
     assert all(
         ">" not in command and "tee " not in command and "--output-file" not in command
         for command in commands

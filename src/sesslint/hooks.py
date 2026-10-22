@@ -1,7 +1,8 @@
 """Agent hook snippet builders (integrations T-02).
 
 Print-only generators: ``sesslint hook --init`` emits ready-to-merge JSON
-blocks for the documented hook recipes. The command **never writes agent
+blocks for the documented hook recipes (Claude Code ``settings.json``,
+Codex ``hooks.json``). The command **never writes agent
 configuration** — that is a permanent design invariant, not a deferral.
 There is no ``--install``/``--write`` flag and there never will be.
 
@@ -101,13 +102,104 @@ _CLAUDE_NOTE = (
     "'sesslint version'. See docs/INTEGRATIONS.md."
 )
 
+_CODEX_TARGET = "~/.codex/hooks.json (hooks section)"
+
+# Codex adds plain SessionStart stdout to model context and ignores plain
+# PreCompact/PostCompact stdout, so those recipes print the content-free
+# systemMessage envelope, which Codex surfaces to the user as a warning.
+# SessionStart skips "compact": PostCompact already checks that transcript.
+# Codex runs hooks through the session shell (PowerShell or cmd on Windows),
+# so commandWindows drops the POSIX '|| true'. A non-zero exit is reported
+# as a failed hook and never stops Codex; only JSON "continue": false does.
+_CODEX_SESSIONSTART_BLOCK: dict[str, Any] = {
+    "hooks": {
+        "SessionStart": [
+            {
+                "matcher": "resume|fork",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": (
+                            "sesslint hook --event SessionStart --format claude-json || true"
+                        ),
+                        "commandWindows": (
+                            "sesslint hook --event SessionStart --format claude-json"
+                        ),
+                    }
+                ],
+            }
+        ]
+    }
+}
+
+_CODEX_PRECOMPACT_BLOCK: dict[str, Any] = {
+    "hooks": {
+        "PreCompact": [
+            {
+                "matcher": "auto|manual",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "sesslint hook --event PreCompact --format claude-json || true",
+                        "commandWindows": "sesslint hook --event PreCompact --format claude-json",
+                    }
+                ],
+            }
+        ]
+    }
+}
+
+_CODEX_POSTCOMPACT_BLOCK: dict[str, Any] = {
+    "hooks": {
+        "PostCompact": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "sesslint hook --event PostCompact --format claude-json || true",
+                        "commandWindows": "sesslint hook --event PostCompact --format claude-json",
+                        "timeout": 5,
+                    }
+                ],
+            }
+        ]
+    }
+}
+
+# Codex reports only the "other" end reason, so the recipe has no matcher;
+# SessionEnd hooks default to a 1s timeout with a 3s maximum.
+_CODEX_SESSIONEND_BLOCK: dict[str, Any] = {
+    "hooks": {
+        "SessionEnd": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "sesslint hook --event SessionEnd || true",
+                        "commandWindows": "sesslint hook --event SessionEnd",
+                        "timeout": 3,
+                    }
+                ],
+            }
+        ]
+    }
+}
+
 _CODEX_NOTE = (
-    "Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in "
-    "config.toml) whose stdin payload carries transcript_path - the same "
-    "contract `sesslint hook` reads. Snippets are not emitted yet: "
-    "matcher values, the 1s SessionEnd timeout, and the /hooks "
-    "trust-review flow need recipe-level verification first. Interim "
-    "coverage for Codex session roots: `sesslint check --agent codex`."
+    "Merge each block into ~/.codex/hooks.json (user) or "
+    ".codex/hooks.json (project; loads only when that .codex/ layer is "
+    "trusted). Codex skips new or changed hooks until you review and "
+    "trust them in /hooks. Every command reads the hook payload from "
+    "stdin (transcript_path, session_id) - no paths to substitute. "
+    "SessionStart, PreCompact and PostCompact print a content-free "
+    "systemMessage, which Codex shows as a warning (a clean pass too) "
+    "instead of adding plain output to model context. SessionStart "
+    "skips 'compact' because PostCompact checks the same transcript. "
+    "SessionEnd uses the 3s maximum Codex allows. commandWindows omits "
+    "'|| true' because Windows hooks may run in PowerShell or cmd; a "
+    "missing or older sesslint then shows a hook error, and no exit code "
+    "stops Codex. Requires SessLint 0.5.0 or later on PATH. See "
+    "docs/INTEGRATIONS.md."
 )
 
 VALID_AGENTS: tuple[str, ...] = ("claude", "codex", "all")
@@ -192,7 +284,32 @@ def _claude_doc() -> InitHooksDoc:
 
 
 def _codex_doc() -> InitHooksDoc:
-    return InitHooksDoc(agent="codex", files=(), note=_CODEX_NOTE)
+    return InitHooksDoc(
+        agent="codex",
+        files=(
+            HookFile(
+                target_path_hint=_CODEX_TARGET,
+                recipe="SessionStart corruption warning (non-blocking)",
+                merge_block=dict(_CODEX_SESSIONSTART_BLOCK),
+            ),
+            HookFile(
+                target_path_hint=_CODEX_TARGET,
+                recipe="PreCompact integrity check (non-blocking)",
+                merge_block=dict(_CODEX_PRECOMPACT_BLOCK),
+            ),
+            HookFile(
+                target_path_hint=_CODEX_TARGET,
+                recipe="PostCompact boundary check (non-blocking)",
+                merge_block=dict(_CODEX_POSTCOMPACT_BLOCK),
+            ),
+            HookFile(
+                target_path_hint=_CODEX_TARGET,
+                recipe="SessionEnd secret check (non-blocking)",
+                merge_block=dict(_CODEX_SESSIONEND_BLOCK),
+            ),
+        ),
+        note=_CODEX_NOTE,
+    )
 
 
 def init_hooks_doc(agent: str) -> InitHooksDoc:
@@ -202,11 +319,12 @@ def init_hooks_doc(agent: str) -> InitHooksDoc:
     if agent == "codex":
         return _codex_doc()
     if agent == "all":
-        # Combined doc: claude files + codex note, per-agent sections kept.
+        # Combined doc: claude files then codex files; target_path_hint
+        # tells them apart, and the note labels one section per agent.
         return InitHooksDoc(
             agent="all",
-            files=_claude_doc().files,
-            note=_CLAUDE_NOTE + " | codex: " + _CODEX_NOTE,
+            files=_claude_doc().files + _codex_doc().files,
+            note="claude: " + _CLAUDE_NOTE + " | codex: " + _CODEX_NOTE,
         )
     raise ValueError(f"unknown agent: {agent!r}")
 

@@ -80,14 +80,16 @@ SL009 is a `warning`-severity finding:
 persisted secret shape appears in a stable file — surfacing a leak within
 one poll interval instead of a postmortem.
 
-## SessionEnd hook (Claude Code)
+## SessionEnd hook (Claude Code, Codex)
 
-`sesslint hook --init --agent claude` prints a `SessionEnd` recipe that <!-- next-release -->
-runs `sesslint hook --event SessionEnd` — which resolves
-`transcript_path` from the hook stdin payload and maps the event to
-`check --select SL009` — the moment the file stops growing. The recipe
+`sesslint hook --init --agent claude` and `--agent codex` print a <!-- next-release -->
+`SessionEnd` recipe that runs `sesslint hook --event SessionEnd` — which
+resolves `transcript_path` from the hook stdin payload and maps the event
+to `check --select SL009` — the moment the file stops growing. The recipe
 is non-blocking (`|| true`) by design; a session must never fail
-to end because a lint warned. See [INTEGRATIONS.md](INTEGRATIONS.md).
+to end because a lint warned. Codex allows SessionEnd hooks at most three
+seconds, so its recipe sets `"timeout": 3`. See
+[INTEGRATIONS.md](INTEGRATIONS.md).
 
 ## Bundling and sharing
 

@@ -1,12 +1,15 @@
 """Agent hook entrypoint: stdin payload -> resolved check (agent-hooks T-01).
 
-Claude Code hooks deliver one JSON control message on **stdin** carrying
-``session_id``, ``transcript_path``, ``cwd``, and ``hook_event_name``.
-``sesslint hook --event <name>`` parses that payload, resolves the session
-file, runs the event-appropriate integrity check, prints one content-free
-line, and exits advisory (0 — or 1 when ``--fail-on`` gates on findings).
+Claude Code and Codex hooks deliver one JSON control message on **stdin**
+carrying ``session_id``, ``transcript_path``, ``cwd``, and
+``hook_event_name`` (Codex adds per-event fields such as ``model``,
+``source``, ``trigger``, or ``reason``, which are ignored).
+``sesslint hook --event <name>`` parses that payload, resolves the
+session file, runs the event-appropriate integrity check, prints one
+content-free line, and exits advisory (0 — or 1 when ``--fail-on`` gates on
+findings).
 
-Claude Code integrations can instead render a result as a root
+Claude Code and Codex integrations can instead render a result as a root
 ``systemMessage`` object. It remains content-free and this module remains
 stateless: hooks neither write a transcript nor keep a cache that could feed
 hook output back into a later invocation.
@@ -100,7 +103,7 @@ class HookResult:
         return json.dumps(self.to_dict(), sort_keys=True)
 
     def system_message(self) -> str:
-        """Return the content-free message Claude displays to the human user."""
+        """Return the content-free message the agent displays to the human user."""
         if self.verdict == "skipped":
             return f"SessLint: check skipped ({self.reason})."
         if self.verdict == "ok":
@@ -109,7 +112,11 @@ class HookResult:
         return f"SessLint: found {total} integrity finding(s); highest code {self.top_code}."
 
     def to_claude_json(self) -> str:
-        """Render the Claude hook protocol envelope without transcript content."""
+        """Render the ``systemMessage`` hook envelope without transcript content.
+
+        Claude Code and Codex both read a root ``systemMessage`` from hook
+        stdout and show it to the user.
+        """
         return json.dumps({"systemMessage": self.system_message()}, sort_keys=True)
 
 
