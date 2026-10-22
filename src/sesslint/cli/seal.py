@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
+
+from sesslint.cli._options import cli_path
 
 if TYPE_CHECKING:
     from sesslint.cli._context import CliContext
@@ -30,7 +31,7 @@ def configure(
     )
     sub.add_argument(
         "--verify",
-        type=Path,
+        type=cli_path,
         required=True,
         metavar="LEDGER",
         help="Ledger JSONL file to re-walk and verify",

@@ -4,9 +4,23 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 from pathlib import Path
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
+
+
+def cli_path(value: str) -> Path:
+    """argparse ``type=`` for path arguments: expand a leading ``~`` (AC-04).
+
+    Hints print paths under home as ``~/...``. Windows PowerShell 5.1 and
+    cmd pass that through literally, so the CLI expands the current user's
+    ``~`` itself. ``-`` (stdin), ``~user`` forms and every other value pass
+    through unchanged.
+    """
+    if value == "~" or value.startswith("~/") or (os.sep == "\\" and value.startswith("~\\")):
+        return Path(value).expanduser()
+    return Path(value)
 
 
 def _validate_positive_int(val_str: str) -> int:
@@ -38,7 +52,7 @@ def _add_seal_args(sub: argparse.ArgumentParser) -> None:
     (evidence-assurance T-01)."""
     sub.add_argument(
         "--seal",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="LEDGER",
         help=(
@@ -121,7 +135,7 @@ def add_report_output_option(sub: argparse.ArgumentParser) -> None:
     sub.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="FILE",
         help=(
@@ -180,7 +194,7 @@ def add_config_option(sub: argparse.ArgumentParser) -> None:
     """Shared ``--config`` declaration (check/scan/repair)."""
     sub.add_argument(
         "--config",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="PATH",
         help="Explicit config file path (overrides [tool.sesslint] discovery)",
@@ -209,14 +223,14 @@ def add_baseline_options(sub: argparse.ArgumentParser) -> None:
     baseline_group = sub.add_mutually_exclusive_group()
     baseline_group.add_argument(
         "--baseline",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="PATH",
         help="Suppress findings whose fingerprints are recorded in baseline file",
     )
     baseline_group.add_argument(
         "--write-baseline",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="PATH",
         help="Write the current finding fingerprints as a new baseline file",

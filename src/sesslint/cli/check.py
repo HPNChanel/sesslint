@@ -32,6 +32,7 @@ from sesslint.cli._options import (
     add_rule_selection_options,
     add_walk_filter_options,
     add_walk_options,
+    cli_path,
 )
 from sesslint.cli._output import emit_text
 from sesslint.cli._render import _emit_check_report, format_scan_report_human
@@ -62,7 +63,7 @@ def configure(
     )
     sub.add_argument(
         "path",
-        type=Path,
+        type=cli_path,
         nargs="*",
         help=(
             "Path(s) to session file(s) (.json or .jsonl) or directories. "

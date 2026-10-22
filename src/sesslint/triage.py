@@ -22,6 +22,7 @@ from sesslint.io import DEFAULT_MAX_FILE_BYTES
 from sesslint.preview import _deltas_for_plan
 from sesslint.repair.planner import plan
 from sesslint.repair.refusals import refusal_rationale_for
+from sesslint.report import EMPTY_INPUT_MESSAGE, finding_is_empty_input
 
 TRIAGE_SCHEMA_VERSION = "sesslint.triage/v1"
 LIMITATION = (
@@ -297,6 +298,8 @@ def triage(
     report = assessment.report if assessment is not None else None
     findings = report.findings if report is not None else ()
     by_code = dict(sorted(Counter(f.code for f in findings).items()))
+    # A file with no records has nothing to repair or compare (AC-04).
+    empty_input = bool(findings) and all(finding_is_empty_input(f) for f in findings)
     adapter = assessment.format if assessment and assessment.format else "unknown"
     previews: tuple[dict[str, Any], ...] = ()
     impact: dict[str, Any] = {"status": "unverified"}
@@ -340,7 +343,9 @@ def triage(
         )
     for code in by_code:
         rationale = refusal_rationale_for(code)
-        if rationale is not None:
+        if empty_input:
+            missing.append({"code": code, "detail": f"{EMPTY_INPUT_MESSAGE}."})
+        elif rationale is not None:
             missing.append({"code": code, "detail": rationale.rationale})
     if "SL203" in by_code or "SL102" in by_code:
         missing.append(
@@ -358,7 +363,15 @@ def triage(
     if native["status"] != "membership-matches":
         missing.append({"code": "native-registry", "detail": native["detail"]})
     actions: tuple[dict[str, str], ...]
-    if status in ("skipped", "unsupported", "unstable", "unreadable"):
+    if empty_input:
+        actions = (
+            {
+                "id": "inspect-source",
+                "detail": "Provide the session file itself; this input holds no records.",
+                "command": "sesslint triage <source>",
+            },
+        )
+    elif status in ("skipped", "unsupported", "unstable", "unreadable"):
         actions = (
             {
                 "id": "inspect-source",

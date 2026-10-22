@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
 from sesslint.cli._common import _output_format
-from sesslint.cli._options import add_report_output_option
+from sesslint.cli._options import add_report_output_option, cli_path
 from sesslint.cli._output import emit_text
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ def configure(
     )
     sub.add_argument(
         "path",
-        type=Path,
+        type=cli_path,
         nargs="*",
         help="Path(s) to session file(s) or directories (scanned recursively)",
     )

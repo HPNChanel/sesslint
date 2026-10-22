@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
+from sesslint._hints import hint_arg
 from sesslint._version import (
     CLI_VERSION,
     MANIFEST_SCHEMA_VERSION,
@@ -114,8 +115,18 @@ def _build_created_by() -> dict[str, Any]:
 
 
 def _sanitize_remediation(remediation: str, basename: str) -> str:
-    """Ensure remediation instructions use strictly basename-only paths."""
-    return re.sub(r"(run 'sesslint repair\s+)[^'\s]+", rf"\1{basename}", remediation)
+    """Ensure remediation instructions use strictly basename-only paths.
+
+    Rewrites the source word of every quoted ``sesslint repair``/``sesslint
+    check`` hint, double-quoted or bare, so no directory survives into the
+    bundle.
+    """
+    source = hint_arg(basename)
+    return re.sub(
+        r"""('sesslint (?:repair|check)\s+)(?:"[^"]*"|[^'\s"]+)""",
+        lambda m: f"{m.group(1)}{source}",
+        remediation,
+    )
 
 
 def _sanitize_evidence(evidence: dict[str, Any], basename: str) -> dict[str, Any]:

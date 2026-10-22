@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _handle_internal_error
-from sesslint.cli._options import add_adapter_option
+from sesslint.cli._options import add_adapter_option, cli_path
 
 if TYPE_CHECKING:
     from sesslint.cli._context import CliContext
@@ -29,13 +28,13 @@ def configure(
     )
     sub.add_argument(
         "path",
-        type=Path,
+        type=cli_path,
         help="Path to session file (.json or .jsonl)",
     )
     sub.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="output",
         help="Path to output canonical file (required)",
@@ -82,5 +81,9 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
         print(f"Output: {args.output} (sha256: {summary.output_sha256[:16]}...)")
         if summary.dropped_unknown_fields:
             print(f"Dropped unknown fields: {summary.dropped_unknown_fields}")
-        print(f"Next Action: Run 'sesslint repair {args.output} --output <file>' to plan repair.")
+        from sesslint._hints import repair_plan_hint
+        from sesslint.report import hint_path
+
+        plan = repair_plan_hint(hint_path(args.output))
+        print(f"Next Action: Run '{plan}' to plan repair.")
     return 0

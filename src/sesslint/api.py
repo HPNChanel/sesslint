@@ -799,8 +799,8 @@ def repair(
                 blocked_detail = "no repairable findings"
             raise RepairRefused(
                 "Findings exist on source session, but no authorized safe "
-                f"repair plan completes (blocked: {blocked_detail}). "
-                "Run 'sesslint repair <file> --dry-run' for per-finding detail."
+                f"repair plan completes (blocked: {blocked_detail}).",
+                blocked=plan_obj.blocked,
             )
     emit_progress(
         progress_cb,

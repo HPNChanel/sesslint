@@ -220,6 +220,9 @@ def _emit_check_report(
             has_detection_or_version_failure = True
             ctx.warn(f"Format detection error [{f.code}]: {f.message}")
 
+    from sesslint._hints import hint_arg, hint_options
+
+    command_options = hint_options(format_opt, profile_opt)
     if has_detection_or_version_failure and (
         display_path == "<stdin>" or Path(display_path).suffix.lower() in (".json", ".jsonl")
     ):
@@ -229,11 +232,12 @@ def _emit_check_report(
                 "and attach the output to an adapter request"
             )
         else:
-            target_disp = display_path.replace("\\", "/")
-            ctx.warn(
-                f"hint: run 'sesslint bundle {target_disp}' "
-                "and attach the output to an adapter request"
+            from sesslint.report import hint_path
+
+            bundle_cmd = " ".join(
+                ["sesslint", "bundle", hint_arg(hint_path(display_path)), *command_options]
             )
+            ctx.warn(f"hint: run '{bundle_cmd}' and attach the output to an adapter request")
 
     adapter_id = report.coverage.adapter.get("id", "canonical")
     format_display = FORMAT_DISPLAY_NAMES.get(adapter_id, adapter_id)
@@ -298,8 +302,17 @@ def _emit_check_report(
         color=use_color,
         adapter=format_display,
         profile=report.coverage.profile.get("id", profile_opt),
+        command_options=command_options,
     )
-    if not has_error and report.counts.by_severity.get("warning", 0) == 0 and not ctx.quiet:
+    # The banner claims a healthy verdict: unsupported and skipped inputs have
+    # no findings either, but no integrity conclusion to claim.
+    concluded = not report.limitation.startswith(("Unsupported:", "Skipped:"))
+    if (
+        concluded
+        and not has_error
+        and report.counts.by_severity.get("warning", 0) == 0
+        and not ctx.quiet
+    ):
         human_text = f"Valid {format_display} session\n" + human_text
     emit_text(ctx, args, human_text, inputs=inputs, summary=summary)
     return exit_code

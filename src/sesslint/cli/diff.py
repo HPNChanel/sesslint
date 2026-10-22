@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import SUPPORTED_FORMATS, VALID_FORMAT_OPTIONS
 from sesslint.cli._common import _output_format
-from sesslint.cli._options import add_report_output_option
+from sesslint.cli._options import add_report_output_option, cli_path
 from sesslint.cli._output import emit_text
 
 if TYPE_CHECKING:
@@ -29,8 +28,8 @@ def configure(
             "relinks, sequence reorders, content changes (hash only)."
         ),
     )
-    sub.add_argument("a", type=Path, help="Path to the first session file")
-    sub.add_argument("b", type=Path, help="Path to the second session file")
+    sub.add_argument("a", type=cli_path, help="Path to the first session file")
+    sub.add_argument("b", type=cli_path, help="Path to the second session file")
     sub.add_argument(
         "--adapter",
         choices=sorted(VALID_FORMAT_OPTIONS),

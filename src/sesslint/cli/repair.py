@@ -15,6 +15,7 @@ from sesslint.cli._options import (
     add_policy_option,
     add_profile_option,
     add_progress_json_option,
+    cli_path,
 )
 from sesslint.cli._seal import _maybe_append_seal
 from sesslint.errors import SesslintError
@@ -41,7 +42,7 @@ def configure(
     )
     sub.add_argument(
         "path",
-        type=Path,
+        type=cli_path,
         nargs="*",
         default=None,
         help="Path(s) to source session file(s) or directories. Directories "
@@ -52,7 +53,7 @@ def configure(
     sub.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="output",
         help="Path to output repaired session file",
@@ -97,7 +98,7 @@ def configure(
     sub.add_argument(
         "--plan",
         "--apply-plan",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="plan",
         help=(
@@ -109,7 +110,7 @@ def configure(
     )
     sub.add_argument(
         "--plan-out",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="plan_out",
         help=(
@@ -121,7 +122,7 @@ def configure(
     )
     sub.add_argument(
         "--from-scan",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="REPORT.json",
         help=(
@@ -132,14 +133,14 @@ def configure(
     )
     sub.add_argument(
         "--output-dir",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="DIR",
         help="Output root for batch repair modes (mirrors input structure).",
     )
     sub.add_argument(
         "--manifest-dir",
-        type=Path,
+        type=cli_path,
         default=None,
         metavar="DIR",
         help=(
@@ -354,6 +355,12 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
     # the command returns.
     stdin_tmp: Any = None
     src_path: Path = src_paths[0]
+    # Salvage commands in blocked-finding detail name the source as the
+    # operator typed it ('-' for stdin), not the private staging copy.
+    from sesslint._hints import STDIN_LABEL, hint_options
+    from sesslint.report import hint_path
+
+    hint_src = STDIN_LABEL if str(src_path) == "-" else hint_path(src_path)
     if str(src_path) == "-":
         import tempfile
 
@@ -382,6 +389,7 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
     profile_opt = getattr(args, "profile", "neutral")
     ack_side_effects = getattr(args, "acknowledge_side_effects", False)
     format_opt = getattr(args, "adapter", "auto")
+    hint_opts = hint_options(format_opt, profile_opt)
 
     from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
     from sesslint.profiles.profile import get_profile
@@ -521,7 +529,9 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
                 print(f"Proposed steps: {len(plan_obj.steps)}")
                 print(f"Blocked findings: {len(plan_obj.blocked)}")
                 for blocked in plan_obj.blocked:
-                    print(f"  [{blocked.code}] {blocked.describe()}")
+                    print(
+                        f"  [{blocked.code}] {blocked.describe(path=hint_src, options=hint_opts)}"
+                    )
             return 0
 
         if manifest is not None:
@@ -606,6 +616,12 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
         else:
             err_code = getattr(err, "code", type(err).__name__)
             ctx.error(f"Repair refused [{err_code}]: {err}")
+            # A plan with no step names every blocked finding with its
+            # documented refusal and any salvage command (SL101 doc contract).
+            for blocked in getattr(err, "blocked", ()):
+                ctx.error(
+                    f"  [{blocked.code}] {blocked.describe(path=hint_src, options=hint_opts)}"
+                )
         return 1
     except (ValueError, KeyError) as err:
         # Invalid or undetectable input is a usage error, not an internal

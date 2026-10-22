@@ -52,8 +52,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   do the repair plans and bundles that carry them. `sesslint.baseline/v2`
   baselines still match, since their keys leave adapter versions out; a
   legacy v1 baseline for Codex rollouts needs `--write-baseline` again.
+- Path arguments expand a leading `~` themselves (`~`, `~/…`, and `~\…` on
+  Windows), so a printed `~/…` path also works in shells that pass `~`
+  through literally, such as PowerShell, `cmd.exe` or a quoted argument.
+  `-` and `~user` forms are left as they are.
 
 ### Fixed
+
+- Every command SessLint prints now runs as printed, from the directory the
+  first command ran in. Repair hints name the `--output` that `repair`
+  requires (`<name>.repaired<ext>` in the working directory, or
+  `repaired.jsonl` for stdin). Paths that need it are double-quoted, a name
+  that starts with `-` gets a `./` prefix, and stdin is spelled `-`. An
+  explicit `--adapter` or `--profile` is repeated in each follow-up command:
+  `check` Next Action and Fix lines, `repair --dry-run` refusal detail,
+  salvage paths and the `bundle` hint after failed detection. The `export`
+  follow-up quotes its output path. SL107 no longer prints a `--profile <id>`
+  pseudo-command.
+- `check` Next Action follows the repair planner. It suggests `repair` only
+  when that policy covers every error. When SL203 is present it suggests no
+  repair or salvage command in human, JSON or HTML output, since automated
+  repair abstains under every policy; it asks you to establish whether the
+  external action ran and re-run `check`, and Fix lines say the recipe exists
+  but abstains while SL203 is present.
+- `repair --dry-run` refusals list each blocked finding with its reason and,
+  where a salvage run can clear it, a runnable salvage command, instead of
+  telling you to run `--dry-run` again. Reasons no salvage run can clear
+  (SL203, failed recipe preconditions, missing targets, component and cap
+  limits) print no salvage path.
+- An SL001 salvage hint is no longer printed when the malformed record cannot
+  be excised: the first record, a record without byte coordinates, or one
+  over the size limit.
+- `check` on an empty, whitespace-only or BOM-only input says `Empty input:
+  file contains no session records` and suggests no repair; it used to
+  suggest a salvage command that exits 2. `triage` asks for the session file
+  instead.
+- `check` no longer prints the `Valid … session` banner for unsupported or
+  skipped input, which has no integrity conclusion.
+- `bundle` reduces the path in every `repair` and `check` hint in
+  remediation text to the file's basename, double-quoted paths included;
+  before, only bare `repair` paths were reduced, so `check` hints kept a
+  minimized directory prefix.
 
 - `docs/RELEASE_0.4.1.md` no longer links to maintainer-local evidence files
   that are not published, which were broken links on the docs site.

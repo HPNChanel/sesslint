@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
 from sesslint.cli._common import _output_format
-from sesslint.cli._options import _validate_positive_int, add_report_output_option
+from sesslint.cli._options import _validate_positive_int, add_report_output_option, cli_path
 from sesslint.cli._output import emit_text
 from sesslint.io import DEFAULT_MAX_FILE_BYTES
 
@@ -27,7 +26,7 @@ def configure(
         help="[read-only] Diagnose a session and explain the next steps.",
         description="Content-free evidence and repair previews; never repairs or resumes.",
     )
-    sub.add_argument("path", type=Path, nargs="?")
+    sub.add_argument("path", type=cli_path, nargs="?")
     sub.add_argument("--agent", choices=["claude", "codex"])
     sub.add_argument("--latest", action="store_true")
     sub.add_argument("--adapter", choices=sorted(VALID_FORMAT_OPTIONS), default=argparse.SUPPRESS)
@@ -40,7 +39,7 @@ def configure(
     )
     sub.add_argument(
         "--state-copy",
-        type=Path,
+        type=cli_path,
         help="Optional closed Codex registry copy outside live agent storage (no WAL).",
     )
     sub.add_argument(

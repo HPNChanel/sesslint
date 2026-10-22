@@ -20,9 +20,11 @@ Guarantees:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
+from sesslint._hints import hint_arg, hint_source, repaired_output_name
 from sesslint.codes import (
     CODE_REGISTRY,
     SL001,
@@ -53,7 +55,7 @@ from sesslint.codes import (
     SL401,
     SL402,
 )
-from sesslint.finding import enforce_content_free_text
+from sesslint.finding import Finding, enforce_content_free_text
 
 # Accepted DEMAND.md citation anchors:
 #   - Requirement IDs:            "AC-004", "FR-023", "NFR-001", "DEV-013", "RVW-011"
@@ -72,6 +74,9 @@ def _is_valid_citation(citation: str) -> bool:
     return any(p.match(citation) for p in _CITATION_PATTERNS)
 
 
+_PLACEHOLDER: Final[re.Pattern[str]] = re.compile(r"\{(path|output|options)\}")
+
+
 @dataclass(frozen=True, slots=True)
 class RefusalRationale:
     """Documented, content-free rationale for an intentional repair refusal.
@@ -82,7 +87,9 @@ class RefusalRationale:
     - demand_citation: normative anchor into DEMAND.md (e.g. 'AC-004',
       'Non-goal #13', 'Conservative policy MUST refuse').
     - salvage_path: optional content-free hint for an explicit, operator-opt-in
-      path; may contain the literal placeholder '{path}' for the session file.
+      path; may contain the literal placeholders '{path}' for the session file,
+      '{output}' for the repaired copy a repair command writes and '{options}'
+      for the operator's explicit adapter and profile flags.
     """
 
     code: str
@@ -110,11 +117,49 @@ class RefusalRationale:
                 self.salvage_path, context=f"refusal salvage path {self.code}"
             )
 
-    def render(self, *, path: str = "<file>") -> str:
-        """Render content-free refusal detail with citation and optional salvage path."""
+    def salvage_hint(
+        self,
+        *,
+        path: str | None = None,
+        output: str | None = None,
+        options: Sequence[str] = (),
+    ) -> str | None:
+        """Return the salvage path with its placeholders filled, or None.
+
+        '{path}' becomes the session file and '{output}' the repaired copy,
+        quoted so the command runs as printed (AC-04); ``output`` defaults
+        to the name derived from ``path``. '{options}' becomes the
+        shell-ready ``options`` words (see ``sesslint._hints.hint_options``).
+        Without a path the '<file>' and '<out>' template placeholders remain.
+        """
+        if self.salvage_path is None:
+            return None
+        if path is None:
+            source, target = "<file>", "<out>" if output is None else hint_arg(output)
+        else:
+            source = hint_source(path)
+            target = hint_arg(repaired_output_name(path) if output is None else output)
+        # One pass, so a path that itself spells a placeholder stays literal.
+        values = {"path": source, "output": target, "options": "".join(f" {w}" for w in options)}
+        return _PLACEHOLDER.sub(lambda m: values[m.group(1)], self.salvage_path)
+
+    def render(
+        self,
+        *,
+        path: str | None = None,
+        output: str | None = None,
+        salvage: bool = True,
+        options: Sequence[str] = (),
+    ) -> str:
+        """Render content-free refusal detail with citation and optional salvage path.
+
+        ``salvage=False`` omits the salvage path, for a finding whose own
+        evidence rules it out (see ``salvage_applicable``).
+        """
         detail = f"{self.rationale} (DEMAND: {self.demand_citation})"
-        if self.salvage_path is not None:
-            detail += f"; salvage path: {self.salvage_path.replace('{path}', path)}"
+        hint = self.salvage_hint(path=path, output=output, options=options) if salvage else None
+        if hint is not None:
+            detail += f"; salvage path: {hint}"
         return detail
 
 
@@ -127,7 +172,8 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
         ),
         demand_citation="AC-004",
         salvage_path=(
-            "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' "
+            "run 'sesslint repair {path} --output {output}{options} --policy salvage "
+            "--acknowledge-side-effects' "
             "(recipe torn-record-excision; per-line malformed records only)"
         ),
     ),
@@ -182,7 +228,8 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
         ),
         demand_citation="Conservative policy MUST refuse",
         salvage_path=(
-            "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' "
+            "run 'sesslint repair {path} --output {output}{options} --policy salvage "
+            "--acknowledge-side-effects' "
             "(recipe orphan-result-drop)"
         ),
     ),
@@ -218,7 +265,7 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
         ),
         demand_citation="FR-038",
         salvage_path=(
-            "re-run 'sesslint check {path} --profile <id>' matching the deployment provider"
+            "re-run check with --profile set to the replay profile of the deployment provider"
         ),
     ),
     SL201: RefusalRationale(
@@ -254,7 +301,7 @@ REFUSAL_REGISTRY: Final[dict[str, RefusalRationale]] = {
         demand_citation="FR-023",
         salvage_path=(
             "export the session via a supported adapter version or upgrade SessLint, "
-            "then re-run 'sesslint check {path}'"
+            "then re-run 'sesslint check {path}{options}'"
         ),
     ),
     SL302: RefusalRationale(
@@ -379,9 +426,35 @@ def refusal_rationale_for(code: str) -> RefusalRationale | None:
     return REFUSAL_REGISTRY.get(code)
 
 
+def salvage_applicable(finding: Finding) -> bool:
+    """Return False when a finding's own evidence rules out its salvage path (AC-04).
+
+    Torn-record excision removes one physical record after the header. An
+    SL001 on the first record (a canonical header) or without byte
+    coordinates (undecodable input, size cap, empty input) fails before any
+    repair plan exists, so suggesting the salvage command would print one
+    that exits 2. Every other code keeps its documented salvage path.
+    """
+    if finding.code != SL001:
+        return True
+    evidence = finding.evidence if isinstance(finding.evidence, Mapping) else {}
+    ordinal = evidence.get("record_ordinal")
+    return (
+        evidence.get("reason") != "size_limit_exceeded"
+        and all(
+            isinstance(evidence.get(key), int) and not isinstance(evidence.get(key), bool)
+            for key in ("byte_offset", "byte_end")
+        )
+        and isinstance(ordinal, int)
+        and not isinstance(ordinal, bool)
+        and ordinal > 1
+    )
+
+
 __all__ = [
     "REFUSAL_CODES",
     "REFUSAL_REGISTRY",
     "RefusalRationale",
     "refusal_rationale_for",
+    "salvage_applicable",
 ]

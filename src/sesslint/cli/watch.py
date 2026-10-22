@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from sesslint.adapters.detect import VALID_FORMAT_OPTIONS
+from sesslint.cli._options import cli_path
 
 if TYPE_CHECKING:
     from sesslint.cli._context import CliContext
@@ -28,7 +29,7 @@ def configure(
     )
     sub.add_argument(
         "path",
-        type=Path,
+        type=cli_path,
         nargs="*",
         help="Path(s) to session file(s) or directories to watch",
     )

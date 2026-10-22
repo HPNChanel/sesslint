@@ -11,6 +11,7 @@ from sesslint.cli._options import (
     _validate_unit_interval_float,
     add_adapter_option,
     add_profile_option,
+    cli_path,
 )
 
 if TYPE_CHECKING:
@@ -31,13 +32,13 @@ def configure(
     )
     sub.add_argument(
         "path",
-        type=Path,
+        type=cli_path,
         help="Path to session file (.json or .jsonl)",
     )
     sub.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="output",
         help="Path to output bundle JSON file",

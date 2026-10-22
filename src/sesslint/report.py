@@ -1921,11 +1921,25 @@ def build_repro_metadata(
     )
 
 
+# Empty input fails closed as SL001, but it is not a malformed record: there
+# is nothing to repair, so it gets its own message and no repair command
+# (AC-04). Every repair command exits 2 on a file with no records.
+EMPTY_INPUT_MESSAGE: Final[str] = "Empty input: file contains no session records"
+
+
+def finding_is_empty_input(f: Finding) -> bool:
+    """Return True when ``f`` records zero-length or whitespace-only input (AC-04)."""
+    evidence = f.evidence
+    return isinstance(evidence, Mapping) and evidence.get("reason") == "empty_input"
+
+
 def get_finding_remediation(
     f: Finding,
     *,
     home: Path | None = None,
     for_operator: bool = False,
+    abstain: bool = False,
+    options: Sequence[str] = (),
 ) -> str:
     """Return concise content-free remediation instructions for a finding.
 
@@ -1935,34 +1949,55 @@ def get_finding_remediation(
 
     ``for_operator=True`` renders the hint path in copy-paste usable form
     (``hint_path``) for terminal output; the default ``False`` keeps the
-    privacy-minimized form used inside shareable report artifacts.
+    privacy-minimized form used inside shareable report artifacts. Either
+    way a suggested command carries every flag it needs to run as printed
+    (AC-04), and empty input suggests none. ``options`` are the shell-ready
+    ``--adapter``/``--profile`` words such a command repeats
+    (``sesslint._hints.hint_options``). ``abstain=True`` marks a report that
+    carries SL203, where every recipe and salvage path abstains under every
+    policy (FR-060), so no repair command is suggested.
     """
+    from sesslint._hints import repair_hint
     from sesslint.codes import Repairability
-    from sesslint.repair.refusals import refusal_rationale_for
+    from sesslint.repair.refusals import refusal_rationale_for, salvage_applicable
 
+    if finding_is_empty_input(f):
+        return f"{EMPTY_INPUT_MESSAGE}; automated repair refused"
     path_str = (
         hint_path(f.source.path, home=home)
         if for_operator
         else minimize_path(f.source.path, home=home)
     )
+    if abstain and f.repairability in (Repairability.DETERMINISTIC, Repairability.LOSSY_EXPLICIT):
+        return (
+            f"{f.repairability.value} recipe exists, but automated repair abstains "
+            "under every policy while SL203 is present"
+        )
     if f.repairability == Repairability.DETERMINISTIC:
-        return f"deterministic recipe available: run 'sesslint repair {path_str}'"
+        return f"deterministic recipe available: run '{repair_hint(path_str, *options)}'"
     if f.repairability == Repairability.LOSSY_EXPLICIT:
-        return f"lossy-explicit recipe available: run 'sesslint repair {path_str} --policy salvage'"
+        salvage_cmd = repair_hint(path_str, *options, "--policy", "salvage")
+        return f"lossy-explicit recipe available: run '{salvage_cmd}'"
     refusal = refusal_rationale_for(f.code)
+    salvage = not abstain and salvage_applicable(f)
     if f.repairability == Repairability.MANUAL:
         if refusal is not None:
             return (
                 "manual inspection required; automated repair refused: "
-                f"{refusal.render(path=path_str)}"
+                f"{refusal.render(path=path_str, salvage=salvage, options=options)}"
             )
         return "manual inspection required; automated repair refused"
     if refusal is not None:
         return (
             "unsupported defect or structure; automated repair refused: "
-            f"{refusal.render(path=path_str)}"
+            f"{refusal.render(path=path_str, salvage=salvage, options=options)}"
         )
     return "unsupported defect or structure; automated repair refused"
+
+
+def report_abstains(findings: Iterable[Finding]) -> bool:
+    """Return True when SL203 blocks every repair for these findings (FR-060)."""
+    return any(f.code == "SL203" for f in findings)
 
 
 finding_report_sort_key = finding_sort_key
@@ -1975,8 +2010,12 @@ def format_finding_content_free(
     include_content: bool = False,
     home: Path | None = None,
     ordinal: int | None = None,
+    abstain: bool = False,
 ) -> dict[str, Any]:
-    """Format a finding into schema-compliant dictionary without raw payload text."""
+    """Format a finding into schema-compliant dictionary without raw payload text.
+
+    ``abstain`` marks a report that carries SL203 (see ``get_finding_remediation``).
+    """
     min_path = minimize_path(f.source.path, home=home)
     byte_val = None
     if f.evidence and isinstance(f.evidence, Mapping):
@@ -2006,7 +2045,7 @@ def format_finding_content_free(
     if ordinal is not None and "ordinal" not in ev_dict:
         ev_dict["ordinal"] = ordinal
 
-    remediation = get_finding_remediation(f, home=home)
+    remediation = get_finding_remediation(f, home=home, abstain=abstain)
 
     res: dict[str, Any] = {
         "code": f.code,
@@ -2044,12 +2083,14 @@ def render_json(
     """
     if isinstance(report, Report):
         sorted_findings = sorted(report.findings, key=finding_report_sort_key)
+        abstain = report_abstains(sorted_findings)
         findings_json = [
             format_finding_content_free(
                 f,
                 include_content=include_content,
                 home=home,
                 ordinal=idx + 1,
+                abstain=abstain,
             )
             for idx, f in enumerate(sorted_findings)
         ]
@@ -2142,8 +2183,14 @@ def render_human(
     profile: str = "neutral",
     next_action: str | None = None,
     home: Path | None = None,
+    command_options: Sequence[str] = (),
 ) -> str:
-    """Render Report to human-readable format with summary header and ordered finding blocks."""
+    """Render Report to human-readable format with summary header and ordered finding blocks.
+
+    ``command_options`` are the shell-ready ``--adapter``/``--profile`` words
+    every suggested command repeats, so it reads the session the way this
+    check did (AC-04; ``sesslint._hints.hint_options``).
+    """
     from sesslint.codes import CODE_REGISTRY
 
     green = "\033[32m" if color else ""
@@ -2159,6 +2206,7 @@ def render_human(
     has_warning = report.counts.by_severity.get("warning", 0) > 0
     err_cnt = report.counts.by_severity.get("error", 0) + report.counts.by_severity.get("fatal", 0)
     warn_cnt = report.counts.by_severity.get("warning", 0)
+    abstain = report_abstains(report.findings)
 
     if report.limitation.startswith("Unsupported:"):
         verdict = "unsupported"
@@ -2187,21 +2235,48 @@ def render_human(
         elif verdict == "skipped":
             next_action = "Raise --max-file-bytes to inspect this file within your memory budget."
         elif has_error:
-            if any(f.repairability.value == "deterministic" for f in report.findings):
-                p = hint_path(report.findings[0].source.path, home=home)
-                next_action = f"Run 'sesslint repair {p} --output <out>'"
-            elif any(f.repairability.value == "lossy-explicit" for f in report.findings):
-                p = hint_path(report.findings[0].source.path, home=home)
-                next_action = f"Run 'sesslint repair {p} --output <out> --policy salvage'"
+            from sesslint._hints import check_hint, repair_hint
+            from sesslint.repair.refusals import refusal_rationale_for, salvage_applicable
+
+            # Suggest a repair only when its policy covers every error: repair
+            # refuses outright when a blocked error leaves no plan, and SL203
+            # blocks every recipe under every policy (FR-060). The hint names
+            # the file that carries the recipe, never findings[0].
+            errors = [f for f in report.findings if f.severity.value in ("error", "fatal")]
+            repairs = {f.repairability.value for f in errors}
+            opts = tuple(command_options)
+            if errors and not abstain and repairs <= {"deterministic"}:
+                p = hint_path(errors[0].source.path, home=home)
+                next_action = f"Run '{repair_hint(p, *opts)}'"
+            elif errors and not abstain and repairs <= {"deterministic", "lossy-explicit"}:
+                lossy = next(f for f in errors if f.repairability.value == "lossy-explicit")
+                p = hint_path(lossy.source.path, home=home)
+                next_action = f"Run '{repair_hint(p, *opts, '--policy', 'salvage')}'"
+            elif errors and all(finding_is_empty_input(f) for f in errors):
+                next_action = f"{EMPTY_INPUT_MESSAGE}; check that the path names the session file."
+            elif abstain:
+                sl203 = next(f for f in report.findings if f.code == "SL203")
+                p = hint_path(sl203.source.path, home=home)
+                next_action = (
+                    "Manual inspection required; automated repair abstains under every "
+                    "policy (SL203). Establish whether the external action ran, then "
+                    f"re-run '{check_hint(p, *opts)}'."
+                )
             else:
                 next_action = "Manual inspection required; automated repair refused."
-                from sesslint.repair.refusals import refusal_rationale_for
-
                 for f in sorted(report.findings, key=finding_report_sort_key):
+                    if finding_is_empty_input(f) or not salvage_applicable(f):
+                        continue
                     entry = refusal_rationale_for(f.code)
-                    if entry is not None and entry.salvage_path is not None:
-                        p = hint_path(f.source.path, home=home)
-                        next_action += f" Possible path: {entry.salvage_path.replace('{path}', p)}."
+                    hint = (
+                        None
+                        if entry is None
+                        else entry.salvage_hint(
+                            path=hint_path(f.source.path, home=home), options=opts
+                        )
+                    )
+                    if hint is not None:
+                        next_action += f" Possible path: {hint}."
                         break
         elif any(f.code == "SL009" for f in report.findings):
             next_action = "Review secret warning; rotate or revoke exposed credentials."
@@ -2275,7 +2350,9 @@ def render_human(
                         f" ({f_rec} further record(s) / {_human_bytes(f_by)}"
                         " may be invisible to vendor loaders)"
                     )
-            fix_str = get_finding_remediation(f, home=home, for_operator=True)
+            fix_str = get_finding_remediation(
+                f, home=home, for_operator=True, abstain=abstain, options=command_options
+            )
 
             sev_rep = f"({f.severity.value.upper()}, {f.repairability.value})"
             lines.append(f"  [{f.code}] {sev_color}{title}{reset} {sev_rep}")
@@ -2332,6 +2409,7 @@ __all__ = [
     "VALID_ASSURANCE_LEVELS",
     "VALID_COVERAGE_SKIP_REASONS",
     "VALID_POLICIES",
+    "EMPTY_INPUT_MESSAGE",
     "Assurance",
     "Counts",
     "Coverage",
@@ -2352,6 +2430,7 @@ __all__ = [
     "dump_manifest",
     "dump_report",
     "enforce_content_free",
+    "finding_is_empty_input",
     "finding_report_sort_key",
     "format_finding_content_free",
     "get_finding_remediation",

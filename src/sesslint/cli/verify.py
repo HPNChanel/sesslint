@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from sesslint.cli._common import _handle_internal_error, should_color
-from sesslint.cli._options import _add_seal_args, add_color_options, add_report_output_option
+from sesslint.cli._options import (
+    _add_seal_args,
+    add_color_options,
+    add_report_output_option,
+    cli_path,
+)
 from sesslint.cli._output import emit_text
 from sesslint.cli._seal import _maybe_append_seal
 
@@ -31,28 +36,28 @@ def configure(
     )
     sub.add_argument(
         "source",
-        type=Path,
+        type=cli_path,
         nargs="?",
         default=None,
         help="Path to source session file",
     )
     sub.add_argument(
         "repaired",
-        type=Path,
+        type=cli_path,
         nargs="?",
         default=None,
         help="Path to repaired session file",
     )
     sub.add_argument(
         "--source",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="source_flag",
         help=argparse.SUPPRESS,
     )
     sub.add_argument(
         "--repaired",
-        type=Path,
+        type=cli_path,
         default=None,
         dest="repaired_flag",
         help=argparse.SUPPRESS,
@@ -60,13 +65,13 @@ def configure(
     add_report_output_option(sub)
     sub.add_argument(
         "--manifest",
-        type=Path,
+        type=cli_path,
         required=True,
         help="Path to repair manifest JSON file",
     )
     sub.add_argument(
         "--plan",
-        type=Path,
+        type=cli_path,
         default=None,
         help="Path to repair plan JSON file (optional)",
     )

@@ -183,6 +183,15 @@ class PlanStep:
         )
 
 
+# Blocked reasons a salvage run cannot clear: SL203 blocks every recipe under
+# every policy (FR-060), a failed recipe precondition ("precondition-failed:*")
+# is already the salvage verdict, and the structural limits hold under any
+# policy.
+_SALVAGE_FUTILE_REASONS: Final[frozenset[str]] = frozenset(
+    {"SL203-refusal", "target-missing", "component-too-large", "cap-overflow"}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Blocked:
     """Record of a finding that could not be automatically planned.
@@ -201,17 +210,23 @@ class Blocked:
         """Documented refusal rationale for this code, if one is registered."""
         return refusal_rationale_for(self.code)
 
-    def describe(self) -> str:
+    def describe(self, *, path: str | None = None, options: Sequence[str] = ()) -> str:
         """Human-readable detail: stable reason plus documented refusal rationale.
 
         Content-free: never embeds session data, only policy-level rationale and
         DEMAND citations. Falls back to the bare machine reason when the code has
-        no registered refusal rationale.
+        no registered refusal rationale. ``path`` and ``options`` fill the
+        salvage command so it runs as printed (AC-04); without a path the
+        '<file>'/'<out>' template placeholders remain. A reason no salvage run
+        can clear omits the salvage path rather than suggest a circular retry.
         """
         entry = self.refusal
         if entry is None:
             return self.reason
-        return f"{self.reason}: {entry.render()}"
+        salvage = self.reason not in _SALVAGE_FUTILE_REASONS and not self.reason.startswith(
+            "precondition-failed"
+        )
+        return f"{self.reason}: {entry.render(path=path, salvage=salvage, options=options)}"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize blocked finding record to dictionary."""

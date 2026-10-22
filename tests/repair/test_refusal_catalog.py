@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from sesslint.codes import ALL_CODES, SL001, SL101, SL203, SL301, SL302
-from sesslint.finding import enforce_content_free_text
+from sesslint.codes import ALL_CODES, SL001, SL101, SL203, SL301, SL302, Repairability, Severity
+from sesslint.finding import Finding, SourceRef, enforce_content_free_text, make_finding
 from sesslint.repair.planner import Blocked
 from sesslint.repair.recipes_conservative import (
     register_all as register_conservative,
@@ -34,6 +34,7 @@ from sesslint.repair.refusals import (
     REFUSAL_REGISTRY,
     RefusalRationale,
     refusal_rationale_for,
+    salvage_applicable,
 )
 from sesslint.repair.registry import clear_registry, recipes_for
 
@@ -171,11 +172,113 @@ def test_blocked_describe_includes_salvage_path() -> None:
 
 
 def test_render_substitutes_path_placeholder() -> None:
-    """RefusalRationale.render() substitutes {path} in salvage path hints."""
+    """RefusalRationale.render() fills {path} and {output} so the command runs (AC-04)."""
     entry = REFUSAL_REGISTRY[SL101]
     rendered = entry.render(path="session.jsonl")
-    assert "sesslint repair session.jsonl --policy salvage" in rendered
-    assert "{path}" not in rendered
+    assert (
+        "sesslint repair session.jsonl --output session.repaired.jsonl "
+        "--policy salvage --acknowledge-side-effects"
+    ) in rendered
+    assert "{" not in rendered
+
+
+def test_salvage_hint_quotes_and_repeats_options() -> None:
+    """Paths are quoted for the shell and explicit adapter/profile words carry over."""
+    entry = REFUSAL_REGISTRY[SL001]
+    hint = entry.salvage_hint(
+        path="my dir/run.jsonl", options=("--adapter", "canonical", "--profile", "neutral-x")
+    )
+    assert hint is not None
+    assert hint.startswith(
+        'run \'sesslint repair "my dir/run.jsonl" --output run.repaired.jsonl '
+        "--adapter canonical --profile neutral-x --policy salvage --acknowledge-side-effects'"
+    )
+    assert REFUSAL_REGISTRY[SL301].salvage_hint(path="-", options=("--adapter", "canonical")) == (
+        "export the session via a supported adapter version or upgrade SessLint, "
+        "then re-run 'sesslint check - --adapter canonical'"
+    )
+
+
+def test_salvage_hint_substitutes_in_one_pass() -> None:
+    """A path that spells a placeholder stays literal (no second substitution)."""
+    hint = REFUSAL_REGISTRY[SL101].salvage_hint(path="{output}.jsonl")
+    assert hint is not None
+    assert 'sesslint repair "{output}.jsonl" --output "{output}.repaired.jsonl"' in hint
+
+
+def test_render_can_omit_salvage_path() -> None:
+    entry = REFUSAL_REGISTRY[SL001]
+    assert "salvage path" in entry.render(path="x.jsonl")
+    assert "salvage path" not in entry.render(path="x.jsonl", salvage=False)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    ["SL203-refusal", "precondition-failed:sl001_excisable", "target-missing", "cap-overflow"],
+)
+def test_blocked_describe_omits_circular_salvage_path(reason: str) -> None:
+    """A reason no salvage run can clear never suggests the salvage command."""
+    detail = Blocked(finding_fp="b" * 16, code=SL001, reason=reason).describe(path="x.jsonl")
+    assert detail.startswith(f"{reason}: ")
+    assert "salvage path" not in detail
+    assert "(DEMAND: AC-004)" in detail
+
+
+def test_blocked_describe_fills_path_and_options() -> None:
+    b = Blocked(finding_fp="a" * 16, code=SL101, reason="needs-salvage-policy")
+    detail = b.describe(path="-", options=("--profile", "openai-strict"))
+    assert (
+        "salvage path: run 'sesslint repair - --output repaired.jsonl --profile openai-strict "
+        "--policy salvage --acknowledge-side-effects'"
+    ) in detail
+
+
+def _sl001(evidence: dict[str, object]) -> Finding:
+    return make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Malformed record on line {line}",
+        template_args={"line": "2"},
+        source=SourceRef(path="run.jsonl", line=2),
+        evidence=evidence,
+    )
+
+
+@pytest.mark.parametrize(
+    ("evidence", "applicable"),
+    [
+        ({"byte_offset": 10, "byte_end": 20, "record_ordinal": 2}, True),
+        ({"byte_offset": 0, "byte_end": 20, "record_ordinal": 1}, False),
+        ({"record_ordinal": 2}, False),
+        ({"byte_offset": True, "byte_end": 20, "record_ordinal": 2}, False),
+        (
+            {
+                "byte_offset": 10,
+                "byte_end": 20,
+                "record_ordinal": 2,
+                "reason": "size_limit_exceeded",
+            },
+            False,
+        ),
+    ],
+)
+def test_salvage_applicable_follows_sl001_evidence(
+    evidence: dict[str, object], applicable: bool
+) -> None:
+    """Only a record after the header with byte coordinates can be excised (AC-04)."""
+    assert salvage_applicable(_sl001(evidence)) is applicable
+
+
+def test_salvage_applicable_keeps_other_codes() -> None:
+    f = make_finding(
+        code=SL101,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="Orphan result",
+        source=SourceRef(path="run.jsonl", line=3),
+    )
+    assert salvage_applicable(f) is True
 
 
 def test_registry_validation_rejects_bad_entries() -> None:
