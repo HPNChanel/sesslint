@@ -100,10 +100,11 @@ def _removed_command_hint(argv: Sequence[str]) -> str | None:
     for token in argv:
         if token.startswith("-"):
             continue
-        replacement = REMOVED_COMMANDS.get(token)
-        if replacement is None:
-            return None
-        return f"Error: '{token}' was removed in 0.5.0; use: {replacement}"
+        # Print the registry's own key, not the argv token, so hints never echo input.
+        for name, replacement in REMOVED_COMMANDS.items():
+            if name == token:
+                return f"Error: '{name}' was removed in 0.5.0; use: {replacement}"
+        return None
     return None
 
 
@@ -120,8 +121,10 @@ def _removed_flag_hint(argv: Sequence[str]) -> str | None:
             and argv[index + 1] in VALID_FORMAT_OPTIONS
         ):
             return "hint: '--format' now selects the output format; use '--adapter <name>'"
-        if flag in REMOVED_FLAGS:
-            return f"hint: '{flag}' was removed in 0.5.0; use {REMOVED_FLAGS[flag]}"
+        # As above: print the registry's key, never the argv flag.
+        for name, replacement in REMOVED_FLAGS.items():
+            if name == flag:
+                return f"hint: '{name}' was removed in 0.5.0; use {replacement}"
     return None
 
 

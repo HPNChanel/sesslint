@@ -157,6 +157,6 @@ class ScanCache:
             try:
                 self._db.close()
             except (sqlite3.Error, ValueError, RecursionError):
-                pass
+                pass  # Best effort: the handle is dropped and the cache disabled below.
             self._db = None
         self._ok = False
