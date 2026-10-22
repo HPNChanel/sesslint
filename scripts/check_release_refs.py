@@ -80,8 +80,11 @@ MARKER_RE = re.compile(r"next[ -]release", re.IGNORECASE)
 SECTION_MARKER_RE = re.compile(r"^ {0,3}<!--\s*next[ -]release\s*-->\s*$", re.IGNORECASE)
 FILE_MARKER_RE = re.compile(r"^ {0,3}<!--\s*next[ -]release\s*:\s*file\s*-->\s*$", re.IGNORECASE)
 # Repository build tooling has its own flags (e.g. ``--target``); they are not CLI flags.
-# Only the command span is ignored: it ends at a closing backtick, ``&``, ``|`` or ``;``.
-TOOLING_SPAN_RE = re.compile(r"\bpython3?\s+(?:-m\s+build\b|scripts/)[^`&|;]*")
+# Only the command span is ignored: it ends at a closing backtick, ``&``, ``|``, ``;``,
+# end of line, or the next ``sesslint`` token (unquoted prose such as ``... then sesslint x``).
+TOOLING_SPAN_RE = re.compile(
+    r"\bpython3?\s+(?:-m\s+build\b|scripts/)[^`&|;]*?(?=\bsesslint\b|[`&|;]|$)"
+)
 HEADING_RE = re.compile(r"^#{1,6}\s")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 VERSION_RE = re.compile(r'__version__\s*=\s*"([^"]+)"')
@@ -327,10 +330,16 @@ def classify(
     latest: tuple[int, int, int] | None,
     dev: tuple[int, int, int],
     tags: set[tuple[int, int, int]],
+    dev_text: str | None = None,
 ) -> str:
     v = parse_semver(value)
     if v is None:
         return "nonsemver"
+    # A pre-release/dev pin is never the final tag; it is "dev" only when it is exactly the
+    # development version text. A ``+local`` label is ignored; ``.postN`` is not a pre-release.
+    pin = value.strip().split("+", 1)[0]
+    if is_prerelease(pin) and (dev_text is None or pin.lstrip("v") != dev_text.strip().lstrip("v")):
+        return "stale"
     if latest and v == latest:
         return "match"
     if latest is None and v == dev:
@@ -350,6 +359,7 @@ def evaluate(
     files: list[Path],
     *,
     allow_no_baseline: bool = False,
+    dev_text: str | None = None,
 ) -> Report:
     """Evaluate pins and flags.
 
@@ -391,7 +401,7 @@ def evaluate(
         pins, hits = scan_lines(read_text(p, rel).splitlines(), rel, post_tag)
         rep.files_scanned += 1
         for ref in pins:
-            ref.verdict = classify(ref.value, latest, dev, tags)
+            ref.verdict = classify(ref.value, latest, dev, tags, dev_text)
             rep.pins.append(ref)
         rep.flags.extend(hits)
 
@@ -534,7 +544,15 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         files = [root / f for f in args.files] if args.files else iter_scan_files(root)
-        rep = evaluate(root, latest, dev, tags, files, allow_no_baseline=args.allow_no_baseline)
+        rep = evaluate(
+            root,
+            latest,
+            dev,
+            tags,
+            files,
+            allow_no_baseline=args.allow_no_baseline,
+            dev_text=dev_text,
+        )
     except (BaselineError, ScanError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

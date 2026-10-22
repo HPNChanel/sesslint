@@ -74,6 +74,34 @@ def test_classify_no_tags_dev_is_ok() -> None:
     assert crr.classify("v0.2.0", None, (0, 3, 0), set()) == "unknown"
 
 
+@pytest.mark.parametrize("pin", ["0.5.0rc1", "v0.5.0-rc.1", "0.5.0.dev0", "0.5.0a1", "0.5.0-rc.1"])
+def test_classify_prerelease_pin_is_never_the_final_tag(pin: str) -> None:
+    final = (0, 5, 0)
+    assert crr.classify(pin, final, (0, 6, 0), {final}, "0.6.0") == "stale"
+    assert crr.classify(pin, final, (0, 6, 0), {final}) == "stale"
+
+
+def test_classify_exact_dev_version_pin_is_dev() -> None:
+    tags = {(0, 5, 0)}
+    assert crr.classify("0.6.0rc1", (0, 5, 0), (0, 6, 0), tags, "0.6.0rc1") == "dev"
+    assert crr.classify("v0.6.0rc1", (0, 5, 0), (0, 6, 0), tags, "0.6.0rc1") == "dev"
+    # a different spelling or another pre-release of the same X.Y.Z is not the dev version
+    assert crr.classify("0.6.0-rc.1", (0, 5, 0), (0, 6, 0), tags, "0.6.0rc1") == "stale"
+    assert crr.classify("0.6.0rc2", (0, 5, 0), (0, 6, 0), tags, "0.6.0rc1") == "stale"
+
+
+def test_classify_final_pin_and_local_or_post_suffix_stay_a_match() -> None:
+    tags = {(0, 5, 0)}
+    for pin in ("v0.5.0", "0.5.0", "0.5.0.post1", "0.5.0+local.1", "0.5.0+a1"):
+        assert crr.classify(pin, (0, 5, 0), (0, 6, 0), tags, "0.6.0") == "match", pin
+
+
+def test_stale_prerelease_pin_fails_through_main(tmp_path: Path) -> None:
+    root = _repo(tmp_path, tags={"v0.4.0": JSON_FLAG}, worktree_cli=JSON_FLAG)
+    _doc(root, "pip install sesslint==0.4.0rc1")
+    assert _run(root) == 1
+
+
 # ---------------------------------------------------------------------------
 # scan_lines — pin extraction and marker coverage
 # ---------------------------------------------------------------------------
@@ -426,6 +454,15 @@ def test_tooling_flags_alone_on_a_line_are_still_ignored() -> None:
     ):
         _, flags = _scan(line, post)
         assert flags == [], line
+
+
+def test_tooling_span_ends_before_sesslint_in_unquoted_prose() -> None:
+    post = {"--as-of", "--target"}
+    prose = "Run python scripts/x.py --target a, then sesslint outcome --as-of T."
+    _, flags = _scan(prose, post)
+    assert [f.flag for f in flags] == ["--as-of"]
+    _, flags = _scan("python scripts/x.py --target a", post)
+    assert flags == []
 
 
 def test_mixed_tooling_line_fails_through_main(tmp_path: Path) -> None:

@@ -184,7 +184,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not the rest of its line. A missing or non-UTF-8 input file exits 2 instead
   of crashing, PEP 440 pre-release versions such as `1.0.0rc1` are accepted
   (their baseline is strictly below `1.0.0`), and a pre-release
-  `--latest-tag` is refused by name.
+  `--latest-tag` is refused by name. A pre-release or dev pin (`0.5.0rc1`,
+  `v0.5.0-rc.1`) no longer passes as the final tag: it is stale unless it is
+  the exact development version, and the tooling exemption ends before a
+  `sesslint` token in unquoted prose.
 
 ## [0.5.0] - 2026-10-19
 
