@@ -3,7 +3,7 @@
 <!-- next-release -->
 
 Claude hook recipes match `resume|compact|fork` at SessionStart and set a
-five-second timeout for PostCompact and SessionEnd. `hook --output claude-json`
+five-second timeout for PostCompact and SessionEnd. `hook --format claude-json`
 emits a root `systemMessage` containing only outcome and code counts. The CLI's
 own JSON result remains available through `--json`; recipes stay advisory.
 
@@ -99,17 +99,18 @@ Contract:
 
 Add to `.claude/settings.json` (project) or `~/.claude/settings.json`
 (user). `sesslint hook --init --agent claude` emits exactly these <!-- next-release -->
-blocks — every command is `sesslint hook --event <name> || true`, so
-there is nothing to substitute.
+blocks — every command is `sesslint hook --event <name> || true`
+(SessionStart adds `--format claude-json`), so there is nothing to
+substitute.
 
 ```json
 {
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear|compact|fork",
+        "matcher": "resume|compact|fork",
         "hooks": [
-          {"type": "command", "command": "sesslint hook --event SessionStart || true"}
+          {"type": "command", "command": "sesslint hook --event SessionStart --format claude-json || true"}
         ]
       }
     ],
@@ -124,7 +125,7 @@ there is nothing to substitute.
     "PostCompact": [
       {
         "hooks": [
-          {"type": "command", "command": "sesslint hook --event PostCompact || true"}
+          {"type": "command", "command": "sesslint hook --event PostCompact || true", "timeout": 5}
         ]
       }
     ],
@@ -132,7 +133,7 @@ there is nothing to substitute.
       {
         "matcher": "clear|logout|prompt_input_exit|other",
         "hooks": [
-          {"type": "command", "command": "sesslint hook --event SessionEnd || true"}
+          {"type": "command", "command": "sesslint hook --event SessionEnd || true", "timeout": 5}
         ]
       }
     ]
@@ -142,9 +143,14 @@ there is nothing to substitute.
 
 Notes:
 
-- `SessionStart` matcher covers all documented sources including
-  `compact` and `fork` — a post-compaction re-injection deserves the
-  same integrity check as a fresh resume.
+- `SessionStart` matches `resume|compact|fork`, the sources that load
+  existing transcript state — a post-compaction re-injection deserves the
+  same integrity check as a resume. `startup` and `clear` begin a new
+  transcript, so there is nothing durable to check yet. With
+  `--format claude-json` the result arrives as a content-free
+  `systemMessage`.
+- `PostCompact` and `SessionEnd` set `"timeout": 5` (seconds), so a slow
+  check delays compaction or exit by at most five seconds.
 - `PostCompact` carries no `matcher` (fires unconditionally after every
   compaction).
 - `|| true` is belt-and-suspenders: `sesslint hook` already exits `0` on
@@ -168,7 +174,7 @@ in hooks.
 ### Latency
 
 Hooks run synchronously — a slow check delays the lifecycle event. SessLint's
-reader is bounded by `ReaderLimits` (`sesslint scan --show-limits`): file size,
+reader is bounded by `ReaderLimits` (reported by `sesslint doctor`): file size,
 line size, record count, and nesting depth are all capped, so a pathological
 file fails fast rather than hanging the hook. Typical session files check in
 well under a second; the 250k-event benchmark contract is ~15 s for the
@@ -242,7 +248,7 @@ protocol errors):
 | ---- | ------- |
 | `sesslint_check` | `sesslint.report/v1` report (structured content) for one session file |
 | `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report |
-| `sesslint_scan` | `sesslint.scan/v1` 5-bucket aggregate for a file or directory tree |
+| `sesslint_scan` | `sesslint.scan-report/v1` 5-bucket aggregate for a file or directory tree |
 
 Each tool takes `path` (required), plus optional `profile` (`neutral`,
 `claude-strict`, `openai-strict`) and `format` adapter override. Missing
@@ -268,7 +274,7 @@ release):
 
 | Runtime | Hook surface | Payload carries `transcript_path` | SessLint recipes |
 | :--- | :--- | :--- | :--- |
-| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`init-hooks --agent claude`) |
+| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`sesslint hook --init --agent claude`) |
 | Codex | `~/.codex/hooks.json`, `config.toml [hooks]` | Yes — all events | Not yet — matcher/timeout/trust-review semantics under verification |
 | Copilot CLI | `.github/hooks/*.json`, `~/.copilot/hooks/` | Only on `PreCompact`, `Stop`, `subagent*` events (PascalCase names → snake_case payload) | Not yet — needs the Copilot adapter first |
 | Gemini CLI | `settings.json` `hooks` | Yes — all events, but stdout must be JSON | Not yet — needs the Gemini adapter + `--json` contract check |

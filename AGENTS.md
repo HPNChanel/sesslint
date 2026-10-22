@@ -39,7 +39,7 @@ Preserve all additional project-specific instructions.
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/sesslint/` | Library + CLI (`cli.py`, `api.py`, `checks/`, `adapters/`, `repair/`, `scan.py`, `report.py`, `verify.py`, `bundle.py`) |
+| `src/sesslint/` | Library + CLI (`cli/` package, `api.py`, `checks/`, `adapters/`, `repair/`, `scan.py`, `report.py`, `verify.py`, `bundle.py`) |
 | `tests/` | pytest suite: unit + `conformance/`, `fuzz/` (hypothesis), `accept/`, `privacy/`, `io/` hostile-input tests |
 | `docs/codes/`, `docs/recipes/` | One doc per SL code / per repair recipe — gated by `tests/test_rule_docs.py`, `tests/test_registry_docs.py` |
 | `schemas/` | JSON Schemas shipped as wheel shared-data |

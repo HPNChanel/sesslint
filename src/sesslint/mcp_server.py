@@ -116,7 +116,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "Scan a session tree",
         "description": (
             "Aggregate scan of a session file or directory tree: 5-bucket "
-            "totals (healthy/invalid/undetected/unreadable/skipped) and "
+            "totals (healthy/invalid/unsupported/unreadable/skipped) and "
             "per-file verdict counts. Read-only."
         ),
         "inputSchema": {

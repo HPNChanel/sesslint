@@ -350,7 +350,12 @@ def normalize_canonical(obj: Any, seen: set[int] | None = None) -> Any:
 
 
 def canonical_json_bytes(obj: Any, *, newline: bool = False) -> bytes:
-    """Serialize an object to SessLint deterministic UTF-8 JSON bytes."""
+    """Serialize an object to SessLint deterministic UTF-8 JSON bytes.
+
+    Defaults to the hash domain (no trailing newline). The file-writing
+    wrapper ``sesslint.determinism.canonical_json_bytes`` defaults to
+    ``newline=True``; the two defaults differ on purpose.
+    """
     return _ACTIVE_CODEC.canonical_json_bytes(obj, newline=newline)
 
 

@@ -149,7 +149,7 @@ than dropped, preserving the record for diagnostics
 ## 7. Assurance vocabulary
 
 Reports carry a single-letter assurance grade computed from findings and
-replay equivalence (`src/sesslint/report.py`, `_assurance_for_findings`):
+replay equivalence (`src/sesslint/report.py:compute_assurance`):
 
 | Grade | Meaning |
 | ----- | ------- |

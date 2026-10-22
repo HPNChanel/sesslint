@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `docs/RELEASE_0.4.1.md` no longer links to maintainer-local evidence files
   that are not published, which were broken links on the docs site.
+- The `sesslint bundle` fixture skeleton template is now a clean canonical
+  session: its example tool call uses actor `assistant` (the invalid `model`
+  raised SL001), and the call/result pair shares `correlation_id`
+  `tool_call_example_1`. Only `fixture_skeleton.template` changes in bundle
+  output.
+- `docs/INTEGRATIONS.md` Claude recipes now match what
+  `sesslint hook --init --agent claude` prints: SessionStart matches
+  `resume|compact|fork` with `--format claude-json`, and PostCompact and
+  SessionEnd set a five-second timeout. A test keeps the two in sync.
+  Mentions of removed surfaces now name their 0.5.0 replacements
+  (`hook --format`, `sesslint doctor`, `hook --init`,
+  `sesslint.scan-report/v1`).
+- The MCP `sesslint_scan` tool description names the `unsupported` bucket
+  (it said `undetected`), and `docs/SPEC.md` cites `compute_assurance` for
+  assurance grades.
 
 ## [0.5.0] - 2026-10-19
 

@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from sesslint import api
-from sesslint.bundle import _count_records_bounded, build_bundle
+from sesslint.bundle import FIXTURE_TEMPLATE, _count_records_bounded, build_bundle
 from sesslint.cli import main
 
 FIXTURES_ROOT = Path(__file__).resolve().parent.parent / "fixtures"
@@ -118,6 +118,14 @@ class TestBundleUnit:
         assert "FIXTURES.md" in template_str
         assert "evt_example_1" in template_str
         assert "SYNTHETIC" in template_str
+
+    def test_fixture_template_checks_clean(self, tmp_path: Path) -> None:
+        """The contributor template must itself be a clean canonical session."""
+        records = [line for line in FIXTURE_TEMPLATE.splitlines() if not line.startswith("#")]
+        template_path = tmp_path / "template.jsonl"
+        template_path.write_text("\n".join(records) + "\n", encoding="utf-8")
+        report = api.check_file(template_path, format="canonical")
+        assert [f.code for f in report.findings] == []
 
     def test_bundle_version_constant(self) -> None:
         """Bundle schema version must strictly be sesslint.bundle/v1."""

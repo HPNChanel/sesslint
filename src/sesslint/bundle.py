@@ -57,9 +57,11 @@ FIXTURE_TEMPLATE: Final[str] = (
     '"session_id":"session_example_1"}\n'
     '{"actor":"user","id":"evt_example_1","kind":"message","parent_id":null,'
     '"payload":{"text":"Synthetic user message example"},"seq":0,"ts":"2026-01-01T00:00:01Z"}\n'
-    '{"actor":"model","id":"evt_example_2","kind":"tool_call","parent_id":"evt_example_1",'
+    '{"actor":"assistant","correlation_id":"tool_call_example_1","id":"evt_example_2",'
+    '"kind":"tool_call","parent_id":"evt_example_1",'
     '"payload":{"arguments":{},"tool_name":"example_tool"},"seq":1,"ts":"2026-01-01T00:00:02Z"}\n'
-    '{"actor":"tool","id":"evt_example_3","kind":"tool_result","parent_id":"evt_example_2",'
+    '{"actor":"tool","correlation_id":"tool_call_example_1","id":"evt_example_3",'
+    '"kind":"tool_result","parent_id":"evt_example_2",'
     '"payload":{"output":"Synthetic tool output example"},"seq":2,"ts":"2026-01-01T00:00:03Z"}\n'
 )
 

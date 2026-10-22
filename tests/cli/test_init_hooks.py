@@ -1,4 +1,4 @@
-"""Tests for ``sesslint init-hooks`` (integrations/T-02).
+"""Tests for ``sesslint hook --init`` (integrations/T-02).
 
 The generator is print-only by permanent design: these tests pin the
 emitted snippets, the honest codex note, the JSON shape, and prove zero
@@ -11,6 +11,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -60,6 +61,19 @@ def test_claude_print_matches_documented_recipes() -> None:
     assert se_entry["matcher"] == "clear|logout|prompt_input_exit|other"
     assert se_entry["hooks"][0]["command"] == "sesslint hook --event SessionEnd || true"
     assert se_entry["hooks"][0]["timeout"] == 5
+
+
+def test_documented_recipe_block_matches_emitted_blocks() -> None:
+    """docs/INTEGRATIONS.md shows the merge of every emitted Claude block."""
+    text = (REPO_ROOT / "docs" / "INTEGRATIONS.md").read_text(encoding="utf-8")
+    recipes = text.split("### Recipes", 1)[1]
+    documented = json.loads(recipes.split("```json\n", 1)[1].split("```", 1)[0])
+    merged: dict[str, Any] = {"hooks": {}}
+    for f in init_hooks_doc("claude").files:
+        assert f.merge_block is not None
+        for event, entries in f.merge_block["hooks"].items():
+            merged["hooks"].setdefault(event, []).extend(entries)
+    assert documented == merged
 
 
 def test_snippets_have_no_placeholder_or_glob() -> None:
