@@ -29,7 +29,10 @@ class TrackedStream(io.TextIOBase):
         return len(s) if not isinstance(written, int) else written
 
     def flush(self) -> None:
-        self.raw.flush()
+        # IOBase finalization flushes after captured streams may be closed; an
+        # open stream still propagates real flush errors.
+        if not getattr(self.raw, "closed", False):
+            self.raw.flush()
 
     def isatty(self) -> bool:
         return self.raw.isatty()

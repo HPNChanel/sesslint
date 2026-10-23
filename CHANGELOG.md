@@ -81,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Finalizing the CLI's stream wrapper after the underlying stream was closed no
+  longer raises `ValueError: I/O operation on closed file` (visible as
+  unraisable-exception warnings on Python 3.13+). Flush errors on open streams
+  still propagate.
 - The HTML report now declares `<html lang="en">`, matching the English text it
   contains (it previously declared `es`).
 - Every command SessLint prints now runs as printed, from the directory the
