@@ -145,3 +145,32 @@ def test_relocation_refuses_an_already_removed_source_coordinate(tmp_path: Path)
     step = api.plan_repair(src).steps[0]
     with pytest.raises(OutputInvalid, match="which an earlier step removed"):
         _relocate_step(step, {0: 0, 1: 1, 2: 2, 4: 3}, 5)
+
+
+@pytest.mark.parametrize("policy", ["conservative", "salvage"])
+def test_verify_replays_shifted_steps(tmp_path: Path, policy: str) -> None:
+    """verify re-addresses replayed steps like the executor (CL-05 fuzz regression).
+
+    A drop step shifts later events; verify replayed each step at its source
+    index and rejected the executor's own output (``recipe-apply-failed``).
+    """
+    orphan = {
+        "actor": "tool",
+        "correlation_id": "call-gone",
+        "id": "res-x",
+        "kind": "tool_result",
+        "parent_id": "msg-0",
+        "payload": {"text": "r"},
+        "seq": 1,
+        "ts": "2026-09-05T12:00:01Z",
+    }
+    text = HEADER + M0 + _line(orphan) + M1 + M2 + M1 + M3 if policy == "salvage" else INTERLEAVED
+    src = _stage(tmp_path, text)
+    out = tmp_path / "out.jsonl"
+    plan, manifest = api.repair(src, out, policy=policy, acknowledge_side_effects=True)  # type: ignore[arg-type]
+    assert manifest is not None
+    assert len(plan.steps) >= 2
+    verdict = api.verify(
+        src, out, tmp_path / "out.jsonl.manifest.json", acknowledge_side_effects=True
+    )
+    assert verdict.ok is True, [c for c in verdict.checks if not c.ok]

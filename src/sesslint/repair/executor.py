@@ -15,7 +15,6 @@ in SessLint. It enforces a strict, pinned 8-step protocol:
 
 from __future__ import annotations
 
-import dataclasses
 import errno
 import hashlib
 import json
@@ -77,10 +76,12 @@ from sesslint.repair.errors import (
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
     MAX_STEPS,
-    PlanStep,
     RepairPlan,
     compute_events_source_hash,
 )
+from sesslint.repair.positions import relocate_step as _relocate_step
+from sesslint.repair.positions import source_positions as _source_positions
+from sesslint.repair.positions import strip_origins, tag_origins
 from sesslint.repair.recipes_conservative import (
     register_all as register_all_conservative_recipes,
 )
@@ -104,24 +105,6 @@ from sesslint.report import (
 
 StrPath = str | os.PathLike[str]
 SQLITE_MAGIC: Final[bytes] = b"SQLite format 3\x00"
-
-# B21: plan steps address events by their position in the source as loaded,
-# but each drop step shifts every later event. While recipes run, each working
-# event carries its source position under this private key (recipes deep-copy
-# events, so the key travels with the event); it is stripped before output
-# validation, and the canonical schema admits no such field.
-_ORIGIN_KEY: Final[str] = "\x00sesslint.origin"
-_STEP_INDEX_PARAMS: Final[tuple[str, ...]] = (
-    "at_index",
-    "boundary_index",
-    "cut_index",
-    "entry_index",
-    "first_index",
-    "first_unsafe_index",
-    "index",
-    "use_index",
-)
-_STEP_INDEX_LIST_PARAMS: Final[tuple[str, ...]] = ("record_indexes", "result_indexes")
 
 _ATOMIC_TEST_HOOKS: dict[str, Any] = {
     "pre_write": None,
@@ -169,48 +152,6 @@ def is_live_store_path(path: StrPath) -> bool:
         except OSError:
             pass
     return False
-
-
-def _source_positions(events: Sequence[Mapping[str, Any]]) -> dict[int, int]:
-    """Map each surviving source position to its current position (B21)."""
-    positions: dict[int, int] = {}
-    for current, ev in enumerate(events):
-        origin = ev.get(_ORIGIN_KEY)
-        if isinstance(origin, int):
-            if origin in positions:
-                raise OutputInvalid(f"Repair duplicated source event {origin}")
-            positions[origin] = current
-    return positions
-
-
-def _relocate_step(step: PlanStep, positions: Mapping[int, int], source_len: int) -> PlanStep:
-    """Re-address ``step`` from source positions to current positions (B21).
-
-    A position that an earlier step removed fails closed instead of letting
-    the step act on whichever event now sits there. Values that are not
-    source positions pass through for the recipe's own guards to judge.
-    """
-
-    def relocate(value: Any) -> Any:
-        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < source_len:
-            return value
-        current = positions.get(value)
-        if current is None:
-            raise OutputInvalid(
-                f"Step {step.seq} (recipe '{step.recipe}') targets source event {value}, "
-                "which an earlier step removed"
-            )
-        return current
-
-    params = dict(step.params)
-    for key in _STEP_INDEX_PARAMS:
-        if key in params:
-            params[key] = relocate(params[key])
-    for key in _STEP_INDEX_LIST_PARAMS:
-        values = params.get(key)
-        if isinstance(values, (list, tuple)):
-            params[key] = [relocate(value) for value in values]
-    return dataclasses.replace(step, target_index=relocate(step.target_index), params=params)
 
 
 def _targeted_lines(findings: Sequence[Finding], targeted_fps: set[str]) -> frozenset[int]:
@@ -645,10 +586,7 @@ def execute(
     register_all_sl002_recipes()
 
     working_events = _copy_events_as_dicts(loaded_events)
-    if any(_ORIGIN_KEY in ev for ev in working_events):
-        raise OutputInvalid("Source event carries a field reserved for repair bookkeeping")
-    for origin, ev_dict in enumerate(working_events):
-        ev_dict[_ORIGIN_KEY] = origin
+    tag_origins(working_events)
     source_len = len(working_events)
     sorted_steps = sorted(plan.steps, key=lambda s: s.seq)
 
@@ -718,8 +656,7 @@ def execute(
             ),
         )
 
-    for ev_dict in working_events:
-        ev_dict.pop(_ORIGIN_KEY, None)
+    strip_origins(working_events)
 
     # -------------------------------------------------------------------------
     # STEP 4: Output validation

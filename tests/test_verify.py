@@ -548,7 +548,8 @@ def test_50_step_plan_replay_perf(tmp_path: Path) -> None:
                 "recipe_version": "1.0.0",
                 "seq": i,
                 "target_finding_fp": f"fp-{i}",
-                "target_index": len(repaired_events) - 1,
+                # B21: source position of the pair, as the planner emits it.
+                "target_index": 2 * i,
             }
         )
 

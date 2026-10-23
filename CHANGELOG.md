@@ -86,6 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verbatim) in the manifest's declared revalidation. Before, the manifest
   claimed a cleaner assurance than the output had, and `verify` rejected the
   pair with `revalidation-mismatch`.
+- `verify` now replays a repair plan at the same positions as `repair`. A
+  step that follows a drop addresses the source as loaded (B21), and verify
+  had replayed it at the shifted position. It then rejected valid repairs of
+  more than one step, such as two duplicate groups or a salvage drop before a
+  duplicate collapse, with `recipe-apply-failed`.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
