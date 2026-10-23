@@ -273,9 +273,13 @@ def load_session_source_with_findings(
         events = [e for e in items if isinstance(e, SessionEvent)]
         findings = hdr_findings + [f for f in items if isinstance(f, Finding)]
         return hdr, events, findings
-    except SchemaError:
+    except SchemaError as schema_err:
         # Fall back to single-document canonical JSON if formatted as a single JSON object
-        raw_text = p.read_text(encoding="utf-8-sig") if data is None else data.decode("utf-8-sig")
+        try:
+            raw_bytes = p.read_bytes() if data is None else data
+            raw_text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise schema_err from None
         text = raw_text.strip()
         if text.startswith("{"):
             try:

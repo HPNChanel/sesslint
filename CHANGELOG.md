@@ -96,6 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `toolUseId`, `call_id` and similar) into reports. Such a value is now
   treated as a missing id. Before, its Python text form, nested keys and
   values included, appeared in finding ids, messages and evidence.
+- `repair` on a canonical-format source whose first line is not valid UTF-8
+  now refuses with `Invalid UTF-8 encoding in header line 1`. Before, the
+  single-document fallback re-decoded the bytes and the command printed only
+  `Error: utf-8`.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
