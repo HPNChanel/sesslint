@@ -32,7 +32,7 @@ use an explicit path whenever that distinction matters.
 
 Extract the starter kit and run these commands from the folder containing
 `examples/` and `VERSION`. Use the installed `sesslint` command or the portable
-Windows function shown in `START_HERE.md`. Every example is synthetic; no native
+Windows function shown in the kit's `QUICKSTART.md`. Every example is synthetic; no native
 session directory or registry copy is needed.
 
 `--format human|json` chooses output. `--adapter canonical|claude-code-jsonl|codex-rollout|openai-agents`
@@ -156,7 +156,7 @@ document = report.to_dict()
 `triage(path, *, format=None, profile="neutral", policy="conservative",
 state_copy=None, max_file_bytes=104857600)` returns `TriageReport`.
 Its schema is `sesslint.triage/v1` (`schemas/sesslint.triage.v1.json`), shipped
-with the other 16 schemas. Existing API/report contracts remain unchanged.
+with the other schemas in `schemas/`. Existing API/report contracts remain unchanged.
 Output includes coverage,
 bounded finding rows, exact aggregate counts, previews, impact, missing evidence
 and at most three next actions. No wall clock or machine identity is serialized.
