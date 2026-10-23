@@ -163,3 +163,24 @@ def test_triage_does_not_modify_the_input(tmp_path: Path) -> None:
     _call({"path": str(session)})
     assert session.read_bytes() == before
     assert [p.name for p in tmp_path.iterdir()] == ["s.jsonl"]
+
+
+def test_unreadable_file_matches_check_without_echoing_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = tmp_path / "private-unreadable.jsonl"
+    session.write_bytes((FIXTURES / "adapters/codex/healthy_min.jsonl").read_bytes())
+    original_open = Path.open
+
+    def denied_open(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path == session:
+            raise PermissionError(MARKER)
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", denied_open)
+    triage_result = _call({"path": str(session)})["result"]
+    check_result = _call({"path": str(session)}, "sesslint_check")["result"]
+    assert triage_result == check_result
+    assert triage_result == {"content": [{"type": "text", "text": "io-error"}], "isError": True}
+    assert MARKER not in json.dumps(triage_result)
+    assert session.name not in json.dumps(triage_result)

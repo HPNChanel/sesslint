@@ -96,6 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MCP `sesslint_triage` now reports an existing but unreadable file as an
+  `io-error` tool result, matching `sesslint_check` without echoing the path
+  or exception details.
+
 - Hostile-number fuzz fixtures use explicit UTF-8 for CSV and JSON on
   Windows; a fixed fullwidth-digit example covers non-UTF-8 system locales.
 

@@ -308,7 +308,10 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 return _tool_err("usage-error: path is not a file")
             from sesslint.triage import triage
 
-            return _tool_ok(triage(path, format=fmt, profile=profile).to_dict())
+            triage_report = triage(path, format=fmt, profile=profile)
+            if triage_report.status == "unreadable":
+                return _tool_err("io-error")
+            return _tool_ok(triage_report.to_dict())
 
         if name == "sesslint_scan":
             from sesslint.api import check_dir
