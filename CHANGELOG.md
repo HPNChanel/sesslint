@@ -81,6 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `scripts/installed_smoke.py` (and so `scripts/smoke_distributions.py`) no longer
+  resolves the interpreter symlink of a venv, which pointed at the base
+  interpreter and failed with `No module named sesslint`.
 - Finalizing the CLI's stream wrapper after the underlying stream was closed no
   longer raises `ValueError: I/O operation on closed file` (visible as
   unraisable-exception warnings on Python 3.13+). Flush errors on open streams

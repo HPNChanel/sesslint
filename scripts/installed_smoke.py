@@ -83,8 +83,13 @@ print(json.dumps({{
 """
 
 
+def absolute(path: Path) -> Path:
+    """Make a path absolute without following symlinks (a venv python is one)."""
+    return Path(os.path.abspath(path))
+
+
 def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
-    artifact, kit = artifact.resolve(), kit.resolve()
+    artifact, kit = absolute(artifact), kit.resolve()
     receipt: dict = {
         "schema_version": 1,
         "version": version,
