@@ -13,15 +13,32 @@ Windows host; it will fail before mutating anything.
 ## Scope
 
 `[tool.mutmut]` in `pyproject.toml` copies the full `src/` tree (so
-`import sesslint` stays intact inside `mutants/`) but restricts mutations via
+`import sesslint` stays intact inside `mutants/`) and restricts mutations via
 `only_mutate` to the highest-risk modules:
 
-- `sesslint/checks/*` — detector logic
-- `sesslint/repair/planner.py` — repair planning / fail-closed decisions
-- `sesslint/repair/executor.py` — repair application
-- `sesslint/io.py` — byte-level reading
+- `src/sesslint/checks/*` — detector logic
+- `src/sesslint/repair/*` — repair planning, preconditions, recipes, executor
+- `src/sesslint/outcome/*` — outcome contract
+- `src/sesslint/io.py` — byte-level reading
 
-Full-tree runs take hours and are explicitly out of scope.
+Notes on the config (all learned the hard way):
+
+- `only_mutate` is `fnmatch`ed against the path **with** the `src/` prefix.
+  `sesslint/checks/*` matches nothing and silently yields zero mutants.
+- Tests run with the `mutants/` tree as cwd, so everything they read from the
+  repo root is listed in `also_copy` (`fixtures/`, `docs/`, `schemas/`,
+  `man/`, and a few root files).
+- Test selection is limited to `tests/{checks,repair,io,engine,outcome}/`
+  (the same dirs as the CI baseline plus `outcome`). The whole `tests/` tree
+  takes ~50 min for the stats phase alone, and includes tests that spawn
+  `python -m sesslint` from another cwd, which cannot work in `mutants/`.
+- One test is deselected via `pytest_add_cli_args` (mutmut runs pytest twice
+  in one process; Hypothesis rejects the class-based test). It still runs in
+  the normal `pytest` suite.
+
+Expected size/runtime on a 4-core runner: ~18.9k mutants; mutant generation
+~7 min, stats ~8 min, mutant testing ~30 min — about 45-60 min in total.
+Full-tree runs are explicitly out of scope.
 
 ## Run
 
@@ -30,8 +47,12 @@ uv sync --extra dev --extra mutation
 uv run pytest -q tests/checks/ tests/repair/ tests/io/ tests/engine/  # baseline must pass
 uv run mutmut run          # incremental; Ctrl-C and re-run resumes
 uv run mutmut results      # survival report
+uv run mutmut run 'sesslint.repair.preconditions.*'   # re-test one module
 uv run mutmut browse       # interactive triage
 ```
+
+`mutants/` is generated output — never commit it. When you change
+`[tool.mutmut]`, delete `mutants/` first.
 
 The CI workflow `.github/workflows/mutation.yml` runs the same scope weekly
 (Sunday 03:00 UTC) and on `workflow_dispatch`, uploading `mutmut-results.txt`,

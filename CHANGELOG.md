@@ -81,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `[tool.mutmut]` configuration now generates and tests mutants. The
+  `only_mutate` patterns lacked mutmut's `src/` prefix (zero mutable files),
+  test fixtures/docs/schemas were not copied into `mutants/` (stats phase
+  failed at collection), and one class-based Hypothesis test cannot run twice
+  in one process. The scope also covers `repair/*` and `outcome/*`.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
