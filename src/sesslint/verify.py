@@ -40,6 +40,12 @@ from sesslint.repair.planner import (
     RepairPlan,
     plan,
 )
+from sesslint.repair.positions import (
+    relocate_step,
+    source_positions,
+    strip_origins,
+    tag_origins,
+)
 from sesslint.repair.recipes_conservative import (
     register_all as register_all_conservative_recipes,
 )
@@ -663,17 +669,27 @@ def verify(
                     working_events = [to_canonical_dict(e) for e in source_events]
                     sorted_steps = sorted(plan_obj.steps, key=lambda s: s.seq)
                     replay_err: str | None = None
+                    source_len = len(working_events)
 
-                    for step in sorted_steps:
+                    try:
+                        tag_origins(working_events)
+                    except Exception as err:
+                        replay_err = f"replay-setup-failed: {err}"
+                    for step in sorted_steps if replay_err is None else ():
                         recipe = get_recipe(step.recipe)
                         if recipe is None or recipe.apply is None:
                             replay_err = f"recipe-missing: {step.recipe}"
                             break
                         try:
-                            working_events = recipe.apply(working_events, step)
+                            # B21: steps address source positions, like the repair.
+                            current_step = relocate_step(
+                                step, source_positions(working_events), source_len
+                            )
+                            working_events = recipe.apply(working_events, current_step)
                         except Exception as err:
                             replay_err = f"recipe-apply-failed: {step.recipe} ({err})"
                             break
+                    strip_origins(working_events)
 
                     if replay_err is not None:
                         c4 = Check(name="transformation_audit", ok=False, detail=replay_err)

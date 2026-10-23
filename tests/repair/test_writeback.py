@@ -272,3 +272,47 @@ def test_api_verify_vendor_pair(tmp_path: Path) -> None:
         manifest_path=tmp_path / "repaired.jsonl.manifest.json",
     )
     assert verdict.ok is True
+
+
+def test_api_verify_vendor_pair_keeps_stream_warning(tmp_path: Path) -> None:
+    """A duplicate-key line survives write-back verbatim; the manifest must say so.
+
+    Regression (CL-05 fuzz): the executor revalidated detector findings only,
+    so a surviving SL303 stream warning was missing from the declared
+    revalidation and verify rejected the pair (declared A4, recomputed A2).
+    """
+    lines = (FIXTURES / "adapters" / "codex" / "healthy_min.jsonl").read_bytes().splitlines()
+    lines[1] = lines[1].replace(b'{"text": "ping"', b'{"text": "x", "text": "ping"', 1)
+    src = tmp_path / "dup.jsonl"
+    src.write_bytes(b"\n".join(lines) + b"\n")
+    out = tmp_path / "repaired.jsonl"
+    _, manifest = api.repair(src, out)
+    assert manifest is not None
+    assert manifest.revalidation is not None
+    assert manifest.revalidation.warning_count == 1
+
+    verdict = api.verify(
+        source_path=src,
+        output_path=out,
+        manifest_path=tmp_path / "repaired.jsonl.manifest.json",
+    )
+    assert verdict.ok is True, [c for c in verdict.checks if not c.ok]
+
+
+def test_vendor_emit_refused_when_output_changes_format(tmp_path: Path) -> None:
+    """Salvage must not emit a vendor artifact that re-detects as another format.
+
+    Regression (CL-05 fuzz): one record line before an OpenAI Agents document
+    made salvage excise the whole document as torn records; the surviving line
+    re-detects as claude-code-jsonl, so verify could never accept the output.
+    """
+    from sesslint.repair.errors import RepairError
+
+    doc = (FIXTURES / "openai_agents" / "items_basic.json").read_bytes()
+    src = tmp_path / "session.json"
+    src.write_bytes(b'{"type": "message", "text": "m", "content": "m"}\n' + doc)
+    out = tmp_path / "out.json"
+    with pytest.raises(RepairError, match="re-detect"):
+        api.repair(src, out, policy="salvage", acknowledge_side_effects=True)
+    assert not out.exists()
+    assert not (tmp_path / "out.json.manifest.json").exists()

@@ -81,6 +81,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `repair` with vendor write-back now counts the emitted artifact's own
+  stream findings (such as an SL303 duplicate-key warning on a line kept
+  verbatim) in the manifest's declared revalidation. Before, the manifest
+  claimed a cleaner assurance than the output had, and `verify` rejected the
+  pair with `revalidation-mismatch`.
+- `verify` now replays a repair plan at the same positions as `repair`. A
+  step that follows a drop addresses the source as loaded (B21), and verify
+  had replayed it at the shifted position. It then rejected valid repairs of
+  more than one step, such as two duplicate groups or a salvage drop before a
+  duplicate collapse, with `recipe-apply-failed`.
+- The Claude Code and OpenAI Agents adapters no longer copy a JSON object or
+  array found in an id field (`id`, `uuid`, `parentId`, `prev_id`,
+  `toolUseId`, `call_id` and similar) into reports. Such a value is now
+  treated as a missing id. Before, its Python text form, nested keys and
+  values included, appeared in finding ids, messages and evidence.
+- `repair` on a canonical-format source whose first line is not valid UTF-8
+  now refuses with `Invalid UTF-8 encoding in header line 1`. Before, the
+  single-document fallback re-decoded the bytes and the command printed only
+  `Error: utf-8`.
+- `repair` now refuses a vendor write-back whose output would be detected as
+  a different format than its source. Example: a salvage of an OpenAI Agents
+  document with an extra line on top excised the whole document as torn
+  records, and the surviving line looked like Claude Code JSONL. `verify`
+  could never accept that output.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
