@@ -334,15 +334,24 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return _tool_err("internal-error: unhandled tool")
 
 
-def _run_tools_call(params: Any) -> tuple[dict[str, Any] | None, str | None]:
+def _run_tools_call(
+    params: Any, *, validation_as_tool_error: bool = False
+) -> tuple[dict[str, Any] | None, str | None]:
     """Validate and run one ``tools/call``; returns (result, invalid-params message)."""
     if not isinstance(params, dict):
         return None, "params must be an object"
     name = params.get("name")
     if not isinstance(name, str) or name not in _TOOL_SCHEMAS:
         return None, "unknown tool"
+    if validation_as_tool_error and "arguments" in params:
+        if not isinstance(params["arguments"], dict):
+            return None, "arguments must be an object"
     args, err = _validate_args(name, params.get("arguments"))
     if err is not None:
+        if validation_as_tool_error:
+            # 2026-07-28 server/tools#error-handling. Do not echo unknown
+            # argument names or values into a content-free tool result.
+            return _tool_err("usage-error: invalid tool arguments"), None
         return None, err
     assert args is not None
     return _call_tool(name, args), None
@@ -402,7 +411,7 @@ def _dispatch_modern(request_id: Any, method: str, params: Any) -> dict[str, Any
     if method == "tools/call":
         if "inputResponses" in params or "requestState" in params:
             return _error(request_id, _E_INVALID_PARAMS, "no input was requested")
-        outcome, err = _run_tools_call(params)
+        outcome, err = _run_tools_call(params, validation_as_tool_error=True)
         if err is not None:
             return _error(request_id, _E_INVALID_PARAMS, err)
         assert outcome is not None

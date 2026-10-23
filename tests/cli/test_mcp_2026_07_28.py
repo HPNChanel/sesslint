@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from sesslint.mcp_server import (
     MODERN_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
@@ -133,12 +135,40 @@ def test_tools_call_success_and_tool_error() -> None:
 
 
 def test_tools_call_protocol_errors() -> None:
-    """server/tools: unknown tool / bad arguments are JSON-RPC -32602, as in legacy."""
+    """server/tools#error-handling: unknown tools and malformed requests are protocol errors."""
     assert _modern("tools/call", {"name": "nope"})["error"]["code"] == -32602
-    assert (
-        _modern("tools/call", {"name": "sesslint_check", "arguments": {}})["error"]["code"]
-        == -32602
-    )
+    for arguments in (None, [], "not-an-object", 1):
+        response = _modern("tools/call", {"name": "sesslint_check", "arguments": arguments})
+        assert response["error"]["code"] == -32602
+
+
+@pytest.mark.parametrize("name", [tool["name"] for tool in TOOLS])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"path": ""},
+        {"path": []},
+        {"path": "x", "profile": "not-a-profile"},
+        {"path": "x", "format": "not-a-format"},
+        {"path": "x", "PRIVATE-ARGUMENT-MARKER": "PRIVATE-VALUE-MARKER"},
+    ],
+)
+def test_modern_validation_is_a_content_free_tool_result(
+    name: str, arguments: dict[str, Any]
+) -> None:
+    """Valid CallToolRequests with invalid tool input are isError results in 2026."""
+    params = {"name": name, "arguments": arguments}
+    response = _modern("tools/call", params)
+    assert "error" not in response
+    assert response["result"] == {
+        "content": [{"type": "text", "text": "usage-error: invalid tool arguments"}],
+        "isError": True,
+        "resultType": "complete",
+        "_meta": {SI: SERVER_INFO},
+    }
+    assert "PRIVATE" not in json.dumps(response)
+    assert _rpc("tools/call", params)["error"]["code"] == -32602
 
 
 def test_tools_call_rejects_unrequested_input_responses() -> None:

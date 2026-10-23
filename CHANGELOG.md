@@ -96,12 +96,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- MCP `sesslint_triage` now reports an existing but unreadable file as an
-  `io-error` tool result, matching `sesslint_check` without echoing the path
-  or exception details.
+- MCP `2026-07-28` returns tool input-validation failures as content-free
+  `isError` results. Malformed requests and unknown tools remain protocol
+  errors, and the `2025-06-18` error contract is unchanged.
 
 - Hostile-number fuzz fixtures use explicit UTF-8 for CSV and JSON on
   Windows; a fixed fullwidth-digit example covers non-UTF-8 system locales.
+
+- MCP `sesslint_triage` now reports an existing but unreadable file as an
+  `io-error` tool result, matching `sesslint_check` without echoing the path
+  or exception details.
 
 - `repair` with vendor write-back now counts the emitted artifact's own
   stream findings (such as an SL303 duplicate-key warning on a line kept
