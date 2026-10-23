@@ -896,3 +896,30 @@ def test_a_top_level_number_that_is_too_long_is_located_at_the_contract(tmp_path
     with pytest.raises(ContractError) as info:
         load_contract(path)
     assert info.value.problems[0].startswith("contract: number out of range;")
+
+
+def test_sixty_four_conditions_load_and_sixty_five_do_not() -> None:
+    many = [{"id": f"c{i}", "type": "exists"} for i in range(64)]
+    assert len(contract_from_dict(_with(conditions=many)).conditions) == 64
+    assert _problems_of(_with(conditions=[*many, {"id": "c64", "type": "exists"}])) == (
+        "contract: at most 64 conditions are supported",
+    )
+
+
+def test_an_on_time_branch_inside_any_of_sees_the_contract_due_window() -> None:
+    spec = contract_from_dict(
+        _with(
+            due={"source_time_field": "t", "within_seconds": 5},
+            conditions=[
+                {
+                    "id": "a",
+                    "type": "any_of",
+                    "conditions": [
+                        {"id": "x", "type": "on_time", "basis": "observation"},
+                        {"id": "y", "type": "exists"},
+                    ],
+                }
+            ],
+        )
+    )
+    assert [c.id for c in spec.iter_conditions()] == ["a", "x", "y"]
