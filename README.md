@@ -64,7 +64,7 @@ for repairable, refused and unsupported cases. Upgrading scripts or config? See
     - [Dual-Gate Side-Effect Abstention Engine](#dual-gate-side-effect-abstention-engine)
     - [Recipe Catalog](#recipe-catalog)
     - [Atomic 8-Step Execution Protocol](#atomic-8-step-execution-protocol)
-    - [Repair Manifest Schema & Cryptographic Binding](#repair-manifest-schema--cryptographic-binding)
+    - [Repair Manifest Schema & Cryptographic Binding](#repair-manifest-schema--cryptographic-binding-fr-072)
     - [Assurance Taxonomy (A0–A4)](#assurance-taxonomy-a0a4)
 - [Replay Profiles](#replay-profiles)
 - [Architecture & Anti-Leak Boundaries](#architecture--anti-leak-boundaries)
@@ -613,7 +613,7 @@ SessLint includes four production adapters with fail-closed auto-detection:
 | `canonical`         | SessLint Canonical v1 standard                      | `*.json`, `*.jsonl`  | N/A (native)      | Round-trip preserved                    |
 
 > [!CAUTION]
-> **Live Store Protection**: If `--output` points to an active SQLite database (detected via SQLite format 3 header magic or `.sqlite`/`.db` extensions), SessLint **immediately aborts** with exit code `2` to protect live stores from corruption.
+> **Live Store Protection**: If `repair` or `export` `--output` names a live-store path (a `.sqlite`/`.db` extension or an existing SQLite format 3 header), SessLint **immediately refuses** it with exit code `1` (`REPAIR_REFUSED` / `EXPORT_REFUSED`) and writes nothing. A SQLite file given as *input* is not parsed as a session (exit `2`).
 
 For comprehensive compatibility matrix across formats and validation profiles, consult the [Adapter & Profile Conformance Matrix](docs/MATRIX.md).
 
@@ -1196,10 +1196,13 @@ from sesslint.repair import execute, load_session_source, plan, run_all_checks
 header, events = load_session_source(Path("session.jsonl"))
 
 # 2. Run check suite with explicit profile
+# `adapter` and the basename in `source_path` must match what `execute` derives
+# for this file; otherwise it refuses the plan as not derived from the source.
 findings = run_all_checks(
     events,
     profile="claude-strict",
     source_path="session.jsonl",
+    adapter="canonical",
 )
 
 # 3. Plan and atomically execute repair
@@ -1265,9 +1268,10 @@ jobs:
 | `source-ref`      | Local checkout path (`.`) or git ref for source install.                                             | `""`       |
 | `python-version`  | Python runtime version.                                                                              | `3.11`     |
 
-To publish results to GitHub code scanning, use `output-format: sarif` and
-upload `sesslint_stdout.json` (written in the step's working directory) with
-`github/codeql-action/upload-sarif`.
+To publish results to GitHub code scanning, use `output-format: sarif`. The
+action does not write a report file; it exposes the document as the
+`report-json` step output (also `exit-code` and `verdict`). Save that output to a
+file in a later step, then pass the file to `github/codeql-action/upload-sarif`.
 
 ### Other CI platforms
 
@@ -1339,7 +1343,7 @@ The NDP-001 "Trustworthy Alpha" program introduces several intentional behaviora
 | **SL302 Type Discriminator** | Unknown event discriminator echoed raw into `evidence.type_value`.                                                                 | Allowlist echo `^[A-Za-z0-9_.-]{1,64}$`; complex or long discriminators masked to `<type:len=N>` with `truncated: true`.                                              | Protects against secret and prompt leakage in default reports (FR-081/FR-082).                                                                              |
 | **Repair Manifest**          | Manifests lacked revalidation proof and allowed silent file overwrite.                                                             | Embedded `revalidation` summary struct, `assurance_ceiling`, real adapter versions, `O_EXCL` exclusive create, and directory fsync.                                   | Additive manifest fields; existing receipt files are never silently overwritten.                                                                            |
 | **SL004 Parent Restoration** | `proven-unique-parent-restore` matched candidate parents across the entire session by string/hash prefix.                          | Candidate matching requires exact full string equality, same-branch confinement, and same-compaction-segment confinement.                                             | Eliminates prefix guessing; ambiguous or unconfined missing-parent cases remain `manual` without auto-repair.                                               |
-| **CLI Command Surface**      | `check` accepted meaningless `--policy` flag; `repair` accepted `--salvage-unsupported`; `cmd_check` had duplicated orchestration. | `check` unified onto `api.check_file` / `api.check_dir`; `--policy` on `check` raises exit code 2; `--salvage-unsupported` deprecated in favor of `--policy salvage`. | Clean CLI contract with zero behavioral drift between CLI and Python API.                                                                                   |
+| **CLI Command Surface**      | `check` accepted meaningless `--policy` flag; `repair` accepted `--salvage-unsupported`; `cmd_check` had duplicated orchestration. | `check` unified onto `api.check_file` / `api.check_dir`; `--policy` on `check` raises exit code 2; `--salvage-unsupported` removed in 0.5.0 (exit 2 with a hint); use `--policy salvage`. | Clean CLI contract with zero behavioral drift between CLI and Python API.                                                                                   |
 
 ---
 
