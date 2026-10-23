@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
-from sesslint._hints import hint_arg
+from sesslint._hints import MANUAL_HINT, hint_arg
 from sesslint._version import (
     CLI_VERSION,
     MANIFEST_SCHEMA_VERSION,
@@ -122,6 +122,10 @@ def _sanitize_remediation(remediation: str, basename: str) -> str:
     bundle.
     """
     source = hint_arg(basename)
+    if source is None and re.search(r"'sesslint (?:repair|check)\s+", remediation):
+        return MANUAL_HINT
+    if source is None:
+        return remediation
     return re.sub(
         r"""('sesslint (?:repair|check)\s+)(?:"[^"]*"|[^'\s"]+)""",
         lambda m: f"{m.group(1)}{source}",

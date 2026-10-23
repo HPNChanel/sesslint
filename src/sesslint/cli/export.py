@@ -81,9 +81,12 @@ def run(ctx: CliContext, args: argparse.Namespace, parser: argparse.ArgumentPars
         print(f"Output: {args.output} (sha256: {summary.output_sha256[:16]}...)")
         if summary.dropped_unknown_fields:
             print(f"Dropped unknown fields: {summary.dropped_unknown_fields}")
-        from sesslint._hints import repair_plan_hint
+        from sesslint._hints import hint_instruction, repair_plan_hint
         from sesslint.report import hint_path
 
         plan = repair_plan_hint(hint_path(args.output))
-        print(f"Next Action: Run '{plan}' to plan repair.")
+        instruction = hint_instruction(plan)
+        if plan is not None:
+            instruction += " to plan repair."
+        print(f"Next Action: {instruction}")
     return 0

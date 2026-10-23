@@ -374,9 +374,13 @@ def _dispatch_modern(request_id: Any, method: str, params: Any) -> dict[str, Any
     requested = meta.get(_META_VERSION)
     if not isinstance(requested, str):
         return _error(request_id, _E_INVALID_PARAMS, f"{_META_VERSION} is required")
+    if requested == PROTOCOL_VERSION:
+        return _error(
+            request_id,
+            _E_INVALID_PARAMS,
+            "Legacy protocol requires initialize; omit modern protocol metadata",
+        )
     if requested != MODERN_PROTOCOL_VERSION:
-        # A legacy version in _meta is not a handshake-free request: the client
-        # must pick a listed version and, for the legacy one, call initialize.
         return _error(
             request_id,
             _E_UNSUPPORTED_VERSION,

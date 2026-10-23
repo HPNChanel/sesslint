@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from sesslint._hints import hint_arg, hint_source, repaired_output_name
+from sesslint._hints import MANUAL_HINT, hint_arg, hint_source, repaired_output_name
 from sesslint.codes import (
     CODE_REGISTRY,
     SL001,
@@ -122,7 +122,7 @@ class RefusalRationale:
         *,
         path: str | None = None,
         output: str | None = None,
-        options: Sequence[str] = (),
+        options: Sequence[str | None] = (),
     ) -> str | None:
         """Return the salvage path with its placeholders filled, or None.
 
@@ -139,6 +139,8 @@ class RefusalRationale:
         else:
             source = hint_source(path)
             target = hint_arg(repaired_output_name(path) if output is None else output)
+        if source is None or target is None or any(word is None for word in options):
+            return MANUAL_HINT
         # One pass, so a path that itself spells a placeholder stays literal.
         values = {"path": source, "output": target, "options": "".join(f" {w}" for w in options)}
         return _PLACEHOLDER.sub(lambda m: values[m.group(1)], self.salvage_path)
@@ -149,7 +151,7 @@ class RefusalRationale:
         path: str | None = None,
         output: str | None = None,
         salvage: bool = True,
-        options: Sequence[str] = (),
+        options: Sequence[str | None] = (),
     ) -> str:
         """Render content-free refusal detail with citation and optional salvage path.
 

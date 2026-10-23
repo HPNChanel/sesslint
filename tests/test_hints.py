@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shlex
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from sesslint._hints import (
     DEFAULT_OUTPUT_NAME,
+    MANUAL_HINT,
     STDIN_LABEL,
     check_hint,
     hint_arg,
+    hint_instruction,
     hint_options,
     hint_source,
     repair_hint,
@@ -105,3 +112,68 @@ def test_options_keep_flags_unprefixed() -> None:
         "--adapter claude-code-jsonl --profile claude-strict"
     )
     assert "./--" not in command
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "$(echo sentinel).jsonl",
+        "`echo sentinel`.jsonl",
+        "%COMSPEC%.jsonl",
+        "!SENTINEL!.jsonl",
+        'quote".jsonl',
+        "quote'.jsonl",
+        "line\nbreak.jsonl",
+        "line\rbreak.jsonl",
+        "escape\x1b.jsonl",
+        "back\\slash.jsonl",
+        "pipe|name.jsonl",
+        "redirect>name.jsonl",
+    ],
+)
+def test_shell_sensitive_arguments_withhold_the_entire_command(value: str) -> None:
+    assert hint_arg(value) is None
+    assert repair_hint(value) is None
+    assert check_hint(value) is None
+    assert repair_plan_hint(value) is None
+    assert hint_instruction(repair_hint(value)) == MANUAL_HINT
+    assert value not in MANUAL_HINT
+
+
+def test_unsafe_option_is_not_silently_dropped() -> None:
+    options = hint_options("canonical", "$(echo sentinel)")
+    assert repair_hint("run.jsonl", *options) is None
+    assert check_hint("run.jsonl", *options) is None
+
+
+@pytest.mark.parametrize(
+    "value", ["my session.jsonl", "a,b.jsonl", "semi;colon.jsonl", "x@y.jsonl"]
+)
+def test_supported_arguments_round_trip_through_real_shells(value: str, tmp_path: Path) -> None:
+    """Exercise shell evaluation, not only shlex tokenization (CX-05-P1-1)."""
+    receiver = tmp_path / "argv_receiver.py"
+    receiver.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
+    argument = hint_arg(value)
+    assert argument is not None
+    if os.name == "nt":
+        command = f'"{sys.executable}" "{receiver}" {argument}'
+        result = subprocess.run(
+            command, shell=True, capture_output=True, check=True, timeout=15
+        )
+        assert json.loads(result.stdout) == [value]
+        executable = str(sys.executable).replace("'", "''")
+        script = str(receiver).replace("'", "''")
+        command = f"& '{executable}' '{script}' {argument}"
+        argv = [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            command,
+        ]
+    else:
+        command = f"{shlex.quote(sys.executable)} {shlex.quote(str(receiver))} {argument}"
+        argv = ["/bin/sh", "-c", command]
+    result = subprocess.run(argv, capture_output=True, check=True, timeout=15)
+    assert json.loads(result.stdout) == [value]

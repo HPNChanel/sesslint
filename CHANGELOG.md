@@ -96,6 +96,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Privacy: Codex object/array identifiers and correlation values are treated as
+  missing instead of copying nested content into findings and reports.
+- Command hints: withhold commands whose paths or options require shell-specific
+  escaping, and provide content-free manual guidance instead.
+- MCP: legacy protocol versions in modern request metadata return `-32602` with
+  initialization guidance instead of advertising the same version as unsupported.
+
 - MCP `2026-07-28` returns tool input-validation failures as content-free
   `isError` results. Malformed requests and unknown tools remain protocol
   errors, and the `2025-06-18` error contract is unchanged.

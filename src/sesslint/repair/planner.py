@@ -210,7 +210,7 @@ class Blocked:
         """Documented refusal rationale for this code, if one is registered."""
         return refusal_rationale_for(self.code)
 
-    def describe(self, *, path: str | None = None, options: Sequence[str] = ()) -> str:
+    def describe(self, *, path: str | None = None, options: Sequence[str | None] = ()) -> str:
         """Human-readable detail: stable reason plus documented refusal rationale.
 
         Content-free: never embeds session data, only policy-level rationale and

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from sesslint._hints import MANUAL_HINT
 from sesslint.bundle import _sanitize_remediation
 from sesslint.cli import main
 from sesslint.cli._options import cli_path
@@ -409,3 +410,49 @@ def test_report_abstains_only_on_sl203() -> None:
         source=SourceRef(path="run.jsonl", line=4),
     )
     assert report_abstains([_error(SL101, Repairability.MANUAL), sl203]) is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["$(Write-Output sentinel).jsonl", "`sentinel`.jsonl", "%PATH%.jsonl", "!PATH!.jsonl"],
+)
+@pytest.mark.parametrize("repairable", [False, True])
+def test_check_withholds_commands_for_shell_sensitive_names(
+    name: str,
+    repairable: bool,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = REPAIR_BASIC.read_bytes()[:-25] if repairable else _mid_record_session()
+    case = _case(tmp_path, name, data)
+    monkeypatch.chdir(case)
+    code, text = _run(capsys, ["check", f"./{name}"])
+    assert code == 1
+    assert _hints(text) == []
+    assert MANUAL_HINT in text
+
+
+def test_bundle_does_not_reinsert_a_shell_sensitive_basename() -> None:
+    assert (
+        _sanitize_remediation("run 'sesslint check /x/run.jsonl'", "$(sentinel).jsonl")
+        == MANUAL_HINT
+    )
+
+
+def test_bundle_preserves_manual_guidance_for_shell_sensitive_basename() -> None:
+    assert _sanitize_remediation("Inspect the source manually.", "%PATH%.jsonl") == (
+        "Inspect the source manually."
+    )
+
+
+def test_deterministic_remediation_withholds_unsafe_options() -> None:
+    from sesslint._hints import hint_options
+
+    remediation = get_finding_remediation(
+        _error(SL002, Repairability.DETERMINISTIC),
+        for_operator=True,
+        options=hint_options("canonical", "$(sentinel)"),
+    )
+    assert MANUAL_HINT in remediation
+    assert _hints(remediation) == []

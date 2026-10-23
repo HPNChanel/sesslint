@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   mutmut:
-    name: Scoped mutation run (checks/, planner, executor, io)
+    name: Scoped mutation run (checks/, repair/, outcome/, io.py)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -37,7 +37,7 @@ jobs:
         run: uv sync --extra dev --extra mutation
 
       - name: Baseline timing (tests must pass unmutated)
-        run: uv run pytest -q tests/checks/ tests/repair/ tests/io/ tests/engine/
+        run: uv run pytest -q tests/checks/ tests/repair/ tests/io/ tests/engine/ tests/outcome/
 
       - name: Run scoped mutation testing
         run: |

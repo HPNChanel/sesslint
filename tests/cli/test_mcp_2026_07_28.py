@@ -85,11 +85,15 @@ def test_retry_with_listed_version_succeeds() -> None:
     assert "result" in _rpc("tools/list", {"_meta": _meta(chosen)})
 
 
-def test_legacy_version_in_meta_is_unsupported_per_request() -> None:
+@pytest.mark.parametrize("method", ["server/discover", "tools/list", "tools/call"])
+def test_legacy_version_in_meta_requires_initialize(method: str) -> None:
     """basic/versioning#backward-compatibility: legacy needs `initialize`, not _meta."""
-    resp = _rpc("tools/list", {"_meta": _meta(PROTOCOL_VERSION)})
-    assert resp["error"]["code"] == -32022
-    assert PROTOCOL_VERSION in resp["error"]["data"]["supported"]
+    resp = _rpc(method, {"_meta": _meta(PROTOCOL_VERSION)})
+    assert "result" not in resp
+    assert resp["error"] == {
+        "code": -32602,
+        "message": "Legacy protocol requires initialize; omit modern protocol metadata",
+    }
 
 
 def test_missing_required_meta_fields_are_invalid_params() -> None:

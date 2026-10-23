@@ -62,3 +62,34 @@ def test_container_id_values_stay_out_of_reports(adapter: str, data: bytes) -> N
     for fmt in (adapter, None):
         report = json.dumps(api.check_bytes(data, format=fmt).to_dict(), ensure_ascii=False)
         assert MARKER not in report
+
+
+@pytest.mark.parametrize("marker", ["pvt", MARKER])
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize("field", ["id", "call_id", "tool_call_id"])
+def test_codex_container_identifiers_are_content_free(
+    marker: str, as_list: bool, field: str, tmp_path: Path
+) -> None:
+    value = [marker] if as_list else {"x": marker}
+    payloads = (
+        [{"type": "message", "role": "user", field: value}] * 2
+        if field == "id"
+        else [
+            {"type": "function_call", "id": "call", "name": "read", field: value},
+            {"type": "function_call_output", "id": "result", field: value},
+        ]
+    )
+    rows = [{"type": "session_meta", "payload": {}}] + [
+        {"type": "response_item", "ordinal": i + 1, "payload": payload}
+        for i, payload in enumerate(payloads)
+    ]
+    data = ("\n".join(json.dumps(row) for row in rows) + "\n").encode()
+    source = tmp_path / "rollout.jsonl"
+    source.write_bytes(data)
+    for fmt in ("codex-rollout", None):
+        first = api.check_file(source, format=fmt)
+        second = api.check_file(source, format=fmt)
+        assert first.to_dict() == second.to_dict()
+        assert marker not in json.dumps(first.to_dict())
+        assert marker not in repr(first.findings)
+    assert source.read_bytes() == data
