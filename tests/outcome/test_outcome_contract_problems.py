@@ -785,3 +785,114 @@ def test_contract_file_may_be_exactly_one_mebibyte(tmp_path: Path) -> None:
     with pytest.raises(ContractError) as info:
         load_contract(path)
     assert info.value.problems == ("contract: file exceeds 1 MiB",)
+
+
+def _problems_of(raw: Any) -> tuple[str, ...]:
+    with pytest.raises(ContractError) as info:
+        contract_from_dict(raw)
+    return info.value.problems
+
+
+def test_warnings_ignore_advisory_and_disabled_presence_conditions() -> None:
+    for extra in ({"advisory": True}, {"disabled": "later"}):
+        spec = contract_from_dict(
+            _with(
+                conditions=[
+                    {"id": "r", "type": "required", "field": "f"},
+                    {"id": "e", "type": "exists", **extra},
+                ]
+            )
+        )
+        assert any(w.startswith("no active exists/count condition") for w in spec.warnings())
+
+
+def test_top_level_must_be_an_object() -> None:
+    assert _problems_of([]) == ("contract: top level must be a JSON object",)
+
+
+def test_empty_condition_list_is_located_at_the_contract() -> None:
+    assert _problems_of(_with(conditions=[])) == (
+        "contract: 'conditions' must be a non-empty list (an empty contract proves nothing)",
+    )
+
+
+def test_null_name_is_incomplete() -> None:
+    assert _problems_of(_with(name=None)) == ("contract: incomplete",)
+
+
+def test_unknown_condition_type_is_located_at_the_condition() -> None:
+    types = "['any_of', 'count', 'equals', 'exists', 'on_time', 'one_of', 'range', 'required', "
+    assert _problems_of(_with(conditions=[{"id": "x", "type": "magic"}])) == (
+        f"conditions[0]: 'type' must be one of {types}'route', 'type']",
+    )
+
+
+def test_unusable_condition_ids_do_not_count_as_duplicates() -> None:
+    bad = {"id": "-", "type": "required"}
+    field = "'field' must be a non-empty field name (at most 256 characters)"
+    id_rule = "'id' must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+    assert _problems_of(_with(conditions=[bad, dict(bad)])) == (
+        f"conditions[0]: {id_rule}",
+        f"condition '?': {field}",
+        f"conditions[1]: {id_rule}",
+        f"condition '?': {field}",
+    )
+
+
+def test_non_boolean_advisory_and_bad_disabled_are_located() -> None:
+    assert _problems_of(
+        _with(conditions=[{"id": "x", "type": "exists", "advisory": "yes", "disabled": 5}])
+    ) == (
+        "condition 'x': 'advisory' must be true or false",
+        "condition 'x': 'disabled' must be a non-empty string (at most 2000 characters)",
+    )
+
+
+def test_bad_any_of_branch_is_located_at_its_parent_and_index() -> None:
+    assert _problems_of(
+        _with(
+            conditions=[
+                {"id": "e", "type": "exists"},
+                {"id": "a", "type": "any_of", "conditions": [5, {"id": "b", "type": "exists"}]},
+            ]
+        )
+    ) == ("condition 'a' branch 0: condition must be an object",)
+
+
+def test_documented_maximums_are_accepted_and_one_more_is_not() -> None:
+    fields = [f"f{i}" for i in range(8)]
+    spec = contract_from_dict(
+        _with(
+            key={"source": fields, "target": fields},
+            eligibility=[{"field": "f", "op": "present"}] * 32,
+            conditions=[
+                {"id": "o", "type": "one_of", "field": "f", "values": list(range(1000))},
+            ],
+            due={"source_time_field": "t", "within_seconds": 10 * 366 * 24 * 3600},
+        )
+    )
+    assert len(spec.source_key) == 8 and len(spec.eligibility) == 32
+    assert len(spec.conditions[0].values) == 1000
+    assert spec.due is not None and spec.due.within_seconds == 10 * 366 * 24 * 3600
+    over = {"source_time_field": "t", "within_seconds": 10 * 366 * 24 * 3600 + 1}
+    assert _problems_of(_with(due=over)) == (
+        "due: 'within_seconds' must be a non-negative integer (<= 10 years)",
+    )
+    assert any(
+        "1-8 field names" in p
+        for p in _problems_of(_with(key={"source": [*fields, "x"], "target": "r"}))
+    )
+    assert any(
+        "at most 32 predicates" in p
+        for p in _problems_of(_with(eligibility=[{"field": "f", "op": "present"}] * 33))
+    )
+    one_of = {"id": "o", "type": "one_of", "field": "f", "values": list(range(1001))}
+    assert any("at most 1000 values" in p for p in _problems_of(_with(conditions=[one_of])))
+
+
+def test_a_top_level_number_that_is_too_long_is_located_at_the_contract(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text("7" * 4301, encoding="utf-8")
+    with pytest.raises(ContractError) as info:
+        load_contract(path)
+    assert info.value.problems[0].startswith("contract: number out of range;")
