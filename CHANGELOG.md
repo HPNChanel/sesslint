@@ -96,6 +96,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hostile-number fuzz fixtures use explicit UTF-8 for CSV and JSON on
+  Windows; a fixed fullwidth-digit example covers non-UTF-8 system locales.
+
 - `repair` with vendor write-back now counts the emitted artifact's own
   stream findings (such as an SL303 duplicate-key warning on a line kept
   verbatim) in the manifest's declared revalidation. Before, the manifest

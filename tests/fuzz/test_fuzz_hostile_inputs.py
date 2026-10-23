@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from sesslint import api
@@ -230,15 +230,16 @@ OUTCOME = FIXTURES / "outcome" / "orders"
     range_max=JSON_NUMBERS,
     hash_keys=st.booleans(),
 )
+@example(weight="１２", sku="１２", target_weight="12", range_max="50", hash_keys=False)
 @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 def test_outcome_odd_numbers_are_typed_and_deterministic(
     weight: str, sku: str, target_weight: str, range_max: str, hash_keys: bool
 ) -> None:
     work = Path(tempfile.mkdtemp(prefix="sl-cl05-og-"))
     try:
-        contract = (OUTCOME / "contract.json").read_text()
+        contract = (OUTCOME / "contract.json").read_text(encoding="utf-8")
         contract = contract.replace('"max": 50', f'"max": {range_max}')
-        (work / "contract.json").write_text(contract)
+        (work / "contract.json").write_text(contract, encoding="utf-8")
 
         def cell(text: str) -> str:
             return '"' + text.replace('"', '""') + '"'
@@ -246,12 +247,14 @@ def test_outcome_odd_numbers_are_typed_and_deterministic(
         (work / "source.csv").write_text(
             "order_id,placed_at,state,region,sku,weight_kg\n"
             f"0001,2026-10-20T08:00:00Z,open,EU,{cell(sku)},{cell(weight)}\n"
-            f"0002,2026-10-20T08:00:00Z,open,US,{cell(MARKER)},1\n"
+            f"0002,2026-10-20T08:00:00Z,open,US,{cell(MARKER)},1\n",
+            encoding="utf-8",
         )
         (work / "target.jsonl").write_text(
             '{"order_ref": "0001", "status": "shipped", "sku": "SKU-A", "warehouse": "EU-1", '
             f'"shipped_at": "2026-10-20T08:40:00Z", "weight_kg": {target_weight}}}\n'
-            f'{{"order_ref": "0002", "status": "{MARKER}", "weight_kg": 1}}\n'
+            f'{{"order_ref": "0002", "status": "{MARKER}", "weight_kg": 1}}\n',
+            encoding="utf-8",
         )
         as_of = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 
