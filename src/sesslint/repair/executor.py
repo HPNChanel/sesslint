@@ -855,6 +855,18 @@ def execute(
                 "Emitted vendor artifact does not round-trip to the repaired "
                 "event set (content identity mismatch after adapter reload)"
             )
+        # Verbatim lines keep their stream-level warnings (e.g. SL303 duplicate
+        # keys); the declared revalidation must count them as verify does.
+        if emit_adapter_findings:
+            reval_findings = list(emit_adapter_findings) + list(reval_findings)
+            reval_assurance, reval_limitation = compute_assurance(
+                parsed_output_events,
+                reval_findings,
+                reference_equivalent=reference_equivalent_if_clean(
+                    parsed_output_events, reval_findings
+                ),
+            )
+            warning_count = len([f for f in reval_findings if f.severity == Severity.WARNING])
     else:
         repaired_session = Session(header=repaired_header, events=tuple(parsed_output_events))
         output_text = dump_session(repaired_session)

@@ -81,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `repair` with vendor write-back now counts the emitted artifact's own
+  stream findings (such as an SL303 duplicate-key warning on a line kept
+  verbatim) in the manifest's declared revalidation. Before, the manifest
+  claimed a cleaner assurance than the output had, and `verify` rejected the
+  pair with `revalidation-mismatch`.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
