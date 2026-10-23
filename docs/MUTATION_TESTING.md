@@ -36,8 +36,9 @@ Notes on the config (all learned the hard way):
   in one process; Hypothesis rejects the class-based test). It still runs in
   the normal `pytest` suite.
 
-Expected size/runtime on a 4-core runner: ~18.9k mutants; mutant generation
-~7 min, stats ~8 min, mutant testing ~30 min — about 45-60 min in total.
+Measured on a 4-core runner: 18,860 mutants; mutant generation ~7 min, stats
+~8 min, mutant testing ~60 min — plan for 75-90 min in total (the last few
+hundred slow/timeout mutants dominate the tail).
 Full-tree runs are explicitly out of scope.
 
 ## Run
