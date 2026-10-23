@@ -38,7 +38,7 @@ def _finding(**over) -> object:
 def test_html_document_shape() -> None:
     out = render_html(_report([]), adapter="canonical", profile="neutral")
     assert out.startswith("<!DOCTYPE html>")
-    assert '<html lang="es">' in out
+    assert '<html lang="en">' in out
     assert "<style>" in out
     assert "</html>" in out
     assert "Session is healthy" in out

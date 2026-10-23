@@ -81,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The HTML report now declares `<html lang="en">`, matching the English text it
+  contains (it previously declared `es`).
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
