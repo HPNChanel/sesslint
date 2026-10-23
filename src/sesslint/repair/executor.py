@@ -775,6 +775,16 @@ def execute(
         from sesslint.adapters.load import reload_vendor_bytes
 
         emit_events, emit_adapter_findings = reload_vendor_bytes(resolved_emit, output_bytes)
+        # verify loads the artifact by detection, not by the forced adapter: an
+        # output that sniffs as another format can never be verified.
+        from sesslint.adapters.detect import detect_format_bytes
+
+        emit_name = Path(output_path).name if output_path is not None else source_p.name
+        if detect_format_bytes(output_bytes, filename=emit_name).format != resolved_emit:
+            raise OutputInvalid(
+                f"Emitted vendor artifact does not re-detect as {resolved_emit}; "
+                "verify could not load it with the same adapter"
+            )
         emit_check_findings = run_all_checks(
             emit_events,
             profile=reval_profile_name,

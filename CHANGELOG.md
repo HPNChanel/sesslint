@@ -100,6 +100,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now refuses with `Invalid UTF-8 encoding in header line 1`. Before, the
   single-document fallback re-decoded the bytes and the command printed only
   `Error: utf-8`.
+- `repair` now refuses a vendor write-back whose output would be detected as
+  a different format than its source. Example: a salvage of an OpenAI Agents
+  document with an extra line on top excised the whole document as torn
+  records, and the surviving line looked like Claude Code JSONL. `verify`
+  could never accept that output.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or
