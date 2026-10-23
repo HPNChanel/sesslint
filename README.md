@@ -371,7 +371,7 @@ removed command names and options.
 | `doctor` | Show versions, config, agent roots and bounded diagnostics | Optional report |
 | `watch` | Observe verdict transitions for files or agent roots | None |
 | `hook` | Check a hook payload or print integration snippets | None |
-| `mcp` | Expose local read-only tools over stdio | None |
+| `mcp` | Expose local read-only tools over stdio (`sesslint_check`, `sesslint_precheck`, `sesslint_scan`, `sesslint_triage`); MCP revisions `2025-06-18` and `2026-07-28` | None |
 | `completion` | Generate a shell completion script | None |
 | `version` | Print component, adapter and schema versions | None |
 
@@ -1315,7 +1315,7 @@ Formal versioned JSON Schemas are maintained in `schemas/`:
 | **Batch Repair**    |  `v1`   | `schemas/sesslint.batch-repair.v1.json`    | Batch repair run summary          |
 | **Seal Ledger**     |  `v1`   | `schemas/sesslint.seal-ledger.v1.json`     | Hash-chain ledger entry           |
 | **Baseline**        |  `v2`   | `schemas/sesslint.baseline.v2.json`        | Known-findings baseline           |
-| **Triage**          |  `v1`   | `schemas/sesslint.triage.v1.json`          | Next-action guidance report       |
+| **Triage**          |  `v1`   | `schemas/sesslint.triage.v1.json`          | `triage -f json` / `sesslint_triage` MCP result |
 | **Hook Result**     |  `v1`   | `schemas/sesslint.hook-result.v1.json`     | `hook --json` result              |
 | **Init Hooks**      |  `v1`   | `schemas/sesslint.init-hooks.v1.json`      | `hook --init --json` snippets *(next release)* |
 | **Watch Event**     |  `v1`   | `schemas/sesslint.watch-event.v1.json`     | `watch --json` NDJSON line        |

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP: the stdio server now also speaks protocol revision `2026-07-28`
+  alongside `2025-06-18`. Modern requests are stateless (per-request `_meta`
+  protocol version and client capabilities), `server/discover` advertises
+  `supportedVersions`, results carry `resultType` and `serverInfo`, `tools/list`
+  carries `ttlMs`/`cacheScope`, and unsupported versions return
+  `UnsupportedProtocolVersionError` (`-32022`). `2025-06-18` responses are
+  byte-identical to before (golden under `fixtures/mcp/2025-06-18`). HTTP
+  transport, subscriptions, multi round-trip results and tasks are not
+  implemented. See `docs/INTEGRATIONS.md`.
+- MCP: read-only `sesslint_triage` tool. It returns the same `sesslint.triage/v1`
+  document as `sesslint triage <path> -f json` (conservative policy, no
+  registry copy) with the same `path`/`profile`/`format` arguments and error
+  style as `sesslint_check`. A missing path is an `io-error` result and a
+  directory a `usage-error` result, where the CLI reports `unreadable`.
+  See `docs/TRIAGE.md`.
 - `sesslint outcome` (OutcomeGuard): verify a declarative
   `sesslint.outcome-contract/v1` against exported source and target snapshots
   (CSV, JSON, JSONL or a `sesslint.snapshot/v1` envelope), offline and read-only.
