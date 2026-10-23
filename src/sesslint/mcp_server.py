@@ -1,9 +1,26 @@
 """Model Context Protocol stdio server (integrations T-01).
 
 Newline-delimited JSON-RPC 2.0 over stdio, implemented with the stdlib
-alone — no MCP SDK, no sockets, no threads. Pinned to protocol revision
-``2025-06-18``: one JSON object per line in both directions, no embedded
-newlines in messages (https://modelcontextprotocol.io/specification/2025-06-18).
+alone — no MCP SDK, no sockets, no threads. One JSON object per line in both
+directions, no embedded newlines in messages.
+
+Two protocol revisions are served side by side (dual-era, per
+https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning):
+
+- ``2025-06-18`` (legacy): ``initialize`` handshake, then ``tools/*``. Its
+  response bytes are frozen by ``fixtures/mcp/2025-06-18`` — never change them
+  (https://modelcontextprotocol.io/specification/2025-06-18).
+- ``2026-07-28`` (modern): stateless; every request carries
+  ``_meta["io.modelcontextprotocol/protocolVersion"]`` and
+  ``.../clientCapabilities``; ``server/discover`` replaces the handshake;
+  results carry ``resultType``; list/discover results carry ``ttlMs`` and
+  ``cacheScope``; an unsupported version yields ``UnsupportedProtocolVersionError``
+  (-32022). Not implemented, by design: Streamable HTTP, ``subscriptions/listen``,
+  multi round-trip ``input_required`` results, the tasks extension — the tool
+  set is static, read-only and never needs server-to-client interaction.
+
+A request selects the modern era by carrying the protocol-version ``_meta``
+key (or by calling ``server/discover``); everything else takes the legacy path.
 
 Exposed tools (all read-only, all content-free — same contract as the CLI):
 
@@ -37,7 +54,9 @@ from typing import Any, BinaryIO
 from sesslint._version import CLI_VERSION
 from sesslint.profiles.builtin import REGISTRY as PROFILE_REGISTRY
 
-PROTOCOL_VERSION: str = "2025-06-18"
+PROTOCOL_VERSION: str = "2025-06-18"  # legacy (initialize-based) revision
+MODERN_PROTOCOL_VERSION: str = "2026-07-28"  # stateless per-request-_meta revision
+SUPPORTED_VERSIONS: tuple[str, ...] = (MODERN_PROTOCOL_VERSION, PROTOCOL_VERSION)
 SERVER_NAME: str = "sesslint"
 
 _JSONRPC_VERSION = "2.0"
@@ -48,6 +67,18 @@ _E_INVALID_REQUEST = -32600
 _E_METHOD_NOT_FOUND = -32601
 _E_INVALID_PARAMS = -32602
 _E_INTERNAL = -32603
+# MCP 2026-07-28 error allocation (-32020..-32099 reserved for the spec).
+_E_UNSUPPORTED_VERSION = -32022
+
+# 2026-07-28 reserved _meta keys (basic/index#meta).
+_META_VERSION = "io.modelcontextprotocol/protocolVersion"
+_META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+_META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+
+# Caching hints (server/utilities/caching). The tool set is fixed for the life
+# of the process and identical for every caller, hence a long TTL and "public".
+_CACHE_TTL_MS = 3_600_000
+_CACHE_SCOPE = "public"
 
 # A JSON-RPC request is one physical line.  Bound each read so an untrusted
 # client cannot make the stdio loop allocate an unbounded buffer.
@@ -187,12 +218,11 @@ def _result(request_id: Any, result: Any) -> dict[str, Any]:
     return {"jsonrpc": _JSONRPC_VERSION, "id": request_id, "result": result}
 
 
-def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {
-        "jsonrpc": _JSONRPC_VERSION,
-        "id": request_id,
-        "error": {"code": code, "message": message},
-    }
+def _error(request_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": _JSONRPC_VERSION, "id": request_id, "error": error}
 
 
 def _tool_ok(payload: dict[str, Any]) -> dict[str, Any]:
@@ -301,6 +331,83 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return _tool_err("internal-error: unhandled tool")
 
 
+def _run_tools_call(params: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate and run one ``tools/call``; returns (result, invalid-params message)."""
+    if not isinstance(params, dict):
+        return None, "params must be an object"
+    name = params.get("name")
+    if not isinstance(name, str) or name not in _TOOL_SCHEMAS:
+        return None, "unknown tool"
+    args, err = _validate_args(name, params.get("arguments"))
+    if err is not None:
+        return None, err
+    assert args is not None
+    return _call_tool(name, args), None
+
+
+def _modern_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Stamp a 2026-07-28 result: resultType + serverInfo (basic/index#meta)."""
+    return {
+        **result,
+        "resultType": "complete",
+        "_meta": {_META_SERVER_INFO: dict(SERVER_INFO)},
+    }
+
+
+def _dispatch_modern(request_id: Any, method: str, params: Any) -> dict[str, Any]:
+    """Serve one stateless 2026-07-28 request (basic/versioning, server/discover)."""
+    meta = params.get("_meta") if isinstance(params, dict) else None
+    if not isinstance(meta, dict):
+        return _error(request_id, _E_INVALID_PARAMS, "params._meta is required")
+    requested = meta.get(_META_VERSION)
+    if not isinstance(requested, str):
+        return _error(request_id, _E_INVALID_PARAMS, f"{_META_VERSION} is required")
+    if requested != MODERN_PROTOCOL_VERSION:
+        # A legacy version in _meta is not a handshake-free request: the client
+        # must pick a listed version and, for the legacy one, call initialize.
+        return _error(
+            request_id,
+            _E_UNSUPPORTED_VERSION,
+            "Unsupported protocol version",
+            {"supported": list(SUPPORTED_VERSIONS), "requested": requested},
+        )
+    if not isinstance(meta.get(_META_CAPABILITIES), dict):
+        return _error(request_id, _E_INVALID_PARAMS, f"{_META_CAPABILITIES} is required")
+
+    if method == "server/discover":
+        return _result(
+            request_id,
+            {
+                **_modern_result({}),
+                "supportedVersions": list(SUPPORTED_VERSIONS),
+                "capabilities": {"tools": {}},
+                "ttlMs": _CACHE_TTL_MS,
+                "cacheScope": _CACHE_SCOPE,
+            },
+        )
+    if method == "tools/list":
+        if params.get("cursor") is not None:
+            return _error(request_id, _E_INVALID_PARAMS, "invalid cursor")
+        return _result(
+            request_id,
+            {
+                **_modern_result({"tools": [dict(t) for t in TOOLS]}),
+                "ttlMs": _CACHE_TTL_MS,
+                "cacheScope": _CACHE_SCOPE,
+            },
+        )
+    if method == "tools/call":
+        if "inputResponses" in params or "requestState" in params:
+            return _error(request_id, _E_INVALID_PARAMS, "no input was requested")
+        outcome, err = _run_tools_call(params)
+        if err is not None:
+            return _error(request_id, _E_INVALID_PARAMS, err)
+        assert outcome is not None
+        return _result(request_id, _modern_result(outcome))
+    # ping and logging/setLevel were removed in 2026-07-28; nothing else is served.
+    return _error(request_id, _E_METHOD_NOT_FOUND, "method not found")
+
+
 def _dispatch(message: Any) -> dict[str, Any] | None:
     """Route one decoded JSON-RPC message; None → no response (notification)."""
     if not isinstance(message, dict) or message.get("jsonrpc") != _JSONRPC_VERSION:
@@ -315,6 +422,14 @@ def _dispatch(message: Any) -> dict[str, Any] | None:
         return None
 
     is_notification = method.startswith("notifications/") or not has_id
+
+    params = message.get("params")
+    meta = params.get("_meta") if isinstance(params, dict) else None
+    modern = method == "server/discover" or (isinstance(meta, dict) and _META_VERSION in meta)
+    if modern and method != "initialize":  # initialize always selects the legacy era
+        if is_notification:
+            return None
+        return _dispatch_modern(request_id, method, params)
 
     if method == "initialize":
         if not has_id:
@@ -341,17 +456,10 @@ def _dispatch(message: Any) -> dict[str, Any] | None:
     if method == "tools/call":
         if not has_id:
             return None
-        params = message.get("params")
-        if not isinstance(params, dict):
-            return _error(request_id, _E_INVALID_PARAMS, "params must be an object")
-        name = params.get("name")
-        if not isinstance(name, str) or name not in _TOOL_SCHEMAS:
-            return _error(request_id, _E_INVALID_PARAMS, "unknown tool")
-        args, err = _validate_args(name, params.get("arguments"))
+        outcome, err = _run_tools_call(message.get("params"))
         if err is not None:
             return _error(request_id, _E_INVALID_PARAMS, err)
-        assert args is not None
-        return _result(request_id, _call_tool(name, args))
+        return _result(request_id, outcome)
 
     if is_notification:
         return None
@@ -404,7 +512,9 @@ def serve(stdin: BinaryIO, stdout: BinaryIO) -> int:
 
 
 __all__ = [
+    "MODERN_PROTOCOL_VERSION",
     "PROTOCOL_VERSION",
+    "SUPPORTED_VERSIONS",
     "SERVER_INFO",
     "TOOLS",
     "handle_line",

@@ -371,7 +371,7 @@ removed command names and options.
 | `doctor` | Show versions, config, agent roots and bounded diagnostics | Optional report |
 | `watch` | Observe verdict transitions for files or agent roots | None |
 | `hook` | Check a hook payload or print integration snippets | None |
-| `mcp` | Expose local read-only tools over stdio (`sesslint_check`, `sesslint_precheck`, `sesslint_scan`, `sesslint_triage`) | None |
+| `mcp` | Expose local read-only tools over stdio (`sesslint_check`, `sesslint_precheck`, `sesslint_scan`, `sesslint_triage`); MCP revisions `2025-06-18` and `2026-07-28` | None |
 | `completion` | Generate a shell completion script | None |
 | `version` | Print component, adapter and schema versions | None |
 

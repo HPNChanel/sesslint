@@ -26,9 +26,7 @@ def _expected() -> bytes:
     ]
     raw = (GOLDEN / "responses.jsonl").read_bytes()
     # serverInfo.version tracks the release; every other byte is pinned.
-    return raw.replace(
-        f'"version": "{recorded}"'.encode(), f'"version": "{CLI_VERSION}"'.encode()
-    )
+    return raw.replace(f'"version": "{recorded}"'.encode(), f'"version": "{CLI_VERSION}"'.encode())
 
 
 def test_golden_provenance_is_synthetic() -> None:
