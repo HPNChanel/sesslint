@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had replayed it at the shifted position. It then rejected valid repairs of
   more than one step, such as two duplicate groups or a salvage drop before a
   duplicate collapse, with `recipe-apply-failed`.
+- The Claude Code and OpenAI Agents adapters no longer copy a JSON object or
+  array found in an id field (`id`, `uuid`, `parentId`, `prev_id`,
+  `toolUseId`, `call_id` and similar) into reports. Such a value is now
+  treated as a missing id. Before, its Python text form, nested keys and
+  values included, appeared in finding ids, messages and evidence.
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or

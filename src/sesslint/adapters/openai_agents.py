@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Final
 
 from sesslint.adapters.drift import DriftTracker
-from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value, scalar_id
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -433,7 +433,7 @@ def _build_payload(
             else (obj.get("tool_name") if obj.get("tool_name") is not None else obj.get("function"))
         )
         tool_name = str(raw_name) if raw_name is not None else ""
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
         )
         call_id = str(raw_call_id) if raw_call_id is not None else rec_id
@@ -459,7 +459,7 @@ def _build_payload(
         }
 
     if kind == "tool_result":
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
         )
         call_id = str(raw_call_id) if raw_call_id is not None else ""
@@ -1317,7 +1317,7 @@ def _process_openai_item(
 ) -> None:
     """Canonicalize a single item dict into a SessionEvent, emitting findings as needed."""
     seq_index = len(events)
-    raw_id = obj.get("id") if obj.get("id") is not None else obj.get("item_id")
+    raw_id = scalar_id(obj.get("id") if obj.get("id") is not None else obj.get("item_id"))
     if byte_offset is not None and byte_end is not None:
         p_len = byte_end - byte_offset
     else:
@@ -1342,7 +1342,9 @@ def _process_openai_item(
         if guard is not None:
             guard.register_synthetic(rec_id_str)
 
-    raw_parent = obj.get("parent_id") if obj.get("parent_id") is not None else obj.get("prev_id")
+    raw_parent = scalar_id(
+        obj.get("parent_id") if obj.get("parent_id") is not None else obj.get("prev_id")
+    )
     parent_id = (
         str(raw_parent).strip() if raw_parent is not None and str(raw_parent).strip() else None
     )
@@ -1488,7 +1490,7 @@ def _process_openai_item(
     # Correlation ID extraction for tool calls and tool results
     correlation_id: str | None = None
     if kind in ("tool_call", "tool_result"):
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
         )
         if raw_call_id is not None:

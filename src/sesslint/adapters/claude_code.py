@@ -21,7 +21,7 @@ from sesslint.adapters.canonical import EventList, SourceMetadata
 from sesslint.adapters.drift import DriftTracker
 from sesslint.adapters.links import extract_links
 from sesslint.adapters.metadata import UnknownMetadataTracker, has_semantic_fields
-from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value, scalar_id
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -346,7 +346,7 @@ def _build_payload(
             if obj.get("name") is not None
             else (obj.get("tool_name") if obj.get("tool_name") is not None else "")
         )
-        raw_tu_id = (
+        raw_tu_id = scalar_id(
             obj.get("toolUseId") if obj.get("toolUseId") is not None else obj.get("tool_use_id")
         )
         tool_use_id = str(raw_tu_id) if raw_tu_id is not None else rec_id
@@ -366,7 +366,7 @@ def _build_payload(
         }
 
     if kind == "tool_result":
-        raw_tu_id = (
+        raw_tu_id = scalar_id(
             obj.get("toolUseId") if obj.get("toolUseId") is not None else obj.get("tool_use_id")
         )
         tool_use_id = str(raw_tu_id) if raw_tu_id is not None else ""
@@ -812,7 +812,9 @@ def _process_claude_line(
     guard: SyntheticIdCollisionGuard = context.setdefault(
         "collision_guard", SyntheticIdCollisionGuard()
     )
-    raw_id = obj.get("uuid") or obj.get("id") or obj.get("record_id") or obj.get("message_id")
+    raw_id = scalar_id(
+        obj.get("uuid") or obj.get("id") or obj.get("record_id") or obj.get("message_id")
+    )
     seq_index = len(events)
     if raw_id is not None and str(raw_id).strip():
         rec_id_str = str(raw_id).strip()
@@ -850,7 +852,7 @@ def _process_claude_line(
             byte_end=raw.byte_end,
         )
 
-    raw_parent = (
+    raw_parent = scalar_id(
         obj.get("logicalParentUuid")
         or obj.get("parentUuid")
         or obj.get("parent_uuid")
@@ -1129,7 +1131,7 @@ def _process_claude_line(
 
         num_tu = len(tool_use_blocks)
         for i, tu_block in enumerate(tool_use_blocks):
-            tu_id = str(tu_block.get("id") or "").strip()
+            tu_id = str(scalar_id(tu_block.get("id")) or "").strip()
             tool_name = str(tu_block.get("name") or "")
             raw_input = tu_block.get("input") or {}
             input_payload = raw_input if isinstance(raw_input, Mapping) else {"value": raw_input}
@@ -1186,7 +1188,7 @@ def _process_claude_line(
     if tool_result_blocks:
         num_tr = len(tool_result_blocks)
         for i, tr_block in enumerate(tool_result_blocks):
-            raw_corr = tr_block.get("tool_use_id") or tr_block.get("toolUseId") or ""
+            raw_corr = scalar_id(tr_block.get("tool_use_id") or tr_block.get("toolUseId")) or ""
             corr_id = str(raw_corr).strip()
             tr_content = tr_block.get("content") or ""
             is_err = bool(tr_block.get("is_error") or tr_block.get("error") or False)
@@ -1198,7 +1200,7 @@ def _process_claude_line(
             if num_tr == 1:
                 res_event_id = rec_id_str
                 orig_id = original_id
-            elif tr_block.get("id"):
+            elif scalar_id(tr_block.get("id")):
                 res_event_id = str(tr_block["id"])
                 guard.register_real(res_event_id)
                 orig_id = res_event_id
@@ -1247,7 +1249,7 @@ def _process_claude_line(
 
     correlation_id: str | None = None
     if kind in ("tool_call", "tool_result"):
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("toolUseId")
             or obj.get("tool_use_id")
             or obj.get("call_id")
