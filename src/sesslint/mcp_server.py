@@ -10,6 +10,8 @@ Exposed tools (all read-only, all content-free — same contract as the CLI):
 - ``sesslint_check``    — full check report for one session file.
 - ``sesslint_precheck`` — the zero-exception gate (ok / reason / exit_code).
 - ``sesslint_scan``     — aggregate 5-bucket scan of a file or directory tree.
+- ``sesslint_triage``   — ``sesslint.triage/v1`` diagnosis of one session file
+  (same document as ``sesslint triage <path> -f json``; never repairs).
 
 Check findings are *results*, not protocol errors: a corrupted session is a
 successful ``tools/call`` whose structured content reports the findings.
@@ -145,6 +147,35 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "sesslint_triage": {
+        "name": "sesslint_triage",
+        "title": "Triage a session",
+        "description": (
+            "Diagnose one session file and explain the next steps: returns the "
+            "sesslint.triage/v1 document (the same answer as `sesslint triage "
+            "<path> -f json`) as structured content. Conservative defaults; "
+            "previews are never applied. Read-only; findings are results, "
+            "not errors."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Session file path."},
+                "profile": {
+                    "type": "string",
+                    "enum": list(_PROFILES),
+                    "description": "Validation profile (default: neutral).",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": list(_FORMATS),
+                    "description": "Force input adapter (default: auto-detect).",
+                },
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
 }
 
 TOOLS: tuple[dict[str, Any], ...] = tuple(_TOOL_SCHEMAS[name] for name in sorted(_TOOL_SCHEMAS))
@@ -241,6 +272,13 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             if res.report is not None:
                 payload["report"] = res.report.to_dict()
             return _tool_ok(payload)
+
+        if name == "sesslint_triage":
+            if not path.is_file():
+                return _tool_err("usage-error: path is not a file")
+            from sesslint.triage import triage
+
+            return _tool_ok(triage(path, format=fmt, profile=profile).to_dict())
 
         if name == "sesslint_scan":
             from sesslint.api import check_dir

@@ -376,11 +376,13 @@ protocol errors):
 | `sesslint_check` | `sesslint.report/v1` report (structured content) for one session file |
 | `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report (`schemas/sesslint.precheck-result.v1.json`) |
 | `sesslint_scan` | `sesslint.scan-report/v1` 5-bucket aggregate for a file or directory tree |
+| `sesslint_triage` | `sesslint.triage/v1` diagnosis (`schemas/sesslint.triage.v1.json`) for one session file — the same document as `sesslint triage <path> -f json`; previews are never applied |
 
 Each tool takes `path` (required), plus optional `profile` (`neutral`,
 `claude-strict`, `openai-strict`) and `format` adapter override. Missing
 paths and tool failures return `isError: true` results with content-free
-reason strings; protocol problems return JSON-RPC error objects. The server
+reason strings (`sesslint_triage`, like `sesslint_check`, requires a file: a
+directory is a `usage-error`, a missing path an `io-error`); protocol problems return JSON-RPC error objects. The server
 adds no timestamps — identical requests produce identical responses.
 EOF or Ctrl+C exits cleanly.
 

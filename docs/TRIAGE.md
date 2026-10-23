@@ -161,6 +161,17 @@ Output includes coverage,
 bounded finding rows, exact aggregate counts, previews, impact, missing evidence
 and at most three next actions. No wall clock or machine identity is serialized.
 
+## MCP tool
+
+`sesslint mcp` exposes the same diagnosis as the read-only `sesslint_triage`
+tool. Arguments: `path` (required, a file), optional `profile` and `format`
+(adapter). Its structured result is the `sesslint.triage/v1` document, equal
+after canonical serialization to `sesslint triage <path> -f json` with the
+default conservative policy. The tool takes no `policy`, `state_copy` or
+`max_file_bytes` argument. A missing path returns an `io-error` result and a
+directory a `usage-error` result (the CLI reports an `unreadable` document
+instead). Nothing is written or applied.
+
 ## Deferred capabilities
 
 An automatically checked synthetic reproducer (`reproduce`) and a compatibility/

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP: read-only `sesslint_triage` tool. It returns the same `sesslint.triage/v1`
+  document as `sesslint triage <path> -f json` (conservative policy, no
+  registry copy) with the same `path`/`profile`/`format` arguments and error
+  style as `sesslint_check`. A missing path is an `io-error` result and a
+  directory a `usage-error` result, where the CLI reports `unreadable`.
+  See `docs/TRIAGE.md`.
 - `sesslint outcome` (OutcomeGuard): verify a declarative
   `sesslint.outcome-contract/v1` against exported source and target snapshots
   (CSV, JSON, JSONL or a `sesslint.snapshot/v1` envelope), offline and read-only.
