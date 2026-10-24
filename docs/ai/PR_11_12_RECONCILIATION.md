@@ -94,6 +94,10 @@ pins the wording or the finding count for forced-adapter empty input.
 - de-duplicate the canonical SL001;
 - add a regression test per forced adapter.
 
+**Fix proposed in #25** (draft, not merged when this was written). It also covers a case found while fixing this:
+BOM-only input reported healthy under `--adapter openai-agents`, and a repairable torn record under `claude-code-jsonl`
+and `codex-rollout`. Until #25 merges, the status on `main` stays **MISSING**.
+
 **Repro** (synthetic):
 ```bash
 mkdir -p /tmp/slhome && cd "$(mktemp -d)" && : > empty.jsonl

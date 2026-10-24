@@ -89,7 +89,7 @@ integration".
 PR #11 (AC-04) and PR #12 (AC-08) were reconciled against this tree in
 [PR_11_12_RECONCILIATION.md](PR_11_12_RECONCILIATION.md). Both are superseded on `main` except for:
 - **11.11:** a forced `--adapter` on empty input loses the empty-input wording, and `--adapter canonical` emits SL001
-  twice.
+  twice. BOM-only input is also misreported under three forced adapters. The fix is proposed in #25.
 - **12.6:** `check` keeps its `[read-only]` label while writing a baseline, report, seal or cache. This is
   documented, but it is a labelling decision.
 
