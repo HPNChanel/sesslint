@@ -44,7 +44,7 @@ def test_check_without_progress_flag_has_empty_stderr(
 
 
 def test_scan_progress_json_emits_per_file(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["scan", str(DETECT_DIR), "--recursive", "--json", "--progress-json"])
+    code = main(["scan", str(DETECT_DIR), "--json", "--progress-json"])
     captured = capsys.readouterr()
     assert code in (0, 1)
     lines = [line for line in captured.err.strip().splitlines() if line.strip()]

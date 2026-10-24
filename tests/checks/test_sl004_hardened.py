@@ -8,7 +8,8 @@ Invariants verified:
    b. Cross-branch decoy (exact equality match but conflicting branch_id).
    c. Cross-segment decoy (exact match, same branch, separated by compaction_boundary).
    d. Duplicate-candidate decoy (multiple matching candidates).
-4. Positive exact-match full repair cycle: detection -> plan -> execute -> verify manifest.
+4. Standalone exact-match helpers remain testable, while executor vetting refuses
+   a plan that current source-derived findings do not authorize.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from sesslint.checks.graph import (
 )
 from sesslint.codes import SL004, Repairability, Severity
 from sesslint.finding import SourceRef, make_finding
+from sesslint.repair.errors import RepairRefused
 from sesslint.repair.executor import execute
 from sesslint.repair.planner import PlanStep, plan
 from sesslint.repair.preconditions import PreconditionContext, unique_parent_candidate
@@ -211,8 +213,7 @@ def test_adversarial_decoy_prefix_collision() -> None:
     assert ev["match_rule"] == "full-equality"
     assert ev["candidate_count"] == 0
     assert ev["reason"] == "no_full_match"
-    assert len(ev["rejected_decoys"]) == 1
-    assert ev["rejected_decoys"][0]["reason"] == "no_full_match"
+    assert ev["rejected_decoys"] == []
 
     # 2. Planner layer
     p = plan([f], event_list)
@@ -403,12 +404,12 @@ def test_adversarial_decoy_duplicate_candidates() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. Positive Exact-Match Test (Lifecycle: Plan -> Execute -> Verify)
+# 7. Exact-Match Helper Test and Source-Derived Executor Veto
 # ---------------------------------------------------------------------------
 
 
-def test_positive_exact_match_full_lifecycle(tmp_path: Path) -> None:
-    """Positive exact match: single candidate passes confinement -> plan -> execute -> manifest."""
+def test_exact_match_helper_plan_is_refused_when_source_finding_disagrees(tmp_path: Path) -> None:
+    """B20 vetoes a crafted helper plan when current source has no equal parent ID."""
     events = [
         {
             "actor": "user",
@@ -486,27 +487,15 @@ def test_positive_exact_match_full_lifecycle(tmp_path: Path) -> None:
     output_file = tmp_path / "repaired.jsonl"
     manifest_file = tmp_path / "repaired.jsonl.manifest.json"
 
-    # 5. Execute repair plan
-    manifest = execute(
-        source_path=source_file,
-        plan=repair_plan,
-        output_path=output_file,
-        policy="conservative",
-    )
+    # 5. The current source says parent ``msg-parent-broken`` is absent; the
+    # standalone helper's substituted ID must never authorize a write.
+    with pytest.raises(RepairRefused, match="not a repair sesslint derives for this source now"):
+        execute(
+            source_path=source_file,
+            plan=repair_plan,
+            output_path=output_file,
+            policy="conservative",
+        )
 
-    # 6. Verify manifest and atomic output
-    assert output_file.is_file()
-    assert manifest_file.is_file()
-    assert len(manifest.actions) == 1
-    assert manifest.actions[0].kind == "proven-unique-parent-restore"
-    assert manifest.policy == "conservative"
-    assert "proven-unique-parent-restore" in manifest.recipe_versions
-
-    # 7. Verify repaired content has parent_id bound to exact parent
-    repaired_lines = [
-        json.loads(line) for line in output_file.read_text(encoding="utf-8").strip().split("\n")
-    ]
-    assert len(repaired_lines) == 3  # header + 2 events
-    repaired_child = repaired_lines[2]
-    assert repaired_child["id"] == "msg-child-exact"
-    assert repaired_child["parent_id"] == "msg-parent-exact"
+    assert not output_file.exists()
+    assert not manifest_file.exists()

@@ -29,6 +29,12 @@ def pages() -> dict[str, str]:
     return gen_man.generate_pages("0.0.0-test")
 
 
+def _canonical_choices(action: argparse._SubParsersAction) -> dict[str, argparse.ArgumentParser]:
+    """Subcommand parser entries for canonical names only (aliases excluded)."""
+    canonical = {pseudo.dest for pseudo in action._choices_actions}
+    return {name: sub for name, sub in action.choices.items() if name in canonical}
+
+
 def _parser_commands() -> tuple[str, ...]:
     from sesslint.cli import create_parser
 
@@ -36,7 +42,7 @@ def _parser_commands() -> tuple[str, ...]:
     for action in parser._actions:
         choices = getattr(action, "choices", None)
         if isinstance(action, argparse._SubParsersAction) and isinstance(choices, dict):
-            return tuple(sorted(choices))
+            return tuple(sorted(_canonical_choices(action)))
     raise AssertionError("no subparsers action in CLI parser")
 
 
@@ -76,7 +82,7 @@ def test_every_flag_documented(pages: dict[str, str]) -> None:
         choices = getattr(action, "choices", None)
         if not isinstance(action, argparse._SubParsersAction) or not isinstance(choices, dict):
             continue
-        for name, sub in sorted(choices.items()):
+        for name, sub in sorted(_canonical_choices(action).items()):
             page = pages[f"sesslint-{name}.1"]
             for sub_action in sub._actions:
                 if isinstance(
@@ -97,7 +103,7 @@ def test_positional_metavars_in_synopsis(pages: dict[str, str]) -> None:
         choices = getattr(action, "choices", None)
         if not isinstance(action, argparse._SubParsersAction) or not isinstance(choices, dict):
             continue
-        for name, sub in choices.items():
+        for name, sub in _canonical_choices(action).items():
             page = pages[f"sesslint-{name}.1"]
             synopsis = page.split(".SH SYNOPSIS")[1].split(".SH")[0]
             for sub_action in sub._actions:

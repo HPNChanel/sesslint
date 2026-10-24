@@ -1,6 +1,6 @@
 # CI Templates
 
-These templates target 0.4.1 (next release). Select a published version before using them in production.
+These templates target 0.5.0 (next release). Select a published version before using them in production.
 
 Copy-paste pipeline snippets for platforms without a native SessLint
 action — GitLab CI, Azure Pipelines, CircleCI. GitHub users should use the
@@ -14,8 +14,9 @@ Conventions shared by every template below:
   `1` a session with findings exits 1 (also verification failed / repair refused).
   `2` an internal tool error exits 2 (also usage error / invalid flags / I/O failure).
   CI steps fail naturally on `1`.
-- **Flags**: `--fail-on error|warning`, `--output-format human|json|sarif|html`,
-  `--profile`, `--format`, `--select`, `--ignore`, `--baseline`,
+<!-- next-release -->
+- **Flags**: `--fail-on error|warning`, `--format human|json|sarif|html`,
+  `--profile`, `--adapter`, `--select`, `--ignore`, `--baseline`,
   `--exclude`, `--ext`, `--skip-undetected`, `--config` — same surface as
   the GitHub action inputs (parity table below).
 - **Reports**: JSON/SARIF are emitted on stdout — redirect to a file and
@@ -31,8 +32,8 @@ sesslint-check:
   stage: test
   image: python:3.12-slim
   script:
-    - pip install sesslint==0.4.1  # next release
-    - sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
+    - pip install sesslint==0.5.0  # next release
+    - sesslint check sessions/ --format json --fail-on error > sesslint-report.json
   artifacts:
     when: always
     paths:
@@ -40,8 +41,8 @@ sesslint-check:
     expire_in: 30 days
 ```
 
-Notes: `scan` on a directory walks the tree with the standard exclusions;
-add `--skip-undetected` if the tree mixes non-session files.
+Notes: `check` on a directory walks the tree recursively with the standard
+exclusions; add `--skip-undetected` if the tree mixes non-session files.
 
 ## Azure Pipelines
 
@@ -52,8 +53,8 @@ steps:
     inputs:
       versionSpec: "3.12"
   - script: |
-      pip install sesslint==0.4.1  # next release
-      sesslint scan sessions/ --output-format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
+      pip install sesslint==0.5.0  # next release
+      sesslint check sessions/ --format json --fail-on error > $(Build.ArtifactStagingDirectory)/sesslint-report.json
     displayName: "Run SessLint integrity scan"
   - task: PublishBuildArtifacts@1
     inputs:
@@ -63,7 +64,7 @@ steps:
 ```
 
 For SARIF-based code scanning surfaces (e.g. a SARIF results tab
-extension), switch the invocation to `--output-format sarif` and publish
+extension), switch the invocation to `--format sarif` and publish
 that file instead.
 
 ## CircleCI
@@ -79,10 +80,10 @@ jobs:
       - checkout
       - run:
           name: "Install SessLint (pinned)"
-          command: pip install sesslint==0.4.1  # next release
+          command: pip install sesslint==0.5.0  # next release
       - run:
           name: "Run integrity scan"
-          command: sesslint scan sessions/ --output-format json --fail-on error > sesslint-report.json
+          command: sesslint check sessions/ --format json --fail-on error > sesslint-report.json
       - store_artifacts:
           path: sesslint-report.json
 workflows:
@@ -95,11 +96,18 @@ workflows:
 
 Every action input maps to the identical CLI flag:
 
+<!-- next-release -->
+The action passes input values through environment variables and builds a Python
+argument list. File inputs must resolve inside `GITHUB_WORKSPACE`; choices such
+as `fail-on` and `output-format` are validated before SessLint runs. A failing
+fixture must return exit code 1 in CI; an installation or usage failure does not
+satisfy that check.
+
 | Action input | CLI flag | Template default |
 | --- | --- | --- |
 | `path` | positional `PATH` | `sessions/` — point at your tree |
 | `profile` | `--profile` | `neutral` |
-| `format` | `--format` | `auto` |
+| `format` | `--adapter` | `auto` |
 | `fail-on` | `--fail-on` | `error` |
 | `select` | `--select` | — |
 | `ignore` | `--ignore` | — |
@@ -109,7 +117,7 @@ Every action input maps to the identical CLI flag:
 | `ext` | `--ext` | — |
 | `skip-undetected` | `--skip-undetected` | — |
 | `config` | `--config` | — |
-| `output-format` | `--output-format` | `json` (redirect to artifact) |
-| `package` / `source-ref` | install line | `sesslint==0.4.1` | (next release)
+| `output-format` | `--format` | `json` (redirect to artifact) |
+| `package` / `source-ref` | install line | `sesslint==0.5.0` | (next release)
 | `python-version` | runner image | `3.12` |
-| `sarif` output | `--output-format sarif` | redirect to artifact file |
+| `sarif` output | `--format sarif` | redirect to artifact file |

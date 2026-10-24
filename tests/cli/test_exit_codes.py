@@ -12,24 +12,25 @@ FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures" / "cli
 
 
 def test_exit_code_0_matrix(tmp_path: Path) -> None:
-    """Exit code 0 is returned on healthy check, formats, and version."""
+    """Exit code 0 is returned on healthy check, doctor, and version."""
     fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
     assert main(["check", str(fixture)]) == 0
     assert main(["check", str(fixture), "--json"]) == 0
-    assert main(["formats"]) == 0
-    assert main(["formats", "--json"]) == 0
+    assert main(["doctor"]) == 0
+    assert main(["doctor", "--json"]) == 0
     assert main(["version"]) == 0
     assert main(["version", "--json"]) == 0
 
 
 def test_exit_code_1_matrix(tmp_path: Path) -> None:
-    """Exit code 1 is returned when findings (error/fatal) or ambiguity exist."""
+    """Exit code 1 is returned for defects and optionally unsupported input."""
     ambig_fixture = FIXTURES_DIR / "check_ambiguity" / "polyglot.json"
-    assert main(["check", str(ambig_fixture)]) == 1
+    assert main(["check", str(ambig_fixture)]) == 0
+    assert main(["check", str(ambig_fixture), "--fail-on-unsupported"]) == 1
 
     corrupt = tmp_path / "corrupt.jsonl"
     corrupt.write_text('{"id":"1","type":"unknown_bogus"}\n', encoding="utf-8")
-    assert main(["check", str(corrupt), "--format", "claude-code-jsonl"]) == 1
+    assert main(["check", str(corrupt), "--adapter", "claude-code-jsonl"]) == 1
 
 
 def _run_cli(argv: list[str]) -> int:
@@ -51,8 +52,8 @@ def test_exit_code_2_matrix(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     # 3. Invalid profile option
     assert _run_cli(["check", str(fixture), "--profile", "non_existent_prof"]) == 2
 
-    # 4. Directory input without recursive flag
-    assert _run_cli(["check", str(tmp_path)]) == 2
+    # 4. --latest without --agent claude|codex
+    assert _run_cli(["check", "--latest"]) == 2
 
     # 5. Nonexistent file
     missing = tmp_path / "missing.jsonl"

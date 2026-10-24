@@ -197,7 +197,7 @@ class TestHostileFixtureStatic:
             assert "AAAA" not in tv
 
         # CLI execution on static fixture
-        exit_code = main(["check", str(fixture_path), "--format", "claude-code-jsonl", "--json"])
+        exit_code = main(["check", str(fixture_path), "--adapter", "claude-code-jsonl", "--json"])
         assert exit_code == 1
 
         # API check_file execution on static fixture
@@ -238,7 +238,7 @@ class TestClaudeCodePrivacyHardening:
         assert secret_token not in ev.get("type_value", "")
 
         # CLI check --json execution
-        exit_code = main(["check", str(fpath), "--format", "claude-code-jsonl", "--json"])
+        exit_code = main(["check", str(fpath), "--adapter", "claude-code-jsonl", "--json"])
         assert exit_code == 1
         captured = capsys.readouterr()
         assert secret_token not in captured.out
@@ -285,7 +285,7 @@ class TestClaudeCodePrivacyHardening:
         assert ev.get("type_truncated") is True
 
         # CLI check --json
-        exit_code = main(["check", str(fpath), "--format", "claude-code-jsonl", "--json"])
+        exit_code = main(["check", str(fpath), "--adapter", "claude-code-jsonl", "--json"])
         assert exit_code == 1
         captured = capsys.readouterr()
         assert prose_payload not in captured.out
@@ -340,7 +340,7 @@ class TestOpenAIAgentsPrivacyHardening:
         assert secret_token not in ev.get("type_value", "")
 
         # CLI check --json
-        exit_code = main(["check", str(fpath), "--format", "openai-agents", "--json"])
+        exit_code = main(["check", str(fpath), "--adapter", "openai-agents", "--json"])
         assert exit_code == 1
         captured = capsys.readouterr()
         assert secret_token not in captured.out
@@ -379,7 +379,7 @@ class TestOpenAIAgentsPrivacyHardening:
         assert ev.get("type_value") == f"<str:len={len(prose)}>"
         assert ev.get("type_truncated") is True
 
-        exit_code = main(["check", str(fpath), "--format", "openai-agents", "--json"])
+        exit_code = main(["check", str(fpath), "--adapter", "openai-agents", "--json"])
         assert exit_code == 1
         captured = capsys.readouterr()
         assert prose not in captured.out
@@ -432,7 +432,7 @@ class TestCanonicalPrivacyHardening:
         assert ev.get("type_truncated") is True
         assert secret_token not in ev.get("type_value", "")
 
-        exit_code = main(["check", str(fpath), "--format", "canonical", "--json"])
+        exit_code = main(["check", str(fpath), "--adapter", "canonical", "--json"])
         assert exit_code == 1
         captured = capsys.readouterr()
         assert secret_token not in captured.out

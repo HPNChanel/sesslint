@@ -32,7 +32,7 @@ Run `sesslint version --json` and paste the output below:
 A clear and concise description of what the unexpected behavior is.
 
 ### Steps to Reproduce
-1. Command executed: `sesslint check <path> --format auto ...`
+1. Command executed: `sesslint check <path> --adapter auto ...` <!-- next-release -->
 2. Arguments used:
 3. Error encountered:
 

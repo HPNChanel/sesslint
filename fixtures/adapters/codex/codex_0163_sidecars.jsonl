@@ -1,0 +1,9 @@
+{"ordinal": 0, "payload": {"cli_version": "0.163.0", "id": "sess-syn-0163", "session_id": "sess-syn-0163"}, "timestamp": "2026-10-22T09:00:00Z", "type": "session_meta"}
+{"ordinal": 1, "payload": {"id": "rt-syn-1", "realtime_session_id": "rts-syn-1", "type": "realtime_session_started"}, "timestamp": "2026-10-22T09:00:01Z", "type": "realtime_item"}
+{"ordinal": 2, "payload": {"id": "rt-syn-2", "realtime_session_id": "rts-syn-1", "role": "user", "text": "synthetic", "type": "transcript_segment"}, "timestamp": "2026-10-22T09:00:02Z", "type": "realtime_item"}
+{"ordinal": 3, "payload": {"content": [{"text": "synthetic", "type": "input_text"}], "id": "msg-syn-1", "role": "user", "type": "message"}, "timestamp": "2026-10-22T09:00:03Z", "type": "response_item"}
+{"ordinal": 4, "payload": {"arguments": "{}", "call_id": "call-syn-1", "id": "fc-syn-1", "name": "shell", "type": "function_call"}, "timestamp": "2026-10-22T09:00:04Z", "type": "response_item"}
+{"ordinal": 5, "payload": {"action": {"type": "synthetic"}, "call_id": "call-syn-1", "sampled_at": "2026-10-22T09:00:05Z", "scores": {"synthetic": 0.25}}, "timestamp": "2026-10-22T09:00:05Z", "type": "security_risk_score"}
+{"ordinal": 6, "payload": {"call_id": "call-syn-1", "id": "fco-syn-1", "output": "synthetic", "type": "function_call_output"}, "timestamp": "2026-10-22T09:00:06Z", "type": "response_item"}
+{"ordinal": 7, "payload": {"id": "rt-syn-3", "item_id": "fco-syn-1", "presentation": {"type": "whole_item"}, "realtime_session_id": "rts-syn-1", "turn_id": "turn-syn-1", "type": "bem_item_promoted"}, "timestamp": "2026-10-22T09:00:07Z", "type": "realtime_item"}
+{"ordinal": 8, "payload": {"id": "rt-syn-4", "outcome": "ended", "realtime_session_id": "rts-syn-1", "type": "realtime_session_closed"}, "timestamp": "2026-10-22T09:00:08Z", "type": "realtime_item"}

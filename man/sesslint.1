@@ -1,4 +1,4 @@
-.TH SESSLINT 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint \- offline, vendor-neutral session integrity checker and conservative repair tool
 .SH SYNOPSIS
@@ -14,14 +14,11 @@ findings by default, and fails closed whenever repair safety cannot
 be proven.
 .SH COMMANDS
 .TP
-.B baseline
-[read\-only] Upgrade a v1 baseline to the path\-normalized v2 format.
-.TP
 .B bundle
 [read\-only] Generate a privacy\-safe diagnostic support bundle and fixture skeleton.
 .TP
 .B check
-[read\-only] Check a session file with auto\-detection.
+[read\-only] Check session artifacts (files, directories, or agent session roots).
 .TP
 .B completion
 [read\-only] Print shell completion script.
@@ -35,23 +32,17 @@ be proven.
 .B export
 [writes: output file] Export a session artifact to canonical format for repair.
 .TP
-.B formats
-[read\-only] List supported session format adapters.
-.TP
 .B hook
 [read\-only] Agent hook entrypoint: reads one hook payload from stdin and checks the transcript.
-.TP
-.B init\-hooks
-[read\-only] Print ready\-to\-merge agent hook snippets (never writes config).
 .TP
 .B mcp
 [read\-only] Run a Model Context Protocol server over stdio.
 .TP
+.B outcome
+[read\-only] Verify an outcome contract against source/target snapshots.
+.TP
 .B repair
 [writes: output file and manifest, lossy under \-\-policy salvage] Safely repair a session file.
-.TP
-.B scan
-[read\-only] Scan directory trees for session artifacts or display limits.
 .TP
 .B seal
 [read\-only] Verify a tamper\-evident seal ledger's hash chain.
@@ -59,8 +50,8 @@ be proven.
 .B stats
 [read\-only] Aggregate content\-free statistics over session files.
 .TP
-.B validate\-session
-[read\-only] Validate a canonical session file against schema.
+.B triage
+[read\-only] Diagnose a session and explain the next steps.
 .TP
 .B verify
 [read\-only] Verify integrity, hash bindings, and idempotence of a repaired session.
@@ -105,7 +96,7 @@ an internal tool error exits 2
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1), sesslint\-diff(1), sesslint\-doctor(1), sesslint\-export(1), sesslint\-formats(1).
+sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1), sesslint\-diff(1), sesslint\-doctor(1), sesslint\-export(1), sesslint\-hook(1), sesslint\-mcp(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

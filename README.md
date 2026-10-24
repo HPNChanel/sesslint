@@ -1,7 +1,7 @@
 <h1 align="center">SessLint</h1>
 
 <p align="center">
-  <strong>Offline, vendor-neutral session-integrity checker and conservative repair engine for tool-using AI agents.</strong>
+  <strong>Find what broke in an agent session, what remains verifiable, and what to do next.</strong>
 </p>
 
 <p align="center">
@@ -23,12 +23,27 @@
 
 ---
 
-> This checkout prepares **0.4.1 (next release)**. Local tags are not proof of
+> This checkout prepares **0.5.0 (next release)**. Local tags are not proof of
 > publication. Install commands without a version select the public PyPI release.
 > For the candidate, use the supplied wheel or binary with the
 > [starter-kit walkthrough](docs/STARTER_KIT.md).
 
 ## Table of Contents
+
+<!-- next-release -->
+
+**Start with session triage in the 0.5.0 candidate:**
+
+```console
+sesslint triage session.jsonl
+sesslint triage --agent codex --latest
+```
+
+Read-only, offline and content-free. Triage combines existing checks and repair
+previews, explains missing evidence, and suggests at most three next steps.
+It never repairs or resumes automatically. See the [triage walkthrough](docs/TRIAGE.md)
+for repairable, refused and unsupported cases. Upgrading scripts or config? See
+[Migration to 0.5](docs/MIGRATING_0_5.md).
 
 - [The Anatomy of Agent Session Failure](#the-anatomy-of-agent-session-failure)
 - [Why SessLint? (The Value Proposition)](#why-sesslint-the-value-proposition)
@@ -49,7 +64,7 @@
     - [Dual-Gate Side-Effect Abstention Engine](#dual-gate-side-effect-abstention-engine)
     - [Recipe Catalog](#recipe-catalog)
     - [Atomic 8-Step Execution Protocol](#atomic-8-step-execution-protocol)
-    - [Repair Manifest Schema & Cryptographic Binding](#repair-manifest-schema--cryptographic-binding)
+    - [Repair Manifest Schema & Cryptographic Binding](#repair-manifest-schema--cryptographic-binding-fr-072)
     - [Assurance Taxonomy (A0–A4)](#assurance-taxonomy-a0a4)
 - [Replay Profiles](#replay-profiles)
 - [Architecture & Anti-Leak Boundaries](#architecture--anti-leak-boundaries)
@@ -182,7 +197,7 @@ Agent session ledgers fail in a small number of recurring ways. SessLint detects
 > [!IMPORTANT]
 > **The Bottom Line on Safety & Atomicity**
 >
-> 1. **Source Immutability**: SessLint never modifies user files in-place. `check`, `scan`, `verify`, and `repair --dry-run` perform zero file writes.
+> 1. **Source Immutability**: SessLint never modifies session sources in-place. `triage`, `check`, `verify`, and `repair --dry-run` do not apply repairs. Explicit report, baseline, cache or seal options can write separate artifacts.
 > 2. **Single Mutator Principle**: File mutation is strictly isolated to a single atomic executor (`sesslint/repair/executor.py`) via `tempfile` &rarr; `os.fsync` &rarr; `os.replace`.
 > 3. **Kill-Safety**: Any unhandled crash or `SIGKILL` at any microsecond of execution leaves the original source byte-identical with zero orphaned temporary files.
 > 4. **No Synthetic Truth**: SessLint never fabricates tool results, user approvals, or model tokens.
@@ -248,7 +263,7 @@ No Python? Choose a standalone binary for your OS from the assets actually
 listed on [GitHub Releases](https://github.com/HPNChanel/sesslint/releases).
 A local version tag does not establish that a corresponding asset exists.
 
-The 0.4.1 delivery pipeline prepares Windows, macOS and Linux binaries, a
+The 0.5.0 delivery pipeline prepares Windows, macOS and Linux binaries, a
 starter kit, man pages, checksums, Sigstore bundles and SLSA provenance.
 This is a **next release** contract until those assets have been published
 and downloaded successfully. See [verification instructions](RELEASING.md#artifact-verification).
@@ -269,7 +284,7 @@ chmod +x "$ASSET"
 On Windows, compare `Get-FileHash -Algorithm SHA256 .\sesslint-*.exe` with
 the published checksum, then follow the PowerShell commands in the
 [starter kit](docs/STARTER_KIT.md). Verify signatures and provenance before
-installing when using the 0.4.1 delivery set.
+installing when using the 0.5.0 delivery set.
 
 **Prepared channels:** Homebrew, Scoop, winget and AUR templates remain in
 `packaging/`. The `Dockerfile` is available for a separately authorized GHCR
@@ -337,340 +352,138 @@ sesslint [--version] COMMAND [OPTIONS]
 
 ### Command Matrix
 
-SessLint exposes eighteen CLI commands designed for both interactive developer usage and CI/CD automation (plus `sesslint completion` for shell integration):
+The CLI has 16 commands. `scan` remains an alias for `check`; directory
+inputs are always recursive. See [Migration to 0.5](docs/MIGRATING_0_5.md) for
+removed command names and options.
 
-| Command                         | Purpose                                                                                         |                 Mutates Disk?                 | Default Format |  Exit Codes   |
-| :------------------------------ | :---------------------------------------------------------------------------------------------- | :-------------------------------------------: | :------------: | :-----------: |
-| **`sesslint check`**            | Scan and lint a session file or directory for defects                                           |              **No** (read-only)               |     `auto`     | `0`, `1`, `2` |
-| **`sesslint scan`**             | Traverse directory trees (or auto-discover agent session roots) with 5-bucket triage            |              **No** (read-only)               |     `auto`     | `0`, `1`, `2` |
-| **`sesslint repair`**           | Plan and execute atomic surgical session repairs                                                |            **Yes** (to `--output`)            |     `auto`     | `0`, `1`, `2` |
-| **`sesslint verify`**           | 7-stage cryptographic audit of repair and manifest                                              |              **No** (read-only)               |     `auto`     | `0`, `1`, `2` |
-| **`sesslint seal`**             | Verify a tamper-evident hash-chain ledger of verdicts (`--seal` on check/verify/repair appends) | **No** (read-only; `--seal` appends one line) |      N/A       | `0`, `1`, `2` |
-| **`sesslint bundle`**           | Emit zero-leak diagnostic support bundle for bug/adapter reports                                |            **Optional** (`--out`)             |     `auto`     | `0`, `1`, `2` |
-| **`sesslint export`**           | Export a vendor artifact to a canonical file for repair                                         |            **Yes** (to `--output`)            |     `auto`     | `0`, `1`, `2` |
-| **`sesslint validate-session`** | Validate canonical session against JSON Schema                                                  |              **No** (read-only)               |  `canonical`   | `0`, `1`, `2` |
-| **`sesslint formats`**          | List supported adapters and format schemas                                                      |                    **No**                     |      N/A       |      `0`      |
-| **`sesslint completion`**       | Print shell completion script (bash, zsh, fish, powershell)                                     |                    **No**                     |      N/A       |      `0`      |
-| **`sesslint baseline`**         | Upgrade a v1 baseline file to path-normalized v2                                                |           **Optional** (`--output`)           |      N/A       |   `0`, `2`    |
-| **`sesslint diff`**             | Structural diff of two session files by event identity                                          |              **No** (read-only)               |     `auto`     | `0`, `1`, `2` |
-| **`sesslint stats`**            | Content-free aggregate statistics over session files/dirs                                       |              **No** (read-only)               |     `auto`     |   `0`, `2`    |
-| **`sesslint doctor`**           | Environment diagnostics: versions, config, agent roots, quick verdicts                          |              **No** (read-only)               |      N/A       |   `0`, `2`    |
-| **`sesslint watch`**            | Poll session dirs, flag newly corrupted files on verdict transitions                            |          **No** (read-only observer)          |     `auto`     |   `0`, `2`    |
-| **`sesslint mcp`**              | MCP stdio server exposing check/precheck/scan tools to agents                                   |           **No** (read-only stdio)            |      N/A       |      `0`      |
-| **`sesslint init-hooks`**       | Print ready-to-merge agent hook snippets — never writes config                                  |              **No** (print-only)              |      N/A       |      `0`      |
-| **`sesslint hook`**             | Agent hook entrypoint: stdin payload → resolved transcript check                                |              **No** (read-only)               |     `auto`     |   `0`, `1`    |
-| **`sesslint version`**          | Print diagnostic version environment struct                                                     |                    **No**                     |      N/A       |      `0`      |
+| Command | Purpose | Explicit writes |
+| --- | --- | --- |
+| `check` (`scan`) | Check files, directories, stdin or discovered agent roots | Report, baseline, incremental cache or seal when requested |
+| `triage` | Explain structural evidence, missing evidence and unapplied repair previews | Optional report |
+| `repair` | Preview, export/apply a plan, or repair copies in a batch | Plan, repaired copy and manifest when requested |
+| `verify` | Verify repair hashes, manifest and idempotence | Optional report or seal |
+| `outcome` | Verify an outcome contract against exported source/target snapshots ([OutcomeGuard](docs/OUTCOME.md)) | Optional report |
+| `seal` | Verify a verdict ledger's hash chain | None |
+| `bundle` | Create a content-free support bundle and synthetic fixture skeleton | Optional bundle |
+| `export` | Convert a supported artifact to canonical format | Canonical output |
+| `diff` | Compare two sessions structurally | Optional report |
+| `stats` | Aggregate content-free statistics | Optional report |
+| `doctor` | Show versions, config, agent roots and bounded diagnostics | Optional report |
+| `watch` | Observe verdict transitions for files or agent roots | None |
+| `hook` | Check a hook payload or print integration snippets | None |
+| `mcp` | Expose local read-only tools over stdio (`sesslint_check`, `sesslint_precheck`, `sesslint_scan`, `sesslint_triage`); MCP revisions `2025-06-18` and `2026-07-28` | None |
+| `completion` | Generate a shell completion script | None |
+| `version` | Print component, adapter and schema versions | None |
 
----
+#### Input adapters and output formats
 
-#### `sesslint check`
+<!-- next-release -->
 
-Scan and validate session files or directories for structural corruptions and provider rule violations.
+`--adapter` selects the input parser. `-f/--format` selects report output on
+`check`, `diff`, `stats`, `doctor`, `triage` and `hook`. `--json` remains the JSON
+shortcut. The other commands expose their own options: for example, `repair`
+and `verify` use `--json`, and `repair --emit` selects the repaired artifact's
+encoding. Check each command's `--help` before moving flags between commands.
 
-```bash
-sesslint check <path> [<path> ...] [OPTIONS]
+```sh
+sesslint check session.jsonl --adapter codex-rollout --format json
+sesslint check sessions/ --format sarif --output report.sarif
+sesslint triage session.jsonl --format json
+sesslint repair session.jsonl --dry-run --json
 ```
 
-Multiple paths aggregate into a single scan report — this is what the
-pre-commit hook relies on when it appends every staged file to one invocation.
-`-` reads one session artifact from stdin (max 100 MB), e.g.
-`type rollout.jsonl | sesslint check -`.
+`check` supports `human`, `json`, `sarif` and `html`; `diff`, `stats`, `doctor`
+and `triage` support `human` and `json`. `hook` supports `text`, `json` and
+`claude-json`. `watch --json` emits NDJSON transition events.
 
-| Option              | Type     | Default    | Description                                                                                                                                               |
-| :------------------ | :------- | :--------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`              | `Path`   | _required_ | Session file path(s) (`.json` or `.jsonl`), a directory (with `--recursive`), or `-` for stdin.                                                           |
-| `--recursive`, `-r` | `flag`   | `False`    | Recursively scan directories and report 5-bucket totals.                                                                                                  |
-| `--format`          | `choice` | `auto`     | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`.                                                                |
-| `--profile`         | `string` | `neutral`  | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`).                                                                                  |
-| `--json`            | `flag`   | `False`    | Emit machine-readable JSON report.                                                                                                                        |
-| `--output-format`   | `choice` | `human`    | Output format: `human`, `json`, `sarif` (SARIF 2.1.0 for GitHub code scanning), or `html` (self-contained report file; mutually exclusive with `--json`). |
-| `--fail-on`         | `choice` | `error`    | Minimum finding severity that fails the command (`error` or `warning`).                                                                                   |
-| `--select`          | `CSV`    | —          | Comma-separated rule codes to run exclusively (mutually exclusive with `--ignore`).                                                                       |
-| `--ignore`          | `CSV`    | —          | Comma-separated rule codes to skip, including detection-stage findings (e.g. `SL302`).                                                                    |
-| `--baseline`        | `Path`   | —          | Suppress findings whose fingerprints are recorded in a baseline file.                                                                                     |
-| `--write-baseline`  | `Path`   | —          | Write current finding fingerprints as a new baseline file (mutually exclusive with `--baseline`).                                                         |
-| `--skip-undetected` | `flag`   | `False`    | Classify format-undetected files as `skipped` instead of `invalid` (hooks, mixed-content trees).                                                          |
-| `--exclude`         | `GLOB`   | —          | Skip files/dirs whose name or root-relative path matches GLOB during directory walks (repeatable).                                                        |
-| `--ext`             | `EXT`    | —          | Only inspect files with these extensions during directory walks (repeatable).                                                                             |
-| `--config`          | `Path`   | —          | Explicit config file path (overrides `[tool.sesslint]` discovery).                                                                                        |
-| `--progress-json`   | `flag`   | `False`    | Emit NDJSON progress events to **stderr** (stdout stays the result channel); used by supervising UIs/CI wrappers.                                         |
-| `--confidence-min`  | `float`  | `0.55`     | Minimum auto-detection confidence threshold.                                                                                                              |
-| `--margin-min`      | `float`  | `0.15`     | Minimum auto-detection margin above second-place format.                                                                                                  |
-| `--max-files`       | `int`    | `10000`    | Maximum number of files to inspect during recursive scan.                                                                                                 |
-| `--max-bytes`       | `int`    | `1GB`      | Maximum cumulative bytes to read during recursive scan.                                                                                                   |
-| `--follow-symlinks` | `flag`   | `False`    | Follow directory symlinks during recursive scanning.                                                                                                      |
-| `--include-content` | `flag`   | `False`    | Embed raw transcript content in reports (warning: emits raw sensitive data).                                                                              |
-| `--color`           | `choice` | `auto`     | Control colored output: `auto`, `always`, `never`.                                                                                                        |
-| `--no-color`        | `flag`   | `False`    | Disable ANSI color styling (equivalent to `NO_COLOR=1`).                                                                                                  |
+Report-producing commands that offer `-o/--output` write the report there and
+print a short confirmation on stdout. `--quiet` suppresses that confirmation
+and non-error diagnostics; `--verbose` sends settings provenance and timing to
+stderr. Reports and baseline outputs refuse protected input aliases. Repair
+and export destinations must be fresh; existing repaired artifacts are never
+silently replaced.
 
-> [!NOTE]
-> `--policy` is valid exclusively for `repair`, not `check`. Passing `--policy` to `check` errors immediately with exit code 2.
+#### Check files and trees
 
----
+<!-- next-release -->
 
-#### `sesslint scan`
-
-Scan directory trees for session artifacts or display reader resource limits.
-
-```bash
-sesslint scan [path] [OPTIONS]
-sesslint scan --agent claude|codex|all
-sesslint scan --show-limits
+```sh
+sesslint check session.jsonl
+sesslint check first.jsonl second.jsonl --format json
+sesslint check sessions/ --jobs 2 --format json
+sesslint check --agent claude --newest 20 --format json
+sesslint check --agent codex --latest --format json
 ```
 
-| Option              | Type     | Default    | Description                                                                                                                                                                                                                                                   |
-| :------------------ | :------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`              | `Path`   | _optional_ | Directory path to scan recursively (required unless `--agent` or `--show-limits`), or `-` for stdin (max 100 MB).                                                                                                                                             |
-| `--agent`           | `choice` | —          | Auto-discover well-known session roots: `claude` (`$CLAUDE_CONFIG_DIR/projects` else `~/.claude/projects`), `codex` (`$CODEX_HOME/sessions` else `~/.codex/sessions`), or `all`. Read-only; an explicit `path` overrides it.                                  |
-| `--show-limits`     | `flag`   | `False`    | Display configured reader resource limits (max line length, max bytes) and exit 0.                                                                                                                                                                            |
-| `--recursive`, `-r` | `flag`   | `True`     | Recursively scan directory trees (default: `True`).                                                                                                                                                                                                           |
-| `--max-files`       | `int`    | `10000`    | Maximum number of files to process before aborting.                                                                                                                                                                                                           |
-| `--max-bytes`       | `int`    | `1GB`      | Maximum cumulative bytes to process before aborting.                                                                                                                                                                                                          |
-| `--format`          | `choice` | `auto`     | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`.                                                                                                                                                                    |
-| `--profile`         | `string` | `neutral`  | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`).                                                                                                                                                                                      |
-| `--json`            | `flag`   | `False`    | Emit machine-readable JSON scan report with 5-bucket totals.                                                                                                                                                                                                  |
-| `--output-format`   | `choice` | `human`    | Output format: `human`, `json`, `sarif`, or `html` (self-contained report file; mutually exclusive with `--json`).                                                                                                                                            |
-| `--fail-on`         | `choice` | `error`    | Minimum finding severity that fails the command (`error` or `warning`).                                                                                                                                                                                       |
-| `--select`          | `CSV`    | —          | Comma-separated rule codes to run exclusively (mutually exclusive with `--ignore`).                                                                                                                                                                           |
-| `--ignore`          | `CSV`    | —          | Comma-separated rule codes to skip, including detection-stage findings.                                                                                                                                                                                       |
-| `--baseline`        | `Path`   | —          | Suppress findings whose fingerprints are recorded in a baseline file.                                                                                                                                                                                         |
-| `--write-baseline`  | `Path`   | —          | Write current finding fingerprints as a new baseline file.                                                                                                                                                                                                    |
-| `--skip-undetected` | `flag`   | `False`    | Classify format-undetected files as `skipped` instead of `invalid`.                                                                                                                                                                                           |
-| `--exclude`         | `GLOB`   | —          | Skip files/dirs matching GLOB during the walk (repeatable). `.git` trees and SessLint-generated artifacts are always excluded.                                                                                                                                |
-| `--ext`             | `EXT`    | —          | Only inspect files with these extensions (repeatable).                                                                                                                                                                                                        |
-| `--config`          | `Path`   | —          | Explicit config file path (overrides `[tool.sesslint]` discovery).                                                                                                                                                                                            |
-| `--progress-json`   | `flag`   | `False`    | Emit NDJSON progress events to **stderr** (stdout stays the result channel).                                                                                                                                                                                  |
-| `--jobs`            | `N`      | `1`        | Parallel worker processes for per-file analysis (`auto`/`0` = CPU count). Report output is identical for any N — only wall time changes. Pays off when average per-file analysis exceeds ~0.5 s. Ignored for single-file input.                               |
-| `--incremental`     | `flag`   | `False`    | Reuse cached per-file results when file content is provably unchanged (SHA-256, never mtime). Replayed entries are marked `"cache": "hit"` in JSON / `[cache-hit]` in human output; findings and verdicts are identical. `unreadable` files are never cached. |
-| `--cache-dir`       | `DIR`    | platform   | Override the incremental cache directory. Default: `$SESSLINT_CACHE_DIR`, else `%LOCALAPPDATA%\sesslint` (Windows) or `$XDG_CACHE_HOME/sesslint` / `~/.cache/sesslint`. Never created inside the scanned tree.                                                |
-| `--top`             | `N`      | `10`       | Show up to N worst files in the report summary (`0` disables the worst-files view).                                                                                                                                                                           |
-| `--group-by`        | `choice` | `code`     | Summary grouping: `code` aggregates findings by rule code; `none` disables the by-code view.                                                                                                                                                                  |
-| `--follow-symlinks` | `flag`   | `False`    | Follow symbolic links during directory traversal.                                                                                                                                                                                                             |
-| `--color`           | `choice` | `auto`     | Control colored output: `auto`, `always`, `never`.                                                                                                                                                                                                            |
-| `--no-color`        | `flag`   | `False`    | Disable ANSI color styling.                                                                                                                                                                                                                                   |
+A single file returns a check report; directory or multiple-path inputs return
+a scan report. `-` reads one bounded artifact from stdin. `--profile` chooses
+`neutral`, `claude-strict` or `openai-strict`. `--select` and `--ignore` are
+mutually exclusive; `--baseline` suppresses recorded findings and
+`--write-baseline` writes the current findings to a separate file.
 
----
+Directory scans accept `--exclude`, `--ext`, file/byte limits, `--newest`,
+`--since`, `--include-archived`, sampling limits and `--fail-on-unsupported`.
+Symlinks are not followed unless requested. With `--progress-json`, progress
+is NDJSON on stderr and stdout remains the result channel.
 
-#### `sesslint repair`
+#### Diagnose before repair
 
-Plan and execute verified, atomic session repairs.
+<!-- next-release -->
 
-```bash
-sesslint repair <path> --output <out_path> [OPTIONS]
+```sh
+sesslint triage session.jsonl --format json
+sesslint triage session.jsonl --policy salvage --format json
+sesslint repair session.jsonl --preview --json
 ```
 
-| Option                       | Type      | Default        | Description                                                                                                                                                                                                                                     |
-| :--------------------------- | :-------- | :------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                       | `Path`    | _required_     | Source session file to repair, or `-` to read the source from stdin (max 100 MB; staged internally through a private temp file so the full atomic-repair protocol applies unchanged).                                                           |
-| `--output`, `-o`             | `Path`    | _required_     | Distinct destination path (required unless `--dry-run`).                                                                                                                                                                                        |
-| `--dry-run`                  | `flag`    | `False`        | Computes and displays plan; creates zero files on disk.                                                                                                                                                                                         |
-| `--policy`                   | `choice`  | `conservative` | `conservative` (allowlisted conservative recipes) or `salvage` (explicit lossy pruning).                                                                                                                                                        |
-| `--format`                   | `choice`  | `auto`         | Force input adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`.                                                                                                                                                |
-| `--emit`                     | `choice`  | `auto`         | Output format: `auto` (vendor write-back where supported, otherwise canonical), `canonical`, or `vendor` (refused for formats without write-back support).                                                                                      |
-| `--progress-json`            | `flag`    | `False`        | Emit NDJSON progress events to **stderr** (stdout stays the result channel).                                                                                                                                                                    |
-| `--profile`                  | `string`  | `neutral`      | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`).                                                                                                                                                                        |
-| `--plan`, `--apply-plan`     | `Path`    | `None`         | Apply a previously exported plan (`sesslint.plan/v1`) without re-planning; the plan is authoritative — `--policy`/`--profile`/`--format` overrides are refused, and the plan fingerprint plus source binding are re-validated before any write. |
-| `--plan-out`                 | `Path`    | `None`         | Export the computed repair plan (`sesslint.plan/v1`) for review or later `--apply-plan`; plan-only when `--output` is absent, export-then-apply otherwise.                                                                                      |
-| `--batch`                    | `Path`    | `None`         | Batch-repair every eligible file under a directory (eligibility = plan has steps and zero blocked findings).                                                                                                                                    |
-| `--from-scan`                | `Path`    | `None`         | Batch-repair files listed in a scan JSON report (`~/` paths resolve; `.._<hash>` entries report skipped).                                                                                                                                       |
-| `--files`                    | `Path...` | `None`         | Batch-repair an explicit file list.                                                                                                                                                                                                             |
-| `--output-dir`               | `Path`    | `None`         | Output root for batch modes — mirrors the input's relative structure with `<stem>.repaired<suffix>` names.                                                                                                                                      |
-| `--manifest-dir`             | `Path`    | `None`         | Manifest root for batch modes (`<sha8-of-path>.manifest.json`); default is adjacent to each output.                                                                                                                                             |
-| `--preview`                  | `flag`    | `False`        | Render a content-free structural diff of the repair plan — drops, relinks, dedupes, tail-discards + blocked findings — with zero writes; composes with `--json`, incompatible with write/plan flags.                                            |
-| `--acknowledge-side-effects` | `flag`    | `False`        | Acknowledge tool side-effects for salvage policy.                                                                                                                                                                                               |
-| `--salvage-unsupported`      | `flag`    | `False`        | _Deprecated_: Use `--policy salvage` instead.                                                                                                                                                                                                   |
-| `--include-content`          | `flag`    | `False`        | Embed raw transcript content in manifests (warning: emits raw sensitive data).                                                                                                                                                                  |
-| `--json`                     | `flag`    | `False`        | Emit machine-readable JSON plan or repair manifest.                                                                                                                                                                                             |
+Triage checks one snapshot and shows missing evidence, structural impact and
+at most three next actions. Previews are unapplied. An explicit salvage policy
+compares both policies without acknowledging side effects. See the
+[triage guide](docs/TRIAGE.md) for statuses and synthetic walkthroughs.
 
-> [!NOTE]
-> **Plan Export / Apply**: `sesslint repair IN --plan-out plan.json` writes the computed plan as a `sesslint.plan/v1` document and stops (no output/manifest). Review or archive it, then `sesslint repair IN --apply-plan plan.json --output OUT` executes it later — the plan fingerprint is recomputed and the plan's `source_hash` is re-validated against the live source before any write, so a stale source refuses with `PLAN_SOURCE_MISMATCH` (plan-stale) and an edited plan refuses with `PLAN_TAMPERED`. The plan is authoritative: `--policy`/`--profile`/`--format` overrides are refused at apply time; policy and profile derive from the plan document itself. `repair IN --plan-out p.json --output OUT` composes export and apply in one run.
->
-> [!NOTE]
-> **Batch Repair**: `sesslint repair --batch DIR --output-dir out/ [--manifest-dir m/]` repairs every file whose computed plan has steps and zero blocked findings — the planner's own eligibility classification, fail-closed and non-overridable. Ineligible files are never attempted and are reported with their blocking code+reason; `--from-scan report.json` drives a batch from a scan report and `--files F...` takes an explicit list. Outputs mirror the input's relative structure under `--output-dir`; exit is `0` only when nothing was skipped or refused (partial success is honest), `1` otherwise. `--dry-run` previews eligibility without writes. Per-file atomicity is unchanged; the batch has no cross-file transaction.
->
-> [!NOTE]
-> **Structural Preview**: `sesslint repair IN --preview` runs the full detection+planning pipeline and renders the would-be outcome as a content-free structural delta — `drop`, `relink`, `discard-tail`, `dedupe` rows with bounded event ids, kinds, source lines and reason codes — so an operator can approve a repair on evidence instead of trust. Blocked findings are listed with their code+reason and the command exits `1` when the plan would refuse. `--preview` writes nothing: it composes with `--json` (emits `sesslint.preview/v1`) and is incompatible with `--output`, `--emit`, `--plan`/`--apply-plan`, `--plan-out`, and the batch flags (exit 2).
->
-> [!NOTE]
-> **Vendor Write-Back**: Claude Code JSONL, OpenAI Agents JSONL, and Codex rollout inputs are repaired in canonical form and projected back onto the source file's physical lines — every surviving record stays byte-identical and only lines explicitly discarded by the plan are removed. Projection refuses (exit 2, reasons R1-R6) whenever a safe verbatim projection cannot be proven: synthesized or field-rewritten events, partial-line survival, reordered lines, source drift, or non-line formats (single-document JSON exports emit `--emit canonical` instead). Emitted output is re-loaded through the original adapter and fully revalidated before the manifest is written.
->
-> **`codex-rollout` inputs** are fully supported for check/scan/export and repair. As a per-line JSONL record stream, rollout files are write-back capable: `--emit auto` (the default) projects the repair onto verbatim source lines under the same R1–R6 refusal rules; `--emit canonical` produces a canonical session stream instead.
+#### Repair and verify copies
 
----
+<!-- next-release -->
 
-#### `sesslint export`
-
-Export a supported session artifact (Claude Code, OpenAI Agents, Codex rollout, or Canonical) to a byte-deterministic canonical file that the repair pipeline accepts. This is repair-enablement, not migration: single artifact in, single file out, atomic write, refusals fail closed.
-
-```bash
-sesslint export <path> --output <canonical_path> [--format auto] [--json]
+```sh
+sesslint repair session.jsonl --dry-run --json
+sesslint repair session.jsonl --plan-out plan.json
+sesslint repair session.jsonl --apply-plan plan.json --output repaired.jsonl --json
+sesslint verify session.jsonl repaired.jsonl --manifest repaired.jsonl.manifest.json --json
+sesslint repair sessions/ --output-dir repaired/ --dry-run --json
 ```
 
-| Option           | Type     | Default    | Description                                                                                |
-| :--------------- | :------- | :--------- | :----------------------------------------------------------------------------------------- |
-| `path`           | `Path`   | _required_ | Source session file (`.json` or `.jsonl`).                                                 |
-| `--output`, `-o` | `Path`   | _required_ | Destination canonical file (must not exist).                                               |
-| `--format`       | `choice` | `auto`     | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
-| `--json`         | `flag`   | `False`    | Emit the content-free export summary as JSON.                                              |
+An exported plan is bound to the source hash. Apply time rejects policy,
+profile or adapter overrides; those values come from the plan. `--emit` is
+`auto`, `canonical` or `vendor`. `auto` preserves supported vendor lines through
+conservative write-back. Refusal, including SL203, creates no repaired copy
+or manifest. Salvage does not override uncertain side effects.
 
----
+A directory, multiple positional files, or `--from-scan report.json` selects
+batch repair with `--output-dir`. Optional `--manifest-dir` separates manifests.
+Each file retains its atomic repair guarantees; the batch is not a transaction.
+Inspect skipped/refused entries even when some files were repaired.
 
-#### `sesslint diff`
+#### Support and integrations
 
-Compare two session files **structurally** — event-identity alignment, not text diff. Answers "what changed between these two sessions" for before/after comparisons (vendor update, pre/post compaction, repair output sanity review) without raw-JSONL noise.
+<!-- next-release -->
 
-```bash
-sesslint diff <a> <b> [--format auto] [--format-a FMT] [--format-b FMT] [--output-format human|json]
+```sh
+sesslint doctor --no-quick-checks --format json
+sesslint version --json
+sesslint bundle session.jsonl --output bundle.json
+sesslint export session.jsonl --output canonical.jsonl --adapter claude-code-jsonl --json
+sesslint diff before.jsonl after.jsonl --adapter codex-rollout --format json
+sesslint stats sessions/ --format json
+sesslint hook --init --agent claude
+sesslint completion powershell
 ```
 
-Alignment is two-pass and deterministic: primary key `event.id` (duplicate ids pair earliest-first), then a `(kind, parent_id, content_identity_hash)` fallback multiset for unpaired events. Delta categories are content-free: `added`, `removed`, `kind-changed`, `parent-relinked`, `seq-reordered`, `content-changed` (identity hash only — never payload text). `--json` emits `sesslint.diff/v1` (`schemas/sesslint.diff.v1.json`).
-
-| Option                     | Type     | Default             | Description                                                  |
-| :------------------------- | :------- | :------------------ | :----------------------------------------------------------- |
-| `a`, `b`                   | `Path`   | _required_          | The two session files to compare.                            |
-| `--format`                 | `choice` | `auto`              | Adapter for both inputs (`auto` detects each independently). |
-| `--format-a`, `--format-b` | `choice` | _(from `--format`)_ | Per-side format override.                                    |
-| `--output-format`          | `choice` | `human`             | `human` (grouped sections) or `json`.                        |
-| `--json`                   | `flag`   | `False`             | Shortcut for `--output-format json`.                         |
-
-Exit codes: `0` identical structure, `1` differences found, `2` usage/input error (missing path, undetectable format).
-
----
-
-#### `sesslint stats`
-
-Aggregate **content-free statistics** over session files or directories — "how big / what shape is my session corpus" without reading transcripts.
-
-```bash
-sesslint stats <path> [<path> ...] [-r] [--agent claude|codex|all] [--output-format human|json]
-```
-
-Counters only, never payloads: files processed/undetected/unreadable, events by canonical `kind` and `actor`, tool-call volume per **truncated sha256 tool-name hash** (raw names are never emitted), compaction-boundary and checkpoint counts, and per-file byte/event percentiles (p50/p95/max). `--json` emits `sesslint.stats/v1` (`schemas/sesslint.stats.v1.json`).
-
-| Option              | Type     | Default          | Description                                                                    |
-| :------------------ | :------- | :--------------- | :----------------------------------------------------------------------------- |
-| `path`              | `Path`   | _(or `--agent`)_ | Session file(s) or directories.                                                |
-| `-r`, `--recursive` | `flag`   | `False`          | Walk directory arguments recursively.                                          |
-| `--agent`           | `choice` | —                | Aggregate a well-known agent root (`claude`, `codex`, `all`) instead of paths. |
-| `--format`          | `choice` | `auto`           | Adapter for all inputs.                                                        |
-| `--output-format`   | `choice` | `human`          | `human` or `json`.                                                             |
-| `--json`            | `flag`   | `False`          | Shortcut for `--output-format json`.                                           |
-
-Exit codes: `0` on successful aggregation, `2` on usage error (missing path, directory without `-r`, `--agent` + paths conflict).
-
----
-
-#### `sesslint doctor`
-
-Environment diagnostics in one read — the first command a new user runs and the first thing maintainers ask for in bug reports. Answers "what does SessLint see on this machine".
-
-```bash
-sesslint doctor [--agent claude|codex|all] [--no-quick-checks] [--output-format human|json]
-```
-
-Reports tool and adapter versions, the resolved config file (or `none`), and per-agent session roots: existence, bounded file count (caps at 10k honestly), newest-file mtime, and quick verdicts on up to 5 newest files per root (verdict counts + top rule codes). **Counts and timestamps only** — never file names, never payloads; paths minimized. `--json` emits `sesslint.doctor/v1` (`schemas/sesslint.doctor.v1.json`). Diagnostics, not a gate: absent roots report `absent` and the command still exits `0`.
-
-| Option              | Type     | Default | Description                                         |
-| :------------------ | :------- | :------ | :-------------------------------------------------- |
-| `--agent`           | `choice` | `all`   | Restrict to one agent (`claude`, `codex`, `all`).   |
-| `--no-quick-checks` | `flag`   | `False` | Skip the bounded per-file check pass (counts only). |
-| `--output-format`   | `choice` | `human` | `human` or `json`.                                  |
-| `--json`            | `flag`   | `False` | Shortcut for `--output-format json`.                |
-
-Exit codes: `0` always on successful diagnostics, `2` on usage error.
-
----
-
-#### `sesslint watch`
-
-Poll-based directory monitor: flag a **newly corrupted session file the moment it lands** — prevention posture, before the next resume reads the poisoned ledger. Portable by construction (stdlib `scandir` snapshots, no OS-event dependency, no runtime deps).
-
-```bash
-sesslint watch [<path> ...|--agent claude|codex|all] [--interval SEC] [--json]
-```
-
-Semantics: mtime+size snapshots under the resolved roots (same built-in exclusions as `scan`), debounced one full interval before checking (agents append in bursts), then the normal check pipeline on that file only. Emits **one line per verdict transition** (`healthy->invalid`, minimized path + rule codes) — repeated states stay quiet. Pure observer: never writes, never installs hooks; Ctrl+C exits cleanly. Per-file state table is LRU-bounded (4096 files). `--json` emits `sesslint.watch-event/v1` NDJSON transitions.
-
-| Option       | Type     | Default          | Description                                               |
-| :----------- | :------- | :--------------- | :-------------------------------------------------------- |
-| `path`       | `Path`   | _(or `--agent`)_ | File(s) or directories to watch.                          |
-| `--agent`    | `choice` | —                | Watch a well-known agent root (`claude`, `codex`, `all`). |
-| `--interval` | `float`  | `2.0`            | Poll interval seconds (min `0.05`).                       |
-| `--format`   | `choice` | `auto`           | Adapter for all watched files.                            |
-| `--json`     | `flag`   | `False`          | NDJSON transition events.                                 |
-
-Exit codes: `0` on clean shutdown (Ctrl+C) or completion, `2` on usage error.
-
----
-
-#### Shell completion
-
-`sesslint completion` prints a completion script generated from the live parser (bash, zsh, fish, or PowerShell). Install it with:
-
-```bash
-eval "$(sesslint completion bash)"   # or: zsh, fish
-```
-
-```powershell
-sesslint completion powershell >> $PROFILE   # PowerShell 7 / Windows PowerShell 5.1
-```
-
----
-
-#### `sesslint verify`
-
-Independently audit integrity, cryptographic hash bindings, manifest actions, and idempotence of a repaired session.
-
-```bash
-sesslint verify <source> <repaired> --manifest <manifest> [OPTIONS]
-```
-
-| Option                       | Type     | Default    | Description                                                                       |
-| :--------------------------- | :------- | :--------- | :-------------------------------------------------------------------------------- |
-| `source`                     | `Path`   | _required_ | Original source session file path (positional or `--source`).                     |
-| `repaired`                   | `Path`   | _required_ | Repaired output session file path (positional or `--output`).                     |
-| `--manifest`                 | `Path`   | _required_ | Cryptographically bound repair manifest JSON path.                                |
-| `--plan`                     | `Path`   | `None`     | Path to repair plan JSON file (optional).                                         |
-| `--acknowledge-side-effects` | `flag`   | `False`    | Acknowledge tool side-effects for salvage policy during verify idempotence check. |
-| `--include-content`          | `flag`   | `False`    | Embed raw transcript content (warning: emits raw sensitive data).                 |
-| `--json`                     | `flag`   | `False`    | Emit machine-readable JSON verdict.                                               |
-| `--color`                    | `choice` | `auto`     | Control colored output: `auto`, `always`, `never`.                                |
-| `--no-color`                 | `flag`   | `False`    | Disable ANSI color styling.                                                       |
-
----
-
-#### `sesslint seal`
-
-Verify the hash chain of a tamper-evident verdict ledger — an append-only JSONL record written by `--seal` on `check`, `verify`, and `repair`. See [docs/seal.md](docs/seal.md) for the line format, honesty boundary, and divergence vocabulary.
-
-```bash
-sesslint seal --verify <ledger> [OPTIONS]
-```
-
-| Option     | Type   | Default    | Description                              |
-| :--------- | :----- | :--------- | :--------------------------------------- |
-| `--verify` | `Path` | _required_ | Ledger JSONL file to re-walk and verify. |
-| `--json`   | `flag` | `False`    | Emit machine-readable JSON result.       |
-
-Seal-appending flags on `check`, `verify`, `repair`: `--seal LEDGER` (append one line; fails `2` if the ledger is divergent or unwritable), `--seal-no-path` (omit the artifact path), `--seal-genesis-of HEX` (bind a new ledger's first line to a prior ledger's last hash). Single-artifact invocations only — scan/batch/plan-only modes refuse `--seal`.
-
----
-
-#### `sesslint bundle`
-
-Generate a privacy-safe diagnostic support bundle and fixture skeleton for troubleshooting or requesting adapter support. Reporting a corrupted session to the agent vendor? See [Reporting a Corrupted Session](docs/REPORTING_CORRUPTION.md) for the check → bundle → attach flow.
-
-```bash
-sesslint bundle <path> [OPTIONS]
-```
-
-| Option                    | Type     | Default    | Description                                                                                |
-| :------------------------ | :------- | :--------- | :----------------------------------------------------------------------------------------- |
-| `path`                    | `Path`   | _required_ | Path to session file (`.json` or `.jsonl`).                                                |
-| `--output`, `--out`, `-o` | `Path`   | `None`     | Path to output bundle JSON file (prints to stdout if omitted).                             |
-| `--json`                  | `flag`   | `False`    | Output bundle as JSON to stdout.                                                           |
-| `--format`                | `choice` | `auto`     | Force adapter: `auto`, `claude-code-jsonl`, `openai-agents`, `codex-rollout`, `canonical`. |
-| `--profile`               | `string` | `neutral`  | Replay validation profile (`neutral`, `claude-strict`, `openai-strict`).                   |
+`doctor` and `version --json` list supported adapters. `seal --verify LEDGER`
+checks a tamper-evident ledger; `--seal LEDGER` on a single-artifact check,
+verification or completed repair explicitly appends a verdict. Review
+[bundle privacy limits](docs/REPORTING_CORRUPTION.md) before sharing a support
+artifact. Hook initialization prints snippets; it does not edit agent settings.
 
 ---
 
@@ -691,8 +504,8 @@ SessLint implements predictable, POSIX-compliant exit code semantics.
 
 SessLint reads project defaults from `[tool.sesslint]` in `sesslint.toml`,
 `.sesslint.toml`, or `pyproject.toml`, discovered by walking upward from the
-working directory (ruff-style). Explicit `--config PATH` overrides discovery.
-Precedence is **CLI flag > config file > built-in default**; unknown keys and
+working directory (ruff-style). Explicit `--config PATH` overrides `SESSLINT_CONFIG` and upward discovery.
+Precedence is **CLI flag > environment > config file > built-in default**; unknown keys and
 invalid values fail closed with exit 2. A `pyproject.toml` that contains the
 literal marker `[tool.sesslint` but is not valid TOML or UTF-8 also fails
 closed (exit 2) and is never replaced by a parent config. A `pyproject.toml`
@@ -703,13 +516,18 @@ unreadable or fails to parse, discovery skips it and keeps walking.
 #:schema https://raw.githubusercontent.com/HPNChanel/sesslint/main/schemas/sesslint-config.schema.json
 # sesslint.toml — flat keys (no [tool.sesslint] header; that is pyproject.toml only)
 profile = "neutral"            # neutral | claude-strict | openai-strict
-format = "auto"                # auto | canonical | claude | claude-code-jsonl | codex | codex-rollout | openai | openai-agents
+adapter = "auto"               # auto | canonical | claude-code-jsonl | codex-rollout | openai-agents
 fail_on = "error"              # error | warning
 ignore = ["SL107"]             # rule codes to skip; mutually exclusive with select
-policy = "conservative"        # repair only: conservative | salvage
+policy = "conservative"        # repair/triage: conservative | salvage
 exclude = ["vendor/*", "*.log"]
 ext = ["jsonl"]
 ```
+
+`SESSLINT_PROFILE` and `SESSLINT_ADAPTER` provide environment defaults.
+`SESSLINT_FORMAT` chooses output only where that command supports it; output
+format is not a shared TOML key. The old TOML `format` key is rejected in 0.5;
+rename it to `adapter`.
 
 For `pyproject.toml` the same keys live under `[tool.sesslint]`. Editor
 autocomplete/validation comes from the shipped JSON Schema
@@ -729,8 +547,8 @@ fully-baselined file reports healthy with no residual output — analysis still
 runs; only report-visible findings are filtered.
 
 ```bash
-sesslint check sessions/ -r --write-baseline .sesslint-baseline.json
-sesslint check sessions/ -r --baseline .sesslint-baseline.json
+sesslint check sessions/ --write-baseline .sesslint-baseline.json
+sesslint check sessions/ --baseline .sesslint-baseline.json
 ```
 
 `--write-baseline` emits **`sesslint.baseline/v2`**: each entry
@@ -743,19 +561,47 @@ the immediate parent directory itself changes the file role and does _not_
 match (documented residual ambiguity — re-baseline after such moves). v1
 baseline files still load and suppress via their raw fingerprints, unchanged.
 
-`sesslint baseline --upgrade OLD.json` rewrites a v1 baseline
-as v2: with `--source SESSION_OR_DIR`, findings are reproduced to verify
-entries (`migrated: "verified"`); without it every entry migrates
-`"unverified"` and still matches through the legacy v1 leg. Output goes to
-`--output PATH` or stdout.
+The old `baseline --upgrade` command is removed. Existing v1 baselines still
+load through `check --baseline`. To create a new v2 baseline from current
+findings, run:
 
-```bash
-sesslint baseline --upgrade .sesslint-baseline.json --source sessions/ -o .sesslint-baseline-v2.json
+```sh
+sesslint check sessions/ --write-baseline .sesslint-baseline-v2.json
 ```
+
+This records all current findings; review them before accepting the baseline.
+It is not an automatic conversion of a previously approved v1 finding set.
 
 ---
 
 ## Supported Formats
+
+<!-- next-release -->
+
+Agent scans follow transcript layouts: Claude project and subagent JSONL files,
+or Codex `rollout-*.jsonl`. Memory notes, tool results and auxiliary metadata are
+outside that scope. Add `--include-archived` to include Codex archives.
+
+```sh
+sesslint scan --agent all --newest 20 --max-findings-per-code 10 --json
+sesslint scan sessions/ --since 2026-10-01 --max-file-bytes 209715200
+sesslint scan sessions/ --fail-on-unsupported
+```
+
+`--since` is an absolute UTC date applied to file modification time. Newest
+selection uses modification time with a deterministic path tie-break. Skipped
+counts identify the size, selection or cumulative scan limit that applied.
+The per-file default is 100 MiB; raising it can increase memory use. An undetected
+format is `unsupported`; `--fail-on-unsupported` makes that outcome exit 1.
+Reports show up to 20 finding samples per code per file while retaining full
+code and severity totals.
+
+SL008 allows 2000 ms of backwards clock skew by default. Configure
+`timestamp_skew_ms` in `[tool.sesslint]` or use `--timestamp-skew-ms`; zero restores
+strict ordering. One SL008 finding carries the affected edge count and maximum
+backwards delta. Unknown non-linking Claude/Codex metadata is grouped as SL306;
+unknown records with identity, links or semantic fields still fail closed.
+
 
 SessLint includes four production adapters with fail-closed auto-detection:
 
@@ -767,7 +613,7 @@ SessLint includes four production adapters with fail-closed auto-detection:
 | `canonical`         | SessLint Canonical v1 standard                      | `*.json`, `*.jsonl`  | N/A (native)      | Round-trip preserved                    |
 
 > [!CAUTION]
-> **Live Store Protection**: If `--output` points to an active SQLite database (detected via SQLite format 3 header magic or `.sqlite`/`.db` extensions), SessLint **immediately aborts** with exit code `2` to protect live stores from corruption.
+> **Live Store Protection**: If `repair` or `export` `--output` names a live-store path (a `.sqlite`/`.db` extension or an existing SQLite format 3 header), SessLint **immediately refuses** it with exit code `1` (`REPAIR_REFUSED` / `EXPORT_REFUSED`) and writes nothing. A SQLite file given as *input* is not parsed as a session (exit `2`).
 
 For comprehensive compatibility matrix across formats and validation profiles, consult the [Adapter & Profile Conformance Matrix](docs/MATRIX.md).
 
@@ -775,7 +621,7 @@ For comprehensive compatibility matrix across formats and validation profiles, c
 
 ## Diagnostic Reason Codes (SL001–SL402)
 
-SessLint implements **34 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
+SessLint implements **35 registered diagnostic codes**. Severity and repairability are maintained as independent dimensions. Detailed analytical documentation for each code is available in [`docs/codes/`](docs/codes/).
 
 ### 1. Syntax & Framing
 
@@ -1147,17 +993,17 @@ SessLint easily integrates into popular autonomous agent frameworks:
 Claude Code serializes user conversations and tool invocations to local project directories (`~/.claude/projects/`). Run SessLint directly against project trees:
 
 ```bash
-sesslint check ~/.claude/projects/my-app/ --profile claude-strict --recursive
+sesslint check ~/.claude/projects/my-app/ --profile claude-strict
 ```
 
 Real-world quickstart — lint the transcripts Claude Code recorded for one of your projects (directories are named after the working path, e.g. `-Users-me-my-app`):
 
 ```bash
 # 1. Lint every *.jsonl transcript under the project dir (read-only)
-sesslint check ~/.claude/projects/-Users-me-my-app/ --profile claude-strict --recursive
+sesslint check ~/.claude/projects/-Users-me-my-app/ --profile claude-strict
 
 # 2. Emit a machine-readable report for scripting or CI
-sesslint check ~/.claude/projects/-Users-me-my-app/ --profile claude-strict --recursive --json > report.json
+sesslint check ~/.claude/projects/-Users-me-my-app/ --profile claude-strict --json > report.json
 
 # 3. Preview the repair plan for a corrupted transcript without touching disk
 sesslint repair ~/.claude/projects/-Users-me-my-app/deadbeef.jsonl --profile claude-strict --dry-run
@@ -1350,10 +1196,13 @@ from sesslint.repair import execute, load_session_source, plan, run_all_checks
 header, events = load_session_source(Path("session.jsonl"))
 
 # 2. Run check suite with explicit profile
+# `adapter` and the basename in `source_path` must match what `execute` derives
+# for this file; otherwise it refuses the plan as not derived from the source.
 findings = run_all_checks(
     events,
     profile="claude-strict",
     source_path="session.jsonl",
+    adapter="canonical",
 )
 
 # 3. Plan and atomically execute repair
@@ -1391,7 +1240,7 @@ jobs:
         steps:
             - uses: actions/checkout@v4
             - name: Validate Session Artifacts
-              uses: HPNChanel/sesslint/.github/actions/sesslint-check@v0.4.1 # next release
+              uses: HPNChanel/sesslint/.github/actions/sesslint-check@v0.5.0 # next release; verify publication first
               with:
                   path: sessions/
                   profile: neutral
@@ -1419,9 +1268,10 @@ jobs:
 | `source-ref`      | Local checkout path (`.`) or git ref for source install.                                             | `""`       |
 | `python-version`  | Python runtime version.                                                                              | `3.11`     |
 
-To publish results to GitHub code scanning, use `output-format: sarif` and
-upload `sesslint_stdout.json` (written in the step's working directory) with
-`github/codeql-action/upload-sarif`.
+To publish results to GitHub code scanning, use `output-format: sarif`. The
+action does not write a report file; it exposes the document as the
+`report-json` step output (also `exit-code` and `verdict`). Save that output to a
+file in a later step, then pass the file to `github/codeql-action/upload-sarif`.
 
 ### Other CI platforms
 
@@ -1438,7 +1288,7 @@ Enforce session integrity locally before commits are created by adding SessLint 
 ```yaml
 repos:
     - repo: https://github.com/HPNChanel/sesslint
-      rev: v0.4.1 # next release; use a published tag or reviewed commit SHA
+      rev: v0.5.0 # next release; use a published tag or reviewed commit SHA
       hooks:
           - id: sesslint-check
 ```
@@ -1461,6 +1311,20 @@ Formal versioned JSON Schemas are maintained in `schemas/`:
 | **Diff**            |  `v1`   | `schemas/sesslint.diff.v1.json`            | Structural diff output            |
 | **Stats**           |  `v1`   | `schemas/sesslint.stats.v1.json`           | Aggregate statistics output       |
 | **Doctor**          |  `v1`   | `schemas/sesslint.doctor.v1.json`          | Environment diagnostics output    |
+| **Repair Preview**  |  `v1`   | `schemas/sesslint.preview.v1.json`         | Structural repair preview         |
+| **Batch Repair**    |  `v1`   | `schemas/sesslint.batch-repair.v1.json`    | Batch repair run summary          |
+| **Seal Ledger**     |  `v1`   | `schemas/sesslint.seal-ledger.v1.json`     | Hash-chain ledger entry           |
+| **Baseline**        |  `v2`   | `schemas/sesslint.baseline.v2.json`        | Known-findings baseline           |
+| **Triage**          |  `v1`   | `schemas/sesslint.triage.v1.json`          | `triage -f json` / `sesslint_triage` MCP result |
+| **Hook Result**     |  `v1`   | `schemas/sesslint.hook-result.v1.json`     | `hook --json` result              |
+| **Init Hooks**      |  `v1`   | `schemas/sesslint.init-hooks.v1.json`      | `hook --init --json` snippets *(next release)* |
+| **Watch Event**     |  `v1`   | `schemas/sesslint.watch-event.v1.json`     | `watch --json` NDJSON line        |
+| **Version**         |  `v1`   | `schemas/sesslint.version.v1.json`         | `version --json` output           |
+| **Precheck Result** |  `v1`   | `schemas/sesslint.precheck-result.v1.json` | `sesslint_precheck` MCP result    |
+| **Outcome Contract** |  `v1`  | `schemas/sesslint.outcome-contract.v1.json` | `outcome` contract input         |
+| **Outcome Report**  |  `v1`   | `schemas/sesslint.outcome-report.v1.json`  | `outcome --json` report           |
+| **Snapshot**        |  `v1`   | `schemas/sesslint.snapshot.v1.json`        | `outcome` JSON snapshot envelope  |
+| **Config**          |  `v1`   | `schemas/sesslint-config.schema.json`      | `sesslint.toml` configuration     |
 
 ---
 
@@ -1479,7 +1343,7 @@ The NDP-001 "Trustworthy Alpha" program introduces several intentional behaviora
 | **SL302 Type Discriminator** | Unknown event discriminator echoed raw into `evidence.type_value`.                                                                 | Allowlist echo `^[A-Za-z0-9_.-]{1,64}$`; complex or long discriminators masked to `<type:len=N>` with `truncated: true`.                                              | Protects against secret and prompt leakage in default reports (FR-081/FR-082).                                                                              |
 | **Repair Manifest**          | Manifests lacked revalidation proof and allowed silent file overwrite.                                                             | Embedded `revalidation` summary struct, `assurance_ceiling`, real adapter versions, `O_EXCL` exclusive create, and directory fsync.                                   | Additive manifest fields; existing receipt files are never silently overwritten.                                                                            |
 | **SL004 Parent Restoration** | `proven-unique-parent-restore` matched candidate parents across the entire session by string/hash prefix.                          | Candidate matching requires exact full string equality, same-branch confinement, and same-compaction-segment confinement.                                             | Eliminates prefix guessing; ambiguous or unconfined missing-parent cases remain `manual` without auto-repair.                                               |
-| **CLI Command Surface**      | `check` accepted meaningless `--policy` flag; `repair` accepted `--salvage-unsupported`; `cmd_check` had duplicated orchestration. | `check` unified onto `api.check_file` / `api.check_dir`; `--policy` on `check` raises exit code 2; `--salvage-unsupported` deprecated in favor of `--policy salvage`. | Clean CLI contract with zero behavioral drift between CLI and Python API.                                                                                   |
+| **CLI Command Surface**      | `check` accepted meaningless `--policy` flag; `repair` accepted `--salvage-unsupported`; `cmd_check` had duplicated orchestration. | `check` unified onto `api.check_file` / `api.check_dir`; `--policy` on `check` raises exit code 2; `--salvage-unsupported` removed in 0.5.0 (exit 2 with a hint); use `--policy salvage`. | Clean CLI contract with zero behavioral drift between CLI and Python API.                                                                                   |
 
 ---
 
@@ -1533,7 +1397,7 @@ Encountering an unsupported format or newer schema version? Use `sesslint bundle
 
 1. **Generate the bundle**:
     ```bash
-    sesslint bundle session.jsonl --out bundle.json
+    sesslint bundle session.jsonl --output bundle.json
     ```
 2. **Review privacy guarantees**: The bundle is strictly content-free (paths are basename-only, discriminators bounded, long IDs hashed via SHA-256, prompt texts excluded).
 3. **Open an issue**: Use the [Adapter Request Template](.github/ISSUE_TEMPLATE/adapter_request.md).

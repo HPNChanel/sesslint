@@ -9,7 +9,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def golden_code_count() -> int:
+    """Registry size, after proving the detector goldens cover exactly the registry."""
+    from sesslint.codes import ALL_CODES
+
+    covered: set[str] = set()
+    for path in (ROOT / "fixtures/conformance/detectors").glob("*.expected.json"):
+        covered.update(f["code"] for f in json.loads(path.read_text(encoding="utf-8"))["findings"])
+    registry = set(ALL_CODES)
+    if covered != registry:
+        raise ValueError(f"Detector goldens and registry differ: {sorted(covered ^ registry)}")
+    return len(registry)
+
+
 def render() -> str:
+    codes = golden_code_count()
     lines = [
         "# Synthetic fixture index",
         "",
@@ -23,7 +37,7 @@ def render() -> str:
         "## Actual detector golden paths",
         "",
         "Nine legacy goldens exercise the reader and cover SL001/SL002. The rows below",
-        "exercise public check_file/check_dir detection and cover all 34 codes.",
+        f"exercise public check_file/check_dir detection and cover all {codes} codes.",
         "",
         "| Code | Execution | Input | Golden |",
         "| --- | --- | --- | --- |",

@@ -1,6 +1,6 @@
 # Diagnostic Reason Codes (SL001–SL402)
 
-This directory documents the 34 diagnostic reason codes recognized and reported by SessLint.
+This directory documents the 35 diagnostic reason codes recognized and reported by SessLint.
 
 ## Crucial Disclaimer Boundaries
 
@@ -62,5 +62,4 @@ All report and human output renderers sort findings using a strict, position-fir
 5. `code`: Lexicographical order of the diagnostic code (e.g. `SL001`, `SL002`).
 6. `record_id`: Event identifier (`None` sorts as empty string before non-empty string).
 7. `fingerprint`: 16-character SHA-256 hex digest for definitive tie-breaking.
-
 

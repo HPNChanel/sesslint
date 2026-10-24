@@ -31,7 +31,9 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
+import sys
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, cast
@@ -156,7 +158,7 @@ def _iter_lines(path: Path) -> list[tuple[int, str]]:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as err:
         raise SealError(f"ledger {path} is not UTF-8: {err}") from err
-    return [(i, line) for i, line in enumerate(text.splitlines(), start=1) if line.strip()]
+    return [(i, line) for i, line in enumerate(text.split("\n"), start=1) if line.strip()]
 
 
 def _validate_entry_shape(entry: Any) -> str | None:
@@ -212,7 +214,7 @@ def verify_lines(lines: list[tuple[int, str]]) -> dict[str, Any] | None:
     for line_no, raw in lines:
         try:
             entry: Any = json.loads(raw)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             return {
                 "kind": "malformed-line",
                 "line": line_no,
@@ -276,6 +278,43 @@ def verify_ledger(path: StrPath) -> tuple[int, dict[str, Any] | None]:
     return verified, divergence
 
 
+@contextmanager
+def _ledger_lock(path: Path) -> Iterator[None]:
+    """Serialize verify-plus-append across processes; the OS releases on crash.
+
+    Keep a stable sidecar inode: deleting a lock file after unlocking could
+    let a third process bypass a waiter holding the old inode.
+    """
+    lock_path = path.with_name(path.name + ".lock")
+    if lock_path.is_symlink():
+        raise SealError("ledger lock must not be a symlink")
+    try:
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError as err:
+        raise SealError("cannot open ledger lock") from err
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    except OSError as err:
+        raise SealError("cannot lock or append ledger") from err
+    finally:
+        os.close(fd)
+
+
 def append_seal(
     ledger: StrPath,
     *,
@@ -295,6 +334,32 @@ def append_seal(
     (allowed only on an empty/absent ledger). The append is a single
     write + fsync; the parent directory is synced on POSIX.
     """
+    with _ledger_lock(Path(ledger)):
+        return _append_seal_locked(
+            ledger,
+            tool=tool,
+            file_sha256=file_sha256,
+            path=path,
+            verdict=verdict,
+            codes=codes,
+            report_sha256=report_sha256,
+            genesis_of=genesis_of,
+            now=now,
+        )
+
+
+def _append_seal_locked(
+    ledger: StrPath,
+    *,
+    tool: str,
+    file_sha256: str,
+    path: str | None,
+    verdict: str,
+    codes: Mapping[str, int],
+    report_sha256: str,
+    genesis_of: str | None,
+    now: datetime | None,
+) -> dict[str, Any]:
     p = Path(ledger)
     seq = 1
     prev = GENESIS
@@ -330,7 +395,11 @@ def append_seal(
         parent = p.parent
         if not parent.exists():
             raise SealError(f"ledger directory does not exist: {parent}")
-        with open(p, "ab") as fh:
+        with open(p, "a+b") as fh:
+            if fh.tell():
+                fh.seek(-1, os.SEEK_END)
+                if fh.read(1) != b"\n":
+                    line = b"\n" + line
             fh.write(line)
             fh.flush()
             os.fsync(fh.fileno())

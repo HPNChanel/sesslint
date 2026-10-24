@@ -1,0 +1,121 @@
+/* Design tokens: "The Ledger". Colour carries verdict meaning only
+   (pass / warn / error / info); everything else is ink and paper. */
+@layer tokens, base, components, utilities;
+
+@layer tokens {
+  :root {
+    color-scheme: light;
+    /* paper */
+    --bg: #f4f1e8;
+    --surface: #fbf9f3;
+    --raised: #ffffff;
+    --sunken: #ebe7da;
+    --line: #d6cfbd;
+    --line-strong: #b9b09a;
+    --rule: rgb(56 88 120 / 0.085);
+    --margin: rgb(200 60 50 / 0.32);
+    --fg: #15181a;
+    --dim: #3d4245;
+    --mute: #5f6568;
+    /* verdicts */
+    --pass: #2c7a10;
+    --pass-ink: #ffffff;
+    --pass-soft: rgb(44 122 16 / 0.1);
+    --warn: #8f5400;
+    --warn-soft: rgb(160 100 0 / 0.11);
+    --err: #b8261b;
+    --err-soft: rgb(184 38 27 / 0.09);
+    --info: #0a6580;
+    --info-soft: rgb(10 101 128 / 0.09);
+    --shadow: 4px 4px 0 var(--line-strong);
+    --term-bg: #121614;
+    --term-fg: #e2ded1;
+    --term-mute: #8b887d;
+    --term-pass: #9be564;
+    --term-warn: #ffb224;
+    --term-err: #ff6a5e;
+    --term-info: #7fd1e8;
+
+    /* type */
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-display: "Fraunces Variable", "Fraunces", Georgia, "Times New Roman", serif;
+    --step--1: clamp(0.8rem, 0.78rem + 0.1vw, 0.86rem);
+    --step-0: clamp(0.95rem, 0.92rem + 0.15vw, 1.03rem);
+    --step-1: clamp(1.1rem, 1.04rem + 0.3vw, 1.28rem);
+    --step-2: clamp(1.35rem, 1.2rem + 0.7vw, 1.75rem);
+    --step-3: clamp(1.7rem, 1.4rem + 1.4vw, 2.6rem);
+    --step-4: clamp(2.2rem, 1.6rem + 2.8vw, 4.1rem);
+
+    /* space: 8px ledger rhythm */
+    --s-1: 4px;
+    --s-2: 8px;
+    --s-3: 12px;
+    --s-4: 16px;
+    --s-5: 24px;
+    --s-6: 32px;
+    --s-7: 48px;
+    --s-8: 64px;
+    --s-9: 96px;
+    --gutter: clamp(16px, 4vw, 40px);
+    --measure: 64ch;
+    --wrap: 1200px;
+    --radius: 2px;
+    --rule-gap: 32px;
+    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0b0d0c;
+    --surface: #101311;
+    --raised: #151917;
+    --sunken: #080a09;
+    --line: #262c28;
+    --line-strong: #3a423c;
+    --rule: rgb(232 228 216 / 0.03);
+    --margin: rgb(255 90 78 / 0.16);
+    --fg: #e8e4d8;
+    --dim: #bdb9ad;
+    --mute: #8d8a80;
+    --pass: #9be564;
+    --pass-ink: #0b0d0c;
+    --pass-soft: rgb(155 229 100 / 0.1);
+    --warn: #ffb224;
+    --warn-soft: rgb(255 178 36 / 0.1);
+    --err: #ff6a5e;
+    --err-soft: rgb(255 106 94 / 0.1);
+    --info: #7fd1e8;
+    --info-soft: rgb(127 209 232 / 0.09);
+    --shadow: 4px 4px 0 #000;
+    --term-bg: #070908;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0b0d0c;
+      --surface: #101311;
+      --raised: #151917;
+      --sunken: #080a09;
+      --line: #262c28;
+      --line-strong: #3a423c;
+      --rule: rgb(232 228 216 / 0.03);
+      --margin: rgb(255 90 78 / 0.16);
+      --fg: #e8e4d8;
+      --dim: #bdb9ad;
+      --mute: #8d8a80;
+      --pass: #9be564;
+      --pass-ink: #0b0d0c;
+      --pass-soft: rgb(155 229 100 / 0.1);
+      --warn: #ffb224;
+      --warn-soft: rgb(255 178 36 / 0.1);
+      --err: #ff6a5e;
+      --err-soft: rgb(255 106 94 / 0.1);
+      --info: #7fd1e8;
+      --info-soft: rgb(127 209 232 / 0.09);
+      --shadow: 4px 4px 0 #000;
+      --term-bg: #070908;
+    }
+  }
+}

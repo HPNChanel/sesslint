@@ -16,14 +16,35 @@ from pathlib import Path
 import pytest
 
 from sesslint.canonical import SessionEvent
-from sesslint.checks.checkpoint import check_checkpoint
-from sesslint.codes import SL003, SL203, Repairability, Severity
-from sesslint.finding import SourceRef, make_finding
+from sesslint.checks.runner import run_all_checks
 from sesslint.repair import (
     Abstained,
+    RepairPlan,
     execute,
     plan,
 )
+from sesslint.repair.executor import load_source_for_format
+
+
+def _source_derived_plan(source_path: Path, *, policy: str) -> RepairPlan:
+    """Use the same current-source findings and canonical events as execution."""
+    source_bytes = source_path.read_bytes()
+    _, events, stream_findings = load_source_for_format(source_path, "canonical", data=source_bytes)
+    findings = list(stream_findings) + list(
+        run_all_checks(
+            events,
+            profile="neutral",
+            source_path=source_path.name,
+            adapter="canonical",
+        )
+    )
+    return plan(
+        findings,
+        events,
+        policy=policy,
+        source_hash=hashlib.sha256(source_bytes).hexdigest(),
+        input_format="canonical",
+    )
 
 
 @pytest.mark.parametrize("has_sl203", [True, False])
@@ -97,13 +118,14 @@ def test_abstention_12_cell_matrix(
     )
     parent = "tr0"
     curr_seq += 1
+    duplicate_ts = f"2026-09-05T12:00:0{curr_seq}Z"
 
     events.append(
         SessionEvent(
-            id="m1",
+            id="m-duplicate",
             parent_id=parent,
             seq=curr_seq,
-            ts=f"2026-09-05T12:00:0{curr_seq}Z",
+            ts=duplicate_ts,
             actor="assistant",
             kind="message",
             payload={"text": "reply"},
@@ -113,34 +135,15 @@ def test_abstention_12_cell_matrix(
 
     events.append(
         SessionEvent(
-            id="m2",
+            id="m-duplicate",
             parent_id=parent,
             seq=curr_seq,
-            ts=f"2026-09-05T12:00:0{curr_seq}Z",
+            ts=duplicate_ts,
             actor="assistant",
             kind="message",
             payload={"text": "reply"},
         )
     )
-
-    m1_idx = len(events) - 2
-    m2_idx = len(events) - 1
-
-    # Findings: SL003 (always present on m1, m2) + real checkpoint findings
-    findings = [
-        make_finding(
-            code=SL003,
-            severity=Severity.WARNING,
-            repairability=Repairability.DETERMINISTIC,
-            message_template="Duplicate event ID m1 and m2",
-            source=SourceRef(path="session.json", line=m1_idx + 1, record_id="m1"),
-            evidence={"index": m1_idx, "duplicate_index": m2_idx},
-        )
-    ]
-    findings.extend(check_checkpoint(events))
-
-    if has_sl203:
-        assert any(f.code == SL203 for f in findings)
 
     # Write source file for executor
     source_file = tmp_path / "matrix_source.jsonl"
@@ -156,13 +159,8 @@ def test_abstention_12_cell_matrix(
 
     output_file = tmp_path / "matrix_repaired.jsonl"
 
-    # Step A: Run Planner (dry-run)
-    planned = plan(
-        findings,
-        events,
-        policy=policy,
-        source_hash=hashlib.sha256(source_file.read_bytes()).hexdigest(),
-    )
+    # Step A: Plan from the exact source bytes the public executor will load.
+    planned = _source_derived_plan(source_file, policy=policy)
 
     # Step B: Assert 100% agreement between dry-run planner and repair executor
     if has_sl203:
@@ -176,37 +174,38 @@ def test_abstention_12_cell_matrix(
                 plan=planned,
                 output_path=output_file,
                 policy=policy,
-                source_events=events,
             )
         assert not output_file.exists()
 
     elif policy == "conservative":
         # DEV-013: Scoped abstention proves region-disjointness for the disjoint SL003 defect
         # across all non-SL203 side_effects ("none", "possible", "unknown").
-        assert len(planned.steps) == 1
-        assert planned.steps[0].recipe == "identical-duplicate-collapse"
+        assert [step.recipe for step in planned.steps] == [
+            "identical-duplicate-collapse",
+            "seq-renumber",
+        ]
 
         manifest = execute(
             source_path=source_file,
             plan=planned,
             output_path=output_file,
             policy=policy,
-            source_events=events,
         )
         assert output_file.is_file()
         assert manifest.input_fingerprint == planned.source_hash
 
     elif policy == "salvage" and side_effects == "none":
         # Safe side effects without SL203 under salvage policy
-        assert len(planned.steps) == 1
-        assert planned.steps[0].recipe == "identical-duplicate-collapse"
+        assert [step.recipe for step in planned.steps] == [
+            "identical-duplicate-collapse",
+            "seq-renumber",
+        ]
 
         manifest = execute(
             source_path=source_file,
             plan=planned,
             output_path=output_file,
             policy=policy,
-            source_events=events,
         )
         assert output_file.is_file()
         assert manifest.input_fingerprint == planned.source_hash
@@ -220,6 +219,5 @@ def test_abstention_12_cell_matrix(
                 plan=planned,
                 output_path=output_file,
                 policy=policy,
-                source_events=events,
             )
         assert not output_file.exists()

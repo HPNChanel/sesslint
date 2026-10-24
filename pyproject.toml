@@ -140,16 +140,39 @@ pythonpath = ["src"]
 addopts = "-q --basetemp=.pytest_temp"
 
 # Scoped mutation testing (qa-infra T-02). source_paths copies the whole
-# package so `import sesslint` stays intact inside the mutants/ tree;
-# only_mutate restricts actual mutations to the highest-risk modules.
+# package so `import sesslint` stays intact inside the mutants/ tree.
+# only_mutate patterns are matched (fnmatch) against the path as mutmut sees
+# it, i.e. with the `src/` prefix; patterns without it match nothing.
 [tool.mutmut]
 source_paths = ["src/"]
 only_mutate = [
-    "sesslint/checks/*",
-    "sesslint/repair/planner.py",
-    "sesslint/repair/executor.py",
-    "sesslint/io.py",
+    "src/sesslint/checks/*",
+    "src/sesslint/repair/*",
+    "src/sesslint/outcome/*",
+    "src/sesslint/io.py",
 ]
-pytest_add_cli_args_test_selection = ["tests/"]
-# mutmut only runs tests that actually reach the mutated function, so the
-# full tests/ selection stays cheap; do not hand-narrow it.
+# Tests resolve fixtures/docs/schemas relative to the repo root; the mutants/
+# tree is the cwd, so everything they read must be copied in.
+also_copy = [
+    "fixtures/",
+    "docs/",
+    "schemas/",
+    "man/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+pytest_add_cli_args_test_selection = [
+    "tests/checks/",
+    "tests/repair/",
+    "tests/io/",
+    "tests/engine/",
+    "tests/outcome/",
+]
+# Not usable under mutmut: mutmut runs pytest twice in one process (stats, then
+# clean run) and hypothesis flags class-based @given tests as "differing executors".
+# The test still runs in the normal `pytest` suite.
+pytest_add_cli_args = [
+    "--deselect=tests/checks/test_adversarial_confinement_challenge.py::TestHypothesisConfinementFuzzing::test_hypothesis_candidate_qualification_oracle",
+]

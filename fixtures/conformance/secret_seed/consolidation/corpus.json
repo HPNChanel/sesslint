@@ -670,5 +670,293 @@
     "family": "generic-credential-assignment",
     "id": "generic-credential-assignment/malformed",
     "text": "{\"bad\":\"api_key=syntheticCanary41"
+  },
+  {
+    "canaries": [
+      "AIzaA1b2C3d4E5f6G7h8I9j0K1l2"
+    ],
+    "category": "positive",
+    "expected": [
+      "google-api-key"
+    ],
+    "family": "google-api-key",
+    "id": "google-api-key/positive",
+    "text": "AIzaA1b2C3d4E5f6G7h8I9j0K1l2"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "google-api-key",
+    "id": "google-api-key/near-miss",
+    "text": "xAIzaA1b2C3d4E5f6G7h8I9j0K1l2"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "google-api-key",
+    "id": "google-api-key/placeholder",
+    "text": "<YOUR_SYNTHETIC_CREDENTIAL>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "google-api-key",
+    "id": "google-api-key/truncated",
+    "text": "AIzaA1b2C3d4E5f6G7h8I9j"
+  },
+  {
+    "canaries": [
+      "AIzaA1b2C3d4E5f6G7h8I9j0K1l2"
+    ],
+    "category": "malformed",
+    "expected": [
+      "google-api-key"
+    ],
+    "family": "google-api-key",
+    "id": "google-api-key/malformed",
+    "text": "{\"bad\":\"AIzaA1b2C3d4E5f6G7h8I9j0K1l2"
+  },
+  {
+    "canaries": [
+      "xoxz-A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "positive",
+    "expected": [
+      "slack-token"
+    ],
+    "family": "slack-token",
+    "id": "slack-token/positive",
+    "text": "xoxz-A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "slack-token",
+    "id": "slack-token/near-miss",
+    "text": "xxoxz-A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "slack-token",
+    "id": "slack-token/placeholder",
+    "text": "<YOUR_SYNTHETIC_CREDENTIAL>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "slack-token",
+    "id": "slack-token/truncated",
+    "text": "xoxz-A1b2C3d4E5f"
+  },
+  {
+    "canaries": [
+      "xoxz-A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "malformed",
+    "expected": [
+      "slack-token"
+    ],
+    "family": "slack-token",
+    "id": "slack-token/malformed",
+    "text": "{\"bad\":\"xoxz-A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [
+      "glpat-A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "positive",
+    "expected": [
+      "gitlab-pat"
+    ],
+    "family": "gitlab-pat",
+    "id": "gitlab-pat/positive",
+    "text": "glpat-A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "gitlab-pat",
+    "id": "gitlab-pat/near-miss",
+    "text": "xglpat-A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "gitlab-pat",
+    "id": "gitlab-pat/placeholder",
+    "text": "<YOUR_SYNTHETIC_CREDENTIAL>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "gitlab-pat",
+    "id": "gitlab-pat/truncated",
+    "text": "glpat-A1b2C3d4E5f6G7h8"
+  },
+  {
+    "canaries": [
+      "glpat-A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "malformed",
+    "expected": [
+      "gitlab-pat"
+    ],
+    "family": "gitlab-pat",
+    "id": "gitlab-pat/malformed",
+    "text": "{\"bad\":\"glpat-A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [
+      "Bearer A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "positive",
+    "expected": [
+      "bearer-token"
+    ],
+    "family": "bearer-token",
+    "id": "bearer-token/positive",
+    "text": "Bearer A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "bearer-token",
+    "id": "bearer-token/near-miss",
+    "text": "xBearer A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "bearer-token",
+    "id": "bearer-token/placeholder",
+    "text": "<YOUR_SYNTHETIC_CREDENTIAL>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "bearer-token",
+    "id": "bearer-token/truncated",
+    "text": "Bearer A1b2C3d4E5f"
+  },
+  {
+    "canaries": [
+      "Bearer A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "malformed",
+    "expected": [
+      "bearer-token"
+    ],
+    "family": "bearer-token",
+    "id": "bearer-token/malformed",
+    "text": "{\"bad\":\"Bearer A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [
+      "npm_A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "positive",
+    "expected": [
+      "npm-token"
+    ],
+    "family": "npm-token",
+    "id": "npm-token/positive",
+    "text": "npm_A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "npm-token",
+    "id": "npm-token/near-miss",
+    "text": "xnpm_A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "npm-token",
+    "id": "npm-token/placeholder",
+    "text": "<YOUR_SYNTHETIC_CREDENTIAL>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "npm-token",
+    "id": "npm-token/truncated",
+    "text": "npm_A1b2C3d4E5f6G7h8"
+  },
+  {
+    "canaries": [
+      "npm_A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "malformed",
+    "expected": [
+      "npm-token"
+    ],
+    "family": "npm-token",
+    "id": "npm-token/malformed",
+    "text": "{\"bad\":\"npm_A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [
+      "hf_A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "positive",
+    "expected": [
+      "huggingface-token"
+    ],
+    "family": "huggingface-token",
+    "id": "huggingface-token/positive",
+    "text": "hf_A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "huggingface-token",
+    "id": "huggingface-token/near-miss",
+    "text": "xhf_A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "huggingface-token",
+    "id": "huggingface-token/placeholder",
+    "text": "<YOUR_SYNTHETIC_CREDENTIAL>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "huggingface-token",
+    "id": "huggingface-token/truncated",
+    "text": "hf_A1b2C3d4E5f6G7h8"
+  },
+  {
+    "canaries": [
+      "hf_A1b2C3d4E5f6G7h8I9j0"
+    ],
+    "category": "malformed",
+    "expected": [
+      "huggingface-token"
+    ],
+    "family": "huggingface-token",
+    "id": "huggingface-token/malformed",
+    "text": "{\"bad\":\"hf_A1b2C3d4E5f6G7h8I9j0"
   }
 ]

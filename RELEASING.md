@@ -1,6 +1,6 @@
 # Releasing SessLint
 
-This checkout prepares **0.4.1 (next release)**. PyPI and GitHub Releases are
+This checkout prepares **0.5.0 (next release)**. PyPI and GitHub Releases are
 the required channels. Local tags, successful tests and a draft are distinct
 from a public release. Push, tag and publication require separate authorization.
 Never move an existing release tag or replace published bytes.
@@ -21,6 +21,15 @@ uv run python scripts/check_release_refs.py
 uv run python scripts/fixture_index.py --check
 ```
 
+`check_release_refs.py` compares documented flags with the CLI at the latest
+**final** release tag (`vX.Y.Z` at or below the development version; pre-release
+tags such as `v0.5.0-rc.1` are ignored). It exits 2 if that baseline cannot be
+resolved (no tags, shallow clone), so fetch tags first (`git fetch --tags`; CI
+checks out with `fetch-depth: 0`). `--allow-no-baseline` skips only the flag-skew
+check, for source archives that cannot carry tags; never use it for a release.
+A document that describes only an unreleased feature can carry a file-level
+next-release marker (see the script docstring).
+
 Coverage must remain at least 86%. The normative benchmark retains 250,000
 events / about 100 MB, a 15-second wall-time ceiling and peak RSS below 512 MB.
 It measures the CLI in a clean process outside tracing/coverage; optional
@@ -29,9 +38,9 @@ or relax thresholds to pass. Use `--record --host-tag <host>` only when adding
 an actual same-host measurement to the historical ledger.
 
 Check zero runtime dependencies, no egress/telemetry/dynamic evaluation,
-privacy, determinism, all 34 detector codes and all 13 recipe-level cases.
+privacy, determinism, all 35 detector codes and all 13 recipe-level cases.
 - [ ] All 13 repair recipes have synced documentation and positive/refusal tests.
-- [ ] All 34 detector codes have actual golden results and synced documentation.
+- [ ] All 35 detector codes have actual golden results and synced documentation.
 
 Keep SL203 fail-closed. Review [fixture navigation](fixtures/INDEX.md), the
 [adapter/profile matrix](docs/MATRIX.md) and the separate
@@ -43,17 +52,17 @@ Actual platform receipts are required: a workflow definition is not a PASS.
 ## Build and installed acceptance
 
 Use the candidate commit's committer timestamp as `SOURCE_DATE_EPOCH`, not
-the wall clock. Pin `build==1.2.2.post1` and `hatchling==1.27.0`. Build into
+the wall clock. Pin `build==1.6.1` and `hatchling==1.32.4`. Build into
 two fresh directories; do not delete an earlier verified release set.
 
 ```bash
 export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
 python -m build --no-isolation --sdist --wheel --outdir dist/candidate
 python -m build --no-isolation --sdist --wheel --outdir dist/reproducible
-python scripts/release_artifacts.py compare --directory dist/candidate --target dist/reproducible --version 0.4.1
-python scripts/build_starter_kit.py --version 0.4.1 --output dist/candidate/sesslint-0.4.1-starter-kit.zip
-python scripts/build_man_archive.py --epoch "$SOURCE_DATE_EPOCH" --output dist/candidate/sesslint-0.4.1-man.tar.gz
-python scripts/smoke_distributions.py --directory dist/candidate --version 0.4.1
+python scripts/release_artifacts.py compare --directory dist/candidate --target dist/reproducible --version 0.5.0
+python scripts/build_starter_kit.py --version 0.5.0 --output dist/candidate/sesslint-0.5.0-starter-kit.zip
+python scripts/build_man_archive.py --epoch "$SOURCE_DATE_EPOCH" --output dist/candidate/sesslint-0.5.0-man.tar.gz
+python scripts/smoke_distributions.py --directory dist/candidate --version 0.5.0
 python scripts/package.py --outdir dist/bin
 ```
 
@@ -64,13 +73,19 @@ $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
 ```
 
 Run `scripts/installed_smoke.py --binary <native-artifact> --kit <starter-kit>
---version 0.4.1 --receipt <receipt.json>` on each required OS. It relocates the
+--version 0.5.0 --receipt <receipt.json>` on each required OS. It relocates the
 executable and examples outside the checkout to a path containing spaces and
 Unicode, removes Python from PATH on Windows, and checks the complete
 `check → dry-run/plan → repair/apply → verify` journey. It checks source
 immutability, idempotence, no output after refusal, adapters/profiles, report
-formats, hook and MCP. The Python-distribution runner also exercises public
-API calls and loads all 13 installed schema resources.
+formats, hook and MCP. The shared contract has 42 CLI cases, including four
+triage states, a synthetic OutcomeGuard run with an explicit `--as-of` *(next release)*, and
+deterministic repeats with no work-directory writes. The
+Python-distribution runner also exercises public
+API calls, including triage, and requires the installed schema resources to match
+the kit's `schemas/` directory name-for-name (no hard-coded count).
+The starter kit includes `TRIAGE.md` and only synthetic inputs with provenance.
+For CLI/config changes, review [Migration to 0.5](docs/MIGRATING_0_5.md).
 
 Wheel/sdist include LICENSE/NOTICE; binaries bundle them with the schemas.
 The starter kit also contains licenses, schemas, rule/recipe documentation,
@@ -170,9 +185,9 @@ CLI/API release and are not advertised as already available.
 
 ## Windows transferable acceptance
 
-The Windows binary job builds `sesslint-0.4.1-acceptance-windows.zip` and runs
+The Windows binary job builds `sesslint-0.5.0-acceptance-windows.zip` and runs
 its PowerShell 5.1 driver. The complete-set gate binds that ZIP and
-`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 32-case
+`smoke-windows-powershell.json` to the candidate EXE, kit, commit and 42-case
 contract. Its logs are retained even on failure.
 Clean-machine qualification remains separate; retest if release CI changes EXE bytes.
 

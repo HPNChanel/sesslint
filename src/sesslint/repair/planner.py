@@ -83,6 +83,9 @@ EVENT_DROP_RECIPES: Final[frozenset[str]] = frozenset(
 # address a specific finding (currently only ``seq-renumber``).
 SYNTHETIC_STEP_FP: Final[str] = "-"
 
+# Line-level findings: the record failed to decode, so it has no event.
+UNDECODED_RECORD_CODES: Final[frozenset[str]] = frozenset({"SL001", "SL002"})
+
 
 def _object(data: Any, label: str) -> Mapping[str, Any]:
     """T-05: validate containers before conversion; never echo input values."""
@@ -180,6 +183,15 @@ class PlanStep:
         )
 
 
+# Blocked reasons a salvage run cannot clear: SL203 blocks every recipe under
+# every policy (FR-060), a failed recipe precondition ("precondition-failed:*")
+# is already the salvage verdict, and the structural limits hold under any
+# policy.
+_SALVAGE_FUTILE_REASONS: Final[frozenset[str]] = frozenset(
+    {"SL203-refusal", "target-missing", "component-too-large", "cap-overflow"}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Blocked:
     """Record of a finding that could not be automatically planned.
@@ -198,17 +210,23 @@ class Blocked:
         """Documented refusal rationale for this code, if one is registered."""
         return refusal_rationale_for(self.code)
 
-    def describe(self) -> str:
+    def describe(self, *, path: str | None = None, options: Sequence[str | None] = ()) -> str:
         """Human-readable detail: stable reason plus documented refusal rationale.
 
         Content-free: never embeds session data, only policy-level rationale and
         DEMAND citations. Falls back to the bare machine reason when the code has
-        no registered refusal rationale.
+        no registered refusal rationale. ``path`` and ``options`` fill the
+        salvage command so it runs as printed (AC-04); without a path the
+        '<file>'/'<out>' template placeholders remain. A reason no salvage run
+        can clear omits the salvage path rather than suggest a circular retry.
         """
         entry = self.refusal
         if entry is None:
             return self.reason
-        return f"{self.reason}: {entry.render()}"
+        salvage = self.reason not in _SALVAGE_FUTILE_REASONS and not self.reason.startswith(
+            "precondition-failed"
+        )
+        return f"{self.reason}: {entry.render(path=path, salvage=salvage, options=options)}"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize blocked finding record to dictionary."""
@@ -364,7 +382,12 @@ def compute_events_source_hash(events: Sequence[Any]) -> str:
 
 
 def _resolve_target_index(f: Finding, events: Sequence[Any] | None = None) -> int | None:
-    """Extract 0-based target event index from finding evidence or record ID."""
+    """Extract 0-based target event index from finding evidence or record ID.
+
+    SL001/SL002 describe a record that never decoded into an event: an event
+    sharing the id the reader salvaged from those bytes is a different record,
+    so it never becomes the step's target (B37).
+    """
     if f.evidence and isinstance(f.evidence, Mapping):
         for key in (
             "at_index",
@@ -386,7 +409,7 @@ def _resolve_target_index(f: Finding, events: Sequence[Any] | None = None) -> in
                     if isinstance(v, int) and not isinstance(v, bool):
                         return v
 
-    if events is not None:
+    if events is not None and f.code not in UNDECODED_RECORD_CODES:
         rec_id: Any = None
         if f.evidence and isinstance(f.evidence, Mapping):
             rec_id = f.evidence.get("root_id") or f.evidence.get("event_id")

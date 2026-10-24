@@ -74,7 +74,8 @@ def test_fractional_second_regression_detected() -> None:
         _ev("a", None, 0, "2026-01-01T00:00:00.500Z"),
         _ev("b", "a", 1, "2026-01-01T00:00:00.250Z"),
     ]
-    findings = check_ordering(events)
+    assert check_ordering(events) == []
+    findings = check_ordering(events, timestamp_skew_ms=0)
     assert len(findings) == 1
     assert cast(dict[str, Any], findings[0].evidence)["ts_delta_ms"] == -250
 
@@ -138,11 +139,13 @@ def test_multiple_regressions_deterministic() -> None:
         _ev("b", "a", 1, "2026-01-01T00:00:02Z"),
         _ev("c", "a", 2, "2026-01-01T00:00:01Z"),
     ]
-    first = check_ordering(events)
-    second = check_ordering(events)
-    assert len(first) == 2
+    first = check_ordering(events, timestamp_skew_ms=0)
+    second = check_ordering(events, timestamp_skew_ms=0)
+    assert len(first) == 1
+    assert first[0].evidence["count"] == 2
     assert [f.fingerprint for f in first] == [f.fingerprint for f in second]
-    assert {f.source.record_id for f in first} == {"b", "c"}
+    assert first[0].source.record_id == "b"
+    assert first[0].evidence["max_delta_ms"] == 2000
 
 
 def test_sidechain_interleave_no_finding() -> None:
@@ -162,7 +165,7 @@ def test_empty_and_single_event() -> None:
 
 def test_runner_select_ignore_gating() -> None:
     events = [
-        _ev("a", None, 0, "2026-01-01T00:00:02Z"),
+        _ev("a", None, 0, "2026-01-01T00:00:04Z"),
         _ev("b", "a", 1, "2026-01-01T00:00:01Z"),
     ]
     default = run_all_checks(events)
@@ -179,7 +182,7 @@ def test_runner_select_ignore_gating() -> None:
 
 def test_evidence_is_content_free() -> None:
     events = [
-        _ev("a", None, 0, "2026-01-01T00:00:02Z"),
+        _ev("a", None, 0, "2026-01-01T00:00:04Z"),
         _ev("b", "a", 1, "2026-01-01T00:00:01Z"),
     ]
     (finding,) = check_ordering(events)
@@ -191,5 +194,8 @@ def test_evidence_is_content_free() -> None:
         "child_index",
         "parent_index",
         "record_ordinal",
+        "count",
+        "max_delta_ms",
+        "timestamp_skew_ms",
     }
     assert "text" not in str(evidence) and "x" not in evidence.values()

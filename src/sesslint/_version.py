@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 CLI_VERSION: Final[str] = __version__
 SESSION_SCHEMA_VERSION: Final[str] = "sesslint.session/v1"
 REPORT_SCHEMA_VERSION: Final[str] = "sesslint.report/v1"
@@ -13,7 +13,7 @@ MANIFEST_SCHEMA_VERSION: Final[str] = "sesslint.repair-manifest/v1"
 ADAPTER_VERSIONS: Final[dict[str, str]] = {
     "canonical": "1.0.0",
     "claude-code-jsonl": "1.0.0",
-    "codex-rollout": "1.0.0",
+    "codex-rollout": "1.1.0",
     "openai-agents": "1.0.0",
 }
 

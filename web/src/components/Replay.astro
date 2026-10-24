@@ -1,0 +1,471 @@
+---
+// Hero: replays real CLI output captured by scripts/capture_demo.py against a
+// synthetic fixture, beside the event graph it describes. Server-rendered in
+// its final state, so no-JS and reduced-motion visitors see the full result.
+import demo from "../data/demo.json";
+import { t, type Lang } from "../i18n";
+import { termLines } from "../lib/term";
+
+type Props = { lang: Lang };
+const { lang } = Astro.props;
+const d = t(lang);
+
+const order = ["check", "repair", "verify"] as const;
+const steps = order.map((id) => ({ id, ...demo.steps[id], lines: termLines(demo.steps[id].out, 92) }));
+
+// Lay the graph out by seq level; a repeated id is the duplicate SL003 found.
+type Node = { key: string; id: string; actor: string; x: number; y: number; dup: boolean; parent: string | null };
+const seen = new Set<string>();
+const levels = new Map<number, number>();
+const counts = new Map<number, number>();
+for (const n of demo.graph) counts.set(n.seq, (counts.get(n.seq) ?? 0) + 1);
+const W = 280;
+const nodes: Node[] = demo.graph.map((n, i) => {
+  const slot = levels.get(n.seq) ?? 0;
+  levels.set(n.seq, slot + 1);
+  const span = counts.get(n.seq) ?? 1;
+  const dup = seen.has(n.id);
+  seen.add(n.id);
+  return { key: `n${i}`, id: n.id, actor: n.actor, parent: n.parent, dup, x: (W / (span + 1)) * (slot + 1), y: 40 + n.seq * 100 };
+});
+const first = (id: string | null) => nodes.find((n) => n.id === id && !n.dup);
+const edges = nodes.flatMap((n) => {
+  const p = first(n.parent);
+  return p ? [{ key: `${p.key}-${n.key}`, x1: p.x, y1: p.y + 18, x2: n.x, y2: n.y - 18, dup: n.dup }] : [];
+});
+const dup = nodes.find((n) => n.dup);
+const orig = dup ? first(dup.id) : undefined;
+const shift = dup && orig ? orig.x - dup.x : 0;
+const H = 40 + Math.max(...demo.graph.map((n) => n.seq)) * 100 + 60;
+---
+
+<sl-replay class="replay" data-state="verify" style={`--shift:${shift}px`} data-l-replay={d.home.replay} data-l-pause={d.home.pause} data-l-resume={d.home.resume}>
+  <div class="term">
+    <div class="term-bar">
+      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <b>~/agent-sessions</b>
+      <span class="mute">{d.home.replayTitle}</span>
+    </div>
+    <div class="controls mono" role="group" aria-label={d.home.replayTitle}>
+      {steps.map((s, i) => (
+        <button type="button" class="step-btn" data-goto={i} aria-pressed={i === steps.length - 1 ? "true" : "false"}>
+          <span class="mute">{i + 1}</span> {s.id}
+        </button>
+      ))}
+      <button type="button" class="play" data-play hidden>
+        <span data-play-label>{d.home.pause}</span>
+      </button>
+    </div>
+    <div class="term-body" tabindex="0" role="region" aria-label={d.home.replayTitle} data-body>
+      {steps.map((s, i) => (
+        <div class="step" data-step={i} data-id={s.id}>
+          <p class="ln cmdline"><span class="pass" aria-hidden="true">❯ </span><span data-cmd={s.cmd}>{s.cmd}</span></p>
+          {s.lines.map((l) => <p class:list={["ln", l.tone]}>{l.text || " "}</p>)}
+          <p class:list={["ln", "exit", s.exit === 0 ? "p" : "e"]}>[exit {s.exit}]</p>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <figure class="dag" aria-labelledby="dag-title" aria-describedby="dag-desc">
+    <figcaption class="mono dag-head">
+      <span id="dag-title">{d.home.graphTitle}</span>
+      <span class="dag-status" data-dag-status aria-live="polite">
+        <span class="s-check w">SL003 · msg-1 ×2</span>
+        <span class="s-repair i">identical-duplicate-collapse</span>
+        <span class="s-verify p">PASSED · repaired-lossless</span>
+      </span>
+    </figcaption>
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="dag-title dag-desc">
+      <desc id="dag-desc">{d.home.graphDesc}</desc>
+      {edges.map((e) => <line class:list={["edge", { "edge-dup": e.dup }]} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} />)}
+      {nodes.map((n) => (
+        <g class:list={["node", `a-${n.actor}`, { "node-dup": n.dup, "node-orig": orig?.key === n.key }]} transform={`translate(${n.x} ${n.y})`}>
+          <g class="inner">
+            <rect x="-46" y="-18" width="92" height="36" rx="3" />
+            <text class="nid" y="-2" text-anchor="middle">{n.id}</text>
+            <text class="nactor" y="11" text-anchor="middle">{n.actor}</text>
+          </g>
+        </g>
+      ))}
+    </svg>
+    <p class="mono legend">
+      <span><i class="sw w" aria-hidden="true"></i>{d.home.graphLegendDup}</span>
+      <span><i class="sw p" aria-hidden="true"></i>{d.home.graphLegendOk}</span>
+    </p>
+  </figure>
+  <p class="caption mute">{d.home.replayCaption} <span class="mono">{demo.version}</span></p>
+</sl-replay>
+
+<script>
+  const STATES = ["check", "repair", "verify"] as const;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  class Replay extends HTMLElement {
+    #run = 0;
+    #paused = false;
+    #done = true;
+
+    connectedCallback() {
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      for (const b of this.querySelectorAll<HTMLButtonElement>("[data-goto]")) {
+        b.addEventListener("click", () => this.goto(Number(b.dataset.goto)));
+      }
+      const play = this.querySelector<HTMLButtonElement>("[data-play]");
+      play?.addEventListener("click", () => {
+        if (this.#done) void this.play();
+        else this.#paused = !this.#paused;
+        this.#label();
+      });
+      if (reduced) return;
+      if (play) play.hidden = false;
+      this.#reset();
+      const io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            io.disconnect();
+            void this.play();
+          }
+        },
+        { threshold: 0.35 },
+      );
+      io.observe(this);
+    }
+
+    #label() {
+      const l = this.querySelector<HTMLElement>("[data-play-label]");
+      const play = this.querySelector<HTMLElement>("[data-play]");
+      if (!l || !play) return;
+      const { lReplay, lPause, lResume } = this.dataset;
+      const word = this.#done ? lReplay : this.#paused ? lResume : lPause;
+      l.textContent = this.#done || this.#paused ? `▶ ${word}` : `❚❚ ${word}`;
+    }
+
+    #setState(i: number) {
+      this.dataset.state = STATES[i] ?? "verify";
+      for (const b of this.querySelectorAll<HTMLButtonElement>("[data-goto]")) {
+        b.setAttribute("aria-pressed", String(Number(b.dataset.goto) === i));
+      }
+    }
+
+    #steps() {
+      return Array.from(this.querySelectorAll<HTMLElement>("[data-step]"));
+    }
+
+    /** Jump straight to step i, fully rendered (stops any playback). */
+    goto(i: number) {
+      this.#run++;
+      this.#done = true;
+      this.#paused = false;
+      this.#steps().forEach((s, j) => {
+        s.hidden = j > i;
+        for (const ln of s.querySelectorAll<HTMLElement>(".ln")) ln.hidden = false;
+        const c = s.querySelector<HTMLElement>("[data-cmd]");
+        if (c) c.textContent = c.dataset.cmd ?? "";
+      });
+      this.#setState(i);
+      this.#scroll(this.#steps()[i]);
+      this.#label();
+    }
+
+    #scroll(target?: HTMLElement) {
+      const body = this.querySelector<HTMLElement>("[data-body]");
+      if (!body) return;
+      body.scrollTop = target ? target.offsetTop - body.offsetTop - 8 : body.scrollHeight;
+    }
+
+    async #wait(ms: number, run: number) {
+      let left = ms;
+      while (left > 0) {
+        if (run !== this.#run) return false;
+        await sleep(30);
+        if (!this.#paused) left -= 30;
+      }
+      return run === this.#run;
+    }
+
+    #reset() {
+      for (const s of this.#steps()) {
+        s.hidden = true;
+        for (const ln of s.querySelectorAll<HTMLElement>(".ln")) ln.hidden = true;
+      }
+      this.#setState(0);
+    }
+
+    async play() {
+      const run = ++this.#run;
+      this.#done = false;
+      this.#paused = false;
+      this.#label();
+      const steps = this.#steps();
+      this.#reset();
+      const body = this.querySelector<HTMLElement>("[data-body]");
+      if (body) body.scrollTop = 0;
+      for (const [i, s] of steps.entries()) {
+        s.hidden = false;
+        this.#setState(i);
+        const lines = Array.from(s.querySelectorAll<HTMLElement>(".ln"));
+        const [cmdLine, ...rest] = lines;
+        const cmd = s.querySelector<HTMLElement>("[data-cmd]");
+        if (cmdLine && cmd) {
+          const full = cmd.dataset.cmd ?? "";
+          cmd.textContent = "";
+          cmdLine.hidden = false;
+          for (let k = 1; k <= full.length; k++) {
+            if (!(await this.#wait(22, run))) return;
+            cmd.textContent = full.slice(0, k);
+          }
+          if (!(await this.#wait(260, run))) return;
+        }
+        for (const ln of rest) {
+          ln.hidden = false;
+          this.#scroll();
+          if (!(await this.#wait(55, run))) return;
+        }
+        if (!(await this.#wait(1400, run))) return;
+      }
+      this.#done = true;
+      this.#label();
+    }
+  }
+  if (!customElements.get("sl-replay")) customElements.define("sl-replay", Replay);
+</script>
+
+<style>
+  .replay {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: var(--s-4);
+    align-items: start;
+  }
+  .term {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .term-bar > * {
+    white-space: nowrap;
+  }
+  .term-bar .mute {
+    color: var(--term-mute);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dots {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .dots i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--term-mute);
+    opacity: 0.6;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--term-fg) 14%, transparent);
+    background: var(--term-bg);
+  }
+  .controls button {
+    min-height: 36px;
+    padding: 0 14px;
+    border: 0;
+    border-right: 1px solid color-mix(in srgb, var(--term-fg) 14%, transparent);
+    background: none;
+    color: var(--term-mute);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+  }
+  .controls button[aria-pressed="true"] {
+    color: var(--term-fg);
+    box-shadow: inset 0 -2px 0 var(--term-pass);
+  }
+  .controls .mute {
+    color: var(--term-mute);
+    opacity: 0.7;
+  }
+  .controls .play {
+    margin-left: auto;
+    border-right: 0;
+    border-left: 1px solid color-mix(in srgb, var(--term-fg) 14%, transparent);
+    color: var(--term-pass);
+  }
+  .controls .play[hidden] {
+    display: none;
+  }
+  .term-body {
+    flex: none;
+    height: 420px;
+    overflow: auto;
+    font-size: 0.74rem;
+    line-height: 1.55;
+    scroll-behavior: auto;
+  }
+  .step[hidden],
+  .ln[hidden] {
+    display: none;
+  }
+  .step + .step {
+    margin-top: var(--s-4);
+  }
+  .ln {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .cmdline {
+    color: var(--term-fg);
+    font-weight: 600;
+  }
+  .cmdline .pass {
+    color: var(--term-pass);
+  }
+  .exit {
+    opacity: 0.8;
+  }
+
+  .dag {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin: 0;
+    padding: var(--s-3);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .dag-head {
+    display: grid;
+    gap: 4px;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+  }
+  .dag-head #dag-title {
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .dag-status > span {
+    display: none;
+    font-weight: 600;
+  }
+  .replay[data-state="check"] .s-check,
+  .replay[data-state="repair"] .s-repair,
+  .replay[data-state="verify"] .s-verify {
+    display: inline;
+  }
+  .dag-status .w {
+    color: var(--warn);
+  }
+  .dag-status .i {
+    color: var(--info);
+  }
+  .dag-status .p {
+    color: var(--pass);
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    flex: 1;
+    overflow: visible;
+  }
+  .edge {
+    stroke: var(--line-strong);
+    stroke-width: 1.5;
+    transition: opacity 0.6s var(--ease);
+  }
+  .node .inner {
+    transition:
+      transform 0.8s var(--ease),
+      opacity 0.8s var(--ease);
+  }
+  .node rect {
+    fill: var(--raised);
+    stroke: var(--line-strong);
+    stroke-width: 1.5;
+    transition:
+      stroke 0.4s,
+      fill 0.4s;
+  }
+  .nid {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    fill: var(--fg);
+  }
+  .nactor {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    fill: var(--mute);
+  }
+  .replay[data-state="check"] :is(.node-dup, .node-orig) rect {
+    stroke: var(--warn);
+    fill: var(--warn-soft);
+  }
+  .replay[data-state="check"] .node-dup rect {
+    stroke-dasharray: 4 3;
+  }
+  .replay[data-state="check"] .edge-dup {
+    stroke: var(--warn);
+    stroke-dasharray: 4 3;
+  }
+  .replay:is([data-state="repair"], [data-state="verify"]) .node-dup .inner {
+    transform: translateX(var(--shift));
+    opacity: 0;
+  }
+  .replay:is([data-state="repair"], [data-state="verify"]) .edge-dup {
+    opacity: 0;
+  }
+  .replay[data-state="repair"] .node-orig rect {
+    stroke: var(--info);
+  }
+  .replay[data-state="verify"] .node rect {
+    stroke: var(--pass);
+    fill: var(--pass-soft);
+  }
+  .legend {
+    display: flex;
+    gap: var(--s-4);
+    font-size: 0.7rem;
+    color: var(--dim);
+  }
+  .sw {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 5px;
+    border: 1.5px solid;
+  }
+  .sw.w {
+    border-color: var(--warn);
+    border-style: dashed;
+  }
+  .sw.p {
+    border-color: var(--pass);
+  }
+  .caption {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.78rem;
+  }
+  @media (max-width: 860px) {
+    .replay {
+      grid-template-columns: 1fr;
+    }
+    .term-body {
+      height: 340px;
+    }
+    .dag svg {
+      max-height: 260px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .node .inner,
+    .edge,
+    .node rect {
+      transition: none;
+    }
+  }
+</style>

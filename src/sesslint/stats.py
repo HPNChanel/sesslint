@@ -259,7 +259,7 @@ def stats_paths(
         if not r.exists() and not r.is_symlink():
             raise FileNotFoundError(f"Path not found: {r}")
         if r.is_dir() and not recursive:
-            raise ValueError(f"Path {r} is a directory. Use recursive=True (--recursive) to scan.")
+            raise ValueError(f"Path {r} is a directory. Use recursive=True to scan.")
 
     explicit = [r for r in roots if not r.is_dir() or r.is_symlink()]
     dirs = [r for r in roots if r.is_dir() and not r.is_symlink()]

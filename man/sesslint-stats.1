@@ -1,30 +1,36 @@
-.TH SESSLINT-STATS 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT-STATS 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint-stats \- [read\-only] Aggregate content\-free statistics over session files.
 .SH SYNOPSIS
-.B sesslint stats [\-\-agent {claude,codex,all}] [\-\-recursive | \-r] [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-output\-format {human,json}] [\-\-json] PATH...
+.B sesslint stats [\-\-agent {claude,codex,all}] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose] PATH...
 .SH DESCRIPTION
 [read\-only] Aggregate statistics over session files or directories: event counts by kind/actor, tool\-call volume per hashed tool name, compactions, checkpoints, size percentiles.
 .SH ARGUMENTS
 .TP
 .B PATH
-Path(s) to session file(s) or directories (use \-r for dirs)
+Path(s) to session file(s) or directories (scanned recursively)
 .SH OPTIONS
 .TP
 .B \-\-agent {claude,codex,all}
 Aggregate over a well\-known agent session root instead of paths Choices: claude, codex, all.
 .TP
-.B \-\-recursive, \-r
-Recursively walk directory arguments
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter for all inputs (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter for all inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
-.TP
-.B \-\-output\-format {human,json}
+.B \-f {human,json}, \-\-format {human,json}
 Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
-Emit sesslint.stats/v1 JSON (shortcut for \-\-output\-format json)
+Emit sesslint.stats/v1 JSON (shortcut for \-\-format json)
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0
@@ -43,7 +49,7 @@ an internal tool error exits 2
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

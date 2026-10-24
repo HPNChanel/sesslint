@@ -1,0 +1,10 @@
+---
+type Props = { kicker: string; title: string; lede?: string; id?: string };
+const { kicker, title, lede, id } = Astro.props;
+---
+
+<header class="section-head">
+  <p class="kicker">{kicker}</p>
+  <h2 id={id}>{title}</h2>
+  {lede && <p>{lede}</p>}
+</header>

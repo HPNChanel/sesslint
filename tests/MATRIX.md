@@ -1,7 +1,7 @@
 # AC-025 Coverage Matrix (human mirror)
 
 This is the detector/recipe node-ID matrix, not the [adapter/profile compatibility matrix](../docs/MATRIX.md).
-The 34-code public detection goldens and 84 public repair integration rows supplement the
+The 35-code public detection goldens and 84 public repair integration rows supplement the
 13 recipe-level positive/refusal cases; a recipe fixture need not be admissible as a complete CLI session.
 See [fixture index](../fixtures/INDEX.md).
 
@@ -43,6 +43,11 @@ Enforced by `tests/test_coverage_matrix.py`. Each cell is a collected pytest nod
 | SL011 | test_size_anomaly uniform_file_stays_clean | test_outlier_fires_once_with_numbers_only_evidence | test_threshold_boundary_exact | test_missing_size_metadata_yields_nothing |
 
 ## Recipes
+
+SL306: known metadata remains clean; unknown non-linking metadata is advisory;
+32-group overflow is bounded; nested identity/linkage fields remain critical.
+The executable quadrant mapping lives in `test_coverage_matrix.py` and is checked
+against collected test nodes.
 
 | Recipe | Positive | Negative | Boundary | Malformed |
 | ------ | -------- | -------- | -------- | --------- |

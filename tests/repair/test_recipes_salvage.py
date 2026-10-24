@@ -240,26 +240,26 @@ def test_no_shorthand() -> None:
     parser = create_parser()
 
     # Valid explicit flag
-    args = parser.parse_args(["--policy", "salvage"])
+    args = parser.parse_args(["repair", "f.jsonl", "-o", "o.jsonl", "--policy", "salvage"])
     assert args.policy == "salvage"
 
     # Default is conservative (flag absent until config merge applies it)
-    args_def = parser.parse_args([])
+    args_def = parser.parse_args(["repair", "f.jsonl", "-o", "o.jsonl"])
     assert getattr(args_def, "policy", "conservative") == "conservative"
 
     # Reject shorthand '-s'
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["-s", "salvage"])
+        parser.parse_args(["repair", "f.jsonl", "-o", "o.jsonl", "-s", "salvage"])
     assert exc_info.value.code == 2
 
     # Reject capitalization
     with pytest.raises(SystemExit) as exc_info_cap:
-        parser.parse_args(["--policy", "Salvage"])
+        parser.parse_args(["repair", "f.jsonl", "-o", "o.jsonl", "--policy", "Salvage"])
     assert exc_info_cap.value.code == 2
 
     # Reject arbitrary string
     with pytest.raises(SystemExit) as exc_info_inv:
-        parser.parse_args(["--policy", "aggressive"])
+        parser.parse_args(["repair", "f.jsonl", "-o", "o.jsonl", "--policy", "aggressive"])
     assert exc_info_inv.value.code == 2
 
 

@@ -2,7 +2,8 @@
 
 Compares ``ts`` along causal edges (event → resolved parent), never across
 global file order — sidechains legitimately interleave. A child whose
-timestamp is strictly earlier than its parent's fires one warning per edge.
+timestamp precedes its parent's beyond the configured skew contributes to one
+aggregate warning per file.
 
 Design notes:
 - ``SessionEvent.ts`` is always a populated RFC3339 string; adapters
@@ -36,7 +37,6 @@ from sesslint.checks.graph import (
     _event_parent_id_safe,
     _resolve_source_coords,
     _safe_id,
-    cap_graph_findings,
 )
 from sesslint.codes import SL008, Repairability, Severity
 from sesslint.context import CheckContext
@@ -62,6 +62,7 @@ def check_ordering(
     source_path: str = "<canonical>",
     max_findings: int = MAX_GRAPH_FINDINGS,
     context: CheckContext | None = None,
+    timestamp_skew_ms: int | None = None,
 ) -> list[Finding]:
     """SL008: flag causal edges where a child's ``ts`` precedes its parent's.
 
@@ -71,6 +72,12 @@ def check_ordering(
     epoch-sentinel timestamps, unparseable values, naive/aware mixing.
     """
     ctx = context if context is not None else CheckContext()
+    skew = ctx.timestamp_skew_ms if timestamp_skew_ms is None else timestamp_skew_ms
+    if type(skew) is not int or skew < 0:
+        raise ValueError("timestamp_skew_ms must be a nonnegative integer")
+    del max_findings  # One aggregate finding per file, independent of edge count.
+    count = 0
+    max_delta = 0
 
     id_to_index: dict[str, int] = {}
     for idx, ev in enumerate(events):
@@ -129,6 +136,12 @@ def check_ordering(
         if child_ts is None or parent_ts is None:
             continue  # unreachable: both branches above narrow or continue
         delta_ms = math.floor((child_ts - parent_ts).total_seconds() * 1000)
+        if delta_ms >= -skew:
+            continue
+        count += 1
+        max_delta = max(max_delta, -delta_ms)
+        if findings:
+            continue
         resolved_path, line_num = _resolve_source_coords(child, source_path)
         clean_rec_id = _safe_id(str(_event_id_safe(child) or ""))
         clean_parent_id = _safe_id(parent_id)
@@ -156,13 +169,20 @@ def check_ordering(
             )
         )
 
-    return cap_graph_findings(
-        findings,
-        code=SL008,
-        max_findings=max_findings,
-        source_path=source_path,
-        context=ctx,
-    )
+    if findings:
+        from dataclasses import replace
+
+        first = findings[0]
+        findings[0] = replace(
+            first,
+            evidence={
+                **(first.evidence or {}),
+                "count": count,
+                "max_delta_ms": max_delta,
+                "timestamp_skew_ms": skew,
+            },
+        )
+    return findings
 
 
 __all__ = ["check_ordering"]

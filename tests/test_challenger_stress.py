@@ -10,7 +10,7 @@ import pytest
 
 from sesslint.codes import SL004, Repairability, Severity
 from sesslint.finding import SourceRef, make_finding
-from sesslint.repair.errors import OutputInvalid, PlanSourceMismatch, PlanTampered
+from sesslint.repair.errors import PlanSourceMismatch, PlanTampered, RepairRefused
 from sesslint.repair.executor import execute
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import PlanStep, plan
@@ -277,7 +277,7 @@ def test_forged_step_through_executor_lifecycle(tmp_path: Path) -> None:
     plan_obj = base_plan
 
     out_file = tmp_path / "repaired.jsonl"
-    with pytest.raises(OutputInvalid, match="cross_branch"):
+    with pytest.raises(RepairRefused, match="not a repair sesslint derives for this source now"):
         execute(
             source_path=src,
             plan=plan_obj,
@@ -591,18 +591,14 @@ def test_multiple_independent_sl004_findings(tmp_path: Path) -> None:
             fh.write(json.dumps(e) + "\n")
 
     out_file = tmp_path / "repaired_multi.jsonl"
-    manifest = execute(
-        source_path=src,
-        plan=repair_plan,
-        output_path=out_file,
-        policy="conservative",
-    )
-    assert len(manifest.actions) == 2
-    repaired_lines = [
-        json.loads(line) for line in out_file.read_text(encoding="utf-8").strip().split("\n")
-    ]
-    assert repaired_lines[2]["parent_id"] == "p0"
-    assert repaired_lines[4]["parent_id"] == "p2"
+    with pytest.raises(RepairRefused, match="not a repair sesslint derives for this source now"):
+        execute(
+            source_path=src,
+            plan=repair_plan,
+            output_path=out_file,
+            policy="conservative",
+        )
+    assert not out_file.exists()
 
 
 def test_mixed_deterministic_and_manual_sl004_no_crosstalk() -> None:
@@ -867,17 +863,11 @@ def test_multi_finding_scale_and_order_preservation(tmp_path: Path) -> None:
             fh.write(json.dumps(e) + "\n")
 
     out_file = tmp_path / "repaired_scale.jsonl"
-    manifest = execute(
-        source_path=src,
-        plan=repair_plan,
-        output_path=out_file,
-        policy="conservative",
-    )
-    assert len(manifest.actions) == 20
-    repaired_lines = [
-        json.loads(line) for line in out_file.read_text(encoding="utf-8").strip().split("\n")
-    ]
-    for i in range(20):
-        c_line = repaired_lines[1 + 2 * i + 1]
-        assert c_line["id"] == f"child_{i}"
-        assert c_line["parent_id"] == f"parent_{i}"
+    with pytest.raises(RepairRefused, match="not a repair sesslint derives for this source now"):
+        execute(
+            source_path=src,
+            plan=repair_plan,
+            output_path=out_file,
+            policy="conservative",
+        )
+    assert not out_file.exists()

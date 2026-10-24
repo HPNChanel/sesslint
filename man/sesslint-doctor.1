@@ -1,8 +1,8 @@
-.TH SESSLINT-DOCTOR 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT-DOCTOR 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint-doctor \- [read\-only] Environment diagnostics for support reports.
 .SH SYNOPSIS
-.B sesslint doctor [\-\-agent {claude,codex,all}] [\-\-no\-quick\-checks] [\-\-output\-format {human,json}] [\-\-json]
+.B sesslint doctor [\-\-agent {claude,codex,all}] [\-\-no\-quick\-checks] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] Report what SessLint sees on this machine: tool and adapter versions, resolved config file, agent session roots, bounded quick verdicts. Counts only — never file names.
 .SH OPTIONS
@@ -13,11 +13,20 @@ Restrict diagnostics to one agent (default: all) Choices: claude, codex, all.
 .B \-\-no\-quick\-checks
 Skip the bounded per\-file check pass (counts only)
 .TP
-.B \-\-output\-format {human,json}
+.B \-f {human,json}, \-\-format {human,json}
 Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
-Emit sesslint.doctor/v1 JSON (shortcut for \-\-output\-format json)
+Emit sesslint.doctor/v1 JSON (shortcut for \-\-format json)
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0
@@ -36,7 +45,7 @@ an internal tool error exits 2
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

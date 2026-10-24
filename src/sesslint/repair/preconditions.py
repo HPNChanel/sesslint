@@ -147,7 +147,38 @@ def no_prior_safe_tool_after_cut(ctx: PreconditionContext) -> bool:
 
 
 def adjacent_identical_duplicate(ctx: PreconditionContext) -> bool:
-    """Precondition: adjacent events have equal content fingerprints, same kind, not boundary."""
+    """Precondition: adjacent events have equal content fingerprints, same kind, not boundary.
+
+    A detector finding that lists its occurrences (``record_indexes``) must be
+    exactly one adjacent pair: collapsing drops a single event, so a group of
+    three or more, or a non-adjacent group, belongs to
+    ``identical-duplicate-drop`` instead — collapsing a neighbouring look-alike
+    would leave copies behind or rewire another event's children (B21).
+    """
+    if ctx.finding and isinstance(ctx.finding.evidence, Mapping):
+        listed = ctx.finding.evidence.get("record_indexes")
+        if listed is not None:
+            if (
+                ctx.finding.evidence.get("truncated")
+                or ctx.finding.evidence.get("count", 2) != 2
+                or not isinstance(listed, Sequence)
+                or isinstance(listed, (str, bytes))
+                or len(listed) != 2
+                or any(not isinstance(i, int) or isinstance(i, bool) for i in listed)
+            ):
+                return False
+            first, second = listed
+            if first < 0 or second != first + 1 or second >= len(ctx.events):
+                return False
+            e1, e2 = ctx.events[first], ctx.events[second]
+            k1 = _event_kind(e1)
+            return (
+                k1 == _event_kind(e2)
+                and k1 not in ("checkpoint", "compaction_boundary")
+                and _event_id(e1) == _event_id(e2)
+                and _event_content_fingerprint(e1) == _event_content_fingerprint(e2)
+            )
+
     idx: int | None = None
     if ctx.finding and ctx.finding.evidence and isinstance(ctx.finding.evidence, Mapping):
         for k in ("at_index", "index", "first_index"):
@@ -291,18 +322,23 @@ def sl003_identical_duplicate(ctx: PreconditionContext) -> bool:
 
     Fail-closed on the conflicting-duplicate class: the finding evidence must
     carry ``variant == "identical-duplicate"`` plus a ``record_indexes`` list
-    of at least two in-bounds integer positions (repair-engine T-04).
+    of at least two in-bounds integer positions (repair-engine T-04). A list
+    the detector truncated, or one shorter than the declared ``count``, would
+    leave unlisted copies behind, so it is refused (B21).
     """
     if ctx.finding is None:
         return False
     evidence = ctx.finding.evidence if isinstance(ctx.finding.evidence, Mapping) else {}
-    if evidence.get("variant") != "identical-duplicate":
+    if evidence.get("variant") != "identical-duplicate" or evidence.get("truncated"):
         return False
     idxs = evidence.get("record_indexes")
     if not isinstance(idxs, Sequence) or isinstance(idxs, (str, bytes)):
         return False
     idx_list = [i for i in idxs if isinstance(i, int) and not isinstance(i, bool)]
     if len(idx_list) < 2 or len(idx_list) != len(idxs):
+        return False
+    count = evidence.get("count", len(idx_list))
+    if count != len(idx_list):
         return False
     n = len(ctx.events)
     return all(0 <= i < n for i in idx_list)
@@ -483,11 +519,27 @@ def sl108_present(ctx: PreconditionContext) -> bool:
     return False
 
 
+def _is_unterminated_torn_append(finding: Finding) -> bool:
+    """SL002 whose evidence proves an unterminated, undecodable final line (B17)."""
+    evidence = finding.evidence
+    return (
+        finding.code == "SL002"
+        and isinstance(evidence, Mapping)
+        and evidence.get("unterminated") is True
+    )
+
+
 def torn_terminal_record(ctx: PreconditionContext) -> bool:
-    """Precondition: finding SL002 is present on terminal incomplete record."""
+    """Precondition: finding SL002 is present on terminal incomplete record.
+
+    The finding must carry ``evidence.unterminated is True`` — minted by the
+    readers only when the final line has no newline and does not begin with a
+    complete JSON value — so a complete record is never suffix-dropped as
+    "torn" (fail closed for SL002 findings from older or edited plans).
+    """
     if ctx.finding is not None:
-        return ctx.finding.code == "SL002"
-    return any(f.code == "SL002" for f in ctx.findings)
+        return _is_unterminated_torn_append(ctx.finding)
+    return any(_is_unterminated_torn_append(f) for f in ctx.findings)
 
 
 PRECONDITION_FUNCS: dict[str, Callable[[PreconditionContext], bool]] = {

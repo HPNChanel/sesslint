@@ -1,5 +1,29 @@
 # Agent Runtime Integrations
 
+<!-- next-release -->
+
+Claude hook recipes match `resume|compact|fork` at SessionStart and set a
+five-second timeout for PostCompact and SessionEnd. `hook --format claude-json`
+emits a root `systemMessage` containing only outcome and code counts. The CLI's
+own JSON result remains available through `--json`; recipes stay advisory.
+
+`hook --init --agent codex` prints Codex `hooks.json` recipes for the same four
+events. They use the `systemMessage` envelope at SessionStart, PreCompact, and
+PostCompact, and give SessionEnd the three-second maximum Codex allows.
+`hook --init --json` prints the blocks as one `sesslint.init-hooks/v1`
+document (`schemas/sesslint.init-hooks.v1.json`).
+
+SessionStart skips transcripts above 128 KiB. SessionEnd limits its SL009 pass
+to 1 MiB, and other hook checks accept at most 8 MiB. A budget skip never means
+the transcript passed. Use `sesslint check --max-file-bytes N` for a larger
+inspection. Hooks do not write transcripts or persist their own output. Actual
+host UI presentation depends on the installed Claude Code version.
+
+Seal ledgers retain a sibling `.lock` file to serialize competing appenders.
+The OS releases the lock when a process exits. The ledger records the digest of
+the checked snapshot even if the source changes before append. An uninspected
+file cannot be sealed as checked.
+
 How to wire SessLint into agent runtimes so session corruption is caught **before**
 it costs you work — not discovered after a failed resume.
 
@@ -15,7 +39,7 @@ are copy-paste recipes you own.
 > stops matching your runtime, treat it as community-verified and check the
 > upstream docs before filing an issue.
 
-> `sesslint init-hooks --agent claude --print` prints the
+> `sesslint hook --init --agent claude` prints the <!-- next-release -->
 > exact JSON blocks below ready to paste — it never writes your settings.
 
 Claude Code fires hooks at lifecycle points where SessLint adds value:
@@ -80,18 +104,19 @@ Contract:
 ### Recipes
 
 Add to `.claude/settings.json` (project) or `~/.claude/settings.json`
-(user). `sesslint init-hooks --agent claude --print` emits exactly these
-blocks — every command is `sesslint hook --event <name> || true`, so
-there is nothing to substitute.
+(user). `sesslint hook --init --agent claude` emits exactly these <!-- next-release -->
+blocks — every command is `sesslint hook --event <name> || true`
+(SessionStart adds `--format claude-json`), so there is nothing to
+substitute.
 
 ```json
 {
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear|compact|fork",
+        "matcher": "resume|compact|fork",
         "hooks": [
-          {"type": "command", "command": "sesslint hook --event SessionStart || true"}
+          {"type": "command", "command": "sesslint hook --event SessionStart --format claude-json || true"}
         ]
       }
     ],
@@ -106,7 +131,7 @@ there is nothing to substitute.
     "PostCompact": [
       {
         "hooks": [
-          {"type": "command", "command": "sesslint hook --event PostCompact || true"}
+          {"type": "command", "command": "sesslint hook --event PostCompact || true", "timeout": 5}
         ]
       }
     ],
@@ -114,7 +139,7 @@ there is nothing to substitute.
       {
         "matcher": "clear|logout|prompt_input_exit|other",
         "hooks": [
-          {"type": "command", "command": "sesslint hook --event SessionEnd || true"}
+          {"type": "command", "command": "sesslint hook --event SessionEnd || true", "timeout": 5}
         ]
       }
     ]
@@ -124,9 +149,14 @@ there is nothing to substitute.
 
 Notes:
 
-- `SessionStart` matcher covers all documented sources including
-  `compact` and `fork` — a post-compaction re-injection deserves the
-  same integrity check as a fresh resume.
+- `SessionStart` matches `resume|compact|fork`, the sources that load
+  existing transcript state — a post-compaction re-injection deserves the
+  same integrity check as a resume. `startup` and `clear` begin a new
+  transcript, so there is nothing durable to check yet. With
+  `--format claude-json` the result arrives as a content-free
+  `systemMessage`.
+- `PostCompact` and `SessionEnd` set `"timeout": 5` (seconds), so a slow
+  check delays compaction or exit by at most five seconds.
 - `PostCompact` carries no `matcher` (fires unconditionally after every
   compaction).
 - `|| true` is belt-and-suspenders: `sesslint hook` already exits `0` on
@@ -150,11 +180,130 @@ in hooks.
 ### Latency
 
 Hooks run synchronously — a slow check delays the lifecycle event. SessLint's
-reader is bounded by `ReaderLimits` (`sesslint scan --show-limits`): file size,
+reader is bounded by `ReaderLimits` (reported by `sesslint doctor`): file size,
 line size, record count, and nesting depth are all capped, so a pathological
 file fails fast rather than hanging the hook. Typical session files check in
 well under a second; the 250k-event benchmark contract is ~15 s for the
 absolute worst case.
+
+## Codex hooks
+
+> Verified on 2026-10-22 against the Codex hooks reference and the hooks
+> engine source at tag `rust-v0.163.0` (Codex 0.163.0). The recipes are tested
+> with synthetic Codex payloads and rollout fixtures, not yet against a live
+> Codex build. The reference has no per-release hook changelog, so re-check it
+> after upgrading Codex.
+
+> `sesslint hook --init --agent codex` prints the <!-- next-release -->
+> exact JSON blocks below ready to paste — it never writes your hooks file.
+
+Codex fires the four events the Claude Code recipes use. Every hook payload
+carries `session_id`, `transcript_path`, `cwd`, and `hook_event_name`.
+`SessionStart` adds `model`, `permission_mode`, and `source`; `PreCompact` and
+`PostCompact` add `model`, `turn_id`, `trigger`, and, inside a subagent,
+`agent_id` and `agent_type`; `SessionEnd` adds `reason`. `sesslint hook`
+ignores the extra fields and auto-detects the Codex rollout format, so the
+`sesslint hook` contract above applies unchanged; a `null` `transcript_path`
+skips cleanly.
+
+What differs from Claude Code, and how the recipes handle it:
+
+| Topic | Codex behavior | Recipe choice |
+| :--- | :--- | :--- |
+| Trust | Hooks are on by default, but new or changed hooks are skipped until you review and trust them in `/hooks`. A project `.codex/hooks.json` loads only when that project's `.codex/` layer is trusted. | Open `/hooks` after merging the blocks, and again after editing a command. |
+| SessionStart output | Plain stdout is added to the model's context as developer context. | `--format claude-json` prints a content-free `systemMessage`, which Codex shows as a warning instead, even for a clean pass. |
+| Compaction output | Plain stdout from `PreCompact` and `PostCompact` is ignored. A compaction also queues `SessionStart` with source `compact` for the next turn. | The same `systemMessage` envelope keeps the result visible. `SessionStart` skips `compact`, so one compaction shows two messages, not three. |
+| SessionEnd | Advisory. The only end reason is currently `other`. The timeout defaults to 1 s and allows at most 3 s; a timeout or error is reported as a hook failure. | No `matcher`, `"timeout": 3`, and the SL009 pass reads at most 1 MiB. |
+| Windows | `commandWindows` replaces `command` on Windows. Hooks run through the session's shell, which on Windows may be PowerShell or `cmd.exe`; without one, Codex falls back to `%COMSPEC% /C` on Windows and `$SHELL -lc` elsewhere. | `commandWindows` repeats the command without the POSIX fallback, so it runs unchanged in either Windows shell (see the notes). |
+| Exit codes | For these four events, a non-zero exit is reported as a failed hook, and Codex reads stdout only on exit `0`. Nothing stops the session or the compaction except JSON `"continue": false`. | `sesslint hook` exits `0` on findings and skips, and its JSON never sets `continue`. |
+
+### Recipes
+
+Merge into `~/.codex/hooks.json` (user) or `.codex/hooks.json` (project).
+`sesslint hook --init --agent codex` emits exactly these blocks: <!-- next-release -->
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "resume|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sesslint hook --event SessionStart --format claude-json || true",
+            "commandWindows": "sesslint hook --event SessionStart --format claude-json"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto|manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sesslint hook --event PreCompact --format claude-json || true",
+            "commandWindows": "sesslint hook --event PreCompact --format claude-json"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sesslint hook --event PostCompact --format claude-json || true",
+            "commandWindows": "sesslint hook --event PostCompact --format claude-json",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sesslint hook --event SessionEnd || true",
+            "commandWindows": "sesslint hook --event SessionEnd",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Notes:
+
+- `SessionStart` matches `resume|fork`. As in the Claude Code recipe,
+  `startup` and `clear` begin a new transcript. Unlike it, `compact` is left
+  out: Codex shows every `systemMessage` as a warning, `PostCompact` already
+  checks the compacted transcript, and the `SessionStart` check reads at most
+  128 KiB. Codex matchers are regular expressions; `auto|manual` covers both
+  compaction triggers.
+- `SessionEnd` uses `"timeout": 3`, the most Codex allows, and checks at most
+  1 MiB for SL009. If a slow host still runs past three seconds, Codex reports
+  a hook failure; SessionEnd hooks are advisory, so the session still ends.
+  `PostCompact` keeps the five-second timeout of the Claude Code recipe.
+- `commandWindows` omits `|| true` because Windows hooks may run in PowerShell
+  or `cmd.exe`, where `|| true` itself fails. `sesslint hook` exits `0` on
+  findings, skips, and bad stdin, so a working setup never shows a hook error.
+  A missing `sesslint`, or one older than 0.5.0, exits non-zero; Codex then
+  shows a hook error instead of the `systemMessage`, and the session goes on.
+- `command` keeps `|| true` and so needs a session shell that accepts POSIX
+  `||`, as `sh`, `bash`, `zsh`, and `fish` do.
+- `--fail-on` turns a finding into exit `1`, but that does not gate Codex:
+  the hook is reported as failed, its `systemMessage` is dropped, and neither
+  the session nor the compaction stops. Gate with `sesslint check` or
+  `sesslint.precheck` instead.
+- Codex also reads inline `[hooks]` tables from `config.toml`; these blocks
+  are for `hooks.json`.
+- Requires SessLint 0.5.0 or later on `PATH` — check `sesslint version`.
+  Output stays content-free, as described under Content-free guarantee above.
 
 ## Programmatic gate: `sesslint.precheck`
 
@@ -191,7 +340,9 @@ sesslint watch --agent all --json >> ~/.local/state/sesslint-watch.ndjson
 ```
 
 Each verdict change prints one line — `healthy->invalid` with the rule codes
-— and stays quiet otherwise. Watch is a pure observer: it never writes to
+— and stays quiet otherwise. With `--json` each line is a
+`sesslint.watch-event/v1` object (`schemas/sesslint.watch-event.v1.json`).
+Watch is a pure observer: it never writes to
 watched directories, never installs hooks, and Ctrl+C exits cleanly. Poll
 cost scales with file count; narrow the scope with an explicit path or
 `--agent` when watching large roots.
@@ -200,8 +351,20 @@ cost scales with file count; narrow the scope with an explicit path or
 
 Agents that natively consume MCP servers (Claude Code, Codex) can call
 SessLint checks directly. `sesslint mcp` runs a Model Context Protocol
-server over **stdio** — newline-delimited JSON-RPC 2.0, protocol revision
-`2025-06-18`, zero dependencies, no sockets, no threads.
+server over **stdio** — newline-delimited JSON-RPC 2.0, zero dependencies, no
+sockets, no threads. Two MCP protocol revisions are served side by side:
+
+| Revision | How a client selects it | Notes |
+| -------- | ----------------------- | ----- |
+| `2025-06-18` | `initialize` handshake, then `tools/list` / `tools/call` | Unchanged; response bytes are frozen by `fixtures/mcp/2025-06-18` |
+| `2026-07-28` | No handshake: every request carries `_meta["io.modelcontextprotocol/protocolVersion"]` and `.../clientCapabilities`; optional `server/discover` | Results carry `resultType`; `tools/list` and `server/discover` carry `ttlMs` / `cacheScope`; an unsupported version returns `UnsupportedProtocolVersionError` (`-32022`) listing `supported` versions |
+
+A client that supports both can probe with `server/discover` and fall back to
+`initialize` (spec: stdio backward compatibility). Not implemented because they
+do not fit a stdio, read-only, static-tool server: Streamable HTTP,
+`subscriptions/listen`, multi round-trip `input_required` results, and the
+tasks extension. `ping` and `logging/setLevel` were removed by `2026-07-28`
+and answer `-32601` there (`ping` still works on the `2025-06-18` path).
 
 Client configuration (add to the agent's MCP settings — SessLint never
 writes client config):
@@ -223,13 +386,15 @@ protocol errors):
 | Tool | Returns |
 | ---- | ------- |
 | `sesslint_check` | `sesslint.report/v1` report (structured content) for one session file |
-| `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report |
-| `sesslint_scan` | `sesslint.scan/v1` 5-bucket aggregate for a file or directory tree |
+| `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report (`schemas/sesslint.precheck-result.v1.json`) |
+| `sesslint_scan` | `sesslint.scan-report/v1` 5-bucket aggregate for a file or directory tree |
+| `sesslint_triage` | `sesslint.triage/v1` diagnosis (`schemas/sesslint.triage.v1.json`) for one session file — the same document as `sesslint triage <path> -f json`; previews are never applied |
 
 Each tool takes `path` (required), plus optional `profile` (`neutral`,
 `claude-strict`, `openai-strict`) and `format` adapter override. Missing
 paths and tool failures return `isError: true` results with content-free
-reason strings; protocol problems return JSON-RPC error objects. The server
+reason strings (`sesslint_triage`, like `sesslint_check`, requires a file: a
+directory is a `usage-error`, a missing path an `io-error`); protocol problems return JSON-RPC error objects. The server
 adds no timestamps — identical requests produce identical responses.
 EOF or Ctrl+C exits cleanly.
 
@@ -245,13 +410,13 @@ workspace-relative inputs for clickable navigation.
 ## Runtime hook surfaces
 
 Which agent runtimes expose a user-facing hook surface whose stdin
-payload `sesslint hook` can read (verified 2026-09 — re-checked each
-release):
+payload `sesslint hook` can read (verified 2026-09, Codex row 2026-10-22 —
+re-checked each release):
 
 | Runtime | Hook surface | Payload carries `transcript_path` | SessLint recipes |
 | :--- | :--- | :--- | :--- |
-| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`init-hooks --agent claude`) |
-| Codex | `~/.codex/hooks.json`, `config.toml [hooks]` | Yes — all events | Not yet — matcher/timeout/trust-review semantics under verification |
+| Claude Code | `settings.json` `hooks` | Yes — all events | Emitted (`sesslint hook --init --agent claude`) *(next release)* |
+| Codex | `~/.codex/hooks.json`, `config.toml [hooks]` | Yes — all events | Emitted (`sesslint hook --init --agent codex`) *(next release)* |
 | Copilot CLI | `.github/hooks/*.json`, `~/.copilot/hooks/` | Only on `PreCompact`, `Stop`, `subagent*` events (PascalCase names → snake_case payload) | Not yet — needs the Copilot adapter first |
 | Gemini CLI | `settings.json` `hooks` | Yes — all events, but stdout must be JSON | Not yet — needs the Gemini adapter + `--json` contract check |
 | Cursor | `.cursor/hooks.json`, `~/.cursor/hooks.json` | Yes — all agent hooks | Not yet — needs the Cursor adapter first |

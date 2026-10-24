@@ -16,7 +16,7 @@ WARNING_MESSAGE = "WARNING: --include-content embeds raw transcript content; do 
 def test_secret_warning_emitted_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify that --include-content emits the exact warning banner to stderr."""
     fixture = FIXTURES_DIR / "claude_secret.jsonl"
-    code = main(["check", str(fixture), "--format", "claude-code-jsonl", "--include-content"])
+    code = main(["check", str(fixture), "--adapter", "claude-code-jsonl", "--include-content"])
     assert code == 0
     captured = capsys.readouterr()
     assert WARNING_MESSAGE in captured.err
@@ -25,7 +25,7 @@ def test_secret_warning_emitted_to_stderr(capsys: pytest.CaptureFixture[str]) ->
 def test_secret_warning_absent_in_default_mode(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify that running without --include-content produces zero warning in stderr."""
     fixture = FIXTURES_DIR / "claude_secret.jsonl"
-    code = main(["check", str(fixture), "--format", "claude-code-jsonl"])
+    code = main(["check", str(fixture), "--adapter", "claude-code-jsonl"])
     assert code == 0
     captured = capsys.readouterr()
     assert WARNING_MESSAGE not in captured.err
@@ -41,7 +41,7 @@ def test_json_warning_keys_present_only_with_flag(capsys: pytest.CaptureFixture[
         [
             "check",
             str(fixture),
-            "--format",
+            "--adapter",
             "claude-code-jsonl",
             "--json",
             "--include-content",
@@ -58,7 +58,7 @@ def test_json_warning_keys_present_only_with_flag(capsys: pytest.CaptureFixture[
         [
             "check",
             str(fixture),
-            "--format",
+            "--adapter",
             "claude-code-jsonl",
             "--json",
         ]

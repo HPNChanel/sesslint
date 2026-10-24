@@ -91,7 +91,7 @@ def test_offline_repair_and_verify_commands(
             str(REPAIRABLE_SESSION),
             "--plan",
             str(plan_file),
-            "--output",
+            "--repaired",
             str(out_file),
             "--manifest",
             str(manifest_file),
@@ -105,7 +105,7 @@ def test_offline_bundle_command(tmp_path: Path, capsys: pytest.CaptureFixture[st
     out_bundle = tmp_path / "offline_bundle.json"
 
     # 1. Bundle to file
-    exit_code = main(["bundle", str(VALID_SESSION), "--out", str(out_bundle)])
+    exit_code = main(["bundle", str(VALID_SESSION), "--output", str(out_bundle)])
     assert exit_code == 0
     assert out_bundle.exists()
 

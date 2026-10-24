@@ -3,7 +3,9 @@
 This module unifies all canonical serialization and identity hashing behind a single
 narrow, strictly-typed protocol interface. It allows pluggable acceleration
 (e.g., pure Python or optional native extension) with guaranteed fail-closed fallback
-and byte-level determinism conforming to RFC 8785 (JSON Canonicalization Scheme).
+and byte-level determinism using SessLint's stable Python JSON codec.  This
+codec deliberately pins Python's ``json.dumps`` behavior; it does not claim
+RFC 8785 / JCS conformance.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ CODEC_INTERFACE_VERSION: Final[str] = "1.0.0"
 _PROVENANCE_FIELD_NAMES: Final[frozenset[str]] = frozenset(
     {"source_line", "source_location", "source_record_hash"}
 )
+_NON_STRING_KEY_ERROR: Final[str] = "Non-string dictionary key rejected by SessLint codec: "
 
 
 @runtime_checkable
@@ -42,7 +45,7 @@ class CanonicalCodec(Protocol):
         ...
 
     def canonical_json_bytes(self, obj: Any, *, newline: bool = False) -> bytes:
-        """Serialize an object or mapping to RFC 8785 canonical UTF-8 JSON bytes."""
+        """Serialize an object or mapping to deterministic UTF-8 JSON bytes."""
         ...
 
     def content_identity_bytes(self, event: SessionEvent) -> bytes:
@@ -74,7 +77,7 @@ class PurePythonCanonicalCodec:
     codec_version: Final[str] = CODEC_INTERFACE_VERSION
 
     def canonical_json_bytes(self, obj: Any, *, newline: bool = False) -> bytes:
-        """Serialize an object to RFC 8785 canonical UTF-8 JSON bytes."""
+        """Serialize an object to deterministic UTF-8 JSON bytes."""
         target = obj.to_dict() if hasattr(obj, "to_dict") and callable(obj.to_dict) else obj
         try:
             normalized = self._normalize(target)
@@ -150,7 +153,7 @@ class PurePythonCanonicalCodec:
 
         if obj_type is float:
             if math.isnan(obj) or math.isinf(obj):
-                raise SchemaError(f"Float value {obj!r} is not valid in canonical JSON (RFC 8785)")
+                raise SchemaError(f"Float value {obj!r} is not valid in SessLint canonical JSON")
             return obj
 
         # Fast path 2: SessionEvent
@@ -201,9 +204,7 @@ class PurePythonCanonicalCodec:
                     if isinstance(obj.extra_fields, Mapping):
                         for k, v in obj.extra_fields.items():
                             if not isinstance(k, str):
-                                raise SchemaError(
-                                    f"Non-string dictionary key rejected under RFC 8785: {k!r}"
-                                )
+                                raise SchemaError(f"{_NON_STRING_KEY_ERROR}{k!r}")
                             # Only experimental_* extras are wire-legal on
                             # canonical events (parse_session_event mirrors
                             # this gate); adapter-internal analysis markers
@@ -226,9 +227,7 @@ class PurePythonCanonicalCodec:
                 norm_map: dict[str, Any] = {}
                 for k, v in obj.items():
                     if type(k) is not str and not isinstance(k, str):
-                        raise SchemaError(
-                            f"Non-string dictionary key rejected under RFC 8785: {k!r}"
-                        )
+                        raise SchemaError(f"{_NON_STRING_KEY_ERROR}{k!r}")
                     norm_map[k] = self._normalize(v, seen)
                 return norm_map
             finally:
@@ -264,9 +263,7 @@ class PurePythonCanonicalCodec:
                         if isinstance(val, Mapping):
                             for k, v in val.items():
                                 if not isinstance(k, str):
-                                    raise SchemaError(
-                                        f"Non-string dictionary key rejected under RFC 8785: {k!r}"
-                                    )
+                                    raise SchemaError(f"{_NON_STRING_KEY_ERROR}{k!r}")
                                 # Same gate as the SessionEvent fast path:
                                 # experimental_* keys hoist; internal extras
                                 # are analysis-only and never reach the wire.
@@ -291,9 +288,7 @@ class PurePythonCanonicalCodec:
                 gen_map: dict[str, Any] = {}
                 for k, v in obj.items():
                     if not isinstance(k, str):
-                        raise SchemaError(
-                            f"Non-string dictionary key rejected under RFC 8785: {k!r}"
-                        )
+                        raise SchemaError(f"{_NON_STRING_KEY_ERROR}{k!r}")
                     gen_map[k] = self._normalize(v, seen)
                 return gen_map
             finally:
@@ -355,7 +350,12 @@ def normalize_canonical(obj: Any, seen: set[int] | None = None) -> Any:
 
 
 def canonical_json_bytes(obj: Any, *, newline: bool = False) -> bytes:
-    """Serialize an object to RFC 8785 canonical UTF-8 JSON bytes."""
+    """Serialize an object to SessLint deterministic UTF-8 JSON bytes.
+
+    Defaults to the hash domain (no trailing newline). The file-writing
+    wrapper ``sesslint.determinism.canonical_json_bytes`` defaults to
+    ``newline=True``; the two defaults differ on purpose.
+    """
     return _ACTIVE_CODEC.canonical_json_bytes(obj, newline=newline)
 
 

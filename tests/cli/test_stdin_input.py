@@ -71,7 +71,10 @@ def test_fingerprint_bytes_matches_file(tmp_path: Path) -> None:
 
 
 def test_check_bytes_fail_closed_variants() -> None:
-    assert [f.code for f in check_bytes(b"garbage").findings] == ["SL302"]
+    garbage = check_bytes(b"garbage")
+    assert garbage.findings == ()
+    assert garbage.assurance == "A0"
+    assert garbage.limitation.startswith("Unsupported: format-undetected")
     assert [f.code for f in check_bytes(b'{"a":1}\x00more').findings] == ["SL001"]
     assert [f.code for f in check_bytes(b"").findings] == ["SL001"]
     assert [f.code for f in check_bytes(b"   \n  ").findings] == ["SL001"]
@@ -79,20 +82,21 @@ def test_check_bytes_fail_closed_variants() -> None:
 
 def test_check_bytes_oversize_structured_result() -> None:
     report = check_bytes(b"x" * 128, max_input_bytes=64)
-    codes = [f.code for f in report.findings]
-    assert codes == ["SL001"]
+    assert report.findings == ()
     assert report.assurance == "A0"
+    assert report.limitation.startswith("Skipped: file-too-large")
 
 
-def test_scan_bytes_oversize_unreadable() -> None:
+def test_scan_bytes_oversize_skipped() -> None:
     rep = scan_bytes(b"x" * 128, max_input_bytes=64)
-    assert rep.files[0].verdict == "unreadable"
-    assert rep.totals.unreadable == 1
-    assert [f.code for f in rep.files[0].findings] == ["SL001"]
+    assert rep.files[0].verdict == "skipped"
+    assert rep.files[0].skipped_reason == "file-too-large"
+    assert rep.totals.skipped == 1
+    assert rep.files[0].findings == ()
 
 
 def test_check_bytes_virtual_path_in_findings() -> None:
-    report = check_bytes(b"garbage", virtual_path="<pipe>")
+    report = check_bytes(b'{"a":1}\x00more', virtual_path="<pipe>")
     assert report.findings[0].source.path == "<pipe>"
 
 
@@ -125,18 +129,21 @@ def test_cli_check_stdin_json_matches_file(
     assert stdin_doc["source_fingerprint"] == file_doc["source_fingerprint"]
 
 
-def test_cli_check_stdin_garbage_fails_closed(
+def test_cli_check_stdin_garbage_is_unsupported_by_default(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _feed_stdin(monkeypatch, b"garbage")
     _feed_stdin(monkeypatch, b"garbage")
     code = main(["check", "-", "--json"])
     captured = capsys.readouterr()
     doc = json.loads(captured.out)
-    assert code == 1
-    assert [f["code"] for f in doc["findings"]] == ["SL302"]
-    # The bundle hint adapts to piped input (stdin has no bundle-able path).
-    assert "save the stream to a file" in captured.err
+    assert code == 0
+    assert doc["assurance"] == "A0"
+    assert doc["findings"] == []
+    assert doc["limitation"].startswith("Unsupported: format-undetected")
+    assert "unsupported (format-undetected)" in captured.err
+
+    _feed_stdin(monkeypatch, b"garbage")
+    assert main(["check", "-", "--fail-on-unsupported"]) == 1
 
 
 def test_cli_check_stdin_mixed_paths_rejected(
@@ -163,7 +170,7 @@ def test_cli_check_stdin_format_override(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _feed_stdin(monkeypatch, CODEX_HEALTHY.read_bytes())
-    code = main(["check", "-", "--format", "codex-rollout"])
+    code = main(["check", "-", "--adapter", "codex-rollout"])
     assert code == 0
     assert "Valid Codex rollout session" in capsys.readouterr().out
 
@@ -171,15 +178,14 @@ def test_cli_check_stdin_format_override(
 def test_cli_check_stdin_oversize_structured(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Oversized stdin yields an SL001 finding payload, never a traceback."""
-    import sesslint.io as sesslint_io
-
-    monkeypatch.setattr(sesslint_io, "DEFAULT_MAX_FILE_BYTES", 64)
+    """Oversized stdin is a declared skip, never a structural finding."""
     _feed_stdin(monkeypatch, b"x" * 128)
-    code = main(["check", "-", "--json"])
+    code = main(["check", "-", "--json", "--max-file-bytes", "64"])
     doc = json.loads(capsys.readouterr().out)
-    assert code == 1
-    assert [f["code"] for f in doc["findings"]] == ["SL001"]
+    assert code == 0
+    assert doc["assurance"] == "A0"
+    assert doc["findings"] == []
+    assert doc["limitation"].startswith("Skipped: file-too-large")
 
 
 # --- CLI: scan - ------------------------------------------------------------
@@ -192,8 +198,7 @@ def test_cli_scan_stdin_healthy(
     code = main(["scan", "-"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "<stdin>" in out
-    assert "healthy=1" in out
+    assert "healthy" in out
 
 
 def test_cli_scan_stdin_garbage(
@@ -201,10 +206,15 @@ def test_cli_scan_stdin_garbage(
 ) -> None:
     _feed_stdin(monkeypatch, b"garbage")
     code = main(["scan", "-", "--json"])
-    doc = json.loads(capsys.readouterr().out)
-    assert code == 1
-    assert doc["root_path"] == "<stdin>"
-    assert doc["totals"]["invalid"] == 1
+    captured = capsys.readouterr()
+    doc = json.loads(captured.out)
+    assert code == 0
+    assert doc["schema_version"] == "sesslint.report/v1"
+    assert doc["session_id"] == "stdin"
+    assert "unsupported" in captured.err.lower()
+
+    _feed_stdin(monkeypatch, b"garbage")
+    assert main(["scan", "-", "--fail-on-unsupported"]) == 1
 
 
 # --- CLI: repair - ----------------------------------------------------------

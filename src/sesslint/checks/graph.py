@@ -473,32 +473,25 @@ def check_missing_parent(
             )
 
             target_idx = g.id_to_index[id_str]
-            target_ev = events[target_idx]
-            qualifying, rejected, conf, reason = find_qualifying_parent_candidates(
-                events=events,
-                child=target_ev,
-                target_idx=target_idx,
-                missing_parent_id=parent_id,
-            )
-
-            rep = Repairability.DETERMINISTIC if len(qualifying) == 1 else Repairability.MANUAL
-
+            # The parent id is absent from the complete id index, so no
+            # full-id-equality candidate can exist. Inferring another parent
+            # from proximity or content would violate conservative repair (B29).
             evidence: dict[str, Any] = {
                 "id": clean_rec_id,
                 "index": target_idx,
                 "parent_id": clean_parent_id,
                 "match_rule": "full-equality",
-                "confinement": conf,
-                "candidate_count": len(qualifying),
-                "rejected_decoys": rejected,
-                "reason": reason,
+                "confinement": {"branch": False, _CONF_SEG_KEY: False},
+                "candidate_count": 0,
+                "rejected_decoys": [],
+                "reason": "no_full_match",
             }
 
             findings.append(
                 make_finding(
                     code=SL004,
                     severity=Severity.ERROR,
-                    repairability=rep,
+                    repairability=Repairability.MANUAL,
                     message_template=_MSG_SL004,
                     source=source_ref,
                     related_ids=related,

@@ -261,7 +261,7 @@ def _open_byte_source(path: Path) -> BinaryIO | _MMapLineSource:
 
 
 def _reject_constant(val: str) -> None:
-    """Reject non-standard numeric constants (NaN, Infinity, -Infinity) per RFC 8785."""
+    """Reject non-JSON numeric constants (NaN, Infinity, -Infinity)."""
     raise ValueError(f"Out-of-range or non-standard numeric constant: {val}")
 
 
@@ -637,6 +637,179 @@ class _RawLine:
         _validate_stream_coordinates(self.byte_offset, self.byte_end, self.record_ordinal)
 
 
+_UTF8_BOM: Final[bytes] = b"\xef\xbb\xbf"
+
+_JSON_WS: Final[str] = " \t\n\r"
+_STRING_RUN: Final[re.Pattern[str]] = re.compile(
+    r'(?:[^"\\\x00-\x1f]+|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*'
+)
+_CUT_ESCAPE: Final[re.Pattern[str]] = re.compile(r"\\(?:u[0-9a-fA-F]{0,3})?\Z")
+_NUMBER_RUN: Final[re.Pattern[str]] = re.compile(r"[-+.eE0-9]+")
+_NUMBER: Final[re.Pattern[str]] = re.compile(
+    r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?"
+)
+_CUT_NUMBER: Final[re.Pattern[str]] = re.compile(
+    r"-?(?:(?:0|[1-9][0-9]*)(?:\.(?:[0-9]+(?:[eE][+-]?[0-9]*)?)?|[eE][+-]?[0-9]*)?)?"
+)
+_LITERALS: Final[tuple[str, ...]] = ("true", "false", "null")
+_CUT: Final[int] = -1  # the text ends inside this token: still a viable prefix
+_BAD: Final[int] = -2  # no continuation can make this token valid JSON
+
+
+def _skip_string(text: str, pos: int) -> int:
+    """Index just past the string opening at ``pos``, or ``_CUT`` / ``_BAD``."""
+    match = _STRING_RUN.match(text, pos + 1)
+    stop = match.end() if match is not None else pos + 1
+    if stop == len(text):
+        return _CUT
+    if text[stop] == '"':
+        return stop + 1
+    return _CUT if _CUT_ESCAPE.match(text, stop) else _BAD
+
+
+def _skip_scalar(text: str, pos: int) -> int:
+    """Index just past the number or literal at ``pos``, or ``_CUT`` / ``_BAD``."""
+    run = _NUMBER_RUN.match(text, pos)
+    if run is not None:
+        if run.end() == len(text):
+            return _CUT if _CUT_NUMBER.fullmatch(run.group()) else _BAD
+        return run.end() if _NUMBER.fullmatch(run.group()) else _BAD
+    head = text[pos : pos + 5]
+    for literal in _LITERALS:
+        if head.startswith(literal):
+            return pos + len(literal)
+        if len(text) - pos < len(literal) and literal.startswith(head):
+            return _CUT
+    return _BAD
+
+
+def _is_cut_json_object(text: str) -> bool:
+    """True iff ``text`` is a proper prefix of some JSON object (B17).
+
+    A torn append stops mid-record, so its text is the beginning of the
+    object the writer was emitting. Text no continuation could turn into a
+    JSON object — garbage, a non-object value, an invalid token, or a complete
+    object with or without trailing data — is malformed, not torn. Iterative,
+    so nesting depth cannot exhaust the interpreter stack.
+    """
+    end = len(text)
+    closers: list[str] = []
+    expect = "object"
+    pos = 0
+    while True:
+        while pos < end and text[pos] in _JSON_WS:
+            pos += 1
+        if pos == end:
+            return bool(closers)
+        ch = text[pos]
+        if expect == "object":
+            if ch != "{":
+                return False
+            closers.append("}")
+            pos += 1
+            expect = "key_or_close"
+        elif expect in ("key", "key_or_close"):
+            if ch == "}" and expect == "key_or_close":
+                closers.pop()
+                pos += 1
+                expect = "after"
+            elif ch == '"':
+                pos = _skip_string(text, pos)
+                expect = "colon"
+            else:
+                return False
+        elif expect == "colon":
+            if ch != ":":
+                return False
+            pos += 1
+            expect = "value"
+        elif expect in ("value", "value_or_close"):
+            if ch == "]" and expect == "value_or_close":
+                closers.pop()
+                pos += 1
+            elif ch in "{[":
+                closers.append("}" if ch == "{" else "]")
+                pos += 1
+                expect = "key_or_close" if ch == "{" else "value_or_close"
+                continue
+            elif ch == '"':
+                pos = _skip_string(text, pos)
+            else:
+                pos = _skip_scalar(text, pos)
+            expect = "after"
+        elif not closers:
+            return False  # a complete object followed by more data
+        elif ch == ",":
+            pos += 1
+            expect = "key" if closers[-1] == "}" else "value"
+        elif ch == closers[-1]:
+            closers.pop()
+            pos += 1
+        else:
+            return False
+        if pos < 0:
+            return pos == _CUT
+
+
+def is_torn_append(line: bytes, *, strip_bom: bool = False) -> bool:
+    """Return True iff a fully buffered final line is an incomplete append (SL002, B17).
+
+    A torn append is the prefix of a record whose write stopped before its
+    terminating newline: the line has no trailing ``\\n`` and its bytes — minus
+    any trailing NUL padding a crash can leave behind — are a proper prefix of
+    a JSON object, possibly cut inside a multi-byte UTF-8 sequence. Every other
+    defect on the final line (a newline-terminated record, a complete JSON
+    value that fails validation, interior NUL bytes, invalid UTF-8 before the
+    end of the line, text no continuation could make an object) is malformed
+    data and reported as SL001: the conservative SL002 suffix drop must never
+    discard a complete record or unexplained bytes (fail closed).
+    """
+    if line.endswith(b"\n"):
+        return False
+    body = line[len(_UTF8_BOM) :] if strip_bom and line.startswith(_UTF8_BOM) else line
+    body = body.rstrip(b"\x00")
+    if b"\x00" in body:
+        return False
+    try:
+        text = body.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as err:
+        # Only a multi-byte sequence cut off at the very end is a tear signature.
+        if err.reason != "unexpected end of data" or err.end != len(body):
+            return False
+        text = body[: err.start].decode("utf-8", errors="strict")
+    if not text.strip(_JSON_WS):
+        return True
+    return _is_cut_json_object(text)
+
+
+def decode_defect_code(raw: _RawLine, *, is_terminal: bool) -> str:
+    """Finding code for a line whose bytes failed to decode (NUL, UTF-8, JSON syntax).
+
+    SL002 only for a provable torn append on the final line (an over-limit
+    line was never fully buffered, so it can never be proven torn); SL001
+    otherwise.
+    """
+    if (
+        is_terminal
+        and not raw.truncated_limit
+        and is_torn_append(raw.raw_bytes, strip_bom=raw.line_number == 1)
+    ):
+        return SL002
+    return SL001
+
+
+def defect_evidence(code: str, coord_evidence: dict[str, Any]) -> dict[str, Any]:
+    """Coordinate evidence for a line defect; SL002 also records ``unterminated``.
+
+    The ``torn_terminal_record`` repair precondition requires that marker, so
+    an SL002 finding minted without proof of an unterminated tail (an older
+    plan, a hand-edited one) is never repaired by suffix drop.
+    """
+    if code == SL002:
+        return {**coord_evidence, "unterminated": True}
+    return coord_evidence
+
+
 class MalformedTailTracker:
     """Quantify the vendor-invisible tail after the first malformed record (T-01).
 
@@ -721,8 +894,9 @@ def _process_line(
     Returns:
     - SessionEvent if valid event record.
     - None if valid session header on first non-empty line (headers are consumed).
-    - Finding(SL002) if terminal line has any error (incomplete append or terminal defect).
-    - Finding(SL001) if nonterminal line has any error (malformed record).
+    - Finding(SL002) if the terminal line is a provable torn append (unterminated and
+      undecodable; see ``is_torn_append``).
+    - Finding(SL001) for every other defect, terminal or not (malformed record).
     """
     # SL009: scan the persisted raw bytes for secret shapes before any
     # validation rejects the record — malformed lines still carry secrets.
@@ -735,7 +909,6 @@ def _process_line(
             record_ordinal=raw.record_ordinal,
         )
 
-    code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
         "byte_end": raw.byte_end,
@@ -750,7 +923,7 @@ def _process_line(
             "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}"
         )
         return make_finding(
-            code=code,
+            code=SL001,
             message_template=msg_template,
             source=source,
             evidence=coord_evidence,
@@ -761,11 +934,12 @@ def _process_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         return make_finding(
             code=code,
             message_template=msg_template,
             source=source,
-            evidence=coord_evidence,
+            evidence=defect_evidence(code, coord_evidence),
         )
 
     # 3. Check UTF-8 decoding (strip BOM on line 1 if present for decode only)
@@ -781,11 +955,12 @@ def _process_line(
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         return make_finding(
             code=code,
             message_template=msg_template,
             source=source,
-            evidence=coord_evidence,
+            evidence=defect_evidence(code, coord_evidence),
         )
 
     # 4. Strict JSON decoding (rejects NaN, Infinity, 1e999, and maps recursion depth overflow)
@@ -801,7 +976,7 @@ def _process_line(
             "for record {record_id}"
         )
         return make_finding(
-            code=code,
+            code=SL001,
             message_template=msg_template,
             source=source,
             evidence=coord_evidence,
@@ -809,12 +984,13 @@ def _process_line(
     except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = decode_error_message_template(err, terminal=is_terminal)
+        code = decode_defect_code(raw, is_terminal=is_terminal)
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         return make_finding(
             code=code,
             message_template=msg_template,
             source=source,
-            evidence=coord_evidence,
+            evidence=defect_evidence(code, coord_evidence),
         )
 
     if dup_sink is not None and dup_keys:
@@ -834,20 +1010,18 @@ def _process_line(
     if not isinstance(obj, dict):
         rec_id = None
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         return make_finding(
-            code=code,
+            code=SL001,
             message_template=msg_template,
             source=source,
             evidence=coord_evidence,
         )
 
     # 6. Check nesting depth limit
-    if not check_nesting_depth(obj, limits.max_depth):
+    if decoded_text.count("{") + decoded_text.count(
+        "["
+    ) > limits.max_depth and not check_nesting_depth(obj, limits.max_depth):
         rec_id = extract_record_id(decoded_text, obj)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = (
@@ -855,7 +1029,7 @@ def _process_line(
             "for record {record_id}"
         )
         return make_finding(
-            code=code,
+            code=SL001,
             message_template=msg_template,
             source=source,
             evidence=coord_evidence,
@@ -869,13 +1043,9 @@ def _process_line(
         except (SchemaError, SesslintError):
             rec_id = extract_record_id(decoded_text, obj)
             source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-            msg_template = (
-                "Torn terminal record on line {line} for record {record_id}"
-                if is_terminal
-                else "Malformed record on line {line} for record {record_id}"
-            )
+            msg_template = "Malformed record on line {line} for record {record_id}"
             return make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -888,13 +1058,9 @@ def _process_line(
     except (SchemaError, SesslintError):
         rec_id = extract_record_id(decoded_text, obj)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         return make_finding(
-            code=code,
+            code=SL001,
             message_template=msg_template,
             source=source,
             evidence=coord_evidence,
@@ -1056,7 +1222,8 @@ def iter_events(
       first SL001's evidence gains ``following_complete_records`` /
       ``following_bytes`` integers at end-of-stream, quantifying the tail a
       stop-at-first-error vendor loader would hide (detector-depth T-01).
-    - Finding(SL002): Torn terminal record on the last non-empty line (deterministic suffix drop).
+    - Finding(SL002): Torn terminal append — the last non-empty line is unterminated and
+      does not decode (deterministic suffix drop). Any other defect on that line is SL001.
     - Finding(SL303): Duplicated JSON object keys within a decoded record.
     - Finding(SL009): Persisted secret-shaped material, emitted after the stream
       completes (aggregated per record/family; content-free).
@@ -1064,8 +1231,9 @@ def iter_events(
     Invariants:
     - Bounded RSS: At most two lines in memory at any time (1-record lookahead).
     - Exact coordinates: 1-based physical line numbers (blanks counted but skipped).
-    - Tail-only SL002: Only the final non-empty line can produce SL002; mid-file broken lines
-      produce SL001.
+    - Tail-only SL002: Only the final non-empty line can produce SL002, and only when it
+      is a provable torn append; mid-file broken lines and complete-but-invalid final
+      lines produce SL001 (B17, fail closed).
     - Content-free: Yielded findings never leak raw payloads, credentials, or control characters.
     - Safe execution: Never evaluates payload content (FR-012).
 
@@ -1154,7 +1322,7 @@ def iter_events(
                 continue
 
             record_count += 1
-            line_end_offset = line_start_offset + len(chunk)
+            line_end_offset = total_bytes_read
             current_raw = _RawLine(
                 line_number=line_number,
                 raw_bytes=chunk,

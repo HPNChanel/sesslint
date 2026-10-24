@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.outcome-report.v1.json",
+  "title": "SessLint OutcomeGuard Report",
+  "description": "Content-free outcome verification report: keys, field names, counts and times only. The four dimensions are reported side by side and never merged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool_version", "run_status", "evaluated_at", "outcome", "outcome_reasons", "demo", "dimensions", "contract", "observations", "coverage", "condition_summary", "condition_detail", "key_display", "items", "unmatched_target_keys", "unmatched_target_keys_truncated", "limitations"],
+  "properties": {
+    "schema_version": {"const": "sesslint.outcome-report/v1"},
+    "tool_version": {"type": "string"},
+    "run_status": {"const": "completed"},
+    "evaluated_at": {"$ref": "#/$defs/instant"},
+    "outcome": {"$ref": "#/$defs/status"},
+    "outcome_reasons": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/reason"}},
+    "demo": {"type": "boolean"},
+    "dimensions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["session_integrity", "outcome_verification", "monitoring_health", "incident_handling"],
+      "properties": {
+        "session_integrity": {"oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "not_linked"}}},
+          {"type": "object", "additionalProperties": false, "required": ["status", "link", "assurance"],
+           "properties": {"status": {"const": "unreadable"}, "link": {"const": "user_asserted"}, "assurance": {"const": "A0"},
+             "finding_count": {"$ref": "#/$defs/count"}, "by_code": {"$ref": "#/$defs/counts"},
+             "source_fingerprint": {"anyOf": [{"type": "string"}, {"type": "null"}]}}},
+          {"type": "object", "additionalProperties": false, "required": ["status", "link", "assurance", "finding_count", "by_code", "source_fingerprint"],
+           "properties": {"status": {"enum": ["no_findings", "findings"]}, "link": {"const": "user_asserted"},
+             "assurance": {"enum": ["A1", "A2", "A3", "A4"]}, "finding_count": {"$ref": "#/$defs/count"},
+             "by_code": {"$ref": "#/$defs/counts"}, "source_fingerprint": {"anyOf": [{"type": "string"}, {"type": "null"}]}}}
+        ]},
+        "outcome_verification": {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"$ref": "#/$defs/status"}}},
+        "monitoring_health": {"type": "object", "additionalProperties": false, "required": ["status", "detail"], "properties": {"status": {"const": "not_configured"}, "detail": {"type": "string"}}},
+        "incident_handling": {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "not_tracked"}}}
+      }
+    },
+    "contract": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "sha256", "condition_count", "warnings"],
+      "properties": {
+        "name": {"type": "string"}, "version": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"},
+        "condition_count": {"type": "integer", "minimum": 1}, "warnings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "observations": {
+      "type": "object", "additionalProperties": false, "required": ["source", "target"],
+      "properties": {"source": {"$ref": "#/$defs/observation"}, "target": {"$ref": "#/$defs/observation"}}
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_rows", "work_items", "unkeyed_source_rows", "excluded_items", "retried_items", "target_rows", "matched_target_records", "unmatched_target_records", "unkeyed_target_rows", "counts"],
+      "properties": {
+        "source_rows": {"$ref": "#/$defs/count"}, "work_items": {"$ref": "#/$defs/count"},
+        "unkeyed_source_rows": {"$ref": "#/$defs/count"}, "excluded_items": {"$ref": "#/$defs/count"},
+        "retried_items": {"$ref": "#/$defs/count"}, "target_rows": {"$ref": "#/$defs/count"},
+        "matched_target_records": {"$ref": "#/$defs/count"}, "unmatched_target_records": {"$ref": "#/$defs/count"},
+        "unkeyed_target_rows": {"$ref": "#/$defs/count"},
+        "counts": {"type": "object", "additionalProperties": false,
+          "required": ["VERIFIED", "VIOLATED", "PENDING", "INCONCLUSIVE", "NOT_APPLICABLE", "NOT_EVALUATED"],
+          "properties": {"VERIFIED": {"$ref": "#/$defs/count"}, "VIOLATED": {"$ref": "#/$defs/count"}, "PENDING": {"$ref": "#/$defs/count"},
+            "INCONCLUSIVE": {"$ref": "#/$defs/count"}, "NOT_APPLICABLE": {"$ref": "#/$defs/count"}, "NOT_EVALUATED": {"$ref": "#/$defs/count"}}}
+      }
+    },
+    "condition_summary": {"type": "object", "additionalProperties": {
+      "type": "object", "additionalProperties": false,
+      "required": ["VERIFIED", "VIOLATED", "PENDING", "INCONCLUSIVE", "NOT_APPLICABLE", "NOT_EVALUATED"],
+      "properties": {"VERIFIED": {"$ref": "#/$defs/count"}, "VIOLATED": {"$ref": "#/$defs/count"}, "PENDING": {"$ref": "#/$defs/count"},
+        "INCONCLUSIVE": {"$ref": "#/$defs/count"}, "NOT_APPLICABLE": {"$ref": "#/$defs/count"}, "NOT_EVALUATED": {"$ref": "#/$defs/count"}}
+    }},
+    "condition_detail": {"enum": ["all", "non_passing"]},
+    "key_display": {"enum": ["plain", "sha256"]},
+    "items": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "source_row", "source_rows", "status", "reason", "deadline", "matched_records", "conditions"],
+      "properties": {
+        "key": {"$ref": "#/$defs/key_or_null"},
+        "source_row": {"type": "integer", "minimum": 1}, "source_rows": {"type": "integer", "minimum": 1},
+        "status": {"$ref": "#/$defs/status"}, "reason": {"$ref": "#/$defs/reason"},
+        "deadline": {"anyOf": [{"$ref": "#/$defs/instant"}, {"type": "null"}]},
+        "matched_records": {"$ref": "#/$defs/count"},
+        "conditions": {"type": "array", "items": {"$ref": "#/$defs/condition_result"}},
+        "detail": {"$ref": "#/$defs/detail"}
+      }
+    }},
+    "unmatched_target_keys": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/key"}},
+    "unmatched_target_keys_truncated": {"type": "boolean"},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+  },
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "counts": {"type": "object", "additionalProperties": {"$ref": "#/$defs/count"}},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "instant": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$"},
+    "status": {"enum": ["VERIFIED", "VIOLATED", "PENDING", "INCONCLUSIVE", "NOT_APPLICABLE", "NOT_EVALUATED"]},
+    "reason": {"type": "string", "pattern": "^[a-z][a-z_]*$"},
+    "key": {"anyOf": [
+      {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string"}},
+      {"type": "string", "pattern": "^sha256:[0-9a-f]{16}$"}
+    ]},
+    "key_or_null": {"anyOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+    "detail": {"type": "object", "additionalProperties": {"type": ["string", "integer", "null"]}},
+    "observation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "name", "sha256", "input_format", "record_count", "observed_at", "completeness", "origin", "demo"],
+      "properties": {
+        "role": {"enum": ["source", "target"]}, "name": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"},
+        "input_format": {"enum": ["csv", "json", "jsonl", "envelope"]}, "record_count": {"$ref": "#/$defs/count"},
+        "observed_at": {"anyOf": [{"$ref": "#/$defs/instant"}, {"type": "null"}]},
+        "completeness": {"enum": ["complete", "partial", "unknown", "unavailable"]},
+        "origin": {"enum": ["target_system", "workflow_log", "user_file", "manual"]}, "demo": {"type": "boolean"}
+      }
+    },
+    "condition_result": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "status", "reason", "advisory"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"enum": ["exists", "count", "required", "type", "one_of", "equals", "range", "route", "on_time", "any_of"]},
+        "status": {"$ref": "#/$defs/status"}, "reason": {"$ref": "#/$defs/reason"}, "advisory": {"type": "boolean"},
+        "detail": {"$ref": "#/$defs/detail"},
+        "branches": {"type": "array", "items": {"$ref": "#/$defs/condition_result"}}
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 """Tests for ``sesslint hook`` (agent-hooks T-01).
 
-The subcommand reads one Claude Code hook payload from stdin, resolves
-``transcript_path``, and runs the event-appropriate check. Contract under
+The subcommand reads one Claude Code or Codex hook payload from stdin,
+resolves ``transcript_path``, and runs the event-appropriate check. Contract under
 test: advisory exit codes only (never 2), skip-not-crash on every bad
 input, content-free output, and the SessionEnd -> SL009 event map.
 """
@@ -9,21 +9,27 @@ input, content-free output, and the SessionEnd -> SL009 event map.
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from sesslint.hook_event import (
     HOOK_RESULT_SCHEMA,
     MAX_HOOK_PAYLOAD_BYTES,
     run_hook,
 )
+from sesslint.hooks import init_hooks_doc
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES_ROOT = REPO_ROOT / "fixtures"
 SEEDED = FIXTURES_ROOT / "checks" / "secret_seed" / "sl009_seeded.jsonl"
 CLEAN = FIXTURES_ROOT / "checks" / "secret_seed" / "sl009_clean.jsonl"
 CORRUPT = FIXTURES_ROOT / "checks" / "sl011_outlier.jsonl"
+CODEX = FIXTURES_ROOT / "adapters" / "codex"
+CODEX_SECRET = FIXTURES_ROOT / "conformance" / "secret_seed" / "codex_secret.jsonl"
 
 
 def _payload(path: Path | None = None, event: str = "SessionStart", **extra: object) -> bytes:
@@ -45,6 +51,17 @@ def _run_cli(*argv: str, stdin: bytes) -> subprocess.CompletedProcess[bytes]:
         capture_output=True,
         cwd=REPO_ROOT,
     )
+
+
+def test_claude_json_cli_envelope() -> None:
+    result = _run_cli(
+        "hook", "--event", "SessionStart", "--format", "claude-json", stdin=_payload(CLEAN)
+    )
+    assert result.returncode == 0
+    message = json.loads(result.stdout)
+    assert set(message) == {"systemMessage"}
+    assert "SessLint:" in message["systemMessage"]
+    assert str(CLEAN) not in result.stdout.decode()
 
 
 class TestPayloadHandling:
@@ -102,12 +119,11 @@ class TestEventMap:
         assert r.exit_code == 0
         assert r.line() == "sesslint hook[SessionStart]: ok"
 
-    def test_sessionstart_corrupt_reports_findings(self) -> None:
+    def test_sessionstart_over_budget_skips_without_reading_transcript(self) -> None:
         r = run_hook("SessionStart", _payload(CORRUPT))
-        assert r.verdict == "findings"
-        assert r.top_code == "SL011"
-        assert r.findings_by_code == {"SL011": 1}
-        assert r.exit_code == 0  # advisory: findings never block
+        assert r.verdict == "skipped"
+        assert r.reason == "budget-exceeded"
+        assert r.exit_code == 0
 
     def test_sessionend_runs_sl009_only(self) -> None:
         """SessionEnd sweeps persisted secrets — the seeded fixture has 14."""
@@ -153,6 +169,73 @@ class TestEventMap:
         """A gate never turns a skip into a block."""
         r = run_hook("SessionStart", b"garbage", fail_on="warning")
         assert r.exit_code == 0
+
+
+class TestCodexPayload:
+    """Codex payloads add ``model`` plus per-event fields and name a rollout file."""
+
+    def test_sessionstart_resume_clean_rollout_ok(self) -> None:
+        r = run_hook(
+            "SessionStart",
+            _payload(CODEX / "healthy_min.jsonl", model="synthetic-model", source="resume"),
+        )
+        assert r.verdict == "ok"
+        assert r.exit_code == 0
+
+    def test_compaction_events_flag_dangling_call(self) -> None:
+        for event in ("PreCompact", "PostCompact"):
+            r = run_hook(
+                event,
+                _payload(
+                    CODEX / "dangling_call.jsonl",
+                    event,
+                    model="synthetic-model",
+                    turn_id="turn-syn-1",
+                    trigger="auto",
+                ),
+            )
+            assert r.verdict == "findings"
+            assert r.top_code == "SL102"
+            assert r.exit_code == 0
+
+    def test_sessionend_sweeps_rollout_secrets_only(self) -> None:
+        r = run_hook("SessionEnd", _payload(CODEX_SECRET, "SessionEnd", reason="other"))
+        assert r.findings_by_code == {"SL009": 2}
+        # A dangling call is structural, not a secret: SessionEnd stays narrowed.
+        r = run_hook("SessionEnd", _payload(CODEX / "dangling_call.jsonl", "SessionEnd"))
+        assert r.verdict == "ok"
+
+    def test_null_transcript_path_skips(self) -> None:
+        r = run_hook("SessionEnd", _payload(None, "SessionEnd", transcript_path=None))
+        assert r.verdict == "skipped"
+        assert r.reason == "no-transcript-path"
+
+    @pytest.mark.parametrize("transcript", ["dangling_call.jsonl", None])
+    def test_cli_runs_every_emitted_windows_command(self, transcript: str | None) -> None:
+        """Each emitted commandWindows string must exit 0 on its own (no '|| true').
+
+        Codex reads hook stdout only on exit 0 and rejects JSON with unknown
+        keys, so the claude-json recipes must print a lone systemMessage.
+        """
+        for f in init_hooks_doc("codex").files:
+            assert f.merge_block is not None
+            for event, entries in f.merge_block["hooks"].items():
+                for entry in entries:
+                    for hook in entry["hooks"]:
+                        argv = shlex.split(hook["commandWindows"])
+                        assert argv[0] == "sesslint"
+                        if transcript is None:
+                            stdin = _payload(None, event, transcript_path=None)
+                        else:
+                            stdin = _payload(CODEX / transcript, event)
+                        res = _run_cli(*argv[1:], stdin=stdin)
+                        assert res.returncode == 0, (event, res.stderr)
+                        out = res.stdout.decode("utf-8")
+                        assert "dangling_call" not in out
+                        if "claude-json" in argv:
+                            assert set(json.loads(out)) == {"systemMessage"}
+                        else:
+                            assert out.startswith(f"sesslint hook[{event}]: ")
 
 
 class TestOutputShape:

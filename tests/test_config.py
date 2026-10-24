@@ -125,7 +125,12 @@ def test_malformed_pyproject_with_sesslint_marker_fails_closed(
     assert "Invalid TOML" in captured.err
     assert str(bad) in captured.err
     assert parse_error in captured.err
-    assert captured.out == ""
+    document = json.loads(captured.out)
+    assert document["code"] == "ERROR"
+    assert document["verdict"] == "error"
+    assert "Invalid TOML" in document["message"]
+    assert str(bad) in document["message"]
+    assert parse_error in document["message"]
 
 
 def test_malformed_pyproject_without_sesslint_marker_falls_back(tmp_path: Path) -> None:
@@ -369,3 +374,29 @@ def test_cli_fail_on_flag_overrides_config(
     (tmp_path / "sesslint.toml").write_text('fail_on = "warning"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     assert main(["check", str(warn_file), "--fail-on", "error"]) == 0
+
+
+def test_adapter_key_accepted(tmp_path: Path) -> None:
+    """The 0.5.x `adapter` config key validates against the adapter registry."""
+    (tmp_path / "sesslint.toml").write_text('adapter = "canonical"\n', encoding="utf-8")
+    cfg = load_config(start=tmp_path)
+    assert cfg == {"adapter": "canonical"}
+
+
+def test_format_key_renamed_to_adapter(tmp_path: Path) -> None:
+    """The 0.4.x `format` config key fails closed with a rename hint."""
+    (tmp_path / "sesslint.toml").write_text('format = "canonical"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="renamed to 'adapter'"):
+        load_config(start=tmp_path)
+
+
+def test_cli_honors_config_adapter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """adapter = "canonical" in config reaches args.adapter (codex file -> SL001)."""
+    (tmp_path / "sesslint.toml").write_text('adapter = "canonical"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code = main(["check", str(CORRUPT), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["counts"]["by_code"] == {"SL001": 1}
+    assert code == 1

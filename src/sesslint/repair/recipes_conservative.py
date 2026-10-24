@@ -910,6 +910,18 @@ def apply_seq_renumber(
     return out
 
 
+def affected_region_seq_renumber(step: Any, events: Sequence[Any]) -> AffectedRegion:
+    """No execution-relevant records change during ordinal normalization.
+
+    The recipe changes only ``seq``, which is excluded from content identity.
+    Membership, order, ids, parent links and payloads are preserved. The public
+    executor vets this synthetic step against the source-derived plan first.
+    Global SL203 abstention still applies in ``check_step_scope``.
+    """
+    del step, events
+    return AffectedRegion()
+
+
 RECIPE_TERMINAL_SUFFIX_DISCARD: Final[Recipe] = Recipe(
     name="terminal-suffix-discard",
     handles=(SL005,),
@@ -977,6 +989,8 @@ RECIPE_SEQ_RENUMBER: Final[Recipe] = Recipe(
     lossy=False,
     salvage_only=False,
     apply=apply_seq_renumber,
+    affected_region=affected_region_seq_renumber,
+    excludes_execution_dependence=True,
 )
 
 RECIPES: Final[tuple[Recipe, ...]] = (
@@ -992,7 +1006,7 @@ CONSERVATIVE_RECIPES: Final[tuple[Recipe, ...]] = RECIPES
 
 
 def register_all() -> None:
-    """Register all five conservative recipes into the repair registry."""
+    """Register all recipes in this module into the repair registry."""
     for r in RECIPES:
         if get_recipe(r.name) is None:
             register_recipe(r)

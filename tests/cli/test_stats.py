@@ -157,7 +157,7 @@ def test_stats_cli_human_output(tmp_path: Path, capsys: pytest.CaptureFixture[st
 def test_stats_cli_exit_2_paths(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     f = _write_jsonl(tmp_path / "s.jsonl", _claude_records(2))
     assert main(["stats"]) == 2
-    assert main(["stats", str(tmp_path)]) == 2  # dir without -r
+    assert main(["stats", str(tmp_path)]) == 0  # directories are always recursive
     assert main(["stats", str(f), "--agent", "claude"]) == 2  # conflict
     capsys.readouterr()
 

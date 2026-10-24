@@ -1,7 +1,7 @@
 """AC-03: lone UTF-16 surrogates are findings, and --json errors stay valid JSON.
 
 A JSONL line containing the escape ``\\ud800`` must produce a finding and must
-not abort the process. With ``--json`` (or ``--output-format json``), stdout
+not abort the process. With ``--json`` (or ``--format json``), stdout
 on every error exit parses with ``json.loads``, including a missing file.
 """
 
@@ -22,6 +22,7 @@ from sesslint.io import (
     decode_error_message_template,
     decode_json_dupaware,
 )
+from sesslint.progress import OperationCancelled
 
 _SURROGATE_WHY = (
     "line {line} contains an invalid Unicode character (lone surrogate, e.g. \\ud800), "
@@ -149,7 +150,9 @@ def test_terminal_lone_surrogate_is_a_finding(
     data = json.loads(out)
     assert data["schema_version"] == "sesslint.report/v1"
     finding = next(f for f in data["findings"] if f["code"] in {"SL001", "SL002"})
-    assert finding["code"] == "SL002"
+    # A complete JSON record with invalid Unicode is malformed, never proven
+    # torn. Treating it as SL002 would authorize destructive suffix dropping.
+    assert finding["code"] == "SL001"
     assert set(finding) == {
         "code",
         "evidence",
@@ -164,7 +167,7 @@ def test_terminal_lone_surrogate_is_a_finding(
 
     human_code, human, _herr = _run(["check", str(path)], capsys)
     assert human_code == 1
-    assert "[SL002] Torn terminal record" in human
+    assert "[SL001] Malformed record" in human
     assert _why_lines(human) == [_surrogate_why(1)]
     assert "Torn terminal record on line" not in human
 
@@ -186,13 +189,13 @@ def test_canonical_event_lone_surrogate(tmp_path: Path, capsys: pytest.CaptureFi
         '"payload":{"text":"ok"},"seq":1,"ts":"2026-09-05T12:00:01Z"}\n'
     )
     path.write_text(header + bad + good, encoding="utf-8")
-    code, out, err = _run(["check", str(path), "--format", "canonical", "--json"], capsys)
+    code, out, err = _run(["check", str(path), "--adapter", "canonical", "--json"], capsys)
     assert code == 1
     data = json.loads(out)
     assert any(f["code"] == "SL001" for f in data["findings"])
     assert SENTINEL not in out
     assert "Canonical serialization" not in err
-    human_code, human, _herr = _run(["check", str(path), "--format", "canonical"], capsys)
+    human_code, human, _herr = _run(["check", str(path), "--adapter", "canonical"], capsys)
     assert human_code == 1
     assert "[SL001] Malformed record" in human
     assert _why_lines(human) == [_surrogate_why(2)]
@@ -203,7 +206,9 @@ def test_ordinary_torn_and_malformed_keep_their_why(
 ) -> None:
     """A truncated append and a broken mid-file line keep the previous Why text."""
     torn = tmp_path / "torn.jsonl"
-    torn.write_text(_claude_line("ok") + '\n{"id":"msg_02","mess\n', encoding="utf-8")
+    # A torn append lacks a completed line; a newline-terminated malformed
+    # record is not sufficient evidence to authorize suffix dropping.
+    torn.write_text(_claude_line("ok") + '\n{"id":"msg_02","mess', encoding="utf-8")
     code, out, _err = _run(["check", str(torn)], capsys)
     assert code == 1
     assert "Torn terminal record on line 2 for record" in out
@@ -271,7 +276,7 @@ def test_missing_file_json_is_parseable(capsys: pytest.CaptureFixture[str]) -> N
     data = json.loads(out)
     assert data["verdict"] == "error"
     assert data["code"] == "ERROR"
-    assert "/nope.jsonl" in data["message"]
+    assert "/nope.jsonl" in data["message"].replace("\\", "/")
     assert "not found" in data["message"].lower()
     assert "Traceback" not in err
 
@@ -308,13 +313,11 @@ def test_json_error_branches(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     out_file = tmp_path / "out.jsonl"
     cases: list[tuple[str, list[str]]] = [
         ("check-missing", ["check", "--json", "/nope.jsonl"]),
-        ("check-output-format-json-missing", ["check", "--output-format", "json", str(missing)]),
-        ("check-directory", ["check", "--json", str(tmp_path)]),
+        ("check-output-format-json-missing", ["check", "--format", "json", str(missing)]),
         ("check-policy", ["check", "--json", "--policy", "salvage", str(healthy)]),
         ("check-profile", ["check", "--json", "--profile", "bogus_profile", str(healthy)]),
         ("check-stdin-combo", ["check", "--json", "-", str(healthy)]),
         ("check-multi-missing", ["check", "--json", str(healthy), str(missing)]),
-        ("check-multi-directory", ["check", "--json", str(healthy), str(tmp_path)]),
         (
             "check-seal-multi",
             ["check", "--json", "--seal", str(ledger), str(healthy), str(healthy)],
@@ -336,14 +339,14 @@ def test_json_error_branches(tmp_path: Path, capsys: pytest.CaptureFixture[str])
         ("check-unknown-code", ["check", "--json", "--ignore", "SL999", str(healthy)]),
         (
             "check-json-and-format",
-            ["check", "--json", "--output-format", "sarif", str(healthy)],
+            ["check", "--json", "--format", "sarif", str(healthy)],
         ),
         ("scan-no-path", ["scan", "--json"]),
         ("scan-missing", ["scan", "--json", str(missing)]),
-        ("scan-output-format-json-missing", ["scan", "--output-format", "json", str(missing)]),
-        ("scan-jobs", ["scan", "--json", "--jobs", "nope", str(tmp_path)]),
-        ("scan-top", ["scan", "--json", "--top", "-1", str(tmp_path)]),
-        ("scan-agent", ["scan", "--json", "--agent", "nope"]),
+        ("scan-output-format-json-missing", ["scan", "--format", "json", str(missing)]),
+        ("check-jobs", ["check", "--json", "--jobs", "nope", str(tmp_path)]),
+        ("check-top", ["check", "--json", "--top", "-1", str(tmp_path)]),
+        ("check-agent", ["check", "--json", "--agent", "nope"]),
         ("repair-no-path", ["repair", "--json"]),
         ("repair-missing", ["repair", "--json", "--dry-run", str(missing)]),
         ("repair-directory", ["repair", "--json", "--dry-run", str(tmp_path)]),
@@ -426,11 +429,125 @@ def test_json_schema_error_branch(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Traceback" not in err
 
 
+def test_directory_inputs_emit_one_scan_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0.5 check accepts directory inputs, so these are reports rather than errors."""
+    for paths, expected_total in [([str(tmp_path)], 0), ([str(HEALTHY), str(tmp_path)], 1)]:
+        code, out, err = _run(["check", *paths, "--format", "json"], capsys)
+        assert code == 0
+        document = json.loads(out)
+        assert document["schema_version"] == "sesslint.scan-report/v1"
+        assert document["totals"]["total"] == expected_total
+        assert document["totals"]["healthy"] == expected_total
+        assert "verdict" not in document and err == ""
+
+
 def test_json_top_level_file_not_found(capsys: pytest.CaptureFixture[str]) -> None:
     """FileNotFoundError escaping dispatch still yields JSON in --json mode."""
-    with patch("sesslint.cli._dispatch_command", side_effect=FileNotFoundError("gone")):
+    with patch("sesslint.cli._dispatch", side_effect=FileNotFoundError("gone")):
         code, out, _err = _run(["version", "--json"], capsys)
     assert code == 2
     data = json.loads(out)
     assert data["verdict"] == "error"
     assert "gone" in data["message"]
+
+
+@pytest.mark.parametrize("newline", ["", "\n"])
+def test_complete_terminal_surrogate_is_not_suffix_repairable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], newline: str
+) -> None:
+    """Invalid Unicode in a complete record is manual SL001, including at EOF."""
+    source = tmp_path / "complete-surrogate.jsonl"
+    source.write_text(
+        HEALTHY.read_text(encoding="utf-8")
+        + _claude_line(f"{SENTINEL} \ud800", record_id="last")
+        + newline,
+        encoding="utf-8",
+    )
+    before = source.read_bytes(), source.stat().st_mtime_ns
+    report = check_file(source, format="claude-code-jsonl")
+    assert any(f.code == "SL001" and f.repairability.value == "manual" for f in report.findings)
+    assert all(f.code != "SL002" for f in report.findings)
+    output = tmp_path / "must-not-exist.jsonl"
+    code, out, err = _run(
+        [
+            "repair",
+            str(source),
+            "--adapter",
+            "claude-code-jsonl",
+            "--output",
+            str(output),
+            "--json",
+        ],
+        capsys,
+    )
+    assert code == 1
+    assert not output.exists()
+    assert not Path(str(output) + ".manifest.json").exists()
+    assert (source.read_bytes(), source.stat().st_mtime_ns) == before
+    assert SENTINEL not in out + err
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt, OperationCancelled])
+def test_json_cancellation_does_not_invent_a_complete_document(
+    capsys: pytest.CaptureFixture[str], error: type[BaseException]
+) -> None:
+    with patch("sesslint.cli._dispatch", side_effect=error):
+        code, out, err = _run(["version", "--json"], capsys)
+    assert code == 130 and out == ""
+    assert "cancelled" in err.lower()
+
+
+def test_existing_json_error_document_is_not_duplicated(capsys: pytest.CaptureFixture[str]) -> None:
+    def dispatch(*_args: object) -> int:
+        print('{"verdict":"error","code":"EXISTING","message":"already emitted"}')
+        raise RuntimeError("failure after report")
+
+    with patch("sesslint.cli._dispatch", side_effect=dispatch):
+        code, out, _err = _run(["version", "--json"], capsys)
+    assert code == 2
+    assert json.loads(out)["code"] == "EXISTING"
+
+
+@pytest.mark.parametrize("flags", [["--format", "json"], ["--format=json"], ["-f", "json"]])
+def test_json_output_format_error_aliases(
+    flags: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, out, _err = _run(["check", "/nope.jsonl", *flags], capsys)
+    assert code == 2
+    assert json.loads(out)["code"] == "ERROR"
+
+
+def test_json_environment_precedence_for_context_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SESSLINT_FORMAT", "json")
+    monkeypatch.setenv("SESSLINT_CONFIG", str(tmp_path / "missing.toml"))
+    code, out, _err = _run(["check", str(HEALTHY)], capsys)
+    assert code == 2 and json.loads(out)["code"] == "ERROR"
+    code, out, _err = _run(["check", str(HEALTHY), "--format", "human"], capsys)
+    assert code == 2 and out == ""
+
+
+def test_doctor_config_error_is_usage_failure(capsys: pytest.CaptureFixture[str]) -> None:
+    from sesslint.config import ConfigError
+
+    with patch("sesslint.doctor.doctor_report", side_effect=ConfigError("invalid config")):
+        code, out, err = _run(["doctor", "--format", "json"], capsys)
+    assert code == 2
+    assert json.loads(out)["code"] == "ERROR"
+    assert "invalid config" in err and "INTERNAL_ERROR" not in out
+
+
+def test_error_tracking_does_not_retain_reports() -> None:
+    import io
+
+    from sesslint.cli._json_errors import TrackedStream
+
+    report = TrackedStream(io.StringIO())
+    report.write("x" * 100_000)
+    assert report.nonempty and report.diagnostic() == ""
+    diagnostics = TrackedStream(io.StringIO(), diagnostic_limit=32)
+    diagnostics.write("x" * 100_000)
+    assert diagnostics.diagnostic() == "x" * 32

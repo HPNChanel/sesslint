@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.watch-event/v1",
+  "title": "SessLint Watch Event Format v1",
+  "description": "One NDJSON line printed by `sesslint watch --json` (ux-reporting T-05) each time a watched file's verdict changes. Content-free: a privacy-minimized path, the previous and new verdicts, and the distinct finding codes of the new state.",
+  "type": "object",
+  "required": [
+    "codes",
+    "from",
+    "path",
+    "schema_version",
+    "to"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.watch-event/v1"
+    },
+    "path": {
+      "type": "string",
+      "description": "Privacy-minimized path of the watched file: `~/...` under the home directory, otherwise `.._<hash>/<name>`; never a raw absolute path."
+    },
+    "from": {
+      "enum": ["new", "healthy", "warnings", "invalid", "unsupported", "skipped", "unreadable"],
+      "description": "Previous verdict; `new` when the file had no earlier verdict."
+    },
+    "to": {
+      "enum": ["healthy", "warnings", "invalid", "unsupported", "skipped", "unreadable"],
+      "description": "New verdict. A file first seen healthy emits no event."
+    },
+    "codes": {
+      "type": "array",
+      "description": "Sorted distinct finding codes of the new state.",
+      "items": {
+        "type": "string",
+        "pattern": "^SL[0-9]{3}$"
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "to": {
+            "enum": ["warnings", "invalid"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "codes": {
+            "minItems": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "codes": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

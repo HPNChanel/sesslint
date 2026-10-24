@@ -32,7 +32,7 @@ from sesslint.checks.graph import (
 )
 from sesslint.codes import SL004, Repairability, Severity
 from sesslint.finding import SourceRef, make_finding
-from sesslint.repair.errors import OutputInvalid
+from sesslint.repair.errors import RepairRefused
 from sesslint.repair.executor import execute
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import Loss, PlanStep, RepairPlan
@@ -741,7 +741,9 @@ class TestCrossLayerCoercionAttacks:
             )
 
             out_file = tmp_path / "repaired.jsonl"
-            with pytest.raises((OutputInvalid, PreconditionFailed)):
+            with pytest.raises(
+                RepairRefused, match="not a repair sesslint derives for this source now"
+            ):
                 execute(
                     source_path=session_file,
                     plan=malicious_plan,

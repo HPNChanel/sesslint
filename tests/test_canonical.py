@@ -868,39 +868,39 @@ def test_parse_session_lines_all_blank() -> None:
 
 
 def test_to_canonical_json_rejects_non_string_keys() -> None:
-    """Reject non-string dict keys with SchemaError under RFC 8785 Section 3.2.2 (P0-08)."""
+    """Reject non-string dictionary keys with SchemaError (P0-08)."""
     # Integer key
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({1: "val"})  # type: ignore[dict-item]
 
     # Boolean key
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({True: "val"})  # type: ignore[dict-item]
 
     # Tuple key
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({(1, 2): "val"})  # type: ignore[dict-item]
 
     # Key collapse prevention: {1: 'a', '1': 'b'} must not silently collapse
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({1: "a", "1": "b"})  # type: ignore[dict-item]
 
     # None key
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({None: "val"})  # type: ignore[dict-item]
 
     # Float key
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({1.5: "val"})  # type: ignore[dict-item]
 
     # Nested mapping with non-string key
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json({"nested": {2: "val"}})  # type: ignore[dict-item]
 
     # Dataclass extra_fields with non-string key
     header = create_sample_header()
     session = Session(header=header, events=(), extra_fields={100: "custom"})  # type: ignore[dict-item]
-    with pytest.raises(SchemaError, match="Non-string dictionary key rejected under RFC 8785"):
+    with pytest.raises(SchemaError, match="Non-string dictionary key rejected by SessLint codec"):
         to_canonical_json(session)
 
 

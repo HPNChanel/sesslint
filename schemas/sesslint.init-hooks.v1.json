@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.init-hooks/v1",
+  "title": "SessLint Init-Hooks Format v1",
+  "description": "Document printed by `sesslint hook --init --json` (integrations T-02): ready-to-merge hook blocks for Claude Code `settings.json` and Codex `hooks.json`. Print-only — SessLint never writes agent configuration. Commands read the hook payload from stdin, so blocks carry no paths.",
+  "type": "object",
+  "required": [
+    "agent",
+    "files",
+    "schema"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sesslint.init-hooks/v1"
+    },
+    "agent": {
+      "enum": ["claude", "codex", "all"]
+    },
+    "files": {
+      "type": "array",
+      "description": "One mergeable snippet per recipe; with agent=all, Claude Code files come first, then Codex files.",
+      "items": {
+        "$ref": "#/$defs/hookFile"
+      }
+    },
+    "note": {
+      "type": "string",
+      "description": "Human-readable merge and trust guidance; with agent=all, one section per agent."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hookFile": {
+      "type": "object",
+      "required": [
+        "recipe",
+        "target_path_hint"
+      ],
+      "properties": {
+        "target_path_hint": {
+          "type": "string",
+          "description": "Config file and section the block merges into, e.g. `~/.codex/hooks.json (hooks section)`."
+        },
+        "recipe": {
+          "type": "string",
+          "description": "Recipe name, e.g. `SessionEnd secret check (non-blocking)`."
+        },
+        "merge_block": {
+          "$ref": "#/$defs/mergeBlock"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mergeBlock": {
+      "type": "object",
+      "required": [
+        "hooks"
+      ],
+      "properties": {
+        "hooks": {
+          "type": "object",
+          "description": "Hook event name to matcher groups.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/matcherGroup"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "matcherGroup": {
+      "type": "object",
+      "required": [
+        "hooks"
+      ],
+      "properties": {
+        "matcher": {
+          "type": "string",
+          "description": "Agent-side matcher; absent when the recipe fires on every occurrence of the event."
+        },
+        "hooks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/commandHook"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "commandHook": {
+      "type": "object",
+      "required": [
+        "command",
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "command"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^sesslint hook --event "
+        },
+        "commandWindows": {
+          "type": "string",
+          "pattern": "^sesslint hook --event ",
+          "description": "Codex-only Windows override of `command`."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Seconds."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -19,6 +19,7 @@ from sesslint.adapters.detect import (
 )
 from sesslint.canonical import SessionEvent
 from sesslint.finding import Finding
+from sesslint.io import DEFAULT_MAX_FILE_BYTES, ReaderLimits
 
 # Single authority mapping resolved format ids to the short keys used inside
 # profile ``allowed_adapters`` tuples. Both ``api.check_file`` and the
@@ -48,9 +49,51 @@ def is_vendor_format(format: str | None) -> bool:
     return format in (FORMAT_CLAUDE_CODE, FORMAT_OPENAI_AGENTS, FORMAT_CODEX_ROLLOUT)
 
 
+class SourceSnapshot(io.BytesIO):
+    """In-memory snapshot of a session file, labelled with its on-disk path.
+
+    Loaders label findings with a stream's ``name``; naming the snapshot after
+    the file keeps finding coordinates (and fingerprints) identical to a
+    path-based load while parse and hash see the very same bytes (B19).
+    """
+
+    def __init__(self, data: bytes, path: str | Path) -> None:
+        super().__init__(data)
+        self.name = str(Path(path))
+
+
+def read_source_snapshot(path: str | Path) -> bytes | None:
+    """Read a session file once so parse and hash see identical bytes (B19).
+
+    Returns None for a non-file or a file above the reader size limit: callers
+    then use the path-based loaders, whose size gates never slurp the file.
+    """
+    p = Path(path)
+    try:
+        if not p.is_file() or p.stat().st_size > DEFAULT_MAX_FILE_BYTES:
+            return None
+        with p.open("rb") as stream:
+            data = stream.read(DEFAULT_MAX_FILE_BYTES + 1)
+    except OSError:
+        return None
+    return data if len(data) <= DEFAULT_MAX_FILE_BYTES else None
+
+
+def snapshot_input(path: str | Path, data: bytes | None) -> Path | SourceSnapshot:
+    """Loader input for ``path``: a fresh stream over ``data`` when given, else the path.
+
+    Oversized snapshots fall back to the path so loaders keep their size gate.
+    """
+    if data is None or len(data) > DEFAULT_MAX_FILE_BYTES:
+        return Path(path)
+    return SourceSnapshot(data, path)
+
+
 def load_vendor_events(
     path: str | Path | io.BytesIO,
     format: str | None,
+    *,
+    limits: ReaderLimits | None = None,
 ) -> tuple[list[SessionEvent], list[Finding]]:
     """Load canonical events and adapter findings for a vendor format id.
 
@@ -65,17 +108,17 @@ def load_vendor_events(
     if format == FORMAT_CLAUDE_CODE:
         from sesslint.adapters.claude_code import load_claude_code
 
-        events, findings = load_claude_code(path)
+        events, findings = load_claude_code(path, limits=limits)
         return events, list(findings)
     if format == FORMAT_OPENAI_AGENTS:
         from sesslint.adapters.openai_agents import load_openai_agents
 
-        events, findings = load_openai_agents(path)
+        events, findings = load_openai_agents(path, limits=limits)
         return events, list(findings)
     if format == FORMAT_CODEX_ROLLOUT:
         from sesslint.adapters.codex_rollout import load_codex_rollout
 
-        events, findings = load_codex_rollout(path)
+        events, findings = load_codex_rollout(path, limits=limits)
         return events, list(findings)
     raise ValueError(f"Not a vendor format: {format!r}")
 
@@ -83,6 +126,8 @@ def load_vendor_events(
 def load_events_for_format(
     path: str | Path | io.BytesIO,
     format: str | None,
+    *,
+    limits: ReaderLimits | None = None,
 ) -> tuple[list[SessionEvent], list[Finding]]:
     """Load canonical events and adapter findings for any supported format id.
 
@@ -96,10 +141,10 @@ def load_events_for_format(
     if format == FORMAT_CANONICAL:
         from sesslint.adapters.canonical import load_canonical
 
-        events, findings = load_canonical(path)
+        events, findings = load_canonical(path, limits=limits)
         return events, list(findings)
     if is_vendor_format(format):
-        return load_vendor_events(path, format)
+        return load_vendor_events(path, format, limits=limits)
     raise ValueError(f"Unsupported format: {format!r}")
 
 

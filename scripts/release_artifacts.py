@@ -106,8 +106,8 @@ def validate_smoke_contract(receipt: dict, raw: bytes) -> None:
     checks = receipt.get("checks", [])
     if (
         contract.get("schema_version") != 1
-        or len(cases) != 32
-        or len({case["id"] for case in cases}) != 32
+        or len(cases) != 42
+        or len({case["id"] for case in cases}) != 42
         or receipt.get("contract_sha256") != hashlib.sha256(raw).hexdigest()
         or [row.get("id") for row in checks] != [case["id"] for case in cases]
         or any(
@@ -115,7 +115,7 @@ def validate_smoke_contract(receipt: dict, raw: bytes) -> None:
             for row, case in zip(checks, cases, strict=True)
         )
     ):
-        raise ValueError("Installed receipt does not cover the shared 32-case contract")
+        raise ValueError("Installed receipt does not cover the shared 42-case contract")
 
 
 def verify(directory: Path, *, complete: bool = False) -> dict:
@@ -158,7 +158,7 @@ def verify(directory: Path, *, complete: bool = False) -> dict:
                 or receipt.get("source_immutable") is not True
                 or receipt.get("starter_kit_sha256")
                 != data["artifacts"].get(f"sesslint-{version}-starter-kit.zip")
-                or not {"check", "repair", "verify", "hook", "mcp"}.issubset(
+                or not {"check", "triage", "repair", "verify", "hook", "mcp"}.issubset(
                     row["command"][0] for row in receipt.get("checks", [])
                 )
             ):

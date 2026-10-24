@@ -321,10 +321,13 @@ def test_cli_check_detection_failure_records_coverage(
     session_file.write_text('{"random": "payload"}\n', encoding="utf-8")
 
     exit_code = main(["check", str(session_file), "--json"])
-    assert exit_code == 1
+    assert exit_code == 0
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert "coverage" in data
+    assert data["assurance"] == "A0"
+    assert data["limitation"].startswith("Unsupported: format-undetected")
+    assert data["findings"] == []
     cov = data["coverage"]
     assert len(cov["performed"]) == 0
     assert len(cov["skipped"]) > 0

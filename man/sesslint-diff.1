@@ -1,8 +1,8 @@
-.TH SESSLINT-DIFF 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT-DIFF 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint-diff \- [read\-only] Structurally diff two session files.
 .SH SYNOPSIS
-.B sesslint diff [\-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-format\-a {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-format\-b {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}] [\-\-output\-format {human,json}] [\-\-json] A B
+.B sesslint diff [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-adapter\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-adapter\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose] A B
 .SH DESCRIPTION
 [read\-only] Compare two session files by event identity (not text diff): added/removed events, kind changes, parent relinks, sequence reorders, content changes (hash only).
 .SH ARGUMENTS
@@ -14,20 +14,29 @@ Path to the first session file
 Path to the second session file
 .SH OPTIONS
 .TP
-.B \-\-format {auto,claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Session format adapter for both inputs (default: auto) Choices: auto, claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical. Default: auto.
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Session format adapter for both inputs (default: auto) Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents. Default: auto.
 .TP
-.B \-\-format\-a {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Format override for input A only Choices: claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-adapter\-a {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Adapter override for input A only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
-.B \-\-format\-b {claude\-code\-jsonl,openai\-agents,codex\-rollout,canonical}
-Format override for input B only Choices: claude\-code\-jsonl, openai\-agents, codex\-rollout, canonical.
+.B \-\-adapter\-b {canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Adapter override for input B only Choices: canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
 .TP
-.B \-\-output\-format {human,json}
+.B \-f {human,json}, \-\-format {human,json}
 Output format (default: human) Choices: human, json.
 .TP
 .B \-\-json
-Emit sesslint.diff/v1 JSON (shortcut for \-\-output\-format json)
+Emit sesslint.diff/v1 JSON (shortcut for \-\-format json)
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0
@@ -46,7 +55,7 @@ an internal tool error exits 2
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

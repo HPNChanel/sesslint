@@ -10,7 +10,7 @@ The [starter kit](../docs/STARTER_KIT.md) provides runnable examples.
 ## Actual detector golden paths
 
 Nine legacy goldens exercise the reader and cover SL001/SL002. The rows below
-exercise public check_file/check_dir detection and cover all 34 codes.
+exercise public check_file/check_dir detection and cover all 35 codes.
 
 | Code | Execution | Input | Golden |
 | --- | --- | --- | --- |
@@ -46,6 +46,7 @@ exercise public check_file/check_dir detection and cover all 34 codes.
 | SL303 | check_file | [checks/sl303_critical_dup.jsonl](checks/sl303_critical_dup.jsonl) | [golden](conformance/detectors/sl303.expected.json) |
 | SL304 | check_file | [checks/sl304_foreign_splice.jsonl](checks/sl304_foreign_splice.jsonl) | [golden](conformance/detectors/sl304.expected.json) |
 | SL305 | check_file | [adapters/codex/sl305_foreign_reasoning.jsonl](adapters/codex/sl305_foreign_reasoning.jsonl) | [golden](conformance/detectors/sl305.expected.json) |
+| SL306 | check_file | [adapters/metadata/claude_unknown.jsonl](adapters/metadata/claude_unknown.jsonl) | [golden](conformance/detectors/sl306.expected.json) |
 | SL401 | scan | [scan/linkage/missing](scan/linkage/missing) | [golden](conformance/detectors/sl401.expected.json) |
 | SL402 | scan | [scan/index_divergence/missing_member](scan/index_divergence/missing_member) | [golden](conformance/detectors/sl402.expected.json) |
 
@@ -58,7 +59,8 @@ have their own rows. Corpus labels are synthetic expectations, not real-data acc
 | --- | ---: | --- |
 | [.](./) | 1 | [source](./PROVENANCE.json) |
 | [adapters](adapters/) | 1 | [source](adapters/PROVENANCE.json) |
-| [adapters/codex](adapters/codex/) | 25 | [source](adapters/codex/PROVENANCE.json) |
+| [adapters/codex](adapters/codex/) | 27 | [source](adapters/codex/PROVENANCE.json) |
+| [adapters/metadata](adapters/metadata/) | 4 | [source](adapters/metadata/PROVENANCE.json) |
 | [bundle](bundle/) | 2 | [source](bundle/PROVENANCE.json) |
 | [canonical](canonical/) | 5 | [source](canonical/PROVENANCE.json) |
 | [checks](checks/) | 44 | [source](checks/PROVENANCE.json) |
@@ -71,7 +73,7 @@ have their own rows. Corpus labels are synthetic expectations, not real-data acc
 | [conformance/canonical](conformance/canonical/) | 5 | [source](conformance/canonical/PROVENANCE.json) |
 | [conformance/claude_code](conformance/claude_code/) | 6 | [source](conformance/claude_code/PROVENANCE.json) |
 | [conformance/codex_rollout](conformance/codex_rollout/) | 6 | [source](conformance/codex_rollout/PROVENANCE.json) |
-| [conformance/detectors](conformance/detectors/) | 34 | [source](conformance/detectors/PROVENANCE.json) |
+| [conformance/detectors](conformance/detectors/) | 35 | [source](conformance/detectors/PROVENANCE.json) |
 | [conformance/openai_agents](conformance/openai_agents/) | 6 | [source](conformance/openai_agents/PROVENANCE.json) |
 | [conformance/repair_matrix](conformance/repair_matrix/) | 1 | [source](conformance/repair_matrix/PROVENANCE.json) |
 | [conformance/secret_seed](conformance/secret_seed/) | 4 | [source](conformance/secret_seed/PROVENANCE.json) |
@@ -91,7 +93,9 @@ have their own rows. Corpus labels are synthetic expectations, not real-data acc
 | [hostile](hostile/) | 14 | [source](hostile/PROVENANCE.json) |
 | [hostile/duplicate_ids](hostile/duplicate_ids/) | 2 | [source](hostile/duplicate_ids/PROVENANCE.json) |
 | [manifests](manifests/) | 1 | [source](manifests/PROVENANCE.json) |
+| [mcp/2025-06-18](mcp/2025-06-18/) | 2 | [source](mcp/2025-06-18/PROVENANCE.json) |
 | [openai_agents](openai_agents/) | 5 | [source](openai_agents/PROVENANCE.json) |
+| [outcome/orders](outcome/orders/) | 5 | [source](outcome/orders/PROVENANCE.json) |
 | [privacy](privacy/) | 1 | [source](privacy/PROVENANCE.json) |
 | [profiles](profiles/) | 4 | [source](profiles/PROVENANCE.json) |
 | [repair](repair/) | 16 | [source](repair/PROVENANCE.json) |

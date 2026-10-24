@@ -105,6 +105,64 @@ def test_ci_workflow_dogfood_job() -> None:
     assert "action-dogfood" in content[content.find("build-and-smoke:") :]
 
 
+def test_ci_workflow_uses_reviewed_action_pins_and_locked_tools() -> None:
+    """CI action revisions and Python tool inputs must be independently reproducible."""
+    content = CI_WORKFLOW.read_text(encoding="utf-8")
+    expected_pins = {
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+        "astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081",
+    }
+    refs = set(re.findall(r"uses:\s*([^\s#]+)", content))
+    assert expected_pins <= refs
+    for ref in refs:
+        if ref.startswith("./"):
+            continue
+        assert re.search(r"@[0-9a-f]{40}$", ref), ref
+    assert 'version: "0.10.10"' in content
+    assert "uv sync --locked --extra dev" in content
+    assert "uv sync --locked --extra packaging" in content
+    assert "uv run mkdocs build --strict" in content
+
+
+def test_ci_workflow_dogfood_requires_the_expected_exit_code() -> None:
+    """A crash or usage error cannot satisfy a corrupt-fixture expectation."""
+    content = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert content.count('expected-exit: "1"') == 3
+    assert "steps.corrupt-check.outputs.exit-code" in content
+    assert "matrix.expected-exit" in content
+
+
+def test_action_uses_environment_inputs_and_structured_argv() -> None:
+    """Composite inputs are validated before Python executes a fixed argv list."""
+    content = ACTION_YML.read_text(encoding="utf-8")
+    assert content.count("shell: python") == 2
+    assert "shell: bash" not in content
+    for env_name, action_input in (
+        ("TARGET_PATH", "path"),
+        ("PROFILE", "profile"),
+        ("FORMAT", "format"),
+        ("FAIL_ON", "fail-on"),
+        ("OUTPUT_FORMAT", "output-format"),
+    ):
+        assert f"{env_name}: ${{{{ inputs.{action_input} }}}}" in content
+    assert "subprocess.run(command, capture_output=True, text=True, check=False)" in content
+    assert "relative_to(workspace)" in content
+    assert "--fail-on" in content, "Action must forward its configured failure threshold"
+    assert "CMD=(" not in content
+
+
+def test_action_python_steps_parse() -> None:
+    """The composite action's Python-shell payloads are valid Python source."""
+    yaml = pytest.importorskip("yaml", reason="PyYAML required for action step parsing")
+    action = yaml.safe_load(ACTION_YML.read_text(encoding="utf-8"))
+    python_steps = [step for step in action["runs"]["steps"] if step.get("shell") == "python"]
+    assert len(python_steps) == 2
+    for step in python_steps:
+        compile(step["run"], ACTION_YML.name, "exec")
+
+
 def test_yaml_parses_if_pyyaml_installed() -> None:
     """If PyYAML is available, verify full syntax parsing of CI metadata files."""
     try:
@@ -180,6 +238,17 @@ def test_release_workflow_required_dag() -> None:
     assert jobs["pypi-verify"]["needs"] == "pypi-publish"
     assert set(jobs["github-promote"]["needs"]) == {"pypi-verify", "provenance-verify"}
     assert jobs["published-verify"]["needs"] == "github-promote"
+
+
+def test_release_workflow_refreshes_site_after_public_release() -> None:
+    """The Pages site rebuilds only once the release is verified public."""
+    import yaml
+
+    jobs = yaml.safe_load(_release_content())["jobs"]
+    refresh = jobs["refresh-site"]
+    assert refresh["needs"] == "published-verify"
+    assert refresh["permissions"] == {"actions": "write"}
+    assert "gh workflow run docs.yml --ref main" in refresh["steps"][0]["run"]
 
 
 def test_release_workflow_tag_version_and_exact_commit_validation() -> None:
@@ -283,7 +352,7 @@ def test_package_metadata_consistency() -> None:
     assert re.search(r'^name\s*=\s*"sesslint"', pyproject, re.M)
     assert 'path = "src/sesslint/_version.py"' in pyproject
     m = re.search(r'__version__\s*=\s*"([^"]+)"', version_py)
-    assert m and m.group(1) == "0.4.1"
+    assert m and m.group(1) == "0.5.0"
     assert 'license = "Apache-2.0"' in pyproject
     assert 'requires-python = ">=3.11"' in pyproject
     assert 'readme = "README.md"' in pyproject
@@ -323,7 +392,7 @@ def test_template_pins_version_and_invocation(platform: str) -> None:
     )
     assert re.search(r"sesslint (scan|check) ", block), f"{platform}: no check/scan invocation"
     assert "--fail-on" in block, f"{platform}: missing --fail-on"
-    assert "--output-format" in block, f"{platform}: missing --output-format"
+    assert "--format" in block, f"{platform}: missing --format"
 
 
 def test_template_required_keys_per_platform() -> None:

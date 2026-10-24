@@ -20,8 +20,11 @@ FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "sessions"
 class TestDecisionMatrix:
     """SL001 vs SL002 classification matrix:
 
-    {mid-file broken, last-line broken, last-line broken + trailing newlines}
-    -> {SL001, SL002, SL002}
+    {mid-file broken, last-line torn (unterminated), last-line broken + trailing newlines}
+    -> {SL001, SL002, SL001}
+
+    A newline-terminated final line is a completed write, so it is malformed data
+    rather than a torn append (B17).
     """
 
     def test_mid_file_broken_produces_sl001(self, tmp_path: Path) -> None:
@@ -72,7 +75,7 @@ class TestDecisionMatrix:
         assert items[1].severity == Severity.ERROR
         assert items[1].repairability == Repairability.DETERMINISTIC
 
-    def test_last_line_broken_with_trailing_newlines_produces_sl002(self, tmp_path: Path) -> None:
+    def test_last_line_broken_with_trailing_newlines_produces_sl001(self, tmp_path: Path) -> None:
         file_path = tmp_path / "last_broken_newlines.jsonl"
         file_path.write_text(
             '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1",'
@@ -91,11 +94,11 @@ class TestDecisionMatrix:
         assert items[0].id == "evt_001"
 
         assert isinstance(items[1], Finding)
-        assert items[1].code == SL002
+        assert items[1].code == SL001
         assert items[1].source.line == 3
         assert items[1].source.record_id == "evt_torn_tail"
         assert items[1].severity == Severity.ERROR
-        assert items[1].repairability == Repairability.DETERMINISTIC
+        assert items[1].repairability == Repairability.MANUAL
 
 
 class TestGoldenFixtures:
@@ -157,7 +160,7 @@ class TestGoldenFixtures:
         assert "Malformed record" in finding.message
 
     def test_deep_nesting_fixture(self) -> None:
-        """Deep nesting fixture produces prior event + SL002 finding."""
+        """A complete final line over the depth cap is malformed (SL001), not torn (B17)."""
         fixture_path = FIXTURES_DIR / "deep-nesting.jsonl"
         items = list(iter_events(fixture_path))
         assert len(items) == 2
@@ -166,7 +169,7 @@ class TestGoldenFixtures:
 
         assert isinstance(items[1], Finding)
         finding = items[1]
-        assert finding.code == SL002
+        assert finding.code == SL001
         assert finding.source.line == 3
         assert finding.source.record_id == "evt_002"
         assert "LIMIT" in finding.message
@@ -210,7 +213,7 @@ class TestEdgeCases:
         items = list(iter_events(file_path))
         assert len(items) == 1
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002
+        assert items[0].code == SL001
         assert items[0].source.line == 2
         assert items[0].source.record_id is None
         assert "<none>" in items[0].message
@@ -218,9 +221,9 @@ class TestEdgeCases:
     def test_broken_line_with_credential_in_id_suppressed(self, tmp_path: Path) -> None:
         """If broken line contains credentials in id, finding suppresses it.
 
-        The torn terminal record still yields SL002 with the credential
-        suppressed from the message; SL009 additionally flags the persisted
-        secret shape, also content-free (family + digest only).
+        The malformed final record yields SL001 with the credential suppressed
+        from the message; SL009 additionally flags the persisted secret shape,
+        also content-free (family + digest only).
         """
         file_path = tmp_path / "leak_id.jsonl"
         file_path.write_text(
@@ -233,7 +236,7 @@ class TestEdgeCases:
         items = list(iter_events(file_path))
         assert len(items) == 2
         assert isinstance(items[0], Finding)
-        assert items[0].code == SL002
+        assert items[0].code == SL001
         assert items[0].source.record_id is None
         assert "sk-secret" not in items[0].message
         assert isinstance(items[1], Finding)

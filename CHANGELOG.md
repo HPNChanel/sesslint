@@ -9,13 +9,328 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI: optional Windows artifact acceptance on standard hosted runners, covering
+  offline wheel installs, the standalone EXE and both supported PowerShell
+  engines without artifact uploads or publication.
+- MCP: the stdio server now also speaks protocol revision `2026-07-28`
+  alongside `2025-06-18`. Modern requests are stateless (per-request `_meta`
+  protocol version and client capabilities), `server/discover` advertises
+  `supportedVersions`, results carry `resultType` and `serverInfo`, `tools/list`
+  carries `ttlMs`/`cacheScope`, and unsupported versions return
+  `UnsupportedProtocolVersionError` (`-32022`). `2025-06-18` responses are
+  pinned by the golden under `fixtures/mcp/2025-06-18`, with the documented
+  SHA-256 path-label migration applied to scan results. HTTP
+  transport, subscriptions, multi round-trip results and tasks are not
+  implemented. See `docs/INTEGRATIONS.md`.
+- MCP: read-only `sesslint_triage` tool. It returns the same `sesslint.triage/v1`
+  document as `sesslint triage <path> -f json` (conservative policy, no
+  registry copy) with the same `path`/`profile`/`format` arguments and error
+  style as `sesslint_check`. A missing path is an `io-error` result and a
+  directory a `usage-error` result, where the CLI reports `unreadable`.
+  See `docs/TRIAGE.md`.
+- `sesslint outcome` (OutcomeGuard): verify a declarative
+  `sesslint.outcome-contract/v1` against exported source and target snapshots
+  (CSV, JSON, JSONL or a `sesslint.snapshot/v1` envelope), offline and read-only.
+  Every work item gets `VERIFIED`, `VIOLATED`, `PENDING`, `INCONCLUSIVE`,
+  `NOT_APPLICABLE` or `NOT_EVALUATED` with a stable reason code. Absence,
+  duplicates and lateness are proven only from a target snapshot declared
+  complete and observed after the deadline; otherwise the verdict is
+  `INCONCLUSIVE`. Session integrity (`--session`) is reported as a separate
+  dimension. Reports are content-free (`--hash-keys` for pseudonymous keys)
+  and have JSON Schemas. Passing items list only their non-passing conditions
+  unless `--all-conditions` is given. `--explain` restates a contract in plain
+  language (text only).
+  Exit 0 only for `VERIFIED`. See `docs/OUTCOME.md`.
+- Project website in `web/` (Astro, static, English + Vietnamese): landing
+  page, portable-binary downloads with Sigstore/SLSA verify steps, a rule
+  catalog, one-time pricing (Free / Plus / Max), and a changelog generated
+  from this file with Atom/JSON feeds. Plus → Max upgrades cost the
+  difference and are proven by a single-use upgrade code from the Plus
+  receipt, so no account is needed. The Pages workflow now serves the site at
+  `/` with the mkdocs docs under `/docs/`, checks every internal link, and
+  rebuilds after each release; a `SITE_URL` repository variable moves it to a
+  custom domain. The site is never shipped in the wheel or sdist and sets no
+  cookies or analytics.
+- `sesslint hook --init --agent codex` now prints Codex `hooks.json` recipes
+  for SessionStart, PreCompact, PostCompact, and SessionEnd instead of a
+  "not emitted yet" note; `--agent all` prints the Claude Code and Codex
+  blocks together, with the merge note labelled per agent. SessionStart and
+  both compaction recipes use `--format claude-json`, because Codex adds
+  plain SessionStart output to model context and ignores plain compaction
+  output. The Codex SessionStart recipe matches `resume|fork` only, since
+  PostCompact already checks a compacted transcript. SessionEnd sets the
+  three-second maximum Codex allows. Each recipe carries a `commandWindows`
+  form without `|| true` for PowerShell and `cmd.exe`. Codex skips new hooks
+  until you trust them in `/hooks`. `docs/INTEGRATIONS.md` documents the
+  recipes, verified on 2026-10-22 against the Codex hooks reference and the
+  hooks engine source at `rust-v0.163.0` but not yet against a live Codex
+  build; tests run every emitted Windows command and keep the documented
+  block in sync with the output.
+- JSON Schemas for four outputs that had none: `watch --json` lines
+  (`schemas/sesslint.watch-event.v1.json`), `hook --init --json`
+  (`schemas/sesslint.init-hooks.v1.json`), `version --json`
+  (`schemas/sesslint.version.v1.json`), and the `sesslint_precheck` MCP tool
+  result (`schemas/sesslint.precheck-result.v1.json`). A new test fails when
+  the runtime names a `sesslint.<name>/vN` schema id without a matching
+  schema file, or when a schema file is missing from the README table, and
+  validates the four new schemas against live output. The README schema
+  table now lists every shipped schema.
+
+### Changed
+
+- Reports: minimized parent-directory labels now use SHA-256 instead of SHA-1,
+  including environments that disable SHA-1. The compact eight-hex display
+  format is unchanged; these labels do not guarantee anonymization or identity.
+
+- CI: ordinary runs keep coverage and benchmark results in job logs without
+  uploading report artifacts. Manual/reusable runs can opt in with
+  `upload_reports`; release tags retain report uploads. All verification gates
+  and the Linux/Windows/macOS matrix remain unchanged.
+
+- The `codex-rollout` adapter version is now `1.1.0`, because
+  `inter_agent_communication` records now map to messages (see Fixed).
+  Finding fingerprints from checks on Codex rollouts change with it, and so
+  do the repair plans and bundles that carry them. `sesslint.baseline/v2`
+  baselines still match, since their keys leave adapter versions out; a
+  legacy v1 baseline for Codex rollouts needs `--write-baseline` again.
+- Path arguments expand a leading `~` themselves (`~`, `~/…`, and `~\…` on
+  Windows), so a printed `~/…` path also works in shells that pass `~`
+  through literally, such as PowerShell, `cmd.exe` or a quoted argument.
+  `-` and `~user` forms are left as they are.
+- The starter kit (all platforms) and the shared smoke contract cover
+  `sesslint outcome`: the kit ships `OUTCOME.md` and a synthetic
+  `examples/outcome/` contract with source and target snapshots (with a
+  provenance file that describes only those files), and the contract adds
+  `outcome` and `outcome-repeat` cases (explicit `--as-of`, exit 1
+  `VIOLATED`, stable report fields, no writes) to the Python smoke check and
+  to the Windows PowerShell driver, for 42 cases in all. The smoke checks'
+  source-immutability check now covers `examples/` recursively, so
+  `examples/outcome/` is included.
+
+### Fixed
+
+- Installed-artifact smoke: canonicalize the temporary extraction root before
+  checking archive containment, so aliased temp paths work while escaping
+  archive members remain refused. Interpreter symlinks remain unresolved.
+- Privacy: Codex object/array identifiers and correlation values are treated as
+  missing instead of copying nested content into findings and reports.
+- Command hints: withhold commands whose paths or options require shell-specific
+  escaping, and provide content-free manual guidance instead.
+- MCP: legacy protocol versions in modern request metadata return `-32602` with
+  initialization guidance instead of advertising the same version as unsupported.
+
+- MCP `2026-07-28` returns tool input-validation failures as content-free
+  `isError` results. Malformed requests and unknown tools remain protocol
+  errors, and the `2025-06-18` error contract is unchanged.
+
+- Hostile-number fuzz fixtures use explicit UTF-8 for CSV and JSON on
+  Windows; a fixed fullwidth-digit example covers non-UTF-8 system locales.
+
+- MCP `sesslint_triage` now reports an existing but unreadable file as an
+  `io-error` tool result, matching `sesslint_check` without echoing the path
+  or exception details.
+
+- `repair` with vendor write-back now counts the emitted artifact's own
+  stream findings (such as an SL303 duplicate-key warning on a line kept
+  verbatim) in the manifest's declared revalidation. Before, the manifest
+  claimed a cleaner assurance than the output had, and `verify` rejected the
+  pair with `revalidation-mismatch`.
+- `verify` now replays a repair plan at the same positions as `repair`. A
+  step that follows a drop addresses the source as loaded (B21), and verify
+  had replayed it at the shifted position. It then rejected valid repairs of
+  more than one step, such as two duplicate groups or a salvage drop before a
+  duplicate collapse, with `recipe-apply-failed`.
+- The Claude Code and OpenAI Agents adapters no longer copy a JSON object or
+  array found in an id field (`id`, `uuid`, `parentId`, `prev_id`,
+  `toolUseId`, `call_id` and similar) into reports. Such a value is now
+  treated as a missing id. Before, its Python text form, nested keys and
+  values included, appeared in finding ids, messages and evidence.
+- `repair` on a canonical-format source whose first line is not valid UTF-8
+  now refuses with `Invalid UTF-8 encoding in header line 1`. Before, the
+  single-document fallback re-decoded the bytes and the command printed only
+  `Error: utf-8`.
+- `repair` now refuses a vendor write-back whose output would be detected as
+  a different format than its source. Example: a salvage of an OpenAI Agents
+  document with an extra line on top excised the whole document as torn
+  records, and the surviving line looked like Claude Code JSONL. `verify`
+  could never accept that output.
+- The `[tool.mutmut]` configuration now generates and tests mutants. The
+  `only_mutate` patterns lacked mutmut's `src/` prefix (zero mutable files),
+  test fixtures/docs/schemas were not copied into `mutants/` (stats phase
+  failed at collection), and one class-based Hypothesis test cannot run twice
+  in one process. The scope also covers `repair/*` and `outcome/*`.
+- `scripts/installed_smoke.py` (and so `scripts/smoke_distributions.py`) no longer
+  resolves the interpreter symlink of a venv, which pointed at the base
+  interpreter and failed with `No module named sesslint`.
+- Finalizing the CLI's stream wrapper after the underlying stream was closed no
+  longer raises `ValueError: I/O operation on closed file` (visible as
+  unraisable-exception warnings on Python 3.13+). Flush errors on open streams
+  still propagate.
+- The HTML report now declares `<html lang="en">`, matching the English text it
+  contains (it previously declared `es`).
+- Every command SessLint prints now runs as printed, from the directory the
+  first command ran in. Repair hints name the `--output` that `repair`
+  requires (`<name>.repaired<ext>` in the working directory, or
+  `repaired.jsonl` for stdin). Paths that need it are double-quoted, a name
+  that starts with `-` gets a `./` prefix, and stdin is spelled `-`. An
+  explicit `--adapter` or `--profile` is repeated in each follow-up command:
+  `check` Next Action and Fix lines, `repair --dry-run` refusal detail,
+  salvage paths and the `bundle` hint after failed detection. The `export`
+  follow-up quotes its output path. SL107 no longer prints a `--profile <id>`
+  pseudo-command.
+- `check` Next Action follows the repair planner. It suggests `repair` only
+  when that policy covers every error. When SL203 is present it suggests no
+  repair or salvage command in human, JSON or HTML output, since automated
+  repair abstains under every policy; it asks you to establish whether the
+  external action ran and re-run `check`, and Fix lines say the recipe exists
+  but abstains while SL203 is present.
+- `repair --dry-run` refusals list each blocked finding with its reason and,
+  where a salvage run can clear it, a runnable salvage command, instead of
+  telling you to run `--dry-run` again. Reasons no salvage run can clear
+  (SL203, failed recipe preconditions, missing targets, component and cap
+  limits) print no salvage path.
+- An SL001 salvage hint is no longer printed when the malformed record cannot
+  be excised: the first record, a record without byte coordinates, or one
+  over the size limit.
+- `check` on an empty, whitespace-only or BOM-only input says `Empty input:
+  file contains no session records` and suggests no repair; it used to
+  suggest a salvage command that exits 2. `triage` asks for the session file
+  instead.
+- `check` no longer prints the `Valid … session` banner for unsupported or
+  skipped input, which has no integrity conclusion.
+- `bundle` reduces the path in every `repair` and `check` hint in
+  remediation text to the file's basename, double-quoted paths included;
+  before, only bare `repair` paths were reduced, so `check` hints kept a
+  minimized directory prefix.
+
+- `docs/RELEASE_0.4.1.md` no longer links to maintainer-local evidence files
+  that are not published, which were broken links on the docs site.
+- The `sesslint bundle` fixture skeleton template is now a clean canonical
+  session: its example tool call uses actor `assistant` (the invalid `model`
+  raised SL001), and the call/result pair shares `correlation_id`
+  `tool_call_example_1`. Only `fixture_skeleton.template` changes in bundle
+  output.
+- `docs/INTEGRATIONS.md` Claude recipes now match what
+  `sesslint hook --init --agent claude` prints: SessionStart matches
+  `resume|compact|fork` with `--format claude-json`, and PostCompact and
+  SessionEnd set a five-second timeout. A test keeps the two in sync.
+  Mentions of removed surfaces now name their 0.5.0 replacements
+  (`hook --format`, `sesslint doctor`, `hook --init`,
+  `sesslint.scan-report/v1`).
+- The MCP `sesslint_scan` tool description names the `unsupported` bucket
+  (it said `undetected`), and `docs/SPEC.md` cites `compute_assurance` for
+  assurance grades.
+- The `sesslint.hook-result/v1` schema's `reason` description now lists the
+  `budget-exceeded` and `format-undetected` skip reasons that `sesslint hook`
+  already emits; a test keeps the list in sync with the code.
+- Codex 0.163.0 rollouts no longer fail detection because of new envelope
+  types. `realtime_item` (realtime presentation facts) and
+  `security_risk_score` (classifier scores Codex keeps out of model context)
+  are now non-durable `system`/`opaque` events projected to their type name
+  only; before, each raised `SL302`, so `check` exited 1 and `precheck` and
+  `sesslint hook` reported `detection-failed`. The `security_risk_score`
+  `call_id` never enters tool pairing. `inter_agent_communication`, which
+  Codex replays into model history as an agent message, now maps to a
+  durable `assistant`/`message` event shaped like the `agent_message` that
+  replay builds, and `SL206` counts it as durable history. Its author and
+  recipient agent paths stay in the payload and never become agent identity
+  or `SL401` links. A payload Codex itself cannot deserialize, a malformed
+  agent path included, still raises `SL302` and counts as non-durable.
+  `retained_context` stays non-durable, because Codex keeps it outside model
+  history. The shapes come from the `rust-v0.163.0` rollout writer and
+  replay source, re-created as synthetic fixtures; `docs/VENDOR_DRIFT.md` §9
+  records the check, the mapping decisions and their limits.
+- The installed-wheel smoke check (`scripts/installed_smoke.py --python`)
+  compares the installed JSON Schemas with the starter kit's `schemas/`
+  folder instead of expecting 17, so every shipped schema is checked. The
+  installed-binary check has no schema comparison.
+- The sandbox acceptance check expects every SL code documented in the kit
+  instead of a fixed 34 (the registry has 35 since SL306), and
+  `scripts/fixture_index.py` takes the count from the registry.
+- `Test-SessLint.ps1`, run with `-File` and without `-PackageRoot`, no longer
+  fails under Windows PowerShell 5.1 with an illegal package path: the
+  default package folder is resolved in the script body, because
+  `$PSScriptRoot` is empty in a `param()` default under `-File`. A relative
+  `-PackageRoot` or `-ReceiptPath` now resolves against the caller's current
+  location, which differs from the process directory after `Set-Location`
+  in an open window. With a UTF-8 console input code page the runner no
+  longer feeds a byte-order mark into the CLI's stdin, and it warns if it
+  cannot switch the code page. It keeps the contract's ISO-8601 `--as-of`
+  strings as written on PowerShell 7.5+ (`ConvertFrom-Json -DateKind
+  String`) and refuses PowerShell 6.0 to 7.4, where the strings would turn
+  into dates; Windows PowerShell 5.1 is unchanged.
+- `scripts/check_release_refs.py` (maintainers) takes the highest final
+  release tag at or below the development version as its baseline and ignores
+  pre-release tags such as `v0.5.0-rc.1`, which made it skip the flag check
+  silently. It fails closed (exit 2) when no baseline or CLI source at the
+  baseline can be read, unless `--allow-no-baseline` is given. A
+  `<!-- next-release: file -->` marker, alone on its own line outside a code
+  block, covers a whole document; section and file markers no longer count
+  inside inline code, fenced blocks or the end of a line. Only the build
+  tooling command span (`python scripts/...`) is exempt from the flag check,
+  not the rest of its line. A missing or non-UTF-8 input file exits 2 instead
+  of crashing, PEP 440 pre-release versions such as `1.0.0rc1` are accepted
+  (their baseline is strictly below `1.0.0`), and a pre-release
+  `--latest-tag` is refused by name. A pre-release or dev pin (`0.5.0rc1`,
+  `v0.5.0-rc.1`) no longer passes as the final tag: it is stale unless it is
+  the exact development version, and the tooling exemption ends before a
+  `sesslint` token in unquoted prose.
+
+## [0.5.0] - 2026-10-19
+
+### Changed (0.5.0 breaking CLI)
+
+- `scan` is now an alias of `check`; directory inputs are always recursive
+  (`-r`/`--recursive` removed). `--adapter` selects the input adapter;
+  `-f`/`--format` selects the output format (replacing `--output-format`).
+- Removed commands `validate-session`, `baseline`, `formats` and `init-hooks`
+  exit 2 with migration hints (`check --adapter canonical`, check baseline
+  flags, `doctor`, `hook --init`). Removed flags likewise exit 2 with hints.
+- `repair` takes positional paths for batch mode with `--output-dir`; the
+  `--batch`, `--files`, `--out` and `--salvage-unsupported` flags are removed.
+- The `format` config key is renamed to `adapter`; the old key raises a
+  `ConfigError` explaining the rename.
+
+### Added
+
+- Global `-q`/`--quiet` and `-v`/`--verbose` flags: quiet suppresses
+  non-error stderr diagnostics and the `Valid ... session` banner; verbose
+  prints `debug:` settings provenance and elapsed time. JSON/SARIF/HTML
+  stdout bytes are unaffected.
+- `-o`/`--output FILE` on `check`, `triage`, `stats`, `diff`, `doctor` and
+  `verify`: writes the report atomically (overwriting existing report files)
+  and prints a `wrote FILE (...)` summary; `--output` may not be an input
+  path.
+- `SESSLINT_CONFIG`, `SESSLINT_PROFILE`, `SESSLINT_ADAPTER` and
+  `SESSLINT_FORMAT` environment variables, resolved CLI > env > config >
+  default per setting (`-v` shows provenance).
+- Interactive single-line TTY progress on stderr for `check`/`repair`
+  (counts only, stdout untouched), disabled by `--no-progress` or `--quiet`.
+- `verify` report output gained `-o`/`--output`; the hidden legacy repaired-
+  path flag is now `--repaired` (`--output` selects report output).
+
+- Read-only `triage` CLI/API and `sesslint.triage/v1`: shared source snapshot,
+  content-free guidance, bounded findings and structural impact, missing-evidence
+  explanations, explicit conservative/salvage preview comparison, primary-session
+  discovery and optional closed Codex registry-copy comparison.
+
+- Three-month OSS roadmap with explicit external-use, recovery and repeat-use
+  targets; historical DV counters and commercial-demand tracking stay separate.
+
+- SL306 groups unknown, non-linking Claude/Codex metadata as informational findings.
+  Unknown records carrying identity, links or semantic fields still fail closed.
+- Scan selectors `--newest` and `--since`, per-file byte limits, bounded finding
+  samples with full aggregate counts, and `--fail-on-unsupported`.
+- Configurable timestamp tolerance (default 2000 ms), with one SL008 summary per
+  file carrying its edge count and maximum backwards delta.
+- Claude hook JSON output, resume/compact/fork recipes and explicit check budgets.
 - Transferable Windows acceptance ZIP and a PowerShell 5.1+ runner sharing all
-  32 CLI cases with Python smoke, with checksums and retained failure receipts.
+  40 CLI cases with Python smoke, with checksums and retained failure receipts.
 - An installed-wheel performance probe binding exact wheel/runtime/input bytes
   to three fresh, untraced process measurements.
 
-- Synthetic public detection goldens for all 34 codes, a 70-case SL009 corpus
-  across 14 families, adapter/plan fuzzing and 84 repair integration cases.
+- Synthetic public detection goldens for all 35 codes, a 100-case SL009 corpus
+  across 20 families, adapter/plan fuzzing and 84 repair integration cases.
 - A deterministic starter kit with PowerShell/POSIX instructions, synthetic
   healthy/repairable/refused examples, schemas and offline rule/recipe docs.
 - Installed wheel/sdist and native-binary acceptance outside the checkout,
@@ -24,6 +339,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immutable retry checks and verification of public downloads on both channels.
 
 ### Fixed
+
+- Report and baseline destinations protect directory sources, auxiliary evidence,
+  config, registry copies and seal ledgers, including aliases and racing writes.
+
+- Modern Claude attachments, metadata and compaction links, plus Codex retained
+  context, no longer generate false critical-record and adjacency findings.
+- Native Claude compaction no longer requires a nonexistent checkpoint to avoid
+  SL203; explicit checkpoint loss and canonical repair refusal remain enforced.
+  Caller-provided checkpoint loss retains performed coverage whenever SL203 fires.
+- Vendor discovery excludes auxiliary memory, tool-result and metadata files.
+  Undetected formats are unsupported; files above the reader limit are skipped.
+- A generic session identifier no longer selects the Claude adapter by itself;
+  known Claude metadata remains a valid format signal.
+- Check and seal bind one source snapshot. Seal appends use an OS lock and retain
+  a missing final LF separator; active watch files survive history-cap pressure.
+- The SL004 detector no longer scans every preceding record for an impossible
+  parent candidate. A parent absent from the complete id index remains manual.
+- Atomic LF baseline/canonical writes, escaped-secret detection, Unicode record
+  separators, hostile JSON handling, SARIF URIs and chunked bundle record counts.
+- Google, Slack, GitLab, bearer, npm and Hugging Face secret shapes now share a
+  registry with adapter redaction; escape scanning preserves original-byte digests.
+- Release staging derives notes from the requested CHANGELOG version or explicit
+  generated notes. CI pins actions, validates inputs and builds docs strictly.
+- Repair plans are checked against current source findings at both public API
+  boundaries, including the low-level executor. Recomputing a plan fingerprint
+  cannot authorize changed targets, recipes, ordering or declared loss.
+- Repair parses, hashes and projects one source snapshot, refuses unaccounted
+  malformed records during canonical emission, and preserves complete events
+  whose IDs also occur in a torn tail. Multi-step repairs retain source coordinates.
+- SL002 now requires a provable truncated JSON-object append without a final
+  newline; complete malformed, oversized or interior-corrupt records remain SL001.
+- Output, plan and bundle writes protect the source, including hard-link aliases.
+  Repair and export publication refuse racing destinations and dangling symlinks;
+  Windows publication works on filesystems without hard links. Repair preserves
+  source permission bits, and batch receipt relocation preserves existing receipts.
+- Vendor write-back preserves single-record JSONL and splits physical records only
+  at LF. Synthesized canonical headers derive their timestamp from the first
+  source event and mark that provenance instead of inventing a fixed creation date.
 
 - Directory scans with `jobs` > 1 start their worker pool with an explicit
   `spawn` context. The previous pool inherited the POSIX default (`fork` on

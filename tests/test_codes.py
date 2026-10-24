@@ -52,6 +52,7 @@ EXPECTED_CODES: frozenset[str] = frozenset(
         "SL303",
         "SL304",
         "SL305",
+        "SL306",
         "SL401",
         "SL402",
     }
@@ -114,12 +115,12 @@ DEMAND_VERBATIM_SUMMARIES: dict[str, str] = {
 }
 
 
-def test_registry_has_exact_34_codes() -> None:
-    """Registry contains exactly 34 codes (DEMAND.md + packs)."""
+def test_registry_has_exact_35_codes() -> None:
+    """Registry includes the Wave 1 metadata advisory in addition to the original 34."""
     assert ALL_CODES == EXPECTED_CODES
     assert frozenset(CODE_REGISTRY.keys()) == EXPECTED_CODES
-    assert len(CODE_REGISTRY) == 34
-    assert len(Code) == 34
+    assert len(CODE_REGISTRY) == 35
+    assert len(Code) == 35
 
 
 def test_code_enum_matches_registry() -> None:

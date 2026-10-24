@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from sesslint import api
-from sesslint.bundle import _count_records_bounded, build_bundle
+from sesslint.bundle import FIXTURE_TEMPLATE, _count_records_bounded, build_bundle
 from sesslint.cli import main
 
 FIXTURES_ROOT = Path(__file__).resolve().parent.parent / "fixtures"
@@ -119,6 +119,14 @@ class TestBundleUnit:
         assert "evt_example_1" in template_str
         assert "SYNTHETIC" in template_str
 
+    def test_fixture_template_checks_clean(self, tmp_path: Path) -> None:
+        """The contributor template must itself be a clean canonical session."""
+        records = [line for line in FIXTURE_TEMPLATE.splitlines() if not line.startswith("#")]
+        template_path = tmp_path / "template.jsonl"
+        template_path.write_text("\n".join(records) + "\n", encoding="utf-8")
+        report = api.check_file(template_path, format="canonical")
+        assert [f.code for f in report.findings] == []
+
     def test_bundle_version_constant(self) -> None:
         """Bundle schema version must strictly be sesslint.bundle/v1."""
         bundle = build_bundle(HEALTHY_CANONICAL)
@@ -191,7 +199,7 @@ class TestBundleCLI:
     def test_bundle_out_file(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """sesslint bundle <path> --out <file> writes bundle JSON to specified destination."""
         out_file = tmp_path / "bundle_output.json"
-        code = main(["bundle", str(HEALTHY_CANONICAL), "--out", str(out_file)])
+        code = main(["bundle", str(HEALTHY_CANONICAL), "--output", str(out_file)])
         assert code == 0
         captured = capsys.readouterr()
         assert "Diagnostic bundle written to" in captured.out
@@ -200,6 +208,18 @@ class TestBundleCLI:
         data = json.loads(out_file.read_text(encoding="utf-8"))
         assert data["bundle_version"] == "sesslint.bundle/v1"
         assert data["source"]["path"] == HEALTHY_CANONICAL.name
+
+    def test_bundle_out_refuses_source_path(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--out naming the bundled session is refused; the source is untouched (B18)."""
+        src = tmp_path / "session.jsonl"
+        src.write_bytes(HEALTHY_CANONICAL.read_bytes())
+        before = src.read_bytes()
+        code = main(["bundle", str(src), "--output", str(src)])
+        assert code == 2
+        assert src.read_bytes() == before
+        assert "Error writing bundle" in capsys.readouterr().err
 
     def test_bundle_missing_file_exits_2(self, capsys: pytest.CaptureFixture[str]) -> None:
         """sesslint bundle on nonexistent file prints error to stderr and exits 2."""
@@ -235,13 +255,11 @@ class TestBundleCLI:
     def test_check_stderr_hint_on_detection_failure(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """sesslint check on ambiguous format emits hint to stderr pointing to sesslint bundle."""
+        """Unknown format emits an unsupported outcome without inventing corruption."""
         code = main(["check", str(POLYGLOT_FIXTURE), "--json"])
-        assert code == 1
+        assert code == 0
         captured = capsys.readouterr()
-        # Hint must be present on stderr
-        assert "hint: run 'sesslint bundle " in captured.err
-        assert "attach the output to an adapter request" in captured.err
+        assert "unsupported (format-undetected)" in captured.err
         # Stdout must remain pure JSON
         data = json.loads(captured.out)
         assert data["schema_version"] == "sesslint.report/v1"
@@ -294,7 +312,7 @@ class TestBundleShareAdvisory:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Non-strict bundle of a seeded file: advisory on stderr, exit 0."""
-        code = main(["bundle", str(self.SEEDED), "--format", "canonical", "--json"])
+        code = main(["bundle", str(self.SEEDED), "--adapter", "canonical", "--json"])
         assert code == 0
         captured = capsys.readouterr()
         assert "share_advisory: source contains secret-shaped material" in captured.err
@@ -310,7 +328,7 @@ class TestBundleShareAdvisory:
             [
                 "bundle",
                 str(self.SEEDED),
-                "--format",
+                "--adapter",
                 "canonical",
                 "--strict-share",
                 "-o",
@@ -330,7 +348,7 @@ class TestBundleShareAdvisory:
             [
                 "bundle",
                 str(self.CLEAN),
-                "--format",
+                "--adapter",
                 "canonical",
                 "--strict-share",
                 "-o",
@@ -444,7 +462,7 @@ class TestBundleIntegration:
         assert "attach the output to an adapter request" in captured_check.err
 
         # 2. sesslint bundle: succeeds with code 0 and records version_evidence
-        bundle_code = main(["bundle", str(unsupported_session), "--format", "canonical"])
+        bundle_code = main(["bundle", str(unsupported_session), "--adapter", "canonical"])
         assert bundle_code == 0
         captured_bundle = capsys.readouterr()
         bundle_data = json.loads(captured_bundle.out)
@@ -505,23 +523,20 @@ def test_bundle_outer_and_embedded_share_effective_thresholds() -> None:
         strict_bundle = bundle(HEALTHY_CANONICAL, confidence_min=0.70)
         # Outer detection surface: resolution failed under the raised threshold.
         assert strict_bundle.detection["resolved"] is None
-        # Embedded report surface: SL302 evidence records the same effective value.
-        sl302 = [f for f in strict_bundle.report["findings"] if f["code"] == "SL302"]
-        assert sl302, "embedded report must carry the SL302 detection-failure finding"
-        assert sl302[0]["evidence"]["confidence_min"] == 0.70
-        assert sl302[0]["evidence"]["margin_min"] == 0.15
+        # Uncertain detection is unsupported, with no invented integrity defect.
+        assert strict_bundle.report["findings"] == []
+        assert strict_bundle.report["assurance"] == "A0"
+        assert strict_bundle.report["limitation"].startswith("Unsupported:")
 
 
 def test_bundle_resolve_format_call_kwargs_match_embedded() -> None:
     """Capture kwargs reaching both resolve_format call sites and assert equality."""
     from unittest.mock import patch
 
-    import sesslint.api as api_mod
-    import sesslint.bundle as bundle_mod
+    from sesslint.adapters.detect import resolve_format_bytes as real_api_rf
+    from sesslint.bundle import resolve_format as real_bundle_rf
 
     seen: list[dict[str, Any]] = []
-    real_bundle_rf = bundle_mod.resolve_format
-    real_api_rf = api_mod.resolve_format
 
     def spy_bundle(*args: Any, **kwargs: Any) -> Any:
         seen.append(dict(kwargs))
@@ -532,10 +547,12 @@ def test_bundle_resolve_format_call_kwargs_match_embedded() -> None:
         return real_api_rf(*args, **kwargs)
 
     with (
-        patch.object(bundle_mod, "resolve_format", spy_bundle),
-        patch.object(api_mod, "resolve_format", spy_api),
+        patch("sesslint.bundle.resolve_format", spy_bundle),
+        patch("sesslint.adapters.detect.resolve_format_bytes", spy_api),
     ):
         build_bundle(HEALTHY_CANONICAL, confidence_min=0.70, margin_min=0.20)
 
     assert len(seen) == 2
-    assert seen[0] == seen[1] == {"confidence_min": 0.70, "margin_min": 0.20}
+    for values in seen:
+        assert values["confidence_min"] == 0.70
+        assert values["margin_min"] == 0.20

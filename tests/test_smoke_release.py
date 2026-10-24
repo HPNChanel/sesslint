@@ -4,7 +4,7 @@ Invariants verified:
 1. `sesslint version --json` outputs all expected schema versions, cli version, adapters,
    and profiles.
 2. `sesslint check` on a healthy fixture returns exit code 0 and empty findings list.
-3. `sesslint check --recursive --json` on mixed directory returns exit code 1 with
+3. `sesslint check --json` on a mixed directory returns exit code 1 with
    exact expected totals shape.
 """
 
@@ -67,7 +67,7 @@ def test_smoke_mixed_directory_scan(capsys: pytest.CaptureFixture[str]) -> None:
     mixed_dir = REPO_ROOT / "fixtures" / "scan" / "mixed"
     assert mixed_dir.is_dir()
 
-    exit_code = main(["check", str(mixed_dir), "--recursive", "--json"])
+    exit_code = main(["check", str(mixed_dir), "--json"])
     assert exit_code == 1
 
     out = capsys.readouterr().out
@@ -79,7 +79,8 @@ def test_smoke_mixed_directory_scan(capsys: pytest.CaptureFixture[str]) -> None:
 
     assert totals.get("total") == 5
     assert totals.get("healthy") == 1
-    assert totals.get("invalid") == 2
+    assert totals.get("invalid") == 1
     assert totals.get("unreadable") == 1
-    assert totals.get("unsupported") == 1
+    # Future canonical schema plus a file with no recognized session format.
+    assert totals.get("unsupported") == 2
     assert totals.get("skipped") == 0

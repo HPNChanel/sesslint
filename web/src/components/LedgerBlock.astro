@@ -1,0 +1,356 @@
+---
+// One release rendered as a block in the hash-chained ledger.
+import { formatDate, href, t, type Lang } from "../i18n";
+import { entryCount, type Release } from "../lib/changelog";
+import { shortHash } from "../lib/hash";
+import { inline } from "../lib/markdown";
+import { REPO_URL } from "../lib/repo";
+
+type Props = {
+  lang: Lang;
+  release: Release;
+  index: number;
+  /** Collapse entries to headlines (index view) or open them (detail view). */
+  compact?: boolean;
+  headingLevel?: 2 | 3;
+  /** Show only the first N entries (landing teaser); the rest stay on the permalink. */
+  preview?: number;
+};
+const { lang, release: r, index, compact = true, headingLevel = 2, preview } = Astro.props;
+const d = t(lang);
+const H = `h${headingLevel}` as "h2" | "h3";
+const HS = `h${headingLevel + 1}` as "h3" | "h4";
+const id = r.unreleased ? "unreleased" : `v${r.version}`;
+const permalink = href(lang, `/changelog/${r.unreleased ? "unreleased" : r.version}`);
+const counts = r.sections.map((s) => ({ kind: s.kind, n: s.entries.length, breaking: s.breaking }));
+const hasBreaking = r.sections.some((s) => s.entries.some((e) => e.breaking));
+let budget = preview ?? Number.POSITIVE_INFINITY;
+const shown = r.sections
+  .map((s) => {
+    const entries = s.entries.slice(0, Math.max(0, budget));
+    budget -= entries.length;
+    return { ...s, entries };
+  })
+  .filter((s) => s.entries.length);
+const hidden = entryCount(r) - shown.reduce((n, s) => n + s.entries.length, 0);
+---
+
+<article class:list={["block", { pending: r.unreleased }]} id={id} data-block aria-labelledby={`${id}-title`}>
+  <div class="gutter mono" aria-hidden="true">
+    <span>#{String(index).padStart(3, "0")}</span>
+  </div>
+  <div class="body">
+    <header class="head">
+      <div class="title-row">
+        <H class="ver mono" id={`${id}-title`}>
+          <a href={permalink}>{r.unreleased ? d.changelog.unreleased : `v${r.version}`}</a>
+        </H>
+        {r.unreleased ? (
+          <span class="chip pending-chip">{d.changelog.pending}</span>
+        ) : (
+          r.date && (
+            <span class="date mono">
+              {formatDate(lang, r.date)} · <time datetime={r.date} data-ago={lang}>{r.date}</time>
+            </span>
+          )
+        )}
+        {hasBreaking && <span class="chip breaking">{d.changelog.breaking}</span>}
+      </div>
+      <dl class="chain mono">
+        <div><dt>{d.changelog.prev}</dt><dd title={r.prev}>{shortHash(r.prev)}…</dd></div>
+        <div>
+          <dt>{d.changelog.hash}</dt>
+          <dd title={r.hash ?? ""}>{r.hash ? `${shortHash(r.hash)}…` : "— — — — — —"}</dd>
+        </div>
+      </dl>
+      <ul class="counts" aria-label={`${entryCount(r)} ${d.changelog.entries}`}>
+        {counts.map((c) => (
+          <li class:list={["count", `k-${c.kind.toLowerCase()}`]}>
+            {d.changelog.kinds[c.kind]} <b class="tnum">{c.n}</b>
+          </li>
+        ))}
+      </ul>
+    </header>
+
+    {r.intro && <p class="intro prose" set:html={inline(r.intro)} />}
+
+    {shown.map((s) => (
+      <section class="sec" data-section data-kind={s.kind.toLowerCase()}>
+        <HS class:list={["sec-title mono", `k-${s.kind.toLowerCase()}`]}>
+          {d.changelog.kinds[s.kind]}
+          {s.note && <span class="note">({s.note})</span>}
+        </HS>
+        <ul class="entries">
+          {s.entries.map((e) => (
+            <li
+              class="entry"
+              data-entry
+              data-kind={s.kind.toLowerCase()}
+              data-breaking={e.breaking ? "true" : undefined}
+              data-search={e.markdown.toLowerCase()}
+            >
+              {compact ? (
+                <details>
+                  <summary>
+                    <span class="hl" set:html={inline(e.headline)} />
+                    {e.breaking && <span class="bk mono">BREAKING</span>}
+                  </summary>
+                  <div class="full prose" set:html={inline(e.markdown)} />
+                </details>
+              ) : (
+                <div class="full prose open">
+                  {e.breaking && <span class="bk mono">BREAKING</span>} <Fragment set:html={inline(e.markdown)} />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
+
+    <footer class="foot mono">
+      <a href={permalink}>{hidden > 0 ? `+${hidden} ${d.changelog.more} →` : d.changelog.permalink}</a>
+      {!r.unreleased && <a href={`${REPO_URL}/releases/tag/v${r.version}`}>{d.changelog.onGithub} ↗</a>}
+    </footer>
+  </div>
+</article>
+
+<style>
+  .block {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    position: relative;
+  }
+  .block + :global(.block) {
+    margin-top: 0;
+  }
+  .gutter {
+    position: relative;
+    padding-top: 22px;
+    font-size: 0.7rem;
+    color: var(--mute);
+  }
+  /* the chain: a vertical rule linking each block to the previous one */
+  .gutter::before {
+    content: "";
+    position: absolute;
+    left: 18px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line-strong);
+  }
+  .gutter span {
+    position: relative;
+    display: inline-block;
+    padding: 2px 0;
+    background: var(--bg);
+  }
+  .body {
+    min-width: 0;
+    margin-bottom: var(--s-6);
+    padding: var(--s-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .pending .body {
+    border-style: dashed;
+    border-color: var(--warn);
+    background: transparent;
+  }
+  .head {
+    display: grid;
+    gap: var(--s-3);
+  }
+  .title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s-2) var(--s-4);
+  }
+  .ver {
+    font-family: var(--font-mono);
+    font-size: var(--step-2);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+  .ver a {
+    text-decoration: none;
+  }
+  .ver a:hover {
+    text-decoration: underline;
+  }
+  .date {
+    font-size: 0.8rem;
+    color: var(--mute);
+  }
+  .pending-chip {
+    border-style: dashed;
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+  .breaking {
+    border-color: var(--err);
+    color: var(--err);
+  }
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1) var(--s-5);
+    margin: 0;
+    font-size: 0.74rem;
+  }
+  .chain div {
+    display: flex;
+    gap: var(--s-2);
+  }
+  .chain dt {
+    color: var(--mute);
+  }
+  .chain dd {
+    margin: 0;
+    color: var(--dim);
+  }
+  .counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .count {
+    padding: 1px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--dim);
+  }
+  .k-added {
+    --k: var(--pass);
+  }
+  .k-fixed {
+    --k: var(--info);
+  }
+  .k-changed,
+  .k-deprecated {
+    --k: var(--warn);
+  }
+  .k-removed,
+  .k-security {
+    --k: var(--err);
+  }
+  .count b {
+    color: var(--k, var(--fg));
+  }
+  .intro {
+    margin-top: var(--s-4);
+    color: var(--dim);
+  }
+  .sec {
+    margin-top: var(--s-5);
+  }
+  .sec-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin: 0 0 var(--s-2);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--k, var(--fg));
+  }
+  .sec-title::before {
+    content: "###";
+    color: var(--mute);
+  }
+  .note {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    color: var(--mute);
+  }
+  .entries {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .entry {
+    min-width: 0;
+    border-top: 1px dashed var(--line);
+    overflow-wrap: anywhere;
+  }
+  .entry summary {
+    display: flex;
+    gap: var(--s-3);
+    align-items: baseline;
+    padding: 8px 0;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.94rem;
+  }
+  .entry summary::-webkit-details-marker {
+    display: none;
+  }
+  .entry summary::before {
+    content: "+";
+    flex: none;
+    width: 1ch;
+    font-family: var(--font-mono);
+    color: var(--k, var(--mute));
+  }
+  .entry details[open] summary::before {
+    content: "−";
+  }
+  .entry summary:hover .hl {
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+  }
+  .bk {
+    flex: none;
+    margin-left: auto;
+    font-size: 0.66rem;
+    color: var(--err);
+    border: 1px solid var(--err);
+    padding: 0 4px;
+  }
+  .full {
+    padding: 0 0 var(--s-3) calc(1ch + var(--s-3));
+    color: var(--dim);
+    font-size: 0.9rem;
+    line-height: 1.65;
+  }
+  .full.open {
+    padding: 10px 0;
+  }
+  .full.open .bk {
+    margin-right: 6px;
+  }
+  .entry[hidden],
+  .sec[hidden] {
+    display: none;
+  }
+  .foot {
+    display: flex;
+    gap: var(--s-5);
+    margin-top: var(--s-5);
+    font-size: 0.78rem;
+  }
+  .foot a {
+    color: var(--mute);
+  }
+  @media (max-width: 600px) {
+    .block {
+      grid-template-columns: 1fr;
+    }
+    .gutter {
+      display: none;
+    }
+    .body {
+      padding: var(--s-4);
+    }
+  }
+</style>

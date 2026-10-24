@@ -9,6 +9,13 @@ conservative repair engine for AI agent session ledgers. Python ≥ 3.11,
 stdlib-only at runtime (`src/sesslint`), packaged with hatchling, released to
 PyPI + GitHub Releases + PyInstaller binaries.
 
+# Shared Agent Policy
+
+Before beginning any task, read and follow
+`AGENT_MAIN.md` as the universal engineering policy.
+
+Preserve all additional project-specific instructions.
+
 ## Hard invariants — never violate these
 
 - **Zero runtime dependencies**: `project.dependencies` in `pyproject.toml`
@@ -32,13 +39,14 @@ PyPI + GitHub Releases + PyInstaller binaries.
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/sesslint/` | Library + CLI (`cli.py`, `api.py`, `checks/`, `adapters/`, `repair/`, `scan.py`, `report.py`, `verify.py`, `bundle.py`) |
+| `src/sesslint/` | Library + CLI (`cli/` package, `api.py`, `checks/`, `adapters/`, `repair/`, `scan.py`, `report.py`, `verify.py`, `bundle.py`) |
 | `tests/` | pytest suite: unit + `conformance/`, `fuzz/` (hypothesis), `accept/`, `privacy/`, `io/` hostile-input tests |
 | `docs/codes/`, `docs/recipes/` | One doc per SL code / per repair recipe — gated by `tests/test_rule_docs.py`, `tests/test_registry_docs.py` |
 | `schemas/` | JSON Schemas shipped as wheel shared-data |
 | `fixtures/` | Synthetic test fixtures, each with `PROVENANCE.json` |
 | `bench/` | Performance probes (`perf_250k.py` contract: 250k events / 100 MB) |
 | `packaging/`, `scripts/` | PyInstaller spec + `package.py` (build-time only, never shipped) |
+| `web/` | Static marketing site (Astro; landing, download, pricing, changelog from `CHANGELOG.md`). Node tooling only, never shipped, not runtime — gates: `npm run check`, `npm test`, `npm run build`, `npm run docs`, `npm run links`, `npm run test:e2e`; see `web/README.md` |
 
 ## Required gates (all must pass)
 

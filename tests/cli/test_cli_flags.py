@@ -10,149 +10,59 @@ from sesslint.cli import create_parser, main
 
 
 def test_global_flag_preservation_subcommands() -> None:
-    """Ensure global CLI flags survive into subcommand namespaces when not overridden (P1-01)."""
+    """Root --color/--no-color survive into subcommand namespaces (P1-01)."""
     parser = create_parser()
 
     # check subcommand
-    args = parser.parse_args(
-        [
-            "--profile",
-            "p_check",
-            "--format",
-            "canonical",
-            "--color",
-            "always",
-            "--include-content",
-            "check",
-            "file.jsonl",
-        ]
-    )
-    assert args.profile == "p_check"
-    assert args.format == "canonical"
+    args = parser.parse_args(["--color", "always", "check", "file.jsonl"])
     assert args.color == "always"
-    assert args.include_content is True
 
     # check with --no-color global
     args = parser.parse_args(["--no-color", "check", "file.jsonl"])
     assert args.no_color is True
 
-    # scan subcommand with --no-color global
-    args = parser.parse_args(
-        [
-            "--profile",
-            "p_scan",
-            "--format",
-            "openai-agents",
-            "--color",
-            "never",
-            "--no-color",
-            "scan",
-            "some_dir",
-        ]
-    )
-    assert args.profile == "p_scan"
-    assert args.format == "openai-agents"
+    # scan (check alias) with --no-color global
+    args = parser.parse_args(["--color", "never", "--no-color", "scan", "some_dir"])
     assert args.color == "never"
     assert args.no_color is True
 
-    # repair subcommand with --include-content global
+    # repair subcommand with --no-color global
+    args = parser.parse_args(["--no-color", "repair", "file.jsonl", "-o", "out.jsonl"])
+    assert args.no_color is True
+
+    # verify subcommand with --no-color global
+    args = parser.parse_args(["--color", "never", "--no-color", "verify", "--manifest", "m.json"])
+    assert args.color == "never"
+    assert args.no_color is True
+
+    # adapter/profile/policy/include-content are subcommand-level flags
     args = parser.parse_args(
-        [
-            "--profile",
-            "p_repair",
-            "--format",
-            "canonical",
-            "--policy",
-            "salvage",
-            "--include-content",
-            "repair",
-            "file.jsonl",
-            "-o",
-            "out.jsonl",
-        ]
+        ["check", "file.jsonl", "--profile", "p_check", "--adapter", "canonical"]
     )
-    assert args.profile == "p_repair"
-    assert args.format == "canonical"
+    assert args.profile == "p_check"
+    assert args.adapter == "canonical"
+
+    args = parser.parse_args(
+        ["repair", "file.jsonl", "-o", "out.jsonl", "--policy", "salvage", "--include-content"]
+    )
     assert args.policy == "salvage"
     assert args.include_content is True
 
-    # verify subcommand with --no-color and --include-content global
-    args = parser.parse_args(
-        [
-            "--color",
-            "never",
-            "--no-color",
-            "--include-content",
-            "verify",
-            "--manifest",
-            "manifest.json",
-        ]
-    )
-    assert args.color == "never"
-    assert args.no_color is True
-    assert args.include_content is True
-
-    # bundle subcommand
-    args = parser.parse_args(
-        ["--profile", "p_bundle", "--format", "canonical", "bundle", "file.jsonl"]
-    )
-    assert args.profile == "p_bundle"
-    assert args.format == "canonical"
-
 
 def test_subcommand_flag_override() -> None:
-    """Ensure subcommand-level flags override global flags when explicitly provided (P1-01)."""
+    """Subcommand-level flags override root flags when explicitly provided (P1-01)."""
     parser = create_parser()
 
-    # check subcommand overrides
-    args = parser.parse_args(
-        [
-            "--profile",
-            "global_prof",
-            "--format",
-            "canonical",
-            "check",
-            "--profile",
-            "local_prof",
-            "--format",
-            "claude-code-jsonl",
-            "file.jsonl",
-        ]
-    )
-    assert args.profile == "local_prof"
-    assert args.format == "claude-code-jsonl"
+    # check subcommand overrides root color
+    args = parser.parse_args(["--color", "always", "check", "file.jsonl", "--color", "never"])
+    assert args.color == "never"
 
-    # scan subcommand overrides
-    args = parser.parse_args(
-        [
-            "--profile",
-            "global_prof",
-            "--format",
-            "canonical",
-            "scan",
-            "--profile",
-            "scan_prof",
-            "--format",
-            "openai-agents",
-            "some_dir",
-        ]
-    )
-    assert args.profile == "scan_prof"
-    assert args.format == "openai-agents"
+    # scan (check alias) subcommand overrides root color
+    args = parser.parse_args(["--color", "always", "scan", "some_dir", "--color", "never"])
+    assert args.color == "never"
 
-    # repair subcommand overrides policy
-    args = parser.parse_args(
-        [
-            "--policy",
-            "conservative",
-            "repair",
-            "--policy",
-            "salvage",
-            "file.jsonl",
-            "-o",
-            "out.jsonl",
-        ]
-    )
+    # repair subcommand policy
+    args = parser.parse_args(["repair", "file.jsonl", "-o", "out.jsonl", "--policy", "salvage"])
     assert args.policy == "salvage"
 
     # verify subcommand overrides color
@@ -276,14 +186,18 @@ def test_scan_threshold_flags_reach_detection(
         # Default thresholds: 0.60 wins -> file is healthy -> exit 0.
         assert main(["scan", str(tmp_path)]) == 0
         capsys.readouterr()
-        # Raised confidence_min=0.70: detection fails -> file invalid -> exit 1.
-        assert main(["scan", str(tmp_path), "--confidence-min", "0.7"]) == 1
+        # Raised confidence_min=0.70: detection is unsupported by default.
+        assert main(["scan", str(tmp_path), "--confidence-min", "0.7"]) == 0
+        capsys.readouterr()
+        assert (
+            main(["scan", str(tmp_path), "--confidence-min", "0.7", "--fail-on-unsupported"]) == 1
+        )
 
 
 def test_check_dir_branch_threshold_flags_reach_detection(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """check <dir> -r forwards --confidence-min/--margin-min to check_dir (T-02)."""
+    """check <dir> forwards --confidence-min/--margin-min to check_dir (T-02)."""
     from unittest.mock import patch
 
     fixture = (
@@ -300,6 +214,19 @@ def test_check_dir_branch_threshold_flags_reach_detection(
         patch("sesslint.adapters.detect.detect_openai_agents", return_value=0.10),
         patch("sesslint.adapters.detect.detect_canonical", return_value=0.10),
     ):
-        assert main(["check", str(tmp_path), "-r"]) == 0
+        assert main(["check", str(tmp_path)]) == 0
         capsys.readouterr()
-        assert main(["check", str(tmp_path), "-r", "--confidence-min", "0.7"]) == 1
+        assert main(["check", str(tmp_path), "--confidence-min", "0.7"]) == 0
+        capsys.readouterr()
+        assert (
+            main(
+                [
+                    "check",
+                    str(tmp_path),
+                    "--confidence-min",
+                    "0.7",
+                    "--fail-on-unsupported",
+                ]
+            )
+            == 1
+        )

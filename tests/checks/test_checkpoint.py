@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from sesslint.adapters.canonical import load_canonical
 from sesslint.canonical import SessionEvent
 from sesslint.checks.checkpoint import (
@@ -290,7 +292,8 @@ def test_compaction_boundary_without_checkpoint_triggers_sl203() -> None:
     assert _evidence(findings[0])["caused_by"] == ["compaction"]
 
 
-def test_sl203_gated_on_codex_rollout() -> None:
+@pytest.mark.parametrize("adapter", ["codex-rollout", "claude-code-jsonl"])
+def test_sl203_native_compaction_needs_checkpoint_capability(adapter: str) -> None:
     """codex-rollout has no checkpoint mechanism — compaction followed by
     tool events is vendor-normal operation, so SL203 cannot fire. On a
     real corpus this trigger produced ~246 deterministic false positives
@@ -316,7 +319,7 @@ def test_sl203_gated_on_codex_rollout() -> None:
             correlation_id="c1",
         ),
     ]
-    ctx = CheckContext(adapter_id="codex-rollout")
+    ctx = CheckContext(adapter_id=adapter)
     assert check_unsafe_continuation(events, context=ctx) == []
 
 
@@ -655,7 +658,8 @@ def test_verdict_matrix_unchanged_by_run_state_projection() -> None:
     assert findings_without[0].fingerprint == findings_with[0].fingerprint
 
 
-def test_check_checkpoint_composite_run_state_preservation() -> None:
+@pytest.mark.parametrize("adapter", ["openai-agents", "claude-code-jsonl"])
+def test_check_checkpoint_composite_run_state_preservation(adapter: str) -> None:
     """Composite check_checkpoint attaches run_state to SL201/SL202 and keeps SL203 minimal."""
     from sesslint.checks.checkpoint import check_checkpoint
     from sesslint.context import CheckContext
@@ -668,7 +672,7 @@ def test_check_checkpoint_composite_run_state_preservation() -> None:
     }
 
     ctx = CheckContext(
-        adapter_id="openai-agents",
+        adapter_id=adapter,
         adapter_version="1.0.0",
         profile_id="openai-strict",
         profile_version="1.0.0",
@@ -722,3 +726,13 @@ def test_check_checkpoint_composite_run_state_preservation() -> None:
     # SL203 remains strictly minimal (no run_state)
     assert f203.evidence is not None
     assert "run_state" not in f203.evidence
+
+    # A caller-provided checkpoint stream can produce explicit loss even when
+    # native compaction on this adapter cannot. Coverage must not deny a finding
+    # that the runner actually evaluated and emitted.
+    from sesslint.checks.runner import run_all_checks
+
+    runner_findings, coverage = run_all_checks(events, context=ctx, return_coverage=True)
+    assert SL203 in {finding.code for finding in runner_findings}
+    assert SL203 in coverage.performed
+    assert SL203 not in {skip.check for skip in coverage.skipped}

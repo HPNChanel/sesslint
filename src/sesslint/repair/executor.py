@@ -7,7 +7,7 @@ in SessLint. It enforces a strict, pinned 8-step protocol:
 3. In-memory sequential application of fingerprinted recipe steps.
 4. Output validation (canonical schema parse, no-synthetic-success multiset check, SL203-absent
    re-scan, and full profile revalidation).
-5. Same-directory temp file creation, fsync, and atomic rename (os.replace).
+5. Same-directory staging, fsync, and atomic publication without replacement.
 6. Post-hashing (re-read source to verify untouched, and read back target).
 7. Failure cleanup (any exception unlinks temp file and leaves source intact).
 8. Manifest generation (sesslint.repair-manifest/v1) binding hashes and audit trails.
@@ -19,7 +19,7 @@ import errno
 import hashlib
 import json
 import os
-import tempfile
+import stat
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -33,6 +33,7 @@ from sesslint.adapters.detect import (
     FORMAT_CODEX_ROLLOUT,
     FORMAT_OPENAI_AGENTS,
 )
+from sesslint.adapters.load import read_source_snapshot
 from sesslint.atomic import atomic_write_bytes
 from sesslint.canonical import (
     Session,
@@ -45,6 +46,7 @@ from sesslint.canonical import (
 from sesslint.checks.checkpoint import check_checkpoint
 from sesslint.checks.runner import run_all_checks
 from sesslint.codes import Severity
+from sesslint.context import CheckContext
 from sesslint.errors import AtomicWriteError
 from sesslint.finding import Finding
 from sesslint.policy.abstention import (
@@ -77,6 +79,9 @@ from sesslint.repair.planner import (
     RepairPlan,
     compute_events_source_hash,
 )
+from sesslint.repair.positions import relocate_step as _relocate_step
+from sesslint.repair.positions import source_positions as _source_positions
+from sesslint.repair.positions import strip_origins, tag_origins
 from sesslint.repair.recipes_conservative import (
     register_all as register_all_conservative_recipes,
 )
@@ -147,6 +152,19 @@ def is_live_store_path(path: StrPath) -> bool:
         except OSError:
             pass
     return False
+
+
+def _targeted_lines(findings: Sequence[Finding], targeted_fps: set[str]) -> frozenset[int]:
+    """Physical source lines of ``findings`` whose fingerprints a plan step targets."""
+    return frozenset(
+        f.source.line
+        for f in findings
+        if f.fingerprint in targeted_fps
+        and f.source is not None
+        and isinstance(f.source.line, int)
+        and not isinstance(f.source.line, bool)
+        and f.source.line >= 1
+    )
 
 
 def _plan_requires_salvage(plan: RepairPlan) -> bool:
@@ -226,16 +244,21 @@ def load_plan(
 
 def load_session_source_with_findings(
     path: StrPath,
+    *,
+    data: bytes | None = None,
 ) -> tuple[SessionHeader, list[SessionEvent], list[Finding]]:
     """Load session header, events, and stream-level findings (SL001/SL002).
 
     Preserves duplicate IDs and nonterminal findings without prematurely failing.
     Falls back to single-document JSON parsing if the file is formatted as single-document JSON.
+    When ``data`` (a ``read_source_snapshot`` of the file) is given, header,
+    events and findings all derive from exactly those bytes (B19).
     """
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(f"Session file not found: {p}")
 
+    from sesslint.adapters.load import snapshot_input
     from sesslint.errors import SchemaError
     from sesslint.io import iter_events, read_header
 
@@ -243,21 +266,28 @@ def load_session_source_with_findings(
         from sesslint.adapters.canonical import CRITICAL_KEYS
 
         hdr_findings: list[Finding] = []
-        hdr = read_header(p, dup_sink=hdr_findings, critical_keys=CRITICAL_KEYS)
-        items = list(iter_events(p, critical_keys=CRITICAL_KEYS))
+        hdr = read_header(
+            snapshot_input(p, data), dup_sink=hdr_findings, critical_keys=CRITICAL_KEYS
+        )
+        items = list(iter_events(snapshot_input(p, data), critical_keys=CRITICAL_KEYS))
         events = [e for e in items if isinstance(e, SessionEvent)]
         findings = hdr_findings + [f for f in items if isinstance(f, Finding)]
         return hdr, events, findings
-    except SchemaError:
+    except SchemaError as schema_err:
         # Fall back to single-document canonical JSON if formatted as a single JSON object
-        text = p.read_text(encoding="utf-8-sig").strip()
+        try:
+            raw_bytes = p.read_bytes() if data is None else data
+            raw_text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise schema_err from None
+        text = raw_text.strip()
         if text.startswith("{"):
             try:
-                data = json.loads(text)
-                if isinstance(data, Mapping) and "events" in data:
+                doc = json.loads(text)
+                if isinstance(doc, Mapping) and "events" in doc:
                     from sesslint.adapters.canonical import load_canonical
 
-                    ev_list, can_findings = load_canonical(p)
+                    ev_list, can_findings = load_canonical(snapshot_input(p, data))
                     hdr = SessionHeader(
                         schema_version="sesslint.session/v1",
                         session_id=str(ev_list.source.get("session_id", p.stem)),
@@ -278,19 +308,23 @@ def load_session_source(path: StrPath) -> tuple[SessionHeader, list[SessionEvent
 def load_source_for_format(
     path: StrPath,
     format: str | None,
+    *,
+    data: bytes | None = None,
 ) -> tuple[SessionHeader | None, list[SessionEvent], list[Finding]]:
     """Load events (and stream findings) via the adapter matching ``format``.
 
     Vendor adapters return no session header and produce canonical events that
     carry provenance (``source_line``/``source_record_hash``) required for
-    vendor write-back projection.
+    vendor write-back projection. ``data`` is an optional snapshot of the
+    file's bytes: when given, everything derives from exactly the bytes the
+    caller hashes, with path-based finding coordinates (B19).
     """
-    from sesslint.adapters.load import is_vendor_format, load_vendor_events
+    from sesslint.adapters.load import is_vendor_format, load_vendor_events, snapshot_input
 
     if is_vendor_format(format):
-        events, findings = load_vendor_events(Path(path), format)
+        events, findings = load_vendor_events(snapshot_input(Path(path), data), format)
         return None, events, findings
-    hdr, events, findings = load_session_source_with_findings(Path(path))
+    hdr, events, findings = load_session_source_with_findings(Path(path), data=data)
     return hdr, events, findings
 
 
@@ -323,7 +357,7 @@ def execute(
     3. Apply recipe steps sequentially in memory.
     4. Output validation: schema conformance, no-synthetic-success multiset check,
        SL203-absent re-scan, and full profile revalidation.
-    5. Write temp file in same directory, fsync, and atomic rename (os.replace).
+        5. Stage complete files in the same directory, fsync, and publish exclusively.
     6. Post-hash: verify source file was never touched; compute output digest.
     7. Failure cleanup: guarantee no temp file or partial output remains.
     8. Manifest generation and atomic sidecar emission (<target>.manifest.json).
@@ -342,14 +376,14 @@ def execute(
             drop-only line-verbatim write-back and revalidates the emitted
             artifact through its adapter.
         acknowledge_side_effects: Operator acknowledgement of tool side-effects.
-        source_events: Optional pre-loaded session events (must carry vendor
-            provenance fields when emit_format is a vendor format).
-        source_findings: Optional findings computed for the source (used to
-            resolve which event-less source lines the plan explicitly discards).
-        pre_rename_hook: Testing hook invoked after temp fsync before os.replace.
+        source_events: Optional pre-loaded session events, checked against a
+            fresh parse of the bytes being repaired. They never replace that parse.
+        source_findings: Legacy caller findings, retained for API compatibility.
+            Current findings are always recomputed from the source bytes.
+        pre_rename_hook: Testing hook invoked after temp fsync before publication.
         pre_write_hook: Testing hook invoked before writing temp file.
         post_apply_hook: Testing hook invoked after memory apply before write.
-        mid_publish_hook: Testing hook invoked after manifest link before output rename.
+        mid_publish_hook: Testing hook invoked after manifest publication, before output.
         post_publish_hook: Testing hook invoked after publish and directory fsync.
         progress_cb: Optional callback receiving ``ProgressEvent`` records
             (``repair:step`` per applied recipe step) — DW-T-13.
@@ -438,18 +472,20 @@ def execute(
     if not source_p.is_file():
         raise FileNotFoundError(f"Source session file not found: {source_p}")
 
-    source_bytes = source_p.read_bytes()
+    # One read: the pre-hash, the parsed events and the write-back projection
+    # all describe these exact bytes, even while a writer appends (B19).
+    source_bytes = read_source_snapshot(source_p)
+    if source_bytes is None:
+        raise RepairRefused("Source cannot be snapshotted within the supported byte limit")
     source_pre_hash = hashlib.sha256(source_bytes).hexdigest()
 
-    source_header: SessionHeader | None = None
-    loaded_events: list[SessionEvent]
-    loaded_stream_findings: list[Finding] = []
-    if source_events is not None:
-        loaded_events = list(source_events)
-    else:
-        source_header, loaded_events, loaded_stream_findings = load_source_for_format(
-            source_p, format
-        )
+    source_header, loaded_events, loaded_stream_findings = load_source_for_format(
+        source_p, format, data=source_bytes
+    )
+    if source_events is not None and [
+        parse_session_event(ev.to_canonical_dict()).content_identity_hash() for ev in source_events
+    ] != [ev.content_identity_hash() for ev in loaded_events]:
+        raise PlanSourceMismatch("Supplied source events do not describe the current source bytes")
 
     events_hash = compute_events_source_hash(loaded_events)
     if plan.source_hash != source_pre_hash and plan.source_hash != events_hash:
@@ -459,7 +495,8 @@ def execute(
         )
 
     # Step 1e: TOCTOU abstention re-check on current source (RVW-011)
-    chk_findings = check_checkpoint(loaded_events)
+    source_context = CheckContext.from_profile_and_adapter(plan.profile, format or "canonical")
+    chk_findings = check_checkpoint(loaded_events, context=source_context)
     abst = should_abstain_from_repair(
         chk_findings,
         loaded_events,
@@ -469,23 +506,48 @@ def execute(
     if abst.abstain:
         raise Abstained(f"Repair abstained: {', '.join(abst.reasons)}")
 
+    # execute() is also a public entry point. A recomputed plan fingerprint
+    # cannot authorize a recipe; derive its steps from the bytes loaded above,
+    # just as api.apply_plan does. Caller findings never serve as evidence.
+    from sesslint.repair.vetting import vet_plan
+
+    current_findings = loaded_stream_findings + list(
+        run_all_checks(
+            loaded_events,
+            profile=plan.profile,
+            source_path=source_p.name,
+            adapter=format or "canonical",
+        )
+    )
+    vet_plan(
+        plan,
+        findings=current_findings,
+        events=loaded_events,
+        source_hash=source_pre_hash,
+        acknowledge_side_effects=acknowledge_side_effects,
+        input_format=format or "canonical",
+    )
+
     # Vendor write-back: physical lines the plan explicitly discards even though
     # they produced no canonical events (e.g. the torn terminal record that
     # produced only an SL002 finding). A no-event line NOT covered by an applied
     # step is kept verbatim — uninterpreted content is never silently dropped.
-    drop_lines: frozenset[int] = frozenset()
-    if emit_is_vendor:
-        targeted_fps = {s.target_finding_fp for s in plan.steps if s.target_finding_fp}
-        all_src_findings = list(source_findings or ()) + list(loaded_stream_findings)
-        drop_lines = frozenset(
-            f.source.line
-            for f in all_src_findings
-            if f.fingerprint in targeted_fps
-            and f.source is not None
-            and isinstance(f.source.line, int)
-            and not isinstance(f.source.line, bool)
-            and f.source.line >= 1
-        )
+    targeted_fps = {s.target_finding_fp for s in plan.steps if s.target_finding_fp}
+    drop_lines = _targeted_lines(loaded_stream_findings, targeted_fps)
+    if not emit_is_vendor:
+        # B22: serializing decoded events alone silently erases malformed
+        # records. Every undecoded record must have its own authorized discard
+        # step, including when another finding has a perfectly safe repair.
+        untargeted = [
+            f
+            for f in loaded_stream_findings
+            if f.code in ("SL001", "SL002") and f.fingerprint not in targeted_fps
+        ]
+        if untargeted:
+            raise RepairRefused(
+                "Canonical emission would discard undecoded source records outside the "
+                "repair plan; every such record requires an authorized discard step"
+            )
 
     # -------------------------------------------------------------------------
     # STEP 2: Pre-flight destination path checks
@@ -509,12 +571,12 @@ def execute(
             )
 
         # Refuse existing output file
-        if output_p.exists():
+        if os.path.lexists(output_p):
             raise RepairRefused(f"Output path already exists (refusing to overwrite): {output_p}")
 
         # Refuse existing manifest file (exclusive create / receipt collision prevention)
         manifest_p = Path(f"{output_p}.manifest.json")
-        if manifest_p.exists():
+        if os.path.lexists(manifest_p):
             raise ManifestCollision(
                 "Repair manifest destination already exists "
                 f"(refusing to overwrite receipt): {manifest_p}"
@@ -528,6 +590,8 @@ def execute(
     register_all_sl002_recipes()
 
     working_events = _copy_events_as_dicts(loaded_events)
+    tag_origins(working_events)
+    source_len = len(working_events)
     sorted_steps = sorted(plan.steps, key=lambda s: s.seq)
 
     for step_idx, step in enumerate(sorted_steps):
@@ -579,8 +643,11 @@ def execute(
                         f"side-effect abstention"
                     )
 
+        # The scope check above judges the step in source coordinates; the
+        # recipe runs on the current events (B21).
+        current_step = _relocate_step(step, _source_positions(working_events), source_len)
         try:
-            working_events = recipe.apply(working_events, step)
+            working_events = recipe.apply(working_events, current_step)
         except Exception as err:
             raise OutputInvalid(f"Recipe '{step.recipe}' failed at step {step.seq}: {err}") from err
         emit(
@@ -592,6 +659,8 @@ def execute(
                 item=step.recipe,
             ),
         )
+
+    strip_origins(working_events)
 
     # -------------------------------------------------------------------------
     # STEP 4: Output validation
@@ -631,7 +700,9 @@ def execute(
             )
 
     # (c) SL203-absent re-scan
-    output_chk_findings = check_checkpoint(parsed_output_events)
+    output_adapter = resolved_emit if emit_is_vendor else "canonical"
+    output_context = CheckContext.from_profile_and_adapter(plan.profile, output_adapter)
+    output_chk_findings = check_checkpoint(parsed_output_events, context=output_context)
     if any(f.code == "SL203" for f in output_chk_findings):
         raise OutputInvalid("SL203 finding present in repaired output")
 
@@ -640,7 +711,7 @@ def execute(
     reval_findings, reval_coverage = run_all_checks(
         parsed_output_events,
         profile=reval_profile_name,
-        adapter="canonical",
+        adapter=output_adapter,
         return_coverage=True,
     )
     error_findings = [f for f in reval_findings if f.severity in (Severity.ERROR, Severity.FATAL)]
@@ -682,7 +753,8 @@ def execute(
         else SessionHeader(
             schema_version="sesslint.session/v1",
             session_id=source_p.stem,
-            created_at="2026-09-05T12:00:00Z",
+            created_at=loaded_events[0].ts if loaded_events else "1970-01-01T00:00:00Z",
+            metadata={"created_at_source": "first_event" if loaded_events else "unknown"},
         )
     )
     projection_summary: Any = None
@@ -703,6 +775,16 @@ def execute(
         from sesslint.adapters.load import reload_vendor_bytes
 
         emit_events, emit_adapter_findings = reload_vendor_bytes(resolved_emit, output_bytes)
+        # verify loads the artifact by detection, not by the forced adapter: an
+        # output that sniffs as another format can never be verified.
+        from sesslint.adapters.detect import detect_format_bytes
+
+        emit_name = Path(output_path).name if output_path is not None else source_p.name
+        if detect_format_bytes(output_bytes, filename=emit_name).format != resolved_emit:
+            raise OutputInvalid(
+                f"Emitted vendor artifact does not re-detect as {resolved_emit}; "
+                "verify could not load it with the same adapter"
+            )
         emit_check_findings = run_all_checks(
             emit_events,
             profile=reval_profile_name,
@@ -724,6 +806,18 @@ def execute(
                 "Emitted vendor artifact does not round-trip to the repaired "
                 "event set (content identity mismatch after adapter reload)"
             )
+        # Verbatim lines keep their stream-level warnings (e.g. SL303 duplicate
+        # keys); the declared revalidation must count them as verify does.
+        if emit_adapter_findings:
+            reval_findings = list(emit_adapter_findings) + list(reval_findings)
+            reval_assurance, reval_limitation = compute_assurance(
+                parsed_output_events,
+                reval_findings,
+                reference_equivalent=reference_equivalent_if_clean(
+                    parsed_output_events, reval_findings
+                ),
+            )
+            warning_count = len([f for f in reval_findings if f.severity == Severity.WARNING])
     else:
         repaired_session = Session(header=repaired_header, events=tuple(parsed_output_events))
         output_text = dump_session(repaired_session)
@@ -830,8 +924,9 @@ def execute(
     # leaves nothing to clean up (DW-T-13).
     check_token(cancel_token)
     # Re-read source bytes to verify source was never concurrently modified
-    source_post_bytes = source_p.read_bytes()
-    source_post_hash = hashlib.sha256(source_post_bytes).hexdigest()
+    from sesslint.io import sha256_file_bytes
+
+    source_post_hash = sha256_file_bytes(source_p)
     if source_post_hash != source_pre_hash:
         raise OutputInvalid(
             f"Source file was concurrently modified during repair: "
@@ -848,41 +943,29 @@ def execute(
     manifest_text = sesslint.report.dump_manifest(manifest) + "\n"
     manifest_bytes = manifest_text.encode("utf-8")
 
-    m_temp: Path | None = None
     manifest_linked = False
     output_replaced = False
 
     try:
         try:
-            # 1. Write manifest temp file
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=target_dir,
-                delete=False,
-                prefix=".sesslint-tmp-man-",
-                suffix=".json",
-            ) as m_file:
-                m_temp = Path(m_file.name)
-                m_file.write(manifest_bytes)
-                m_file.flush()
-                os.fsync(m_file.fileno())
-
-            # Exclusive-create manifest receipt (O_EXCL via os.link)
+            # Both names use exclusive publication: a racing writer or dangling
+            # symlink is never overwritten. Windows needs no hard-link support.
             try:
-                os.link(m_temp, manifest_p)
+                atomic_write_bytes(
+                    manifest_p,
+                    manifest_bytes,
+                    overwrite=False,
+                    prefix=".sesslint-tmp-man-",
+                    sync_dir=True,
+                )
                 manifest_linked = True
-            except FileExistsError as err:
-                raise ManifestCollision(
-                    "Repair manifest destination already exists "
-                    f"(refusing to overwrite receipt): {manifest_p}"
-                ) from err
-            finally:
-                if m_temp is not None and m_temp.exists():
-                    try:
-                        m_temp.unlink()
-                    except OSError:
-                        pass
-                m_temp = None
+            except AtomicWriteError as err:
+                if isinstance(err.__cause__, FileExistsError):
+                    raise ManifestCollision(
+                        "Repair manifest destination already exists "
+                        f"(refusing to overwrite receipt): {manifest_p}"
+                    ) from err
+                raise
 
             # Mid-publish fault-injection hook (e.g. crash simulation)
             active_mid_publish = mid_publish_hook or _ATOMIC_TEST_HOOKS.get("mid_publish")
@@ -900,6 +983,8 @@ def execute(
                 pre_write_hook=active_pre_write,
                 pre_rename_hook=active_pre_rename,
                 sync_dir=True,
+                overwrite=False,
+                mode=stat.S_IMODE(source_p.stat().st_mode),
             )
             output_replaced = True
 
@@ -933,11 +1018,6 @@ def execute(
             raise OutputInvalid(f"Atomic write to destination failed: {err}") from err
     except BaseException:
         # Atomic repair invariant: never leave output or manifest orphaned
-        if m_temp is not None and m_temp.exists():
-            try:
-                m_temp.unlink()
-            except OSError:
-                pass
         if manifest_linked and manifest_p.exists() and not output_replaced:
             try:
                 manifest_p.unlink()

@@ -85,7 +85,7 @@ def test_runtime_blackhole_proxy_isolation() -> None:
         "sesslint",
         "check",
         str(FIXTURE_PATH),
-        "--format",
+        "--adapter",
         "canonical",
         "--json",
     ]

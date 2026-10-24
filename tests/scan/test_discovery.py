@@ -32,7 +32,7 @@ def test_discovery_order_is_deterministic() -> None:
 def test_discovery_env_overrides(tmp_path: Path) -> None:
     ccfg = tmp_path / "ccfg"
     cx = tmp_path / "cxhome"
-    (ccfg / "projects").mkdir(parents=True)
+    (ccfg / "projects" / "synthetic-project").mkdir(parents=True)
     (cx / "sessions").mkdir(parents=True)
     roots = discover_session_roots(
         env={"CLAUDE_CONFIG_DIR": str(ccfg), "CODEX_HOME": str(cx)},
@@ -95,7 +95,7 @@ def test_cli_scan_agent_discovers_env_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ccfg = tmp_path / "ccfg"
-    proj = ccfg / "projects"
+    proj = ccfg / "projects" / "synthetic-project"
     proj.mkdir(parents=True)
     (proj / "sess1.jsonl").write_text(SESSION_LINE)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(ccfg))
@@ -152,10 +152,10 @@ def test_cli_scan_agent_all_merges_roots(
 ) -> None:
     ccfg = tmp_path / "ccfg"
     cx = tmp_path / "cx"
-    (ccfg / "projects").mkdir(parents=True)
+    (ccfg / "projects" / "synthetic-project").mkdir(parents=True)
     (cx / "sessions").mkdir(parents=True)
-    (ccfg / "projects" / "a.jsonl").write_text(SESSION_LINE)
-    (cx / "sessions" / "b.jsonl").write_text(SESSION_LINE)
+    (ccfg / "projects" / "synthetic-project" / "a.jsonl").write_text(SESSION_LINE)
+    (cx / "sessions" / "rollout-b.jsonl").write_text(SESSION_LINE)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(ccfg))
     monkeypatch.setenv("CODEX_HOME", str(cx))
     code = main(["scan", "--agent", "all", "--json"])

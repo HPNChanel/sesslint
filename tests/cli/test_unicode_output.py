@@ -27,7 +27,7 @@ def test_unicode_filename_with_legacy_stdout(tmp_path: Path, output_format: str)
             "sesslint",
             "check",
             str(source),
-            "--output-format",
+            "--format",
             output_format,
         ],
         cwd=tmp_path,

@@ -8,8 +8,12 @@ Validates:
   custom_tool_call (tool_call), function_call_output /
   custom_tool_call_output (tool_result).
 - Non-conversational envelopes (session_meta, event_msg, turn_context,
-  world_state, inter_agent_communication_metadata) map to system/opaque;
+  world_state, inter_agent_communication_metadata, and the Codex 0.163.0
+  realtime_item and security_risk_score sidecars) map to system/opaque;
   compacted maps to compaction_boundary.
+- Codex 0.163.0 inter_agent_communication maps to a durable assistant
+  message like the agent_message its replay produces; a payload Codex would
+  reject fails closed with SL302.
 - call_id pairing preserved via correlation_id for SL101/SL102 detection.
 - Linear parentage derived from envelope ordinal continuity; dropped records
   break the chain honestly (SL006/SL007).
@@ -29,6 +33,7 @@ from pathlib import Path
 
 import pytest
 
+from sesslint import precheck
 from sesslint.adapters.codex_rollout import (
     SQLITE_MAGIC,
     SUPPORTED_CODEX_ROLLOUT_VERSIONS,
@@ -76,6 +81,45 @@ def _item(ordinal: int, itype: str, iid: str | None, **kw: object) -> dict:
 
 def _jsonl(*records: dict) -> bytes:
     return ("\n".join(json.dumps(r, sort_keys=True) for r in records) + "\n").encode()
+
+
+@pytest.mark.parametrize("value", ["  id  ", "0", 0, -1, 1.5])
+def test_scalar_identity_and_correlation_semantics(value: object) -> None:
+    events, _ = load_codex_rollout(
+        _jsonl(
+            _env(0, "session_meta", {}),
+            _item(1, "function_call", None, id=value, call_id=value, name="read"),
+            _item(2, "function_call_output", "result", call_id=value),
+        )
+    )
+    assert events[1].id == str(value).strip()
+    assert events[1].correlation_id == str(value)
+    assert events[2].correlation_id == str(value)
+
+
+@pytest.mark.parametrize("value", [{"x": "pvt"}, ["pvt"], True, False])
+def test_invalid_identity_uses_existing_fallback_without_alias_retry(value: object) -> None:
+    events, _ = load_codex_rollout(
+        _jsonl(
+            _env(0, "session_meta", {}),
+            _item(1, "function_call", None, id=value, call_id=value, tool_call_id="alias"),
+            _item(2, "function_call_output", "result", call_id=value, tool_call_id="alias"),
+        )
+    )
+    assert is_synthetic_id(events[1].id)
+    assert events[1].correlation_id == events[1].id
+    assert events[2].correlation_id is None
+
+
+def _iac(**fields: object) -> dict:
+    """A well-formed inter_agent_communication payload with ``fields`` merged in."""
+    return {
+        "author": "/root",
+        "content": "canary",
+        "recipient": "/root/worker",
+        "trigger_turn": True,
+        **fields,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -454,12 +498,13 @@ class TestVersionAndUnknowns:
         )
         assert any(f.code == SL301 for f in findings)
 
-    def test_unknown_envelope_type_sl302(self) -> None:
+    def test_unknown_non_linking_envelope_type_is_advisory(self) -> None:
         _, findings = load_codex_rollout(FIXTURES / "unknown_type.jsonl")
-        sl302 = [f for f in findings if f.code == SL302]
-        assert sl302
-        assert sl302[0].evidence["field_path"] == "type"
-        assert sl302[0].evidence["type_value"] == "mystery_envelope"
+        advisory = [f for f in findings if f.code == "SL306"]
+        assert len(advisory) == 1
+        assert advisory[0].severity == "info"
+        assert advisory[0].evidence["type_value"] == "mystery_envelope"
+        assert not any(f.code == SL302 for f in findings)
 
     def test_unknown_payload_type_sl302(self) -> None:
         _, findings = load_codex_rollout(FIXTURES / "unknown_payload_type.jsonl")
@@ -494,6 +539,286 @@ class TestVersionAndUnknowns:
 
 
 # ---------------------------------------------------------------------------
+# Codex 0.163.0 envelope drift (docs/VENDOR_DRIFT.md §9)
+# ---------------------------------------------------------------------------
+
+
+class TestCodex0163Envelopes:
+    """Envelope types from the rust-v0.163.0 rollout writer, as synthetic records."""
+
+    SIDECARS = FIXTURES / "codex_0163_sidecars.jsonl"
+    INTER_AGENT = FIXTURES / "codex_0163_inter_agent.jsonl"
+
+    def test_sidecars_are_opaque_non_durable_and_content_free(self) -> None:
+        events, findings = load_codex_rollout(self.SIDECARS)
+        assert not findings
+        sidecars = [events[i] for i in (1, 2, 5, 7, 8)]
+        assert [e.payload for e in sidecars] == [
+            {"type": "realtime_item"},
+            {"type": "realtime_item"},
+            {"type": "security_risk_score"},
+            {"type": "realtime_item"},
+            {"type": "realtime_item"},
+        ]
+        for e in sidecars:
+            assert (e.actor, e.kind, e.correlation_id) == ("system", "opaque", None)
+            assert e.extra_fields["codex"]["durable"] is False
+
+    def test_security_risk_score_call_id_does_not_pair(self) -> None:
+        events, _ = load_codex_rollout(self.SIDECARS)
+        assert events[4].correlation_id == events[6].correlation_id
+        report = check_file(self.SIDECARS, format="codex-rollout", profile="openai-strict")
+        assert [f.code for f in report.findings] == []
+
+    def test_precheck_passes_sidecars_and_inter_agent(self) -> None:
+        for path in (self.SIDECARS, self.INTER_AGENT):
+            result = precheck(path)
+            assert (result.reason, result.exit_code) == ("clean", 0)
+
+    def test_inter_agent_communication_maps_to_durable_assistant_message(self) -> None:
+        # Codex replays the record into model history as an agent_message:
+        # another agent's text, never user input, with no thread identity.
+        events, findings = load_codex_rollout(self.INTER_AGENT)
+        assert not findings
+        ev = events[1]
+        assert (ev.actor, ev.kind, ev.correlation_id, ev.agent_id) == (
+            "assistant",
+            "message",
+            None,
+            None,
+        )
+        assert ev.payload == {
+            "author": "/root",
+            "content": "canary inter-agent message",
+            "recipient": "/root/worker",
+            "role": "assistant",
+        }
+        assert ev.extra_fields["codex"] == {
+            "durable": True,
+            "envelope_type": "inter_agent_communication",
+            "has_encrypted_content": False,
+            "ordinal": 1,
+        }
+        assert (ev.parent_id, events[2].parent_id) == (events[0].id, ev.id)
+        # Agent paths are not thread ids, so they never become SL401 links.
+        assert events.source["links"] == []
+        meta = events[2]
+        assert (meta.kind, meta.extra_fields["codex"]["durable"]) == ("opaque", False)
+        for profile in ("neutral", "openai-strict"):
+            report = check_file(self.INTER_AGENT, format="codex-rollout", profile=profile)
+            assert [f.code for f in report.findings] == []
+
+    def test_encrypted_inter_agent_communication_projects_presence_only(self) -> None:
+        events, findings = load_codex_rollout(
+            _jsonl(
+                _env(0, "session_meta", {}),
+                _env(
+                    1,
+                    "inter_agent_communication",
+                    {
+                        "author": "/root",
+                        "content": "",
+                        "encrypted_content": "canary-ciphertext",
+                        "id": "iac-syn-1",
+                        "other_recipients": ["/root/reviewer"],
+                        "recipient": "/root/worker",
+                        "trigger_turn": True,
+                    },
+                ),
+            )
+        )
+        assert not findings
+        ev = events[1]
+        assert (ev.id, ev.original_id) == ("iac-syn-1", "iac-syn-1")
+        assert ev.payload == {
+            "author": "/root",
+            "content": "",
+            "recipient": "/root/worker",
+            "role": "assistant",
+        }
+        assert ev.extra_fields["codex"]["has_encrypted_content"] is True
+        assert b"canary-ciphertext" not in ev.to_canonical_bytes()
+
+    def test_inter_agent_communication_matches_live_agent_message(self, tmp_path: Path) -> None:
+        # The 0.163 live writer persists the same message as a response_item
+        # agent_message; both encodings must reach the same canonical event
+        # and the same findings.
+        paths = {"author": "/root", "recipient": "/root/worker"}
+        records = {
+            "legacy": _env(
+                2,
+                "inter_agent_communication",
+                {"content": "canary", "id": "am1", "trigger_turn": False, **paths},
+            ),
+            "live": _item(
+                2,
+                "agent_message",
+                "am1",
+                content=[{"text": "canary", "type": "input_text"}],
+                **paths,
+            ),
+        }
+        results = {}
+        for name, record in records.items():
+            src = tmp_path / f"{name}.jsonl"
+            src.write_bytes(
+                _jsonl(
+                    _env(0, "session_meta", {}),
+                    _item(1, "function_call", "fc1", call_id="c1", name="shell", arguments="{}"),
+                    record,
+                    _item(3, "function_call_output", None, call_id="c1", output="ok"),
+                )
+            )
+            events, _ = load_codex_rollout(src)
+            ev = events[2]
+            report = check_file(src, format="codex-rollout", profile="openai-strict")
+            results[name] = (
+                (ev.id, ev.actor, ev.kind, ev.payload["author"], ev.payload["recipient"]),
+                ev.extra_fields["codex"]["durable"],
+                [(f.code, f.evidence) for f in report.findings],
+            )
+        assert results["legacy"] == results["live"]
+
+    @pytest.mark.parametrize(
+        ("payload", "field_path"),
+        [
+            ("canary inter-agent text", "payload"),
+            (
+                {"author": "/root", "recipient": "/root/worker", "trigger_turn": True},
+                "payload.content",
+            ),
+            (
+                {"author": "/root", "content": "canary", "recipient": "/root/worker"},
+                "payload.trigger_turn",
+            ),
+            (_iac(author=7), "payload.author"),
+            (_iac(author="worker"), "payload.author"),
+            (_iac(recipient=None), "payload.recipient"),
+            (_iac(recipient="/root/Worker"), "payload.recipient"),
+            (_iac(other_recipients=None), "payload.other_recipients"),
+            (_iac(other_recipients=["/root/worker/"]), "payload.other_recipients"),
+            (_iac(id=42), "payload.id"),
+            (_iac(content="", encrypted_content=["canary"]), "payload.encrypted_content"),
+            (
+                _iac(internal_chat_message_metadata_passthrough="canary"),
+                "payload.internal_chat_message_metadata_passthrough",
+            ),
+            (
+                _iac(internal_chat_message_metadata_passthrough={"turn_id": 7}),
+                "payload.internal_chat_message_metadata_passthrough",
+            ),
+            (
+                _iac(internal_chat_message_metadata_passthrough={"create_time": True}),
+                "payload.internal_chat_message_metadata_passthrough",
+            ),
+        ],
+    )
+    def test_malformed_inter_agent_communication_fails_closed(
+        self, payload: object, field_path: str
+    ) -> None:
+        # Codex skips a line it cannot deserialize, so the model never sees it;
+        # mapping it as a message would claim otherwise.
+        events, findings = load_codex_rollout(
+            _jsonl(_env(0, "session_meta", {}), _env(1, "inter_agent_communication", payload))
+        )
+        sl302 = [f for f in findings if f.code == SL302]
+        assert [(f.evidence["field_path"], f.evidence["type_value"]) for f in sl302] == [
+            (field_path, "inter_agent_communication")
+        ]
+        ev = events[1]
+        assert (ev.actor, ev.kind, ev.payload) == (
+            "system",
+            "unknown",
+            {"type": "inter_agent_communication"},
+        )
+        assert ev.extra_fields["codex"]["durable"] is False
+        blob = json.dumps([[f.message, f.evidence] for f in findings])
+        assert "canary" not in blob
+        assert "/root" not in blob
+
+    @pytest.mark.parametrize(
+        ("path", "accepted"),
+        [
+            ("/root", True),
+            ("/root/researcher/worker_2", True),
+            ("/morpheus", True),
+            ("", False),
+            ("/", False),
+            ("root/worker", False),
+            ("/not-root", False),
+            ("/root/", False),
+            ("/root//worker", False),
+            ("/root/root", False),
+            ("/root/..", False),
+            ("/root/BadName", False),
+            ("/root/w\u00f6rker", False),
+            ("/morpheus/worker", False),
+        ],
+    )
+    def test_agent_paths_follow_codex_validation(self, path: str, accepted: bool) -> None:
+        # Codex validates AgentPath syntax while it deserializes the record,
+        # and a path it rejects takes the whole line with it.
+        events, findings = load_codex_rollout(
+            _jsonl(
+                _env(0, "session_meta", {}),
+                _env(1, "inter_agent_communication", _iac(recipient=path)),
+            )
+        )
+        sl302 = [f.evidence["field_path"] for f in findings if f.code == SL302]
+        if accepted:
+            assert sl302 == []
+            assert (events[1].kind, events[1].payload["recipient"]) == ("message", path)
+        else:
+            assert sl302 == ["payload.recipient"]
+            assert events[1].extra_fields["codex"]["durable"] is False
+
+    def test_inter_agent_communication_tolerates_what_codex_tolerates(self) -> None:
+        # Null optionals, unknown keys, and passthrough keys Codex defaults or
+        # ignores all deserialize, so they must not fail closed.
+        payload = _iac(
+            encrypted_content=None,
+            id=None,
+            internal_chat_message_metadata_passthrough={
+                "cell_id": 5,
+                "content_item_kinds": "unchecked",
+                "create_time": 1767225600.5,
+                "turn_id": "turn-1",
+            },
+            other_recipients=["/root/reviewer", "/morpheus"],
+            unknown_future_key={"nested": True},
+        )
+        events, findings = load_codex_rollout(
+            _jsonl(_env(0, "session_meta", {}), _env(1, "inter_agent_communication", payload))
+        )
+        assert [f for f in findings if f.code == SL302] == []
+        ev = events[1]
+        assert (ev.actor, ev.kind) == ("assistant", "message")
+        assert ev.extra_fields["codex"]["durable"] is True
+        assert ev.extra_fields["codex"]["has_encrypted_content"] is False
+
+    def test_compacted_0163_keys_are_tolerated(self) -> None:
+        events, findings = load_codex_rollout(
+            _jsonl(
+                _env(0, "session_meta", {}),
+                _env(
+                    1,
+                    "compacted",
+                    {
+                        "mcp_resource_origins": {},
+                        "message": "",
+                        "replacement_history": [],
+                        "replacement_history_metadata": [],
+                        "resume_metadata": {},
+                    },
+                ),
+                _item(2, "message", "m1", role="user"),
+            )
+        )
+        assert [e.kind for e in events] == ["opaque", "compaction_boundary", "message"]
+        assert not findings
+
+
+# ---------------------------------------------------------------------------
 # Hostile input / corruption families
 # ---------------------------------------------------------------------------
 
@@ -513,9 +838,19 @@ class TestHostileInput:
         assert events[-1].parent_id is None
 
     def test_nul_byte_rejected(self) -> None:
+        # Newline-terminated: corruption, never a torn append (B17).
         data = _jsonl(_env(0, "session_meta", {})) + b'{"ordinal":1,"payload":\x00}\n'
         _, findings = load_codex_rollout(data)
-        assert any(f.code == SL002 and "NUL" in f.message for f in findings)
+        assert any(f.code == SL001 and "NUL" in f.message for f in findings)
+        assert not any(f.code == SL002 for f in findings)
+
+    def test_nul_padded_torn_tail_is_sl002(self) -> None:
+        # A crash can leave NUL padding after a cut-off append (B17).
+        data = _jsonl(_env(0, "session_meta", {})) + b'{"ordinal":1,"pay' + b"\x00" * 8
+        _, findings = load_codex_rollout(data)
+        torn = [f for f in findings if f.code == SL002]
+        assert len(torn) == 1
+        assert torn[0].evidence["unterminated"] is True
 
     def test_invalid_utf8(self) -> None:
         data = _jsonl(_env(0, "session_meta", {})) + b"\xff\xfe\n"

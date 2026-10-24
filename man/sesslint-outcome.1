@@ -1,0 +1,94 @@
+.TH SESSLINT-OUTCOME 1 "" "SessLint 0.5.0" "SessLint Manual"
+.SH NAME
+sesslint-outcome \- [read\-only] Verify an outcome contract against source/target snapshots.
+.SH SYNOPSIS
+.B sesslint outcome [\-\-explain] [\-\-source SOURCE] [\-\-target TARGET] [\-\-as\-of AS_OF] [\-\-source\-observed\-at SOURCE_OBSERVED_AT] [\-\-source\-completeness {complete,partial,unknown,unavailable}] [\-\-source\-origin {target_system,workflow_log,user_file,manual}] [\-\-target\-observed\-at TARGET_OBSERVED_AT] [\-\-target\-completeness {complete,partial,unknown,unavailable}] [\-\-target\-origin {target_system,workflow_log,user_file,manual}] [\-\-session SESSION] [\-\-hash\-keys] [\-\-all\-conditions] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose] CONTRACT
+.SH DESCRIPTION
+OutcomeGuard: reconcile work items in a source snapshot with results in a target snapshot, per a declared contract. Offline and read\-only; absence is proven only from a complete target snapshot observed after the deadline.
+.SH ARGUMENTS
+.TP
+.B CONTRACT
+sesslint.outcome\-contract/v1 JSON file
+.SH OPTIONS
+.TP
+.B \-\-explain
+Validate the contract and print what it checks; read no snapshots
+.TP
+.B \-\-source SOURCE
+Source snapshot (.csv/.json/.jsonl)
+.TP
+.B \-\-target TARGET
+Target snapshot (.csv/.json/.jsonl)
+.TP
+.B \-\-as\-of AS_OF
+Evaluation instant (default: the target observation time; no wall clock)
+.TP
+.B \-\-source\-observed\-at SOURCE_OBSERVED_AT
+When the source snapshot was taken (UTC offset required)
+.TP
+.B \-\-source\-completeness {complete,partial,unknown,unavailable}
+Declared completeness of the source snapshot (default: unknown) Choices: complete, partial, unknown, unavailable.
+.TP
+.B \-\-source\-origin {target_system,workflow_log,user_file,manual}
+Where the source snapshot came from (default: user_file) Choices: target_system, workflow_log, user_file, manual.
+.TP
+.B \-\-target\-observed\-at TARGET_OBSERVED_AT
+When the target snapshot was taken (UTC offset required)
+.TP
+.B \-\-target\-completeness {complete,partial,unknown,unavailable}
+Declared completeness of the target snapshot (default: unknown) Choices: complete, partial, unknown, unavailable.
+.TP
+.B \-\-target\-origin {target_system,workflow_log,user_file,manual}
+Where the target snapshot came from (default: user_file) Choices: target_system, workflow_log, user_file, manual.
+.TP
+.B \-\-session SESSION
+Session file you link to this run (user\-asserted); checked, never modified
+.TP
+.B \-\-hash\-keys
+Show keys as truncated SHA\-256 pseudonyms (pseudonymous, not anonymous)
+.TP
+.B \-\-all\-conditions
+List every condition result for passing items too (default: problems only)
+.TP
+.B \-\-max\-file\-bytes MAX_FILE_BYTES
+Default: 104857600.
+.TP
+.B \-f {human,json}, \-\-format {human,json}
+Output format (default: human) Choices: human, json.
+.TP
+.B \-\-json
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
+.SH EXIT STATUS
+.TP
+.B 0
+a clean session exits 0
+(also verification passed / dry-run plan generated)
+.TP
+.B 1
+a session with findings exits 1
+(also verification failed / repair refused)
+.TP
+.B 2
+an internal tool error exits 2
+(also usage error / invalid flags / I/O failure)
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

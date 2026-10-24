@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Final
 
 from sesslint.adapters.drift import DriftTracker
-from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value, scalar_id
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -54,8 +54,10 @@ from sesslint.io import (
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
+    decode_defect_code,
     decode_error_message_template,
     decode_json_dupaware,
+    defect_evidence,
     dup_key_findings,
     extract_record_id,
 )
@@ -431,7 +433,7 @@ def _build_payload(
             else (obj.get("tool_name") if obj.get("tool_name") is not None else obj.get("function"))
         )
         tool_name = str(raw_name) if raw_name is not None else ""
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
         )
         call_id = str(raw_call_id) if raw_call_id is not None else rec_id
@@ -457,7 +459,7 @@ def _build_payload(
         }
 
     if kind == "tool_result":
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
         )
         call_id = str(raw_call_id) if raw_call_id is not None else ""
@@ -947,7 +949,6 @@ def _load_openai_agents_jsonl(
         rec_byte_end = line_end
         if truncated:
             record_bytes = line_chunk[: limits.max_line_bytes + 1]
-            rec_byte_end = line_start + len(record_bytes)
 
         current_raw = _RawLine(
             line_number=line_number,
@@ -1041,7 +1042,6 @@ def _process_jsonl_line(
             record_ordinal=raw.record_ordinal,
         )
 
-    code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
         "byte_end": raw.byte_end,
@@ -1061,7 +1061,7 @@ def _process_jsonl_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -1073,12 +1073,13 @@ def _process_jsonl_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -1096,12 +1097,13 @@ def _process_jsonl_line(
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -1119,7 +1121,7 @@ def _process_jsonl_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -1129,13 +1131,14 @@ def _process_jsonl_line(
     except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = decode_error_message_template(err, terminal=is_terminal)
+        code = decode_defect_code(raw, is_terminal=is_terminal)
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -1154,14 +1157,10 @@ def _process_jsonl_line(
 
     if not isinstance(obj, dict):
         source = SourceRef(path=path_str, line=raw.line_number, record_id=None)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -1178,7 +1177,7 @@ def _process_jsonl_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -1318,7 +1317,7 @@ def _process_openai_item(
 ) -> None:
     """Canonicalize a single item dict into a SessionEvent, emitting findings as needed."""
     seq_index = len(events)
-    raw_id = obj.get("id") if obj.get("id") is not None else obj.get("item_id")
+    raw_id = scalar_id(obj.get("id") if obj.get("id") is not None else obj.get("item_id"))
     if byte_offset is not None and byte_end is not None:
         p_len = byte_end - byte_offset
     else:
@@ -1343,7 +1342,9 @@ def _process_openai_item(
         if guard is not None:
             guard.register_synthetic(rec_id_str)
 
-    raw_parent = obj.get("parent_id") if obj.get("parent_id") is not None else obj.get("prev_id")
+    raw_parent = scalar_id(
+        obj.get("parent_id") if obj.get("parent_id") is not None else obj.get("prev_id")
+    )
     parent_id = (
         str(raw_parent).strip() if raw_parent is not None and str(raw_parent).strip() else None
     )
@@ -1489,7 +1490,7 @@ def _process_openai_item(
     # Correlation ID extraction for tool calls and tool results
     correlation_id: str | None = None
     if kind in ("tool_call", "tool_result"):
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("call_id") if obj.get("call_id") is not None else obj.get("tool_call_id")
         )
         if raw_call_id is not None:

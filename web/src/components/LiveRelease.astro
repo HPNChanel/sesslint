@@ -1,0 +1,139 @@
+---
+// Live ribbon: if GitHub has a release newer than the one baked into this
+// build, say so immediately instead of waiting for the next site rebuild.
+// One public, read-only GET; no visitor data is sent. Cached 10 minutes per
+// tab; any failure stays silent.
+import { t, type Lang } from "../i18n";
+import { REPO_SLUG } from "../lib/repo";
+
+type Props = { lang: Lang; current: string };
+const { lang, current } = Astro.props;
+const d = t(lang);
+---
+
+<sl-live-release data-current={current} data-repo={REPO_SLUG} hidden>
+  <div class="ribbon wrap" role="status">
+    <span class="pulse" aria-hidden="true"></span>
+    <span class="mono"><b data-live-tag></b> {d.changelog.liveNew}</span>
+    <a class="mono" data-live-link href="#">{d.changelog.liveView} ↗</a>
+    <button type="button" class="x" data-live-dismiss aria-label={d.changelog.liveDismiss}>×</button>
+  </div>
+</sl-live-release>
+
+<script>
+  import { compareVersions } from "../lib/version";
+
+  type Latest = { tag: string; url: string };
+  const KEY = "sl-latest-release";
+  const TTL = 10 * 60 * 1000;
+
+  function readCache(): Latest | null {
+    try {
+      const raw = sessionStorage.getItem(KEY);
+      if (!raw) return null;
+      const v = JSON.parse(raw) as Latest & { at: number };
+      return Date.now() - v.at < TTL ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCache(v: Latest) {
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({ ...v, at: Date.now() }));
+    } catch {
+      /* storage blocked: just refetch next time */
+    }
+  }
+
+  class LiveRelease extends HTMLElement {
+    async connectedCallback() {
+      const current = this.dataset.current ?? "";
+      const repo = this.dataset.repo ?? "";
+      let latest = readCache();
+      if (!latest) {
+        try {
+          const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          if (!res.ok) return;
+          const j = (await res.json()) as { tag_name?: string; html_url?: string };
+          if (!j.tag_name || !j.html_url) return;
+          latest = { tag: j.tag_name, url: j.html_url };
+          writeCache(latest);
+        } catch {
+          return;
+        }
+      }
+      if (compareVersions(latest.tag, current) <= 0) return;
+      try {
+        if (sessionStorage.getItem(`${KEY}-dismissed`) === latest.tag) return;
+      } catch {
+        /* ignore */
+      }
+      const tag = this.querySelector<HTMLElement>("[data-live-tag]");
+      const link = this.querySelector<HTMLAnchorElement>("[data-live-link]");
+      if (tag) tag.textContent = latest.tag;
+      if (link) link.href = latest.url;
+      this.hidden = false;
+      const shown = latest;
+      this.querySelector("[data-live-dismiss]")?.addEventListener("click", () => {
+        this.hidden = true;
+        try {
+          sessionStorage.setItem(`${KEY}-dismissed`, shown.tag);
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+  }
+
+  if (!customElements.get("sl-live-release")) customElements.define("sl-live-release", LiveRelease);
+</script>
+
+<style>
+  sl-live-release {
+    display: block;
+    border-bottom: 1px solid var(--pass);
+    background: var(--pass-soft);
+  }
+  sl-live-release[hidden] {
+    display: none;
+  }
+  .ribbon {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    min-height: 40px;
+    font-size: 0.84rem;
+  }
+  .ribbon b {
+    color: var(--pass);
+  }
+  .ribbon a {
+    color: var(--fg);
+  }
+  .pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--pass);
+    box-shadow: 0 0 0 0 var(--pass);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    70% {
+      box-shadow: 0 0 0 8px transparent;
+    }
+  }
+  .x {
+    margin-left: auto;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: none;
+    font-size: 1.2rem;
+    color: var(--dim);
+  }
+</style>

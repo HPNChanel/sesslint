@@ -1,14 +1,20 @@
-.TH SESSLINT-VERSION 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT-VERSION 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint-version \- [read\-only] Display detailed component and schema version information.
 .SH SYNOPSIS
-.B sesslint version [\-\-json]
+.B sesslint version [\-\-json] [\-q | \-\-quiet] [\-v | \-\-verbose]
 .SH DESCRIPTION
 [read\-only] Display detailed component and schema version information.
 .SH OPTIONS
 .TP
 .B \-\-json
 Output version details as JSON object
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
 .SH EXIT STATUS
 .TP
 .B 0
@@ -27,7 +33,7 @@ an internal tool error exits 2
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

@@ -44,7 +44,7 @@ def test_aggregate_5_bucket_partitioning() -> None:
 def test_cli_scan_mixed_dir_exit_code_1(capsys: pytest.CaptureFixture[str]) -> None:
     """CLI check on mixed directory exits 1 due to invalid/unsupported/unreadable files."""
     mixed_dir = FIXTURES_DIR / "mixed"
-    code = main(["check", str(mixed_dir), "--recursive", "--json"])
+    code = main(["check", str(mixed_dir), "--json"])
     assert code == 1
 
     captured = capsys.readouterr()
@@ -57,11 +57,10 @@ def test_cli_scan_mixed_dir_exit_code_1(capsys: pytest.CaptureFixture[str]) -> N
     assert data["totals"]["unreadable"] >= 1
 
 
-def test_cli_scan_without_recursive_flag_exits_2(
+def test_cli_check_directory_is_recursive_by_default(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Passing a directory without --recursive exits with code 2."""
+    """Passing a directory to check works without any recursive flag."""
     code = main(["check", str(tmp_path)])
-    assert code == 2
-    captured = capsys.readouterr()
-    assert "--recursive" in captured.err
+    assert code == 0
+    capsys.readouterr()

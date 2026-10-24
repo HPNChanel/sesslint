@@ -86,7 +86,7 @@ def test_runstate_checkpoint_clean(tmp_path: Path) -> None:
     assert rep.counts.by_severity.get("error", 0) == 0
 
     # CLI check exits 0
-    code = main(["check", str(session_file), "--format", "canonical"])
+    code = main(["check", str(session_file), "--adapter", "canonical"])
     assert code == 0
 
 
@@ -116,7 +116,7 @@ def test_runstate_checkpoint_sl201_gap_end_to_end(
     assert f.evidence["source"] == "run_state"
 
     # 2. CLI check
-    code = main(["check", str(session_file), "--format", "canonical", "--json"])
+    code = main(["check", str(session_file), "--adapter", "canonical", "--json"])
     assert code == 1
     captured = capsys.readouterr()
     cli_rep = json.loads(captured.out)
@@ -141,7 +141,7 @@ def test_runstate_checkpoint_sl201_missing_hash_end_to_end(tmp_path: Path) -> No
     assert f.evidence["source"] == "run_state"
     assert f.evidence["found_seq"] == 0
 
-    code = main(["check", str(session_file), "--format", "canonical"])
+    code = main(["check", str(session_file), "--adapter", "canonical"])
     assert code == 1
 
 
@@ -169,7 +169,7 @@ def test_runstate_checkpoint_sl202_internal_divergence_end_to_end(
     assert f.evidence["hash_b"] == "bbbb444455556666"
     assert f.evidence["source"] == "run_state"
 
-    code = main(["check", str(session_file), "--format", "canonical", "--json"])
+    code = main(["check", str(session_file), "--adapter", "canonical", "--json"])
     assert code == 1
     captured = capsys.readouterr()
     cli_rep = json.loads(captured.out)

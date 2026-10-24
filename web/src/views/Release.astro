@@ -1,0 +1,45 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import LedgerBlock from "../components/LedgerBlock.astro";
+import { href, t, type Lang } from "../i18n";
+import { released, type Release } from "../lib/changelog";
+import { site } from "../lib/site";
+
+type Props = { lang: Lang; release: Release };
+const { lang, release } = Astro.props;
+const d = t(lang);
+const { releases } = site();
+const i = releases.indexOf(release);
+const newer = i > 0 ? releases[i - 1] : undefined;
+const older = releases[i + 1];
+const total = released(releases).length;
+const name = release.unreleased ? d.changelog.unreleased : `v${release.version}`;
+const slugOf = (r: Release) => (r.unreleased ? "unreleased" : r.version);
+---
+
+<Base lang={lang} route={`/changelog/${slugOf(release)}`} title={`${name} · ${d.changelog.title}`} description={release.sections.flatMap((s) => s.entries.map((e) => e.headline)).slice(0, 4).join(" · ")} section="CHANGELOG">
+  <PageHead kicker={`changelog --show ${slugOf(release)}`} title={name}>
+    <p class="mono back"><a href={href(lang, "/changelog")}>← {d.changelog.title}</a></p>
+  </PageHead>
+  <div class="wrap">
+    <LedgerBlock lang={lang} release={release} index={release.unreleased ? total + 1 : total - released(releases).indexOf(release)} compact={false} />
+    <nav class="pager mono" aria-label="Versions">
+      {older ? <a href={href(lang, `/changelog/${slugOf(older)}`)}>← {d.changelog.older}: {older.unreleased ? d.changelog.unreleased : `v${older.version}`}</a> : <span />}
+      {newer && <a href={href(lang, `/changelog/${slugOf(newer)}`)}>{d.changelog.newer}: {newer.unreleased ? d.changelog.unreleased : `v${newer.version}`} →</a>}
+    </nav>
+  </div>
+</Base>
+
+<style>
+  .back {
+    margin-top: var(--s-4);
+    font-size: 0.84rem;
+  }
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-4);
+    font-size: 0.84rem;
+  }
+</style>

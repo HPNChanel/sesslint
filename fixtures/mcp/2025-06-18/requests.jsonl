@@ -1,0 +1,16 @@
+{"id": 1, "jsonrpc": "2.0", "method": "initialize", "params": {"capabilities": {}, "clientInfo": {"name": "golden", "version": "0"}, "protocolVersion": "2025-06-18"}}
+{"id": 2, "jsonrpc": "2.0", "method": "tools/list"}
+{"id": 3, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/adapters/codex/healthy_min.jsonl"}, "name": "sesslint_check"}}
+{"id": 4, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/mcp/does-not-exist.jsonl"}, "name": "sesslint_check"}}
+{"id": 5, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/adapters/codex/healthy_min.jsonl"}, "name": "sesslint_precheck"}}
+{"id": 6, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/mcp/does-not-exist.jsonl"}, "name": "sesslint_precheck"}}
+{"id": 7, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/adapters/codex/healthy_min.jsonl"}, "name": "sesslint_scan"}}
+{"id": 8, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/mcp/does-not-exist.jsonl"}, "name": "sesslint_scan"}}
+{"id": 9, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/adapters/codex/healthy_min.jsonl"}, "name": "sesslint_triage"}}
+{"id": 10, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {"path": "fixtures/mcp/does-not-exist.jsonl"}, "name": "sesslint_triage"}}
+{"id": 11, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {}, "name": "nope"}}
+{"id": 12, "jsonrpc": "2.0", "method": "tools/call", "params": {"arguments": {}, "name": "sesslint_check"}}
+{"id": 13, "jsonrpc": "2.0", "method": "ping"}
+{"id": 14, "jsonrpc": "2.0", "method": "resources/list"}
+{"id": 15, "jsonrpc": "2.0", "method": "initialize", "params": {"capabilities": {}, "clientInfo": {"name": "golden", "version": "0"}, "protocolVersion": "1900-01-01"}}
+{"jsonrpc": "2.0", "id": 99, "method": "tools/list"

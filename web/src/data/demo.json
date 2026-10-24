@@ -1,0 +1,66 @@
+{
+  "generated_by": "web/scripts/capture_demo.py",
+  "version": "SessLint CLI: 0.5.0",
+  "graph": [
+    {
+      "id": "msg-0",
+      "parent": null,
+      "kind": "message",
+      "actor": "user",
+      "seq": 0
+    },
+    {
+      "id": "msg-1",
+      "parent": "msg-0",
+      "kind": "message",
+      "actor": "assistant",
+      "seq": 1
+    },
+    {
+      "id": "msg-1",
+      "parent": "msg-0",
+      "kind": "message",
+      "actor": "assistant",
+      "seq": 1
+    },
+    {
+      "id": "msg-2",
+      "parent": "msg-1",
+      "kind": "message",
+      "actor": "user",
+      "seq": 2
+    }
+  ],
+  "steps": {
+    "check": {
+      "cmd": "sesslint check session.jsonl",
+      "exit": 0,
+      "out": "[read-only] Session is healthy with warnings (verdict: healthy with warnings / errors: 0 / warnings: 1 / files: H=1 I=0 U=0 R=0 S=0 / profile: neutral / adapter: canonical)\nNext Action: Review warnings and the reported assurance limits before resuming.\nAssurance: A2 - Provider/runtime replay has not been independently exercised.\nLimitation: Provider/runtime replay has not been independently exercised.\nSource fingerprint: ad96f2a760a8054b95027fb1771b6158d8edc313aad98e8323a8ddfc8c53d4a6\nCoverage: 31 checks performed (SL001, SL002, SL003, SL004, SL005, SL006, SL007, SL008, SL009, SL101, SL102, SL103, SL104, SL105, SL106, SL107, SL108, SL201, SL202, SL203, SL204, SL205, SL301, SL302, accounting, checkpoint, graph, identity, ordering, tool_pairing_1, tool_pairing_2)\n  Skipped (10): SL010 (adapter-not-applicable), SL011 (adapter-not-applicable), SL206 (adapter-not-applicable), SL207 (adapter-not-applicable), SL208 (adapter-not-applicable), SL305 (adapter-not-applicable), SL306 (adapter-not-applicable), shape (adapter-not-applicable), size (adapter-not-applicable), writers (adapter-not-applicable)\n\nFindings:\n  [SL003] Duplicate event ID (WARNING, deterministic)\n    Span:        session.jsonl\n    Why:         Duplicate event ID detected with identical content for record msg-1\n    Fix:         deterministic recipe available: run 'sesslint repair session.jsonl --output session.repaired.jsonl'\n    Fingerprint: 7d6fee99ee7fbe42"
+    },
+    "triage": {
+      "cmd": "sesslint triage session.jsonl",
+      "exit": 0,
+      "out": "SessLint triage: checked\n  adapter: canonical; structural assurance: A2\n  source: ad96f2a760a8054b95027fb1771b6158d8edc313aad98e8323a8ddfc8c53d4a6\n  findings: SL003 x1\n  native state: not-provided\n  conservative preview: 2 steps; 4 kept events; 0 lost records; 0 blocked findings (not applied)\n  structural impact: 0 / 4 parsed events; unmapped findings are listed separately\nEvidence still needed:\n  [native-resume] Validate continuation in the originating application.\n  [native-registry] Native registry was not inspected.\nNext steps (substitute your paths in command templates):\n  1. Review codes, coverage and mapped impact before changing a copy.\n     sesslint check <source>\n  2. Inspect preconditions and loss; blockers remain unresolved.\n     sesslint repair <source> --dry-run\n  3. Create a content-free support bundle if the issue remains.\n     sesslint bundle <source>\nStructural evidence only. Application resume, semantic correctness and external side effects are unverified. No repair or agent command was executed."
+    },
+    "repair": {
+      "cmd": "sesslint repair session.jsonl -o session.repaired.jsonl --seal ledger.jsonl",
+      "exit": 0,
+      "out": "Repair successful. Output: session.repaired.jsonl\nManifest written to: session.repaired.jsonl.manifest.json\nOutput fingerprint: 2c6da187e0203f22d155f9262e909c6244a3ad3975c8c54d61117a69b6587dba\nIdempotency key: b179c3a888d8adca18ec6f7420e7dc52e911042a4bdff8c205c20f12c8bfb463\nsealed: seq 1 -> ledger.jsonl"
+    },
+    "verify": {
+      "cmd": "sesslint verify session.jsonl session.repaired.jsonl --manifest session.repaired.jsonl.manifest.json",
+      "exit": 0,
+      "out": "Verification: PASSED\nAssurance: repaired-lossless\nChecks:\n  [PASS] source_hash: matched\n  [PASS] plan_fingerprint: matched\n  [PASS] output_hash: matched\n  [PASS] transformation_audit: matched\n  [PASS] loss_audit: matched\n  [PASS] assurance_audit: matched\n  [PASS] idempotence: 0-steps (converged)"
+    },
+    "seal": {
+      "cmd": "sesslint seal --verify ledger.jsonl",
+      "exit": 0,
+      "out": "ok: 1 sealed entries"
+    },
+    "refuse": {
+      "cmd": "sesslint triage blocked.jsonl",
+      "exit": 1,
+      "out": "SessLint triage: blocked\n  adapter: canonical; structural assurance: A1\n  source: 2daf5d4df960d3631464c5148696427ea037b5b269fc8fe382262cc72d4cd351\n  findings: SL102 x1, SL203 x1\n  native state: not-provided\n  conservative preview: 0 steps; 3 kept events; 0 lost records; 2 blocked findings (not applied)\n  structural impact: 1 / 3 parsed events; unmapped findings are listed separately\nEvidence still needed:\n  [SL203] external side-effect status cannot be determined from session data; abstention is mandatory under every repair policy\n  [external-state] Verify actual tool side effects outside this ledger; acknowledgement is not proof.\n  [native-resume] Validate continuation in the originating application.\n  [native-registry] Native registry was not inspected.\nNext steps (substitute your paths in command templates):\n  1. Establish whether pending tools changed external state; do not replay them automatically.\n  2. Create a content-free support bundle for manual review.\n     sesslint bundle <source>\nStructural evidence only. Application resume, semantic correctness and external side effects are unverified. No repair or agent command was executed."
+    }
+  }
+}

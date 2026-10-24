@@ -110,7 +110,8 @@ class DoctorReport:
     """Frozen environment diagnostics envelope (``sesslint.doctor/v1``)."""
 
     tool_version: str
-    adapters: Mapping[str, tuple[str, ...]]
+    adapters: tuple[dict[str, object], ...]
+    reader_limits: Mapping[str, int | None]
     config_path: str | None
     roots: tuple[RootDiag, ...]
 
@@ -120,7 +121,8 @@ class DoctorReport:
         return {
             "schema_version": DOCTOR_SCHEMA_VERSION,
             "tool_version": self.tool_version,
-            "adapters": {k: list(v) for k, v in sorted(self.adapters.items())},
+            "adapters": [dict(row) for row in self.adapters],
+            "reader_limits": dict(self.reader_limits),
             "config_path": (
                 minimize_path(self.config_path, home=home) if self.config_path is not None else None
             ),
@@ -138,8 +140,13 @@ class DoctorReport:
             f"  tool version: {self.tool_version}",
             "  adapters:",
         ]
-        for name, vers in sorted(self.adapters.items()):
-            lines.append(f"    {name:<24} {', '.join(vers)}")
+        for row in self.adapters:
+            vers_raw = row["versions_supported"]
+            vers = ", ".join(str(v) for v in vers_raw) if isinstance(vers_raw, list) else ""
+            lines.append(f"    {str(row['name']):<24} {vers}")
+        lines.append("  reader limits:")
+        for key, val in self.reader_limits.items():
+            lines.append(f"    {key}: {'none' if val is None else val}")
         cfg = minimize_path(self.config_path, home=home) if self.config_path is not None else "none"
         lines.append(f"  config: {cfg}")
         lines.append("  roots:")
@@ -233,7 +240,11 @@ def _quick_verdicts(
         checked += 1
         sev = report.counts.by_severity
         errors = sev.get("error", 0) + sev.get("fatal", 0)
-        if errors > 0:
+        if report.limitation.startswith("Unsupported:"):
+            verdict = "unsupported"
+        elif report.limitation.startswith("Skipped:"):
+            verdict = "skipped"
+        elif errors > 0:
             verdict = "invalid"
         elif sev.get("warning", 0) > 0:
             verdict = "warnings"
@@ -384,18 +395,17 @@ def doctor_report(
             ``[tool.sesslint`` but cannot be parsed. Discovery does not
             substitute a parent config.
     """
-    from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
-    from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
-    from sesslint.adapters.codex_rollout import SUPPORTED_CODEX_ROLLOUT_VERSIONS
-    from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
+    from sesslint.adapters import supported_adapters
     from sesslint.api import discover_session_roots
     from sesslint.config import find_config_file
+    from sesslint.io import ReaderLimits
 
-    adapters: dict[str, tuple[str, ...]] = {
-        "canonical": tuple(sorted(SUPPORTED_CANONICAL_VERSIONS)),
-        "claude-code-jsonl": tuple(sorted(SUPPORTED_CLAUDE_VERSIONS)),
-        "codex-rollout": tuple(sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS)),
-        "openai-agents": tuple(sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS)),
+    limits = ReaderLimits()
+    reader_limits = {
+        "max_line_bytes": limits.max_line_bytes,
+        "max_depth": limits.max_depth,
+        "max_file_bytes": limits.max_file_bytes,
+        "max_records": limits.max_records,
     }
 
     config_path: str | None = None
@@ -458,7 +468,8 @@ def doctor_report(
 
     return DoctorReport(
         tool_version=CLI_VERSION,
-        adapters=adapters,
+        adapters=tuple(supported_adapters()),
+        reader_limits=reader_limits,
         config_path=config_path,
         roots=tuple(diags),
     )

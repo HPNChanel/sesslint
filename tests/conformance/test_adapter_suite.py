@@ -519,7 +519,7 @@ class TestCrossAdapterConformance:
         )
 
         # Step 3: Run CLI check command
-        exit_code = main(["check", str(fixture_path), "--format", adapter.format_name])
+        exit_code = main(["check", str(fixture_path), "--adapter", adapter.format_name])
         assert exit_code == 0
         assert hashlib.sha256(fixture_path.read_bytes()).hexdigest() == sha_before, (
             f"CLI main check modified fixture {fixture_path} on disk!"
@@ -556,7 +556,7 @@ class TestCrossAdapterConformance:
         )
 
         # Step 3: CLI exits non-zero on unsupported version
-        cli_code = main(["check", str(fixture_path), "--format", adapter.format_name])
+        cli_code = main(["check", str(fixture_path), "--adapter", adapter.format_name])
         assert cli_code == exp.expected_exit_code
 
     @pytest.mark.parametrize("adapter_id", list(ADAPTERS.keys()))
@@ -635,7 +635,7 @@ class TestCrossAdapterConformance:
             assert token not in report_json, f"Canary token {token} leaked into report JSON!"
 
         # Step 2: CLI stdout/stderr privacy check
-        exit_code = main(["check", str(fixture_path), "--format", adapter.format_name, "--json"])
+        exit_code = main(["check", str(fixture_path), "--adapter", adapter.format_name, "--json"])
         assert exit_code == 0
         captured = capsys.readouterr()
         for token in secret_tokens:

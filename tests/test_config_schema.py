@@ -131,6 +131,8 @@ def test_negative_float_is_valid_parity() -> None:
 @pytest.mark.parametrize("key", sorted(config._ALLOWED_KEYS))
 def test_each_key_invalid_values(key: str) -> None:
     for bad in _invalid_values_for(key):
+        if key == "timestamp_skew_ms" and type(bad) is int and bad == 0:
+            continue  # Explicit zero tolerance is a supported configuration.
         cfg = {key: bad}
         assert not _config_accepts(cfg), f"runtime accepted {key!r}={bad!r}"
         name = f"{key}={bad!r}"

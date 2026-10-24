@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, cast
 
+from sesslint.atomic import atomic_write_text
 from sesslint.errors import SchemaError, UnknownFieldError, VersionError
 
 SchemaVersionLiteral = Literal["sesslint.session/v1"]
@@ -369,7 +370,7 @@ def to_canonical_json(obj: Any) -> str:
     - Compact separators without whitespace (',', ':').
     - Non-ASCII characters preserved directly as UTF-8 (ensure_ascii=False).
     - Dataclass extra fields (experimental_*) hoisted to top level.
-    - Strict RFC 8785 compliance (rejects out-of-range floats like NaN/Inf and cyclic structures).
+    - SessLint deterministic JSON serialization (rejects non-finite floats and cyclic structures).
     """
     from sesslint._canonical_codec import canonical_json_bytes as _seam_cjb
 
@@ -745,7 +746,9 @@ def load_session_file(path: str | Path) -> Session:
             # Fall back to line-by-line parsing if not a single document
             pass
 
-    return parse_session_lines(text.splitlines())
+    # JSONL framing is physical LF only.  ``str.splitlines()`` would split a
+    # legal U+2028/U+2029/U+0085 character inside a decoded JSON string.
+    return parse_session_lines(text.split("\n"))
 
 
 def dump_session(session: Session) -> str:
@@ -758,10 +761,10 @@ def dump_session(session: Session) -> str:
 
 
 def dump_session_file(session: Session, path: str | Path) -> None:
-    """Write canonical session to file using UTF-8 encoding."""
+    """Atomically write canonical LF-delimited session bytes as UTF-8."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(dump_session(session), encoding="utf-8")
+    atomic_write_text(target, dump_session(session), encoding="utf-8")
 
 
 def get_session_schema_path() -> Path:

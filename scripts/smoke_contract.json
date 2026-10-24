@@ -42,6 +42,210 @@
       }
     },
     {
+      "id": "triage-healthy",
+      "args": [
+        "triage",
+        "examples/healthy.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "checked",
+        "adapter": "claude-code-jsonl",
+        "finding_count": 0,
+        "previews.0.step_count": 0,
+        "previews.0.applied": false
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-healthy-repeat",
+      "args": [
+        "triage",
+        "examples/healthy.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdout_equals": "triage-healthy",
+      "no_writes": true
+    },
+    {
+      "id": "triage-repairable",
+      "args": [
+        "triage",
+        "examples/repairable.jsonl",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "checked",
+        "adapter": "canonical",
+        "by_code.SL003": 1,
+        "previews.0.step_count": 2,
+        "previews.0.blocked_count": 0,
+        "previews.0.applied": false
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-repairable-repeat",
+      "args": [
+        "triage",
+        "examples/repairable.jsonl",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "stdout_equals": "triage-repairable",
+      "no_writes": true
+    },
+    {
+      "id": "triage-refused",
+      "args": [
+        "triage",
+        "examples/refused.json",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "blocked",
+        "adapter": "canonical",
+        "by_code.SL203": 1,
+        "previews.0.step_count": 0,
+        "previews.0.blocked_count": 2,
+        "previews.0.applied": false
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-refused-repeat",
+      "args": [
+        "triage",
+        "examples/refused.json",
+        "--format",
+        "json",
+        "--adapter",
+        "canonical"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "stdout_equals": "triage-refused",
+      "no_writes": true
+    },
+    {
+      "id": "triage-unsupported",
+      "args": [
+        "triage",
+        "examples/unsupported.txt",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.triage/v1",
+        "status": "unsupported",
+        "assurance": "A0",
+        "previews": []
+      },
+      "no_writes": true
+    },
+    {
+      "id": "triage-unsupported-repeat",
+      "args": [
+        "triage",
+        "examples/unsupported.txt",
+        "--format",
+        "json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "stdout_equals": "triage-unsupported",
+      "no_writes": true
+    },
+    {
+      "id": "outcome",
+      "args": [
+        "outcome",
+        "examples/outcome/contract.json",
+        "--source",
+        "examples/outcome/source.csv",
+        "--source-completeness",
+        "complete",
+        "--target",
+        "examples/outcome/target_complete.json",
+        "--as-of",
+        "2026-10-20T12:00:00Z",
+        "--json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "json_equals": {
+        "schema_version": "sesslint.outcome-report/v1",
+        "run_status": "completed",
+        "outcome": "VIOLATED",
+        "evaluated_at": "2026-10-20T12:00:00Z",
+        "demo": false,
+        "contract.name": "orders-to-shipments",
+        "contract.sha256": "5a7b49f1e67e4ff0542044726313775703af5615a1c9d9d6d81a8f21aae6475b",
+        "coverage.counts.VERIFIED": 2,
+        "coverage.counts.VIOLATED": 4,
+        "coverage.counts.PENDING": 1,
+        "coverage.counts.NOT_APPLICABLE": 1,
+        "coverage.counts.INCONCLUSIVE": 0,
+        "coverage.counts.NOT_EVALUATED": 0
+      },
+      "no_writes": true
+    },
+    {
+      "id": "outcome-repeat",
+      "args": [
+        "outcome",
+        "examples/outcome/contract.json",
+        "--source",
+        "examples/outcome/source.csv",
+        "--source-completeness",
+        "complete",
+        "--target",
+        "examples/outcome/target_complete.json",
+        "--as-of",
+        "2026-10-20T12:00:00Z",
+        "--json"
+      ],
+      "exit_codes": [
+        1
+      ],
+      "stdout_equals": "outcome",
+      "no_writes": true
+    },
+    {
       "id": "healthy",
       "args": [
         "check",
@@ -75,7 +279,7 @@
       "args": [
         "check",
         "examples/repairable.jsonl",
-        "--output-format",
+        "--format",
         "human"
       ],
       "exit_codes": [
@@ -91,7 +295,7 @@
       "args": [
         "check",
         "examples/repairable.jsonl",
-        "--output-format",
+        "--format",
         "sarif"
       ],
       "exit_codes": [
@@ -107,7 +311,7 @@
       "args": [
         "check",
         "examples/repairable.jsonl",
-        "--output-format",
+        "--format",
         "html"
       ],
       "exit_codes": [
@@ -123,7 +327,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "human"
       ],
       "exit_codes": [
@@ -139,7 +343,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "json"
       ],
       "exit_codes": [
@@ -155,7 +359,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "sarif"
       ],
       "exit_codes": [
@@ -171,7 +375,7 @@
       "args": [
         "check",
         "examples/phi\u00ean ki\u1ec3m th\u1eed.jsonl",
-        "--output-format",
+        "--format",
         "html"
       ],
       "exit_codes": [
@@ -344,7 +548,7 @@
       "args": [
         "check",
         "examples/claude.jsonl",
-        "--format",
+        "--adapter",
         "claude-code-jsonl",
         "--profile",
         "neutral",
@@ -363,7 +567,7 @@
       "args": [
         "check",
         "examples/claude.jsonl",
-        "--format",
+        "--adapter",
         "claude-code-jsonl",
         "--profile",
         "claude-strict",
@@ -382,7 +586,7 @@
       "args": [
         "check",
         "examples/claude.jsonl",
-        "--format",
+        "--adapter",
         "claude-code-jsonl",
         "--profile",
         "openai-strict",
@@ -397,7 +601,7 @@
       "args": [
         "check",
         "examples/codex.jsonl",
-        "--format",
+        "--adapter",
         "codex-rollout",
         "--profile",
         "neutral",
@@ -416,7 +620,7 @@
       "args": [
         "check",
         "examples/codex.jsonl",
-        "--format",
+        "--adapter",
         "codex-rollout",
         "--profile",
         "claude-strict",
@@ -431,7 +635,7 @@
       "args": [
         "check",
         "examples/codex.jsonl",
-        "--format",
+        "--adapter",
         "codex-rollout",
         "--profile",
         "openai-strict",
@@ -450,7 +654,7 @@
       "args": [
         "check",
         "examples/openai.json",
-        "--format",
+        "--adapter",
         "openai-agents",
         "--profile",
         "neutral",
@@ -469,7 +673,7 @@
       "args": [
         "check",
         "examples/openai.json",
-        "--format",
+        "--adapter",
         "openai-agents",
         "--profile",
         "claude-strict",
@@ -484,7 +688,7 @@
       "args": [
         "check",
         "examples/openai.json",
-        "--format",
+        "--adapter",
         "openai-agents",
         "--profile",
         "openai-strict",

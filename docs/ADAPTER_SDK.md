@@ -42,9 +42,11 @@ stream head alone; the dispatcher reads a bounded prefix
 
 The loader must return canonical `SessionEvent` objects plus any adapter
 findings (`Finding` records describing malformed/mapped input). The single
-authoritative dispatch is `adapters/load.py:load_events_for_format` — a new
-adapter registers there once; every command (`check`, `scan`, `repair`,
-`verify`, `bundle`, `diff`, `stats`) picks it up automatically.
+authoritative loader dispatch is `adapters/load.py:load_events_for_format`.
+Adding a format also requires detection registration, profile keys and allowed
+adapters, version metadata, capability declarations, schemas and conformance
+coverage. Shared loading avoids per-command parser copies; it does not remove
+these registration and safety obligations.
 
 ## 2. Canonical event contract
 

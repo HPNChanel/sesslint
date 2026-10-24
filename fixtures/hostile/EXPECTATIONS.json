@@ -49,11 +49,11 @@
     "repairable": false
   },
   "huge_line.jsonl": {
-    "code": "SL002",
-    "description": "Line exceeding 1MB max_line_bytes triggers bounded limit error; check still fails (exit 1, A0), but repair succeeds via torn-terminal-record-discard write-back since vendor emit landed in v0.2.0",
+    "code": "SL001",
+    "description": "Line exceeding the 8 MiB max_line_bytes is a bounded-limit malformed record (SL001): an over-limit line is never fully buffered, so it is never provably torn and conservative repair refuses instead of dropping a complete record (B17)",
     "expected_assurance": "A0",
     "exit": 1,
-    "repairable": true
+    "repairable": false
   },
   "interleaved_branches.jsonl": {
     "code": "SL106",
@@ -71,10 +71,10 @@
   },
   "null_bytes.jsonl": {
     "code": "SL001",
-    "description": "Forbidden NUL byte in JSONL stream triggers fail-closed check error (consistent with scan unreadable classification); the unparseable terminal record is discarded by torn-terminal-record-discard under vendor write-back",
+    "description": "Forbidden NUL byte in a newline-terminated JSONL record triggers a fail-closed SL001 (consistent with scan unreadable classification); a complete record is never suffix-dropped as torn, so conservative repair refuses (B17)",
     "expected_assurance": "A0",
     "exit": 1,
-    "repairable": true
+    "repairable": false
   },
   "self_parent.jsonl": {
     "code": "SL005",

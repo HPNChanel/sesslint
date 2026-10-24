@@ -2,16 +2,15 @@
   "counts": {
     "by_code": {
       "SL005": 1,
-      "SL006": 1,
-      "SL008": 2
+      "SL006": 1
     },
     "by_severity": {
       "error": 0,
       "fatal": 1,
       "info": 0,
-      "warning": 3
+      "warning": 1
     },
-    "total": 4
+    "total": 2
   },
   "findings": [
     {
@@ -24,18 +23,6 @@
       "code": "SL006",
       "line": null,
       "record_id": "h1",
-      "severity": "warning"
-    },
-    {
-      "code": "SL008",
-      "line": null,
-      "record_id": "a",
-      "severity": "warning"
-    },
-    {
-      "code": "SL008",
-      "line": null,
-      "record_id": "b",
       "severity": "warning"
     }
   ],

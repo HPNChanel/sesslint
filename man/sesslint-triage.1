@@ -1,0 +1,74 @@
+.TH SESSLINT-TRIAGE 1 "" "SessLint 0.5.0" "SessLint Manual"
+.SH NAME
+sesslint-triage \- [read\-only] Diagnose a session and explain the next steps.
+.SH SYNOPSIS
+.B sesslint triage [\-\-agent {claude,codex}] [\-\-latest] [\-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}] [\-\-profile PROFILE] [\-\-policy {conservative,salvage}] [\-\-state\-copy STATE_COPY] [\-\-max\-file\-bytes MAX_FILE_BYTES] [\-\-include\-content] [\-f | \-\-format {human,json}] [\-\-json] [\-o | \-\-output FILE] [\-q | \-\-quiet] [\-v | \-\-verbose] [PATH]
+.SH DESCRIPTION
+Content\-free evidence and repair previews; never repairs or resumes.
+.SH ARGUMENTS
+.TP
+.B PATH
+Required argument.
+.SH OPTIONS
+.TP
+.B \-\-agent {claude,codex}
+Choices: claude, codex.
+.TP
+.B \-\-latest
+.TP
+.B \-\-adapter {auto,canonical,claude\-code\-jsonl,codex\-rollout,openai\-agents}
+Choices: auto, canonical, claude\-code\-jsonl, codex\-rollout, openai\-agents.
+.TP
+.B \-\-profile PROFILE
+.TP
+.B \-\-policy {conservative,salvage}
+Explicit salvage opt\-in compares both policies; never acknowledges side effects. Choices: conservative, salvage.
+.TP
+.B \-\-state\-copy STATE_COPY
+Optional closed Codex registry copy outside live agent storage (no WAL).
+.TP
+.B \-\-max\-file\-bytes MAX_FILE_BYTES
+Default: 104857600.
+.TP
+.B \-\-include\-content
+[Invalid for triage] Triage never emits transcript content.
+.TP
+.B \-f {human,json}, \-\-format {human,json}
+Output format (default: human) Choices: human, json.
+.TP
+.B \-\-json
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
+.TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
+.SH EXIT STATUS
+.TP
+.B 0
+a clean session exits 0
+(also verification passed / dry-run plan generated)
+.TP
+.B 1
+a session with findings exits 1
+(also verification failed / repair refused)
+.TP
+.B 2
+an internal tool error exits 2
+(also usage error / invalid flags / I/O failure)
+.TP
+.B 130
+Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
+partial outputs are cleaned up.
+.SH SEE ALSO
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
+
+.nf
+Full documentation: the docs/ tree in the source repository
+(docs/SPEC.md, docs/codes/, docs/recipes/, docs/adr/, docs/THREAT_MODEL.md),
+or the project site.
+.fi
+

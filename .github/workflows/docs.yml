@@ -1,6 +1,20 @@
-# Docs site deploy — GitHub Pages (docs-spec/T-04).
-# Builds the mkdocs-material site from docs/ (single source of truth —
-# no content duplication) and deploys on pushes to main touching docs.
+# Site deploy — GitHub Pages (docs-spec/T-04).
+# One Pages artifact per repo, so this builds both halves of the site:
+#   /          the Astro landing site in web/ (download, pricing, changelog)
+#   /docs/     the mkdocs-material site from docs/ (single source of truth —
+#              no content duplication)
+# The changelog page is generated from CHANGELOG.md and the download page from
+# the GitHub Releases API at build time; release.yml dispatches this workflow
+# after a release is public, so the site tracks releases without a manual push.
+#
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   SITE_URL               public URL; unset = https://hpnchanel.github.io/sesslint.
+#                          For a custom domain set e.g. https://sesslint.example
+#                          and add the same domain under Settings → Pages.
+#   PUBLIC_CHECKOUT_PLUS, PUBLIC_CHECKOUT_MAX, PUBLIC_CHECKOUT_GIFT_PLUS,
+#   PUBLIC_CHECKOUT_GIFT_MAX, PUBLIC_CHECKOUT_CODE_PARAM
+#                          hosted checkout links; unset = "payments open soon".
+#                          See web/README.md.
 name: docs
 
 on:
@@ -11,47 +25,114 @@ on:
       - "mkdocs.yml"
       - ".github/workflows/docs.yml"
       - "pyproject.toml"
+      - "CHANGELOG.md"
+      - "man/**"
+      - "src/sesslint/**"
+      - "web/**"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
+      - "CHANGELOG.md"
+      - "web/**"
   workflow_dispatch:
+  # Safety net in case a release-time dispatch is missed.
+  schedule:
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
 
 # Only one deployment at a time; in-progress runs are allowed to finish.
+# Pull requests build in their own group and never deploy.
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('site-{0}', github.ref) || 'pages' }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SITE_URL: ${{ vars.SITE_URL }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
 
-      - name: Install uv
-        run: pip install uv
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
 
       - name: Install docs extra
         run: uv sync --extra docs
 
-      - name: Build site
-        run: uv run mkdocs build
+      # The landing replay shows real CLI output; recapture it from this
+      # commit's CLI against synthetic fixtures so it never drifts.
+      - name: Capture landing demo
+        run: uv run python web/scripts/capture_demo.py
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type-check and unit-test web
+        working-directory: web
+        run: |
+          npm run check
+          npm test
+
+      - name: Build landing site
+        working-directory: web
+        env:
+          # Read-only: lists public release assets for the download page.
+          GITHUB_TOKEN: ${{ github.token }}
+          PUBLIC_CHECKOUT_PLUS: ${{ vars.PUBLIC_CHECKOUT_PLUS }}
+          PUBLIC_CHECKOUT_MAX: ${{ vars.PUBLIC_CHECKOUT_MAX }}
+          PUBLIC_CHECKOUT_GIFT_PLUS: ${{ vars.PUBLIC_CHECKOUT_GIFT_PLUS }}
+          PUBLIC_CHECKOUT_GIFT_MAX: ${{ vars.PUBLIC_CHECKOUT_GIFT_MAX }}
+          PUBLIC_CHECKOUT_CODE_PARAM: ${{ vars.PUBLIC_CHECKOUT_CODE_PARAM }}
+        run: npm run build
+
+      - name: Build docs site under /docs/
+        working-directory: web
+        run: npm run docs
+
+      - name: Check every internal link
+        working-directory: web
+        run: npm run links
+
+      - name: End-to-end and accessibility tests
+        working-directory: web
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
 
       - name: Configure Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload site artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: site
+          path: web/dist
 
   deploy:
     needs: [build]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pages: write

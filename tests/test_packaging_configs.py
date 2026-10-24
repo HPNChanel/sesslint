@@ -207,6 +207,7 @@ def test_release_workflow_binaries_job_matrix() -> None:
     assert "scripts/package.py" in block, "binaries must run scripts/package.py"
     assert "actions/upload-artifact@" in block, "binaries must retain verified assets"
     assert "github_stage.py" in blocks["github-draft"]
+    assert "--generate-notes" in blocks["github-draft"]
 
 
 def test_release_workflow_binaries_smoke_test() -> None:
@@ -229,10 +230,9 @@ def test_release_workflow_binaries_gate_complete_draft_and_pypi() -> None:
 
 def test_release_workflow_yaml_parses_if_pyyaml_installed() -> None:
     """If PyYAML is available, validate the binaries job structurally."""
-    try:
-        import yaml
-    except ImportError:
-        pytest.skip("PyYAML not installed; stdlib structural checks succeeded")
+    yaml = pytest.importorskip(
+        "yaml", reason="PyYAML not installed; stdlib structural checks succeeded"
+    )
 
     with open(RELEASE_WORKFLOW, encoding="utf-8") as f:
         data = yaml.safe_load(f)

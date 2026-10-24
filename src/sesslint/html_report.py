@@ -1,6 +1,6 @@
 """Self-contained HTML report rendering (ux-reporting T-01).
 
-``check``/``scan --output-format html`` emit a single ``.html`` document a
+``sesslint check --format html`` emits a single ``.html`` document a
 human can open and share — the shareable artifact for "show my maintainer
 what broke" without pasting terminal text.
 
@@ -32,6 +32,7 @@ from sesslint.report import (
     finding_report_sort_key,
     get_finding_remediation,
     minimize_path,
+    report_abstains,
 )
 from sesslint.scan import ScanReport
 
@@ -66,7 +67,7 @@ def _esc(value: object) -> str:
 def _page(title: str, body: str) -> str:
     return (
         "<!DOCTYPE html>\n"
-        '<html lang="es">\n<head>\n<meta charset="utf-8">\n'
+        '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{_esc(title)}</title>\n<style>{_CSS}</style>\n</head>\n"
         f'<body>\n<div class="wrap">\n{body}\n</div>\n</body>\n</html>\n'
@@ -123,6 +124,7 @@ def render_html(
     skipped = ", ".join(f"{_esc(s.check)} ({_esc(s.reason)})" for s in cov.skipped)
 
     ordered = sorted(report.findings, key=finding_report_sort_key)
+    abstain = report_abstains(ordered)
     rows: list[str] = []
     for f in ordered[:MAX_ROWS]:
         title = CODE_REGISTRY[f.code].name if f.code in CODE_REGISTRY else "Integrity finding"
@@ -134,7 +136,7 @@ def render_html(
             f"<td>{_esc(title)}</td>"
             f'<td class="mono">{_esc(_span(f, home=home))}</td>'
             f"<td>{_esc(f.message)}</td>"
-            f"<td>{_esc(get_finding_remediation(f, home=home))}</td>"
+            f"<td>{_esc(get_finding_remediation(f, home=home, abstain=abstain))}</td>"
             f'<td class="mono">{_esc(f.fingerprint)}</td>'
             "</tr>"
         )
@@ -237,6 +239,7 @@ def scan_report_html(scan_report: ScanReport, *, tool_version: str) -> str:
     findings_rows: list[str] = []
     total_findings = 0
     for r in scan_report.files:
+        abstain = report_abstains(r.findings)
         for f in r.findings:
             total_findings += 1
             if len(findings_rows) < MAX_ROWS:
@@ -254,7 +257,7 @@ def scan_report_html(scan_report: ScanReport, *, tool_version: str) -> str:
                     f"<td>{_esc(title)}</td>"
                     f'<td class="mono">{_esc(loc)}</td>'
                     f"<td>{_esc(f.message)}</td>"
-                    f"<td>{_esc(get_finding_remediation(f))}</td>"
+                    f"<td>{_esc(get_finding_remediation(f, abstain=abstain))}</td>"
                     "</tr>"
                 )
     hidden_findings = total_findings - len(findings_rows)

@@ -134,7 +134,7 @@ class TestBundlePrivacyRedTeam:
             encoding="utf-8",
         )
 
-        code = main(["bundle", str(fixture), "--format", "claude-code-jsonl"])
+        code = main(["bundle", str(fixture), "--adapter", "claude-code-jsonl"])
         assert code == 0
         captured = capsys.readouterr()
 

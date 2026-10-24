@@ -1,0 +1,5 @@
+{"message":{"content":"synthetic","role":"user"},"timestamp":"2026-10-08T00:00:00Z","type":"user","uuid":"synthetic-u1"}
+{"message":{"content":"synthetic","role":"assistant"},"parentUuid":"synthetic-u1","timestamp":"2026-10-08T00:00:01Z","type":"assistant","uuid":"synthetic-a1"}
+{"operation":"enqueue","type":"queue-operation"}
+{"logicalParentUuid":"synthetic-a1","parentUuid":null,"subtype":"compact_boundary","timestamp":"2026-10-08T00:00:02Z","type":"system","uuid":"synthetic-c1"}
+{"attachment":{"type":"synthetic"},"parentUuid":"synthetic-c1","timestamp":"2026-10-08T00:00:03Z","type":"attachment","uuid":"synthetic-x1"}

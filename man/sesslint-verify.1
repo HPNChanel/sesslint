@@ -1,8 +1,8 @@
-.TH SESSLINT-VERIFY 1 "" "SessLint 0.4.1" "SessLint Manual"
+.TH SESSLINT-VERIFY 1 "" "SessLint 0.5.0" "SessLint Manual"
 .SH NAME
 sesslint-verify \- [read\-only] Verify integrity, hash bindings, and idempotence of a repaired session.
 .SH SYNOPSIS
-.B sesslint verify [\-\-source SOURCE_FLAG] [\-\-output OUTPUT_FLAG] \-\-manifest MANIFEST [\-\-plan PLAN] [\-\-json] [\-\-color {auto,always,never}] [\-\-no\-color] [\-\-acknowledge\-side\-effects] [\-\-include\-content] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [SOURCE] [REPAIRED]
+.B sesslint verify [\-\-source SOURCE_FLAG] [\-\-repaired REPAIRED_FLAG] [\-o | \-\-output FILE] \-\-manifest MANIFEST [\-\-plan PLAN] [\-\-json] [\-\-color {auto,always,never}] [\-\-no\-color] [\-q | \-\-quiet] [\-v | \-\-verbose] [\-\-acknowledge\-side\-effects] [\-\-seal LEDGER] [\-\-seal\-no\-path] [\-\-seal\-genesis\-of HEX] [SOURCE] [REPAIRED]
 .SH DESCRIPTION
 [read\-only] Verify integrity, hash bindings, and idempotence of a repaired session artifact.
 .SH ARGUMENTS
@@ -16,7 +16,10 @@ Path to repaired session file
 .TP
 .B \-\-source SOURCE_FLAG
 .TP
-.B \-\-output OUTPUT_FLAG
+.B \-\-repaired REPAIRED_FLAG
+.TP
+.B \-o FILE, \-\-output FILE
+Write the report to FILE instead of stdout (existing report files are overwritten atomically)
 .TP
 .B \-\-manifest MANIFEST
 Path to repair manifest JSON file
@@ -28,16 +31,19 @@ Path to repair plan JSON file (optional)
 Output verify verdict as JSON to stdout
 .TP
 .B \-\-color {auto,always,never}
-Control colored output in human report mode Choices: auto, always, never.
+Control colored terminal output (default: auto) Choices: auto, always, never.
 .TP
 .B \-\-no\-color
 Disable ANSI color styling
 .TP
+.B \-q, \-\-quiet
+Suppress non\-error stderr output
+.TP
+.B \-v, \-\-verbose
+Print debug diagnostics (settings provenance, elapsed) to stderr
+.TP
 .B \-\-acknowledge\-side\-effects
 Acknowledge tool side\-effects for salvage policy during verify idempotence check
-.TP
-.B \-\-include\-content
-Embed raw transcript content (warning: emits raw sensitive data)
 .TP
 .B \-\-seal LEDGER
 Append a tamper\-evident seal line to LEDGER (append\-only hash\-chained verdict record; 'sesslint seal \-\-verify' re\-checks it)
@@ -65,7 +71,7 @@ an internal tool error exits 2
 Cancelled — interrupted via Ctrl+C or a cooperative cancellation request;
 partial outputs are cleaned up.
 .SH SEE ALSO
-sesslint(1), sesslint\-baseline(1), sesslint\-bundle(1), sesslint\-check(1).
+sesslint(1), sesslint\-bundle(1), sesslint\-check(1), sesslint\-completion(1).
 
 .nf
 Full documentation: the docs/ tree in the source repository

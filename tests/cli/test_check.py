@@ -52,14 +52,14 @@ def test_check_finding_exit1(capsys: pytest.CaptureFixture[str], tmp_path: Path)
     )
 
     # Human mode
-    code = main(["check", str(bad_session), "--format", "claude-code-jsonl"])
+    code = main(["check", str(bad_session), "--adapter", "claude-code-jsonl"])
     assert code == 1
     captured = capsys.readouterr()
     assert "Integrity check failed" in captured.out
     assert "SL101" in captured.out
 
     # JSON mode
-    code_json = main(["check", str(bad_session), "--format", "claude-code-jsonl", "--json"])
+    code_json = main(["check", str(bad_session), "--adapter", "claude-code-jsonl", "--json"])
     assert code_json == 1
     captured_json = capsys.readouterr()
     data = json.loads(captured_json.out)
@@ -68,29 +68,32 @@ def test_check_finding_exit1(capsys: pytest.CaptureFixture[str], tmp_path: Path)
 
 
 def test_check_ambiguity_fail_closed(capsys: pytest.CaptureFixture[str]) -> None:
-    """Ambiguous format fails closed with exit 1 and stderr actionable hint."""
+    """Ambiguous input is unsupported by default and fails only when requested."""
     fixture = FIXTURES_DIR / "check_ambiguity" / "polyglot.json"
     code = main(["check", str(fixture)])
-    assert code == 1
+    assert code == 0
     captured = capsys.readouterr()
-    assert "Format detection ambiguous" in captured.err
-    assert "specify --format" in captured.err
+    assert "unsupported" in captured.err.lower()
+    assert "healthy" not in captured.out.lower()
+
+    assert main(["check", str(fixture), "--fail-on-unsupported"]) == 1
+    capsys.readouterr()
 
     # With --json
     code_json = main(["check", str(fixture), "--json"])
-    assert code_json == 1
+    assert code_json == 0
     captured_json = capsys.readouterr()
     data = json.loads(captured_json.out)
-    assert any(f["code"] == "SL302" for f in data["findings"])
+    assert data["assurance"] == "A0"
+    assert data["limitation"].startswith("Unsupported: format-undetected")
+    assert data["findings"] == []
+    assert data["coverage"]["performed"] == []
 
 
-def test_check_directory_rejected(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
-    """Directory passed to check without recursive exits 2 with error."""
+def test_check_directory_accepted(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    """Directory passed to check is scanned recursively (no -r needed)."""
     code = main(["check", str(tmp_path)])
-    assert code == 2
-    captured = capsys.readouterr()
-    assert "directory" in captured.err.lower()
-    assert "--recursive" in captured.err
+    assert code == 0
 
 
 def test_check_nonexistent_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -135,9 +138,9 @@ def test_check_json_repro_binds_coverage_values(capsys: pytest.CaptureFixture[st
 
 
 def test_check_json_repro_manual_format(capsys: pytest.CaptureFixture[str]) -> None:
-    """Explicit --format reports detection method=manual with null confidence."""
+    """Explicit --adapter reports detection method=manual with null confidence."""
     fixture = FIXTURES_DIR / "check_basic" / "healthy.jsonl"
-    code = main(["check", str(fixture), "--format", "claude-code-jsonl", "--json"])
+    code = main(["check", str(fixture), "--adapter", "claude-code-jsonl", "--json"])
     assert code == 0
     data = json.loads(capsys.readouterr().out)
 
@@ -210,7 +213,7 @@ def test_error_run_status_is_not_contradictory(
         '{"id":"msg_02","parentId":"msg_01","type":"tool_result","toolUseId":"call_missing","content":"res"}\n',
         encoding="utf-8",
     )
-    code = main(["check", str(bad_session), "--format", "claude-code-jsonl", "--color", "never"])
+    code = main(["check", str(bad_session), "--adapter", "claude-code-jsonl", "--color", "never"])
     out = capsys.readouterr().out
     assert code == 1
     assert not _status_lines_contradict(out)

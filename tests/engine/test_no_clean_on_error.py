@@ -101,10 +101,14 @@ def test_recursive_directory_scan_detects_all_hostile() -> None:
     # Hostile directory should have non-zero invalid files and scanning should complete
     assert report.totals.total > 0
 
-    # CLI check on directory without -r exits 2
-    code_no_r = main(["check", str(FIXTURES_DIR)])
-    assert code_no_r == 2
+    # CLI check on the hostile directory exits 1 (directories are always
+    # recursive — findings, not a usage error)
+    code_dir = main(["check", str(FIXTURES_DIR)])
+    assert code_dir == 1
 
-    # CLI check with -r exits 1
-    code_r = main(["check", str(FIXTURES_DIR), "-r"])
-    assert code_r == 1
+    # Removed -r/--recursive flag exits 2
+    try:
+        code_r = main(["check", str(FIXTURES_DIR), "-r"])
+    except SystemExit as exc:
+        code_r = exc.code
+    assert code_r == 2

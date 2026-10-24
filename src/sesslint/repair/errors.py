@@ -7,7 +7,12 @@ and CLI entry points.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sesslint.errors import SesslintError
+
+if TYPE_CHECKING:
+    from sesslint.repair.planner import Blocked
 
 
 class RepairError(SesslintError, ValueError):
@@ -41,9 +46,24 @@ class OutputInvalid(RepairError):
 
 
 class RepairRefused(RepairError):
-    """Raised when repair is refused due to invalid destination, live-store, etc."""
+    """Raised when repair is refused due to invalid destination, live-store, etc.
+
+    ``blocked`` carries the planner's blocked-finding records when the refusal
+    is a plan with no step, so a caller can show each finding's reason and
+    documented refusal rationale instead of a bare code list.
+    """
 
     code: str = "REPAIR_REFUSED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        blocked: tuple[Blocked, ...] = (),
+    ) -> None:
+        super().__init__(message, code=code)
+        self.blocked = blocked
 
 
 class VendorRepairRefused(RepairRefused):

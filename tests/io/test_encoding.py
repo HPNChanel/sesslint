@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 
 from sesslint.canonical import SessionEvent
-from sesslint.codes import SL002
+from sesslint.codes import SL001, SL002
 from sesslint.finding import Finding
 from sesslint.io import iter_events
 
@@ -54,7 +54,8 @@ def test_forbidden_nul_byte_in_body() -> None:
 
     assert len(items) == 1
     assert isinstance(items[0], Finding)
-    assert items[0].code == SL002
+    # Newline-terminated: a complete-but-corrupt record, never a torn append (B17).
+    assert items[0].code == SL001
 
 
 def test_utf16_bom_mismatch() -> None:

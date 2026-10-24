@@ -29,8 +29,8 @@ jobs:
     needs: quality
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
       - name: Validate tag and commit epoch
@@ -60,7 +60,7 @@ jobs:
         if: steps.reuse.outputs.restored != 'true'
         run: |
           set -euo pipefail
-          python -m pip install "build==1.2.2.post1" "hatchling==1.27.0"
+          python -m pip install "build==1.6.1" "hatchling==1.32.4"
           python -m build --no-isolation --sdist --wheel --outdir dist
           python -m build --no-isolation --sdist --wheel --outdir reproducible
           python scripts/release_artifacts.py compare --version "${GITHUB_REF_NAME#v}" --target reproducible
@@ -95,8 +95,8 @@ jobs:
           - runner: macos-latest
             os: macos
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -170,7 +170,7 @@ jobs:
     outputs:
       artifact-subjects: ${{ steps.subjects.outputs.subjects }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Restore complete signed set on retry
         id: reuse
         if: github.run_attempt > 1
@@ -231,7 +231,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-dist
@@ -239,7 +239,7 @@ jobs:
       - name: Stage complete draft without overwriting existing bytes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/github_stage.py --repo "${{ github.repository }}" --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+        run: python scripts/github_stage.py --repo "${{ github.repository }}" --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --generate-notes
 
       - name: Reuse existing provenance after verifying it in the next job
         id: existing
@@ -289,7 +289,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-dist
@@ -311,7 +311,7 @@ jobs:
     needs: pypi-publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-dist
@@ -342,7 +342,7 @@ jobs:
     needs: github-promote
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-dist
@@ -361,3 +361,17 @@ jobs:
         with:
           name: published-github-receipts
           path: public-github/smoke-*.json
+
+  # The release was promoted with GITHUB_TOKEN, which never fires `release`
+  # events for other workflows; workflow_dispatch is the permitted exception.
+  # Rebuild the Pages site so its changelog and download page show the release.
+  refresh-site:
+    needs: published-verify
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the site build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref main --repo "${{ github.repository }}"

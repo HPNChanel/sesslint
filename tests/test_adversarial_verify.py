@@ -138,7 +138,7 @@ def test_cli_declared_loss_null_exits_2_instead_of_1(
         str(src),
         "--plan",
         str(pln),
-        "--output",
+        "--repaired",
         str(out),
         "--manifest",
         str(man),

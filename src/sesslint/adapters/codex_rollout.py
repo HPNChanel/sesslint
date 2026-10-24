@@ -13,7 +13,11 @@ Envelope ``type`` values seen in the wild: ``session_meta`` (header-like
 metadata), ``response_item`` (conversation items), ``event_msg`` (lifecycle
 signals), ``turn_context`` (per-turn run context), ``world_state``,
 ``inter_agent_communication_metadata``, ``token_usage_record`` (token usage
-metadata), and ``compacted`` (window compaction).
+metadata), ``retained_context`` (host-owned review facts), and ``compacted``
+(window compaction). Codex 0.163.0 also writes ``realtime_item`` and
+``security_risk_score`` sidecars, which its resume replay skips, and reads
+``inter_agent_communication``, which its resume replay feeds to the model as
+an ``agent_message``.
 
 ``response_item`` payloads carry their own ``type``: ``message``,
 ``agent_message``, ``reasoning``, ``function_call``, ``custom_tool_call``,
@@ -30,9 +34,13 @@ Guarantees:
   bounded structural markers (id/type/correlator only) for SL208.
 - Run-metadata records (``event_msg``, ``turn_context``, ``world_state``,
   ``session_meta``, ``inter_agent_communication_metadata``,
-  ``token_usage_record``) are kept as ``system``/``opaque`` events — preserved
-  in DAG position without pretending to be conversational content (unknown
-  noncritical records may be kept opaque, FR-021).
+  ``token_usage_record``, ``retained_context``, ``realtime_item``,
+  ``security_risk_score``) are kept as ``system``/``opaque`` events —
+  preserved in DAG position without pretending to be conversational content
+  (unknown noncritical records may be kept opaque, FR-021).
+- ``inter_agent_communication`` maps to a durable ``assistant``/``message``
+  event, like the ``agent_message`` its replay produces; a payload the
+  vendor's deserializer would reject fails closed with SL302.
 - Unknown envelope types and unknown ``response_item`` payload types route to
   SL302 with bounded discriminator evidence; missing/unsupported explicit
   format-version markers (``rollout_version``/``format_version``/
@@ -59,12 +67,13 @@ from typing import Any, BinaryIO, Final
 
 from sesslint.adapters.drift import DriftTracker
 from sesslint.adapters.links import extract_links
+from sesslint.adapters.metadata import UnknownMetadataTracker, has_semantic_fields
 from sesslint.adapters.openai_agents import (
     EventList,
     SourceMetadata,
     normalize_version,
 )
-from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value, scalar_id
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -91,8 +100,10 @@ from sesslint.io import (
     ReaderLimits,
     _RawLine,
     check_nesting_depth,
+    decode_defect_code,
     decode_error_message_template,
     decode_json_dupaware,
+    defect_evidence,
     dup_key_findings,
     extract_record_id,
 )
@@ -116,6 +127,9 @@ SUPPORTED_CODEX_ROLLOUT_VERSIONS: Final[frozenset[str]] = frozenset(
 # Envelope-level types that carry run/telemetry metadata rather than
 # conversational content. Mapped to system/opaque so they keep DAG position
 # without participating in identity/parentage/pairing semantics (FR-021).
+# ``inter_agent_communication`` is absent: Codex replays it into
+# model-visible history, so it has its own message mapping below
+# (docs/VENDOR_DRIFT.md §9).
 ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "session_meta",
@@ -124,6 +138,12 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
         "world_state",
         "inter_agent_communication_metadata",
         "token_usage_record",
+        "retained_context",
+        # Codex 0.163.0 sidecars: never model-visible and skipped by resume
+        # replay. A security_risk_score call_id names the scored tool call; it
+        # is not a pairing edge.
+        "realtime_item",
+        "security_risk_score",
     }
 )
 
@@ -131,16 +151,25 @@ ENVELOPE_OPAQUE_TYPES: Final[frozenset[str]] = frozenset(
 # durable record sequence the paginated resume path replays (SL206,
 # detector-depth T-03). ``session_meta`` is the durable thread header;
 # ``response_item`` carries conversation items; ``compacted`` is a durable
-# history rewrite. The remaining ENVELOPE_OPAQUE_TYPES families
-# (``event_msg``, ``turn_context``, ``world_state``,
-# ``inter_agent_communication_metadata``, ``token_usage_record``) are
+# history rewrite; ``inter_agent_communication`` is replayed into model
+# history as an ``agent_message`` and kept by full-history forks. The
+# remaining ENVELOPE_OPAQUE_TYPES families (``event_msg``, ``turn_context``,
+# ``world_state``, ``inter_agent_communication_metadata``,
+# ``token_usage_record``, ``realtime_item``, ``security_risk_score``) are
 # per-run telemetry — present in the file but not part of the durable
-# prefix. Unknown envelope types fail closed as non-durable.
+# prefix. ``retained_context`` is also non-durable although resume replay
+# reads it: replay records it in the separate retained-context review store,
+# never in model history ("sparse, model-invisible updates" written only by
+# the host), and both fork kinds drop it, so it is never part of an
+# inherited prefix. Being read by replay has never made a family durable
+# here (``turn_context`` and ``world_state`` are read too). Unknown envelope
+# types fail closed as non-durable.
 DURABLE_ENVELOPE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "session_meta",
         "response_item",
         "compacted",
+        "inter_agent_communication",
     }
 )
 
@@ -267,7 +296,8 @@ KNOWN_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
         "window_number",
         "replacement_history",
         "guardian_history",
-        # inter_agent_communication_metadata
+        # inter_agent_communication (+ its _metadata sidecar's trigger_turn)
+        "other_recipients",
         "trigger_turn",
         # version markers honored when present
         "rollout_version",
@@ -306,6 +336,9 @@ CRITICAL_KEYS: Final[frozenset[str]] = frozenset(
 _TIMESTAMP_ISO_REGEX: Final[re.Pattern[str]] = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$"
 )
+
+# One name segment of a Codex ``AgentPath`` (``validate_agent_name``, rust-v0.163.0).
+_AGENT_NAME_REGEX: Final[re.Pattern[str]] = re.compile(r"[a-z0-9_]+")
 
 
 def _safe_type_value(val: Any) -> str:
@@ -511,6 +544,74 @@ def _tool_input_payload(raw_input: Any) -> Any:
     return {"value": raw_input}
 
 
+def _is_agent_path(value: Any) -> bool:
+    """Return True when ``value`` deserializes as a Codex ``AgentPath``.
+
+    Mirrors ``validate_absolute_path`` at rust-v0.163.0: ``/morpheus``, or
+    ``/root`` followed by ``/``-separated names made of lowercase ASCII
+    letters, digits and ``_``, none of them ``root``.
+    """
+    if value == "/morpheus":
+        return True
+    if not isinstance(value, str) or not value.startswith("/") or value.endswith("/"):
+        return False
+    root, *names = value[1:].split("/")
+    return root == "root" and all(
+        name != "root" and _AGENT_NAME_REGEX.fullmatch(name) is not None for name in names
+    )
+
+
+def _is_message_passthrough(value: Any) -> bool:
+    """Return True when ``value`` deserializes as Codex's
+    ``InternalChatMessageMetadataPassthrough`` at rust-v0.163.0: an object
+    whose ``turn_id`` is a string and whose ``create_time`` is a number,
+    each when present. Codex defaults or ignores its other keys.
+    """
+    if not isinstance(value, Mapping):
+        return False
+    turn_id = value.get("turn_id")
+    if turn_id is not None and not isinstance(turn_id, str):
+        return False
+    create_time = value.get("create_time")
+    return create_time is None or (
+        not isinstance(create_time, bool) and isinstance(create_time, (int, float))
+    )
+
+
+def _inter_agent_shape_error(payload: Any) -> str | None:
+    """Return the first field path that breaks Codex's InterAgentCommunication
+    shape, or None when the payload matches it.
+
+    Mirrors the serde contract at rust-v0.163.0 field by field: ``id`` and
+    ``encrypted_content`` are strings when present; ``author``,
+    ``recipient`` and every ``other_recipients`` entry are agent paths;
+    ``content`` is a string; ``trigger_turn`` is a bool; the passthrough
+    metadata matches its own contract when present. Unknown keys pass, as
+    they do for Codex. Only an object passes, so the check is never more
+    lenient than Codex. Codex skips a line that breaks the contract, so such
+    a record is never model-visible.
+    """
+    if not isinstance(payload, Mapping):
+        return "payload"
+    for key in ("id", "encrypted_content"):
+        if payload.get(key) is not None and not isinstance(payload.get(key), str):
+            return f"payload.{key}"
+    for key in ("author", "recipient"):
+        if not _is_agent_path(payload.get(key)):
+            return f"payload.{key}"
+    others = payload.get("other_recipients", [])
+    if not isinstance(others, list) or not all(_is_agent_path(path) for path in others):
+        return "payload.other_recipients"
+    if not isinstance(payload.get("content"), str):
+        return "payload.content"
+    if not isinstance(payload.get("trigger_turn"), bool):
+        return "payload.trigger_turn"
+    passthrough = payload.get("internal_chat_message_metadata_passthrough")
+    if passthrough is not None and not _is_message_passthrough(passthrough):
+        return "payload.internal_chat_message_metadata_passthrough"
+    return None
+
+
 def _version_field_name(envelope: Any, payload: Any) -> str:
     """Return the bounded key path that supplied the version candidate.
 
@@ -555,6 +656,7 @@ def _process_rollout_record(
     last_envelope_ordinal: int | None = None,
     gap_after_drop: bool = False,
     drift: DriftTracker | None = None,
+    unknown_metadata: UnknownMetadataTracker | None = None,
 ) -> tuple[bool, int | None]:
     """Canonicalize one rollout envelope record into a SessionEvent.
 
@@ -585,7 +687,7 @@ def _process_rollout_record(
     payload = envelope.get("payload")
 
     # Resolve event identity: payload.id when present, else synthetic.
-    payload_id: Any = payload.get("id") if isinstance(payload, Mapping) else None
+    payload_id = scalar_id(payload.get("id")) if isinstance(payload, Mapping) else None
     if payload_id is not None and str(payload_id).strip():
         rec_id_str = str(payload_id).strip()
         original_id: str | None = rec_id_str
@@ -729,6 +831,13 @@ def _process_rollout_record(
                         codex_extra["reasoning_content_shape"] = "other"
             if isinstance(item_type, str) and item_type in RESPONSE_ITEM_TYPE_MAP:
                 actor, kind = RESPONSE_ITEM_TYPE_MAP[item_type]
+            elif isinstance(item_type, str) and item_type and not has_semantic_fields(payload):
+                actor, kind = "system", "opaque"
+                tracker = unknown_metadata or UnknownMetadataTracker()
+                tracker.note(item_type, line=line_number)
+                if unknown_metadata is None:
+                    findings.extend(tracker.findings(path_str))
+                out_payload = {"type": item_type}
             else:
                 _emit_sl302(
                     path_str=path_str,
@@ -762,7 +871,7 @@ def _process_rollout_record(
                     if payload.get("recipient") is not None:
                         out_payload["recipient"] = str(payload.get("recipient"))
             elif kind == "tool_call":
-                raw_call_id = (
+                raw_call_id = scalar_id(
                     payload.get("call_id")
                     if payload.get("call_id") is not None
                     else payload.get("tool_call_id")
@@ -809,7 +918,7 @@ def _process_rollout_record(
                 else:
                     side_effects = "unknown"
             elif kind == "tool_result":
-                raw_call_id = (
+                raw_call_id = scalar_id(
                     payload.get("call_id")
                     if payload.get("call_id") is not None
                     else payload.get("tool_call_id")
@@ -905,6 +1014,43 @@ def _process_rollout_record(
                     codex_extra["guardian_items_truncated"] = True
         else:
             out_payload = {"summary": ""}
+    elif env_type == "inter_agent_communication":
+        # Codex 0.163.0 resume replay feeds this record to the model as an
+        # ``agent_message`` (``to_model_input_item``); the 0.163 live writer
+        # persists the same message as that ``response_item`` instead. Both
+        # encodings map alike: an assistant message carrying another agent's
+        # text, never user input. Codex also counts the record as a user-turn
+        # boundary for rollback; the canonical stream has no turn segments,
+        # so that stays unmodeled. Author and recipient are agent paths, not
+        # thread ids: they stay in the canonical payload and never become
+        # ``agent_id`` scope or SL401 links. No ``item_type`` marker: the
+        # record declares none, so SL208 has no vendor claim to compare.
+        bad_field = _inter_agent_shape_error(payload)
+        if bad_field is None and isinstance(payload, Mapping):
+            actor, kind = "assistant", "message"
+            out_payload = {
+                "content": payload["content"],
+                "role": actor,
+                "author": payload["author"],
+                "recipient": payload["recipient"],
+            }
+            # Field presence only — never the encrypted value. An encrypted
+            # message reaches the model as vendor framing plus ciphertext,
+            # neither of which is projected, so ``content`` stays as written.
+            codex_extra["has_encrypted_content"] = payload.get("encrypted_content") is not None
+        else:
+            _emit_sl302(
+                path_str=path_str,
+                line_number=line_number,
+                rec_id=rec_id_str,
+                field_path=bad_field or "payload",
+                type_value=env_type,
+                coord_ev=coord_ev,
+                findings=findings,
+            )
+            out_payload = {"type": env_type}
+            # Codex skips a line it cannot parse, so it is no durable history.
+            codex_extra["durable"] = False
     elif isinstance(env_type, str) and env_type in ENVELOPE_OPAQUE_TYPES:
         actor, kind = "system", "opaque"
         out_payload = {"type": env_type}
@@ -966,6 +1112,14 @@ def _process_rollout_record(
                     # SL206: declared inherited-prefix ordinal the file's
                     # durable sequence must cover (#40747 signature).
                     codex_extra["subagent_history_start_ordinal"] = _shso
+        elif env_type == "retained_context" and isinstance(payload, Mapping):
+            # Host-owned review bookkeeping, not a response/tool result or
+            # model history (see DURABLE_ENVELOPE_TYPES). Its call_id names
+            # the answered request_user_input call; it must never participate
+            # in tool pairing.
+            for key in ("type", "turn_id"):
+                if isinstance(payload.get(key), str):
+                    out_payload["subtype" if key == "type" else key] = payload[key]
         elif env_type == "turn_context" and isinstance(payload, Mapping):
             if payload.get("turn_id") is not None:
                 out_payload["turn_id"] = str(payload.get("turn_id"))
@@ -1000,6 +1154,13 @@ def _process_rollout_record(
                             "occupancy": occupancy,
                             "window": window,
                         }
+    elif isinstance(env_type, str) and env_type and not has_semantic_fields(envelope):
+        actor, kind = "system", "opaque"
+        out_payload = {"type": env_type}
+        tracker = unknown_metadata or UnknownMetadataTracker()
+        tracker.note(env_type, line=line_number)
+        if unknown_metadata is None:
+            findings.extend(tracker.findings(path_str))
     else:
         # Unknown or missing envelope type -> SL302 unknown critical record.
         _emit_sl302(
@@ -1117,6 +1278,7 @@ def _process_jsonl_line(
     gap_after_drop: bool = False,
     drift: DriftTracker | None = None,
     secret_tracker: SecretScanTracker | None = None,
+    unknown_metadata: UnknownMetadataTracker | None = None,
 ) -> tuple[bool, bool, int | None]:
     """Process a single rollout JSONL line, emitting SessionEvent or SL001/SL002.
 
@@ -1135,7 +1297,6 @@ def _process_jsonl_line(
             record_ordinal=raw.record_ordinal,
         )
 
-    code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
         "byte_end": raw.byte_end,
@@ -1146,7 +1307,7 @@ def _process_jsonl_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=(
                     "Line {line} exceeds maximum line byte limit [detail: LIMIT] "
                     "for record {record_id}"
@@ -1159,12 +1320,13 @@ def _process_jsonl_line(
 
     if b"\x00" in raw.raw_bytes:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template="Forbidden NUL byte on line {line} for record {record_id}",
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return seen_version_sl301, False, None
@@ -1177,6 +1339,7 @@ def _process_jsonl_line(
         decoded_text = to_decode.decode("utf-8", errors="strict").strip()
     except UnicodeDecodeError:
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
@@ -1185,7 +1348,7 @@ def _process_jsonl_line(
                     "for record {record_id}"
                 ),
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return seen_version_sl301, False, None
@@ -1198,7 +1361,7 @@ def _process_jsonl_line(
         rec_id = extract_record_id(decoded_text)
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=(
                     "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
                     "for record {record_id}"
@@ -1210,13 +1373,14 @@ def _process_jsonl_line(
         return seen_version_sl301, False, None
     except (json.JSONDecodeError, ValueError) as err:
         rec_id = extract_record_id(decoded_text)
-        msg_template = decode_error_message_template(err, terminal=is_terminal)
+        code = decode_defect_code(raw, is_terminal=is_terminal)
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=rec_id),
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return seen_version_sl301, False, None
@@ -1234,14 +1398,10 @@ def _process_jsonl_line(
         )
 
     if not isinstance(obj, dict):
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=SourceRef(path=path_str, line=raw.line_number, record_id=None),
                 evidence=coord_evidence,
@@ -1253,7 +1413,7 @@ def _process_jsonl_line(
         rec_id = extract_record_id(decoded_text, obj)
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=(
                     "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] "
                     "for record {record_id}"
@@ -1280,6 +1440,7 @@ def _process_jsonl_line(
         last_envelope_ordinal=last_envelope_ordinal,
         gap_after_drop=gap_after_drop,
         drift=drift,
+        unknown_metadata=unknown_metadata,
     )
     return latch, True, env_ord
 
@@ -1382,6 +1543,7 @@ def load_codex_rollout(
         seen_version_sl301 = False
         drift = DriftTracker("codex-rollout")
         secret_tracker = SecretScanTracker()
+        unknown_metadata = UnknownMetadataTracker()
         last_event_id: str | None = None
         last_envelope_ordinal: int | None = None
         gap_after_drop = False
@@ -1416,7 +1578,6 @@ def load_codex_rollout(
             rec_byte_end = line_end
             if truncated:
                 record_bytes = line_chunk[: effective_limits.max_line_bytes + 1]
-                rec_byte_end = line_start + len(record_bytes)
 
             current_raw = _RawLine(
                 line_number=line_number,
@@ -1453,6 +1614,7 @@ def load_codex_rollout(
                     gap_after_drop=gap_after_drop,
                     drift=drift,
                     secret_tracker=secret_tracker,
+                    unknown_metadata=unknown_metadata,
                 )
                 tail_tracker.note_produced(events[prev_len:], findings[prev_findings:])
                 if emitted and len(events) > prev_len:
@@ -1491,6 +1653,7 @@ def load_codex_rollout(
                 gap_after_drop=gap_after_drop,
                 drift=drift,
                 secret_tracker=secret_tracker,
+                unknown_metadata=unknown_metadata,
             )
             new_findings = findings[prev_findings:]
             tail_tracker.note_produced(events[prev_len:], new_findings)
@@ -1503,6 +1666,7 @@ def load_codex_rollout(
         guard.assert_no_collision()
         findings.extend(drift.into_findings(path_str=path_str))
         findings.extend(secret_tracker.into_findings(path_str=path_str))
+        findings.extend(unknown_metadata.findings(path_str))
         return EventList(events, source=source_metadata), sort_findings(findings)
     finally:
         if is_owned_file:

@@ -82,7 +82,7 @@ def test_scan_fault_isolation_on_unhandled_exception(
 def test_scan_fault_isolation_on_file_too_large(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RVW-022: FileTooLargeError maps to unreadable without aborting sweep."""
+    """RVW-022: FileTooLargeError maps to skipped without aborting sweep."""
     from sesslint.errors import FileTooLargeError
     from sesslint.repair import executor
 
@@ -110,10 +110,11 @@ def test_scan_fault_isolation_on_file_too_large(
 
     report: ScanReport = check_dir(tmp_path, recursive=True)
     assert report.totals.healthy == 1
-    assert report.totals.unreadable == 1
+    assert report.totals.skipped == 1
     huge_res = next(r for r in report.files if "huge" in r.path)
-    assert huge_res.verdict == "unreadable"
-    assert "Unreadable file" in huge_res.findings[0].message
+    assert huge_res.verdict == "skipped"
+    assert huge_res.skipped_reason == "file-too-large"
+    assert not huge_res.findings
 
 
 def test_scan_fault_isolation_on_unhandled_scan_single_file_exception(

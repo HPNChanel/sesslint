@@ -85,7 +85,7 @@ def test_clean_session_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
 def test_session_with_findings_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A session with findings exits 1."""
     session = _findings_session(tmp_path)
-    code = _run(["check", str(session), "--format", "claude-code-jsonl"])
+    code = _run(["check", str(session), "--adapter", "claude-code-jsonl"])
     assert code == 1
     captured = capsys.readouterr()
     assert "Integrity check failed" in captured.out
@@ -125,7 +125,7 @@ def test_no_color_keeps_exit_codes_and_strips_ansi(
     assert ANSI_ESCAPE.search(clean_out.out) is None
     assert "Session is healthy" in clean_out.out
 
-    findings = _run(["check", str(session), "--format", "claude-code-jsonl", "--color", "always"])
+    findings = _run(["check", str(session), "--adapter", "claude-code-jsonl", "--color", "always"])
     findings_out = capsys.readouterr()
     assert findings == 1
     assert ANSI_ESCAPE.search(findings_out.out) is None
@@ -189,7 +189,7 @@ def test_documented_codes_match_observed_behavior(
     session = _findings_session(tmp_path)
     clean = _run(["check", str(HEALTHY), "--color", "never"])
     capsys.readouterr()
-    findings = _run(["check", str(session), "--format", "claude-code-jsonl", "--color", "never"])
+    findings = _run(["check", str(session), "--adapter", "claude-code-jsonl", "--color", "never"])
     capsys.readouterr()
     with patch(
         "sesslint.api.check_file",

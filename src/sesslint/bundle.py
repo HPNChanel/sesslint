@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
+from sesslint._hints import MANUAL_HINT, hint_arg
 from sesslint._version import (
     CLI_VERSION,
     MANIFEST_SCHEMA_VERSION,
@@ -57,9 +58,11 @@ FIXTURE_TEMPLATE: Final[str] = (
     '"session_id":"session_example_1"}\n'
     '{"actor":"user","id":"evt_example_1","kind":"message","parent_id":null,'
     '"payload":{"text":"Synthetic user message example"},"seq":0,"ts":"2026-01-01T00:00:01Z"}\n'
-    '{"actor":"model","id":"evt_example_2","kind":"tool_call","parent_id":"evt_example_1",'
+    '{"actor":"assistant","correlation_id":"tool_call_example_1","id":"evt_example_2",'
+    '"kind":"tool_call","parent_id":"evt_example_1",'
     '"payload":{"arguments":{},"tool_name":"example_tool"},"seq":1,"ts":"2026-01-01T00:00:02Z"}\n'
-    '{"actor":"tool","id":"evt_example_3","kind":"tool_result","parent_id":"evt_example_2",'
+    '{"actor":"tool","correlation_id":"tool_call_example_1","id":"evt_example_3",'
+    '"kind":"tool_result","parent_id":"evt_example_2",'
     '"payload":{"output":"Synthetic tool output example"},"seq":2,"ts":"2026-01-01T00:00:03Z"}\n'
 )
 
@@ -112,8 +115,22 @@ def _build_created_by() -> dict[str, Any]:
 
 
 def _sanitize_remediation(remediation: str, basename: str) -> str:
-    """Ensure remediation instructions use strictly basename-only paths."""
-    return re.sub(r"(run 'sesslint repair\s+)[^'\s]+", rf"\1{basename}", remediation)
+    """Ensure remediation instructions use strictly basename-only paths.
+
+    Rewrites the source word of every quoted ``sesslint repair``/``sesslint
+    check`` hint, double-quoted or bare, so no directory survives into the
+    bundle.
+    """
+    source = hint_arg(basename)
+    if source is None and re.search(r"'sesslint (?:repair|check)\s+", remediation):
+        return MANUAL_HINT
+    if source is None:
+        return remediation
+    return re.sub(
+        r"""('sesslint (?:repair|check)\s+)(?:"[^"]*"|[^'\s"]+)""",
+        lambda m: f"{m.group(1)}{source}",
+        remediation,
+    )
 
 
 def _sanitize_evidence(evidence: dict[str, Any], basename: str) -> dict[str, Any]:
@@ -163,13 +180,15 @@ def _count_records_bounded(path: Path) -> int:
         with open(path, "rb") as stream:
             non_empty_line = False
             while chunk := stream.read(65536):
-                for b in chunk:
-                    if b == 10:  # \n
-                        if non_empty_line:
-                            count += 1
-                            non_empty_line = False
-                    elif b not in (32, 9, 13):  # space, tab, \r
-                        non_empty_line = True
+                # Split only this bounded chunk.  The final fragment joins the
+                # next chunk's first fragment, preserving physical-LF record
+                # semantics without Python-level iteration over every byte.
+                fragments = chunk.split(b"\n")
+                for fragment in fragments[:-1]:
+                    if non_empty_line or fragment.strip(b" \t\r"):
+                        count += 1
+                    non_empty_line = False
+                non_empty_line = non_empty_line or bool(fragments[-1].strip(b" \t\r"))
             if non_empty_line:
                 count += 1
     except OSError:

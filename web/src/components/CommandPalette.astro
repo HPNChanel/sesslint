@@ -1,0 +1,270 @@
+---
+// ⌘K / Ctrl+K / "/" palette rendered like `sesslint --help`. Native <dialog>
+// gives focus containment and Esc; the list follows the ARIA combobox pattern.
+import { asset, href, other, t, type Lang } from "../i18n";
+import { detectors } from "../lib/repo";
+
+type Props = { lang: Lang; route: string };
+const { lang, route } = Astro.props;
+const d = t(lang);
+
+type Item = { group: string; label: string; hint: string; href?: string; action?: string; value?: string };
+const items: Item[] = [
+  { group: d.palette.pages, label: "home", hint: d.meta.title, href: href(lang, "/") },
+  { group: d.palette.pages, label: "download", hint: d.nav.download, href: href(lang, "/download") },
+  { group: d.palette.pages, label: "pricing", hint: d.nav.pricing, href: href(lang, "/pricing") },
+  { group: d.palette.pages, label: "changelog", hint: d.nav.changelog, href: href(lang, "/changelog") },
+  { group: d.palette.pages, label: "rules", hint: d.nav.rules, href: href(lang, "/rules") },
+  { group: d.palette.pages, label: "docs", hint: d.nav.docs, href: asset("/docs/") },
+  { group: d.palette.actions, label: "copy pipx install sesslint", hint: d.palette.copyInstall, action: "copy", value: "pipx install sesslint" },
+  { group: d.palette.actions, label: "theme --toggle", hint: d.palette.toggleTheme, action: "theme" },
+  { group: d.palette.actions, label: `lang ${other(lang)}`, hint: d.palette.switchLang, href: href(other(lang), route) },
+  ...detectors().map((x) => ({ group: d.palette.codes, label: x.code, hint: x.title, href: `${href(lang, "/rules")}#${x.code}` })),
+];
+---
+
+<dialog class="palette" aria-label={d.nav.palette} data-palette>
+  <form method="dialog" class="palette-form" role="search">
+    <span class="pass mono" aria-hidden="true">$ sesslint</span>
+    <input
+      type="text"
+      role="combobox"
+      aria-expanded="true"
+      aria-controls="palette-list"
+      aria-autocomplete="list"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder={d.palette.placeholder}
+      aria-label={d.palette.placeholder}
+      data-palette-input
+    />
+    <kbd>esc</kbd>
+  </form>
+  <ul id="palette-list" role="listbox" class="palette-list" data-palette-list>
+    {items.map((it, i) => (
+      <li
+        role="option"
+        id={`pal-${i}`}
+        aria-selected="false"
+        data-group={it.group}
+        data-kind={it.group === d.palette.codes ? "code" : undefined}
+        data-href={it.href}
+        data-action={it.action}
+        data-value={it.value}
+        data-search={`${it.label} ${it.hint}`.toLowerCase()}
+      >
+        <span class="pal-label mono">{it.label}</span>
+        <span class="pal-hint">{it.hint}</span>
+        <span class="pal-group mono">{it.group}</span>
+      </li>
+    ))}
+  </ul>
+  <p class="palette-empty mono" hidden data-palette-empty>{d.palette.empty}</p>
+  <p class="palette-hint mono">{d.palette.hint}</p>
+</dialog>
+
+<script>
+  import { copyText } from "../scripts/copy";
+  import { toggleTheme } from "../scripts/theme";
+
+  const dlg = document.querySelector<HTMLDialogElement>("[data-palette]");
+  const input = document.querySelector<HTMLInputElement>("[data-palette-input]");
+  const list = document.querySelector<HTMLUListElement>("[data-palette-list]");
+  const empty = document.querySelector<HTMLElement>("[data-palette-empty]");
+
+  if (dlg && input && list && empty) {
+    const options = Array.from(list.querySelectorAll<HTMLLIElement>("[role=option]"));
+    let active = 0;
+
+    const visible = () => options.filter((o) => !o.hidden);
+
+    const setActive = (i: number) => {
+      const vis = visible();
+      if (!vis.length) {
+        input.removeAttribute("aria-activedescendant");
+        return;
+      }
+      active = (i + vis.length) % vis.length;
+      for (const o of options) o.setAttribute("aria-selected", "false");
+      const cur = vis[active];
+      if (!cur) return;
+      cur.setAttribute("aria-selected", "true");
+      input.setAttribute("aria-activedescendant", cur.id);
+      cur.scrollIntoView({ block: "nearest" });
+    };
+
+    const filter = () => {
+      const q = input.value.trim().toLowerCase();
+      const terms = q.split(/\s+/).filter(Boolean);
+      for (const o of options) {
+        const s = o.dataset.search ?? "";
+        o.hidden = terms.length > 0 && !terms.every((t) => s.includes(t));
+      }
+      // Rule codes only appear once the visitor starts typing.
+      if (!terms.length) for (const o of options) if (o.dataset.kind === "code") o.hidden = true;
+      empty.hidden = visible().length > 0;
+      setActive(0);
+    };
+
+    const open = () => {
+      if (dlg.open) return;
+      input.value = "";
+      filter();
+      dlg.showModal();
+      input.focus();
+    };
+
+    const run = (o: HTMLLIElement | undefined) => {
+      if (!o) return;
+      const { href, action, value } = o.dataset;
+      dlg.close();
+      if (action === "copy" && value) void copyText(value);
+      else if (action === "theme") toggleTheme();
+      else if (href) window.location.href = href;
+    };
+
+    document.addEventListener("keydown", (e) => {
+      const target = e.target as HTMLElement | null;
+      const typing = target?.closest("input, textarea, select, [contenteditable=true]");
+      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (dlg.open) dlg.close();
+        else open();
+      } else if (e.key === "/" && !typing && !dlg.open) {
+        e.preventDefault();
+        open();
+      }
+    });
+
+    for (const b of document.querySelectorAll("[data-palette-open]")) b.addEventListener("click", open);
+
+    input.addEventListener("input", filter);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActive(active + 1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActive(active - 1);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        run(visible()[active]);
+      }
+    });
+
+    list.addEventListener("click", (e) => {
+      const o = (e.target as HTMLElement).closest<HTMLLIElement>("[role=option]");
+      if (o) run(o);
+    });
+    list.addEventListener("mousemove", (e) => {
+      const o = (e.target as HTMLElement).closest<HTMLLIElement>("[role=option]");
+      if (o) setActive(visible().indexOf(o));
+    });
+
+    dlg.addEventListener("click", (e) => {
+      if (e.target === dlg) dlg.close();
+    });
+  }
+</script>
+
+<style>
+  .palette {
+    width: min(640px, calc(100vw - 32px));
+    max-height: min(560px, calc(100dvh - 64px));
+    margin: 12vh auto auto;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--raised);
+    color: var(--fg);
+    box-shadow: 8px 8px 0 color-mix(in srgb, var(--fg) 18%, transparent);
+    overflow: hidden;
+  }
+  .palette[open] {
+    display: flex;
+    flex-direction: column;
+  }
+  .palette::backdrop {
+    background: rgb(5 7 6 / 0.55);
+    backdrop-filter: blur(2px);
+  }
+  .palette-form {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.9rem;
+  }
+  .palette-form span {
+    white-space: nowrap;
+  }
+  .palette-form input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    outline: none;
+  }
+  .palette-list {
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    overflow-y: auto;
+  }
+  .palette-list li {
+    display: grid;
+    grid-template-columns: minmax(120px, auto) 1fr auto;
+    gap: var(--s-4);
+    align-items: baseline;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.86rem;
+  }
+  .palette-list li[aria-selected="true"] {
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .palette-list li[aria-selected="true"] .pal-hint,
+  .palette-list li[aria-selected="true"] .pal-group {
+    color: color-mix(in srgb, var(--bg) 75%, var(--fg));
+  }
+  .pal-label {
+    font-weight: 600;
+  }
+  .pal-hint {
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pal-group {
+    font-size: 0.7rem;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .palette-empty {
+    padding: 16px;
+    color: var(--err);
+    font-size: 0.86rem;
+  }
+  .palette-hint {
+    margin-top: auto;
+    padding: 8px 16px;
+    border-top: 1px solid var(--line);
+    font-size: 0.72rem;
+    color: var(--mute);
+  }
+  @media (max-width: 520px) {
+    .palette-list li {
+      grid-template-columns: auto 1fr;
+    }
+    .pal-group {
+      display: none;
+    }
+  }
+</style>

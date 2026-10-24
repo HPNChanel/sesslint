@@ -311,18 +311,18 @@ def test_cli_default_exit_zero_and_select(capsys: pytest.CaptureFixture[str]) ->
     """SL009 warnings keep default exit 0; --select isolates, --ignore drops."""
     fixture = str(CONFORMANCE_DIR / "canonical_secret.jsonl")
 
-    code = main(["check", fixture, "--format", "canonical", "--json"])
+    code = main(["check", fixture, "--adapter", "canonical", "--json"])
     out = capsys.readouterr().out
     assert code == 0
     assert SL009 in {f["code"] for f in json.loads(out)["findings"]}
 
     capsys.readouterr()
-    code = main(["check", fixture, "--format", "canonical", "--json", "--select", "SL009"])
+    code = main(["check", fixture, "--adapter", "canonical", "--json", "--select", "SL009"])
     out = capsys.readouterr().out
     assert code == 0
     assert {f["code"] for f in json.loads(out)["findings"]} == {SL009}
 
-    code = main(["check", fixture, "--format", "canonical", "--json", "--ignore", "SL009"])
+    code = main(["check", fixture, "--adapter", "canonical", "--json", "--ignore", "SL009"])
     out = capsys.readouterr().out
     assert code == 0
     assert SL009 not in {f["code"] for f in json.loads(out)["findings"]}
@@ -332,7 +332,7 @@ def test_cli_output_never_contains_secret(capsys: pytest.CaptureFixture[str]) ->
     """Human and JSON CLI output never embed the matched secret bytes."""
     fixture = str(CONFORMANCE_DIR / "canonical_secret.jsonl")
     for extra in ([], ["--json"]):
-        main(["check", fixture, "--format", "canonical", *extra])
+        main(["check", fixture, "--adapter", "canonical", *extra])
         captured = capsys.readouterr()
         for token in (
             "sk-ant-api03-SECRET-CANARY-TOKEN-XYZ123",

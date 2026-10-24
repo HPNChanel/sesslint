@@ -1,16 +1,15 @@
 {
   "counts": {
     "by_code": {
-      "SL302": 1,
       "SL401": 1
     },
     "by_severity": {
-      "error": 1,
+      "error": 0,
       "fatal": 0,
       "info": 0,
       "warning": 1
     },
-    "total": 2
+    "total": 1
   },
   "findings": [
     {
@@ -18,12 +17,6 @@
       "line": 1,
       "record_id": "c1",
       "severity": "warning"
-    },
-    {
-      "code": "SL302",
-      "line": 1,
-      "record_id": null,
-      "severity": "error"
     }
   ],
   "format": "canonical",

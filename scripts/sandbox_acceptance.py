@@ -142,8 +142,8 @@ def run(args: argparse.Namespace) -> bool:
         "examples/refused.json",
     )
     commands = (
-        "baseline bundle check completion diff doctor export formats hook init-hooks "
-        "mcp repair scan seal stats validate-session verify version watch"
+        "bundle check completion diff doctor export hook mcp repair scan seal stats "
+        "triage verify version watch"
     ).split()
 
     def root_help() -> None:
@@ -154,19 +154,20 @@ def run(args: argparse.Namespace) -> bool:
     for c in commands:
         check(f"help/{c}", lambda c=c: require("usage:" in invoke([c, "--help"])))
     check("version", lambda: require(json.loads(invoke(["version", "--json"]))["cli"] == "0.4.1"))
-    check("formats", lambda: require("canonical" in invoke(["formats", "--json"])))
+    check("doctor/adapters", lambda: require("canonical" in invoke(["doctor", "--json"])))
     check(
         "healthy", lambda: require(not json.loads(invoke(["check", healthy, "--json"]))["findings"])
     )
     check(
-        "validate-session", lambda: invoke(["validate-session", "fixtures/canonical/minimal.json"])
+        "canonical-session",
+        lambda: invoke(
+            ["check", "fixtures/canonical/minimal.json", "--adapter", "canonical"], (0, 1)
+        ),
     )
     for fmt in ("human", "json", "sarif", "html"):
         check(
             f"report/{fmt}",
-            lambda fmt=fmt: require(
-                "SL003" in invoke(["check", broken, "--output-format", fmt], (0, 1))
-            ),
+            lambda fmt=fmt: require("SL003" in invoke(["check", broken, "--format", fmt], (0, 1))),
         )
     check(
         "determinism/check",
@@ -192,7 +193,7 @@ def run(args: argparse.Namespace) -> bool:
                         [
                             "check",
                             f"examples/{file}",
-                            "--format",
+                            "--adapter",
                             adapter,
                             "--profile",
                             profile,
@@ -254,7 +255,7 @@ def run(args: argparse.Namespace) -> bool:
         (work / "batch-input").mkdir()
         for name in ("healthy.jsonl", "repairable.jsonl", "refused.json"):
             shutil.copyfile(work / "examples" / name, work / "batch-input" / name)
-        invoke(["repair", "--batch", "batch-input", "--output-dir", "batch-output", "--json"], (1,))
+        invoke(["repair", "batch-input", "--output-dir", "batch-output", "--json"], (1,))
         outputs = list((work / "batch-output").glob("*.jsonl"))
         assert len(outputs) == 1 and "repairable" in outputs[0].name
         invoke(
@@ -267,14 +268,14 @@ def run(args: argparse.Namespace) -> bool:
                 "--json",
             ]
         )
-        invoke(["repair", "--files", broken, "--output-dir", "files-output", "--json"])
+        invoke(["repair", broken, healthy, "--output-dir", "files-output", "--json"], (0, 1))
 
     check("repair/batch-and-files", batch)
     for fmt in ("human", "json", "sarif", "html"):
         check(
             f"scan/{fmt}",
             lambda fmt=fmt: require(
-                "SL003" in invoke(["scan", "batch-input", "--output-format", fmt], (1,))
+                "SL003" in invoke(["scan", "batch-input", "--format", fmt], (1,))
             ),
         )
 
@@ -285,7 +286,7 @@ def run(args: argparse.Namespace) -> bool:
         for _ in range(2):
             invoke(["scan", "batch-input", "--json", "--incremental", "--cache-dir", "cache"], (1,))
         invoke(["scan", "--agent", "all", "--json"], (0, 1))
-        invoke(["scan", "--show-limits"])
+        require("max_file_bytes" in invoke(["doctor", "--json"]))
         invoke(["scan", "-", "--json"], stdin=(work / healthy).read_text(encoding="utf-8"))
 
     check("scan/parallel-cache-discovery-stdin", scan)
@@ -298,7 +299,11 @@ def run(args: argparse.Namespace) -> bool:
         (work / "legacy-baseline.json").write_text(
             '{"schema_version":"sesslint.baseline/v1","fingerprints":[]}', encoding="utf-8"
         )
-        assert "sesslint.baseline/v2" in invoke(["baseline", "--upgrade", "legacy-baseline.json"])
+        invoke(["check", broken, "--baseline", "legacy-baseline.json", "--json"], (0, 1))
+        invoke(["check", broken, "--write-baseline", "upgraded-baseline.json", "--json"], (0, 1))
+        assert "sesslint.baseline/v2" in (work / "upgraded-baseline.json").read_text(
+            encoding="utf-8"
+        )
         assert not json.loads(invoke(["check", broken, "--ignore", "SL003", "--json"]))["findings"]
 
     check("baseline-and-rule-filter", baseline)
@@ -307,7 +312,7 @@ def run(args: argparse.Namespace) -> bool:
     )
     check(
         "stats",
-        lambda: require('"schema_version"' in invoke(["stats", "batch-input", "-r", "--json"])),
+        lambda: require('"schema_version"' in invoke(["stats", "batch-input", "--json"])),
     )
     check("doctor", lambda: require('"schema_version"' in invoke(["doctor", "--json"])))
     check(
@@ -328,7 +333,7 @@ def run(args: argparse.Namespace) -> bool:
         data["events"][0]["payload"]["text"] = "\n".join(row["text"] for row in positives)
         (work / "synthetic-secrets.json").write_text(json.dumps(data), encoding="utf-8")
         for fmt in ("human", "json", "sarif", "html"):
-            output = invoke(["check", "synthetic-secrets.json", "--output-format", fmt], (0, 1))
+            output = invoke(["check", "synthetic-secrets.json", "--format", fmt], (0, 1))
             assert "SL009" in output
             assert all(canary not in output for row in positives for canary in row["canaries"])
         invoke(
@@ -349,7 +354,7 @@ def run(args: argparse.Namespace) -> bool:
         name = "phiên kiểm thử.jsonl"
         shutil.copyfile(work / broken, work / name)
         for fmt in ("human", "json", "sarif", "html"):
-            assert "SL003" in invoke(["check", name, "--output-format", fmt], (0, 1))
+            assert "SL003" in invoke(["check", name, "--format", fmt], (0, 1))
         invoke(["bundle", name, "--json"])
 
     check("paths/unicode-filename", unicode_filename)
@@ -358,7 +363,7 @@ def run(args: argparse.Namespace) -> bool:
         def export(name: str = name) -> None:
             out = "export-" + name
             invoke(["export", "examples/" + name, "--output", out, "--json"])
-            invoke(["check", out, "--format", "canonical", "--json"], (0, 1))
+            invoke(["check", out, "--adapter", "canonical", "--json"], (0, 1))
 
         check("export/" + name, export)
 
@@ -379,9 +384,9 @@ def run(args: argparse.Namespace) -> bool:
         )
     for agent in ("claude", "codex", "all"):
         check(
-            "init-hooks/" + agent,
+            "hook-init/" + agent,
             lambda agent=agent: require(
-                "sesslint" in invoke(["init-hooks", "--agent", agent, "--json"])
+                "sesslint" in invoke(["hook", "--init", "--agent", agent, "--json"])
             ),
         )
     for event in ("SessionStart", "PreCompact", "PostCompact", "SessionEnd", "Unknown"):
@@ -494,7 +499,7 @@ def run(args: argparse.Namespace) -> bool:
             source = str(work / "fixtures" / expected["input"])
             argv = ["scan" if expected["mode"] == "scan" else "check", source, "--json"]
             if expected.get("format") and expected["mode"] != "scan":
-                argv += ["--format", expected["format"]]
+                argv += ["--adapter", expected["format"]]
             doc = json.loads(invoke(argv, (0, 1)))
             findings = (
                 [f for item in doc["files"] for f in item.get("findings", [])]
@@ -506,7 +511,13 @@ def run(args: argparse.Namespace) -> bool:
             observed.update(actual)
 
         check("golden/" + path.stem, golden)
-    check("detectors/34-codes", lambda: require(len(observed) == 34))
+    # The kit ships one docs/codes/SLxxx.md per registered code (gated against the
+    # registry by tests/test_rule_docs.py), so the corpus must trigger exactly that set.
+    documented = {p.stem for p in (work / "docs/codes").glob("SL*.md")}
+    check(
+        "detectors/all-documented-codes",
+        lambda: require(bool(documented) and observed == documented),
+    )
     after = {
         str(p.relative_to(work)): sha(p)
         for folder in ("examples", "fixtures")

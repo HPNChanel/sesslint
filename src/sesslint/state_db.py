@@ -26,6 +26,7 @@ from sesslint.report import short_hash
 
 MAX_STATE_DB_BYTES: int = 256 * 1024 * 1024
 MAX_STATE_ROWS: int = 1_000_000
+MAX_STATE_QUERY_STEPS: int = 50_000_000
 
 STATE_DB_GLOB: str = "state_*.sqlite"
 
@@ -72,6 +73,7 @@ class CodexStateSnapshot:
     spawn_edge_orphans: int
     migration_skips: int
     migration_skip_reason_hashes: tuple[str, ...]
+    thread_rollout_pairs: frozenset[tuple[str, str]] = frozenset()
 
     @property
     def membership_complete(self) -> bool:
@@ -95,7 +97,7 @@ def _table_columns(con: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
 
 
-def read_codex_state(path: Path) -> CodexStateSnapshot:
+def read_codex_state(path: Path, *, immutable: bool = False) -> CodexStateSnapshot:
     """Read one Codex ``state_*.sqlite`` into a :class:`CodexStateSnapshot`.
 
     Never raises on bad input: every failure mode is a deterministic
@@ -111,12 +113,23 @@ def read_codex_state(path: Path) -> CodexStateSnapshot:
     except OSError:
         return _empty(parse_ok=False, note="io-error")
 
-    uri = f"file:{path.absolute().as_posix()}?mode=ro"
+    uri = path.absolute().as_uri() + "?mode=ro"
+    if immutable:
+        uri += "&immutable=1"
     try:
         con = sqlite3.connect(uri, uri=True)
     except sqlite3.Error:
         return _empty(parse_ok=False, note="io-error")
     try:
+        query_budget = MAX_STATE_QUERY_STEPS
+
+        def limit_query() -> int:
+            nonlocal query_budget
+            query_budget -= 1000
+            return int(query_budget <= 0)
+
+        if immutable:
+            con.set_progress_handler(limit_query, 1000)
         con.execute("PRAGMA query_only = ON")
         con.execute("PRAGMA busy_timeout = 0")
         tcols = _table_columns(con, "threads")
@@ -125,6 +138,7 @@ def read_codex_state(path: Path) -> CodexStateSnapshot:
 
         thread_ids: set[str] = set()
         rollout_uuids: set[str] = set()
+        thread_rollout_pairs: set[tuple[str, str]] = set()
         rows = 0
         for tid, rpath in con.execute(
             "SELECT id, rollout_path FROM threads LIMIT ?", (MAX_STATE_ROWS + 1,)
@@ -141,36 +155,45 @@ def read_codex_state(path: Path) -> CodexStateSnapshot:
                 u = rollout_uuid_from_name(base)
                 if u:
                     rollout_uuids.add(u)
+                    if isinstance(tid, str) and tid:
+                        thread_rollout_pairs.add((tid, u))
 
         orphans = 0
         if _table_columns(con, "thread_spawn_edges") >= set(_SPAWN_COLS):
-            orphans = int(
+            # Bound rows before relationship work; correlated COUNT queries
+            # can be quadratic on unindexed, user-supplied registry copies.
+            for i, (parent, child) in enumerate(
                 con.execute(
-                    "SELECT COUNT(*) FROM thread_spawn_edges e "
-                    "WHERE NOT EXISTS (SELECT 1 FROM threads p "
-                    "  WHERE p.id = e.parent_thread_id) "
-                    "OR NOT EXISTS (SELECT 1 FROM threads c "
-                    "  WHERE c.id = e.child_thread_id)"
-                ).fetchone()[0]
-            )
-
-        skips = 0
-        reason_hashes: set[str] = set()
-        if _table_columns(con, "rollout_migration_skipped_rollouts") >= set(_SKIP_COLS):
-            skips = int(
-                con.execute("SELECT COUNT(*) FROM rollout_migration_skipped_rollouts").fetchone()[0]
-            )
-            for i, (reason,) in enumerate(
-                con.execute(
-                    "SELECT DISTINCT skip_reason FROM rollout_migration_skipped_rollouts LIMIT ?",
+                    "SELECT parent_thread_id, child_thread_id FROM thread_spawn_edges LIMIT ?",
                     (MAX_STATE_ROWS + 1,),
                 )
             ):
                 if i >= MAX_STATE_ROWS:
                     return _empty(parse_ok=False, note="oversized")
+                if parent not in thread_ids or child not in thread_ids:
+                    orphans += 1
+
+        skips = 0
+        reason_hashes: set[str] = set()
+        if _table_columns(con, "rollout_migration_skipped_rollouts") >= set(_SKIP_COLS):
+            for i, (reason,) in enumerate(
+                con.execute(
+                    "SELECT skip_reason FROM rollout_migration_skipped_rollouts LIMIT ?",
+                    (MAX_STATE_ROWS + 1,),
+                )
+            ):
+                if i >= MAX_STATE_ROWS:
+                    return _empty(parse_ok=False, note="oversized")
+                skips += 1
                 reason_hashes.add(short_hash(reason if isinstance(reason, str) else ""))
     except sqlite3.OperationalError as err:
-        note = "locked" if "locked" in str(err).lower() else "io-error"
+        note = (
+            "query-limit"
+            if immutable and query_budget <= 0
+            else "locked"
+            if "locked" in str(err).lower()
+            else "io-error"
+        )
         return _empty(parse_ok=False, note=note)
     except sqlite3.DatabaseError:
         return _empty(parse_ok=False, note="malformed")
@@ -185,6 +208,7 @@ def read_codex_state(path: Path) -> CodexStateSnapshot:
         spawn_edge_orphans=orphans,
         migration_skips=skips,
         migration_skip_reason_hashes=tuple(sorted(reason_hashes)),
+        thread_rollout_pairs=frozenset(thread_rollout_pairs),
     )
 
 

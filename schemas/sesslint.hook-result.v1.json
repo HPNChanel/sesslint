@@ -24,7 +24,7 @@
     },
     "reason": {
       "type": "string",
-      "description": "Outcome reason: clean, findings-present, detection-failed, or a skip reason (malformed-payload, payload-too-large, no-transcript-path, transcript-not-found, io-error, usage-error, internal-error)."
+      "description": "Outcome reason: clean, findings-present, detection-failed, or a skip reason (malformed-payload, payload-too-large, no-transcript-path, transcript-not-found, budget-exceeded, io-error, usage-error, internal-error, format-undetected)."
     },
     "findings_by_code": {
       "type": "object",

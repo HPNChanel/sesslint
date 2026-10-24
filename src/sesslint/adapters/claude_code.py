@@ -20,7 +20,8 @@ from typing import Any, BinaryIO, Final
 from sesslint.adapters.canonical import EventList, SourceMetadata
 from sesslint.adapters.drift import DriftTracker
 from sesslint.adapters.links import extract_links
-from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.metadata import UnknownMetadataTracker, has_semantic_fields
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value, scalar_id
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -49,8 +50,10 @@ from sesslint.io import (
     _open_byte_source,
     _RawLine,
     check_nesting_depth,
+    decode_defect_code,
     decode_error_message_template,
     decode_json_dupaware,
+    defect_evidence,
     dup_key_findings,
     extract_record_id,
 )
@@ -99,6 +102,7 @@ CRITICAL_KEYS: Final[frozenset[str]] = frozenset(
         "parent_id",
         "parentUuid",
         "parent_uuid",
+        "logicalParentUuid",
         "toolUseId",
         "tool_use_id",
         "tool_call_id",
@@ -115,6 +119,7 @@ TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
     "tool_use": ("assistant", "tool_call"),
     "tool_result": ("tool", "tool_result"),
     "system": ("system", "message"),
+    "attachment": ("system", "opaque"),
     # ``{"type":"summary","leafUuid":...}`` records mark where prior history was
     # compacted into a summary — canonically a compaction boundary, not a
     # conversational message (they also lack uuid linkage and must not form a
@@ -124,6 +129,25 @@ TYPE_MAP: Final[dict[str, tuple[ActorLiteral, KindLiteral]]] = {
     "compaction_boundary": ("system", "compaction_boundary"),
     "message": ("assistant", "message"),
 }
+
+# These records describe session UI/housekeeping state, not messages. Their
+# decorative id (if any) is not a conversation UUID. A UUID-bearing instance
+# remains an opaque chain node instead of being silently removed from the graph.
+SESSION_METADATA_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "custom-title",
+        "last-prompt",
+        "atis-latch",
+        "agent-name",
+        "pr-link",
+        "queue-operation",
+        "mode",
+        "permission-mode",
+        "cost-state",
+        "file-history-delta",
+        "file-history-snapshot",
+    }
+)
 
 # Known Claude Code record keys used to distinguish standard fields from unknown fields
 KNOWN_RECORD_KEYS: Final[frozenset[str]] = frozenset(
@@ -136,6 +160,10 @@ KNOWN_RECORD_KEYS: Final[frozenset[str]] = frozenset(
         "parent_id",
         "parentUuid",
         "parent_uuid",
+        "logicalParentUuid",
+        "subtype",
+        "isCompactSummary",
+        "toolUseResult",
         "type",
         "timestamp",
         "ts",
@@ -267,11 +295,12 @@ def detect_claude_code(first_bytes: bytes, filename: str) -> float:
         parsed_records += 1
 
         rec_type = obj.get("type")
-        if isinstance(rec_type, str) and rec_type in TYPE_MAP:
+        if isinstance(rec_type, str) and (
+            rec_type in TYPE_MAP or rec_type in SESSION_METADATA_TYPES
+        ):
             claude_signals += 2
-
-        if "sessionId" in obj or "session_id" in obj:
-            claude_signals += 1
+        # A session identifier is shared by unrelated formats. It cannot,
+        # by itself, establish this adapter (mixed-store discovery, B4).
 
         if "toolUseId" in obj or "tool_use_id" in obj:
             claude_signals += 2
@@ -317,7 +346,7 @@ def _build_payload(
             if obj.get("name") is not None
             else (obj.get("tool_name") if obj.get("tool_name") is not None else "")
         )
-        raw_tu_id = (
+        raw_tu_id = scalar_id(
             obj.get("toolUseId") if obj.get("toolUseId") is not None else obj.get("tool_use_id")
         )
         tool_use_id = str(raw_tu_id) if raw_tu_id is not None else rec_id
@@ -337,7 +366,7 @@ def _build_payload(
         }
 
     if kind == "tool_result":
-        raw_tu_id = (
+        raw_tu_id = scalar_id(
             obj.get("toolUseId") if obj.get("toolUseId") is not None else obj.get("tool_use_id")
         )
         tool_use_id = str(raw_tu_id) if raw_tu_id is not None else ""
@@ -435,6 +464,7 @@ def _load_claude_code_internal(
         "record_sizes": [],
         "drift": DriftTracker("claude-code-jsonl"),
         "secret_tracker": SecretScanTracker(),
+        "unknown_metadata": UnknownMetadataTracker(),
     }
 
     try:
@@ -479,7 +509,7 @@ def _load_claude_code_internal(
                 continue
 
             record_count += 1
-            line_end_offset = line_start_offset + len(chunk)
+            line_end_offset = total_bytes_read
             current_raw = _RawLine(
                 line_number=line_number,
                 raw_bytes=chunk,
@@ -548,6 +578,9 @@ def _load_claude_code_internal(
         secret_ctx = context.get("secret_tracker")
         if isinstance(secret_ctx, SecretScanTracker):
             findings.extend(secret_ctx.into_findings(path_str=path_str))
+        unknown_ctx = context.get("unknown_metadata")
+        if isinstance(unknown_ctx, UnknownMetadataTracker):
+            findings.extend(unknown_ctx.findings(path_str))
         guard.assert_no_collision()
         return (
             events,
@@ -625,7 +658,6 @@ def _process_claude_line(
     if isinstance(sizes_meta, list) and raw.byte_end >= raw.byte_offset:
         sizes_meta.append(raw.byte_end - raw.byte_offset)
 
-    code = SL002 if is_terminal else SL001
     coord_evidence: dict[str, Any] = {
         "byte_offset": raw.byte_offset,
         "byte_end": raw.byte_end,
@@ -641,7 +673,7 @@ def _process_claude_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -654,12 +686,13 @@ def _process_claude_line(
         rec_id = extract_record_id(raw.raw_bytes.decode("utf-8", errors="replace"))
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
         msg_template = "Forbidden NUL byte on line {line} for record {record_id}"
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -677,12 +710,13 @@ def _process_claude_line(
         msg_template = (
             "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
         )
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -701,7 +735,7 @@ def _process_claude_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -709,15 +743,16 @@ def _process_claude_line(
         )
         return
     except (json.JSONDecodeError, ValueError) as err:
+        code = decode_defect_code(raw, is_terminal=is_terminal)
         rec_id = extract_record_id(decoded_text)
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = decode_error_message_template(err, terminal=is_terminal)
+        msg_template = decode_error_message_template(err, terminal=code == SL002)
         findings.append(
             make_finding(
                 code=code,
                 message_template=msg_template,
                 source=source,
-                evidence=coord_evidence,
+                evidence=defect_evidence(code, coord_evidence),
             )
         )
         return
@@ -738,14 +773,10 @@ def _process_claude_line(
     if not isinstance(obj, dict):
         rec_id = None
         source = SourceRef(path=path_str, line=raw.line_number, record_id=rec_id)
-        msg_template = (
-            "Torn terminal record on line {line} for record {record_id}"
-            if is_terminal
-            else "Malformed record on line {line} for record {record_id}"
-        )
+        msg_template = "Malformed record on line {line} for record {record_id}"
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -763,7 +794,7 @@ def _process_claude_line(
         )
         findings.append(
             make_finding(
-                code=code,
+                code=SL001,
                 message_template=msg_template,
                 source=source,
                 evidence=coord_evidence,
@@ -781,7 +812,9 @@ def _process_claude_line(
     guard: SyntheticIdCollisionGuard = context.setdefault(
         "collision_guard", SyntheticIdCollisionGuard()
     )
-    raw_id = obj.get("uuid") or obj.get("id") or obj.get("record_id") or obj.get("message_id")
+    raw_id = scalar_id(
+        obj.get("uuid") or obj.get("id") or obj.get("record_id") or obj.get("message_id")
+    )
     seq_index = len(events)
     if raw_id is not None and str(raw_id).strip():
         rec_id_str = str(raw_id).strip()
@@ -819,8 +852,9 @@ def _process_claude_line(
             byte_end=raw.byte_end,
         )
 
-    raw_parent = (
-        obj.get("parentUuid")
+    raw_parent = scalar_id(
+        obj.get("logicalParentUuid")
+        or obj.get("parentUuid")
         or obj.get("parent_uuid")
         or obj.get("parentId")
         or obj.get("parent_id")
@@ -956,9 +990,22 @@ def _process_claude_line(
         raw_role = obj["message"].get("role")
 
     has_emitted_sl302 = False
+    actor: ActorLiteral
+    kind: KindLiteral
 
-    if isinstance(raw_type, str) and raw_type in TYPE_MAP:
+    if isinstance(raw_type, str) and raw_type in SESSION_METADATA_TYPES:
+        if not obj.get("uuid"):
+            # Preserve a refusal for unexpected critical fields even on a
+            # known metadata family. Its ordinary decorative fields are ignored.
+            if not any(k.startswith(("critical_", "unknown_critical")) for k in obj):
+                return
+        actor, kind = "system", "opaque"
+    elif isinstance(raw_type, str) and raw_type in TYPE_MAP:
         actor, kind = TYPE_MAP[raw_type]
+        if raw_type == "system" and obj.get("subtype") == "compact_boundary":
+            kind = "compaction_boundary"
+        elif raw_type == "system" and obj.get("subtype") in ("stop_hook_summary", "local_command"):
+            kind = "opaque"
         if raw_type == "message" and raw_role in ("user", "assistant", "system"):
             actor = raw_role
     elif (
@@ -968,6 +1015,11 @@ def _process_claude_line(
     ):
         actor = raw_role  # type: ignore[assignment]
         kind = "message"
+    elif isinstance(raw_type, str) and raw_type and not has_semantic_fields(obj):
+        unknown_ctx = context.get("unknown_metadata")
+        if isinstance(unknown_ctx, UnknownMetadataTracker):
+            unknown_ctx.note(raw_type, line=raw.line_number)
+        return
     else:
         actor = "system"
         kind = "unknown"
@@ -1079,7 +1131,7 @@ def _process_claude_line(
 
         num_tu = len(tool_use_blocks)
         for i, tu_block in enumerate(tool_use_blocks):
-            tu_id = str(tu_block.get("id") or "").strip()
+            tu_id = str(scalar_id(tu_block.get("id")) or "").strip()
             tool_name = str(tu_block.get("name") or "")
             raw_input = tu_block.get("input") or {}
             input_payload = raw_input if isinstance(raw_input, Mapping) else {"value": raw_input}
@@ -1136,7 +1188,7 @@ def _process_claude_line(
     if tool_result_blocks:
         num_tr = len(tool_result_blocks)
         for i, tr_block in enumerate(tool_result_blocks):
-            raw_corr = tr_block.get("tool_use_id") or tr_block.get("toolUseId") or ""
+            raw_corr = scalar_id(tr_block.get("tool_use_id") or tr_block.get("toolUseId")) or ""
             corr_id = str(raw_corr).strip()
             tr_content = tr_block.get("content") or ""
             is_err = bool(tr_block.get("is_error") or tr_block.get("error") or False)
@@ -1148,7 +1200,7 @@ def _process_claude_line(
             if num_tr == 1:
                 res_event_id = rec_id_str
                 orig_id = original_id
-            elif tr_block.get("id"):
+            elif scalar_id(tr_block.get("id")):
                 res_event_id = str(tr_block["id"])
                 guard.register_real(res_event_id)
                 orig_id = res_event_id
@@ -1197,7 +1249,7 @@ def _process_claude_line(
 
     correlation_id: str | None = None
     if kind in ("tool_call", "tool_result"):
-        raw_call_id = (
+        raw_call_id = scalar_id(
             obj.get("toolUseId")
             or obj.get("tool_use_id")
             or obj.get("call_id")

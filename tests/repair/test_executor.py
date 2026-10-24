@@ -42,7 +42,6 @@ from sesslint.repair import (
     PlanStep,
     PlanTampered,
     PolicyMismatch,
-    Recipe,
     RepairPlan,
     RepairRefused,
     clear_registry,
@@ -53,7 +52,6 @@ from sesslint.repair import (
     load_plan,
     register_all_conservative_recipes,
     register_all_salvage_recipes,
-    register_recipe,
 )
 from sesslint.report import load_manifest_schema, parse_manifest
 
@@ -423,49 +421,19 @@ def test_output_invalid_synthetic_tool_result(tmp_path: Path) -> None:
         }
         return events + [rogue_ev]
 
-    rogue_recipe = Recipe(
-        name="rogue-inject-success",
-        handles=("SL003",),
-        preconditions=(),
-        lossy=False,
-        salvage_only=False,
-        apply=rogue_apply,
-    )
-    register_recipe(rogue_recipe)
+    from sesslint import api
+    from sesslint.repair.registry import REGISTRY, get_recipe
 
-    step = PlanStep(
-        seq=0,
-        recipe="rogue-inject-success",
-        target_finding_fp="fp-test",
-        target_index=1,
-    )
-    source_hash = hashlib.sha256(source_file.read_bytes()).hexdigest()
-    plan_dict: dict[str, Any] = {
-        "blocked": [],
-        "loss_accounting": {"preview": {}},
-        "profile": "neutral",
-        "source_hash": source_hash,
-        "steps": [step.to_dict()],
-        "version": "sesslint.plan/v1",
-    }
-    fp = compute_plan_fingerprint(plan_dict)
-    plan = RepairPlan(
-        source_hash=source_hash,
-        profile="neutral",
-        steps=(step,),
-        blocked=(),
-        loss_accounting=Loss(preview={}),
-        fingerprint=fp,
-        policy="conservative",
-    )
+    plan = api.plan_repair(source_file)
+    recipe = get_recipe(plan.steps[0].recipe)
+    assert recipe is not None
+    # Fault-inject a bad implementation of an authorized recipe. The plan
+    # itself still passes current-finding vetting, so this exercises the
+    # independent no-synthetic-success gate.
+    with patch.dict(REGISTRY, {recipe.name: replace(recipe, apply=rogue_apply)}):
+        with pytest.raises(OutputInvalid, match="Synthetic tool_result detected"):
+            execute(source_path=source_file, plan=plan, output_path=output_file)
 
-    with pytest.raises(OutputInvalid, match="Synthetic tool_result detected"):
-        execute(
-            source_path=source_file,
-            plan=plan,
-            output_path=output_file,
-            policy="conservative",
-        )
     assert not output_file.exists()
 
 
@@ -555,7 +523,9 @@ def test_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_exit_codes_table(tmp_path: Path) -> None:
     """Verify FR-099 exit code contract: 0=success/dry-run, 1=refusal/no safe plan, 2=usage/I-O."""
-    valid_source = tmp_path / "valid_source.jsonl"
+    # Same file name as the fixture: plan steps bind finding fingerprints, which
+    # include the source name (B20).
+    valid_source = tmp_path / "source.jsonl"
     shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", valid_source)
     plan_path = FIXTURES_DIR / "exec_basic" / "plan.json"
 
@@ -657,7 +627,7 @@ def test_manifest_schema_validation(tmp_path: Path) -> None:
 
 
 def test_only_mutator() -> None:
-    """Grep src/sesslint/ for os.replace and os.rename: only atomic.py and executor.py allowed."""
+    """Publication primitives are confined to atomic.py; executor coordinates cleanup."""
     pattern = re.compile(r"\bos\.(replace|rename)\b")
     mutator_files: list[str] = []
 
@@ -673,7 +643,7 @@ def test_only_mutator() -> None:
                     rel = file_path.relative_to(SRC_DIR).as_posix()
                     mutator_files.append(rel)
 
-    expected_mutators = {"atomic.py", "repair/executor.py"}
+    expected_mutators = {"atomic.py"}
     assert set(mutator_files) == expected_mutators, (
         f"Unexpected file mutators found in src/sesslint: {set(mutator_files) - expected_mutators}"
     )
@@ -731,7 +701,10 @@ def test_cross_device_replace_error_mapping(tmp_path: Path) -> None:
 
     plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
 
-    with patch("os.replace", side_effect=OSError(errno.EXDEV, "Invalid cross-device link")):
+    with patch(
+        "sesslint.atomic._publish_exclusive",
+        side_effect=OSError(errno.EXDEV, "Invalid cross-device link"),
+    ):
         with pytest.raises(OutputInvalid, match="Cross-device link error"):
             execute(
                 source_path=source_file,
@@ -750,7 +723,9 @@ def test_unicode_and_spaces_in_path(tmp_path: Path) -> None:
     shutil.copyfile(FIXTURES_DIR / "exec_basic" / "source.jsonl", source_file)
     output_file = odd_dir / "output 🎯.jsonl"
 
-    plan = load_plan(FIXTURES_DIR / "exec_basic" / "plan.json")
+    from sesslint import api
+
+    plan = api.plan_repair(source_file)
     manifest = execute(
         source_path=source_file,
         plan=plan,
@@ -1215,12 +1190,9 @@ def test_salvage_e2e_manifest_ceiling(tmp_path: Path) -> None:
     source_file.write_text(
         dump_session(Session(header=header, events=tuple(events))), encoding="utf-8"
     )
-    source_hash = hashlib.sha256(source_file.read_bytes()).hexdigest()
+    from sesslint import api
 
-    raw_plan = dict(fixture_data["expected_plan"])
-    raw_plan["source_hash"] = source_hash
-    raw_plan["fingerprint"] = compute_plan_fingerprint(raw_plan)
-    salvage_plan = load_plan(raw_plan)
+    salvage_plan = api.plan_repair(source_file, policy="salvage", acknowledge_side_effects=True)
 
     output_file = tmp_path / "salvage_repaired.jsonl"
     manifest_file = tmp_path / "salvage_repaired.jsonl.manifest.json"

@@ -6,7 +6,25 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      upload_reports:
+        description: "Store coverage and benchmark artifacts (uses artifact storage)"
+        type: boolean
+        default: false
+      windows_acceptance:
+        description: "Build and test Windows wheel, EXE and PowerShell acceptance"
+        type: boolean
+        default: false
   workflow_call:
+    inputs:
+      upload_reports:
+        description: "Store coverage and benchmark artifacts (uses artifact storage)"
+        type: boolean
+        default: false
+      windows_acceptance:
+        description: "Build and test Windows wheel, EXE and PowerShell acceptance"
+        type: boolean
+        default: false
   schedule:
     - cron: "0 2 * * 1"  # Weekly Monday 02:00 UTC benchmark run
 
@@ -35,82 +53,111 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+
       - name: Install build and test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+        run: uv sync --locked --extra dev
 
       - name: Lint with ruff
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Check formatting with ruff
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Type check with mypy
-        run: mypy --strict src/
+        run: uv run mypy --strict src/
 
       - name: Verify Apache-2.0 License and SPDX headers
-        run: pytest -q tests/test_license.py
+        run: uv run pytest -q tests/test_license.py
 
       - name: Verify Fixture Provenance Gate
-        run: pytest -q tests/test_fixture_provenance.py
+        run: uv run pytest -q tests/test_fixture_provenance.py
 
       - name: Verify Reason-Code and Recipe Documentation Gate
-        run: pytest -q tests/test_rule_docs.py tests/test_registry_docs.py
+        run: uv run pytest -q tests/test_rule_docs.py tests/test_registry_docs.py
 
       - name: Run Conformance Matrix Gate
-        run: pytest -q tests/conformance/
+        run: uv run pytest -q tests/conformance/
 
       - name: Run Full Test Suite
-        run: pytest -q
+        run: uv run pytest -q
 
       - name: Run property-based tests separately
-        run: pytest -q tests/fuzz/ --hypothesis-profile=ci
+        run: uv run pytest -q tests/fuzz/ --hypothesis-profile=ci
 
       - name: Run Acceptance & Smoke Tests
-        run: pytest -q tests/test_smoke_release.py tests/accept/test_healthy.py tests/accept/test_parity.py
+        run: uv run pytest -q tests/test_smoke_release.py tests/accept/test_healthy.py tests/accept/test_parity.py
+
+  docs-validation:
+    name: Documentation strict build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+
+      - name: Install locked docs dependencies
+        run: uv sync --locked --extra docs
+
+      - name: Build documentation strictly
+        run: uv run mkdocs build --strict
 
   offline-verification:
     name: Offline Isolation Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
-      - name: Pre-install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+
+      - name: Pre-install locked dependencies
+        run: uv sync --locked --extra dev
 
       - name: Execute Offline Tests
         env:
           PIP_NO_INDEX: "1"
         run: |
-          pytest -q tests/accept/test_offline.py tests/accept/test_kill.py
+          uv run pytest -q tests/accept/test_offline.py tests/accept/test_kill.py
 
   release-refs:
     name: Release Reference Consistency
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository (full history for tags)
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
@@ -122,27 +169,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
 
       - name: Measure coverage (fails below fail_under ratchet)
         run: >-
-          pytest -q --cov=sesslint --cov-branch
+          uv run pytest -q --cov=sesslint --cov-branch
           --cov-report=term --cov-report=html:coverage-html
           --cov-report=xml:coverage.xml
 
       - name: Upload coverage reports
-        if: always()
-        uses: actions/upload-artifact@v7.0.2
+        # Ordinary CI keeps reports in job logs without allocating artifact storage.
+        # Release tags retain their existing evidence uploads.
+        if: always() && (inputs.upload_reports == true || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-${{ github.run_id }}
           path: |
@@ -165,13 +217,16 @@ jobs:
             expected: pass
           - fixture: fixtures/checks/sl005_cycle.json
             expected: fail
+            expected-exit: "1"
           - fixture: fixtures/checks/sl101_orphan.json
             expected: fail
+            expected-exit: "1"
           - fixture: fixtures/canonical/unknown_critical.json
             expected: fail
+            expected-exit: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Run sesslint-check (Healthy fixture)
         if: matrix.expected == 'pass'
@@ -196,6 +251,10 @@ jobs:
             echo "Expected outcome to be failure, but got: ${{ steps.corrupt-check.outcome }}"
             exit 1
           fi
+          if [ "${{ steps.corrupt-check.outputs.exit-code }}" != "${{ matrix.expected-exit }}" ]; then
+            echo "Expected exit code ${{ matrix.expected-exit }}, but got: ${{ steps.corrupt-check.outputs.exit-code }}"
+            exit 1
+          fi
           echo "Corrupt fixture ${{ matrix.fixture }} was correctly rejected by sesslint-check action."
 
   build-and-smoke:
@@ -204,18 +263,23 @@ jobs:
     needs: [test, offline-verification, action-dogfood]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
-      - name: Install build tool
-        run: python -m pip install build
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+
+      - name: Install locked build dependencies
+        run: uv sync --locked --extra packaging
 
       - name: Build sdist and wheel
-        run: python -m build
+        run: uv run python -m build
 
       - name: Generate sha256sums.txt
         run: |
@@ -226,12 +290,90 @@ jobs:
 
       - name: Clean environment installation smoke test
         run: |
-          python -m venv test_env
+          uv run python -m venv test_env
           source test_env/bin/activate
           pip install --no-index --find-links=dist sesslint
           sesslint version --json
           sesslint check fixtures/cli/check_basic/healthy.jsonl --json
           deactivate
+
+  windows-acceptance:
+    name: Windows artifact acceptance (opt-in)
+    if: inputs.windows_acceptance == true
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+          enable-cache: false
+
+      - name: Build unsigned artifacts from the checked-out commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset CODESIGN_PFX CODESIGN_PFX_PASSWORD CERT_THUMBPRINT
+          unset APPLE_SIGNING_IDENTITY APPLE_NOTARY_PROFILE GPG_KEY_ID
+          uv sync --locked --extra packaging
+          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          VERSION=$(uv run --no-sync python -c 'from sesslint._version import CLI_VERSION; print(CLI_VERSION)')
+          echo "ACCEPTANCE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          git rev-parse HEAD
+          uv run --no-sync python -m build --no-isolation
+          uv run --no-sync python scripts/build_starter_kit.py --version "$VERSION" --output dist/kit.zip
+          uv run --no-sync python scripts/package.py --outdir dist/bin
+          uv run --no-sync python scripts/build_windows_acceptance.py --binary "dist/bin/sesslint-$VERSION-windows-x86_64.exe" --kit dist/kit.zip --version "$VERSION" --commit "$(git rev-parse HEAD)" --output dist/acceptance.zip
+          uv run --no-sync python -m zipfile -e dist/acceptance.zip dist/acceptance
+          sha256sum dist/*.whl dist/*.tar.gz dist/*.zip dist/bin/*.exe
+
+      - name: Offline installed wheel and standalone EXE smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$ACCEPTANCE_VERSION"
+          uv run --no-sync python -m venv "$RUNNER_TEMP/standard"
+          "$RUNNER_TEMP/standard/Scripts/python.exe" -m pip install --no-index --no-deps --find-links=dist "sesslint==$VERSION"
+          uv venv --offline --python .venv/Scripts/python.exe "$RUNNER_TEMP/uv-env"
+          uv pip install --python "$RUNNER_TEMP/uv-env/Scripts/python.exe" --offline --no-index --no-deps --find-links=dist "sesslint==$VERSION"
+          uv run --no-sync python scripts/installed_smoke.py --python "$RUNNER_TEMP/standard/Scripts/python.exe" --kit dist/kit.zip --version "$VERSION" --receipt dist/smoke-standard.json
+          uv run --no-sync python scripts/installed_smoke.py --python "$RUNNER_TEMP/uv-env/Scripts/python.exe" --kit dist/kit.zip --version "$VERSION" --receipt dist/smoke-uv.json
+          uv run --no-sync python scripts/installed_smoke.py --binary "dist/bin/sesslint-$VERSION-windows-x86_64.exe" --kit dist/kit.zip --version "$VERSION" --receipt dist/smoke-binary.json
+
+      - name: Windows PowerShell 5.1 acceptance
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PSModulePath = Join-Path $PSHOME 'Modules'
+          # A child process separates script success from expected nonzero CLI cases.
+          & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -File ./dist/acceptance/Test-SessLint.ps1 -PackageRoot ./dist/acceptance -ReceiptPath ./dist/powershell-51.json
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell 5.1 acceptance failed' }
+          $result = Get-Content -Raw ./dist/powershell-51.json | ConvertFrom-Json
+          if ($result.status -ne 'PASS' -or $result.checks.Count -ne 42 -or -not $result.source_immutable) { throw 'Incomplete acceptance receipt' }
+          $result | ConvertTo-Json -Depth 10
+
+      - name: PowerShell 7.5 or newer acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $PSHOME 'pwsh.exe') -NoLogo -NoProfile -NonInteractive -File ./dist/acceptance/Test-SessLint.ps1 -PackageRoot ./dist/acceptance -ReceiptPath ./dist/powershell-7.json
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell 7 acceptance failed' }
+          $result = Get-Content -Raw ./dist/powershell-7.json | ConvertFrom-Json
+          if ($result.status -ne 'PASS' -or $result.checks.Count -ne 42 -or -not $result.source_immutable) { throw 'Incomplete acceptance receipt' }
+          $result | ConvertTo-Json -Depth 10
+
+      # Receipts and checksums remain in job logs; no artifact storage or publication.
+      # Hosted-runner PASS does not establish clean-host, signing or release acceptance.
 
   perf-benchmark:
     name: Performance Benchmark (250k events / 100MB)
@@ -243,30 +385,33 @@ jobs:
       startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.10.10"
+
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
 
       - name: Execute 250k Performance Benchmark
         run: |
           set -o pipefail
-          python -u bench/perf_250k.py --records 250000 --time-budget 15.0 --mem-budget 512.0 --record --host-tag ci-${{ runner.os }} --source ci --receipt benchmark-receipt.json 2>&1 | tee benchmark.log
+          uv run python -u bench/perf_250k.py --records 250000 --time-budget 15.0 --mem-budget 512.0 --record --host-tag ci-${{ runner.os }} --source ci --receipt benchmark-receipt.json 2>&1 | tee benchmark.log
 
       - name: Perf regression gate (advisory until calibrated)
         continue-on-error: true
-        run: python scripts/bench_gate.py --tolerance 1.25 --mem-budget 512
+        run: uv run python scripts/bench_gate.py --tolerance 1.25 --mem-budget 512
 
       - name: Upload bench ledger artifact
-        if: always()
-        uses: actions/upload-artifact@v7.0.2
+        if: always() && (inputs.upload_reports == true || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bench-ledger-${{ github.run_id }}
           path: |
@@ -274,4 +419,3 @@ jobs:
             benchmark-receipt.json
             benchmark.log
           retention-days: 30
-
