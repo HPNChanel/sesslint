@@ -1,8 +1,9 @@
 """Byte-identity golden for the MCP ``2025-06-18`` stdio server (CL-07).
 
 ``fixtures/mcp/2025-06-18`` holds request lines and the exact response bytes
-recorded from the server over stdio *before* ``2026-07-28`` support landed.
-A client that negotiates ``2025-06-18`` must keep getting those bytes.
+recorded from the server over stdio *before* ``2026-07-28`` support landed,
+with the SHA-256 path-label migration documented in its provenance.
+A client that negotiates ``2025-06-18`` must keep getting those pinned bytes.
 """
 
 from __future__ import annotations

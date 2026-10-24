@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `supportedVersions`, results carry `resultType` and `serverInfo`, `tools/list`
   carries `ttlMs`/`cacheScope`, and unsupported versions return
   `UnsupportedProtocolVersionError` (`-32022`). `2025-06-18` responses are
-  byte-identical to before (golden under `fixtures/mcp/2025-06-18`). HTTP
+  pinned by the golden under `fixtures/mcp/2025-06-18`, with the documented
+  SHA-256 path-label migration applied to scan results. HTTP
   transport, subscriptions, multi round-trip results and tasks are not
   implemented. See `docs/INTEGRATIONS.md`.
 - MCP: read-only `sesslint_triage` tool. It returns the same `sesslint.triage/v1`
