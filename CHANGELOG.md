@@ -109,6 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Installed-artifact smoke: canonicalize the temporary extraction root before
+  checking archive containment, so aliased temp paths work while escaping
+  archive members remain refused. Interpreter symlinks remain unresolved.
 - Privacy: Codex object/array identifiers and correlation values are treated as
   missing instead of copying nested content into findings and reports.
 - Command hints: withhold commands whose paths or options require shell-specific
