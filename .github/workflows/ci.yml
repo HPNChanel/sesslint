@@ -355,7 +355,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $env:PSModulePath = Join-Path $PSHOME 'Modules'
-          & ./dist/acceptance/Test-SessLint.ps1 -PackageRoot ./dist/acceptance -ReceiptPath ./dist/powershell-51.json
+          # A child process separates script success from expected nonzero CLI cases.
+          & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -File ./dist/acceptance/Test-SessLint.ps1 -PackageRoot ./dist/acceptance -ReceiptPath ./dist/powershell-51.json
           if ($LASTEXITCODE -ne 0) { throw 'PowerShell 5.1 acceptance failed' }
           $result = Get-Content -Raw ./dist/powershell-51.json | ConvertFrom-Json
           if ($result.status -ne 'PASS' -or $result.checks.Count -ne 42 -or -not $result.source_immutable) { throw 'Incomplete acceptance receipt' }
@@ -365,7 +366,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./dist/acceptance/Test-SessLint.ps1 -PackageRoot ./dist/acceptance -ReceiptPath ./dist/powershell-7.json
+          & (Join-Path $PSHOME 'pwsh.exe') -NoLogo -NoProfile -NonInteractive -File ./dist/acceptance/Test-SessLint.ps1 -PackageRoot ./dist/acceptance -ReceiptPath ./dist/powershell-7.json
           if ($LASTEXITCODE -ne 0) { throw 'PowerShell 7 acceptance failed' }
           $result = Get-Content -Raw ./dist/powershell-7.json | ConvertFrom-Json
           if ($result.status -ne 'PASS' -or $result.checks.Count -ne 42 -or -not $result.source_immutable) { throw 'Incomplete acceptance receipt' }
