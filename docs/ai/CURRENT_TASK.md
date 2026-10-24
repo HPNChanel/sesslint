@@ -47,9 +47,10 @@ integration".
     suite, property tests and acceptance tests.
 - **Other jobs: PASS.** Offline isolation gate, release-reference consistency, coverage ratchet, strict docs build,
   and the 6 `sesslint-check` action dogfood cases.
-- **Reproducible build and release smoke: PASS** in both the PR and dispatch runs.
-  - It did **not** run on the `main` push. Attempt 1 skipped it because `test` failed; attempt 2 re-ran only the
-    failed job, and this job does not appear in it.
+- **Reproducible build and release smoke: PASS** in the PR and dispatch runs and on `main` attempt 2.
+  - Attempt 1 skipped it because `test` failed. Attempt 2 includes successful job
+    [120822328709](https://github.com/HPNChanel/sesslint/actions/runs/40076092151/job/120822328709).
+    The completed attempt has 24 successful jobs and 2 intentional skips (performance and opt-in Windows acceptance).
 - **Performance benchmark: PASS.** `250,000 records (99.2 MB); fresh-process check 6.046s (budget: 15.0s), peak RSS
   442.28MB (budget: 512.0MB)`.
   - The regression gate printed `perf-gate: no baseline for os='linux'; record-only pass`. Only the absolute budget
@@ -66,9 +67,10 @@ integration".
 - Cause: `subprocess.TimeoutExpired`, because `powershell.exe -NoLogo -NoProfile -NonInteractive -Command …` did not
   finish within the test's 15 s timeout.
 - The same job passed on attempt 2 and in both earlier runs.
-- DERIVED: the failure was a PowerShell start-up time-out, not an assertion on hint quoting. The root cause is
-  **not established**, and a passing re-run does not erase it. A hardening change to this test (separate task) should
-  not weaken what it asserts.
+- OBSERVED: the PowerShell subprocess timed out before the hint-quoting assertion could run. The log does not
+  establish whether the delay was in PowerShell start-up, the synthetic receiver or process I/O. The root cause is
+  **not established**, and a passing re-run does not erase it. Any separate hardening change should preserve the
+  assertions and be justified by additional timing evidence.
 
 ## Acceptance boundaries
 
@@ -78,8 +80,9 @@ integration".
 - **Signing, provenance and publication: not performed.** No tag, GitHub Release, PyPI upload, cosign or SLSA
   verification.
 - **Mutation testing:** not run on this tree (the weekly `mutation.yml` last ran on `ee3edc2`). The `[tool.mutmut]`
-  scope was fixed by CL-09. `mutation.yml`'s baseline step still omits `tests/outcome/`. Long mutation runs are out of
-  scope for this update.
+  scope was fixed by CL-09. On `91c09ee`, `mutation.yml`'s baseline step already includes `tests/outcome/` alongside
+  checks, repair, I/O and engine tests; the job timeout remains 120 minutes. This configuration is not evidence of a
+  completed mutation run. Long mutation runs are out of scope for this update.
 - **Performance regression baseline:** none for Linux. CI enforces only the absolute 15 s / 512 MB budget.
 - **External adoption, useful recovery and repeat use:** UNVERIFIED (see [TRIAGE.md](../TRIAGE.md) and
   [OSS_STRATEGY.md](../OSS_STRATEGY.md)).
