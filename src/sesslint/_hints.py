@@ -53,9 +53,7 @@ def hint_arg(value: str) -> str | None:
     return _quote(value)
 
 
-def hint_options(
-    adapter: str | None = None, profile: str | None = None
-) -> tuple[str | None, ...]:
+def hint_options(adapter: str | None = None, profile: str | None = None) -> tuple[str | None, ...]:
     """Return the ``--adapter``/``--profile`` words a follow-up command repeats.
 
     A suggested command must read the session the way the command that

@@ -134,6 +134,7 @@ class RefusalRationale:
         """
         if self.salvage_path is None:
             return None
+        source: str | None
         if path is None:
             source, target = "<file>", "<out>" if output is None else hint_arg(output)
         else:

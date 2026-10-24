@@ -157,9 +157,7 @@ def test_supported_arguments_round_trip_through_real_shells(value: str, tmp_path
     assert argument is not None
     if os.name == "nt":
         command = f'"{sys.executable}" "{receiver}" {argument}'
-        result = subprocess.run(
-            command, shell=True, capture_output=True, check=True, timeout=15
-        )
+        result = subprocess.run(command, shell=True, capture_output=True, check=True, timeout=15)
         assert json.loads(result.stdout) == [value]
         executable = str(sys.executable).replace("'", "''")
         script = str(receiver).replace("'", "''")
