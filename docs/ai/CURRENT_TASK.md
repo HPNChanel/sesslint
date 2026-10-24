@@ -1,4 +1,4 @@
-# Current state — `main` @ `91c09ee` (0.5.0 integration landed)
+# Verified implementation — 0.5.0 integration and empty-input fix
 
 <!-- next-release: file -->
 
@@ -12,10 +12,12 @@ Updated 2026-10-24 from current CI evidence. It replaces the 2026-10-19 local-re
 
 ## Source state
 
-**`main` head.** OBSERVED: `main` = `91c09eea5236393a31a5523c05acf862bb397239`, "Merge pull request #23: verified 0.5.0
-integration".
-- Its tree `c502ddc` is identical to the tree of PR #23 head `96298f4`.
-- CI runs on `96298f4` therefore exercised the same files as `main`.
+**Verified implementation baseline.** OBSERVED: [PR #25](https://github.com/HPNChanel/sesslint/pull/25) merged into
+`main` as `c199bd73452d6d110a4a4aa5a7dfad87cf1eaf94`. Its tree `610cfa2630cde488162542ff9c40d36626fa49e0` is identical
+to the tested PR head `55e8cbe1cf8b8425bc1de564eab3a648c6881221`.
+
+**Previous integration baseline.** PR #23 merged as `91c09eea5236393a31a5523c05acf862bb397239`; its tree `c502ddc`
+is identical to PR #23 head `96298f4`. Evidence for that earlier tree is retained in the historical CI section.
 
 **What it contains:**
 - the 0.5.0 candidate (`bbd06fd`);
@@ -26,12 +28,25 @@ integration".
   - runnable shell hints;
   - opt-in Windows artifact acceptance;
   - opt-in report uploads.
+- PR #25: forced-adapter empty, whitespace-only and UTF-8 BOM-only input gets one empty-input SL001 without a
+  repair hint; triage asks for the session file.
 
 **Not done.** No tag, release, PyPI upload or signing has been done for this state. Package version is `0.5.0`;
 `CHANGELOG.md` keeps the new work under `Unreleased` above `## [0.5.0] - 2026-10-19`. Whether it ships as 0.5.0 or
 0.5.1 is undecided.
 
-## CI evidence for tree `c502ddc`
+## CI evidence for the empty-input fix
+
+- OBSERVED: [CI 40081929473](https://github.com/HPNChanel/sesslint/actions/runs/40081929473) on `55e8cbe` passed
+  25 jobs; the opt-in Windows artifact job was skipped. All 13 OS/Python matrix legs passed, as did coverage,
+  release references, documentation, offline checks, performance and build/smoke.
+- [CodeQL](https://github.com/HPNChanel/sesslint/actions/runs/40081929614) and
+  [docs](https://github.com/HPNChanel/sesslint/actions/runs/40081929454) passed on the same head.
+- The final PR checks also reported CodeQL result and GitGuardian success.
+- **Windows artifact acceptance for this revision: UNVERIFIED.** The receipt on `96298f4` below belongs to the
+  earlier runtime tree. A new artifact run is needed to establish acceptance of a binary containing #25.
+
+## Historical CI evidence for tree `c502ddc`
 
 | Run | Event / ref | Result |
 | --- | --- | --- |
@@ -87,16 +102,16 @@ integration".
 - **External adoption, useful recovery and repeat use:** UNVERIFIED (see [TRIAGE.md](../TRIAGE.md) and
   [OSS_STRATEGY.md](../OSS_STRATEGY.md)).
 
-## Open pull requests reconciled
+## Superseded pull requests
 
-PR #11 (AC-04) and PR #12 (AC-08) were reconciled against this tree in
-[PR_11_12_RECONCILIATION.md](PR_11_12_RECONCILIATION.md). Both are superseded on `main` except for:
-- **11.11:** a forced `--adapter` on empty input loses the empty-input wording, and `--adapter canonical` emits SL001
-  twice. BOM-only input is also misreported under three forced adapters. The fix is proposed in #25.
+PR #11 (AC-04) and PR #12 (AC-08) were originally reconciled against `91c09ee` in
+[PR_11_12_RECONCILIATION.md](PR_11_12_RECONCILIATION.md). Their original patches are superseded:
+- **11.11: PRESENT (fixed by #25).** The forced-adapter empty-input gap was resolved by `55e8cbe`, merged as
+  `c199bd7`. Earlier observations in the reconciliation are retained as historical evidence.
 - **12.6:** `check` keeps its `[read-only]` label while writing a baseline, report, seal or cache. This is
   documented, but it is a labelling decision.
 
-Neither PR was closed or merged.
+PR closure status is recorded on GitHub. The 12.6 wording decision remains separate from closing the obsolete PRs.
 
 ## Historical notes still in force
 

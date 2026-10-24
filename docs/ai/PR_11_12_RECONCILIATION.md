@@ -4,10 +4,11 @@
 
 **Scope:** documentation and evidence only. No runtime code was changed.
 
-**PR status:**
-- Both PRs stay open.
-- Neither was merged, closed, rebased or pushed to.
-- Nothing was tagged or published.
+**Status update after #25:** requirement **11.11 is PRESENT (fixed by #25)**. The fix at `55e8cbe` merged into `main`
+as `c199bd73452d6d110a4a4aa5a7dfad87cf1eaf94`. The observations against `91c09ee` below remain historical evidence.
+
+**PR status at the original audit:** both PRs were open; neither had been merged, closed, rebased or pushed to by
+that documentation task. Nothing was tagged or published. Current closure status is recorded on GitHub.
 
 **Labels**, from `AGENT_MAIN.md` §1:
 - OBSERVED: commands were run for this report.
@@ -61,9 +62,11 @@ through `3ce0dd5`.
 | 11.8 | Malformed content keeps its own message, colour and repair hint | **PRESENT, narrowed** | The message is unchanged. A salvage hint is now printed only where salvage can run; it is suppressed for the first record, records without byte coordinates and size-limit refusals (`CHANGELOG.md:192-194`, from `6f3ca01`). Test `test_empty_input.py:59` uses a torn record *between* valid records. OBSERVED: the PR's own example, a malformed **first** line, now prints `Next Action: Manual inspection required; automated repair refused.` by design |
 | 11.9 | "How to test" step `sesslint check /tmp/bad.jsonl --format canonical` | **OBSOLETE** | In 0.5.0, `-f/--format` selects the *output* format (`CHANGELOG.md:284-285`). OBSERVED: exit 2 with hint `'--format' now selects the output format; use '--adapter <name>'`. The equivalent today is `--adapter canonical` |
 | 11.10 | `CHANGELOG.md` `Unreleased` entry | **PRESENT** | `CHANGELOG.md:195-198` |
-| 11.11 | Empty-input recognition covers both finding shapes, so that a forced adapter also gets the empty-input wording (PR #11's `finding_is_empty_input` accepted `reason == "empty_input"` *or* `detail == "empty-or-whitespace-only input"`) | **MISSING** | Details below |
+| 11.11 | Empty-input recognition covers both finding shapes, so that a forced adapter also gets the empty-input wording (PR #11's `finding_is_empty_input` accepted `reason == "empty_input"` *or* `detail == "empty-or-whitespace-only input"`) | **PRESENT (fixed by #25)** | Historical gap at `91c09ee` documented below; fixed in `55e8cbe`, merged as `c199bd7` |
 
 ### 11.11 — forced-adapter empty input
+
+The following diagnosis describes `91c09ee`, before the fix in #25.
 
 **Where the two shapes come from:**
 - SOURCE: `src/sesslint/report.py:1931-1934` accepts only `evidence["reason"] == "empty_input"`.
@@ -89,14 +92,14 @@ pins the wording or the finding count for forced-adapter empty input.
 - the `CHANGELOG.md:195-198` sentence holds only for auto-detection;
 - the canonical path double-counts the empty-input finding.
 
-**Follow-up**, runtime, not done here:
+**Original proposed follow-up**, now implemented in #25:
 - one shared empty-input predicate, or one evidence shape;
 - de-duplicate the canonical SL001;
 - add a regression test per forced adapter.
 
-**Fix proposed in #25** (draft, not merged when this was written). It also covers a case found while fixing this:
+**Fix merged in #25** as `c199bd7`. It also covers a case found while fixing this:
 BOM-only input reported healthy under `--adapter openai-agents`, and a repairable torn record under `claude-code-jsonl`
-and `codex-rollout`. Until #25 merges, the status on `main` stays **MISSING**.
+and `codex-rollout`. Current status is **PRESENT**; the reproduction below is for the historical baseline.
 
 **Repro** (synthetic):
 ```bash
@@ -139,10 +142,10 @@ label and state its meaning ("never modifies session sources") in `check --help`
 PR #12 did for `baseline`. Both options change user-visible text, and the second also changes
 `tests/cli/test_help.py:35`. **Maintainer decision.**
 
-## Recommendation (for the maintainer; no action taken)
+## Recommendation for the maintainer
 
-- **PR #11:** superseded by `6f3ca01` for requirements 11.1–11.10. Requirement 11.11 remains: open a small runtime PR
-  for forced-adapter empty input instead of reviving `3ce0dd5`, which no longer applies to the `cli/` package.
+- **PR #11:** superseded by `6f3ca01` for requirements 11.1–11.10 and by merged #25 for requirement 11.11. Close it
+  as superseded instead of reviving `3ce0dd5`, which no longer applies to the `cli/` package.
 - **PR #12:** superseded by the 0.5.0 removal of `baseline`. Requirement 12.6 is a separate wording decision for
   `check`.
-- Closing either PR is the maintainer's call. This task does not close, merge or update them.
+- Closing either PR is the maintainer's call; GitHub records the actual disposition.
