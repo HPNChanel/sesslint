@@ -81,6 +81,13 @@ HTML/XML coverage reports and the benchmark ledger, explicitly enable the
 its own allowance. Release-tag runs retain their existing report uploads.
 All test, coverage, performance and build gates run regardless of this option.
 
+Enable `windows_acceptance` on a manual or reusable CI run to additionally
+build an unsigned Windows EXE and run the 42-case contract against it, wheel
+installs in both standard and uv virtual environments, Windows PowerShell 5.1,
+and PowerShell 7.5 or newer. Checksums and PowerShell receipts stay in job logs;
+this job does not upload artifacts, sign binaries or publish releases. A hosted
+runner PASS does not qualify as clean-host acceptance.
+
 ---
 
 ## Contributing Format Adapters

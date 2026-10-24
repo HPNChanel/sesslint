@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI: optional Windows artifact acceptance on standard hosted runners, covering
+  offline wheel installs, the standalone EXE and both supported PowerShell
+  engines without artifact uploads or publication.
 - MCP: the stdio server now also speaks protocol revision `2026-07-28`
   alongside `2025-06-18`. Modern requests are stateless (per-request `_meta`
   protocol version and client capabilities), `server/discover` advertises
