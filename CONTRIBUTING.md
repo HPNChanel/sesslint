@@ -69,9 +69,17 @@ uv run pytest --cov=sesslint --cov-branch --cov-report=term
 **Coverage floor (ratchet)**: `[tool.coverage.report] fail_under` in
 `pyproject.toml` is a one-way ratchet — PRs may raise it (encouraged when
 coverage improves) but must never lower it. The CI `coverage` job fails
-below the floor and uploads HTML/XML reports as artifacts. It is a
+below the floor and prints the coverage report in the job log. It is a
 tripwire, not a quality target; the number is never quoted as a coverage
 claim.
+
+CI uses standard GitHub-hosted runners, which are free for this public
+repository, including Linux, Windows and macOS. Ordinary CI runs keep coverage
+and benchmark results in job logs without uploading report artifacts. To retain
+HTML/XML coverage reports and the benchmark ledger, explicitly enable the
+`upload_reports` boolean on a manual or reusable CI run; artifact storage has
+its own allowance. Release-tag runs retain their existing report uploads.
+All test, coverage, performance and build gates run regardless of this option.
 
 ---
 

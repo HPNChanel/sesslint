@@ -74,6 +74,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI: ordinary runs keep coverage and benchmark results in job logs without
+  uploading report artifacts. Manual/reusable runs can opt in with
+  `upload_reports`; release tags retain report uploads. All verification gates
+  and the Linux/Windows/macOS matrix remain unchanged.
+
 - The `codex-rollout` adapter version is now `1.1.0`, because
   `inter_agent_communication` records now map to messages (see Fixed).
   Finding fingerprints from checks on Codex rollouts change with it, and so

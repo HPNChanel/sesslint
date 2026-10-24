@@ -6,7 +6,17 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      upload_reports:
+        description: "Store coverage and benchmark artifacts (uses artifact storage)"
+        type: boolean
+        default: false
   workflow_call:
+    inputs:
+      upload_reports:
+        description: "Store coverage and benchmark artifacts (uses artifact storage)"
+        type: boolean
+        default: false
   schedule:
     - cron: "0 2 * * 1"  # Weekly Monday 02:00 UTC benchmark run
 
@@ -173,7 +183,9 @@ jobs:
           --cov-report=xml:coverage.xml
 
       - name: Upload coverage reports
-        if: always()
+        # Ordinary CI keeps reports in job logs without allocating artifact storage.
+        # Release tags retain their existing evidence uploads.
+        if: always() && (inputs.upload_reports == true || startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-${{ github.run_id }}
@@ -312,7 +324,7 @@ jobs:
         run: uv run python scripts/bench_gate.py --tolerance 1.25 --mem-budget 512
 
       - name: Upload bench ledger artifact
-        if: always()
+        if: always() && (inputs.upload_reports == true || startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bench-ledger-${{ github.run_id }}
