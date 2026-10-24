@@ -1,5 +1,7 @@
 # Current state — `main` @ `91c09ee` (0.5.0 integration landed)
 
+<!-- next-release: file -->
+
 Updated 2026-10-24 from current CI evidence. It replaces the 2026-10-19 local-release note, which pointed to a
 `RELEASE_0_5_ACCEPTANCE.md` that was never committed.
 

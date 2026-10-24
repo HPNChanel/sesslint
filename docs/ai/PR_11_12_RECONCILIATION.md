@@ -1,5 +1,7 @@
 # PR #11 / PR #12 reconciliation against `main` @ `91c09ee`
 
+<!-- next-release: file -->
+
 **Scope:** documentation and evidence only. No runtime code was changed.
 
 **PR status:**
