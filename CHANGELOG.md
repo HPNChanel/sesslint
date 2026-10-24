@@ -109,6 +109,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `check`, directory scans and `triage` with a forced `--adapter` now handle
+  empty, whitespace-only and BOM-only input as auto-detection does: one SL001
+  `Empty input: file contains no session records`, no repair command, and
+  `triage` asks for the session file. Before, every forced adapter showed the
+  malformed-record refusal instead, `--adapter canonical` reported SL001
+  twice, and a BOM-only file reported healthy under `--adapter openai-agents`
+  or a torn record with a repair command (which then refused) under
+  `--adapter claude-code-jsonl` and `codex-rollout`. A baseline that recorded
+  those BOM-only or duplicate findings needs `--write-baseline` again.
 - Installed-artifact smoke: canonicalize the temporary extraction root before
   checking archive containment, so aliased temp paths work while escaping
   archive members remain refused. Interpreter symlinks remain unresolved.
