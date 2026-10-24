@@ -19,6 +19,7 @@ from sesslint.adapters.detect import (
     FORMAT_CLAUDE_CODE,
     FORMAT_CODEX_ROLLOUT,
     FORMAT_OPENAI_AGENTS,
+    is_empty_input,
     resolve_format,
     validate_detection_thresholds,
 )
@@ -57,12 +58,15 @@ from sesslint.repair import executor as repair_executor
 from sesslint.repair.planner import plan as planner_plan
 from sesslint.repair.vetting import vet_plan as _vet_supplied_plan
 from sesslint.report import (
+    EMPTY_INPUT_DETAIL,
+    EMPTY_INPUT_MESSAGE,
     Coverage,
     CoverageSkip,
     RepairManifest,
     Report,
     build_report,
     compute_assurance,
+    finding_is_empty_input,
 )
 from sesslint.scan import (
     DEFAULT_MAX_BYTES,
@@ -413,25 +417,30 @@ def _check_impl(
     if _capture_events is not None:
         _capture_events(resolved_fmt, events)
     adapter_findings.extend(loaded_findings)
-    # An empty/whitespace-only file is not a valid session of any format —
-    # a forced --format must not let it report healthy. (Auto-detect already
-    # retains the empty-input SL001 finding.)
+    # An empty, whitespace-only or BOM-only file is not a valid session of any
+    # format: a forced --adapter must not let it report healthy, and it gets
+    # the same single empty-input SL001 as auto-detection (AC-04). Any other
+    # adapter diagnosis of bytes that hold no records is dropped.
     if not events:
         if data is not None:
-            _empty_input = not data.strip()
+            _empty_input = is_empty_input(data)
         else:
-            _empty_input = target_path.stat().st_size == 0 or not target_path.read_bytes().strip()
-        if _empty_input:
-            adapter_findings.append(
-                make_finding(
-                    code=SL001,
-                    severity=Severity.ERROR,
-                    repairability=Repairability.MANUAL,
-                    message_template="Empty input: file contains no session records",
-                    source=SourceRef(path=display_path),
-                    evidence={"detail": "empty-or-whitespace-only input"},
-                )
+            _empty_input = target_path.stat().st_size == 0 or is_empty_input(
+                target_path.read_bytes()
             )
+        if _empty_input:
+            adapter_findings = [f for f in adapter_findings if finding_is_empty_input(f)][:1]
+            if not adapter_findings:
+                adapter_findings.append(
+                    make_finding(
+                        code=SL001,
+                        severity=Severity.ERROR,
+                        repairability=Repairability.MANUAL,
+                        message_template=EMPTY_INPUT_MESSAGE,
+                        source=SourceRef(path=display_path),
+                        evidence={"detail": EMPTY_INPUT_DETAIL},
+                    )
+                )
     # Version-gating is a fail-closed reliability mechanism, not a reportable
     # finding — it must consult the unfiltered adapter findings so that
     # --ignore SL301 suppresses the report without un-gating unsafe analysis.

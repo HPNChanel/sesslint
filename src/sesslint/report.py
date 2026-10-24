@@ -1926,12 +1926,18 @@ def build_repro_metadata(
 # is nothing to repair, so it gets its own message and no repair command
 # (AC-04). Every repair command exits 2 on a file with no records.
 EMPTY_INPUT_MESSAGE: Final[str] = "Empty input: file contains no session records"
+# Evidence detail of the empty-input SL001 that ``api`` and ``scan`` add under a
+# forced ``--adapter``. Adapters record ``reason: empty_input`` instead. Both
+# keys feed the fingerprint, so neither shape is rewritten.
+EMPTY_INPUT_DETAIL: Final[str] = "empty-or-whitespace-only input"
 
 
 def finding_is_empty_input(f: Finding) -> bool:
-    """Return True when ``f`` records zero-length or whitespace-only input (AC-04)."""
+    """Return True when ``f`` records empty, whitespace-only or BOM-only input (AC-04)."""
     evidence = f.evidence
-    return isinstance(evidence, Mapping) and evidence.get("reason") == "empty_input"
+    if not isinstance(evidence, Mapping):
+        return False
+    return evidence.get("reason") == "empty_input" or evidence.get("detail") == EMPTY_INPUT_DETAIL
 
 
 def get_finding_remediation(
@@ -2411,6 +2417,7 @@ __all__ = [
     "VALID_ASSURANCE_LEVELS",
     "VALID_COVERAGE_SKIP_REASONS",
     "VALID_POLICIES",
+    "EMPTY_INPUT_DETAIL",
     "EMPTY_INPUT_MESSAGE",
     "Assurance",
     "Counts",

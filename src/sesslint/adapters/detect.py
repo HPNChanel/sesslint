@@ -58,6 +58,19 @@ REASON_EMPTY: Final[str] = "empty"
 REASON_REFUSED_LIVE_DB: Final[str] = "refused-live-db"
 REASON_EXPLICIT_OVERRIDE: Final[str] = "explicit-override"
 
+_UTF8_BOM: Final[bytes] = b"\xef\xbb\xbf"
+
+
+def is_empty_input(data: bytes) -> bool:
+    """Return True when ``data`` holds no session records (AC-04).
+
+    Empty, whitespace-only and BOM-only input all qualify: one leading UTF-8
+    BOM is dropped before the whitespace test. Auto-detection and the forced
+    ``--adapter`` paths in ``api`` and ``scan`` share this definition.
+    """
+    body = data[len(_UTF8_BOM) :] if data.startswith(_UTF8_BOM) else data
+    return not body.strip()
+
 
 def validate_detection_thresholds(
     confidence_min: float | None,
@@ -209,8 +222,7 @@ def _detect_from_head(
         )
 
     # 2. Empty / whitespace-only / BOM-only check
-    clean_bytes = head_bytes[3:] if head_bytes.startswith(b"\xef\xbb\xbf") else head_bytes
-    if not clean_bytes.strip():
+    if is_empty_input(head_bytes):
         return DetectionResult(
             format=None,
             confidences={

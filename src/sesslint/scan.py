@@ -48,7 +48,13 @@ from sesslint.progress import (
     check_token,
     emit,
 )
-from sesslint.report import minimize_path, short_hash
+from sesslint.report import (
+    EMPTY_INPUT_DETAIL,
+    EMPTY_INPUT_MESSAGE,
+    finding_is_empty_input,
+    minimize_path,
+    short_hash,
+)
 from sesslint.state_db import is_state_db_name, read_codex_state
 
 if TYPE_CHECKING:
@@ -535,7 +541,7 @@ def _scan_single_source(
         else set(effective_cfg.enabled_rules)
     )
     try:
-        from sesslint.adapters.detect import resolve_format, resolve_format_bytes
+        from sesslint.adapters.detect import is_empty_input, resolve_format, resolve_format_bytes
 
         if data is not None:
             resolved_fmt, detection_res, det_findings = resolve_format_bytes(
@@ -612,24 +618,27 @@ def _scan_single_source(
         ):
             return FileResult(path=display_path, verdict="skipped", skipped_reason="file-too-large")
         adapter_findings.extend(loaded_findings)
-        # An empty/whitespace-only file is not a valid session of any format —
-        # a forced --format must not let it report healthy.
+        # An empty, whitespace-only or BOM-only file is not a valid session of
+        # any format: a forced --adapter must not let it report healthy, and it
+        # gets the same single empty-input SL001 as auto-detection (AC-04).
         if not events:
             if data is not None:
-                _empty = not data.strip()
+                _empty = is_empty_input(data)
             else:
-                _empty = file_path.stat().st_size == 0 or not file_path.read_bytes().strip()
+                _empty = file_path.stat().st_size == 0 or is_empty_input(file_path.read_bytes())
             if _empty:
-                adapter_findings.append(
-                    make_finding(
-                        code=SL001,
-                        severity=Severity.ERROR,
-                        repairability=Repairability.MANUAL,
-                        message_template="Empty input: file contains no session records",
-                        source=SourceRef(path=display_path),
-                        evidence={"detail": "empty-or-whitespace-only input"},
+                adapter_findings = [f for f in adapter_findings if finding_is_empty_input(f)][:1]
+                if not adapter_findings:
+                    adapter_findings.append(
+                        make_finding(
+                            code=SL001,
+                            severity=Severity.ERROR,
+                            repairability=Repairability.MANUAL,
+                            message_template=EMPTY_INPUT_MESSAGE,
+                            source=SourceRef(path=display_path),
+                            evidence={"detail": EMPTY_INPUT_DETAIL},
+                        )
                     )
-                )
         adapter_findings = [f for f in adapter_findings if f.code in enabled_rules]
 
         # 4. Invariant checks
