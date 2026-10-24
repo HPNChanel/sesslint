@@ -1733,7 +1733,8 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
 
     If path is under home directory, renders as '~/relative/path' (or '~' for home itself).
     If path is outside home directory, renders as '.._<8hex>/filename'
-    where 8hex is sha1(parent)[:8].
+    where 8hex is sha256(parent)[:8]. This deterministic display label is not
+    an anonymization guarantee or a collision-resistant identity.
     Non-home absolute paths are never emitted in default mode.
     """
     if isinstance(path, str):
@@ -1771,12 +1772,12 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
                 pass
 
         parent_str = str(p.parent).replace("\\", "/")
-        p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+        p_hash = hashlib.sha256(parent_str.encode("utf-8")).hexdigest()[:8]
         return f".._{p_hash}/{p.name}"
 
     parent_str = str(p.parent).replace("\\", "/") if p.parent != Path(".") else ""
     if parent_str:
-        p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+        p_hash = hashlib.sha256(parent_str.encode("utf-8")).hexdigest()[:8]
         return f".._{p_hash}/{p.name}"
     return p.name
 

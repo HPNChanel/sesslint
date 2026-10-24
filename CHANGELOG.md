@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reports: minimized parent-directory labels now use SHA-256 instead of SHA-1,
+  including environments that disable SHA-1. The compact eight-hex display
+  format is unchanged; these labels do not guarantee anonymization or identity.
+
 - CI: ordinary runs keep coverage and benchmark results in job logs without
   uploading report artifacts. Manual/reusable runs can opt in with
   `upload_reports`; release tags retain report uploads. All verification gates
