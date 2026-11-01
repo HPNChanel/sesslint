@@ -9,37 +9,45 @@ from pathlib import Path
 
 try:
     from .release_artifacts import digest, verify
+    from .release_notes import CHANGELOG, release_notes
 except ImportError:
     from release_artifacts import digest, verify
+    from release_notes import CHANGELOG, release_notes
 
 
 def gh(*args: str) -> str:
     return subprocess.run(["gh", *args], capture_output=True, text=True, check=True).stdout
 
 
-def stage(directory: Path, repo: str, tag: str, commit: str) -> None:
+def stage(directory: Path, repo: str, tag: str, commit: str, changelog: Path = CHANGELOG) -> None:
     manifest = verify(directory, complete=True)
     if manifest["commit"] != commit or tag != "v" + manifest["version"]:
         raise ValueError("Release identity mismatch")
+    # B35: the body is the tracked CHANGELOG section of the verified version,
+    # extracted before any remote call so a missing section fails closed.
+    notes = release_notes(manifest["version"], changelog)
     try:
         release = json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}"))
     except subprocess.CalledProcessError as error:
         if "HTTP 404" not in error.stderr:
             raise
-        gh(
-            "release",
-            "create",
-            tag,
-            "--repo",
-            repo,
-            "--draft",
-            "--target",
-            commit,
-            "--title",
-            f"SessLint {tag}",
-            "--notes-file",
-            "docs/RELEASE_0.4.1.md",
-        )
+        with tempfile.TemporaryDirectory() as raw:
+            notes_file = Path(raw) / "release-notes.md"
+            notes_file.write_bytes(notes.encode("utf-8"))
+            gh(
+                "release",
+                "create",
+                tag,
+                "--repo",
+                repo,
+                "--draft",
+                "--target",
+                commit,
+                "--title",
+                f"SessLint {tag}",
+                "--notes-file",
+                str(notes_file),
+            )
         release = json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}"))
     if release["target_commitish"] != commit:
         raise ValueError("Existing release targets another commit")

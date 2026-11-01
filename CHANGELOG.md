@@ -64,6 +64,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a separate action; local tags and local evidence do not establish a release.
 - GHCR and package-manager templates are prepared channels only.
 
+## [0.4.1]
+
+Patch release consolidating performance, delivery and release hardening.
+API/schema v1, exit codes, the four adapters, the three profiles and zero
+runtime dependencies are unchanged.
+
+### Added
+
+- Synthetic public detection goldens for all 34 detector codes, a 70-case
+  labeled SL009 corpus across 14 secret families, adapter/plan fuzzing and 84
+  repair integration cases, with matching conformance rows. These establish
+  synthetic correctness, not detection accuracy on real transcripts.
+- A deterministic starter kit (PowerShell/POSIX instructions, synthetic
+  healthy/repairable/refused examples, schemas, rule/recipe docs and licenses)
+  and a man-page archive, both shipped as release assets.
+- Installed wheel/sdist and native-binary acceptance outside the checkout,
+  covering paths with spaces/Unicode, hook/MCP and the full
+  `check → plan → apply → verify` journey; a transferable Windows acceptance
+  ZIP with a PowerShell 5.1+ runner; and an installed-wheel performance probe
+  bound to exact wheel/runtime/input bytes.
+- Release pipeline: reproducible build comparison, distribution metadata
+  validation, a complete Sigstore-signed three-platform draft, SLSA provenance
+  verification and downloaded-byte verification on PyPI and GitHub before
+  promotion. Retries reuse only verified immutable artifacts and fail closed
+  on missing or altered evidence.
+
+### Fixed
+
+- Windows CLI output uses UTF-8 when piped or redirected, so Unicode session
+  filenames no longer fail with a legacy-code-page error.
+- Frozen binaries dispatch multiprocessing workers before parsing arguments,
+  so parallel directory scans work without a separate Python installation.
+- Malformed repair-plan containers and unsupported profiles produce defined
+  domain refusals instead of uncaught type/attribute errors.
+- Schema lookup for installed preview/batch APIs and frozen PyInstaller
+  bundles; missing scan HTML remediation and misleading warning-only resume
+  guidance.
+- Path minimization no longer resolves foreign-shaped absolute paths (such as
+  a drive-letter path on POSIX) against the working directory, which could
+  fabricate a `~/`-relative location; they use the hashed form instead.
+- `fixtures/INDEX.md` ordering is identical on case-sensitive and
+  case-insensitive file systems.
+- PyPI uploads contain only the wheel and sdist; man-page and starter-kit
+  archives are excluded.
+
+### Changed
+
+- Check time on the unchanged 250,000-event / ~100 MB benchmark roughly
+  halves: first-line single-document probe, zero-copy secret-scan feeds,
+  direct canonical field access on hot paths and a single-pass SL203 trigger
+  scan. Detector output remains byte-identical on every fixture.
+- Benchmark memory limits are exclusive (exactly 512 MiB, missing or
+  non-finite measurements fail) and timing gates run in fresh, untraced
+  processes.
+- Internal planning packs, review notes and local release-evidence documents
+  are no longer published in the repository.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added
@@ -1305,6 +1362,7 @@ hash-verified identical artifacts on both channels.
 - PyPI: https://pypi.org/project/sesslint/0.1.0/
 
 [Unreleased]: https://github.com/HPNChanel/sesslint/compare/v0.4.0...HEAD
+[0.4.1]: https://github.com/HPNChanel/sesslint/releases/tag/v0.4.1
 [0.4.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.4.0
 [0.3.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.3.0
 [0.2.0]: https://github.com/HPNChanel/sesslint/releases/tag/v0.2.0

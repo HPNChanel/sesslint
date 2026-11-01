@@ -38,6 +38,8 @@ jobs:
           set -euo pipefail
           version="$(python -c 'import runpy; print(runpy.run_path("src/sesslint/_version.py")["__version__"])')"
           test "${GITHUB_REF_NAME#v}" = "$version" || { echo "Tag/version mismatch"; exit 1; }
+          # B35: the draft body is this version's CHANGELOG.md section; fail before building.
+          python scripts/release_notes.py --version "$version" --output "$RUNNER_TEMP/release-notes.md"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
       - name: Verify reviewed SLSA generator tag
         run: |

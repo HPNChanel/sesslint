@@ -51,20 +51,24 @@ Thumbs.db
 docs/implementation/
 
 # AI Agent workspaces, prompt experiments, and internal development planning (local only)
+# Planning/scratch packs live at the repo root only: anchor them so a tracked
+# subdirectory such as fixtures/**/stale-plan/ is never silently ignored.
+# Agent state directories stay unanchored on purpose (privacy guard: a copied
+# agent home must never be committed from any depth).
 .agents/
-*-next-development/
-*-plan/
+/*-next-development/
+/*-plan/
 /STRATEGY.md
 /ROADMAP.md
-*.agent/
+/*.agent/
 .gemini/
 .claude/
 .cursor/
 .windsurf/
 .playwright-mcp/
-scratch/
+/scratch/
 
-agent_tasks/
+/agent_tasks/
 
 # Internal task/plan packs and release evidence docs (maintainer-local; not published)
 /plans/
