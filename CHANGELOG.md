@@ -120,6 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `diff` now applies the same content-free rule to event ids and parent ids as
   check findings: ids carrying control characters, line breaks, PII or
   credential shapes are reported as `<redacted>` instead of verbatim.
+- `watch --interval` now rejects non-finite values and values above one day
+  (`86400` seconds) up front with exit 2. Previously `nan` was accepted until
+  the first sleep and `inf` or very large values ended in an internal error.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and
