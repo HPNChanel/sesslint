@@ -105,3 +105,38 @@ describe("verificationEvidence", () => {
     );
   });
 });
+
+describe("normalizeGithubReleases on malformed metadata", () => {
+  const ok = {
+    tag_name: "v0.6.0",
+    html_url: "https://github.com/x/y/releases/tag/v0.6.0",
+    published_at: "2026-10-01T00:00:00Z",
+    draft: false,
+    prerelease: false,
+    assets: [{ name: "sha256sums.txt", browser_download_url: "https://github.com/x/y/s", size: 1 }],
+  };
+
+  it("keeps a well-formed published record", () => {
+    expect(normalizeGithubReleases([ok]).map((r) => r.availability)).toEqual(["published"]);
+  });
+
+  it.each([
+    ["draft missing", { draft: undefined }],
+    ["draft not boolean", { draft: "false" }],
+    ["prerelease missing", { prerelease: undefined }],
+    ["prerelease not boolean", { prerelease: 0 }],
+    ["tag missing", { tag_name: undefined }],
+    ["tag not a version", { tag_name: "nightly" }],
+    ["html_url not https", { html_url: "javascript:alert(1)" }],
+    ["assets missing", { assets: undefined }],
+    ["asset url not https", { assets: [{ name: "x", browser_download_url: "http://example.test/x", size: 1 }] }],
+    ["asset name missing", { assets: [{ browser_download_url: "https://example.test/x", size: 1 }] }],
+  ])("drops a record with %s instead of presenting it as published", (_label, patch) => {
+    expect(normalizeGithubReleases([ok, { ...ok, tag_name: "v0.7.0", ...patch }]).map((r) => r.version)).toEqual(["0.6.0"]);
+  });
+
+  it("rejects a non-array payload so availability becomes unknown", () => {
+    expect(() => normalizeGithubReleases({ message: "API rate limit exceeded" })).toThrow(TypeError);
+    expect(() => normalizeGithubReleases(null)).toThrow(TypeError);
+  });
+});

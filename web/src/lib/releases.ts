@@ -44,9 +44,44 @@ export type GithubReleasePayload = { tag_name: string; html_url: string; publish
 type GithubResult = { available: true; releases: ReleaseInfo[] } | { available: false; releases: [] };
 let cache: Promise<GithubResult> | null = null;
 
+const isHttps = (v: unknown): v is string => {
+  if (typeof v !== "string") return false;
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+type GithubAssetPayload = GithubReleasePayload["assets"][number];
+
+function validAsset(a: unknown): a is GithubAssetPayload {
+  if (typeof a !== "object" || a === null) return false;
+  const x = a as Record<string, unknown>;
+  return typeof x.name === "string" && x.name !== "" && isHttps(x.browser_download_url) && typeof x.size === "number"
+    && (x.digest === undefined || x.digest === null || typeof x.digest === "string");
+}
+
+/**
+ * Fail closed on malformed metadata: a record counts only when it is
+ * explicitly `draft: false` with a boolean `prerelease`, a tag, HTTPS URLs
+ * and well-formed assets. Anything else is dropped rather than presented as
+ * a download. A non-array payload throws (the caller reports "unknown").
+ */
+function validRelease(r: unknown): r is GithubReleasePayload {
+  if (typeof r !== "object" || r === null) return false;
+  const x = r as Record<string, unknown>;
+  return x.draft === false && typeof x.prerelease === "boolean"
+    && typeof x.tag_name === "string" && /^v?\d+\.\d+\.\d+/.test(x.tag_name)
+    && isHttps(x.html_url)
+    && (x.published_at === null || typeof x.published_at === "string")
+    && Array.isArray(x.assets) && x.assets.every(validAsset);
+}
+
 /** Normalize only non-draft API records; prereleases remain distinct from published releases. */
-export function normalizeGithubReleases(data: GithubReleasePayload[]): ReleaseInfo[] {
-  return data.filter((r) => !r.draft).map((r) => ({
+export function normalizeGithubReleases(data: unknown): ReleaseInfo[] {
+  if (!Array.isArray(data)) throw new TypeError("GitHub releases payload is not an array");
+  return data.filter(validRelease).map((r) => ({
     tag: r.tag_name,
     version: r.tag_name.replace(/^v/, ""),
     publishedAt: r.published_at,
@@ -80,7 +115,7 @@ async function fetchReleases(): Promise<GithubResult> {
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return { available: false, releases: [] };
-    const data = (await res.json()) as GithubReleasePayload[];
+    const data: unknown = await res.json();
     return { available: true, releases: normalizeGithubReleases(data) };
   } catch {
     return { available: false, releases: [] };
