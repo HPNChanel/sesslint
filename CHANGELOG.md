@@ -109,6 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bench: `measure_installed.py` no longer resolves the `--python` path, which
+  followed a POSIX venv's `bin/python` symlink to the base interpreter and made
+  every installed-wheel measurement fail with "measurement unavailable".
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and
