@@ -677,6 +677,26 @@ def parse_session(obj: Mapping[str, Any]) -> Session:
     return Session(header=header, events=tuple(events), extra_fields=extra_fields)
 
 
+def split_jsonl_lines(text: str) -> list[str]:
+    """Split JSONL text into physical record lines on ``"\\n"`` only (B25).
+
+    ``str.splitlines`` also breaks on U+2028, U+2029, U+0085, ``\\x0b``,
+    ``\\x0c`` and ``\\x1c``-``\\x1e``. Canonical output is written with
+    ``ensure_ascii=False``, so U+2028/U+2029/U+0085 appear raw inside JSON
+    strings and ``splitlines`` would tear one record into invalid fragments —
+    SessLint would reject its own output. Framing therefore matches the
+    streaming reader in ``sesslint.io``: records end at ``"\\n"`` and nothing
+    else. A trailing ``"\\r"`` (CRLF framing) stays on the line; callers strip
+    it with ``str.strip()`` exactly as the streaming reader does. The empty
+    remainder after a final ``"\\n"`` is dropped, so line numbers match
+    ``splitlines`` on plain LF text.
+    """
+    lines = text.split("\n")
+    if lines and not lines[-1]:
+        lines.pop()
+    return lines
+
+
 def parse_session_lines(lines: Iterable[str]) -> Session:
     """Parse line-delimited session (JSONL) with header on line 1 and events below."""
     header: SessionHeader | None = None
@@ -713,7 +733,9 @@ def load_session_file(path: str | Path) -> Session:
     """Load and validate a canonical session file (.json or .jsonl).
 
     Rejects files larger than 100 MB, directing caller to streaming reader.
-    Normalizes CRLF and UTF-8-BOM encodings.
+    Normalizes CRLF and UTF-8-BOM encodings. Records are framed on ``"\\n"``
+    only, like the streaming reader (B25): the bytes are decoded without
+    universal-newline translation, so a lone ``"\\r"`` never splits a record.
     """
     file_path = Path(path)
     if not file_path.is_file():
@@ -727,7 +749,7 @@ def load_session_file(path: str | Path) -> Session:
         )
 
     try:
-        text = file_path.read_text(encoding="utf-8-sig")
+        text = file_path.read_bytes().decode("utf-8-sig")
     except UnicodeDecodeError as err:
         raise SchemaError(f"File encoding is not valid UTF-8: {err}") from err
 
@@ -745,7 +767,7 @@ def load_session_file(path: str | Path) -> Session:
             # Fall back to line-by-line parsing if not a single document
             pass
 
-    return parse_session_lines(text.splitlines())
+    return parse_session_lines(split_jsonl_lines(text))
 
 
 def dump_session(session: Session) -> str:
@@ -758,10 +780,17 @@ def dump_session(session: Session) -> str:
 
 
 def dump_session_file(session: Session, path: str | Path) -> None:
-    """Write canonical session to file using UTF-8 encoding."""
+    """Write canonical session to file as UTF-8 with LF framing on every OS (B13).
+
+    The text is encoded to bytes explicitly — a text-mode write would
+    translate ``"\\n"`` to CRLF on Windows and break byte determinism — and
+    placed atomically, so a failed write never leaves a torn file.
+    """
+    from sesslint.atomic import atomic_write_bytes
+
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(dump_session(session), encoding="utf-8")
+    atomic_write_bytes(target, dump_session(session).encode("utf-8"))
 
 
 def get_session_schema_path() -> Path:

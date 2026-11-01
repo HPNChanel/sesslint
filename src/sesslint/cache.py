@@ -133,7 +133,11 @@ class ScanCache:
             return None
         try:
             data = json.loads(row[1])
-        except (json.JSONDecodeError, TypeError):
+        except (ValueError, TypeError, RecursionError):
+            # A corrupt row is a cache miss, never an exception (B31):
+            # JSONDecodeError and UnicodeDecodeError (a BLOB holding invalid
+            # UTF-8) are ValueErrors, as are over-long integer literals;
+            # pathological nesting raises RecursionError.
             return None
         return data if isinstance(data, dict) else None
 
@@ -148,7 +152,7 @@ class ScanCache:
                 (path, analysis_fp, file_sha256, json.dumps(result, sort_keys=True)),
             )
             self._db.commit()
-        except (sqlite3.Error, TypeError, ValueError):
+        except (sqlite3.Error, TypeError, ValueError, RecursionError):
             self._ok = False
 
     def close(self) -> None:

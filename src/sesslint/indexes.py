@@ -18,6 +18,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from sesslint.canonical import split_jsonl_lines
+
 MAX_INDEX_BYTES: int = 16 * 1024 * 1024
 MAX_INDEX_ENTRIES: int = 65536
 MAX_PROJECT_DIRS: int = 4096
@@ -157,7 +159,9 @@ def _salvage_partial(text: str) -> tuple[IndexEntry, ...]:
             break
         try:
             obj, nxt = dec.raw_decode(text, pos)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
+            # JSONDecodeError is a ValueError; over-long integers raise a plain
+            # ValueError and deep nesting a RecursionError (B31).
             break
         pos = nxt
         if isinstance(obj, dict):
@@ -215,6 +219,11 @@ def read_index(path: Path) -> IndexSnapshot:
                 note="truncated",
             )
         return _snapshot(parse_ok=False, note="malformed")
+    except (ValueError, RecursionError):
+        # Over-long integer literals (ValueError) and nesting deeper than the
+        # interpreter's JSON limit (RecursionError) are malformed, never a
+        # truncation — a deterministic snapshot, never an exception (B31).
+        return _snapshot(parse_ok=False, note="malformed")
 
     entries, note = _extract_entries(doc)
     if len(entries) > MAX_INDEX_ENTRIES:
@@ -233,7 +242,9 @@ def _read_jsonl_index(text: str) -> IndexSnapshot:
     fails the whole index — a corrupted middle is not a clean cut.
     """
     entries: list[IndexEntry] = []
-    lines = text.splitlines()
+    # LF-only framing (B25): thread names may carry raw U+2028/U+2029/U+0085,
+    # which str.splitlines would treat as record breaks.
+    lines = split_jsonl_lines(text)
     missing_id = 0
     saw_object = False
     for pos, line in enumerate(lines):
@@ -244,8 +255,11 @@ def _read_jsonl_index(text: str) -> IndexSnapshot:
             continue
         try:
             obj = json.loads(stripped)
-        except json.JSONDecodeError:
-            tail = pos == len(lines) - 1
+        except (ValueError, RecursionError) as err:
+            # Only a JSON syntax cut on the final line is a torn tail; over-long
+            # integers (ValueError) and deep nesting (RecursionError) are
+            # malformed wherever they occur (B31).
+            tail = isinstance(err, json.JSONDecodeError) and pos == len(lines) - 1
             return _snapshot(
                 fmt=_INDEX_FORMAT_CODEX,
                 entries=tuple(entries),

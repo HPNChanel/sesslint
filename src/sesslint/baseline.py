@@ -39,10 +39,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from pathlib import Path
 from typing import Any, Final, TypeVar
 
+from sesslint.atomic import StrPath, atomic_write_text
 from sesslint.finding import (
     Finding,
     _canonical_evidence_for_fingerprint,
@@ -204,10 +205,23 @@ def dump_baseline(findings: Iterable[Finding], *, created_by: str = "sesslint") 
     return json.dumps(doc, indent=2, sort_keys=True) + "\n"
 
 
-def write_baseline(path: Path, findings: Iterable[Finding], *, created_by: str = "sesslint") -> int:
-    """Write findings as a v2 baseline file; returns the entry count written."""
+def write_baseline(
+    path: Path,
+    findings: Iterable[Finding],
+    *,
+    created_by: str = "sesslint",
+    refuse_paths: Collection[StrPath] = (),
+) -> int:
+    """Write findings as a v2 baseline file; returns the entry count written.
+
+    The document is written atomically as LF-framed UTF-8 bytes (B13) and
+    never over any path in ``refuse_paths`` (e.g. the scanned input).
+
+    Raises:
+        AtomicWriteError: refused destination or I/O failure (an ``OSError``).
+    """
     doc = dump_baseline(findings, created_by=created_by)
-    path.write_text(doc, encoding="utf-8", newline="\n")
+    atomic_write_text(path, doc, refuse_paths=refuse_paths)
     return doc.count('"key"')
 
 

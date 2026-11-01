@@ -27,6 +27,7 @@ from sesslint.canonical import (
     parse_session_event,
     parse_session_header,
     reparse_identity_hashes,
+    split_jsonl_lines,
     to_canonical_dict,
     to_canonical_json,
 )
@@ -218,7 +219,9 @@ def _parse_session_events(
         except Exception:
             pass
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    # Frame on LF only, like sesslint.io (B25): splitlines would tear
+    # records carrying raw U+2028/U+2029/U+0085 inside JSON strings.
+    lines = [line.strip() for line in split_jsonl_lines(text) if line.strip()]
     if not lines:
         return None, []
 
@@ -511,17 +514,11 @@ def verify(
     if manifest_dict is None:
         c1 = Check(name="source_hash", ok=False, detail=manifest_err_detail)
     else:
-        in_place = bool(manifest_dict.get("in_place", False))
-        if in_place:
-            expected_src_hash = (
-                manifest_dict.get("source_post_hash")
-                or manifest_dict.get("output_fingerprint")
-                or manifest_dict.get("output_hash")
-            )
-        else:
-            expected_src_hash = manifest_dict.get("input_fingerprint") or manifest_dict.get(
-                "source_pre_hash"
-            )
+        # The source is always bound to the manifest's input fingerprint (B15).
+        # parse_manifest rejects unknown top-level fields, so the former
+        # ``in_place``/``source_post_hash``/``source_pre_hash`` fallbacks were
+        # unreachable; an in-place flag must never redirect the binding.
+        expected_src_hash = manifest_dict.get("input_fingerprint")
 
         if expected_src_hash is None:
             c1 = Check(name="source_hash", ok=False, detail="field-missing")

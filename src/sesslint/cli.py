@@ -1444,12 +1444,14 @@ def create_parser() -> argparse.ArgumentParser:
     # baseline
     baseline_parser = subparsers.add_parser(
         "baseline",
-        help="[read-only] Upgrade a v1 baseline to the path-normalized v2 format.",
+        help="[writes: output file] Upgrade a v1 baseline to the path-normalized v2 format.",
         description=(
-            "[read-only] Baseline maintenance: --upgrade rewrites a "
+            "[writes: output file] Baseline maintenance: --upgrade rewrites a "
             "sesslint.baseline/v1 file as v2 (path-normalized keys). With "
             "--source, findings are reproduced to verify entries; without it "
-            "every entry migrates 'unverified' (still matchable via the v1 leg)."
+            "every entry migrates 'unverified' (still matchable via the v1 leg). "
+            "--output is written atomically and never over the input baseline "
+            "or --source; without it the document goes to stdout."
         ),
     )
     baseline_parser.add_argument(
@@ -3271,7 +3273,19 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             return 2
 
         if args.output is not None:
-            args.output.write_text(doc, encoding="utf-8", newline="\n")
+            from sesslint.atomic import atomic_write_text
+            from sesslint.errors import AtomicWriteError
+
+            # B13: atomic LF bytes; never overwrite the baseline being
+            # upgraded or the --source being re-checked.
+            refuse: list[Path] = [args.upgrade]
+            if args.source is not None:
+                refuse.append(args.source)
+            try:
+                atomic_write_text(args.output, doc, refuse_paths=refuse)
+            except AtomicWriteError as err:
+                print(f"Error: {err}", file=sys.stderr)
+                return 2
             print(
                 f"upgraded baseline: {verified} verified, {unverified} unverified -> {args.output}",
                 file=sys.stderr,

@@ -141,7 +141,13 @@ def emit_vendor_bytes(
             reason="R6",
         )
 
-    lines = source_bytes.splitlines(keepends=True) if source_bytes else []
+    # Physical lines end at b"\n" only, exactly as the adapters' readers number
+    # them (B25): bytes.splitlines also breaks on a lone b"\r" — legal JSON
+    # whitespace inside a record — and would shift every later line number.
+    parts = source_bytes.split(b"\n")
+    lines = [part + b"\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
     drop_lines = drop_lines or frozenset()
 
     # Index each event-bearing source line -> [(event_id, identity)] in order.

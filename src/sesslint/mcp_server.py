@@ -20,6 +20,12 @@ file) produce ``isError: true`` results with a content-free reason string.
 Determinism: identical request bytes produce identical response bytes — the
 server adds no timestamps, ids, or environment data to tool results.
 
+Robustness (B31): one bad request never ends the session. Request lines are
+bounded by ``MAX_REQUEST_LINE_BYTES``; an oversized line is discarded in
+bounded chunks and answered with a JSON-RPC ``-32600`` error. Invalid UTF-8,
+non-JSON, over-long integer literals, and pathologically deep nesting are
+answered with ``-32700``; the loop keeps serving until EOF.
+
 Security posture: stdio only; the server never writes files, never opens
 sockets, and performs no ambient filesystem access — tool arguments are the
 only filesystem inputs and are validated for existence before dispatch. The
@@ -30,7 +36,7 @@ user; exposure equals the CLI's own).
 from __future__ import annotations
 
 import json
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Final
 
 from sesslint._version import CLI_VERSION
 from sesslint.profiles.builtin import REGISTRY as PROFILE_REGISTRY
@@ -39,6 +45,13 @@ PROTOCOL_VERSION: str = "2025-06-18"
 SERVER_NAME: str = "sesslint"
 
 _JSONRPC_VERSION = "2.0"
+
+# Upper bound on one request line, terminating newline included (B31). Real
+# MCP requests (initialize, tools/list, tools/call with a path) are a few KiB;
+# the cap keeps a runaway or hostile client from growing an unbounded buffer.
+MAX_REQUEST_LINE_BYTES: Final[int] = 1024 * 1024
+# Chunk size used to discard the remainder of an oversized line.
+_DRAIN_CHUNK_BYTES: Final[int] = 64 * 1024
 
 # JSON-RPC 2.0 error codes (spec-reserved range).
 _E_PARSE = -32700
@@ -316,27 +329,66 @@ def _dispatch(message: Any) -> dict[str, Any] | None:
     return _error(request_id, _E_METHOD_NOT_FOUND, "method not found")
 
 
+def _encode(response: dict[str, Any]) -> bytes:
+    return (json.dumps(response, sort_keys=True) + "\n").encode("utf-8")
+
+
 def handle_line(raw: bytes) -> bytes | None:
-    """Process one newline-delimited request; returns response line or None."""
+    """Process one newline-delimited request; returns response line or None.
+
+    Never raises (B31): a line over ``MAX_REQUEST_LINE_BYTES`` is an invalid
+    request; undecodable or unparseable input (invalid UTF-8, bad JSON,
+    over-long integers, deep nesting) is a parse error; a failure while
+    dispatching or encoding the reply becomes an internal-error object, so
+    the serve loop survives every request.
+    """
+    if len(raw) > MAX_REQUEST_LINE_BYTES:
+        return _encode(
+            _error(
+                None,
+                _E_INVALID_REQUEST,
+                f"request line exceeds {MAX_REQUEST_LINE_BYTES} bytes",
+            )
+        )
     raw = raw.strip()
     if not raw:
         return None
     try:
         message = json.loads(raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return (json.dumps(_error(None, _E_PARSE, "parse error"), sort_keys=True) + "\n").encode(
-            "utf-8"
-        )
-    response = _dispatch(message)
-    if response is None:
-        return None
-    return (json.dumps(response, sort_keys=True) + "\n").encode("utf-8")
+    except (ValueError, RecursionError):
+        # JSONDecodeError and UnicodeDecodeError are ValueErrors, as are
+        # over-long integer literals; deep nesting raises RecursionError.
+        return _encode(_error(None, _E_PARSE, "parse error"))
+    try:
+        response = _dispatch(message)
+        if response is None:
+            return None
+        return _encode(response)
+    except Exception:
+        # e.g. an echoed request id nested too deeply to re-encode.
+        return _encode(_error(None, _E_INTERNAL, "internal error"))
+
+
+def _read_request_line(stdin: BinaryIO) -> bytes:
+    """Read one request line without buffering more than the line cap (B31).
+
+    An oversized line comes back as its first ``MAX_REQUEST_LINE_BYTES + 1``
+    bytes (which ``handle_line`` rejects) after the remainder, up to the next
+    newline or EOF, has been discarded in bounded chunks.
+    """
+    line = stdin.readline(MAX_REQUEST_LINE_BYTES + 1)
+    if len(line) > MAX_REQUEST_LINE_BYTES and not line.endswith(b"\n"):
+        while True:
+            rest = stdin.readline(_DRAIN_CHUNK_BYTES)
+            if not rest or rest.endswith(b"\n"):
+                break
+    return line
 
 
 def serve(stdin: BinaryIO, stdout: BinaryIO) -> int:
     """Run the stdio JSON-RPC loop until EOF. Returns the process exit code."""
     while True:
-        line = stdin.readline()
+        line = _read_request_line(stdin)
         if not line:
             return 0
         out = handle_line(line)
@@ -346,6 +398,7 @@ def serve(stdin: BinaryIO, stdout: BinaryIO) -> int:
 
 
 __all__ = [
+    "MAX_REQUEST_LINE_BYTES",
     "PROTOCOL_VERSION",
     "SERVER_INFO",
     "TOOLS",

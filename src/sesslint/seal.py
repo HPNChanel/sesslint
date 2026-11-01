@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from sesslint._canonical_codec import canonical_json_bytes
+from sesslint.canonical import split_jsonl_lines
 
 StrPath = str | os.PathLike[str]
 
@@ -156,7 +157,10 @@ def _iter_lines(path: Path) -> list[tuple[int, str]]:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as err:
         raise SealError(f"ledger {path} is not UTF-8: {err}") from err
-    return [(i, line) for i, line in enumerate(text.splitlines(), start=1) if line.strip()]
+    # LF-only framing (B25): entries are written with ensure_ascii=False, so a
+    # path carrying U+2028/U+2029/U+0085 must not be split by str.splitlines.
+    lines = split_jsonl_lines(text)
+    return [(i, line) for i, line in enumerate(lines, start=1) if line.strip()]
 
 
 def _validate_entry_shape(entry: Any) -> str | None:
