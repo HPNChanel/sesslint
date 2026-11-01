@@ -27,6 +27,7 @@ from sesslint.canonical import to_canonical_json
 from sesslint.cli import main
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.verify import Check, Verdict, verify
+from tests.utils.derived_plan import derived_steps
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERIFY_SRC = REPO_ROOT / "src" / "sesslint" / "verify.py"
@@ -76,17 +77,7 @@ def _write_ok_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         },
         "profile": "neutral",
         "source_hash": src_hash,
-        "steps": [
-            {
-                "min_policy": "conservative",
-                "params": {},
-                "recipe": "identical-duplicate-collapse",
-                "recipe_version": "1.0.0",
-                "seq": 0,
-                "target_finding_fp": "070ceee4b3954eb0",
-                "target_index": 1,
-            }
-        ],
+        "steps": derived_steps(src_path, recipe="identical-duplicate-collapse"),
         "version": "sesslint.plan/v1",
     }
     plan_fp = compute_plan_fingerprint(plan_dict)
@@ -500,7 +491,10 @@ def test_directory_as_file_raises_isadirectoryerror(tmp_path: Path) -> None:
 def test_symlinked_files(tmp_path: Path) -> None:
     """Verifier follows symlinks and hashes target bytes correctly."""
     src, pln, out, man = _write_ok_bundle(tmp_path)
-    symlink_src = tmp_path / "sym_source.jsonl"
+    # Plans bind the source file name, so the link keeps the basename.
+    link_dir = tmp_path / "link"
+    link_dir.mkdir()
+    symlink_src = link_dir / src.name
     try:
         symlink_src.symlink_to(src)
     except OSError:
@@ -560,6 +554,7 @@ def test_50_step_plan_replay_perf(tmp_path: Path) -> None:
     out_path = dest_dir / "output.jsonl"
     src_path.write_bytes(src_bytes)
     out_path.write_bytes(out_bytes)
+    steps = derived_steps(src_path, recipe="identical-duplicate-collapse")
 
     src_hash = hashlib.sha256(src_bytes).hexdigest()
     out_hash = hashlib.sha256(out_bytes).hexdigest()
