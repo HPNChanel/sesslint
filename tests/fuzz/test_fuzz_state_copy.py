@@ -42,10 +42,10 @@ _SCHEMAS = st.sampled_from(
         "CREATE TABLE threads (id {t})",
         "CREATE TABLE threads (rollout_path {t}, id {t}, title {t})",
         "CREATE TABLE other (id {t}, rollout_path {t}); "
-        "CREATE VIEW threads AS SELECT id, rollout_path FROM other",
+        + "CREATE VIEW threads AS SELECT id, rollout_path FROM other",
         "CREATE TABLE threads (id {t}, rollout_path {t}); "
-        "CREATE TABLE thread_spawn_edges (parent_thread_id {t}, child_thread_id {t}); "
-        "CREATE TABLE rollout_migration_skipped_rollouts (skip_reason {t})",
+        + "CREATE TABLE thread_spawn_edges (parent_thread_id {t}, child_thread_id {t}); "
+        + "CREATE TABLE rollout_migration_skipped_rollouts (skip_reason {t})",
     ]
 )
 
@@ -68,7 +68,7 @@ def _databases(draw: st.DrawFn) -> bytes:
                     con.execute(f"INSERT INTO {table} VALUES ({','.join('?' * n)})", row)
             con.commit()
         except sqlite3.Error:
-            pass
+            pass  # Some schema/cell combinations are invalid; keep whatever was built.
         finally:
             con.close()
         data = db.read_bytes()
