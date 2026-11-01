@@ -94,6 +94,18 @@ def test_repair_preserves_source_permissions(tmp_path: Path) -> None:
     assert stat.S_IMODE(out.stat().st_mode) == 0o640
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_repair_output_mode_drops_special_and_shared_write_bits(tmp_path: Path) -> None:
+    src = _stage(tmp_path)
+    src.chmod(0o6777)
+    out = tmp_path / "out.jsonl"
+    try:
+        api.repair(src, out)
+    finally:
+        src.chmod(0o600)
+    assert stat.S_IMODE(out.stat().st_mode) == 0o644
+
+
 def test_batch_existing_relocated_receipt_is_preserved(tmp_path: Path) -> None:
     src = _stage(tmp_path)
     receipts = tmp_path / "receipts"

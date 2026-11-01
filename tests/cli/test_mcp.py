@@ -10,6 +10,8 @@ import io
 import json
 from pathlib import Path
 
+import pytest
+
 from sesslint.mcp_server import PROTOCOL_VERSION, TOOLS, handle_line, serve
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -247,3 +249,30 @@ def test_no_values_leak_in_tool_results() -> None:
     sc = resp["result"]["structuredContent"]
     for finding in sc["findings"]:
         assert "payload" not in json.dumps(finding.get("evidence", {}))
+
+
+def test_unstatable_path_is_iserror_result() -> None:
+    """A path the OS cannot stat (name too long) is a tool error, not a crash."""
+    resp = _call(
+        _line(
+            {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {"name": "sesslint_check", "arguments": {"path": "a" * 5000}},
+            }
+        )
+    )
+    assert "error" not in resp
+    assert resp["result"]["isError"] is True
+    assert "io-error" in resp["result"]["content"][0]["text"]
+
+
+def test_non_finite_json_constants_are_parse_errors() -> None:
+    """Responses stay valid JSON: NaN/Infinity request ids are rejected."""
+    for token in ("NaN", "Infinity", "-Infinity"):
+        out = handle_line(b'{"jsonrpc":"2.0","id":' + token.encode() + b',"method":"ping"}\n')
+        assert out is not None
+        assert token.encode() not in out
+        resp = json.loads(out, parse_constant=lambda c: pytest.fail(f"non-JSON {c}"))
+        assert resp["error"]["code"] == -32700

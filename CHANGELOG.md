@@ -129,6 +129,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line whose fields cannot be canonicalized (for example `NaN` or a lone
   surrogate added by an edit) as a `malformed-line` divergence (exit 1, and a
   `divergence` object with `--json`) instead of failing without a result.
+- `repair`: the repaired output still mirrors the source's permission bits,
+  but is now capped at `0644`: setuid/setgid/sticky, execute, and group or
+  other write bits are no longer copied from the source.
+- MCP: a tool path the OS cannot stat (for example a name longer than the
+  file-system limit, or one under an unreadable directory) is now an
+  `io-error` tool result instead of terminating the stdio server, and
+  requests carrying `NaN`/`Infinity` literals are parse errors instead of
+  being echoed back as invalid JSON.
+- `verify`: the transformation audit now fails when the repaired output
+  carries records the replay does not account for (an unparseable line or a
+  duplicate-key record, reported as `output-unaccounted-records`) or a header
+  that differs from the source header, including a missing one
+  (`header-mismatch`). Previously only `session_id` was compared and such
+  output could still pass when the manifest declared the degraded
+  revalidation.
+- `verify --plan`: a supplied plan is now vetted against the source exactly
+  as `repair --apply-plan` vets one (B20). Its `source_hash` must match the
+  source (`plan-source-mismatch`) and every step must be one the planner
+  derives for that source (`plan-not-derived-from-source`). Before, a plan
+  whose fingerprint was merely self-consistent was replayed as given, so its
+  self-reported `lossy`/`loss` fields could make a lossy transformation
+  verify as `repaired-lossless`.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and
