@@ -5,6 +5,7 @@ import {
   formatCode,
   isLive,
   normalizeCode,
+  publicConfig,
   resolveCheckout,
   UPGRADE_CODE,
 } from "../../src/lib/checkout";
@@ -68,5 +69,15 @@ describe("resolveCheckout", () => {
 
   it("keeps a supplied checkout URL inert until integration acceptance", () => {
     expect(isLive(live)).toBe(false);
+  });
+});
+
+describe("publicConfig", () => {
+  it("serializes no provider URL while checkout is closed", () => {
+    expect(isLive(live)).toBe(false);
+    const shipped = publicConfig(live);
+    expect(shipped.links).toEqual({});
+    expect(JSON.stringify(shipped)).not.toContain("pay.example");
+    expect(shipped.codeParam).toBe(DEFAULT_CODE_PARAM);
   });
 });

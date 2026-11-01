@@ -63,6 +63,15 @@ export function isLive(cfg: CheckoutConfig): boolean {
   return false;
 }
 
+/**
+ * The config the static page may serialize into its HTML. While checkout is
+ * closed, configured provider URLs must not ship in the page source, where
+ * anyone could lift them and pay through a path the site does not offer.
+ */
+export function publicConfig(cfg: CheckoutConfig): CheckoutConfig {
+  return isLive(cfg) ? cfg : { links: {}, codeParam: cfg.codeParam };
+}
+
 export type Resolution =
   | { kind: "ready"; url: string }
   | { kind: "blocked" } // the quote itself refuses (already owned, free, …)
