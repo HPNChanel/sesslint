@@ -109,6 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `repair`: the repaired output still mirrors the source's permission bits,
+  but is now capped at `0644`: setuid/setgid/sticky, execute, and group or
+  other write bits are no longer copied from the source.
 - MCP: a tool path the OS cannot stat (for example a name longer than the
   file-system limit, or one under an unreadable directory) is now an
   `io-error` tool result instead of terminating the stdio server, and
