@@ -210,6 +210,7 @@ def test_durable_trailing_anchor_scan_continues_past_non_int_ordinal() -> None:
         _ev("x", 1, _cx(ordinal="1", durable=True)),
         _ev("a", 2, _cx(ordinal=0, durable=True, subagent_history_start_ordinal=3)),
         _ev("claim", 3, _cx(ordinal=3, durable=False)),
+        _ev("z", 4, _cx(note="no ordinal")),
     ]
     (f,) = check_durable_prefix(evs)
     assert f.source.record_id == "claim"
@@ -220,7 +221,8 @@ def test_durable_trailing_falls_back_to_last_marked_record() -> None:
     # matches no record: the anchor is the last marked record.
     evs = [
         _ev("first", 1, _cx(ordinal=-2, durable=True, subagent_history_start_ordinal=-1)),
-        _ev("last", 2, _cx(note="no ordinal")),
+        _ev("mid", 2, _cx(note="no ordinal")),
+        _ev("last", 3, _cx(note="no ordinal")),
     ]
     (f,) = check_durable_prefix(evs)
     assert f.source.record_id == "last"
