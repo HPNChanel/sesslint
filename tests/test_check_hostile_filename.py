@@ -36,3 +36,22 @@ def test_check_file_with_hostile_name_succeeds(tmp_path: Path, name: str) -> Non
         code = main(["check", str(target), "-f", "json"])
     assert code == 0, err.getvalue()
     assert "\x1b" not in out.getvalue() + err.getvalue()
+
+
+def test_baseline_error_does_not_echo_entry_content(tmp_path: Path) -> None:
+    """Regression (CL-17): a rejected baseline value is described, never echoed."""
+    secret = "Bearer QWERTYUIOPASDFGHJKLZXCVBNM123456"
+    for doc in (
+        {"schema_version": "sesslint.baseline/v1", "fingerprints": [secret]},
+        {"schema_version": "sesslint.baseline/v2", "entries": [secret]},
+        {"schema_version": "sesslint.baseline/v2", "entries": [{"key": secret}]},
+    ):
+        baseline = tmp_path / "bl.json"
+        baseline.write_text(json.dumps(doc), encoding="utf-8")
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["check", str(FIXTURE), "--baseline", str(baseline), "-f", "json"])
+        text = out.getvalue() + err.getvalue()
+        assert code == 2
+        assert "QWERTYUIOP" not in text
+        assert "got str of length" in text or "got dict" in text
