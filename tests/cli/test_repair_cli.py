@@ -227,3 +227,22 @@ def test_repair_cli_sl002_success(tmp_path: Path, capsys: pytest.CaptureFixture[
     recheck = api.check_file(out)
     assert recheck.counts.total == 0
     assert len(recheck.findings) == 0
+
+
+def test_repair_cli_invalid_utf8_header_is_typed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Invalid UTF-8 on the first line refuses with the schema error (CL-05 fuzz).
+
+    The single-document fallback re-decoded the bytes and leaked a bare
+    UnicodeDecodeError, printed as ``Error: utf-8``.
+    """
+    codex = FIXTURES_DIR.parent / "adapters" / "codex" / "healthy_min.jsonl"
+    src = tmp_path / "session.jsonl"
+    src.write_bytes(codex.read_bytes().replace(b'"ordinal": 0', b'"ordinal": \xff\xfe\xc3 0', 1))
+    out = str(tmp_path / "out.jsonl")
+    code = main(["repair", str(src), "--adapter", "canonical", "--output", out])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "Invalid UTF-8 encoding in header line 1" in err
+    assert not (tmp_path / "out.jsonl").exists()

@@ -15,7 +15,6 @@ in SessLint. It enforces a strict, pinned 8-step protocol:
 
 from __future__ import annotations
 
-import dataclasses
 import errno
 import hashlib
 import json
@@ -77,10 +76,12 @@ from sesslint.repair.errors import (
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.repair.planner import (
     MAX_STEPS,
-    PlanStep,
     RepairPlan,
     compute_events_source_hash,
 )
+from sesslint.repair.positions import relocate_step as _relocate_step
+from sesslint.repair.positions import source_positions as _source_positions
+from sesslint.repair.positions import strip_origins, tag_origins
 from sesslint.repair.recipes_conservative import (
     register_all as register_all_conservative_recipes,
 )
@@ -104,24 +105,6 @@ from sesslint.report import (
 
 StrPath = str | os.PathLike[str]
 SQLITE_MAGIC: Final[bytes] = b"SQLite format 3\x00"
-
-# B21: plan steps address events by their position in the source as loaded,
-# but each drop step shifts every later event. While recipes run, each working
-# event carries its source position under this private key (recipes deep-copy
-# events, so the key travels with the event); it is stripped before output
-# validation, and the canonical schema admits no such field.
-_ORIGIN_KEY: Final[str] = "\x00sesslint.origin"
-_STEP_INDEX_PARAMS: Final[tuple[str, ...]] = (
-    "at_index",
-    "boundary_index",
-    "cut_index",
-    "entry_index",
-    "first_index",
-    "first_unsafe_index",
-    "index",
-    "use_index",
-)
-_STEP_INDEX_LIST_PARAMS: Final[tuple[str, ...]] = ("record_indexes", "result_indexes")
 
 _ATOMIC_TEST_HOOKS: dict[str, Any] = {
     "pre_write": None,
@@ -169,48 +152,6 @@ def is_live_store_path(path: StrPath) -> bool:
         except OSError:
             pass
     return False
-
-
-def _source_positions(events: Sequence[Mapping[str, Any]]) -> dict[int, int]:
-    """Map each surviving source position to its current position (B21)."""
-    positions: dict[int, int] = {}
-    for current, ev in enumerate(events):
-        origin = ev.get(_ORIGIN_KEY)
-        if isinstance(origin, int):
-            if origin in positions:
-                raise OutputInvalid(f"Repair duplicated source event {origin}")
-            positions[origin] = current
-    return positions
-
-
-def _relocate_step(step: PlanStep, positions: Mapping[int, int], source_len: int) -> PlanStep:
-    """Re-address ``step`` from source positions to current positions (B21).
-
-    A position that an earlier step removed fails closed instead of letting
-    the step act on whichever event now sits there. Values that are not
-    source positions pass through for the recipe's own guards to judge.
-    """
-
-    def relocate(value: Any) -> Any:
-        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < source_len:
-            return value
-        current = positions.get(value)
-        if current is None:
-            raise OutputInvalid(
-                f"Step {step.seq} (recipe '{step.recipe}') targets source event {value}, "
-                "which an earlier step removed"
-            )
-        return current
-
-    params = dict(step.params)
-    for key in _STEP_INDEX_PARAMS:
-        if key in params:
-            params[key] = relocate(params[key])
-    for key in _STEP_INDEX_LIST_PARAMS:
-        values = params.get(key)
-        if isinstance(values, (list, tuple)):
-            params[key] = [relocate(value) for value in values]
-    return dataclasses.replace(step, target_index=relocate(step.target_index), params=params)
 
 
 def _targeted_lines(findings: Sequence[Finding], targeted_fps: set[str]) -> frozenset[int]:
@@ -332,9 +273,13 @@ def load_session_source_with_findings(
         events = [e for e in items if isinstance(e, SessionEvent)]
         findings = hdr_findings + [f for f in items if isinstance(f, Finding)]
         return hdr, events, findings
-    except SchemaError:
+    except SchemaError as schema_err:
         # Fall back to single-document canonical JSON if formatted as a single JSON object
-        raw_text = p.read_text(encoding="utf-8-sig") if data is None else data.decode("utf-8-sig")
+        try:
+            raw_bytes = p.read_bytes() if data is None else data
+            raw_text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise schema_err from None
         text = raw_text.strip()
         if text.startswith("{"):
             try:
@@ -645,10 +590,7 @@ def execute(
     register_all_sl002_recipes()
 
     working_events = _copy_events_as_dicts(loaded_events)
-    if any(_ORIGIN_KEY in ev for ev in working_events):
-        raise OutputInvalid("Source event carries a field reserved for repair bookkeeping")
-    for origin, ev_dict in enumerate(working_events):
-        ev_dict[_ORIGIN_KEY] = origin
+    tag_origins(working_events)
     source_len = len(working_events)
     sorted_steps = sorted(plan.steps, key=lambda s: s.seq)
 
@@ -718,8 +660,7 @@ def execute(
             ),
         )
 
-    for ev_dict in working_events:
-        ev_dict.pop(_ORIGIN_KEY, None)
+    strip_origins(working_events)
 
     # -------------------------------------------------------------------------
     # STEP 4: Output validation
@@ -834,6 +775,16 @@ def execute(
         from sesslint.adapters.load import reload_vendor_bytes
 
         emit_events, emit_adapter_findings = reload_vendor_bytes(resolved_emit, output_bytes)
+        # verify loads the artifact by detection, not by the forced adapter: an
+        # output that sniffs as another format can never be verified.
+        from sesslint.adapters.detect import detect_format_bytes
+
+        emit_name = Path(output_path).name if output_path is not None else source_p.name
+        if detect_format_bytes(output_bytes, filename=emit_name).format != resolved_emit:
+            raise OutputInvalid(
+                f"Emitted vendor artifact does not re-detect as {resolved_emit}; "
+                "verify could not load it with the same adapter"
+            )
         emit_check_findings = run_all_checks(
             emit_events,
             profile=reval_profile_name,
@@ -855,6 +806,18 @@ def execute(
                 "Emitted vendor artifact does not round-trip to the repaired "
                 "event set (content identity mismatch after adapter reload)"
             )
+        # Verbatim lines keep their stream-level warnings (e.g. SL303 duplicate
+        # keys); the declared revalidation must count them as verify does.
+        if emit_adapter_findings:
+            reval_findings = list(emit_adapter_findings) + list(reval_findings)
+            reval_assurance, reval_limitation = compute_assurance(
+                parsed_output_events,
+                reval_findings,
+                reference_equivalent=reference_equivalent_if_clean(
+                    parsed_output_events, reval_findings
+                ),
+            )
+            warning_count = len([f for f in reval_findings if f.severity == Severity.WARNING])
     else:
         repaired_session = Session(header=repaired_header, events=tuple(parsed_output_events))
         output_text = dump_session(repaired_session)

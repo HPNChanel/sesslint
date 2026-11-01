@@ -67,6 +67,20 @@ def safe_type_value(val: Any) -> str:
     return f"<{t_name}>"
 
 
+def scalar_id(val: Any) -> str | int | float | None:
+    """Return ``val`` if it can serve as an identifier, else None (FR-081).
+
+    Identifiers are JSON strings and numbers. An object or array in an id
+    field is treated as absent: ``str()`` of it would copy nested record
+    content into finding ids and messages.
+    """
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, (str, int, float)):
+        return val
+    return None
+
+
 def safe_discriminator(val: Any) -> tuple[str, bool]:
     """Echo discriminator verbatim if allowlisted and content-free, else safe shape.
 
@@ -95,4 +109,5 @@ def safe_discriminator(val: Any) -> tuple[str, bool]:
 __all__ = [
     "safe_discriminator",
     "safe_type_value",
+    "scalar_id",
 ]

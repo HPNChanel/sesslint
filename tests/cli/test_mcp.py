@@ -54,11 +54,16 @@ def test_initialized_notification_is_dropped() -> None:
     assert handle_line(_line({"jsonrpc": "2.0", "method": "notifications/initialized"})) is None
 
 
-def test_tools_list_returns_three_readonly_tools() -> None:
+def test_tools_list_returns_four_readonly_tools() -> None:
     resp = _call(_line({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
     assert resp is not None
     tools = {t["name"]: t for t in resp["result"]["tools"]}
-    assert set(tools) == {"sesslint_check", "sesslint_precheck", "sesslint_scan"}
+    assert set(tools) == {
+        "sesslint_check",
+        "sesslint_precheck",
+        "sesslint_scan",
+        "sesslint_triage",
+    }
     for t in tools.values():
         assert t["inputSchema"]["type"] == "object"
         assert "path" in t["inputSchema"]["required"]
@@ -69,6 +74,7 @@ def test_tools_list_is_static() -> None:
         "sesslint_check",
         "sesslint_precheck",
         "sesslint_scan",
+        "sesslint_triage",
     ]
 
 

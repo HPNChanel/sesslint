@@ -73,7 +73,7 @@ from sesslint.adapters.openai_agents import (
     SourceMetadata,
     normalize_version,
 )
-from sesslint.adapters.safe_value import safe_discriminator, safe_type_value
+from sesslint.adapters.safe_value import safe_discriminator, safe_type_value, scalar_id
 from sesslint.adapters.synthetic import (
     SyntheticIdCollisionGuard,
     synthetic_event_id,
@@ -687,7 +687,7 @@ def _process_rollout_record(
     payload = envelope.get("payload")
 
     # Resolve event identity: payload.id when present, else synthetic.
-    payload_id: Any = payload.get("id") if isinstance(payload, Mapping) else None
+    payload_id = scalar_id(payload.get("id")) if isinstance(payload, Mapping) else None
     if payload_id is not None and str(payload_id).strip():
         rec_id_str = str(payload_id).strip()
         original_id: str | None = rec_id_str
@@ -871,7 +871,7 @@ def _process_rollout_record(
                     if payload.get("recipient") is not None:
                         out_payload["recipient"] = str(payload.get("recipient"))
             elif kind == "tool_call":
-                raw_call_id = (
+                raw_call_id = scalar_id(
                     payload.get("call_id")
                     if payload.get("call_id") is not None
                     else payload.get("tool_call_id")
@@ -918,7 +918,7 @@ def _process_rollout_record(
                 else:
                     side_effects = "unknown"
             elif kind == "tool_result":
-                raw_call_id = (
+                raw_call_id = scalar_id(
                     payload.get("call_id")
                     if payload.get("call_id") is not None
                     else payload.get("tool_call_id")

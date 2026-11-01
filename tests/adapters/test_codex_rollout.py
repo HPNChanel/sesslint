@@ -83,6 +83,34 @@ def _jsonl(*records: dict) -> bytes:
     return ("\n".join(json.dumps(r, sort_keys=True) for r in records) + "\n").encode()
 
 
+@pytest.mark.parametrize("value", ["  id  ", "0", 0, -1, 1.5])
+def test_scalar_identity_and_correlation_semantics(value: object) -> None:
+    events, _ = load_codex_rollout(
+        _jsonl(
+            _env(0, "session_meta", {}),
+            _item(1, "function_call", None, id=value, call_id=value, name="read"),
+            _item(2, "function_call_output", "result", call_id=value),
+        )
+    )
+    assert events[1].id == str(value).strip()
+    assert events[1].correlation_id == str(value)
+    assert events[2].correlation_id == str(value)
+
+
+@pytest.mark.parametrize("value", [{"x": "pvt"}, ["pvt"], True, False])
+def test_invalid_identity_uses_existing_fallback_without_alias_retry(value: object) -> None:
+    events, _ = load_codex_rollout(
+        _jsonl(
+            _env(0, "session_meta", {}),
+            _item(1, "function_call", None, id=value, call_id=value, tool_call_id="alias"),
+            _item(2, "function_call_output", "result", call_id=value, tool_call_id="alias"),
+        )
+    )
+    assert is_synthetic_id(events[1].id)
+    assert events[1].correlation_id == events[1].id
+    assert events[2].correlation_id is None
+
+
 def _iac(**fields: object) -> dict:
     """A well-formed inter_agent_communication payload with ``fields`` merged in."""
     return {

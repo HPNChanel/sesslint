@@ -67,7 +67,7 @@ def _esc(value: object) -> str:
 def _page(title: str, body: str) -> str:
     return (
         "<!DOCTYPE html>\n"
-        '<html lang="es">\n<head>\n<meta charset="utf-8">\n'
+        '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{_esc(title)}</title>\n<style>{_CSS}</style>\n</head>\n"
         f'<body>\n<div class="wrap">\n{body}\n</div>\n</body>\n</html>\n'

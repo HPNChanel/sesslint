@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI: optional Windows artifact acceptance on standard hosted runners, covering
+  offline wheel installs, the standalone EXE and both supported PowerShell
+  engines without artifact uploads or publication.
+- MCP: the stdio server now also speaks protocol revision `2026-07-28`
+  alongside `2025-06-18`. Modern requests are stateless (per-request `_meta`
+  protocol version and client capabilities), `server/discover` advertises
+  `supportedVersions`, results carry `resultType` and `serverInfo`, `tools/list`
+  carries `ttlMs`/`cacheScope`, and unsupported versions return
+  `UnsupportedProtocolVersionError` (`-32022`). `2025-06-18` responses are
+  pinned by the golden under `fixtures/mcp/2025-06-18`, with the documented
+  SHA-256 path-label migration applied to scan results. HTTP
+  transport, subscriptions, multi round-trip results and tasks are not
+  implemented. See `docs/INTEGRATIONS.md`.
+- MCP: read-only `sesslint_triage` tool. It returns the same `sesslint.triage/v1`
+  document as `sesslint triage <path> -f json` (conservative policy, no
+  registry copy) with the same `path`/`profile`/`format` arguments and error
+  style as `sesslint_check`. A missing path is an `io-error` result and a
+  directory a `usage-error` result, where the CLI reports `unreadable`.
+  See `docs/TRIAGE.md`.
 - `sesslint outcome` (OutcomeGuard): verify a declarative
   `sesslint.outcome-contract/v1` against exported source and target snapshots
   (CSV, JSON, JSONL or a `sesslint.snapshot/v1` envelope), offline and read-only.
@@ -59,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reports: minimized parent-directory labels now use SHA-256 instead of SHA-1,
+  including environments that disable SHA-1. The compact eight-hex display
+  format is unchanged; these labels do not guarantee anonymization or identity.
+
+- CI: ordinary runs keep coverage and benchmark results in job logs without
+  uploading report artifacts. Manual/reusable runs can opt in with
+  `upload_reports`; release tags retain report uploads. All verification gates
+  and the Linux/Windows/macOS matrix remain unchanged.
+
 - The `codex-rollout` adapter version is now `1.1.0`, because
   `inter_agent_communication` records now map to messages (see Fixed).
   Finding fingerprints from checks on Codex rollouts change with it, and so
@@ -81,6 +109,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `check`, directory scans and `triage` with a forced `--adapter` now handle
+  empty, whitespace-only and BOM-only input as auto-detection does: one SL001
+  `Empty input: file contains no session records`, no repair command, and
+  `triage` asks for the session file. Before, every forced adapter showed the
+  malformed-record refusal instead, `--adapter canonical` reported SL001
+  twice, and a BOM-only file reported healthy under `--adapter openai-agents`
+  or a torn record with a repair command (which then refused) under
+  `--adapter claude-code-jsonl` and `codex-rollout`. A baseline that recorded
+  those BOM-only or duplicate findings needs `--write-baseline` again.
+- Installed-artifact smoke: canonicalize the temporary extraction root before
+  checking archive containment, so aliased temp paths work while escaping
+  archive members remain refused. Interpreter symlinks remain unresolved.
+- Privacy: Codex object/array identifiers and correlation values are treated as
+  missing instead of copying nested content into findings and reports.
+- Command hints: withhold commands whose paths or options require shell-specific
+  escaping, and provide content-free manual guidance instead.
+- MCP: legacy protocol versions in modern request metadata return `-32602` with
+  initialization guidance instead of advertising the same version as unsupported.
+
+- MCP `2026-07-28` returns tool input-validation failures as content-free
+  `isError` results. Malformed requests and unknown tools remain protocol
+  errors, and the `2025-06-18` error contract is unchanged.
+
+- Hostile-number fuzz fixtures use explicit UTF-8 for CSV and JSON on
+  Windows; a fixed fullwidth-digit example covers non-UTF-8 system locales.
+
+- MCP `sesslint_triage` now reports an existing but unreadable file as an
+  `io-error` tool result, matching `sesslint_check` without echoing the path
+  or exception details.
+
+- `repair` with vendor write-back now counts the emitted artifact's own
+  stream findings (such as an SL303 duplicate-key warning on a line kept
+  verbatim) in the manifest's declared revalidation. Before, the manifest
+  claimed a cleaner assurance than the output had, and `verify` rejected the
+  pair with `revalidation-mismatch`.
+- `verify` now replays a repair plan at the same positions as `repair`. A
+  step that follows a drop addresses the source as loaded (B21), and verify
+  had replayed it at the shifted position. It then rejected valid repairs of
+  more than one step, such as two duplicate groups or a salvage drop before a
+  duplicate collapse, with `recipe-apply-failed`.
+- The Claude Code and OpenAI Agents adapters no longer copy a JSON object or
+  array found in an id field (`id`, `uuid`, `parentId`, `prev_id`,
+  `toolUseId`, `call_id` and similar) into reports. Such a value is now
+  treated as a missing id. Before, its Python text form, nested keys and
+  values included, appeared in finding ids, messages and evidence.
+- `repair` on a canonical-format source whose first line is not valid UTF-8
+  now refuses with `Invalid UTF-8 encoding in header line 1`. Before, the
+  single-document fallback re-decoded the bytes and the command printed only
+  `Error: utf-8`.
+- `repair` now refuses a vendor write-back whose output would be detected as
+  a different format than its source. Example: a salvage of an OpenAI Agents
+  document with an extra line on top excised the whole document as torn
+  records, and the surviving line looked like Claude Code JSONL. `verify`
+  could never accept that output.
+- The `[tool.mutmut]` configuration now generates and tests mutants. The
+  `only_mutate` patterns lacked mutmut's `src/` prefix (zero mutable files),
+  test fixtures/docs/schemas were not copied into `mutants/` (stats phase
+  failed at collection), and one class-based Hypothesis test cannot run twice
+  in one process. The scope also covers `repair/*` and `outcome/*`.
+- `scripts/installed_smoke.py` (and so `scripts/smoke_distributions.py`) no longer
+  resolves the interpreter symlink of a venv, which pointed at the base
+  interpreter and failed with `No module named sesslint`.
+- Finalizing the CLI's stream wrapper after the underlying stream was closed no
+  longer raises `ValueError: I/O operation on closed file` (visible as
+  unraisable-exception warnings on Python 3.13+). Flush errors on open streams
+  still propagate.
+- The HTML report now declares `<html lang="en">`, matching the English text it
+  contains (it previously declared `es`).
 - Every command SessLint prints now runs as printed, from the directory the
   first command ran in. Repair hints name the `--output` that `repair`
   requires (`<name>.repaired<ext>` in the working directory, or

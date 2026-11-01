@@ -83,8 +83,13 @@ print(json.dumps({{
 """
 
 
+def absolute(path: Path) -> Path:
+    """Make a path absolute without following symlinks (a venv python is one)."""
+    return Path(os.path.abspath(path))
+
+
 def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
-    artifact, kit = artifact.resolve(), kit.resolve()
+    artifact, kit = absolute(artifact), kit.resolve()
     receipt: dict = {
         "schema_version": 1,
         "version": version,
@@ -100,7 +105,10 @@ def run(artifact: Path, kit: Path, *, python: bool, version: str) -> dict:
     with tempfile.TemporaryDirectory(
         prefix="sesslint handoff \u0111\u01b0\u1eddng d\u1eabn "
     ) as raw:
-        cwd = Path(raw)
+        # Compare canonical paths on both sides of the containment check.
+        # Windows short-name temp roots and symlinked temp roots can differ
+        # from the path returned by resolve() for an archive member.
+        cwd = Path(raw).resolve()
         with zipfile.ZipFile(kit) as archive:
             for member in archive.namelist():
                 target = (cwd / member).resolve()

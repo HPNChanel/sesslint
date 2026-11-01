@@ -351,8 +351,20 @@ cost scales with file count; narrow the scope with an explicit path or
 
 Agents that natively consume MCP servers (Claude Code, Codex) can call
 SessLint checks directly. `sesslint mcp` runs a Model Context Protocol
-server over **stdio** — newline-delimited JSON-RPC 2.0, protocol revision
-`2025-06-18`, zero dependencies, no sockets, no threads.
+server over **stdio** — newline-delimited JSON-RPC 2.0, zero dependencies, no
+sockets, no threads. Two MCP protocol revisions are served side by side:
+
+| Revision | How a client selects it | Notes |
+| -------- | ----------------------- | ----- |
+| `2025-06-18` | `initialize` handshake, then `tools/list` / `tools/call` | Unchanged; response bytes are frozen by `fixtures/mcp/2025-06-18` |
+| `2026-07-28` | No handshake: every request carries `_meta["io.modelcontextprotocol/protocolVersion"]` and `.../clientCapabilities`; optional `server/discover` | Results carry `resultType`; `tools/list` and `server/discover` carry `ttlMs` / `cacheScope`; an unsupported version returns `UnsupportedProtocolVersionError` (`-32022`) listing `supported` versions |
+
+A client that supports both can probe with `server/discover` and fall back to
+`initialize` (spec: stdio backward compatibility). Not implemented because they
+do not fit a stdio, read-only, static-tool server: Streamable HTTP,
+`subscriptions/listen`, multi round-trip `input_required` results, and the
+tasks extension. `ping` and `logging/setLevel` were removed by `2026-07-28`
+and answer `-32601` there (`ping` still works on the `2025-06-18` path).
 
 Client configuration (add to the agent's MCP settings — SessLint never
 writes client config):
@@ -376,11 +388,13 @@ protocol errors):
 | `sesslint_check` | `sesslint.report/v1` report (structured content) for one session file |
 | `sesslint_precheck` | `{ok, reason, exit_code}` gate result plus the report (`schemas/sesslint.precheck-result.v1.json`) |
 | `sesslint_scan` | `sesslint.scan-report/v1` 5-bucket aggregate for a file or directory tree |
+| `sesslint_triage` | `sesslint.triage/v1` diagnosis (`schemas/sesslint.triage.v1.json`) for one session file — the same document as `sesslint triage <path> -f json`; previews are never applied |
 
 Each tool takes `path` (required), plus optional `profile` (`neutral`,
 `claude-strict`, `openai-strict`) and `format` adapter override. Missing
 paths and tool failures return `isError: true` results with content-free
-reason strings; protocol problems return JSON-RPC error objects. The server
+reason strings (`sesslint_triage`, like `sesslint_check`, requires a file: a
+directory is a `usage-error`, a missing path an `io-error`); protocol problems return JSON-RPC error objects. The server
 adds no timestamps — identical requests produce identical responses.
 EOF or Ctrl+C exits cleanly.
 

@@ -1733,7 +1733,8 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
 
     If path is under home directory, renders as '~/relative/path' (or '~' for home itself).
     If path is outside home directory, renders as '.._<8hex>/filename'
-    where 8hex is sha1(parent)[:8].
+    where 8hex is sha256(parent)[:8]. This deterministic display label is not
+    an anonymization guarantee or a collision-resistant identity.
     Non-home absolute paths are never emitted in default mode.
     """
     if isinstance(path, str):
@@ -1771,12 +1772,12 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
                 pass
 
         parent_str = str(p.parent).replace("\\", "/")
-        p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+        p_hash = hashlib.sha256(parent_str.encode("utf-8")).hexdigest()[:8]
         return f".._{p_hash}/{p.name}"
 
     parent_str = str(p.parent).replace("\\", "/") if p.parent != Path(".") else ""
     if parent_str:
-        p_hash = hashlib.sha1(parent_str.encode("utf-8")).hexdigest()[:8]
+        p_hash = hashlib.sha256(parent_str.encode("utf-8")).hexdigest()[:8]
         return f".._{p_hash}/{p.name}"
     return p.name
 
@@ -1925,12 +1926,18 @@ def build_repro_metadata(
 # is nothing to repair, so it gets its own message and no repair command
 # (AC-04). Every repair command exits 2 on a file with no records.
 EMPTY_INPUT_MESSAGE: Final[str] = "Empty input: file contains no session records"
+# Evidence detail of the empty-input SL001 that ``api`` and ``scan`` add under a
+# forced ``--adapter``. Adapters record ``reason: empty_input`` instead. Both
+# keys feed the fingerprint, so neither shape is rewritten.
+EMPTY_INPUT_DETAIL: Final[str] = "empty-or-whitespace-only input"
 
 
 def finding_is_empty_input(f: Finding) -> bool:
-    """Return True when ``f`` records zero-length or whitespace-only input (AC-04)."""
+    """Return True when ``f`` records empty, whitespace-only or BOM-only input (AC-04)."""
     evidence = f.evidence
-    return isinstance(evidence, Mapping) and evidence.get("reason") == "empty_input"
+    if not isinstance(evidence, Mapping):
+        return False
+    return evidence.get("reason") == "empty_input" or evidence.get("detail") == EMPTY_INPUT_DETAIL
 
 
 def get_finding_remediation(
@@ -1939,7 +1946,7 @@ def get_finding_remediation(
     home: Path | None = None,
     for_operator: bool = False,
     abstain: bool = False,
-    options: Sequence[str] = (),
+    options: Sequence[str | None] = (),
 ) -> str:
     """Return concise content-free remediation instructions for a finding.
 
@@ -1957,7 +1964,7 @@ def get_finding_remediation(
     carries SL203, where every recipe and salvage path abstains under every
     policy (FR-060), so no repair command is suggested.
     """
-    from sesslint._hints import repair_hint
+    from sesslint._hints import hint_instruction, repair_hint
     from sesslint.codes import Repairability
     from sesslint.repair.refusals import refusal_rationale_for, salvage_applicable
 
@@ -1974,10 +1981,11 @@ def get_finding_remediation(
             "under every policy while SL203 is present"
         )
     if f.repairability == Repairability.DETERMINISTIC:
-        return f"deterministic recipe available: run '{repair_hint(path_str, *options)}'"
+        instruction = hint_instruction(repair_hint(path_str, *options), verb="run")
+        return f"deterministic recipe available: {instruction}"
     if f.repairability == Repairability.LOSSY_EXPLICIT:
         salvage_cmd = repair_hint(path_str, *options, "--policy", "salvage")
-        return f"lossy-explicit recipe available: run '{salvage_cmd}'"
+        return f"lossy-explicit recipe available: {hint_instruction(salvage_cmd, verb='run')}"
     refusal = refusal_rationale_for(f.code)
     salvage = not abstain and salvage_applicable(f)
     if f.repairability == Repairability.MANUAL:
@@ -2183,7 +2191,7 @@ def render_human(
     profile: str = "neutral",
     next_action: str | None = None,
     home: Path | None = None,
-    command_options: Sequence[str] = (),
+    command_options: Sequence[str | None] = (),
 ) -> str:
     """Render Report to human-readable format with summary header and ordered finding blocks.
 
@@ -2235,7 +2243,7 @@ def render_human(
         elif verdict == "skipped":
             next_action = "Raise --max-file-bytes to inspect this file within your memory budget."
         elif has_error:
-            from sesslint._hints import check_hint, repair_hint
+            from sesslint._hints import check_hint, hint_instruction, repair_hint
             from sesslint.repair.refusals import refusal_rationale_for, salvage_applicable
 
             # Suggest a repair only when its policy covers every error: repair
@@ -2247,11 +2255,11 @@ def render_human(
             opts = tuple(command_options)
             if errors and not abstain and repairs <= {"deterministic"}:
                 p = hint_path(errors[0].source.path, home=home)
-                next_action = f"Run '{repair_hint(p, *opts)}'"
+                next_action = hint_instruction(repair_hint(p, *opts))
             elif errors and not abstain and repairs <= {"deterministic", "lossy-explicit"}:
                 lossy = next(f for f in errors if f.repairability.value == "lossy-explicit")
                 p = hint_path(lossy.source.path, home=home)
-                next_action = f"Run '{repair_hint(p, *opts, '--policy', 'salvage')}'"
+                next_action = hint_instruction(repair_hint(p, *opts, "--policy", "salvage"))
             elif errors and all(finding_is_empty_input(f) for f in errors):
                 next_action = f"{EMPTY_INPUT_MESSAGE}; check that the path names the session file."
             elif abstain:
@@ -2260,7 +2268,7 @@ def render_human(
                 next_action = (
                     "Manual inspection required; automated repair abstains under every "
                     "policy (SL203). Establish whether the external action ran, then "
-                    f"re-run '{check_hint(p, *opts)}'."
+                    f"{hint_instruction(check_hint(p, *opts), verb='re-run')}."
                 )
             else:
                 next_action = "Manual inspection required; automated repair refused."
@@ -2409,6 +2417,7 @@ __all__ = [
     "VALID_ASSURANCE_LEVELS",
     "VALID_COVERAGE_SKIP_REASONS",
     "VALID_POLICIES",
+    "EMPTY_INPUT_DETAIL",
     "EMPTY_INPUT_MESSAGE",
     "Assurance",
     "Counts",
