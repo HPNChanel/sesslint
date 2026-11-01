@@ -106,7 +106,8 @@ _CODEX_TARGET = "~/.codex/hooks.json (hooks section)"
 
 # Codex adds plain SessionStart stdout to model context and ignores plain
 # PreCompact/PostCompact stdout, so those recipes print the content-free
-# systemMessage envelope, which Codex surfaces to the user as a warning.
+# systemMessage envelope, which Codex surfaces to the user as a warning
+# (a clean pass prints ``{}`` and shows nothing).
 # SessionStart skips "compact": PostCompact already checks that transcript.
 # Codex runs hooks through the session shell (PowerShell or cmd on Windows),
 # so commandWindows drops the POSIX '|| true'. A non-zero exit is reported
@@ -191,9 +192,10 @@ _CODEX_NOTE = (
     "trusted). Codex skips new or changed hooks until you review and "
     "trust them in /hooks. Every command reads the hook payload from "
     "stdin (transcript_path, session_id) - no paths to substitute. "
-    "SessionStart, PreCompact and PostCompact print a content-free "
-    "systemMessage, which Codex shows as a warning (a clean pass too) "
-    "instead of adding plain output to model context. SessionStart "
+    "SessionStart, PreCompact and PostCompact print JSON instead of "
+    "plain output, which Codex would add to model context: a content-free "
+    "systemMessage (shown as a warning) for findings or a skip, and {} "
+    "(nothing shown) for a clean pass. SessionStart "
     "skips 'compact' because PostCompact checks the same transcript. "
     "SessionEnd uses the 3s maximum Codex allows. commandWindows omits "
     "'|| true' because Windows hooks may run in PowerShell or cmd; a "
