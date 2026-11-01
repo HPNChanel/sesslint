@@ -30,8 +30,14 @@ from sesslint.codes import SL001, Repairability, Severity
 from sesslint.context import CheckContext
 from sesslint.diff import SessionDiff
 from sesslint.doctor import DoctorReport
+from sesslint.errors import FindingError
 from sesslint.exporter import ExportSummary
-from sesslint.finding import Finding, SourceRef, make_finding
+from sesslint.finding import (
+    Finding,
+    SourceRef,
+    enforce_content_free_text,
+    make_finding,
+)
 from sesslint.io import DEFAULT_MAX_FILE_BYTES, ReaderLimits, read_limit_plus_one
 from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
 from sesslint.preview import PreviewDoc
@@ -185,6 +191,23 @@ def check_bytes(
     )
 
 
+def _display_path(target_path: Path) -> str:
+    """Path label for findings; a hostile file name degrades to a redacted label.
+
+    A name carrying control characters or credential shapes would be rejected by
+    ``SourceRef`` and abort the whole check (exit 2). The scan path already
+    redacts such names via ``minimize_path``; single-file checks do the same.
+    """
+    shown = str(target_path)
+    try:
+        enforce_content_free_text(shown.strip().replace("\\", "/"), context="SourceRef.path")
+    except FindingError:
+        from sesslint.report import minimize_path
+
+        return minimize_path(target_path)
+    return shown
+
+
 def _check_impl(
     target_path: Path,
     *,
@@ -213,7 +236,7 @@ def _check_impl(
 
     # Narrowing note for mypy --strict: guards on `data`/`virtual_path` use the
     # `is not None` form so Optional types narrow without a flag variable.
-    display_path = virtual_path if virtual_path is not None else str(target_path)
+    display_path = virtual_path if virtual_path is not None else _display_path(target_path)
     item_name = virtual_path if virtual_path is not None else target_path.name
     item_stem = "stdin" if virtual_path is not None else target_path.stem
 
