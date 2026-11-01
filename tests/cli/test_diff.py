@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
@@ -246,3 +248,36 @@ def test_diff_load_side_undetectable_raises(tmp_path: Path) -> None:
     good = _write_jsonl(tmp_path / "good.jsonl", _claude_records(2))
     with pytest.raises(DiffInputError):
         diff_sessions(good, bad)
+
+
+def test_hostile_ids_are_redacted_like_check_findings(tmp_path: Path) -> None:
+    """CL-16: ids with PII, credentials or control characters never reach output."""
+    a = tmp_path / "a.jsonl"
+    b = tmp_path / "b.jsonl"
+    a.write_text(
+        json.dumps({"id": "a@example.com\x1b[31m", "type": "user_message", "message": "hi"})
+        + "\n"
+        + json.dumps(
+            {
+                "id": "m2",
+                "parentId": "Bearer abcdefghijklmnopqrstuvwxyz0123456789",
+                "type": "assistant_message",
+                "message": "yo",
+            }
+        )
+        + "\n"
+    )
+    b.write_text(
+        json.dumps(
+            {"id": "m2", "parentId": "x\nFORGED", "type": "assistant_message", "message": "yo"}
+        )
+        + "\n"
+    )
+    for argv in (["diff", str(a), str(b)], ["diff", str(a), str(b), "--json"]):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            assert main(argv) == 1
+        text = out.getvalue()
+        for leaked in ("example.com", "\x1b", "Bearer", "FORGED"):
+            assert leaked not in text
+        assert "<redacted>" in text

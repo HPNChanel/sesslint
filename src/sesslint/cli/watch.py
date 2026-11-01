@@ -44,7 +44,7 @@ def configure(
         type=float,
         default=2.0,
         metavar="SEC",
-        help="Poll interval in seconds (default: 2.0, min: 0.05)",
+        help="Poll interval in seconds (default: 2.0, min: 0.05, max: 86400)",
     )
     sub.add_argument(
         "--adapter",

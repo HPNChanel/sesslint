@@ -3,6 +3,7 @@
 import io
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,7 +80,6 @@ def test_missing_benchmark_results_still_save_failure(failure, monkeypatch, tmp_
 
 
 def test_installed_timeout_retains_all_attempts(monkeypatch, tmp_path):
-    import sys
 
     artifact, source = tmp_path / "wheel.whl", tmp_path / "input.jsonl"
     artifact.write_bytes(b"synthetic")
@@ -189,3 +189,40 @@ def test_release_promotion_requires_verified_pypi_and_provenance():
     assert set(jobs["pypi-publish"]["needs"]) == {"github-draft", "provenance-verify"}
     assert set(jobs["github-promote"]["needs"]) == {"pypi-verify", "provenance-verify"}
     assert "if" not in jobs["github-promote"]  # GitHub's default success gate stays active.
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX symlinks")
+def test_installed_measurement_keeps_venv_python_symlink(monkeypatch, tmp_path):
+    """A venv's bin/python is a symlink to the base interpreter; resolving it drops the venv."""
+    link = tmp_path / "venv" / "bin" / "python"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(sys.executable)
+    artifact = tmp_path / "a.whl"
+    source = tmp_path / "in.jsonl"
+    artifact.write_bytes(b"w")
+    source.write_bytes(b"i")
+    receipt = tmp_path / "receipt.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "measure",
+            "--python",
+            str(link),
+            "--artifact",
+            str(artifact),
+            "--input",
+            str(source),
+            "--receipt",
+            str(receipt),
+        ],
+    )
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append(command[0])
+        raise OSError("stop")
+
+    monkeypatch.setattr(measure_installed.subprocess, "run", run)
+    measure_installed.main()
+    assert seen and set(seen) == {str(link)}

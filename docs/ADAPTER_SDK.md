@@ -16,8 +16,13 @@ implemented touching only:
 
 - `src/sesslint/adapters/<name>.py` (new)
 - `src/sesslint/adapters/detect.py` (score function wiring)
-- `src/sesslint/adapters/load.py` (format dispatch)
+- `src/sesslint/adapters/load.py` (format dispatch, profile key)
 - `src/sesslint/_version.py` (`ADAPTER_VERSIONS` entry)
+- `src/sesslint/profiles/` (accepted format names, built-in profiles'
+  `allowed_adapters`)
+- adapter listings: `src/sesslint/mcp_server.py`,
+  `src/sesslint/cli/_common.py`, `src/sesslint/adapters/drift.py`
+  (§7 step 5)
 - `fixtures/<name>/` + `PROVENANCE.json`
 - `tests/adapters/test_<name>.py`
 
@@ -133,11 +138,26 @@ A conforming adapter contribution must:
    Adapter ids/versions are part of plan/bundle fingerprints — bump the
    version when the mapping changes (`ADAPTER_GUIDE.md` §Version-Bump
    Checklist).
-5. Add synthetic fixtures with `PROVENANCE.json`.
-6. Add `tests/adapters/test_<name>.py`: detection signature tests,
+5. Register the format everywhere it is listed by name; until then the
+   adapter is refused, unlisted or mislabeled:
+   - `profiles/profile.py:VALID_FORMATS` (format names a profile may
+     accept), `adapters/load.py:FORMAT_PROFILE_KEYS` (format → profile
+     key), and the `allowed_adapters` of each built-in profile that should
+     accept it (`profiles/builtin.py:NEUTRAL_PROFILE`, …);
+   - `mcp_server.py:_FORMATS` (the `format` enum MCP clients see);
+   - `cli/_common.py:FORMAT_DISPLAY_NAMES` (human-readable name in CLI
+     output);
+   - `adapters/drift.py:FOREIGN_SIGNATURE_TYPES` (envelope `type` values
+     unique to the new format, so a foreign record in another stream is
+     reported as drift).
+
+   `tests/test_adapter_sdk_docs.py` fails when a module-level table that
+   enumerates every vendor format is not cited here.
+6. Add synthetic fixtures with `PROVENANCE.json`.
+7. Add `tests/adapters/test_<name>.py`: detection signature tests,
    hostile-input expectations (truncated records, hostile `type` values,
    oversized lines), canonical-mapping tests, privacy tests.
-7. Run the conformance suite (`ADAPTER_GUIDE.md` §Running the Conformance
+8. Run the conformance suite (`ADAPTER_GUIDE.md` §Running the Conformance
    Suite): `uv run pytest -q tests/adapters tests/checks`.
 
 ## 8. Non-goals for adapter authors

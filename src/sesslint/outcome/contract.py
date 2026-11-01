@@ -777,7 +777,7 @@ def contract_from_dict(raw: object) -> Contract:
             ]
         )
     try:
-        fingerprint = hashlib.sha256(canonical_json_bytes(raw)).hexdigest()
+        fingerprint = hashlib.sha256(canonical_json_bytes(raw, newline=False)).hexdigest()
     except (SchemaError, ValueError, TypeError, RecursionError) as err:
         # e.g. a lone surrogate escape ("\ud800"): no canonical UTF-8 form exists.
         cause = err.__cause__ if isinstance(err, SchemaError) else err

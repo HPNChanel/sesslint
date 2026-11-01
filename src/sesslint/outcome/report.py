@@ -74,7 +74,9 @@ def session_dimension(
 
 
 def _hashed(key: tuple[str, ...]) -> str:
-    return "sha256:" + hashlib.sha256(canonical_json_bytes(list(key))).hexdigest()[:16]
+    return (
+        "sha256:" + hashlib.sha256(canonical_json_bytes(list(key), newline=False)).hexdigest()[:16]
+    )
 
 
 @dataclass(frozen=True, slots=True)

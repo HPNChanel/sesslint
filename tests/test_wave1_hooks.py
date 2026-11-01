@@ -22,7 +22,7 @@ def _payload(path: Path, event: str = "SessionStart") -> bytes:
     ).encode("utf-8")
 
 
-def test_claude_output_is_a_content_free_system_message(tmp_path: Path) -> None:
+def test_claude_output_is_silent_when_the_session_is_clean(tmp_path: Path) -> None:
     transcript = tmp_path / "clean.jsonl"
     transcript.write_text(
         '{"schema_version":"sesslint.session/v1","session_id":"wave1","created_at":"2026-10-08T00:00:00Z"}\n',
@@ -33,9 +33,11 @@ def test_claude_output_is_a_content_free_system_message(tmp_path: Path) -> None:
     result = run_hook("SessionStart", _payload(transcript))
     envelope = json.loads(result.to_claude_json())
 
-    assert envelope == {"systemMessage": "SessLint: session integrity check passed."}
-    assert str(transcript) not in envelope["systemMessage"]
-    assert "wave1-hook-session" not in envelope["systemMessage"]
+    assert result.verdict == "ok"
+    # A clean pass is silent: no user-visible systemMessage at all.
+    assert envelope == {}
+    assert str(transcript) not in result.to_claude_json()
+    assert "wave1-hook-session" not in result.to_claude_json()
 
 
 def test_malformed_hook_event_skips_without_disclosing_paths(tmp_path: Path) -> None:

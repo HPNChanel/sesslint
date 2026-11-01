@@ -272,3 +272,26 @@ def test_watch_clean_to_secret_transition(tmp_path: Path) -> None:
     line = format_transition(t)
     assert "SL009" in line
     assert "ghp_" not in line
+
+
+@pytest.mark.parametrize("interval", [float("nan"), float("inf"), 1e10])
+def test_watch_interval_must_be_finite_and_bounded(tmp_path: Path, interval: float) -> None:
+    """CL-16: NaN slipped past the floor check; inf/1e10 overflowed time.sleep."""
+    calls: list[Path] = []
+
+    def check(path: Path) -> Any:
+        calls.append(path)
+        return _healthy(path)
+
+    with pytest.raises(ValueError, match="interval"):
+        watch([tmp_path], interval=interval, check_fn=check, sleep_fn=lambda s: None)
+    assert calls == []
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "1e10"])
+def test_cli_watch_rejects_non_finite_interval(
+    tmp_path: Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["watch", str(tmp_path), "--interval", value, "--json"]) == 2
+    out = capsys.readouterr().out
+    assert "INTERNAL_ERROR" not in out

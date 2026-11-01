@@ -27,6 +27,7 @@ from sesslint.canonical import to_canonical_json
 from sesslint.cli import main
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.verify import Check, Verdict, verify
+from tests.utils.derived_plan import derived_steps
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERIFY_SRC = REPO_ROOT / "src" / "sesslint" / "verify.py"
@@ -76,17 +77,7 @@ def _write_ok_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         },
         "profile": "neutral",
         "source_hash": src_hash,
-        "steps": [
-            {
-                "min_policy": "conservative",
-                "params": {},
-                "recipe": "identical-duplicate-collapse",
-                "recipe_version": "1.0.0",
-                "seq": 0,
-                "target_finding_fp": "070ceee4b3954eb0",
-                "target_index": 1,
-            }
-        ],
+        "steps": derived_steps(src_path, recipe="identical-duplicate-collapse"),
         "version": "sesslint.plan/v1",
     }
     plan_fp = compute_plan_fingerprint(plan_dict)
@@ -500,7 +491,10 @@ def test_directory_as_file_raises_isadirectoryerror(tmp_path: Path) -> None:
 def test_symlinked_files(tmp_path: Path) -> None:
     """Verifier follows symlinks and hashes target bytes correctly."""
     src, pln, out, man = _write_ok_bundle(tmp_path)
-    symlink_src = tmp_path / "sym_source.jsonl"
+    # Plans bind the source file name, so the link keeps the basename.
+    link_dir = tmp_path / "link"
+    link_dir.mkdir()
+    symlink_src = link_dir / src.name
     try:
         symlink_src.symlink_to(src)
     except OSError:
@@ -560,6 +554,7 @@ def test_50_step_plan_replay_perf(tmp_path: Path) -> None:
     out_path = dest_dir / "output.jsonl"
     src_path.write_bytes(src_bytes)
     out_path.write_bytes(out_bytes)
+    steps = derived_steps(src_path, recipe="identical-duplicate-collapse")
 
     src_hash = hashlib.sha256(src_bytes).hexdigest()
     out_hash = hashlib.sha256(out_bytes).hexdigest()
@@ -1282,3 +1277,140 @@ def test_hostile_profile_version_fails_privacy_safe(tmp_path: Path) -> None:
         assert "9.9.9;drop" not in check.detail
     c_map = {c.name: c for c in verdict.checks}
     assert c_map["plan_fingerprint"].detail.startswith("profile-version-unavailable")
+
+
+def _rewrite_output(out: Path, man: Path, new_bytes: bytes) -> None:
+    """Replace output bytes and rebind the manifest output fingerprint."""
+    out.write_bytes(new_bytes)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["output_fingerprint"] = hashlib.sha256(new_bytes).hexdigest()
+    man.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+
+def test_output_header_must_match_source_header(tmp_path: Path) -> None:
+    """Check 4 fails when header fields other than session_id differ."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    lines = out.read_bytes().split(b"\n")
+    header = json.loads(lines[0])
+    header["title"] = "changed"
+    lines[0] = json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    _rewrite_output(out, man, b"\n".join(lines))
+
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["transformation_audit"].ok is False
+    assert c_map["transformation_audit"].detail.startswith("header-mismatch")
+    assert verdict.ok is False
+
+
+def test_output_missing_header_fails(tmp_path: Path) -> None:
+    """Check 4 fails when the output drops the source header."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    lines = out.read_bytes().split(b"\n")
+    _rewrite_output(out, man, b"\n".join(lines[1:]))
+
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["transformation_audit"].ok is False
+    assert verdict.ok is False
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda b: b + b"not a json record\n", id="unparseable-line"),
+        pytest.param(
+            lambda b: b.replace(b'"text":"hello"', b'"text":"other","text":"hello"', 1),
+            id="duplicate-key",
+        ),
+    ],
+)
+def test_output_stream_findings_fail_audit(tmp_path: Path, mutate: Any) -> None:
+    """Check 4 fails when output bytes contain records the replay cannot account for.
+
+    The manifest revalidation block is rebound to the degraded output so only
+    the transformation audit can catch the difference.
+    """
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    _rewrite_output(out, man, mutate(out.read_bytes()))
+    for _ in range(4):
+        verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+        c_map = {c.name: c for c in verdict.checks}
+        detail = c_map["assurance_audit"].detail
+        if c_map["assurance_audit"].ok:
+            break
+        manifest_data = json.loads(man.read_text(encoding="utf-8"))
+        got = detail.rsplit("got ", 1)[-1]
+        if detail.startswith("revalidation-mismatch"):
+            manifest_data["revalidation"]["assurance"] = got
+        elif detail.startswith("revalidation-error-count"):
+            manifest_data["revalidation"]["error_count"] = int(got)
+        elif detail.startswith("revalidation-warning-count"):
+            manifest_data["revalidation"]["warning_count"] = int(got)
+        elif detail.startswith("assurance-ceiling"):
+            manifest_data["assurance_ceiling"] = got
+        man.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    assert c_map["assurance_audit"].ok is True
+    assert c_map["transformation_audit"].ok is False
+    assert c_map["transformation_audit"].detail.startswith("output-unaccounted-records")
+    assert verdict.ok is False
+
+
+def _rebind_plan(pln: Path, man: Path, mutate: Any) -> None:
+    """Rewrite the supplied plan, refingerprint it, and rebind the manifest."""
+    plan_dict = json.loads(pln.read_text(encoding="utf-8"))
+    mutate(plan_dict)
+    plan_dict.pop("fingerprint", None)
+    plan_dict["fingerprint"] = compute_plan_fingerprint(plan_dict)
+    pln.write_text(json.dumps(plan_dict), encoding="utf-8")
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["plan_fingerprint"] = plan_dict["fingerprint"]
+    manifest_data["actions"] = [
+        {"detail": f"step {s['seq']}", "kind": s["recipe"]} for s in plan_dict["steps"]
+    ]
+    man.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+
+def test_supplied_plan_not_derived_from_source_fails(tmp_path: Path) -> None:
+    """A self-consistent supplied plan must still be one the planner derives."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    lines = src.read_bytes().split(b"\n")
+    _rewrite_output(out, man, lines[0] + b"\n" + lines[1] + b"\n")
+
+    def _swap_step(plan_dict: dict[str, Any]) -> None:
+        plan_dict["steps"] = [
+            {
+                "loss": {},
+                "lossy": False,
+                "min_policy": "conservative",
+                "params": {},
+                "recipe": "terminal-suffix-discard",
+                "recipe_version": "1.0.0",
+                "seq": 0,
+                "target_finding_fp": "0" * 16,
+                "target_index": 1,
+            }
+        ]
+
+    _rebind_plan(pln, man, _swap_step)
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["plan_fingerprint"].ok is False
+    assert c_map["plan_fingerprint"].detail == "plan-not-derived-from-source"
+    assert c_map["transformation_audit"].ok is False
+    assert verdict.ok is False
+
+
+def test_supplied_plan_source_hash_must_match(tmp_path: Path) -> None:
+    """A supplied plan bound to other source bytes fails check 2."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+
+    def _rebind_source(plan_dict: dict[str, Any]) -> None:
+        plan_dict["source_hash"] = "0" * 64
+
+    _rebind_plan(pln, man, _rebind_source)
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["plan_fingerprint"].detail == "plan-source-mismatch"
+    assert verdict.ok is False

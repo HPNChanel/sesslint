@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sesslint.canonical import SessionEvent
-from sesslint.io import DEFAULT_MAX_FILE_BYTES
+from sesslint.io import DEFAULT_MAX_FILE_BYTES, read_limit_plus_one
 from sesslint.report import Report
 
 
@@ -85,7 +85,7 @@ def assess_source(
         before = os.fstat(stream.fileno())
         # The shared pipeline's limit branch does not read oversized paths.
         oversized = before.st_size > max_file_bytes
-        data = None if oversized else stream.read(max_file_bytes + 1)
+        data = None if oversized else read_limit_plus_one(stream, max_file_bytes)
         after = os.fstat(stream.fileno())
     report = _check_impl(
         target,
