@@ -122,6 +122,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A malformed baseline entry is now reported by type and length instead of
   echoing its value, so a wrong file passed to `--baseline` cannot print its
   contents.
+- Reading a Codex `state_*.sqlite` whose header declares WAL mode but that has no
+  `-wal` file no longer creates `-wal`/`-shm` sidecars beside it (`doctor`,
+  `scan`); the registry directory is left untouched.
 - Bench: `measure_installed.py` no longer resolves the `--python` path, which
   followed a POSIX venv's `bin/python` symlink to the base interpreter and made
   every installed-wheel measurement fail with "measurement unavailable".
