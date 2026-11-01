@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SL009 detects Azure Storage SAS signatures (`azure-sas-signature`): a
+  `sig=` query parameter carrying a 43-character base64 HMAC-SHA256 plus pad,
+  raw or percent-encoded, also after a JSON-escaped `&` (`\u0026`). A SAS URL
+  in a tool result grants storage access until it expires, and was not
+  reported before. Findings carry `secret_family_set` `5`; the digest covers
+  the signature only.
 - CI: optional Windows artifact acceptance on standard hosted runners, covering
   offline wheel installs, the standalone EXE and both supported PowerShell
   engines without artifact uploads or publication.

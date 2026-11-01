@@ -958,5 +958,53 @@
     "family": "huggingface-token",
     "id": "huggingface-token/malformed",
     "text": "{\"bad\":\"hf_A1b2C3d4E5f6G7h8I9j0"
+  },
+  {
+    "canaries": [
+      "SYNTHETICsasSIGNATURE0123456789abcdef+/ABCD%3D"
+    ],
+    "category": "positive",
+    "expected": [
+      "azure-sas-signature"
+    ],
+    "family": "azure-sas-signature",
+    "id": "azure-sas-signature/positive",
+    "text": "https://synthetic.blob.core.windows.net/c/b?sv=2024-11-04&sr=b&sp=r&sig=SYNTHETICsasSIGNATURE0123456789abcdef+/ABCD%3D"
+  },
+  {
+    "canaries": [],
+    "category": "near-miss",
+    "expected": [],
+    "family": "azure-sas-signature",
+    "id": "azure-sas-signature/near-miss",
+    "text": "https://synthetic.blob.core.windows.net/c/b?sv=2024-11-04&sr=b&sp=r&xsig=SYNTHETICsasSIGNATURE0123456789abcdef+/ABCD%3D"
+  },
+  {
+    "canaries": [],
+    "category": "placeholder",
+    "expected": [],
+    "family": "azure-sas-signature",
+    "id": "azure-sas-signature/placeholder",
+    "text": "https://synthetic.blob.core.windows.net/c/b?sv=2024-11-04&sr=b&sp=r&sig=<SAS_SIGNATURE>"
+  },
+  {
+    "canaries": [],
+    "category": "truncated",
+    "expected": [],
+    "family": "azure-sas-signature",
+    "id": "azure-sas-signature/truncated",
+    "text": "https://synthetic.blob.core.windows.net/c/b?sv=2024-11-04&sr=b&sp=r&sig=SYNTHETICsasSIGNATURE0123456789abcdef+/ABC%3D"
+  },
+  {
+    "canaries": [
+      "SYNTHETICsasSIGNATURE0123456789abcdef+/ABCD%3D"
+    ],
+    "category": "malformed",
+    "expected": [
+      "azure-sas-signature"
+    ],
+    "family": "azure-sas-signature",
+    "id": "azure-sas-signature/malformed",
+    "text": "{\"bad\":\"https://synthetic.blob.core.windows.net/c/b?sv=2024-11-04&sr=b&sp=r&sig=SYNTHETICsasSIGNATURE0123456789abcdef+/ABCD%3D"
   }
 ]
