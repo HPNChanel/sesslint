@@ -4,7 +4,7 @@ import PageHead from "../components/PageHead.astro";
 import CopyCmd from "../components/CopyCmd.astro";
 import SectionHead from "../components/SectionHead.astro";
 import { href, t, type Lang } from "../i18n";
-import { githubReleases, humanSize, type Asset } from "../lib/releases";
+import { githubReleases, humanSize, verificationEvidence, type Asset } from "../lib/releases";
 import { REPO_SLUG, REPO_URL } from "../lib/repo";
 
 type Props = { lang: Lang };
@@ -26,10 +26,7 @@ const binCmd = (a: Asset) =>
     ? `Invoke-WebRequest ${a.url} -OutFile sesslint.exe`
     : `curl -fsSLo sesslint ${a.url} && chmod +x sesslint`;
 
-const first = binaries[0];
-const checksum = main.find((a) => a.kind === "checksum" && /^sha256sums\.txt$/i.test(a.name));
-const signature = first ? sigs.get(first.name) : undefined;
-const provenance = main.find((a) => a.kind === "provenance");
+const { binary: first, checksum, sigstore: signature, provenance } = rel ? verificationEvidence(rel) : { binary: null, checksum: null, sigstore: null, provenance: null };
 const verify = [
   checksum && { label: d.download.verifySteps[0], cmd: `sha256sum -c "${checksum.name}" --ignore-missing` },
   signature && first && rel && { label: d.download.verifySteps[1], cmd: `cosign verify-blob --bundle "${signature.name}" --certificate-identity "${REPO_URL}/.github/workflows/release.yml@refs/tags/${rel.tag}" --certificate-oidc-issuer https://token.actions.githubusercontent.com "${first.name}"` },
@@ -131,7 +128,7 @@ const channels = [
                         <span class="mute">{d.download.noSha}</span>
                       )}
                     </td>
-                    <td class="mono">{sig ? <a href={sig.url}>.sigstore.json</a> : <span class="mute">—</span>}</td>
+                    <td class="mono">{sig ? <a href={sig.url}>{sig.name.slice(a.name.length)}</a> : <span class="mute">—</span>}</td>
                   </tr>
                 );
               })}

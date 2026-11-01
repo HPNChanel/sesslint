@@ -99,6 +99,24 @@ export async function releaseFor(version: string): Promise<ReleaseLookup> {
   return lookupRelease(version, result.available ? result.releases : null);
 }
 
+/** Evidence files a release actually lists, keyed for the verify commands. */
+export type VerificationEvidence = {
+  /** First binary; the cosign and slsa-verifier commands target it. */
+  binary: Asset | null;
+  checksum: Asset | null;
+  /** Sigstore bundle for `binary`. A detached `.asc` (GPG) signature is not one. */
+  sigstore: Asset | null;
+  provenance: Asset | null;
+};
+
+export function verificationEvidence(release: ReleaseInfo): VerificationEvidence {
+  const binary = release.assets.find((a) => a.kind === "binary" && a.os !== undefined) ?? null;
+  const checksum = release.assets.find((a) => a.kind === "checksum" && /^sha256sums\.txt$/i.test(a.name)) ?? null;
+  const sigstore = binary ? (release.assets.find((a) => a.name === `${binary.name}.sigstore.json`) ?? null) : null;
+  const provenance = release.assets.find((a) => a.kind === "provenance") ?? null;
+  return { binary, checksum, sigstore, provenance };
+}
+
 export function humanSize(bytes: number | null): string {
   if (bytes === null) return "—";
   if (bytes < 1024) return `${bytes} B`;

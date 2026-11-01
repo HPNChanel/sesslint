@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { REPO_ROOT, commands, detectors, packageVersion, recipes } from "../../src/lib/repo";
-import { artifactName, classify, lookupRelease, normalizeGithubReleases } from "../../src/lib/releases";
+import { artifactName, classify, lookupRelease, normalizeGithubReleases, verificationEvidence } from "../../src/lib/releases";
 
 describe("repo facts", () => {
   it("counts detectors from docs/codes", () => {
@@ -67,5 +67,41 @@ describe("release assets", () => {
         .map((asset) => [asset.name.replace(/\.(sigstore\.json|asc)$/, ""), asset]),
     );
     expect(binary && signatures.get(binary.name)).toBeUndefined();
+  });
+});
+
+describe("verificationEvidence", () => {
+  const release = (names: string[]) =>
+    normalizeGithubReleases([
+      {
+        tag_name: "v0.6.0",
+        html_url: "https://github.com/x/y/releases/tag/v0.6.0",
+        published_at: "2026-10-01T00:00:00Z",
+        draft: false,
+        prerelease: false,
+        assets: names.map((name) => ({ name, browser_download_url: `https://github.com/x/y/releases/download/v0.6.0/${name}`, size: 1 })),
+      },
+    ])[0]!;
+
+  it("never offers a GPG .asc signature as a Sigstore bundle", () => {
+    const ev = verificationEvidence(release(["sesslint-0.6.0-linux-x86_64", "sesslint-0.6.0-linux-x86_64.asc", "sha256sums.txt"]));
+    expect(ev.binary?.name).toBe("sesslint-0.6.0-linux-x86_64");
+    expect(ev.sigstore).toBeNull();
+    expect(ev.checksum?.name).toBe("sha256sums.txt");
+    expect(ev.provenance).toBeNull();
+  });
+
+  it("pairs the bundle that matches the binary", () => {
+    const ev = verificationEvidence(
+      release(["sesslint-0.6.0-linux-x86_64", "sesslint-0.6.0-linux-x86_64.asc", "sesslint-0.6.0-linux-x86_64.sigstore.json", "sesslint-provenance.intoto.jsonl"]),
+    );
+    expect(ev.sigstore?.name).toBe("sesslint-0.6.0-linux-x86_64.sigstore.json");
+    expect(ev.provenance?.name).toBe("sesslint-provenance.intoto.jsonl");
+  });
+
+  it("reports nothing for a legacy wheel-only release", () => {
+    expect(verificationEvidence(release(["sesslint-0.1.0-py3-none-any.whl", "sha256sums.txt"]))).toEqual(
+      expect.objectContaining({ binary: null, sigstore: null, provenance: null }),
+    );
   });
 });
