@@ -82,7 +82,7 @@ def sha256_file(path: StrPath) -> str:
 def _entry_hash(entry: Mapping[str, Any]) -> str:
     """SHA-256 over the canonical JSON of every field except ``entry_sha256``."""
     preimage = {k: v for k, v in entry.items() if k != "entry_sha256"}
-    return hashlib.sha256(canonical_json_bytes(preimage)).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(preimage, newline=False)).hexdigest()
 
 
 def build_entry(
