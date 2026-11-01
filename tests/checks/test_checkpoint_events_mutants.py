@@ -272,3 +272,17 @@ def test_gap_fingerprint_depends_on_every_context_field() -> None:
             other = run({**base, field: "zz"}, meta)
             assert len(other) == len(ref)
             assert all(a != b for a, b in zip(ref, other, strict=True)), field
+
+
+def test_coverage_fingerprint_depends_on_context() -> None:
+    boundary = SimpleNamespace(
+        kind="compaction_boundary",
+        id="bnd",
+        parent_id=None,
+        source_location="f",
+        source_line=1,
+        extra_fields={"coverage": {"covered_through_id": "nope"}},
+    )
+    a = cp.check_compaction_coverage([boundary], context=CTX)
+    b = cp.check_compaction_coverage([boundary])
+    assert a[0].fingerprint != b[0].fingerprint
