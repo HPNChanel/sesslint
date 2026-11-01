@@ -84,6 +84,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- SL009 family set v6 cuts false positives in two families (findings now
+  carry `secret_family_set` `6`). `bearer-token` needs 20+ token characters
+  (was 16) and skips `Bearer your-…`/`your_…`/`your.…` placeholders.
+  `google-api-key` accepts at most 35 characters after `AIza` and no longer
+  reports a longer run inside an unrelated blob. Every v5 positive and
+  malformed corpus row is still reported. See `docs/codes/SL009.md`.
+- `sesslint hook --format claude-json` is silent on a clean session: a clean
+  pass now prints `{}` instead of the `systemMessage` "SessLint: session
+  integrity check passed.", so Claude Code and Codex show nothing. Findings
+  and every skip (budget exceeded, refusal, error) are reported exactly as
+  before. Plain-text and `--json` output are unchanged. See
+  `docs/INTEGRATIONS.md`.
 - Reports: minimized parent-directory labels now use SHA-256 instead of SHA-1,
   including environments that disable SHA-1. The compact eight-hex display
   format is unchanged; these labels do not guarantee anonymization or identity.

@@ -508,3 +508,30 @@ def test_azure_sas_signature_family() -> None:
     assert families(b'{"u":"' + url + b"&xsig=" + sig + b'="}') == []
     assert families(b'{"u":"' + url + b"&sig=" + sig[:-1] + b'="}') == []
     assert families(b'{"u":"' + url + b"&sig=" + sig + b'A="}') == []
+
+
+def test_family_set_v6_tightens_bearer_and_google_without_losing_positives() -> None:
+    """Family set v6 (CL-19, ported from salvage/wf-bfc-6): fewer false positives
+    for ``bearer-token`` and ``google-api-key``; every v5 true positive stays."""
+
+    def families(record: bytes) -> list[str]:
+        t = SecretScanTracker()
+        t.feed(record, line_number=1, byte_offset=0, byte_end=len(record), record_ordinal=0)
+        return sorted(f.evidence["secret_family"] for f in t.into_findings(path_str="x.jsonl"))
+
+    assert SECRET_FAMILY_SET_VERSION == 6
+    # bearer-token: 20+ token chars, and documentation placeholders are vetoed.
+    assert families(b"Bearer SYNTHETIC0123456789ab") == ["bearer-token"]
+    assert families(b"BEARER " + b"A" * 20) == ["bearer-token"]
+    assert families(b"bearer super-secret-token-12345") == ["bearer-token"]
+    assert families(b"Bearer SYNTHETIC0123456") == []  # 16 chars: v5 reported it
+    assert families(b"Bearer " + b"S" * 19) == []
+    assert families(b"Bearer your-synthetic-access-token") == []
+    assert families(b"Bearer YOUR_SYNTHETIC_ACCESS_TOKEN") == []
+    assert families(b"Bearer your.synthetic.access.token") == []
+    # google-api-key: AIza + 20..35 token chars, never continued past 35.
+    assert families(b"AIza" + b"A" * 24) == ["google-api-key"]
+    assert families(b"AIzaSYNTHETIC" + b"0123456789abcdefghijklmnop") == ["google-api-key"]
+    assert families(b'{"k":"AIzaSYNTHETIC' + b"0" * 26 + b'"}') == ["google-api-key"]
+    assert families(b"AIzaSYNTHETIC" + b"0" * 27) == []  # 36 chars: a longer blob
+    assert families(b"AIzaSYNTHETIC" + b"0" * 40) == []
