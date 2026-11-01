@@ -4,7 +4,7 @@ import { formatDate, href, t, type Lang } from "../i18n";
 import { entryCount, type Release } from "../lib/changelog";
 import { shortHash } from "../lib/hash";
 import { inline } from "../lib/markdown";
-import { REPO_URL } from "../lib/repo";
+import { releaseFor } from "../lib/releases";
 
 type Props = {
   lang: Lang;
@@ -33,9 +33,11 @@ const shown = r.sections
   })
   .filter((s) => s.entries.length);
 const hidden = entryCount(r) - shown.reduce((n, s) => n + s.entries.length, 0);
+const publication = r.unreleased ? null : await releaseFor(r.version);
+const published = publication?.availability === "published" ? publication.release : null;
 ---
 
-<article class:list={["block", { pending: r.unreleased }]} id={id} data-block aria-labelledby={`${id}-title`}>
+<article class:list={["block", { pending: r.unreleased || !published }]} id={id} data-block aria-labelledby={`${id}-title`}>
   <div class="gutter mono" aria-hidden="true">
     <span>#{String(index).padStart(3, "0")}</span>
   </div>
@@ -47,6 +49,8 @@ const hidden = entryCount(r) - shown.reduce((n, s) => n + s.entries.length, 0);
         </H>
         {r.unreleased ? (
           <span class="chip pending-chip">{d.changelog.pending}</span>
+        ) : !published ? (
+          <span class="chip pending-chip">{d.changelog.notPublished}</span>
         ) : (
           r.date && (
             <span class="date mono">
@@ -110,7 +114,7 @@ const hidden = entryCount(r) - shown.reduce((n, s) => n + s.entries.length, 0);
 
     <footer class="foot mono">
       <a href={permalink}>{hidden > 0 ? `+${hidden} ${d.changelog.more} →` : d.changelog.permalink}</a>
-      {!r.unreleased && <a href={`${REPO_URL}/releases/tag/v${r.version}`}>{d.changelog.onGithub} ↗</a>}
+      {published && <a href={published.url}>{d.changelog.onGithub} ↗</a>}
     </footer>
   </div>
 </article>

@@ -121,6 +121,12 @@ def compute_v2_key(finding: Finding) -> str:
     return hashlib.sha256(encoded).hexdigest()[:16]
 
 
+def _shape(value: object) -> str:
+    """Content-free description of a rejected baseline value (type and size only)."""
+    size = f" of length {len(value)}" if isinstance(value, str | list | dict | bytes) else ""
+    return f"{type(value).__name__}{size}"
+
+
 def _load_v1(path: Path, raw: dict[str, Any]) -> frozenset[str]:
     fps = raw.get("fingerprints")
     if not isinstance(fps, list):
@@ -128,7 +134,8 @@ def _load_v1(path: Path, raw: dict[str, Any]) -> frozenset[str]:
     for idx, fp in enumerate(fps):
         if not isinstance(fp, str) or not _FINGERPRINT_RE.fullmatch(fp):
             raise BaselineError(
-                f"Baseline file {path} fingerprints[{idx}] must be a 16-hex string, got {fp!r}"
+                f"Baseline file {path} fingerprints[{idx}] must be a 16-hex string, "
+                f"got {_shape(fp)}"
             )
     return frozenset(fps)
 
@@ -141,15 +148,19 @@ def _load_v2(path: Path, raw: dict[str, Any]) -> frozenset[str]:
     for idx, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise BaselineError(
-                f"Baseline file {path} entries[{idx}] must be an object, got {entry!r}"
+                f"Baseline file {path} entries[{idx}] must be an object, got {_shape(entry)}"
             )
         key = entry.get("key")
         if not isinstance(key, str) or not _FINGERPRINT_RE.fullmatch(key):
             raise BaselineError(
-                f"Baseline file {path} entries[{idx}].key must be a 16-hex string, got {key!r}"
+                f"Baseline file {path} entries[{idx}].key must be a 16-hex string, "
+                f"got {_shape(key)}"
             )
         keys.add(key)
     return frozenset(keys)
+
+
+_TOO_DEEP = "JSON nesting is too deep"
 
 
 def load_baseline(path: Path) -> frozenset[str]:
@@ -168,6 +179,8 @@ def load_baseline(path: Path) -> frozenset[str]:
         raw: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         raise BaselineError(f"Cannot read baseline file {path}: {err}") from err
+    except RecursionError as err:
+        raise BaselineError(f"Cannot read baseline file {path}: {_TOO_DEEP}") from err
 
     if not isinstance(raw, dict):
         raise BaselineError(f"Baseline file {path} must contain a JSON object")
@@ -260,6 +273,8 @@ def upgrade_baseline(
         raw: Any = json.loads(baseline_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         raise BaselineError(f"Cannot read baseline file {baseline_path}: {err}") from err
+    except RecursionError as err:
+        raise BaselineError(f"Cannot read baseline file {baseline_path}: {_TOO_DEEP}") from err
     if not isinstance(raw, dict) or raw.get("schema_version") != BASELINE_SCHEMA_VERSION:
         raise BaselineError(
             f"--upgrade requires a {BASELINE_SCHEMA_VERSION!r} baseline, got {baseline_path}"

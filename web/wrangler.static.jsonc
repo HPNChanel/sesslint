@@ -1,0 +1,8 @@
+{
+  "name": "sesslint-web-candidate",
+  "compatibility_date": "2026-06-30",
+  "workers_dev": false,
+  "preview_urls": false,
+  "send_metrics": false,
+  "assets": { "directory": "./dist", "html_handling": "auto-trailing-slash", "not_found_handling": "404-page" }
+}

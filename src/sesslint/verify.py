@@ -364,6 +364,77 @@ def _run_detector_checks(
     )
 
 
+def _vet_supplied_plan(
+    supplied: RepairPlan,
+    *,
+    source_path: StrPath,
+    source_bytes: bytes,
+    source_hash: str,
+    acknowledge_side_effects: bool,
+) -> str | None:
+    """Vet a caller-supplied plan against the source; return a failure detail or None.
+
+    Failure details are closed vocabulary and never echo plan or source content.
+    """
+    from sesslint.repair.errors import PlanSourceMismatch
+    from sesslint.repair.vetting import vet_plan
+
+    try:
+        _, src_events, stream_findings, src_fmt = _load_artifact_events(source_path, source_bytes)
+        src_name = (
+            Path(source_path).name
+            if source_path and not str(source_path).startswith("<")
+            else str(source_path)
+        )
+        findings = list(stream_findings) + _run_detector_checks(
+            src_events,
+            source_path=src_name,
+            profile_name=supplied.profile,
+            adapter=src_fmt,
+        )
+        vet_plan(
+            supplied,
+            findings=findings,
+            events=src_events,
+            source_hash=source_hash,
+            acknowledge_side_effects=acknowledge_side_effects,
+            input_format=src_fmt,
+        )
+    except PlanSourceMismatch:
+        return "plan-source-mismatch"
+    except Exception:
+        return "plan-not-derived-from-source"
+    return None
+
+
+def _header_accounted(
+    source_header: SessionHeader | None,
+    output_header: SessionHeader | None,
+    output_fmt: str,
+    source_events: Sequence[SessionEvent],
+) -> bool:
+    """Return True when the output header is fully explained by the source.
+
+    Repair copies the source header verbatim; when the source has none it
+    synthesizes one whose only free coordinate is ``session_id`` (derived from
+    the source file name). Any other header difference is unaccounted output.
+    """
+    if output_fmt != "canonical":
+        # Vendor write-back artifacts carry no canonical header.
+        return output_header is None
+    if output_header is None:
+        return source_header is None
+    if source_header is not None:
+        return to_canonical_json(output_header) == to_canonical_json(source_header)
+    expected = SessionHeader(
+        schema_version="sesslint.session/v1",
+        session_id=output_header.session_id,
+        created_at=source_events[0].ts if source_events else "1970-01-01T00:00:00Z",
+        metadata={"created_at_source": "first_event" if source_events else "unknown"},
+    )
+    return to_canonical_json(output_header) == to_canonical_json(expected)
+
+
 def verify(
     *,
     source_path: StrPath,
@@ -453,6 +524,23 @@ def verify(
         binding_failure = manifest_err_detail
 
     ack_effective = acknowledge_side_effects
+    plan_vetting_failure: str | None = None
+    if plan_obj is not None:
+        # A supplied plan is untrusted: its fingerprint is a plain digest anyone
+        # can recompute, and its declared loss/lossy fields are self-reported.
+        # Require every step to be one the planner derives from this source now
+        # (B20), exactly as repair does before applying a supplied plan.
+        plan_vetting_failure = _vet_supplied_plan(
+            plan_obj,
+            source_path=source_path,
+            source_bytes=source_bytes,
+            source_hash=actual_source_hash,
+            acknowledge_side_effects=acknowledge_side_effects,
+        )
+        if plan_vetting_failure is not None:
+            plan_obj = None
+            plan_dict = None
+
     if plan_path is None and bound_profile is not None:
         # Reconstruct plan from source events and manifest policy/profile (RVW-024)
         target_policy = (
@@ -545,7 +633,7 @@ def verify(
             name="plan_fingerprint",
             ok=False,
             detail=(
-                "invalid-plan-json"
+                (plan_vetting_failure or "invalid-plan-json")
                 if plan_path is not None
                 else (binding_failure or "plan-missing")
             ),
@@ -737,6 +825,27 @@ def verify(
                                     name="transformation_audit",
                                     ok=False,
                                     detail="header-mismatch: session_id mismatch",
+                                )
+                            elif output_fmt == "canonical" and output_stream_findings:
+                                # Repair emits only well-formed canonical records;
+                                # any stream-level finding (unparseable line,
+                                # duplicate key, ...) means the output carries
+                                # bytes the replay does not account for.
+                                c4 = Check(
+                                    name="transformation_audit",
+                                    ok=False,
+                                    detail=(
+                                        "output-unaccounted-records: "
+                                        f"{len(output_stream_findings)} stream finding(s)"
+                                    ),
+                                )
+                            elif not _header_accounted(
+                                source_header, output_header, output_fmt, source_events
+                            ):
+                                c4 = Check(
+                                    name="transformation_audit",
+                                    ok=False,
+                                    detail="header-mismatch: header differs from source",
                                 )
                             else:
                                 c4 = Check(name="transformation_audit", ok=True, detail="matched")

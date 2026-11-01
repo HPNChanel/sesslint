@@ -57,8 +57,11 @@ SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
         0,
     ),
     (
+        # v6: AIza + 20..35 token chars, not continued. A real key is AIza +
+        # exactly 35; a longer run is part of an unrelated blob. The lower
+        # bound stays 20 so shorter v5 shapes keep reporting.
         "google-api-key",
-        re.compile(_TOKEN_BOUNDARY + rb"AIza[A-Za-z0-9_-]{20,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"AIza[A-Za-z0-9_-]{20,35}(?![A-Za-z0-9_-])"),
         0,
     ),
     (
@@ -72,8 +75,11 @@ SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
         0,
     ),
     (
+        # v6: 20+ token chars (was 16+). Group 1 is the token, which the
+        # detector checks against documentation placeholders; the digest
+        # still covers the whole match (group 0).
         "bearer-token",
-        re.compile(_TOKEN_BOUNDARY + rb"(?i:bearer)[ \t]+[A-Za-z0-9._~+/=\\-]{16,}"),
+        re.compile(_TOKEN_BOUNDARY + rb"(?i:bearer)[ \t]+([A-Za-z0-9._~+/=\\-]{20,})"),
         0,
     ),
     (
@@ -95,6 +101,17 @@ SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
         "telegram-bot-token",
         re.compile(_TOKEN_BOUNDARY + rb"\d{8,10}:[A-Za-z0-9_-]{35}\b"),
         0,
+    ),
+    (
+        # Azure SAS ``sig=``: base64 HMAC-SHA256 = 43 base64 units + one pad,
+        # raw or percent-encoded (%2B, %2F, %3D). The key may follow a JSON
+        # ``\u0026`` escape of ``&``. Group 1 is the signature only.
+        "azure-sas-signature",
+        re.compile(
+            rb"(?:(?<![A-Za-z0-9_-])|(?<=\\u0026))sig="
+            rb"((?:[A-Za-z0-9+/]|%2[BbFf]){43}(?:=|%3[Dd]))(?![A-Za-z0-9+/=%])"
+        ),
+        1,
     ),
     (
         "jwt",
@@ -151,6 +168,7 @@ FAMILY_LITERALS: Final[dict[str, tuple[bytes, ...]]] = {
     "npm-token": (b"npm_",),
     "huggingface-token": (b"hf_",),
     "supabase-pat": (b"sbp_",),
+    "azure-sas-signature": (b"sig=",),
     "jwt": (b"eyJ",),
     "private-key-block": (b"PRIVATE KEY-----",),
 }

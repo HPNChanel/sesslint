@@ -97,6 +97,21 @@ def _table_columns(con: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
 
 
+def _wal_header_without_wal(path: Path) -> bool:
+    """True when the SQLite header declares WAL mode but no ``-wal`` file exists."""
+    try:
+        with path.open("rb") as stream:
+            header = stream.read(20)
+        return (
+            len(header) == 20
+            and header.startswith(b"SQLite format 3\x00")
+            and 2 in (header[18], header[19])
+            and not Path(str(path) + "-wal").exists()
+        )
+    except OSError:
+        return False
+
+
 def read_codex_state(path: Path, *, immutable: bool = False) -> CodexStateSnapshot:
     """Read one Codex ``state_*.sqlite`` into a :class:`CodexStateSnapshot`.
 
@@ -112,6 +127,11 @@ def read_codex_state(path: Path, *, immutable: bool = False) -> CodexStateSnapsh
             return _empty(parse_ok=False, note="oversized")
     except OSError:
         return _empty(parse_ok=False, note="io-error")
+
+    if not immutable and _wal_header_without_wal(path):
+        # A WAL-mode header with no -wal file has nothing to replay, but a plain
+        # read-only open would still create -wal/-shm beside the registry.
+        immutable = True
 
     uri = path.absolute().as_uri() + "?mode=ro"
     if immutable:

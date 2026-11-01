@@ -4,21 +4,19 @@ import PageHead from "../components/PageHead.astro";
 import CopyCmd from "../components/CopyCmd.astro";
 import SectionHead from "../components/SectionHead.astro";
 import { href, t, type Lang } from "../i18n";
-import { released } from "../lib/changelog";
-import { fallbackRelease, githubReleases, humanSize, type Asset } from "../lib/releases";
+import { githubReleases, humanSize, verificationEvidence, type Asset } from "../lib/releases";
 import { REPO_SLUG, REPO_URL } from "../lib/repo";
-import { site } from "../lib/site";
 
 type Props = { lang: Lang };
 const { lang } = Astro.props;
 const d = t(lang);
-const facts = site();
 const gh = await githubReleases();
-const rel = gh[0] ?? fallbackRelease(facts.latest?.version ?? facts.packageVersion);
-const others = gh.length ? gh.slice(1) : released(facts.releases).slice(1).map((r) => fallbackRelease(r.version));
+const published = gh.available ? gh.releases.filter((r) => r.availability === "published") : [];
+const rel = published[0];
+const others = published.slice(1);
 
-const sigs = new Map(rel.assets.filter((a) => a.kind === "signature").map((a) => [a.name.replace(/\.(sigstore\.json|asc)$/, ""), a]));
-const main = rel.assets.filter((a) => a.kind !== "signature");
+const sigs = new Map((rel?.assets ?? []).filter((a) => a.kind === "signature").map((a) => [a.name.replace(/\.(sigstore\.json|asc)$/, ""), a]));
+const main = (rel?.assets ?? []).filter((a) => a.kind !== "signature");
 const kinds = ["binary", "kit", "checksum", "provenance", "other"] as const;
 const binaries = main.filter((a): a is Asset & { os: "linux" | "macos" | "windows" } => a.kind === "binary" && a.os !== undefined);
 const osOrder = ["linux", "macos", "windows"] as const;
@@ -28,13 +26,12 @@ const binCmd = (a: Asset) =>
     ? `Invoke-WebRequest ${a.url} -OutFile sesslint.exe`
     : `curl -fsSLo sesslint ${a.url} && chmod +x sesslint`;
 
-const first = binaries[0];
-const verifyAsset = first?.name ?? "sesslint-<version>-<os>-<arch>";
+const { binary: first, checksum, sigstore: signature, provenance } = rel ? verificationEvidence(rel) : { binary: null, checksum: null, sigstore: null, provenance: null };
 const verify = [
-  "sha256sum -c sha256sums.txt --ignore-missing",
-  `cosign verify-blob --bundle "${verifyAsset}.sigstore.json" --certificate-identity "${REPO_URL}/.github/workflows/release.yml@refs/tags/${rel.tag}" --certificate-oidc-issuer https://token.actions.githubusercontent.com "${verifyAsset}"`,
-  `slsa-verifier verify-artifact "${verifyAsset}" --provenance-path sesslint-provenance.intoto.jsonl --source-uri github.com/${REPO_SLUG} --source-tag ${rel.tag}`,
-];
+  checksum && { label: d.download.verifySteps[0], cmd: `sha256sum -c "${checksum.name}" --ignore-missing` },
+  signature && first && rel && { label: d.download.verifySteps[1], cmd: `cosign verify-blob --bundle "${signature.name}" --certificate-identity "${REPO_URL}/.github/workflows/release.yml@refs/tags/${rel.tag}" --certificate-oidc-issuer https://token.actions.githubusercontent.com "${first.name}"` },
+  provenance && first && rel && { label: d.download.verifySteps[2], cmd: `slsa-verifier verify-artifact "${first.name}" --provenance-path "${provenance.name}" --source-uri github.com/${REPO_SLUG} --source-tag ${rel.tag}` },
+].filter((item): item is { label: string; cmd: string } => Boolean(item));
 
 const tabs = [
   { id: "pipx", cmd: "pipx install sesslint", note: d.download.pipxNote, rec: true },
@@ -54,11 +51,9 @@ const channels = [
 ---
 
 <Base lang={lang} route="/download" title={d.download.title} description={d.download.lede} section="DOWNLOAD">
-  <PageHead kicker={`download --tag ${rel.tag}`} title={d.download.title} lede={d.download.lede}>
+  <PageHead kicker={rel ? `download --tag ${rel.tag}` : `download --availability ${gh.available ? "unpublished" : "unknown"}`} title={d.download.title} lede={d.download.lede}>
     <p class="mono tag-line">
-      <span class="chip"><span class="dot" aria-hidden="true"></span>{rel.tag}</span>
-      {rel.publishedAt && <span class="mute">{d.changelog.released} <time datetime={rel.publishedAt.slice(0, 10)} data-ago={lang}>{rel.publishedAt.slice(0, 10)}</time></span>}
-      <a href={href(lang, `/changelog/${rel.version}`)}>{d.nav.changelog} →</a>
+      {rel ? <><span class="chip"><span class="dot" aria-hidden="true"></span>{rel.tag}</span>{rel.publishedAt && <span class="mute">{d.changelog.released} <time datetime={rel.publishedAt.slice(0, 10)} data-ago={lang}>{rel.publishedAt.slice(0, 10)}</time></span>}<a href={href(lang, `/changelog/${rel.version}`)}>{d.nav.changelog} →</a></> : <span class="mute">{gh.available ? d.download.noPublished : d.download.releaseUnknown}</span>}
     </p>
   </PageHead>
 
@@ -68,7 +63,7 @@ const channels = [
         <span class="mute">{d.download.detected}:</span> <b data-detected-name></b>
       </div>
       <div class="tablist" role="tablist" aria-label="Install method">
-        {tabs.map((tb, i) => (
+        {tabs.filter((tb) => tb.id !== "binary" || binaries.length > 0).map((tb, i) => (
           <button type="button" role="tab" id={`tab-${tb.id}`} aria-controls={`panel-${tb.id}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1} data-tab={tb.id}>
             {d.download.tabs[tb.id]}
             {tb.rec && <span class="rec">{d.common.recommended}</span>}
@@ -76,7 +71,7 @@ const channels = [
           </button>
         ))}
       </div>
-      {tabs.map((tb, i) => (
+      {tabs.filter((tb) => tb.id !== "binary" || binaries.length > 0).map((tb, i) => (
         <div class="panel" role="tabpanel" id={`panel-${tb.id}`} aria-labelledby={`tab-${tb.id}`} hidden={i !== 0} tabindex="0">
           <p class="dim note">{tb.note}</p>
           {tb.id === "binary" ? (
@@ -105,8 +100,9 @@ const channels = [
   </div>
 
   <section class="section wrap" aria-labelledby="assets-title">
-    <SectionHead kicker={`gh release view ${rel.tag}`} title={d.download.assets} id="assets-title" />
-    {rel.source === "fallback" && <p class="mono mute small offline">{d.download.offline}</p>}
+    <SectionHead kicker={rel ? `gh release view ${rel.tag}` : "gh release view unavailable"} title={d.download.assets} id="assets-title" />
+    {!gh.available && <p class="mono mute small offline">{d.download.releaseUnknown}</p>}
+    {gh.available && !rel && <p class="mono mute small offline">{d.download.noPublished}</p>}
     <div class="table-wrap">
       <table class="table assets">
         <thead>
@@ -132,7 +128,7 @@ const channels = [
                         <span class="mute">{d.download.noSha}</span>
                       )}
                     </td>
-                    <td class="mono">{sig ? <a href={sig.url}>.sigstore.json</a> : <span class="mute">—</span>}</td>
+                    <td class="mono">{sig ? <a href={sig.url}>{sig.name.slice(a.name.length)}</a> : <span class="mute">—</span>}</td>
                   </tr>
                 );
               })}
@@ -142,7 +138,7 @@ const channels = [
       </table>
     </div>
     <p class="mono small links">
-      <a href={rel.url}>{rel.tag} on GitHub ↗</a>
+      {rel && <a href={rel.url}>{rel.tag} on GitHub ↗</a>}
       <a href={`${REPO_URL}/releases`}>{d.download.allReleases} ↗</a>
     </p>
     {others.length > 0 && (
@@ -155,18 +151,20 @@ const channels = [
     )}
   </section>
 
+  {rel && verify.length > 0 && (
   <section class="section wrap" aria-labelledby="verify-title">
     <SectionHead kicker="verify --before-run" title={d.download.verifyTitle} lede={d.download.verifyLede} id="verify-title" />
     <ol class="steps">
-      {verify.map((cmd, i) => (
+      {verify.map((item, i) => (
         <li>
-          <p class="mono step-title"><span class="pass">{String(i + 1).padStart(2, "0")}</span> {d.download.verifySteps[i]}</p>
-          <CopyCmd lang={lang} cmd={cmd} />
+          <p class="mono step-title"><span class="pass">{String(i + 1).padStart(2, "0")}</span> {item.label}</p>
+          <CopyCmd lang={lang} cmd={item.cmd} />
         </li>
       ))}
     </ol>
     <p class="dim small">PowerShell: <code>Get-FileHash -Algorithm SHA256 .\sesslint-*.exe</code></p>
   </section>
+  )}
 
   <section class="section wrap" aria-labelledby="channels-title">
     <SectionHead kicker="channels --status" title={d.download.channels} lede={d.download.channelsLede} id="channels-title" />

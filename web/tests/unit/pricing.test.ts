@@ -8,13 +8,9 @@ describe("quote", () => {
     expect(quote("max").sku).toBe("max");
   });
 
-  it("credits the owned tier on upgrade", () => {
+  it("refuses an upgrade until provider-side purchase proof exists", () => {
     const q = quote("max", "plus");
-    expect(q.allowed).toBe(true);
-    expect(q.creditCents).toBe(900);
-    expect(q.dueCents).toBe(4000);
-    expect(q.sku).toBe("upgrade_plus_max");
-    expect(q.lines.map((l) => l.cents)).toEqual([4900, -900]);
+    expect(q).toMatchObject({ allowed: false, reason: "proof-required", creditCents: 0, dueCents: 0 });
   });
 
   it("refuses same-tier and downgrade purchases", () => {
@@ -23,10 +19,10 @@ describe("quote", () => {
     expect(quote("max", "max")).toMatchObject({ allowed: false, reason: "already-owned" });
   });
 
-  it("never credits gifts and allows gifting while owning a tier", () => {
+  it("blocks gifts even when a direct query tries to request one", () => {
     const g = quote("plus", "max", true);
-    expect(g).toMatchObject({ allowed: true, dueCents: 900, creditCents: 0, sku: "gift_plus" });
-    expect(quote("max", "plus", true).dueCents).toBe(4900);
+    expect(g).toMatchObject({ allowed: false, reason: "gift-disabled", dueCents: 0, sku: null });
+    expect(quote("max", "plus", true)).toMatchObject({ allowed: false, reason: "gift-disabled" });
   });
 
   it("never sells or gifts Free", () => {

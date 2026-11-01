@@ -12,7 +12,9 @@ findings).
 Claude Code and Codex integrations can instead render a result as a root
 ``systemMessage`` object. It remains content-free and this module remains
 stateless: hooks neither write a transcript nor keep a cache that could feed
-hook output back into a later invocation.
+hook output back into a later invocation. A clean pass renders as ``{}``: no
+user-visible message, so a healthy session adds no noise. Findings and every
+skip (budget, refusal, error) keep their ``systemMessage``.
 
 Invariants:
 
@@ -102,12 +104,16 @@ class HookResult:
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True)
 
-    def system_message(self) -> str:
-        """Return the content-free message the agent displays to the human user."""
+    def system_message(self) -> str | None:
+        """Return the content-free message shown to the human user, if any.
+
+        ``None`` for a clean pass: there is nothing to report, so the hook
+        stays silent. Skips and findings always produce a message.
+        """
         if self.verdict == "skipped":
             return f"SessLint: check skipped ({self.reason})."
         if self.verdict == "ok":
-            return "SessLint: session integrity check passed."
+            return None
         total = sum(self.findings_by_code.values())
         return f"SessLint: found {total} integrity finding(s); highest code {self.top_code}."
 
@@ -115,9 +121,12 @@ class HookResult:
         """Render the ``systemMessage`` hook envelope without transcript content.
 
         Claude Code and Codex both read a root ``systemMessage`` from hook
-        stdout and show it to the user.
+        stdout and show it to the user. A clean pass renders as ``{}`` so
+        nothing is shown; ``additionalContext`` is never emitted.
         """
-        return json.dumps({"systemMessage": self.system_message()}, sort_keys=True)
+        message = self.system_message()
+        envelope: dict[str, str] = {} if message is None else {"systemMessage": message}
+        return json.dumps(envelope, sort_keys=True)
 
 
 def _skip(event: str, reason: str, session_id: str | None = None) -> HookResult:

@@ -53,15 +53,40 @@ def _run_cli(*argv: str, stdin: bytes) -> subprocess.CompletedProcess[bytes]:
     )
 
 
-def test_claude_json_cli_envelope() -> None:
+def test_claude_json_cli_envelope_is_silent_when_clean() -> None:
     result = _run_cli(
         "hook", "--event", "SessionStart", "--format", "claude-json", stdin=_payload(CLEAN)
     )
     assert result.returncode == 0
+    assert run_hook("SessionStart", _payload(CLEAN)).verdict == "ok"
+    assert json.loads(result.stdout) == {}
+    assert str(CLEAN) not in result.stdout.decode()
+
+
+def test_claude_json_cli_envelope_reports_findings() -> None:
+    result = _run_cli(
+        "hook", "--event", "SessionEnd", "--format", "claude-json", stdin=_payload(SEEDED)
+    )
+    assert result.returncode == 0
     message = json.loads(result.stdout)
     assert set(message) == {"systemMessage"}
-    assert "SessLint:" in message["systemMessage"]
-    assert str(CLEAN) not in result.stdout.decode()
+    assert message["systemMessage"].startswith("SessLint: found ")
+    assert str(SEEDED) not in result.stdout.decode()
+
+
+def test_claude_json_cli_envelope_reports_skips() -> None:
+    result = _run_cli(
+        "hook",
+        "--event",
+        "SessionEnd",
+        "--format",
+        "claude-json",
+        stdin=_payload(None, "SessionEnd", transcript_path=None),
+    )
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {
+        "systemMessage": "SessLint: check skipped (no-transcript-path)."
+    }
 
 
 class TestPayloadHandling:
@@ -233,7 +258,11 @@ class TestCodexPayload:
                         out = res.stdout.decode("utf-8")
                         assert "dangling_call" not in out
                         if "claude-json" in argv:
-                            assert set(json.loads(out)) == {"systemMessage"}
+                            # A clean pass is silent ({}); findings and
+                            # skips keep the lone systemMessage key.
+                            verdict = run_hook(argv[argv.index("--event") + 1], stdin).verdict
+                            expected = set() if verdict == "ok" else {"systemMessage"}
+                            assert set(json.loads(out)) == expected
                         else:
                             assert out.startswith(f"sesslint hook[{event}]: ")
 

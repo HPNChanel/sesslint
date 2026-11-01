@@ -25,6 +25,7 @@ ordering follows event order.
 
 from __future__ import annotations
 
+import math
 import os
 import time
 import warnings
@@ -40,6 +41,8 @@ WATCH_EVENT_SCHEMA: Final[str] = "sesslint.watch-event/v1"
 
 DEFAULT_INTERVAL: Final[float] = 2.0
 MIN_INTERVAL: Final[float] = 0.05
+# One day: longer waits are meaningless for a poller and overflow time.sleep.
+MAX_INTERVAL: Final[float] = 86_400.0
 MAX_TRACKED_FILES: Final[int] = 4096
 
 _EXCLUDED_DIRS: Final[frozenset[str]] = frozenset({".git", ".hg", ".svn"})
@@ -149,8 +152,10 @@ def watch(
     Raises ``OperationCancelled`` on cancellation — the CLI maps it to a
     clean exit.
     """
-    if interval < MIN_INTERVAL:
-        raise ValueError(f"interval must be >= {MIN_INTERVAL}s, got {interval}")
+    if not math.isfinite(interval) or not MIN_INTERVAL <= interval <= MAX_INTERVAL:
+        raise ValueError(
+            f"interval must be between {MIN_INTERVAL}s and {MAX_INTERVAL:g}s, got {interval}"
+        )
 
     if check_fn is None:
         from sesslint.api import check_file

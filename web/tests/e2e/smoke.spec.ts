@@ -1,5 +1,18 @@
 import { ALL, expect, test } from "./fixtures";
 
+test("footer does not invent a release missing from the header", async ({ page }) => {
+  await page.goto("download/");
+  const published = page.locator("header.bar .ver.chip");
+  if (await published.count()) {
+    const tag = (await published.innerText()).match(/v[0-9]+\.[0-9]+\.[0-9]+[^\s]*/)?.[0];
+    expect(tag).toBeTruthy();
+    await expect(page.locator("footer [data-release-version]")).toHaveText(tag ?? "");
+  } else {
+    await expect(page.locator("footer [data-release-version]")).toHaveCount(0);
+    await expect(page.locator("footer .tmux")).not.toContainText(/\bv[0-9]+\.[0-9]+\.[0-9]+\b/);
+  }
+});
+
 for (const path of ALL) {
   test(`renders /${path} without errors`, async ({ page, errors }) => {
     const res = await page.goto(path);
@@ -11,13 +24,30 @@ for (const path of ALL) {
 }
 
 for (const width of [375, 1366]) {
-  test(`no horizontal scroll at ${width}px`, async ({ page, errors }) => {
+  test(`no horizontal scroll at ${width}px`, async ({ page, errors }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     for (const path of ALL) {
       await page.goto(path);
-      if (path.endsWith("download/")) await page.locator("#tab-binary").click();
+      if (path.endsWith("download/")) {
+        const binary = page.locator("#tab-binary");
+        if (await binary.count()) {
+          await binary.click();
+          await expect(page.locator("#panel-binary")).toBeVisible();
+          expect(await page.locator("#panel-binary a[href]").count()).toBeGreaterThan(0);
+        } else {
+          await expect(page.locator("#panel-binary")).toHaveCount(0);
+        }
+        for (const tab of await page.locator("sl-install [role=tab]").all()) {
+          const panel = await tab.getAttribute("aria-controls");
+          expect(panel).toBeTruthy();
+          await expect(page.locator(`[id="${panel}"]`)).toHaveCount(1);
+        }
+      }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow, `/${path}`).toBeLessThanOrEqual(0);
+      if (path === "pricing/" || path === "download/") {
+        await page.screenshot({ path: testInfo.outputPath(`${path.slice(0, -1)}-${width}.png`), fullPage: true });
+      }
     }
     expect(errors).toEqual([]);
   });

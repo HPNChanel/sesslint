@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseChangelog, released, type Release } from "./changelog";
 import { REPO_ROOT, packageVersion, readChangelogSource } from "./repo";
+import { githubReleases, type ReleaseInfo } from "./releases";
 
 function gitShort(): string {
   const env = process.env.GITHUB_SHA;
@@ -24,6 +25,7 @@ function gitShort(): string {
 }
 
 let memo: SiteFacts | null = null;
+let publicationMemo: Promise<{ available: boolean; releases: ReleaseInfo[]; latest: ReleaseInfo | null }> | null = null;
 
 export type SiteFacts = {
   /** Releases worth rendering: an empty Unreleased block is dropped. */
@@ -43,4 +45,13 @@ export function site(): SiteFacts {
     build: gitShort(),
   };
   return memo;
+}
+
+/** Actual published GitHub releases only; changelog dates never establish publication. */
+export function publishedSite(): Promise<{ available: boolean; releases: ReleaseInfo[]; latest: ReleaseInfo | null }> {
+  publicationMemo ??= githubReleases().then((result) => {
+    const releases = result.available ? result.releases.filter((r) => r.availability === "published") : [];
+    return { available: result.available, releases, latest: releases[0] ?? null };
+  });
+  return publicationMemo;
 }

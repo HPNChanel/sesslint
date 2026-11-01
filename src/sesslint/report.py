@@ -1728,6 +1728,10 @@ def apply_plan_assurance(base: str, plan: Any) -> str:
     return cap_assurance(base, plan)
 
 
+def _path_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+
+
 def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
     """Render a path in minimized home-relative form (e.g. ~/dir/file.jsonl).
 
@@ -1736,7 +1740,24 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
     where 8hex is sha256(parent)[:8]. This deterministic display label is not
     an anonymization guarantee or a collision-resistant identity.
     Non-home absolute paths are never emitted in default mode.
+
+    A label that would carry control characters, undecodable bytes, PII or
+    credential shapes (FR-081) renders as '.._<8hex>/redacted-<8hex>' instead,
+    so one hostile file name can neither abort a scan nor reach the output.
     """
+    shown = _minimize_path_raw(path, home=home)
+    try:
+        shown.encode("utf-8")
+        enforce_content_free_text(shown, context="path")
+    except (UnicodeEncodeError, FindingError):
+        raw = str(path).replace("\\", "/")
+        parent, _, name = raw.rpartition("/")
+        return f".._{_path_hash(parent)}/redacted-{_path_hash(name)}"
+    return shown
+
+
+def _minimize_path_raw(path: Path | str, *, home: Path | None) -> str:
+    """Unchecked ``minimize_path`` rendering (see there for the forms)."""
     if isinstance(path, str):
         if path.startswith("~/") or path == "~" or path.startswith(".._"):
             return path
@@ -1772,12 +1793,12 @@ def minimize_path(path: Path | str, *, home: Path | None = None) -> str:
                 pass
 
         parent_str = str(p.parent).replace("\\", "/")
-        p_hash = hashlib.sha256(parent_str.encode("utf-8")).hexdigest()[:8]
+        p_hash = hashlib.sha256(parent_str.encode("utf-8", "surrogatepass")).hexdigest()[:8]
         return f".._{p_hash}/{p.name}"
 
     parent_str = str(p.parent).replace("\\", "/") if p.parent != Path(".") else ""
     if parent_str:
-        p_hash = hashlib.sha256(parent_str.encode("utf-8")).hexdigest()[:8]
+        p_hash = hashlib.sha256(parent_str.encode("utf-8", "surrogatepass")).hexdigest()[:8]
         return f".._{p_hash}/{p.name}"
     return p.name
 
