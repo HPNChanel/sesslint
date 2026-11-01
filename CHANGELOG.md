@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Command hints now withhold the entire command when a path or option needs
+  shell-specific escaping, instead of placing expandable text inside double
+  quotes. Repair, check, export, refusal and bundle hints give content-free
+  manual guidance for these arguments; ordinary names keep runnable hints.
+
 ### Added
 
 - `sesslint outcome` (OutcomeGuard): verify a declarative

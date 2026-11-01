@@ -1939,7 +1939,7 @@ def get_finding_remediation(
     home: Path | None = None,
     for_operator: bool = False,
     abstain: bool = False,
-    options: Sequence[str] = (),
+    options: Sequence[str | None] = (),
 ) -> str:
     """Return concise content-free remediation instructions for a finding.
 
@@ -1957,7 +1957,7 @@ def get_finding_remediation(
     carries SL203, where every recipe and salvage path abstains under every
     policy (FR-060), so no repair command is suggested.
     """
-    from sesslint._hints import repair_hint
+    from sesslint._hints import hint_instruction, repair_hint
     from sesslint.codes import Repairability
     from sesslint.repair.refusals import refusal_rationale_for, salvage_applicable
 
@@ -1974,10 +1974,11 @@ def get_finding_remediation(
             "under every policy while SL203 is present"
         )
     if f.repairability == Repairability.DETERMINISTIC:
-        return f"deterministic recipe available: run '{repair_hint(path_str, *options)}'"
+        instruction = hint_instruction(repair_hint(path_str, *options), verb="run")
+        return f"deterministic recipe available: {instruction}"
     if f.repairability == Repairability.LOSSY_EXPLICIT:
         salvage_cmd = repair_hint(path_str, *options, "--policy", "salvage")
-        return f"lossy-explicit recipe available: run '{salvage_cmd}'"
+        return f"lossy-explicit recipe available: {hint_instruction(salvage_cmd, verb='run')}"
     refusal = refusal_rationale_for(f.code)
     salvage = not abstain and salvage_applicable(f)
     if f.repairability == Repairability.MANUAL:
@@ -2183,7 +2184,7 @@ def render_human(
     profile: str = "neutral",
     next_action: str | None = None,
     home: Path | None = None,
-    command_options: Sequence[str] = (),
+    command_options: Sequence[str | None] = (),
 ) -> str:
     """Render Report to human-readable format with summary header and ordered finding blocks.
 
@@ -2235,7 +2236,7 @@ def render_human(
         elif verdict == "skipped":
             next_action = "Raise --max-file-bytes to inspect this file within your memory budget."
         elif has_error:
-            from sesslint._hints import check_hint, repair_hint
+            from sesslint._hints import check_hint, hint_instruction, repair_hint
             from sesslint.repair.refusals import refusal_rationale_for, salvage_applicable
 
             # Suggest a repair only when its policy covers every error: repair
@@ -2247,11 +2248,11 @@ def render_human(
             opts = tuple(command_options)
             if errors and not abstain and repairs <= {"deterministic"}:
                 p = hint_path(errors[0].source.path, home=home)
-                next_action = f"Run '{repair_hint(p, *opts)}'"
+                next_action = hint_instruction(repair_hint(p, *opts))
             elif errors and not abstain and repairs <= {"deterministic", "lossy-explicit"}:
                 lossy = next(f for f in errors if f.repairability.value == "lossy-explicit")
                 p = hint_path(lossy.source.path, home=home)
-                next_action = f"Run '{repair_hint(p, *opts, '--policy', 'salvage')}'"
+                next_action = hint_instruction(repair_hint(p, *opts, "--policy", "salvage"))
             elif errors and all(finding_is_empty_input(f) for f in errors):
                 next_action = f"{EMPTY_INPUT_MESSAGE}; check that the path names the session file."
             elif abstain:
@@ -2260,7 +2261,7 @@ def render_human(
                 next_action = (
                     "Manual inspection required; automated repair abstains under every "
                     "policy (SL203). Establish whether the external action ran, then "
-                    f"re-run '{check_hint(p, *opts)}'."
+                    f"{hint_instruction(check_hint(p, *opts), verb='re-run')}."
                 )
             else:
                 next_action = "Manual inspection required; automated repair refused."

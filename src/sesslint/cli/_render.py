@@ -220,7 +220,7 @@ def _emit_check_report(
             has_detection_or_version_failure = True
             ctx.warn(f"Format detection error [{f.code}]: {f.message}")
 
-    from sesslint._hints import hint_arg, hint_options
+    from sesslint._hints import command_hint, hint_arg, hint_instruction, hint_options
 
     command_options = hint_options(format_opt, profile_opt)
     if has_detection_or_version_failure and (
@@ -234,10 +234,13 @@ def _emit_check_report(
         else:
             from sesslint.report import hint_path
 
-            bundle_cmd = " ".join(
-                ["sesslint", "bundle", hint_arg(hint_path(display_path)), *command_options]
+            bundle_cmd = command_hint(
+                "sesslint", "bundle", hint_arg(hint_path(display_path)), *command_options
             )
-            ctx.warn(f"hint: run '{bundle_cmd}' and attach the output to an adapter request")
+            instruction = hint_instruction(bundle_cmd, verb="run")
+            if bundle_cmd is not None:
+                instruction += " and attach the output to an adapter request"
+            ctx.warn(f"hint: {instruction}")
 
     adapter_id = report.coverage.adapter.get("id", "canonical")
     format_display = FORMAT_DISPLAY_NAMES.get(adapter_id, adapter_id)
