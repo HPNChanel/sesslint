@@ -364,6 +364,34 @@ def _run_detector_checks(
     )
 
 
+def _header_accounted(
+    source_header: SessionHeader | None,
+    output_header: SessionHeader | None,
+    output_fmt: str,
+    source_events: Sequence[SessionEvent],
+) -> bool:
+    """Return True when the output header is fully explained by the source.
+
+    Repair copies the source header verbatim; when the source has none it
+    synthesizes one whose only free coordinate is ``session_id`` (derived from
+    the source file name). Any other header difference is unaccounted output.
+    """
+    if output_fmt != "canonical":
+        # Vendor write-back artifacts carry no canonical header.
+        return output_header is None
+    if output_header is None:
+        return source_header is None
+    if source_header is not None:
+        return to_canonical_json(output_header) == to_canonical_json(source_header)
+    expected = SessionHeader(
+        schema_version="sesslint.session/v1",
+        session_id=output_header.session_id,
+        created_at=source_events[0].ts if source_events else "1970-01-01T00:00:00Z",
+        metadata={"created_at_source": "first_event" if source_events else "unknown"},
+    )
+    return to_canonical_json(output_header) == to_canonical_json(expected)
+
+
 def verify(
     *,
     source_path: StrPath,
@@ -737,6 +765,27 @@ def verify(
                                     name="transformation_audit",
                                     ok=False,
                                     detail="header-mismatch: session_id mismatch",
+                                )
+                            elif output_fmt == "canonical" and output_stream_findings:
+                                # Repair emits only well-formed canonical records;
+                                # any stream-level finding (unparseable line,
+                                # duplicate key, ...) means the output carries
+                                # bytes the replay does not account for.
+                                c4 = Check(
+                                    name="transformation_audit",
+                                    ok=False,
+                                    detail=(
+                                        "output-unaccounted-records: "
+                                        f"{len(output_stream_findings)} stream finding(s)"
+                                    ),
+                                )
+                            elif not _header_accounted(
+                                source_header, output_header, output_fmt, source_events
+                            ):
+                                c4 = Check(
+                                    name="transformation_audit",
+                                    ok=False,
+                                    detail="header-mismatch: header differs from source",
                                 )
                             else:
                                 c4 = Check(name="transformation_audit", ok=True, detail="matched")

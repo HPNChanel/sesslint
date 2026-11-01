@@ -109,6 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `verify`: the transformation audit now fails when the repaired output
+  carries records the replay does not account for (an unparseable line or a
+  duplicate-key record, reported as `output-unaccounted-records`) or a header
+  that differs from the source header, including a missing one
+  (`header-mismatch`). Previously only `session_id` was compared and such
+  output could still pass when the manifest declared the degraded
+  revalidation.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and

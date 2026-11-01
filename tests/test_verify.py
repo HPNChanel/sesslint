@@ -1277,3 +1277,81 @@ def test_hostile_profile_version_fails_privacy_safe(tmp_path: Path) -> None:
         assert "9.9.9;drop" not in check.detail
     c_map = {c.name: c for c in verdict.checks}
     assert c_map["plan_fingerprint"].detail.startswith("profile-version-unavailable")
+
+
+def _rewrite_output(out: Path, man: Path, new_bytes: bytes) -> None:
+    """Replace output bytes and rebind the manifest output fingerprint."""
+    out.write_bytes(new_bytes)
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["output_fingerprint"] = hashlib.sha256(new_bytes).hexdigest()
+    man.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+
+def test_output_header_must_match_source_header(tmp_path: Path) -> None:
+    """Check 4 fails when header fields other than session_id differ."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    lines = out.read_bytes().split(b"\n")
+    header = json.loads(lines[0])
+    header["title"] = "changed"
+    lines[0] = json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    _rewrite_output(out, man, b"\n".join(lines))
+
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["transformation_audit"].ok is False
+    assert c_map["transformation_audit"].detail.startswith("header-mismatch")
+    assert verdict.ok is False
+
+
+def test_output_missing_header_fails(tmp_path: Path) -> None:
+    """Check 4 fails when the output drops the source header."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    lines = out.read_bytes().split(b"\n")
+    _rewrite_output(out, man, b"\n".join(lines[1:]))
+
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["transformation_audit"].ok is False
+    assert verdict.ok is False
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda b: b + b"not a json record\n", id="unparseable-line"),
+        pytest.param(
+            lambda b: b.replace(b'"text":"hello"', b'"text":"other","text":"hello"', 1),
+            id="duplicate-key",
+        ),
+    ],
+)
+def test_output_stream_findings_fail_audit(tmp_path: Path, mutate: Any) -> None:
+    """Check 4 fails when output bytes contain records the replay cannot account for.
+
+    The manifest revalidation block is rebound to the degraded output so only
+    the transformation audit can catch the difference.
+    """
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    _rewrite_output(out, man, mutate(out.read_bytes()))
+    for _ in range(4):
+        verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+        c_map = {c.name: c for c in verdict.checks}
+        detail = c_map["assurance_audit"].detail
+        if c_map["assurance_audit"].ok:
+            break
+        manifest_data = json.loads(man.read_text(encoding="utf-8"))
+        got = detail.rsplit("got ", 1)[-1]
+        if detail.startswith("revalidation-mismatch"):
+            manifest_data["revalidation"]["assurance"] = got
+        elif detail.startswith("revalidation-error-count"):
+            manifest_data["revalidation"]["error_count"] = int(got)
+        elif detail.startswith("revalidation-warning-count"):
+            manifest_data["revalidation"]["warning_count"] = int(got)
+        elif detail.startswith("assurance-ceiling"):
+            manifest_data["assurance_ceiling"] = got
+        man.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    assert c_map["assurance_audit"].ok is True
+    assert c_map["transformation_audit"].ok is False
+    assert c_map["transformation_audit"].detail.startswith("output-unaccounted-records")
+    assert verdict.ok is False
