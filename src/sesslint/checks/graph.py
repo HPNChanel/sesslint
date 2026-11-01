@@ -2,9 +2,12 @@
 
 This module implements four vendor-neutral parent-graph rules over canonical events:
 - SL004 (Missing parent): Event references a non-existent parent ID.
-  Severity: error, Repairability: manual.
+  Severity: error, Repairability: manual (always — B29).
   Rationale: A missing parent breaks the causal chain to its predecessor;
   automated repair cannot invent missing history without a proven-unique predecessor.
+  Under the full-equality rule an earlier event whose ID equals the missing
+  parent ID would make the parent present, so no detector finding can carry
+  a proven-unique predecessor: the finding never becomes deterministic.
 - SL005 (Parent cycle): Directed cycles detected in child-to-parent linkage.
   Severity: fatal, Repairability: unsupported.
   Rationale: Causal cycles break directed acyclic ordering completely,
@@ -33,6 +36,7 @@ are treated as missing parents.
 from __future__ import annotations
 
 import hashlib
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, KeysView, Mapping, Sequence
 from typing import Any, Final
@@ -231,81 +235,144 @@ def is_qualifying_parent_candidate(
 _CONF_SEG_KEY: Final[str] = "".join(["seg", "ment"])
 
 
+def _segment_seq(events: Sequence[Any], ev: Any) -> int | None:
+    """Return the coordinate ``same_compaction_segment`` uses for an event object.
+
+    ``seq`` when it is an int, else the list position of the first equal event;
+    None when the event cannot be located (never in the same segment).
+    """
+    seq = _event_seq_safe(ev)
+    if seq is None:
+        try:
+            seq = events.index(ev)
+        except (ValueError, IndexError):
+            return None
+    return seq
+
+
+class _ParentCandidateIndex:
+    """Single-pass candidate index for SL004 parent qualification (B29).
+
+    Built once per event list. Candidates are looked up by exact ID (the
+    full-equality rule) instead of rescanning every earlier event per orphan,
+    and compaction-segment confinement is a bisect over the sorted boundary
+    coordinates instead of a full scan per candidate. Results are identical
+    to evaluating ``is_qualifying_parent_candidate`` against each ID-equal
+    earlier event; events whose ID differs from the missing parent ID are not
+    candidates and are not enumerated.
+    """
+
+    __slots__ = ("_boundary_seqs", "_by_id", "_events")
+
+    def __init__(self, events: Sequence[Any]) -> None:
+        self._events = events
+        by_id: dict[str, list[int]] = {}
+        boundary_seqs: list[int] = []
+        for idx, ev in enumerate(events):
+            by_id.setdefault(_event_id_safe(ev) or "", []).append(idx)
+            if _event_get(ev, "kind") == "compaction_boundary":
+                b_seq = _event_seq_safe(ev, default_idx=idx)
+                if b_seq is not None:
+                    boundary_seqs.append(b_seq)
+        boundary_seqs.sort()
+        self._by_id = by_id
+        self._boundary_seqs = boundary_seqs
+
+    def _same_segment(self, seq_a: int | None, seq_b: int | None) -> bool:
+        """``same_compaction_segment`` over pre-resolved coordinates (O(log n))."""
+        if seq_a is None or seq_b is None:
+            return False
+        low_seq, high_seq = min(seq_a, seq_b), max(seq_a, seq_b)
+        if high_seq - low_seq <= 1:
+            return True
+        pos = bisect_right(self._boundary_seqs, low_seq)
+        return not (pos < len(self._boundary_seqs) and self._boundary_seqs[pos] < high_seq)
+
+    def find(
+        self,
+        child: Any,
+        target_idx: int,
+        missing_parent_id: str | None = None,
+    ) -> tuple[list[int], list[dict[str, Any]], dict[str, bool], str]:
+        """Evaluate ID-equal events before ``target_idx`` (see find_qualifying_parent_candidates)."""
+        events = self._events
+        target_parent = (
+            str(missing_parent_id)
+            if missing_parent_id is not None
+            else (_event_parent_id_safe(child) or "")
+        )
+        matches = self._by_id.get(target_parent, [])
+        id_match_indices = matches[: bisect_left(matches, target_idx)]
+
+        qualifying_indices: list[int] = []
+        rejected_decoys: list[dict[str, Any]] = []
+        branch_confined = False
+        segment_confined = False
+        if id_match_indices:
+            child_id = _event_id_safe(child)
+            child_branch = _event_branch_safe(child)
+            child_seq = _segment_seq(events, child)
+            for i in id_match_indices:
+                cand = events[i]
+                c_id = _event_id_safe(cand)
+                same_branch = _event_branch_safe(cand) == child_branch
+                same_segment = self._same_segment(_segment_seq(events, cand), child_seq)
+                branch_confined = branch_confined or same_branch
+                segment_confined = segment_confined or same_segment
+                # Same precedence as is_qualifying_parent_candidate; the
+                # full-match rule holds by construction of the ID index.
+                if not c_id:
+                    fail_reason = "empty_candidate_id"
+                elif child_id is not None and c_id == child_id:
+                    fail_reason = "self_candidate"
+                elif not same_branch:
+                    fail_reason = "cross_branch"
+                elif not same_segment:
+                    fail_reason = "cross_segment"
+                else:
+                    qualifying_indices.append(i)
+                    continue
+                rejected_decoys.append(
+                    {"id": _safe_id(c_id or ""), "index": i, "reason": fail_reason}
+                )
+
+        confinement = {"branch": branch_confined, _CONF_SEG_KEY: segment_confined}
+        if len(qualifying_indices) == 1:
+            reason = "ok"
+        elif len(qualifying_indices) > 1:
+            reason = "ambiguous"
+        elif any(d["reason"] == "cross_branch" for d in rejected_decoys):
+            reason = "cross_branch"
+        elif any(d["reason"] == "cross_segment" for d in rejected_decoys):
+            reason = "cross_segment"
+        else:
+            reason = "no_full_match"
+        return qualifying_indices, rejected_decoys, confinement, reason
+
+
 def find_qualifying_parent_candidates(
     events: Sequence[Any],
     child: Any,
     target_idx: int,
     missing_parent_id: str | None = None,
 ) -> tuple[list[int], list[dict[str, Any]], dict[str, bool], str]:
-    """Evaluate all earlier events (0..target_idx-1) against candidate confinement rules.
+    """Evaluate earlier events (0..target_idx-1) against candidate confinement rules.
+
+    Only events whose ID equals the missing parent ID (full-equality rule) are
+    candidates; any other earlier event is not a decoy and is not listed (B29:
+    enumerating every earlier event made SL004 evidence O(n) per finding).
 
     Returns:
         (qualifying_indices, rejected_decoys, confinement, reason)
         where:
         - qualifying_indices: list of integer indices for qualifying candidate events.
-        - rejected_decoys: list of dicts with {"id": str, "index": int, "reason": str}.
+        - rejected_decoys: ID-equal candidates that failed a confinement rule, as
+          dicts with {"id": str, "index": int, "reason": str}.
         - confinement: {"branch": bool, ...}.
         - reason: "ok" if len(qualifying) == 1, "ambiguous" if > 1,
                   else primary failure reason ("cross_branch", "cross_segment", "no_full_match").
     """
-    target_parent = (
-        str(missing_parent_id)
-        if missing_parent_id is not None
-        else (_event_parent_id_safe(child) or "")
-    )
-
-    qualifying_indices: list[int] = []
-    rejected_decoys: list[dict[str, Any]] = []
-    id_match_indices: list[int] = []
-
-    for i in range(target_idx):
-        cand = events[i]
-        qualifies, fail_reason = is_qualifying_parent_candidate(
-            candidate=cand,
-            child=child,
-            events=events,
-            missing_parent_id=target_parent,
-        )
-        cand_id = _event_id_safe(cand) or ""
-        if cand_id == target_parent:
-            id_match_indices.append(i)
-
-        if qualifies:
-            qualifying_indices.append(i)
-        else:
-            rejected_decoys.append(
-                {
-                    "id": _safe_id(cand_id),
-                    "index": i,
-                    "reason": fail_reason,
-                }
-            )
-
-    if id_match_indices:
-        child_branch = _event_branch_safe(child)
-        branch_confined = any(
-            _event_branch_safe(events[idx]) == child_branch for idx in id_match_indices
-        )
-        segment_confined = any(
-            same_compaction_segment(events, events[idx], child) for idx in id_match_indices
-        )
-        confinement = {"branch": branch_confined, _CONF_SEG_KEY: segment_confined}
-    else:
-        confinement = {"branch": False, _CONF_SEG_KEY: False}
-
-    if len(qualifying_indices) == 1:
-        reason = "ok"
-    elif len(qualifying_indices) > 1:
-        reason = "ambiguous"
-    else:
-        if any(d["reason"] == "cross_branch" for d in rejected_decoys):
-            reason = "cross_branch"
-        elif any(d["reason"] == "cross_segment" for d in rejected_decoys):
-            reason = "cross_segment"
-        else:
-            reason = "no_full_match"
-
-    return qualifying_indices, rejected_decoys, confinement, reason
+    return _ParentCandidateIndex(events).find(child, target_idx, missing_parent_id)
 
 
 def cap_graph_findings(
@@ -447,11 +514,18 @@ def check_missing_parent(
     - Only `parent_id is None` is treated as a root; empty string parent is missing.
     - Forward references to IDs present later in the session do not fire.
     - Self-loops (parent_id == id) do not fire SL004 (deferred to SL005).
+    - Always ``manual`` (B29): candidate evidence is diagnostic only. An
+      ID-equal predecessor can exist only for an ID the occurrence graph
+      ignores (blank or non-string), and re-pointing the child at that same
+      ID changes nothing — so no finding is ever offered for auto-repair.
+    - Candidates come from one ID index built per call: linear in events,
+      not a rescan of every earlier event per orphan (B29).
     - Sorts output by primary ID, capped at max_findings with overflow summary.
     """
     ctx = context if context is not None else CheckContext()
     g = occurrence_graph if occurrence_graph is not None else _OccurrenceGraph(events, source_path)
     findings: list[Finding] = []
+    candidate_index: _ParentCandidateIndex | None = None
 
     for id_str in g.id_order:
         parent_id = g.id_to_parent[id_str]
@@ -474,14 +548,11 @@ def check_missing_parent(
 
             target_idx = g.id_to_index[id_str]
             target_ev = events[target_idx]
-            qualifying, rejected, conf, reason = find_qualifying_parent_candidates(
-                events=events,
-                child=target_ev,
-                target_idx=target_idx,
-                missing_parent_id=parent_id,
+            if candidate_index is None:
+                candidate_index = _ParentCandidateIndex(events)
+            qualifying, rejected, conf, reason = candidate_index.find(
+                target_ev, target_idx, parent_id
             )
-
-            rep = Repairability.DETERMINISTIC if len(qualifying) == 1 else Repairability.MANUAL
 
             evidence: dict[str, Any] = {
                 "id": clean_rec_id,
@@ -498,7 +569,7 @@ def check_missing_parent(
                 make_finding(
                     code=SL004,
                     severity=Severity.ERROR,
-                    repairability=rep,
+                    repairability=Repairability.MANUAL,
                     message_template=_MSG_SL004,
                     source=source_ref,
                     related_ids=related,
