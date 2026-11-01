@@ -45,6 +45,7 @@ from sesslint.finding import Finding, SourceRef, enforce_content_free_text, make
 DEFAULT_MAX_LINE_BYTES: Final[int] = 8 * 1024 * 1024
 DEFAULT_MAX_DEPTH: Final[int] = 100
 DEFAULT_MAX_FILE_BYTES: Final[int] = 100 * 1024 * 1024  # 100 MB
+_READ_CHUNK_BYTES: Final[int] = 16 * 1024 * 1024
 _RECORD_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'"id"\s*:\s*"([^"]{1,200})"')
 _CHUNK_DRAIN_SIZE: Final[int] = 65536
 
@@ -104,6 +105,25 @@ DEFAULT_READER_LIMITS: Final[ReaderLimits] = ReaderLimits()
 _PROBE_CHUNK_BYTES: Final[int] = 1024 * 1024  # 1 MiB
 
 EncodingProbe = Literal["nul", "utf8"]
+
+
+def read_limit_plus_one(stream: Any, limit: int) -> bytes:
+    """Read at most ``limit + 1`` bytes so callers detect oversize exactly.
+
+    Reads in bounded chunks: ``limit`` is a user flag that may exceed
+    ``sys.maxsize``, and a single ``read(limit + 1)`` asks the runtime to
+    allocate the whole request up front (``OverflowError`` / huge allocation).
+    """
+    want = limit + 1
+    chunks: list[bytes] = []
+    total = 0
+    while total < want:
+        chunk: bytes = stream.read(min(want - total, _READ_CHUNK_BYTES))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return chunks[0] if len(chunks) == 1 else b"".join(chunks)
 
 
 def probe_stream_encoding(stream: BinaryIO) -> EncodingProbe | None:

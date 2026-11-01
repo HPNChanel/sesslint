@@ -117,9 +117,9 @@ def _read_stdin_bytes(max_file_bytes: int | None = None) -> bytes:
     oversize exactly (``len(data) > cap``). Binary-mode read avoids Windows
     text-mode newline translation.
     """
-    from sesslint.io import DEFAULT_MAX_FILE_BYTES
+    from sesslint.io import DEFAULT_MAX_FILE_BYTES, read_limit_plus_one
 
     limit = DEFAULT_MAX_FILE_BYTES if max_file_bytes is None else max_file_bytes
     if limit <= 0:
         raise ValueError("max_file_bytes must be positive")
-    return sys.stdin.buffer.read(limit + 1)
+    return read_limit_plus_one(sys.stdin.buffer, limit)
