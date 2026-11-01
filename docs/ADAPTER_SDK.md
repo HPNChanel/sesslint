@@ -15,9 +15,13 @@ implemented touching only:
 > and hashing rules cited below are defined there.
 
 - `src/sesslint/adapters/<name>.py` (new)
-- `src/sesslint/adapters/detect.py` (score function wiring)
-- `src/sesslint/adapters/load.py` (format dispatch)
+- `src/sesslint/adapters/detect.py` (format registry + score function wiring)
+- `src/sesslint/adapters/load.py` (format dispatch + profile key)
+- `src/sesslint/profiles/builtin.py` + `src/sesslint/profiles/profile.py`
+  (profile `allowed_adapters`, `VALID_FORMATS`)
 - `src/sesslint/_version.py` (`ADAPTER_VERSIONS` entry)
+- adapter listings in `src/sesslint/cli.py`, `src/sesslint/mcp_server.py`
+  and `src/sesslint/doctor.py` (§7 step 6)
 - `fixtures/<name>/` + `PROVENANCE.json`
 - `tests/adapters/test_<name>.py`
 
@@ -41,10 +45,16 @@ stream head alone; the dispatcher reads a bounded prefix
 (`adapters/detect.py:detect_format`).
 
 The loader must return canonical `SessionEvent` objects plus any adapter
-findings (`Finding` records describing malformed/mapped input). The single
-authoritative dispatch is `adapters/load.py:load_events_for_format` — a new
-adapter registers there once; every command (`check`, `scan`, `repair`,
-`verify`, `bundle`, `diff`, `stats`) picks it up automatically.
+findings (`Finding` records describing malformed/mapped input). Loading has
+one authoritative dispatch: `adapters/load.py:load_events_for_format`, which
+routes vendor formats (`adapters/load.py:is_vendor_format`) through
+`adapters/load.py:load_vendor_events`. Every command that loads a session
+(`check`, `scan`, `repair`, `verify`, `bundle`, `diff`, `stats`, `export`)
+goes through these two functions, so no per-command loader branch is needed.
+Loader dispatch is not the only registration, though: detection, profile
+gating, version stamping and the adapter listings each keep their own entry
+and a new adapter is refused or missing until all of them are added — follow
+the §7 checklist.
 
 ## 2. Canonical event contract
 

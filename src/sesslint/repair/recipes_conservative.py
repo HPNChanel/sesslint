@@ -1,9 +1,10 @@
 """Conservative repair recipe pack (TASK-019).
 
-This module implements the five conservative (non-salvage, non-lossy-beyond-explicit)
-repair recipes as pure event-list transforms:
+This module implements the seven ``RECIPES`` of the conservative pack as pure
+event-list transforms. Six are lossless and run under the conservative policy;
+terminal-suffix-discard is lossy and salvage-only (``min_policy="salvage"``):
 1. terminal-suffix-discard: drop trailing events after the first unsafe index when
-   every dropped event is after the last checkpoint and finding set includes SL203/SL005.
+   every dropped event is after the last checkpoint and finding set includes SL005.
 2. identical-duplicate-collapse: collapse two adjacent events with equal content
    fingerprints and matching kinds into one.
 3. proven-unique-parent-restore: reattach an SL004 missing parent link when exactly
@@ -12,6 +13,10 @@ repair recipes as pure event-list transforms:
    call/result pair to immediately after the pair.
 5. duplicate-projection-removal: drop the later of two identical tool_result projections
    for the same correlation ID.
+6. identical-duplicate-drop: drop every later occurrence of an SL003
+   identical-duplicate event id, keeping the earliest.
+7. seq-renumber: renumber ``seq`` to ``0..n-1`` after drop steps on canonical
+   input (planner-synthesized normalizing step; handles no finding code).
 
 Guarantees:
 - Zero I/O, zero disk access, zero network calls.
@@ -992,7 +997,7 @@ CONSERVATIVE_RECIPES: Final[tuple[Recipe, ...]] = RECIPES
 
 
 def register_all() -> None:
-    """Register all five conservative recipes into the repair registry."""
+    """Register every recipe in ``RECIPES`` (seven) into the repair registry."""
     for r in RECIPES:
         if get_recipe(r.name) is None:
             register_recipe(r)

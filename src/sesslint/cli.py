@@ -18,13 +18,21 @@ from sesslint._version import get_version_info
 from sesslint.adapters.canonical import SUPPORTED_CANONICAL_VERSIONS
 from sesslint.adapters.claude_code import SUPPORTED_CLAUDE_VERSIONS
 from sesslint.adapters.codex_rollout import SUPPORTED_CODEX_ROLLOUT_VERSIONS
+from sesslint.adapters.detect import ADAPTER_FORMATS, FORMAT_AUTO
 from sesslint.adapters.openai_agents import SUPPORTED_OPENAI_AGENTS_VERSIONS
 from sesslint.api import build_internal_error_envelope, validate_session
 from sesslint.errors import SesslintError
 from sesslint.finding import Finding
+from sesslint.profiles import NEUTRAL_PROFILE
 from sesslint.progress import OperationCancelled
 
 load_session_file = validate_session
+
+# Single sources of truth for CLI surface lists (B12): every ``--format``
+# choice list derives from the adapter registry, and the built-in default
+# profile is the one value both ``_apply_config`` and ``formats`` report.
+FORMAT_CHOICES: Final[tuple[str, ...]] = (FORMAT_AUTO, *ADAPTER_FORMATS)
+DEFAULT_PROFILE: Final[str] = NEUTRAL_PROFILE.name
 
 FORMAT_DISPLAY_NAMES: Final[dict[str, str]] = {
     "canonical": "canonical",
@@ -260,7 +268,7 @@ def _apply_config(args: argparse.Namespace, cfg: Mapping[str, Any]) -> None:
     if getattr(args, "format", None) is None:
         args.format = cfg.get("format", "auto")
     if getattr(args, "profile", None) is None:
-        args.profile = cfg.get("profile", "neutral")
+        args.profile = cfg.get("profile", DEFAULT_PROFILE)
     if getattr(args, "confidence_min", None) is None:
         args.confidence_min = cfg.get("confidence_min")
     if getattr(args, "margin_min", None) is None:
@@ -587,7 +595,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=argparse.SUPPRESS,
         help=argparse.SUPPRESS,
     )
@@ -649,7 +657,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -882,7 +890,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1084,7 +1092,7 @@ def create_parser() -> argparse.ArgumentParser:
             "Render the structural repair preview (sesslint.preview/v1): "
             "content-free delta rows per plan step, then exit without "
             "writing. Incompatible with --output/--plan-out/--apply-plan/"
-            "batch modes. *(next release)*"
+            "batch modes."
         ),
     )
     repair_parser.add_argument(
@@ -1095,7 +1103,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     repair_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1136,7 +1144,7 @@ def create_parser() -> argparse.ArgumentParser:
             "Apply a previously exported plan JSON (sesslint.plan/v1) without "
             "re-planning. The plan is authoritative: --policy/--profile/--format "
             "overrides are refused, and execution still re-validates the plan "
-            "fingerprint and source binding. *(next release)*"
+            "fingerprint and source binding."
         ),
     )
     repair_parser.add_argument(
@@ -1147,8 +1155,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Export the computed repair plan (sesslint.plan/v1) to PATH for "
             "review or later --apply-plan. Plan-only when --output is absent; "
-            "with --output the exported plan is executed in the same run. "
-            "*(next release)*"
+            "with --output the exported plan is executed in the same run."
         ),
     )
     repair_parser.add_argument(
@@ -1159,7 +1166,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Batch-repair every eligible session file under DIR (eligibility "
             "= planner computes steps with zero blocked findings). Outputs "
-            "mirror DIR's structure under --output-dir. *(next release)*"
+            "mirror DIR's structure under --output-dir."
         ),
     )
     repair_parser.add_argument(
@@ -1170,7 +1177,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Batch-repair files listed in a sesslint scan JSON report; only "
             "'~/'-minimized and absolute paths resolve — '.._<hash>' entries "
-            "are reported skipped. *(next release)*"
+            "are reported skipped."
         ),
     )
     repair_parser.add_argument(
@@ -1179,14 +1186,14 @@ def create_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=None,
         metavar="FILE",
-        help="Batch-repair an explicit file list into --output-dir. *(next release)*",
+        help="Batch-repair an explicit file list into --output-dir.",
     )
     repair_parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
         metavar="DIR",
-        help="Output root for batch repair modes (mirrors input structure). *(next release)*",
+        help="Output root for batch repair modes (mirrors input structure).",
     )
     repair_parser.add_argument(
         "--manifest-dir",
@@ -1196,7 +1203,7 @@ def create_parser() -> argparse.ArgumentParser:
         help=(
             "Manifest root for batch modes; manifests are named "
             "<sha8-of-source-path>.manifest.json. Default: adjacent to each "
-            "output. *(next release)*"
+            "output."
         ),
     )
     repair_parser.add_argument(
@@ -1363,7 +1370,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     bundle_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1419,7 +1426,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=argparse.SUPPRESS,
         help="Session format adapter (default: auto)",
     )
@@ -1476,7 +1483,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     baseline_parser.add_argument(
         "--format",
-        choices=["auto", "canonical", "claude-code-jsonl", "openai-agents", "codex-rollout"],
+        choices=FORMAT_CHOICES,
         default="auto",
         help="Input format override for --source (default: auto)",
     )
@@ -1500,21 +1507,21 @@ def create_parser() -> argparse.ArgumentParser:
     diff_parser.add_argument("b", type=Path, help="Path to the second session file")
     diff_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default="auto",
         help="Session format adapter for both inputs (default: auto)",
     )
     diff_parser.add_argument(
         "--format-a",
         dest="format_a",
-        choices=["claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=ADAPTER_FORMATS,
         default=None,
         help="Format override for input A only",
     )
     diff_parser.add_argument(
         "--format-b",
         dest="format_b",
-        choices=["claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=ADAPTER_FORMATS,
         default=None,
         help="Format override for input B only",
     )
@@ -1562,7 +1569,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     stats_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default="auto",
         help="Session format adapter for all inputs (default: auto)",
     )
@@ -1646,7 +1653,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default="auto",
         help="Session format adapter for all inputs (default: auto)",
     )
@@ -1734,7 +1741,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     hook_parser.add_argument(
         "--format",
-        choices=["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"],
+        choices=FORMAT_CHOICES,
         default=None,
         help="Session format adapter (default: auto-detect)",
     )
@@ -1780,25 +1787,25 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
     if args.command == "formats":
         adapter_data = [
             {
-                "default_profile": "neutral",
+                "default_profile": DEFAULT_PROFILE,
                 "description": "SessLint Canonical Session Format v1 (JSON/JSONL)",
                 "name": "canonical",
                 "versions_supported": sorted(SUPPORTED_CANONICAL_VERSIONS),
             },
             {
-                "default_profile": "claude-strict",
+                "default_profile": DEFAULT_PROFILE,
                 "description": "Claude Code JSONL session logs adapter",
                 "name": "claude-code-jsonl",
                 "versions_supported": sorted(SUPPORTED_CLAUDE_VERSIONS),
             },
             {
-                "default_profile": "openai-strict",
+                "default_profile": DEFAULT_PROFILE,
                 "description": "OpenAI Agents SDK item-export adapter",
                 "name": "openai-agents",
                 "versions_supported": sorted(SUPPORTED_OPENAI_AGENTS_VERSIONS),
             },
             {
-                "default_profile": "openai-strict",
+                "default_profile": DEFAULT_PROFILE,
                 "description": "Codex CLI/Desktop rollout-*.jsonl adapter",
                 "name": "codex-rollout",
                 "versions_supported": sorted(SUPPORTED_CODEX_ROLLOUT_VERSIONS),

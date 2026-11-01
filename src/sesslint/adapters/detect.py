@@ -40,14 +40,16 @@ FORMAT_CODEX_ROLLOUT: Final[str] = "codex-rollout"
 FORMAT_CANONICAL: Final[str] = "canonical"
 FORMAT_AUTO: Final[str] = "auto"
 
-SUPPORTED_FORMATS: Final[frozenset[str]] = frozenset(
-    {
-        FORMAT_CLAUDE_CODE,
-        FORMAT_OPENAI_AGENTS,
-        FORMAT_CODEX_ROLLOUT,
-        FORMAT_CANONICAL,
-    }
+# Adapter registry in presentation order (B12): CLI ``--format`` choices are
+# derived from this tuple instead of being re-listed per subcommand.
+ADAPTER_FORMATS: Final[tuple[str, ...]] = (
+    FORMAT_CLAUDE_CODE,
+    FORMAT_OPENAI_AGENTS,
+    FORMAT_CODEX_ROLLOUT,
+    FORMAT_CANONICAL,
 )
+
+SUPPORTED_FORMATS: Final[frozenset[str]] = frozenset(ADAPTER_FORMATS)
 
 VALID_FORMAT_OPTIONS: Final[frozenset[str]] = SUPPORTED_FORMATS | {FORMAT_AUTO}
 
