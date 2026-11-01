@@ -377,3 +377,71 @@ def test_component_related_ids_and_sample_cap() -> None:
     assert ev["root_id"] == "b00"
     assert ev["member_sample"] == [f"b{i:02d}" for i in range(g.MAX_MEMBER_SAMPLE_SIZE)]
     assert f.related_ids == tuple(f"b{i:02d}" for i in range(11))
+
+
+def test_resolve_source_coords_normalises_explicit_path_separators() -> None:
+    ev = SimpleNamespace(source_location="ignored", source_line=2)
+    assert g._resolve_source_coords(ev, "a\\b\\c.jsonl") == ("a/b/c.jsonl", 2)
+
+
+def test_candidate_named_like_placeholder_never_matches_parentless_child() -> None:
+    ev = [_ns("XXXX", seq=0), _ns("child", None, seq=1)]
+    assert g.is_qualifying_parent_candidate(ev[0], ev[1], ev) == (False, "no_full_match")
+    assert g.find_qualifying_parent_candidates(ev, ev[1], 1)[3] == "no_full_match"
+
+
+def test_cycle_scan_continues_past_nodes_hanging_off_explored_ones() -> None:
+    evs = [_se("z", None), _se("x", "z"), _se("a", "b"), _se("b", "a")]
+    (f,) = g.check_cycles(evs)
+    assert dict(f.evidence or {})["cycle_path"] == ["a", "b", "a"]
+
+
+def test_graph_caps_emit_exact_overflow_with_context_for_every_family() -> None:
+    def ctx(adapter: str) -> CheckContext:
+        return CheckContext(
+            adapter_id=adapter, adapter_version="1", profile_id="p", profile_version="2"
+        )
+
+    missing = [_se(f"m{i:02d}", "ghost") for i in range(4)]
+    cycles = [e for i in range(4) for e in (_se(f"c{i}a", f"c{i}b"), _se(f"c{i}b", f"c{i}a"))]
+    comps = [_se(f"k{i}", None) for i in range(5)]
+    for fn, evs, total in (
+        (g.check_missing_parent, missing, 4),
+        (g.check_cycles, cycles, 4),
+        (g.check_components, comps, 4),
+    ):
+        out = fn(evs, source_path="a\\b.jsonl", max_findings=2, context=ctx("one"))
+        other = fn(evs, source_path="a\\b.jsonl", max_findings=2, context=ctx("two"))
+        assert len(out) == 3, fn.__name__
+        overflow = out[-1]
+        assert overflow.severity is Severity.WARNING
+        assert overflow.repairability is Repairability.MANUAL
+        assert overflow.source.path == "a/b.jsonl"
+        assert dict(overflow.evidence or {}) == {
+            "cap": 2,
+            "overflow": True,
+            "total_count": total,
+            "truncated_count": total - 2,
+            "variant": "overflow-summary",
+        }
+        assert overflow.fingerprint != other[-1].fingerprint, fn.__name__
+
+
+def test_graph_overflow_fingerprint_depends_on_each_context_field() -> None:
+    base = {"adapter_id": "ad", "adapter_version": "1", "profile_id": "pr", "profile_version": "2"}
+    evs = [_se(f"m{i}", "ghost") for i in range(3)]
+    ref = g.check_missing_parent(evs, max_findings=1, context=CheckContext(**base))
+    for field in base:
+        other = g.check_missing_parent(
+            evs, max_findings=1, context=CheckContext(**{**base, field: "zz"})
+        )
+        assert all(a.fingerprint != b.fingerprint for a, b in zip(ref, other, strict=True)), field
+
+
+def test_component_finding_fingerprint_depends_on_context_fields() -> None:
+    base = {"adapter_id": "ad", "adapter_version": "1", "profile_id": "pr", "profile_version": "2"}
+    evs = [_se("a", None), _se("b", None)]
+    (ref,) = g.check_components(evs, context=CheckContext(**base))
+    for field in base:
+        (other,) = g.check_components(evs, context=CheckContext(**{**base, field: "zz"}))
+        assert other.fingerprint != ref.fingerprint, field
