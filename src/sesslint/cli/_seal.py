@@ -56,6 +56,16 @@ def _maybe_append_seal(
             file_sha = seal_mod.sha256_bytes(artifact_bytes)
         else:
             raise seal_mod.SealError("no artifact bytes or path to seal")
+        if not getattr(args, "seal_no_path", False) and artifact_path is not None:
+            try:
+                str(artifact_path).encode("utf-8")
+            except UnicodeEncodeError as err:
+                # minimize_path now renders hostile names as hashed labels
+                # (CL-16); sealing still fails closed on undecodable names
+                # (CL-12) rather than binding a label the user cannot read.
+                raise seal_mod.SealError(
+                    "entry fields cannot be serialized as canonical JSON"
+                ) from err
         entry_path = (
             None
             if getattr(args, "seal_no_path", False) or artifact_path is None

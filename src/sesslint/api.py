@@ -32,7 +32,7 @@ from sesslint.diff import SessionDiff
 from sesslint.doctor import DoctorReport
 from sesslint.exporter import ExportSummary
 from sesslint.finding import Finding, SourceRef, make_finding
-from sesslint.io import DEFAULT_MAX_FILE_BYTES, ReaderLimits
+from sesslint.io import DEFAULT_MAX_FILE_BYTES, ReaderLimits, read_limit_plus_one
 from sesslint.precheck import PrecheckReason, PrecheckResult, precheck
 from sesslint.preview import PreviewDoc
 from sesslint.profiles import (
@@ -247,7 +247,7 @@ def _check_impl(
             oversized = True
         else:
             with target_path.open("rb") as stream:
-                data = stream.read(max_file_bytes + 1)
+                data = read_limit_plus_one(stream, max_file_bytes)
             oversized = len(data) > max_file_bytes
     else:
         oversized = len(data) > max_file_bytes

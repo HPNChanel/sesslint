@@ -276,3 +276,50 @@ def test_non_finite_json_constants_are_parse_errors() -> None:
         assert token.encode() not in out
         resp = json.loads(out, parse_constant=lambda c: pytest.fail(f"non-JSON {c}"))
         assert resp["error"]["code"] == -32700
+
+
+def test_overlong_path_is_iserror_result_not_a_crash() -> None:
+    """CL-16: ENAMETOOLONG from the existence probe must not kill the server."""
+    raw = _line(
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {"name": "sesslint_check", "arguments": {"path": "a" * 5000}},
+        }
+    )
+    resp = _call(raw)
+    assert resp["id"] == 10
+    assert resp["result"]["isError"] is True
+    out = io.BytesIO()
+    assert serve(io.BytesIO(raw + _line({"jsonrpc": "2.0", "id": 11, "method": "ping"})), out) == 0
+    assert [json.loads(x)["id"] for x in out.getvalue().splitlines()] == [10, 11]
+
+
+def _strict(raw: bytes) -> dict:
+    def reject(token: str) -> None:
+        raise AssertionError(f"non-standard JSON constant {token}")
+
+    out = handle_line(raw)
+    assert out is not None
+    return json.loads(out, parse_constant=reject)
+
+
+def test_non_finite_or_structured_ids_are_invalid_requests() -> None:
+    """CL-16: never echo non-scalar or boolean ids (NaN/Infinity: parse error, CL-14)."""
+    for rid in (b'{"a":1}', b"[1]", b"true"):
+        resp = _strict(b'{"jsonrpc":"2.0","id":' + rid + b',"method":"ping"}\n')
+        assert resp["id"] is None
+        assert resp["error"]["code"] == -32600
+
+
+def test_batches_scalars_and_wrong_version_get_invalid_request() -> None:
+    """CL-16: an addressable request is never left unanswered."""
+    for raw in (b'[{"jsonrpc":"2.0","id":1,"method":"ping"}]\n', b"[]\n", b"7\n", b'"x"\n'):
+        resp = _strict(raw)
+        assert resp["id"] is None
+        assert resp["error"]["code"] == -32600
+    resp = _strict(b'{"jsonrpc":"1.0","id":3,"method":"ping"}\n')
+    assert resp["id"] == 3
+    assert resp["error"]["code"] == -32600
+    assert handle_line(b'{"jsonrpc":"1.0","method":"ping"}\n') is None

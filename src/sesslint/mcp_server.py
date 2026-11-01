@@ -49,6 +49,7 @@ user; exposure equals the CLI's own).
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, BinaryIO
 
 from sesslint._version import CLI_VERSION
@@ -429,13 +430,33 @@ def _dispatch_modern(request_id: Any, method: str, params: Any) -> dict[str, Any
     return _error(request_id, _E_METHOD_NOT_FOUND, "method not found")
 
 
+def _valid_id(request_id: Any) -> bool:
+    """JSON-RPC 2.0 id: string, null, or a finite number (never bool/NaN/inf)."""
+    if request_id is None or isinstance(request_id, str):
+        return True
+    if isinstance(request_id, bool):
+        return False
+    if isinstance(request_id, int):
+        return True
+    return isinstance(request_id, float) and math.isfinite(request_id)
+
+
 def _dispatch(message: Any) -> dict[str, Any] | None:
     """Route one decoded JSON-RPC message; None → no response (notification)."""
-    if not isinstance(message, dict) or message.get("jsonrpc") != _JSONRPC_VERSION:
-        return None  # cannot even identify an id — spec: drop silently
-    method = message.get("method")
-    request_id = message.get("id")
+    if not isinstance(message, dict):
+        # Batches (removed in MCP 2025-06-18) and bare scalars are not
+        # requests: answer once with Invalid Request rather than leave a
+        # waiting client hanging (JSON-RPC 2.0 §5, §6).
+        return _error(None, _E_INVALID_REQUEST, "invalid request")
     has_id = "id" in message
+    request_id = message.get("id")
+    if not _valid_id(request_id):
+        return _error(None, _E_INVALID_REQUEST, "invalid request id")
+    if message.get("jsonrpc") != _JSONRPC_VERSION:
+        if has_id:
+            return _error(request_id, _E_INVALID_REQUEST, "invalid request")
+        return None  # not addressable — drop silently
+    method = message.get("method")
 
     if not isinstance(method, str):
         if has_id:

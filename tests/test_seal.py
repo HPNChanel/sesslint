@@ -605,3 +605,16 @@ def test_cli_check_seal_unencodable_path_exits_2(
     assert code == 2
     assert "seal failed" in capsys.readouterr().err
     assert not ledger.exists() or ledger.read_bytes() == b""
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "1e400", '"\\ud800"'])
+def test_cli_seal_verify_non_canonical_extra_field_is_divergence(
+    tmp_path: Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CL-16: a value canonical JSON cannot encode is tampering, not a crash."""
+    ledger = tmp_path / "ledger.jsonl"
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
+    capsys.readouterr()
+    line = ledger.read_text().strip()
+    ledger.write_text(line[:-1] + ', "x": ' + value + "}\n")
+    assert seal.verify_ledger(ledger)[1]["kind"] == "malformed-line"  # type: ignore[index]
