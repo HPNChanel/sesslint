@@ -1663,7 +1663,9 @@ def create_parser() -> argparse.ArgumentParser:
         help="[read-only] Print ready-to-merge agent hook snippets (never writes config).",
         description=(
             "[read-only] Print ready-to-merge settings.json hook blocks for "
-            "the documented SessionStart/PreCompact recipes. Print-only by "
+            "the documented SessionStart, PreCompact, PostCompact, and "
+            "SessionEnd recipes (each runs 'sesslint hook --output "
+            "claude-json' with an explicit timeout). Print-only by "
             "permanent design — SessLint never writes agent configuration."
         ),
     )
@@ -1698,9 +1700,11 @@ def create_parser() -> argparse.ArgumentParser:
             "[read-only] Reads one JSON hook payload from stdin (Claude Code "
             "contract: session_id, transcript_path, cwd, hook_event_name), "
             "resolves the transcript file, and runs the event-appropriate "
-            "integrity check. Prints one content-free line and exits 0 "
-            "(advisory) — or 1 when --fail-on gates on findings. Exit 2 is "
-            "never emitted: hook checks never block the agent."
+            "integrity check. Prints one content-free line (or JSON per "
+            "--output) and exits 0 (advisory) — or 1 when --fail-on gates "
+            "on findings. Exit 2 is never emitted: hook checks never block "
+            "the agent. SessionStart with source startup/clear skips "
+            "without opening the transcript."
         ),
     )
     hook_parser.add_argument(
@@ -1717,6 +1721,17 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Emit sesslint.hook-result/v1 JSON instead of the one-line form",
+    )
+    hook_parser.add_argument(
+        "--output",
+        choices=["line", "json", "claude-json"],
+        default=None,
+        help=(
+            "Output form (default: line; --json is the same as --output "
+            "json, and --output wins when both are given). 'claude-json' "
+            "emits one Claude Code hook-protocol object: a systemMessage "
+            "when findings exist, '{}' when healthy or skipped"
+        ),
     )
     hook_parser.add_argument(
         "--fail-on",
@@ -2427,10 +2442,10 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             format=None if fmt in (None, "auto") else fmt,
             fail_on=getattr(args, "fail_on", None),
         )
-        if getattr(args, "json", False):
-            print(hook_result.to_json())
-        else:
-            print(hook_result.line())
+        hook_output = getattr(args, "output", None) or (
+            "json" if getattr(args, "json", False) else "line"
+        )
+        print(hook_result.render(hook_output))
         return hook_result.exit_code
 
     if args.command == "mcp":

@@ -10,8 +10,10 @@ are copy-paste recipes you own.
 
 ## Claude Code hooks
 
-> Verified against the Claude Code hooks reference (SessionStart, PreCompact)
-> as of 2026-09. Hook contracts can drift between releases — if a recipe here
+> Verified against the Claude Code
+> [hooks reference](https://code.claude.com/docs/en/hooks) (SessionStart
+> sources, PreCompact, PostCompact, SessionEnd budget, JSON output fields,
+> exit codes, `timeout`) as of 2026-10. Hook contracts can drift between releases — if a recipe here
 > stops matching your runtime, treat it as community-verified and check the
 > upstream docs before filing an issue.
 
@@ -22,10 +24,10 @@ Claude Code fires hooks at lifecycle points where SessLint adds value:
 
 | Hook | When it fires | What SessLint adds |
 | :--- | :--- | :--- |
-| `SessionStart` | Session begins, is resumed, or is cleared | Warn the agent if the session file is already corrupt *before* it resumes into a broken ledger. |
+| `SessionStart` | Session is resumed, compacted, or forked (`resume`/`compact`/`fork`; `startup`/`clear` open a fresh transcript and are skipped) | Warn the user — and the model — if the session file is already corrupt *before* it resumes into a broken ledger. |
 | `PreCompact` | Before transcript compaction | Warn if compaction input is structurally damaged (orphan pairs, torn records) so the summary isn't built on a broken graph. |
 | `PostCompact` | After transcript compaction | Catch compaction-boundary faults (SL108/SL205 classes) immediately, while the boundary is fresh. |
-| `SessionEnd` | Session ends (clear, logout, prompt exit) | Flag secret-shaped material persisted in the transcript (SL009) at the exact moment the file stops growing — per-session instead of a monthly audit. |
+| `SessionEnd` | Session ends (clear, logout, prompt exit) | Flag secret-shaped material persisted in the transcript (SL009) at the exact moment the file stops growing — per-session instead of a monthly audit. Transcripts above 32 MiB are skipped (`too-large-for-hook`). |
 
 ### Exit-code contract
 
@@ -62,20 +64,62 @@ Contract:
   secrets at the moment the file stops growing); every other event —
   including unknown names, for forward-compat — runs the full integrity
   check.
-- **Output**: `sesslint hook[<event>]: ok` | `findings=N top=<code>` |
-  `skipped (<reason>)`. `--json` emits `sesslint.hook-result/v1`
-  (`schemas/sesslint.hook-result.v1.json`).
+- **Fast skips**: `SessionStart` with payload `source` `startup` or
+  `clear` skips as `fresh-session` *before* the transcript path is
+  touched — a brand-new session has no durable state to check.
+  `SessionEnd` skips transcripts larger than 32 MiB as
+  `too-large-for-hook` (a stat, no read) so the sweep cannot overrun the
+  hook timeout; run `sesslint check --select SL009 <transcript>` offline
+  for those.
+- **Output** (`--output`, default `line`):
+  - `line`: `sesslint hook[<event>]: ok` | `findings=N top=<code>` |
+    `skipped (<reason>)`.
+  - `json` (or the older `--json`): `sesslint.hook-result/v1`
+    (`schemas/sesslint.hook-result.v1.json`). `--output` wins when both
+    are given.
+  - `claude-json`: one Claude Code hook-protocol object — see below.
 - **Exit codes**: `0` always — findings included — unless `--fail-on`
   gates them (`--fail-on warning` exits `1` on any finding, `--fail-on
   error` on error/fatal findings only; default `never`). `2` is never
   emitted in v1: none of the mapped events are blocking-capable, so a
-  merge error cannot wedge the agent.
+  merge error cannot wedge the agent. Malformed payloads — including
+  pathologically nested JSON — skip as `malformed-payload` with exit `0`.
 - `transcript_path` is untrusted input: resolved literally (no glob, no
   shell), must be an existing regular file. Missing/nonexistent paths
   skip cleanly.
 - Caveat from the vendor docs: `transcript_path` can lag the in-flight
   turn. The check guards *durable* state — the on-disk record — which is
   exactly what a later resume reads back.
+
+### `--output claude-json`
+
+Claude Code adds a `SessionStart` hook's plain-text stdout to the
+model's context, so the default `line` output is seen by the model but
+rarely by the user. `--output claude-json` speaks the hook JSON protocol
+instead — exactly one object on stdout:
+
+| Verdict | Object |
+| :--- | :--- |
+| `findings` | `{"systemMessage": "..."}` — a user-visible warning: event, finding count, top code, and a fixed next step (`sesslint check <transcript>` then `sesslint repair --dry-run <transcript>`; for SL009-only results, rotate the credential and run `sesslint check --select SL009 <transcript>`). On `SessionStart` it also carries `hookSpecificOutput` (`hookEventName: "SessionStart"`, `additionalContext`): one content-free sentence telling the model that earlier context may be damaged. |
+| `ok` | `{}` — nothing shown, nothing added to the model's context. |
+| `skipped` | `{}` — silent, whatever the reason. |
+
+The object never carries `continue`, `decision`, or `stopReason`, so it
+cannot stop or block anything. `<transcript>` is a literal placeholder:
+the payload's `transcript_path` is never echoed.
+
+Per-event behavior in Claude Code (per the hooks reference):
+
+| Event | What Claude Code does with the object |
+| :--- | :--- |
+| `SessionStart` | Shows `systemMessage` to the user; adds `additionalContext` to the model's context before the first prompt. |
+| `PreCompact` | Shows `systemMessage` to the user. |
+| `PostCompact`, `SessionEnd` | Discards JSON output fields (only `terminalSequence` is honored), so the message reaches Claude Code's debug log only. These recipes still run the check — useful with `--fail-on` in scripts — but are not a user-visible channel today. |
+
+Claude Code reads stdout JSON on every exit code and, when it parses,
+lets the JSON decide the outcome — so a `--fail-on` exit `1` does not
+change what Claude Code shows. Keep `--fail-on` for `line`/`json`
+consumers (CI, wrappers).
 
 ### Recipes
 

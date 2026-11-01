@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sesslint.dev/schemas/sesslint.hook-result/v1",
   "title": "SessLint Hook Result Format v1",
-  "description": "Content-free result emitted by `sesslint hook --json` (agent-hooks T-01): the event, verdict, skip/findings reason, per-code finding counts, and hash-truncated session identifier. Carries no payload values — hook stdout may be injected into agent context.",
+  "description": "Content-free result emitted by `sesslint hook --json` / `--output json` (agent-hooks T-01): the event, verdict, skip/findings reason, per-code finding counts, and hash-truncated session identifier. Carries no payload values — hook stdout may be injected into agent context.",
   "type": "object",
   "required": [
     "event",
@@ -24,7 +24,7 @@
     },
     "reason": {
       "type": "string",
-      "description": "Outcome reason: clean, findings-present, detection-failed, or a skip reason (malformed-payload, payload-too-large, no-transcript-path, transcript-not-found, io-error, usage-error, internal-error)."
+      "description": "Outcome reason: clean, findings-present, detection-failed, or a skip reason (malformed-payload, payload-too-large, no-transcript-path, transcript-not-found, io-error, usage-error, internal-error, fresh-session, too-large-for-hook)."
     },
     "findings_by_code": {
       "type": "object",

@@ -11,6 +11,13 @@ Snippets are content-free by construction: hook commands reference
 shell plumbing. Output is deterministic modulo the optional binary
 path interpolation (bare ``sesslint`` by default — PATH requirement is
 documented).
+
+Claude Code recipes (W1-7 / B11) use ``--output claude-json`` so findings
+reach the user as a ``systemMessage`` and a healthy session stays silent;
+the SessionStart matcher is ``resume|compact|fork`` (a ``startup`` or
+``clear`` session has no durable transcript to check); every entry sets
+an explicit ``timeout`` in seconds — SessionEnd hooks otherwise share a
+1.5 s budget that a large SL009 sweep would overrun.
 """
 
 from __future__ import annotations
@@ -23,15 +30,28 @@ SCHEMA_VERSION = "sesslint.init-hooks/v1"
 
 _CLAUDE_TARGET = "~/.claude/settings.json (hooks section)"
 
+# Per-entry hook timeouts in seconds (Claude Code ``timeout`` field). The
+# SessionEnd value raises that event's shared 1.5 s budget and must stay
+# within the documented 60 s ceiling; SessionStart/PreCompact bound how long
+# Claude's first response or a compaction can wait; PostCompact runs
+# asynchronously, so it can afford the longest bound.
+SESSIONSTART_TIMEOUT_S: int = 30
+PRECOMPACT_TIMEOUT_S: int = 30
+POSTCOMPACT_TIMEOUT_S: int = 60
+SESSIONEND_TIMEOUT_S: int = 30
+
 _CLAUDE_SESSIONSTART_BLOCK: dict[str, Any] = {
     "hooks": {
         "SessionStart": [
             {
-                "matcher": "startup|resume|clear|compact|fork",
+                "matcher": "resume|compact|fork",
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "sesslint hook --event SessionStart || true",
+                        "command": (
+                            "sesslint hook --event SessionStart --output claude-json || true"
+                        ),
+                        "timeout": SESSIONSTART_TIMEOUT_S,
                     }
                 ],
             }
@@ -47,7 +67,8 @@ _CLAUDE_PRECOMPACT_BLOCK: dict[str, Any] = {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "sesslint hook --event PreCompact || true",
+                        "command": "sesslint hook --event PreCompact --output claude-json || true",
+                        "timeout": PRECOMPACT_TIMEOUT_S,
                     }
                 ],
             }
@@ -62,7 +83,8 @@ _CLAUDE_POSTCOMPACT_BLOCK: dict[str, Any] = {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "sesslint hook --event PostCompact || true",
+                        "command": "sesslint hook --event PostCompact --output claude-json || true",
+                        "timeout": POSTCOMPACT_TIMEOUT_S,
                     }
                 ],
             }
@@ -78,7 +100,8 @@ _CLAUDE_SESSIONEND_BLOCK: dict[str, Any] = {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "sesslint hook --event SessionEnd || true",
+                        "command": "sesslint hook --event SessionEnd --output claude-json || true",
+                        "timeout": SESSIONEND_TIMEOUT_S,
                     }
                 ],
             }
@@ -90,7 +113,9 @@ _CLAUDE_NOTE = (
     "Merge each block into ~/.claude/settings.json (user) or "
     ".claude/settings.json (project). Every command reads the hook "
     "payload from stdin (transcript_path, session_id) - no paths to "
-    "substitute. '|| true' keeps each recipe advisory; 'sesslint hook' "
+    "substitute. '--output claude-json' shows findings as a systemMessage "
+    "and stays silent when healthy; each entry sets a 'timeout' (seconds). "
+    "'|| true' keeps each recipe advisory; 'sesslint hook' "
     "never exits 2, so nothing can block the agent. To gate on findings, "
     "pass '--fail-on warning' (exits 1; drop '|| true' to surface it). "
     "Requires a SessLint release carrying 'sesslint hook' - check "
