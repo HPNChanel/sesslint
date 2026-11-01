@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { REPO_ROOT, commands, detectors, packageVersion, recipes } from "../../src/lib/repo";
-import { artifactName, classify, fallbackRelease } from "../../src/lib/releases";
+import { artifactName, classify, lookupRelease, normalizeGithubReleases } from "../../src/lib/releases";
 
 describe("repo facts", () => {
   it("counts detectors from docs/codes", () => {
@@ -26,6 +26,46 @@ describe("release assets", () => {
     expect(artifactName("0.4.0", "windows", "x86_64")).toBe("sesslint-0.4.0-windows-x86_64.exe");
     expect(classify("sesslint-0.4.0-macos-arm64")).toEqual({ kind: "binary", os: "macos", arch: "arm64" });
     expect(classify("sesslint-0.4.0-linux-x86_64.sigstore.json").kind).toBe("signature");
-    expect(fallbackRelease("0.4.0").assets.filter((a) => a.kind === "binary")).toHaveLength(3);
+    expect(classify("sha256sums.txt").kind).toBe("checksum");
+  });
+
+  it("distinguishes draft-only, prerelease, unpublished and unavailable release facts", () => {
+    const releases = normalizeGithubReleases([
+      { tag_name: "v0.5.0", html_url: "https://example.test/draft", published_at: null, draft: true, prerelease: false, assets: [] },
+      { tag_name: "v0.5.0-rc.1", html_url: "https://example.test/rc", published_at: "2026-10-24T00:00:00Z", draft: false, prerelease: true, assets: [] },
+    ]);
+    expect(releases).toHaveLength(1);
+    expect(lookupRelease("0.5.0-rc.1", releases).availability).toBe("prerelease");
+    expect(lookupRelease("0.5.0", releases)).toEqual({ availability: "unpublished", release: null });
+    expect(lookupRelease("0.5.0", null)).toEqual({ availability: "unknown", release: null });
+  });
+
+  it("does not invent a missing signature or asset URL", () => {
+    const [release] = normalizeGithubReleases([{ tag_name: "v0.2.0", html_url: "https://example.test/0.2.0", published_at: "2026-10-01T00:00:00Z", draft: false, prerelease: false, assets: [{ name: "sha256sums.txt", browser_download_url: "https://example.test/sums", size: 12 }] }]);
+    expect(release?.assets).toEqual([expect.objectContaining({ name: "sha256sums.txt", kind: "checksum" })]);
+    expect(release?.assets.some((asset) => asset.kind === "signature")).toBe(false);
+  });
+
+  it("does not attach an unrelated signature to a binary", () => {
+    const [release] = normalizeGithubReleases([
+      {
+        tag_name: "v0.2.0",
+        html_url: "https://example.test/0.2.0",
+        published_at: "2026-10-01T00:00:00Z",
+        draft: false,
+        prerelease: false,
+        assets: [
+          { name: "sesslint-0.2.0-linux-x86_64", browser_download_url: "https://example.test/bin", size: 12 },
+          { name: "different-file.sigstore.json", browser_download_url: "https://example.test/sig", size: 12 },
+        ],
+      },
+    ]);
+    const binary = release?.assets.find((asset) => asset.kind === "binary");
+    const signatures = new Map(
+      release?.assets
+        .filter((asset) => asset.kind === "signature")
+        .map((asset) => [asset.name.replace(/\.(sigstore\.json|asc)$/, ""), asset]),
+    );
+    expect(binary && signatures.get(binary.name)).toBeUndefined();
   });
 });

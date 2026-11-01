@@ -1,24 +1,26 @@
 // Atom feed of released versions, built from CHANGELOG.md.
 import type { APIRoute } from "astro";
-import { released } from "../lib/changelog";
 import { escapeHtml, inline } from "../lib/markdown";
-import { site } from "../lib/site";
+import { publishedSite, site } from "../lib/site";
 import { absolute, asset } from "../i18n";
 
-export const GET: APIRoute = () => {
-  const rels = released(site().releases);
-  const updated = rels[0]?.date ? `${rels[0].date}T00:00:00Z` : "1970-01-01T00:00:00Z";
+export const GET: APIRoute = async () => {
+  const publication = await publishedSite();
+  const published = new Map(publication.releases.map((release) => [release.version, release]));
+  const rels = site().releases.filter((r) => !r.unreleased && published.has(r.version));
+  const updated = published.get(rels[0]?.version ?? "")?.publishedAt ?? "1970-01-01T00:00:00Z";
   const entries = rels
     .map((r) => {
       const url = absolute(asset(`/changelog/${r.version}/`));
       const html = r.sections
         .map((s) => `<h3>${s.kind}</h3><ul>${s.entries.map((e) => `<li>${inline(e.markdown)}</li>`).join("")}</ul>`)
         .join("");
+      const publishedAt = published.get(r.version)?.publishedAt ?? "1970-01-01T00:00:00Z";
       return `  <entry>
     <id>${url}</id>
     <title>SessLint v${r.version}</title>
     <link href="${url}"/>
-    <updated>${r.date ?? "1970-01-01"}T00:00:00Z</updated>
+    <updated>${publishedAt}</updated>
     <content type="html">${escapeHtml(html)}</content>
   </entry>`;
     })

@@ -1,9 +1,8 @@
 ---
 // Order summary. Static page: the order comes from the query string and is
 // priced in the browser by the same quote() used on /pricing. Collects no
-// personal data. Goes live once PUBLIC_CHECKOUT_* URLs are set at build.
-// Upgrades need the single-use code from the Plus receipt email (?code=…);
-// it is forwarded to the provider, which validates and redeems it.
+// personal data. Provider links remain inert even when PUBLIC_CHECKOUT_* is set.
+// Upgrade/gift previews are blocked; query parameters never authorize credit.
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import { href, t, type Lang } from "../i18n";

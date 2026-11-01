@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Website: distinguish published downloads from candidate documentation and
+  previews; unavailable release metadata no longer creates speculative download
+  links. Signature and provenance instructions describe the selected asset set.
+- CI: name the single-build Python wheel smoke according to its actual scope;
+  reproducible builds and complete installed acceptance remain separate gates.
+
+### Changed
+
+- Website: describe the planned Plus/Max v1 packs and per-major updates without
+  offering unimplemented gifts, upgrade credits or unconnected payment flows.
+
 ### Added
+
+- Website: optional HTTPS account navigation for recovering existing purchases;
+  an unconfigured account service remains hidden and checkout stays closed.
+- Website: a separate Cloudflare Static Assets candidate configuration.
 
 - CI: optional Windows artifact acceptance on standard hosted runners, covering
   offline wheel installs, the standalone EXE and both supported PowerShell

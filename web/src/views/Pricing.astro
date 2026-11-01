@@ -24,12 +24,6 @@ const jsonLd = {
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Linux, macOS, Windows",
   url: absolute(href(lang, "/")),
-  offers: TIER_ORDER.map((id) => ({
-    "@type": "Offer",
-    name: `SessLint ${d.pricing.names[id]}`,
-    price: (TIERS[id].priceCents / 100).toFixed(2),
-    priceCurrency: "USD",
-  })),
 };
 const labels = {
   buy: d.pricing.buy,
@@ -58,10 +52,6 @@ const labels = {
           <label><input type="radio" name="own" value="max" />{d.pricing.names.max}</label>
         </div>
       </fieldset>
-      <label class="switch">
-        <input type="checkbox" name="gift" role="switch" aria-describedby="gift-hint" />
-        <span>{d.pricing.gift} 🎁</span>
-      </label>
       <p class="hint mute" id="gift-hint">{d.pricing.giftHint}</p>
     </div>
 
@@ -142,7 +132,6 @@ const labels = {
     const L = JSON.parse(controls.dataset.labels ?? "{}") as Record<string, string>;
     const checkout = controls.dataset.checkout ?? "/checkout";
     const download = controls.dataset.download ?? "/download";
-    const giftBox = controls.querySelector<HTMLInputElement>("input[name=gift]");
     const STORE = "sl-owned";
 
     const read = (): { owned: TierId; gift: boolean } => {
@@ -155,12 +144,12 @@ const labels = {
           owned = null;
         }
       }
-      return { owned: isTierId(owned) ? owned : "free", gift: qs.get("gift") === "1" };
+      return { owned: isTierId(owned) ? owned : "free", gift: false };
     };
 
     const render = () => {
       const owned = (controls.querySelector<HTMLInputElement>("input[name=own]:checked")?.value ?? "free") as TierId;
-      const gift = giftBox?.checked ?? false;
+      const gift = false;
       for (const card of document.querySelectorAll<HTMLElement>("[data-receipt]")) {
         const tier = card.dataset.receipt as TierId;
         const q = quote(tier, owned, gift);
@@ -191,7 +180,7 @@ const labels = {
           cta.textContent = owned === "free" ? (L.free ?? "") : (L.covered ?? "");
           cta.href = download;
         } else if (!q.allowed) {
-          cta.textContent = tier === owned ? (L.owned ?? "") : (L.covered ?? "");
+          cta.textContent = q.reason === "proof-required" ? (L.upgrade ?? "") : tier === owned ? (L.owned ?? "") : (L.covered ?? "");
           cta.setAttribute("aria-disabled", "true");
           cta.removeAttribute("href");
         } else {
@@ -223,7 +212,6 @@ const labels = {
     const init = read();
     const radio = controls.querySelector<HTMLInputElement>(`input[name=own][value=${init.owned}]`);
     if (radio) radio.checked = true;
-    if (giftBox) giftBox.checked = init.gift;
     controls.addEventListener("change", render);
     render();
   }

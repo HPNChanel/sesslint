@@ -1,12 +1,15 @@
 ---
 import { asset, href, t, type Lang } from "../i18n";
 import { REPO_URL } from "../lib/repo";
-import { site } from "../lib/site";
+import { publishedSite, site } from "../lib/site";
+import { accountUrl } from "../lib/account";
+const account = accountUrl(import.meta.env.PUBLIC_ACCOUNT_URL);
 
 type Props = { lang: Lang; route: string };
 const { lang } = Astro.props;
 const d = t(lang);
-const { latest, build } = site();
+const { build } = site();
+const { latest } = await publishedSite();
 
 const cols = [
   {
@@ -14,6 +17,7 @@ const cols = [
     links: [
       { label: d.nav.download, url: href(lang, "/download") },
       { label: d.nav.pricing, url: href(lang, "/pricing") },
+      ...(account ? [{ label: d.nav.account, url: account }] : []),
       { label: d.nav.changelog, url: href(lang, "/changelog") },
       { label: d.nav.rules, url: href(lang, "/rules") },
     ],
@@ -49,7 +53,7 @@ const cols = [
       <nav aria-label={c.title}>
         <p class="kicker">{c.title}</p>
         <ul>
-          {c.links.map((l) => <li><a href={l.url}>{l.label}</a></li>)}
+          {c.links.map((l) => <li><a data-account-link={account && l.url === account ? true : undefined} href={l.url}>{l.label}</a></li>)}
         </ul>
       </nav>
     ))}
@@ -57,7 +61,7 @@ const cols = [
   <div class="tmux mono">
     <div class="wrap tmux-row">
       <span class="seg-a"><span class="dot" aria-hidden="true"></span> exit 0</span>
-      <span>v{latest?.version ?? "0.0.0"}</span>
+      {latest && <span data-release-version>v{latest.version}</span>}
       <span class="hide-sm">{d.footer.built} {build}</span>
       <span class="hide-sm">{lang}</span>
       <span class="push hide-sm" data-theme-label>auto</span>

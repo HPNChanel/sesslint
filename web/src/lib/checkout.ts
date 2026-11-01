@@ -1,7 +1,7 @@
 // Checkout seam. Payments are not live until PUBLIC_CHECKOUT_<SKU> (e.g.
 // PUBLIC_CHECKOUT_MAX, PUBLIC_CHECKOUT_GIFT_PLUS) is set to the provider's
-// hosted checkout URL at build time; until then /checkout shows the order
-// summary with a "payments open soon" state. No UI changes are needed.
+// hosted checkout URL at build time. Until a provider integration is accepted,
+// all configured links stay inert and /checkout shows the unavailable state.
 //
 // Upgrades have no checkout link of their own. A public "$40 Max" link would
 // sell Max at the upgrade price to anyone, so an upgrade is the target tier's
@@ -57,7 +57,10 @@ export function checkoutConfig(env: Record<string, string | undefined>): Checkou
 }
 
 export function isLive(cfg: CheckoutConfig): boolean {
-  return Object.keys(cfg.links).length > 0;
+  // This static site has no accepted payment/provider integration yet.
+  // Keep configured URLs inert rather than turning an environment typo into a sale path.
+  void cfg;
+  return false;
 }
 
 export type Resolution =
@@ -74,6 +77,7 @@ export function isUpgrade(q: Quote): boolean {
 /** Where "Continue to secure checkout" goes for this quote, if anywhere. */
 export function resolveCheckout(q: Quote, cfg: CheckoutConfig, rawCode: string | null = null): Resolution {
   if (!q.allowed || !q.sku) return { kind: "blocked" };
+  if (!isLive(cfg)) return { kind: "not-live" };
   if (!isUpgrade(q)) {
     const url = cfg.links[q.sku as Sku];
     return url ? { kind: "ready", url } : { kind: "not-live" };

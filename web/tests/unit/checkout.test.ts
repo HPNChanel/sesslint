@@ -51,26 +51,14 @@ describe("upgrade codes", () => {
 });
 
 describe("resolveCheckout", () => {
-  it("first purchases and gifts use their own links", () => {
-    expect(resolveCheckout(quote("max"), live)).toEqual({ kind: "ready", url: "https://pay.example/max?ref=site" });
-    expect(resolveCheckout(quote("max", "plus", true), live)).toEqual({ kind: "ready", url: "https://pay.example/gift-max" });
-    expect(resolveCheckout(quote("plus", "free", true), live)).toEqual({ kind: "not-live" });
+  it("keeps every payment path inert and blocks direct gift quotes", () => {
+    expect(resolveCheckout(quote("max"), live)).toEqual({ kind: "not-live" });
+    expect(resolveCheckout(quote("max", "plus", true), live)).toEqual({ kind: "blocked" });
   });
 
-  it("an upgrade needs a well-formed code before it goes anywhere", () => {
+  it("never treats a formatted code as proof of a Plus purchase", () => {
     const up = quote("max", "plus");
-    expect(resolveCheckout(up, live)).toEqual({ kind: "need-code" });
-    expect(resolveCheckout(up, live, "   ")).toEqual({ kind: "need-code" });
-    expect(resolveCheckout(up, live, "HELLO")).toEqual({ kind: "bad-code" });
-  });
-
-  it("an upgrade goes to the Max checkout with the code pre-filled", () => {
-    const r = resolveCheckout(quote("max", "plus"), live, "slup 7k2q m9xh 4tra");
-    expect(r.kind).toBe("ready");
-    const url = new URL(r.kind === "ready" ? r.url : "");
-    expect(url.origin + url.pathname).toBe("https://pay.example/max");
-    expect(url.searchParams.get("ref")).toBe("site");
-    expect(url.searchParams.get(DEFAULT_CODE_PARAM)).toBe(CODE);
+    expect(resolveCheckout(up, live, CODE)).toEqual({ kind: "blocked" });
   });
 
   it("refused quotes never resolve, even with a code", () => {
@@ -78,7 +66,7 @@ describe("resolveCheckout", () => {
     expect(resolveCheckout(quote("free"), live)).toEqual({ kind: "blocked" });
   });
 
-  it("an upgrade is not live without a Max link", () => {
-    expect(resolveCheckout(quote("max", "plus"), checkoutConfig({}), CODE)).toEqual({ kind: "not-live" });
+  it("keeps a supplied checkout URL inert until integration acceptance", () => {
+    expect(isLive(live)).toBe(false);
   });
 });
