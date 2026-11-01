@@ -364,6 +364,49 @@ def _run_detector_checks(
     )
 
 
+def _vet_supplied_plan(
+    supplied: RepairPlan,
+    *,
+    source_path: StrPath,
+    source_bytes: bytes,
+    source_hash: str,
+    acknowledge_side_effects: bool,
+) -> str | None:
+    """Vet a caller-supplied plan against the source; return a failure detail or None.
+
+    Failure details are closed vocabulary and never echo plan or source content.
+    """
+    from sesslint.repair.errors import PlanSourceMismatch
+    from sesslint.repair.vetting import vet_plan
+
+    try:
+        _, src_events, stream_findings, src_fmt = _load_artifact_events(source_path, source_bytes)
+        src_name = (
+            Path(source_path).name
+            if source_path and not str(source_path).startswith("<")
+            else str(source_path)
+        )
+        findings = list(stream_findings) + _run_detector_checks(
+            src_events,
+            source_path=src_name,
+            profile_name=supplied.profile,
+            adapter=src_fmt,
+        )
+        vet_plan(
+            supplied,
+            findings=findings,
+            events=src_events,
+            source_hash=source_hash,
+            acknowledge_side_effects=acknowledge_side_effects,
+            input_format=src_fmt,
+        )
+    except PlanSourceMismatch:
+        return "plan-source-mismatch"
+    except Exception:
+        return "plan-not-derived-from-source"
+    return None
+
+
 def _header_accounted(
     source_header: SessionHeader | None,
     output_header: SessionHeader | None,
@@ -481,6 +524,23 @@ def verify(
         binding_failure = manifest_err_detail
 
     ack_effective = acknowledge_side_effects
+    plan_vetting_failure: str | None = None
+    if plan_obj is not None:
+        # A supplied plan is untrusted: its fingerprint is a plain digest anyone
+        # can recompute, and its declared loss/lossy fields are self-reported.
+        # Require every step to be one the planner derives from this source now
+        # (B20), exactly as repair does before applying a supplied plan.
+        plan_vetting_failure = _vet_supplied_plan(
+            plan_obj,
+            source_path=source_path,
+            source_bytes=source_bytes,
+            source_hash=actual_source_hash,
+            acknowledge_side_effects=acknowledge_side_effects,
+        )
+        if plan_vetting_failure is not None:
+            plan_obj = None
+            plan_dict = None
+
     if plan_path is None and bound_profile is not None:
         # Reconstruct plan from source events and manifest policy/profile (RVW-024)
         target_policy = (
@@ -573,7 +633,7 @@ def verify(
             name="plan_fingerprint",
             ok=False,
             detail=(
-                "invalid-plan-json"
+                (plan_vetting_failure or "invalid-plan-json")
                 if plan_path is not None
                 else (binding_failure or "plan-missing")
             ),

@@ -116,6 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`header-mismatch`). Previously only `session_id` was compared and such
   output could still pass when the manifest declared the degraded
   revalidation.
+- `verify --plan`: a supplied plan is now vetted against the source exactly
+  as `repair --apply-plan` vets one (B20). Its `source_hash` must match the
+  source (`plan-source-mismatch`) and every step must be one the planner
+  derives for that source (`plan-not-derived-from-source`). Before, a plan
+  whose fingerprint was merely self-consistent was replayed as given, so its
+  self-reported `lossy`/`loss` fields could make a lossy transformation
+  verify as `repaired-lossless`.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and

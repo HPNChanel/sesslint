@@ -1355,3 +1355,62 @@ def test_output_stream_findings_fail_audit(tmp_path: Path, mutate: Any) -> None:
     assert c_map["transformation_audit"].ok is False
     assert c_map["transformation_audit"].detail.startswith("output-unaccounted-records")
     assert verdict.ok is False
+
+
+def _rebind_plan(pln: Path, man: Path, mutate: Any) -> None:
+    """Rewrite the supplied plan, refingerprint it, and rebind the manifest."""
+    plan_dict = json.loads(pln.read_text(encoding="utf-8"))
+    mutate(plan_dict)
+    plan_dict.pop("fingerprint", None)
+    plan_dict["fingerprint"] = compute_plan_fingerprint(plan_dict)
+    pln.write_text(json.dumps(plan_dict), encoding="utf-8")
+    manifest_data = json.loads(man.read_text(encoding="utf-8"))
+    manifest_data["plan_fingerprint"] = plan_dict["fingerprint"]
+    manifest_data["actions"] = [
+        {"detail": f"step {s['seq']}", "kind": s["recipe"]} for s in plan_dict["steps"]
+    ]
+    man.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+
+def test_supplied_plan_not_derived_from_source_fails(tmp_path: Path) -> None:
+    """A self-consistent supplied plan must still be one the planner derives."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+    lines = src.read_bytes().split(b"\n")
+    _rewrite_output(out, man, lines[0] + b"\n" + lines[1] + b"\n")
+
+    def _swap_step(plan_dict: dict[str, Any]) -> None:
+        plan_dict["steps"] = [
+            {
+                "loss": {},
+                "lossy": False,
+                "min_policy": "conservative",
+                "params": {},
+                "recipe": "terminal-suffix-discard",
+                "recipe_version": "1.0.0",
+                "seq": 0,
+                "target_finding_fp": "0" * 16,
+                "target_index": 1,
+            }
+        ]
+
+    _rebind_plan(pln, man, _swap_step)
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["plan_fingerprint"].ok is False
+    assert c_map["plan_fingerprint"].detail == "plan-not-derived-from-source"
+    assert c_map["transformation_audit"].ok is False
+    assert verdict.ok is False
+
+
+def test_supplied_plan_source_hash_must_match(tmp_path: Path) -> None:
+    """A supplied plan bound to other source bytes fails check 2."""
+    src, pln, out, man = _write_ok_bundle(tmp_path)
+
+    def _rebind_source(plan_dict: dict[str, Any]) -> None:
+        plan_dict["source_hash"] = "0" * 64
+
+    _rebind_plan(pln, man, _rebind_source)
+    verdict = verify(source_path=src, plan_path=pln, output_path=out, manifest_path=man)
+    c_map = {c.name: c for c in verdict.checks}
+    assert c_map["plan_fingerprint"].detail == "plan-source-mismatch"
+    assert verdict.ok is False
