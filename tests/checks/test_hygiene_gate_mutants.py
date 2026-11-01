@@ -284,3 +284,86 @@ def test_overflow_marks_last_finding_with_suppressed_count() -> None:
         _feed(t2, PAT, line=i + 1, off=i * 100)
     out2 = t2.into_findings(path_str="p")
     assert "overflow" not in dict(out2[-1].evidence or {})
+
+
+def test_short_prefix_scan_visits_every_occurrence() -> None:
+    assert hy._short_prefix_present(b"anpm_ npm_ anpm_") is True
+    assert hy._short_prefix_present(b"anpm_ bnpm_ cnpm_") is False
+
+
+def test_feed_findings_carry_record_ordinal() -> None:
+    t = hy.SecretScanTracker()
+    t.feed(PAT, line_number=4, byte_offset=0, byte_end=len(PAT), record_ordinal=7)
+    (f,) = t.into_findings(path_str="p")
+    ev = dict(f.evidence or {})
+    assert ev["record_ordinal"] == 7
+    assert ev["byte_offset"] == 0
+    assert ev["byte_end"] == len(PAT)
+    assert f.source.line == 4
+    assert f.source.record_id is None
+    assert f.message == "Persisted secret-shaped material in record on line 4"
+
+
+AWS = b"AKIA" + b"ABCDEFGHIJKLMNOP"
+
+
+def test_findings_ordering_line_then_ordinal_then_family() -> None:
+    t = hy.SecretScanTracker()
+    # (line, byte_offset, ordinal, payload) in deliberately scrambled feed order
+    rows = [
+        (5, None, None, PAT, "a"),
+        (None, 0, 0, PAT, "b"),
+        (1, None, None, PAT, "c"),
+        (2, 10, 1, PAT, "d"),
+        (2, 20, None, PAT, "e"),
+        (3, 30, None, PAT, "f"),
+        (3, 40, -1, AWS, "g"),
+    ]
+    for line, off, ordinal, payload, _tag in rows:
+        t.feed(
+            payload,
+            line_number=line,
+            byte_offset=off,
+            byte_end=None if off is None else off + len(payload),
+            record_ordinal=ordinal,
+        )
+    out = t.into_findings(path_str="p")
+    got = [(f.source.line, dict(f.evidence or {}).get("record_ordinal")) for f in out]
+    assert got == [
+        (None, 0),  # missing line sorts first
+        (1, None),
+        (2, None),  # missing ordinal sorts before a real ordinal on the same line
+        (2, 1),
+        # same line, missing ordinal vs ordinal -1: tie -> family id order
+        (3, -1),  # aws-access-key
+        (3, None),  # github-pat-classic
+        (5, None),
+    ]
+    assert [dict(f.evidence or {})["secret_family"] for f in out[4:6]] == [
+        "aws-access-key",
+        "github-pat-classic",
+    ]
+
+
+def test_digest_cap_boundary() -> None:
+    n = hy.MAX_DIGESTS_PER_FINDING
+
+    def record(count: int) -> bytes:
+        parts = [b"ghp_" + (b"%02d" % i) + b"b2C3d4E5" * 4 + b"x1" for i in range(count)]
+        return b" ".join(parts)
+
+    t = hy.SecretScanTracker()
+    _feed(t, record(n))
+    (f,) = t.into_findings(path_str="p")
+    ev = dict(f.evidence or {})
+    assert ev["occurrence_count"] == n
+    assert len(ev["match_sha256"]) == n
+    assert "truncated" not in ev
+
+    t = hy.SecretScanTracker()
+    _feed(t, record(n + 1))
+    (f,) = t.into_findings(path_str="p")
+    ev = dict(f.evidence or {})
+    assert ev["occurrence_count"] == n + 1
+    assert len(ev["match_sha256"]) == n
+    assert ev["truncated"] is True
