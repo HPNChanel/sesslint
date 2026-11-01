@@ -203,3 +203,12 @@ def test_benchmark_breach_nonzero_even_with_valid_reference(
     result = run_benchmark(records=100, time_budget=0.0, mem_budget=0.0)
     assert result == 1
     capsys.readouterr()
+
+
+def test_generated_fixture_bytes_are_host_independent(tmp_path: Path) -> None:
+    """The generator emits CRLF on every OS, matching the protected 250k fixture."""
+    bench_file = tmp_path / "fixture.jsonl"
+    generate_benchmark_file(bench_file, num_records=50)
+    data = bench_file.read_bytes()
+    assert data.count(b"\n") == 51
+    assert data.count(b"\r\n") == 51
