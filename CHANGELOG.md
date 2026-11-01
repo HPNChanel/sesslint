@@ -109,6 +109,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MCP: a tool path the OS cannot stat (for example a name longer than the
+  file-system limit, or one under an unreadable directory) is now an
+  `io-error` tool result instead of terminating the stdio server, and
+  requests carrying `NaN`/`Infinity` literals are parse errors instead of
+  being echoed back as invalid JSON.
 - `verify`: the transformation audit now fails when the repaired output
   carries records the replay does not account for (an unparseable line or a
   duplicate-key record, reported as `output-unaccounted-records`) or a header

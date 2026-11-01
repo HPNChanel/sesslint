@@ -277,7 +277,12 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     fmt_arg = arguments.get("format")
     fmt = None if fmt_arg in (None, "auto") else fmt_arg
 
-    if not path.exists():
+    try:
+        exists = path.exists()
+    except (OSError, ValueError):
+        # e.g. ENAMETOOLONG or EACCES: Path.exists only absorbs ENOENT-like errors.
+        return _tool_err("io-error")
+    if not exists:
         return _tool_err("io-error: path does not exist")
 
     try:
@@ -482,6 +487,11 @@ def _dispatch(message: Any) -> dict[str, Any] | None:
     return _error(request_id, _E_METHOD_NOT_FOUND, "method not found")
 
 
+def _reject_constant(token: str) -> Any:
+    """Reject NaN/Infinity: they are not JSON and could not be echoed back as JSON."""
+    raise ValueError("non-finite JSON constant")
+
+
 def handle_line(raw: bytes) -> bytes | None:
     """Process one newline-delimited request; returns response line or None."""
     if len(raw) > MAX_MCP_LINE_BYTES:
@@ -492,7 +502,7 @@ def handle_line(raw: bytes) -> bytes | None:
     if not raw:
         return None
     try:
-        message = json.loads(raw.decode("utf-8"))
+        message = json.loads(raw.decode("utf-8"), parse_constant=_reject_constant)
     except (UnicodeDecodeError, ValueError, RecursionError):
         return (json.dumps(_error(None, _E_PARSE, "parse error"), sort_keys=True) + "\n").encode(
             "utf-8"
