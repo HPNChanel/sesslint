@@ -47,7 +47,7 @@ from sesslint.finding import (
 from sesslint.secret_families import FAMILY_LITERALS as _FAMILY_LITERALS
 from sesslint.secret_families import SECRET_FAMILIES as _SECRET_FAMILIES
 
-SECRET_FAMILY_SET_VERSION: Final[int] = 4
+SECRET_FAMILY_SET_VERSION: Final[int] = 5
 MAX_SECRET_FINDINGS_PER_FILE: Final[int] = 64
 MAX_DIGESTS_PER_FINDING: Final[int] = 16
 
@@ -108,6 +108,7 @@ _GATE_LITERALS: Final[tuple[bytes, ...]] = (
     b"AIza",  # google-api-key
     b"glpat-",  # gitlab-pat
     b"sbp_",  # supabase-pat
+    b"sig=",  # azure-sas-signature
     b"eyJ",  # jwt (real JWT headers are always exact-case ``eyJ``)
     b"-----BEGIN",  # private-key-block
 )

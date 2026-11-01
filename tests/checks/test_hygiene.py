@@ -488,3 +488,23 @@ def test_vendor_prefix_families_require_token_boundary() -> None:
     # Mid-token after '-'/'_' inside a longer blob is also noise.
     assert scan(b'{"tok": "part-' + key + b'"}') == []
     assert scan(b'{"tok": "part_' + key + b'"}') == []
+
+
+def test_azure_sas_signature_family() -> None:
+    """``sig=`` with a 43-unit base64 HMAC-SHA256 plus pad is an Azure SAS
+    signature: raw, percent-encoded, or after a JSON ``\\u0026`` escape."""
+
+    def families(record: bytes) -> list[str]:
+        t = SecretScanTracker()
+        t.feed(record, line_number=1, byte_offset=0, byte_end=len(record), record_ordinal=0)
+        return sorted(f.evidence["secret_family"] for f in t.into_findings(path_str="x.jsonl"))
+
+    sig = b"SYNTHETICsasSIGNATURE0123456789abcdef+/ABCD"
+    url = b"https://synthetic.blob.core.windows.net/c/b?sv=2024-11-04&sr=b"
+    assert families(b'{"u":"' + url + b"&sig=" + sig + b'="}') == ["azure-sas-signature"]
+    assert families(b'{"u":"' + url + b"&sig=" + sig + b'%3D"}') == ["azure-sas-signature"]
+    assert families(b'{"u":"' + url + b"\\u0026sig=" + sig + b'="}') == ["azure-sas-signature"]
+    # Mid-token key, short value, or a longer run are not SAS signatures.
+    assert families(b'{"u":"' + url + b"&xsig=" + sig + b'="}') == []
+    assert families(b'{"u":"' + url + b"&sig=" + sig[:-1] + b'="}') == []
+    assert families(b'{"u":"' + url + b"&sig=" + sig + b'A="}') == []

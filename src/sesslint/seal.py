@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from sesslint._canonical_codec import canonical_json_bytes
+from sesslint.errors import SesslintError
 
 StrPath = str | os.PathLike[str]
 
@@ -80,9 +81,18 @@ def sha256_file(path: StrPath) -> str:
 
 
 def _entry_hash(entry: Mapping[str, Any]) -> str:
-    """SHA-256 over the canonical JSON of every field except ``entry_sha256``."""
+    """SHA-256 over the canonical JSON of every field except ``entry_sha256``.
+
+    Raises ``SealError`` when a field cannot be canonical JSON (a lone
+    surrogate from undecodable filename bytes, a non-finite float, hostile
+    nesting), so sealing and verification fail closed in the seal domain.
+    """
     preimage = {k: v for k, v in entry.items() if k != "entry_sha256"}
-    return hashlib.sha256(canonical_json_bytes(preimage, newline=False)).hexdigest()
+    try:
+        canonical = canonical_json_bytes(preimage, newline=False)
+    except (SesslintError, ValueError, RecursionError) as err:
+        raise SealError("entry fields cannot be serialized as canonical JSON") from err
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def build_entry(
@@ -246,7 +256,18 @@ def verify_lines(lines: list[tuple[int, str]]) -> dict[str, Any] | None:
                 "seq": seq,
                 "detail": "prev_sha256 does not bind to the previous entry hash",
             }
-        if entry["entry_sha256"] != _entry_hash(entry):
+        try:
+            recomputed = _entry_hash(entry)
+        except SealError:
+            # Extra fields that cannot be canonicalized (NaN, lone
+            # surrogates) can never hash-verify: a divergence, not a crash.
+            return {
+                "kind": "malformed-line",
+                "line": line_no,
+                "seq": seq,
+                "detail": "entry fields cannot be canonicalized",
+            }
+        if entry["entry_sha256"] != recomputed:
             return {
                 "kind": "hash-mismatch",
                 "line": line_no,

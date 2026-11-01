@@ -97,6 +97,17 @@ SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
         0,
     ),
     (
+        # Azure SAS ``sig=``: base64 HMAC-SHA256 = 43 base64 units + one pad,
+        # raw or percent-encoded (%2B, %2F, %3D). The key may follow a JSON
+        # ``\u0026`` escape of ``&``. Group 1 is the signature only.
+        "azure-sas-signature",
+        re.compile(
+            rb"(?:(?<![A-Za-z0-9_-])|(?<=\\u0026))sig="
+            rb"((?:[A-Za-z0-9+/]|%2[BbFf]){43}(?:=|%3[Dd]))(?![A-Za-z0-9+/=%])"
+        ),
+        1,
+    ),
+    (
         "jwt",
         re.compile(
             _TOKEN_BOUNDARY + rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
@@ -151,6 +162,7 @@ FAMILY_LITERALS: Final[dict[str, tuple[bytes, ...]]] = {
     "npm-token": (b"npm_",),
     "huggingface-token": (b"hf_",),
     "supabase-pat": (b"sbp_",),
+    "azure-sas-signature": (b"sig=",),
     "jwt": (b"eyJ",),
     "private-key-block": (b"PRIVATE KEY-----",),
 }
