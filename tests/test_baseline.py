@@ -12,6 +12,7 @@ Missing or malformed baselines fail closed.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,32 @@ def test_load_wrong_schema_fails(tmp_path: Path) -> None:
     bad.write_text('{"schema_version":"other/v9","fingerprints":[]}')
     with pytest.raises(BaselineError, match="schema_version"):
         load_baseline(bad)
+
+
+# Interpreters whose JSON decoder recurses reject this as too deep; others parse
+# it and reject the non-object document. Either way it is a BaselineError.
+_DEEP_REJECTED = "nesting is too deep|must contain a JSON object|requires a"
+
+
+def test_load_deeply_nested_fails_closed(tmp_path: Path) -> None:
+    bad = tmp_path / "deep.json"
+    bad.write_text("[" * 100_000 + "]" * 100_000)
+    with pytest.raises(BaselineError, match=_DEEP_REJECTED):
+        load_baseline(bad)
+    with pytest.raises(BaselineError, match=_DEEP_REJECTED):
+        upgrade_baseline(bad, None)
+
+
+def test_check_deeply_nested_baseline_is_a_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "deep.json"
+    bad.write_text("[" * 100_000 + "]" * 100_000)
+    src = Path(__file__).resolve().parents[1] / "fixtures" / "canonical" / "minimal.json"
+    assert main(["check", str(src), "--baseline", str(bad), "-f", "json"]) == 2
+    out = capsys.readouterr()
+    assert "INTERNAL_ERROR" not in out.out + out.err
+    assert re.search(_DEEP_REJECTED, out.out + out.err)
 
 
 def test_file_role_normalizes_spelling() -> None:

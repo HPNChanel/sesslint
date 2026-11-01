@@ -45,7 +45,11 @@ class CanonicalCodec(Protocol):
         ...
 
     def canonical_json_bytes(self, obj: Any, *, newline: bool = False) -> bytes:
-        """Serialize an object or mapping to deterministic UTF-8 JSON bytes."""
+        """Serialize an object or mapping to deterministic UTF-8 JSON bytes.
+
+        Unlike this method, ``sesslint.determinism.canonical_json_bytes`` defaults to
+        ``newline=True``.
+        """
         ...
 
     def content_identity_bytes(self, event: SessionEvent) -> bytes:
@@ -77,7 +81,11 @@ class PurePythonCanonicalCodec:
     codec_version: Final[str] = CODEC_INTERFACE_VERSION
 
     def canonical_json_bytes(self, obj: Any, *, newline: bool = False) -> bytes:
-        """Serialize an object to deterministic UTF-8 JSON bytes."""
+        """Serialize an object to deterministic UTF-8 JSON bytes.
+
+        Unlike this method, ``sesslint.determinism.canonical_json_bytes`` defaults to
+        ``newline=True``.
+        """
         target = obj.to_dict() if hasattr(obj, "to_dict") and callable(obj.to_dict) else obj
         try:
             normalized = self._normalize(target)

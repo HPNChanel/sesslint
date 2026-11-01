@@ -24,6 +24,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
+from sesslint.io import read_limit_plus_one
 from sesslint.outcome.contract import NumberRangeError as NumberRangeError
 from sesslint.outcome.contract import (
     check_number_length,
@@ -263,7 +264,7 @@ def load_snapshot(
         raise ValueError("max_bytes must be a positive integer")
     target = Path(path)
     with target.open("rb") as stream:
-        data = stream.read(max_bytes + 1)
+        data = read_limit_plus_one(stream, max_bytes)
     if len(data) > max_bytes:
         raise SnapshotError(f"{role} snapshot exceeds {max_bytes} bytes")
     try:

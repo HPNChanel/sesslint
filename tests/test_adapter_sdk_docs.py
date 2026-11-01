@@ -87,3 +87,46 @@ def test_file_only_cited_paths_exist() -> None:
     content = SDK_DOC.read_text(encoding="utf-8")
     for rel in re.findall(r"`((?:tests|scripts|src|fixtures|docs)/[\w./-]+)`", content):
         assert (REPO_ROOT / rel.rstrip("/")).exists(), f"cited path not found: {rel}"
+
+
+def _format_registries() -> set[tuple[str, str]]:
+    """Module-level literals that enumerate every vendor adapter format id.
+
+    Such a table is a registration site: a new adapter missing from it is
+    refused, unlisted, or mislabeled. Found by AST, not by a curated list,
+    so a new hard-coded table cannot hide from the SDK checklist.
+    """
+    from sesslint.adapters.detect import FORMAT_CANONICAL, SUPPORTED_FORMATS
+
+    vendor_ids = set(SUPPORTED_FORMATS) - {FORMAT_CANONICAL}
+    found: set[tuple[str, str]] = set()
+    for path in sorted(SRC.rglob("*.py")):
+        rel = path.relative_to(SRC).as_posix()
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
+                name, value = node.targets[0].id, node.value
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.value is not None
+            ):
+                name, value = node.target.id, node.value
+            else:
+                continue
+            literals = {
+                c.value
+                for c in ast.walk(value)
+                if isinstance(c, ast.Constant) and isinstance(c.value, str)
+            }
+            if vendor_ids <= literals:
+                found.add((rel, name))
+    return found
+
+
+def test_every_format_registry_is_in_the_checklist() -> None:
+    """Every hard-coded adapter-format table is cited as ``file.py:SYMBOL``."""
+    registries = _format_registries()
+    assert registries, "expected at least ADAPTER_VERSIONS to enumerate the formats"
+    cited = {(rel.removeprefix("src/sesslint/"), sym) for rel, sym in _citations()}
+    missing = sorted(f"{rel}:{sym}" for rel, sym in registries - cited)
+    assert not missing, f"ADAPTER_SDK.md does not cite registration sites: {missing}"

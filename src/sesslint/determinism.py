@@ -18,6 +18,8 @@ def canonical_json_bytes(obj: Any, *, newline: bool = True) -> bytes:
     """Serialize an object or dictionary to deterministic canonical UTF-8 JSON bytes.
 
     Unifies canonical JSON serialization across SessLint into a single primitive.
+    Unlike this wrapper, ``sesslint._canonical_codec.canonical_json_bytes`` defaults to
+    ``newline=False``.
     Guarantees:
     - Keys are sorted lexicographically (sort_keys=True)
     - Compact separators without whitespace (",", ":")
@@ -55,7 +57,7 @@ def repeat_hash(data: bytes | str | Any) -> str:
     elif isinstance(data, str):
         raw_bytes = data.encode("utf-8")
     else:
-        raw_bytes = canonical_json_bytes(data)
+        raw_bytes = canonical_json_bytes(data, newline=True)
 
     return hashlib.sha256(raw_bytes).hexdigest()
 

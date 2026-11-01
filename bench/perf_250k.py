@@ -40,7 +40,9 @@ from sesslint.io import iter_events  # noqa: E402
 def generate_benchmark_file(path: Path, num_records: int) -> None:
     """Generate deterministic synthetic ~100MB session JSONL file with num_records events.
 
-    Uses fixed random seed 0x026 per TASK-026 specification.
+    Uses fixed random seed 0x026 per TASK-026 specification. Lines end in CRLF on
+    every host (the protected 250k fixture hashed by ``measure_installed.py`` was
+    produced on Windows), so the bytes no longer depend on the host OS.
     """
     rng = random.Random(0x026)
     pad_chars = "abcdefghijklmnopqrstuvwxyz0123456789-_"
@@ -48,7 +50,7 @@ def generate_benchmark_file(path: Path, num_records: int) -> None:
     padding_pool = ["".join(rng.choices(pad_chars, k=260)) for _ in range(100)]
 
     batch_size = 5000
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\r\n") as f:
         # Write canonical header
         f.write(
             '{"created_at":"2026-09-06T00:00:00Z","schema_version":"sesslint.session/v1",'

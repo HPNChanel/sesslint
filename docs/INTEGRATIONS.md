@@ -4,8 +4,10 @@
 
 Claude hook recipes match `resume|compact|fork` at SessionStart and set a
 five-second timeout for PostCompact and SessionEnd. `hook --format claude-json`
-emits a root `systemMessage` containing only outcome and code counts. The CLI's
-own JSON result remains available through `--json`; recipes stay advisory.
+emits a root `systemMessage` containing only outcome and code counts when there
+is something to report: findings, or a skip (budget, refusal, or error). A
+clean pass prints `{}`, so nothing is shown. The CLI's own JSON result remains
+available through `--json`; recipes stay advisory.
 
 `hook --init --agent codex` prints Codex `hooks.json` recipes for the same four
 events. They use the `systemMessage` envelope at SessionStart, PreCompact, and
@@ -153,8 +155,8 @@ Notes:
   existing transcript state — a post-compaction re-injection deserves the
   same integrity check as a resume. `startup` and `clear` begin a new
   transcript, so there is nothing durable to check yet. With
-  `--format claude-json` the result arrives as a content-free
-  `systemMessage`.
+  `--format claude-json` findings and skips arrive as a content-free
+  `systemMessage`; a clean pass prints `{}` and shows nothing.
 - `PostCompact` and `SessionEnd` set `"timeout": 5` (seconds), so a slow
   check delays compaction or exit by at most five seconds.
 - `PostCompact` carries no `matcher` (fires unconditionally after every
@@ -211,8 +213,8 @@ What differs from Claude Code, and how the recipes handle it:
 | Topic | Codex behavior | Recipe choice |
 | :--- | :--- | :--- |
 | Trust | Hooks are on by default, but new or changed hooks are skipped until you review and trust them in `/hooks`. A project `.codex/hooks.json` loads only when that project's `.codex/` layer is trusted. | Open `/hooks` after merging the blocks, and again after editing a command. |
-| SessionStart output | Plain stdout is added to the model's context as developer context. | `--format claude-json` prints a content-free `systemMessage`, which Codex shows as a warning instead, even for a clean pass. |
-| Compaction output | Plain stdout from `PreCompact` and `PostCompact` is ignored. A compaction also queues `SessionStart` with source `compact` for the next turn. | The same `systemMessage` envelope keeps the result visible. `SessionStart` skips `compact`, so one compaction shows two messages, not three. |
+| SessionStart output | Plain stdout is added to the model's context as developer context. | `--format claude-json` prints a content-free `systemMessage` for findings or a skip, which Codex shows as a warning instead. A clean pass prints `{}`, so nothing is shown. |
+| Compaction output | Plain stdout from `PreCompact` and `PostCompact` is ignored. A compaction also queues `SessionStart` with source `compact` for the next turn. | The same `systemMessage` envelope keeps findings and skips visible. `SessionStart` skips `compact`, so one compaction shows at most two messages, not three. |
 | SessionEnd | Advisory. The only end reason is currently `other`. The timeout defaults to 1 s and allows at most 3 s; a timeout or error is reported as a hook failure. | No `matcher`, `"timeout": 3`, and the SL009 pass reads at most 1 MiB. |
 | Windows | `commandWindows` replaces `command` on Windows. Hooks run through the session's shell, which on Windows may be PowerShell or `cmd.exe`; without one, Codex falls back to `%COMSPEC% /C` on Windows and `$SHELL -lc` elsewhere. | `commandWindows` repeats the command without the POSIX fallback, so it runs unchanged in either Windows shell (see the notes). |
 | Exit codes | For these four events, a non-zero exit is reported as a failed hook, and Codex reads stdout only on exit `0`. Nothing stops the session or the compaction except JSON `"continue": false`. | `sesslint hook` exits `0` on findings and skips, and its JSON never sets `continue`. |

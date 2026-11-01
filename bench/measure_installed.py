@@ -150,7 +150,7 @@ def main():
     for index in range(args.runs):
         receipt = args.receipt.with_name(args.receipt.stem + f"-{index + 1}.json").resolve()
         command = [
-            str(args.python.resolve()),
+            str(args.python.absolute()),
             "-I",
             str(Path(__file__).resolve()),
             "--child",
@@ -183,7 +183,7 @@ def main():
                 artifact=args.artifact.name,
                 artifact_sha256=digest(args.artifact) if args.artifact.is_file() else None,
                 input_sha256=digest(args.input) if args.input.is_file() else None,
-                python=str(args.python.resolve()),
+                python=str(args.python.absolute()),
                 platform=platform.platform(),
                 exit_code=returncode,
             )

@@ -115,6 +115,9 @@ _ATOMIC_TEST_HOOKS: dict[str, Any] = {
 }
 
 
+_OUTPUT_MODE_MASK: Final[int] = 0o644
+
+
 def _sync_dir(path: Path) -> None:
     """Best-effort parent directory fsync across platforms (guarded for Windows)."""
     if os.name == "nt":
@@ -984,7 +987,9 @@ def execute(
                 pre_rename_hook=active_pre_rename,
                 sync_dir=True,
                 overwrite=False,
-                mode=stat.S_IMODE(source_p.stat().st_mode),
+                # Mirror the source's read bits but never its write-for-others,
+                # execute or setuid/setgid/sticky bits.
+                mode=stat.S_IMODE(source_p.stat().st_mode) & _OUTPUT_MODE_MASK,
             )
             output_replaced = True
 

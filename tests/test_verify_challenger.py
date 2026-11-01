@@ -33,6 +33,7 @@ import pytest
 from sesslint.cli import main
 from sesslint.repair.fingerprint import compute_plan_fingerprint
 from sesslint.verify import verify
+from tests.utils.derived_plan import derived_steps
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO_ROOT / "fixtures" / "verify"
@@ -77,19 +78,7 @@ def _build_valid_bundle(dest_dir: Path) -> tuple[Path, Path, Path, Path]:
         "policy": "conservative",
         "profile": "neutral",
         "source_hash": src_hash,
-        "steps": [
-            {
-                "loss": {},
-                "lossy": False,
-                "min_policy": "conservative",
-                "params": {},
-                "recipe": "identical-duplicate-collapse",
-                "recipe_version": "1.0.0",
-                "seq": 0,
-                "target_finding_fp": "c1f7a29e10b42d3a",
-                "target_index": 1,
-            }
-        ],
+        "steps": derived_steps(src_p, recipe="identical-duplicate-collapse"),
         "version": "sesslint.plan/v1",
     }
     plan_fp = compute_plan_fingerprint(plan_dict)

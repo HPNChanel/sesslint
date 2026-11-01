@@ -47,7 +47,9 @@ from sesslint.finding import (
 from sesslint.secret_families import FAMILY_LITERALS as _FAMILY_LITERALS
 from sesslint.secret_families import SECRET_FAMILIES as _SECRET_FAMILIES
 
-SECRET_FAMILY_SET_VERSION: Final[int] = 4
+# v6 (CL-19): tighter ``bearer-token`` (20+ chars, placeholder veto) and
+# ``google-api-key`` (at most 35 chars after ``AIza``, not continued).
+SECRET_FAMILY_SET_VERSION: Final[int] = 6
 MAX_SECRET_FINDINGS_PER_FILE: Final[int] = 64
 MAX_DIGESTS_PER_FINDING: Final[int] = 16
 
@@ -108,6 +110,7 @@ _GATE_LITERALS: Final[tuple[bytes, ...]] = (
     b"AIza",  # google-api-key
     b"glpat-",  # gitlab-pat
     b"sbp_",  # supabase-pat
+    b"sig=",  # azure-sas-signature
     b"eyJ",  # jwt (real JWT headers are always exact-case ``eyJ``)
     b"-----BEGIN",  # private-key-block
 )
@@ -292,6 +295,18 @@ def _looks_like_placeholder(value: bytes) -> bool:
     return v in _PLACEHOLDER_VALUES
 
 
+def _looks_like_bearer_placeholder(token: bytes) -> bool:
+    """Documentation placeholders after ``Bearer`` (family set v6).
+
+    Ports the placeholder half of salvage/wf-bfc-6's bearer value check: a
+    ``your-``/``your_``/``your.`` prefix or a known placeholder word. The
+    uniform-character rule of :func:`_looks_like_placeholder` is deliberately
+    not applied here: ``Bearer AAAA...`` is a pinned v5 true positive.
+    """
+    v = token.lower()
+    return v.startswith((b"your-", b"your_", b"your.")) or v in _PLACEHOLDER_VALUES
+
+
 @dataclass(slots=True)
 class _HitAgg:
     """Per-(record, family) aggregation: count, distinct digests, max length."""
@@ -403,6 +418,10 @@ class SecretScanTracker:
                 secret_bytes = raw_bytes[match.start(value_group) : match.end(value_group)]
                 if family_id == "generic-credential-assignment" and _looks_like_placeholder(
                     secret_bytes
+                ):
+                    continue
+                if family_id == "bearer-token" and _looks_like_bearer_placeholder(
+                    raw_bytes[match.start(1) : match.end(1)]
                 ):
                     continue
                 key: _HitKey = (
