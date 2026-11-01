@@ -1,13 +1,12 @@
 ---
 // Order summary. Static page: the order comes from the query string and is
 // priced in the browser by the same quote() used on /pricing. Collects no
-// personal data. Goes live once PUBLIC_CHECKOUT_* URLs are set at build.
-// Upgrades need the single-use code from the Plus receipt email (?code=…);
-// it is forwarded to the provider, which validates and redeems it.
+// personal data. Provider links remain inert even when PUBLIC_CHECKOUT_* is set.
+// Upgrade/gift previews are blocked; query parameters never authorize credit.
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import { href, t, type Lang } from "../i18n";
-import { checkoutConfig, isLive } from "../lib/checkout";
+import { checkoutConfig, isLive, publicConfig } from "../lib/checkout";
 import { REPO_URL } from "../lib/repo";
 
 type Props = { lang: Lang };
@@ -32,7 +31,7 @@ const strings = {
 <Base lang={lang} route="/checkout" title={d.checkout.title} section="CHECKOUT" noindex>
   <PageHead kicker="checkout --dry-run" title={d.checkout.title} />
   <div class="wrap grid">
-    <section class="order card" aria-labelledby="order-title" data-order data-strings={JSON.stringify(strings)} data-config={JSON.stringify(cfg)}>
+    <section class="order card" aria-labelledby="order-title" data-order data-strings={JSON.stringify(strings)} data-config={JSON.stringify(publicConfig(cfg))}>
       <h2 class="mono order-title" id="order-title">{d.checkout.lede}</h2>
       <dl class="rows mono">
         <div class="row"><dt data-o-billto>{d.pricing.billTo}</dt><dd data-o-who>{d.pricing.you}</dd></div>

@@ -1,12 +1,6 @@
-// One-time purchase pricing. Pure and browser-safe: the same function
-// renders the static receipts at build time and recomputes them live when a
-// visitor toggles "I already own" or "This is a gift".
-//
-// Rules:
-//   - upgrade (not a gift, target ranks above owned): pay the difference;
-//   - same or lower tier for yourself: not purchasable (already owned);
-//   - gift: always full price, never credited, any paid tier;
-//   - Free is never sold or gifted.
+// Reference prices for the static preview, never authoritative purchase proof.
+// Gift and upgrade checkout remain blocked pending accepted provider integration.
+// Same/lower tier is not purchasable; Free is never sold or gifted.
 import { TIERS, type TierId } from "../data/tiers";
 
 export type Line = { kind: "item" | "credit"; tier: TierId; cents: number };
@@ -20,7 +14,7 @@ export type Quote = {
   dueCents: number;
   lines: Line[];
   allowed: boolean;
-  reason: "ok" | "free" | "already-owned" | "not-giftable";
+  reason: "ok" | "free" | "already-owned" | "not-giftable" | "gift-disabled" | "proof-required";
   /**
    * Checkout SKU, e.g. "max", "upgrade_plus_max", "gift_plus". Upgrade SKUs
    * have no link of their own: checkout.ts sends them to the target tier's
@@ -52,8 +46,7 @@ export function quote(target: TierId, owned: TierId = "free", gift = false): Quo
   if (t.priceCents === 0) return { ...base, allowed: false, reason: "free", dueCents: 0 };
 
   if (gift) {
-    if (!t.giftable) return { ...base, allowed: false, reason: "not-giftable" };
-    return { ...base, sku: `gift_${target}` };
+    return { ...base, allowed: false, reason: "gift-disabled", dueCents: 0 };
   }
 
   if (t.rank <= o.rank) {
@@ -61,14 +54,9 @@ export function quote(target: TierId, owned: TierId = "free", gift = false): Quo
   }
 
   if (o.priceCents > 0) {
-    const credit = Math.min(o.priceCents, t.priceCents);
-    return {
-      ...base,
-      creditCents: credit,
-      dueCents: t.priceCents - credit,
-      lines: [...base.lines, { kind: "credit", tier: owned, cents: -credit }],
-      sku: `upgrade_${owned}_${target}`,
-    };
+    // A static query parameter is not purchase proof. Credit stays unavailable
+    // until a provider-side entitlement check is integrated.
+    return { ...base, allowed: false, reason: "proof-required", dueCents: 0 };
   }
 
   return { ...base, sku: target };

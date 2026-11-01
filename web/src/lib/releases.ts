@@ -1,6 +1,5 @@
-// Build-time GitHub Releases lookup for the Download page. Falls back to the
-// deterministic asset naming in scripts/package.py when the API is
-// unreachable (offline builds, rate limits) so the build never fails on it.
+// Build-time GitHub Releases lookup. Asset links are rendered only when
+// GitHub returned them for a non-draft release; URLs are never inferred.
 import { REPO_SLUG } from "./repo";
 
 export type Asset = {
@@ -19,15 +18,12 @@ export type ReleaseInfo = {
   publishedAt: string | null;
   url: string;
   assets: Asset[];
-  source: "github" | "fallback";
+  availability: "published" | "prerelease";
 };
-
-/** Platforms the release workflow builds (ubuntu-22.04, windows, macos). */
-const FALLBACK_PLATFORMS = [
-  { os: "linux", arch: "x86_64" },
-  { os: "windows", arch: "x86_64" },
-  { os: "macos", arch: "arm64" },
-] as const;
+export type ReleaseAvailability = "published" | "prerelease" | "unpublished" | "unknown";
+export type ReleaseLookup =
+  | { availability: "published" | "prerelease"; release: ReleaseInfo }
+  | { availability: "unpublished" | "unknown"; release: null };
 
 export function artifactName(version: string, os: string, arch: string): string {
   return `sesslint-${version}-${os}-${arch}${os === "windows" ? ".exe" : ""}`;
@@ -43,33 +39,70 @@ export function classify(name: string): Pick<Asset, "kind" | "os" | "arch"> {
   return { kind: "other" };
 }
 
-export function fallbackRelease(version: string): ReleaseInfo {
-  const tag = `v${version}`;
-  const dl = `https://github.com/${REPO_SLUG}/releases/download/${tag}`;
-  const names = [
-    ...FALLBACK_PLATFORMS.map((p) => artifactName(version, p.os, p.arch)),
-    `sesslint-${version}-starter-kit.zip`,
-    `sesslint-${version}-man.tar.gz`,
-    "sha256sums.txt",
-    "sesslint-provenance.intoto.jsonl",
-  ];
-  return {
-    tag,
-    version,
-    publishedAt: null,
-    url: `https://github.com/${REPO_SLUG}/releases/tag/${tag}`,
-    source: "fallback",
-    assets: names.map((name) => ({ name, url: `${dl}/${name}`, size: null, sha256: null, ...classify(name) })),
-  };
+export type GithubReleasePayload = { tag_name: string; html_url: string; published_at: string | null; draft: boolean; prerelease: boolean; assets: { name: string; browser_download_url: string; size: number; digest?: string | null }[] };
+
+type GithubResult = { available: true; releases: ReleaseInfo[] } | { available: false; releases: [] };
+let cache: Promise<GithubResult> | null = null;
+
+const isHttps = (v: unknown): v is string => {
+  if (typeof v !== "string") return false;
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+type GithubAssetPayload = GithubReleasePayload["assets"][number];
+
+function validAsset(a: unknown): a is GithubAssetPayload {
+  if (typeof a !== "object" || a === null) return false;
+  const x = a as Record<string, unknown>;
+  return typeof x.name === "string" && x.name !== "" && isHttps(x.browser_download_url) && typeof x.size === "number"
+    && (x.digest === undefined || x.digest === null || typeof x.digest === "string");
 }
 
-type GhAsset = { name: string; browser_download_url: string; size: number; digest?: string | null };
-type GhRelease = { tag_name: string; html_url: string; published_at: string | null; draft: boolean; assets: GhAsset[] };
+/**
+ * Fail closed on malformed metadata: a record counts only when it is
+ * explicitly `draft: false` with a boolean `prerelease`, a tag, HTTPS URLs
+ * and well-formed assets. Anything else is dropped rather than presented as
+ * a download. A non-array payload throws (the caller reports "unknown").
+ */
+function validRelease(r: unknown): r is GithubReleasePayload {
+  if (typeof r !== "object" || r === null) return false;
+  const x = r as Record<string, unknown>;
+  return x.draft === false && typeof x.prerelease === "boolean"
+    && typeof x.tag_name === "string" && /^v?\d+\.\d+\.\d+/.test(x.tag_name)
+    && isHttps(x.html_url)
+    && (x.published_at === null || typeof x.published_at === "string")
+    && Array.isArray(x.assets) && x.assets.every(validAsset);
+}
 
-let cache: Promise<ReleaseInfo[]> | null = null;
+/** Normalize only non-draft API records; prereleases remain distinct from published releases. */
+export function normalizeGithubReleases(data: unknown): ReleaseInfo[] {
+  if (!Array.isArray(data)) throw new TypeError("GitHub releases payload is not an array");
+  return data.filter(validRelease).map((r) => ({
+    tag: r.tag_name,
+    version: r.tag_name.replace(/^v/, ""),
+    publishedAt: r.published_at,
+    url: r.html_url,
+    availability: r.prerelease ? "prerelease" as const : "published" as const,
+    assets: r.assets.map((a) => ({
+      name: a.name, url: a.browser_download_url, size: a.size,
+      sha256: a.digest?.startsWith("sha256:") ? a.digest.slice(7) : null,
+      ...classify(a.name),
+    })).sort((x, y) => x.name.localeCompare(y.name)),
+  }));
+}
 
-async function fetchReleases(): Promise<ReleaseInfo[]> {
-  if (process.env.SESSLINT_WEB_OFFLINE === "1") return [];
+export function lookupRelease(version: string, releases: ReleaseInfo[] | null): ReleaseLookup {
+  if (releases === null) return { availability: "unknown", release: null };
+  const release = releases.find((r) => r.version === version);
+  return release ? { availability: release.availability, release } : { availability: "unpublished", release: null };
+}
+
+async function fetchReleases(): Promise<GithubResult> {
+  if (process.env.SESSLINT_WEB_OFFLINE === "1") return { available: false, releases: [] };
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "User-Agent": "sesslint-web-build",
@@ -81,41 +114,42 @@ async function fetchReleases(): Promise<ReleaseInfo[]> {
       headers,
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as GhRelease[];
-    return data
-      .filter((r) => !r.draft)
-      .map((r) => ({
-        tag: r.tag_name,
-        version: r.tag_name.replace(/^v/, ""),
-        publishedAt: r.published_at,
-        url: r.html_url,
-        source: "github" as const,
-        assets: r.assets
-          .map((a) => ({
-            name: a.name,
-            url: a.browser_download_url,
-            size: a.size,
-            sha256: a.digest?.startsWith("sha256:") ? a.digest.slice(7) : null,
-            ...classify(a.name),
-          }))
-          .sort((x, y) => x.name.localeCompare(y.name)),
-      }));
+    if (!res.ok) return { available: false, releases: [] };
+    const data: unknown = await res.json();
+    return { available: true, releases: normalizeGithubReleases(data) };
   } catch {
-    return [];
+    return { available: false, releases: [] };
   }
 }
 
-/** Published releases, newest first; [] when the API is unavailable. */
-export function githubReleases(): Promise<ReleaseInfo[]> {
+/** Actual non-draft GitHub releases, including prereleases, newest first. */
+export function githubReleases(): Promise<GithubResult> {
   cache ??= fetchReleases();
   return cache;
 }
 
-/** Release info for `version`, from GitHub when available, else synthesized. */
-export async function releaseFor(version: string): Promise<ReleaseInfo> {
-  const found = (await githubReleases()).find((r) => r.version === version);
-  return found ?? fallbackRelease(version);
+/** A changelog entry is not itself proof that GitHub published a release. */
+export async function releaseFor(version: string): Promise<ReleaseLookup> {
+  const result = await githubReleases();
+  return lookupRelease(version, result.available ? result.releases : null);
+}
+
+/** Evidence files a release actually lists, keyed for the verify commands. */
+export type VerificationEvidence = {
+  /** First binary; the cosign and slsa-verifier commands target it. */
+  binary: Asset | null;
+  checksum: Asset | null;
+  /** Sigstore bundle for `binary`. A detached `.asc` (GPG) signature is not one. */
+  sigstore: Asset | null;
+  provenance: Asset | null;
+};
+
+export function verificationEvidence(release: ReleaseInfo): VerificationEvidence {
+  const binary = release.assets.find((a) => a.kind === "binary" && a.os !== undefined) ?? null;
+  const checksum = release.assets.find((a) => a.kind === "checksum" && /^sha256sums\.txt$/i.test(a.name)) ?? null;
+  const sigstore = binary ? (release.assets.find((a) => a.name === `${binary.name}.sigstore.json`) ?? null) : null;
+  const provenance = release.assets.find((a) => a.kind === "provenance") ?? null;
+  return { binary, checksum, sigstore, provenance };
 }
 
 export function humanSize(bytes: number | null): string {

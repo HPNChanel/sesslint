@@ -7,11 +7,11 @@ import LedgerBlock from "../components/LedgerBlock.astro";
 import LiveRelease from "../components/LiveRelease.astro";
 import Receipt from "../components/Receipt.astro";
 import demo from "../data/demo.json";
-import { TIER_ORDER, TIERS } from "../data/tiers";
+import { TIER_ORDER } from "../data/tiers";
 import { absolute, href, t, type Lang } from "../i18n";
 import { released } from "../lib/changelog";
 import { DETECTOR_GROUPS, REPO_URL, commands, detectors, recipes } from "../lib/repo";
-import { site } from "../lib/site";
+import { publishedSite, site } from "../lib/site";
 import { termLines } from "../lib/term";
 
 type Props = { lang: Lang };
@@ -20,7 +20,8 @@ const d = t(lang);
 const h = d.home;
 const facts = site();
 const rel = released(facts.releases);
-const latest = facts.latest;
+const publication = await publishedSite();
+const latest = publication.latest;
 const rules = detectors();
 const groups = DETECTOR_GROUPS.map((g) => ({ ...g, items: rules.filter((r) => r.group === g.id) })).filter((g) => g.items.length);
 const nRecipes = recipes().length;
@@ -39,16 +40,10 @@ const jsonLd = {
   description: d.meta.description,
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Linux, macOS, Windows",
-  softwareVersion: latest?.version ?? facts.packageVersion,
+  softwareVersion: latest?.version,
   license: "https://www.apache.org/licenses/LICENSE-2.0",
   url: absolute(href(lang, "/")),
   codeRepository: REPO_URL,
-  offers: TIER_ORDER.map((id) => ({
-    "@type": "Offer",
-    name: `SessLint ${d.pricing.names[id]}`,
-    price: (TIERS[id].priceCents / 100).toFixed(2),
-    priceCurrency: "USD",
-  })),
 };
 ---
 

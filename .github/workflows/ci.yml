@@ -258,7 +258,9 @@ jobs:
           echo "Corrupt fixture ${{ matrix.fixture }} was correctly rejected by sesslint-check action."
 
   build-and-smoke:
-    name: Reproducible Build & Release Smoke
+    # Single-build wheel installation smoke. Reproducibility and the complete
+    # installed contract are separate release.yml gates; this name is not a receipt.
+    name: Python Build & Basic Wheel Smoke
     runs-on: ubuntu-latest
     needs: [test, offline-verification, action-dogfood]
     steps:

@@ -67,50 +67,36 @@ SITE_URL=https://sesslint.example npm run test:e2e
 
 ## Payments
 
-Payments are off until hosted checkout links are configured. With no links,
-`/checkout` shows the order and a "payments open soon" notice, and its button
-stays disabled. Set these repository variables (they are public URLs, not
-secrets) and re-run the workflow:
+The public site is a static preview. All provider links remain inert, including
+when `PUBLIC_CHECKOUT_*` variables are supplied; setting a URL does not activate
+payments. Plus is USD 9 and Max USD 49, perpetual for major v1 with 1.x updates.
+Pro pricing remains pending its pilot. These are reference prices, not receipts.
 
-| Variable | Checkout |
-| --- | --- |
-| `PUBLIC_CHECKOUT_PLUS` | Plus, $9 |
-| `PUBLIC_CHECKOUT_MAX` | Max, $49; also the upgrade target |
-| `PUBLIC_CHECKOUT_GIFT_PLUS` | Plus bought as a gift, $9 |
-| `PUBLIC_CHECKOUT_GIFT_MAX` | Max bought as a gift, $49 |
-| `PUBLIC_CHECKOUT_CODE_PARAM` | Query parameter that pre-fills a discount code. Default `checkout[discount_code]` (Lemon Squeezy). Stripe Payment Links: `prefilled_promo_code`. |
+The `own`, `gift` and `code` query parameters and local browser preferences are
+untrusted presentation input. They never prove ownership, authorize credit or
+activate checkout. Gifts and upgrades are explicitly blocked; there is no public
+USD 40 Max checkout. A syntactically valid legacy code cannot bypass that block.
 
-Only `https://` links are accepted. Pricing logic lives in `src/lib/pricing.ts`,
-link resolution in `src/lib/checkout.ts`; both are pure and unit-tested.
+`src/lib/pricing.ts` computes preview states; `src/lib/checkout.ts` enforces the
+inactive provider boundary. Any future activation requires accepted server-side
+identity, price, entitlement/refund and delivery integration plus separate
+release authorization. Private commerce implementation and credentials stay
+outside this public repository and the offline Python runtime.
 
-### Upgrade codes (Plus → Max for $40)
 
-The site is static and has no accounts, so it cannot know who owns Plus. The
-proof is a **single-use upgrade code** that only a Plus buyer receives. There
-is deliberately no standalone "$40 Max" link: anyone could use it.
+## Cloudflare static website and separate account
 
-Flow:
+The website stays static and public. Build with `SITE_URL` set to the intended
+HTTPS domain root for Cloudflare. `wrangler.static.jsonc` serves only `dist/`;
+no account API, paid ZIP or private service source belongs in this project.
 
-1. A customer buys Plus.
-2. The provider's `order_created` webhook (or equivalent) mints a code and
-   stores it as a discount on the provider:
-   - format `SLUP` + 12 Crockford base32 characters (`0-9 A-H J K M N P-T V-Z`),
-     60 random bits from a CSPRNG, e.g. `SLUP7K2QM9XH4TRA`;
-   - amount: a fixed $9.00 off (the Plus price);
-   - applies to the Max product only;
-   - one redemption in total, no expiry (the purchase is for life);
-   - linked to the Plus order, so it is revoked if that order is refunded.
-3. The Plus receipt email carries the code and the upgrade link:
-   `${SITE_URL}/checkout/?tier=max&own=plus&code=SLUP7K2QM9XH4TRA`
-   (Vietnamese: `${SITE_URL}/vi/checkout/?tier=max&own=plus&code=…`).
-4. The checkout page pre-fills the code, checks its format, and sends the buyer
-   to `PUBLIC_CHECKOUT_MAX` with the code in `PUBLIC_CHECKOUT_CODE_PARAM`.
-   Buyers who arrive via "I already own: Plus" on /pricing paste the code.
-5. The provider validates and redeems the code, charging $49 − $9 = $40. The
-   site never decides the price; a guessed or reused code is refused there.
-6. On the Max order, issue the Max license. The Plus license may stay active:
-   it is the same customer.
+Set `PUBLIC_ACCOUNT_URL=https://account.example.test/account` to show an account
+navigation link. This is a build-time HTTPS destination, not authentication or
+checkout activation. Empty means hidden. Credentials, query/fragment and paths
+other than `/account` are rejected; a bare origin is normalized to `/account`.
+The account service owns its API on its own origin. Do not proxy bearer tokens
+through this static site. The example domain is synthetic, not a deployment.
 
-A shared code transfers at most the $9 the buyer already paid, once, which
-is the same as gifting it. Support resends lost codes by replying to the Plus
-receipt; the site asks for no email.
+Local QA uses `SESSLINT_WEB_OFFLINE=1`; run check, test, build, docs, links and
+Chromium E2E sequentially. Test both an unset account URL and an explicitly
+configured synthetic URL. Payment buttons remain closed in both builds.

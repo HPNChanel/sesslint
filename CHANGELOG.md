@@ -7,8 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Website: distinguish published downloads from candidate documentation and
+  previews; unavailable release metadata no longer creates speculative download
+  links. Signature and provenance instructions describe the selected asset set.
+- Website: a detached `.asc` signature is no longer offered as a Sigstore
+  bundle in the Download page's `cosign` command or assets table.
+- Website: malformed GitHub release records (missing `draft`/`prerelease`
+  flags, non-HTTPS URLs, malformed assets) are dropped instead of being shown
+  as published downloads.
+- Website: the closed checkout page no longer embeds build-time
+  `PUBLIC_CHECKOUT_*` provider URLs in its HTML.
+- CI: name the single-build Python wheel smoke according to its actual scope;
+  reproducible builds and complete installed acceptance remain separate gates.
+
+### Changed
+
+- Website: describe the planned Plus/Max v1 packs and per-major updates without
+  offering unimplemented gifts, upgrade credits or unconnected payment flows.
+
 ### Added
 
+- Website: optional HTTPS account navigation for recovering existing purchases;
+  an unconfigured account service remains hidden and checkout stays closed.
+- Website: a separate Cloudflare Static Assets candidate configuration.
 - SL009 detects Azure Storage SAS signatures (`azure-sas-signature`): a
   `sig=` query parameter carrying a 43-character base64 HMAC-SHA256 plus pad,
   raw or percent-encoded, also after a JSON-escaped `&` (`\u0026`). A SAS URL

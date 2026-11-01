@@ -5,12 +5,13 @@ import LedgerBlock from "../components/LedgerBlock.astro";
 import LiveRelease from "../components/LiveRelease.astro";
 import { asset, t, type Lang } from "../i18n";
 import { released } from "../lib/changelog";
-import { site } from "../lib/site";
+import { publishedSite, site } from "../lib/site";
 
 type Props = { lang: Lang };
 const { lang } = Astro.props;
 const d = t(lang);
-const { releases, latest } = site();
+const { releases } = site();
+const { latest } = await publishedSite();
 const total = released(releases).length;
 const filters = [
   { id: "all", label: d.changelog.all },
