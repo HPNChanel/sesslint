@@ -152,6 +152,9 @@ def _load_v2(path: Path, raw: dict[str, Any]) -> frozenset[str]:
     return frozenset(keys)
 
 
+_TOO_DEEP = "JSON nesting is too deep"
+
+
 def load_baseline(path: Path) -> frozenset[str]:
     """Load a v1 or v2 baseline file into a validated key set.
 
@@ -168,6 +171,8 @@ def load_baseline(path: Path) -> frozenset[str]:
         raw: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         raise BaselineError(f"Cannot read baseline file {path}: {err}") from err
+    except RecursionError as err:
+        raise BaselineError(f"Cannot read baseline file {path}: {_TOO_DEEP}") from err
 
     if not isinstance(raw, dict):
         raise BaselineError(f"Baseline file {path} must contain a JSON object")
@@ -260,6 +265,8 @@ def upgrade_baseline(
         raw: Any = json.loads(baseline_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         raise BaselineError(f"Cannot read baseline file {baseline_path}: {err}") from err
+    except RecursionError as err:
+        raise BaselineError(f"Cannot read baseline file {baseline_path}: {_TOO_DEEP}") from err
     if not isinstance(raw, dict) or raw.get("schema_version") != BASELINE_SCHEMA_VERSION:
         raise BaselineError(
             f"--upgrade requires a {BASELINE_SCHEMA_VERSION!r} baseline, got {baseline_path}"

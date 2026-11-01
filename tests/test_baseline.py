@@ -94,6 +94,27 @@ def test_load_wrong_schema_fails(tmp_path: Path) -> None:
         load_baseline(bad)
 
 
+def test_load_deeply_nested_fails_closed(tmp_path: Path) -> None:
+    bad = tmp_path / "deep.json"
+    bad.write_text("[" * 100_000 + "]" * 100_000)
+    with pytest.raises(BaselineError, match="nesting is too deep"):
+        load_baseline(bad)
+    with pytest.raises(BaselineError, match="nesting is too deep"):
+        upgrade_baseline(bad, None)
+
+
+def test_check_deeply_nested_baseline_is_a_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "deep.json"
+    bad.write_text("[" * 100_000 + "]" * 100_000)
+    src = Path(__file__).resolve().parents[1] / "fixtures" / "canonical" / "minimal.json"
+    assert main(["check", str(src), "--baseline", str(bad), "-f", "json"]) == 2
+    out = capsys.readouterr()
+    assert "INTERNAL_ERROR" not in out.out + out.err
+    assert "nesting is too deep" in out.out + out.err
+
+
 def test_file_role_normalizes_spelling() -> None:
     assert file_role(r"C:\work\proj\sess\run.jsonl") == "sess/run.jsonl"
     assert file_role("sess/run.jsonl") == "sess/run.jsonl"

@@ -115,6 +115,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--baseline` and `baseline --upgrade` now reject a baseline file whose JSON
+  nesting is too deep with a baseline error (exit 2) instead of an
+  `INTERNAL_ERROR`.
 - Bench: `measure_installed.py` no longer resolves the `--python` path, which
   followed a POSIX venv's `bin/python` symlink to the base interpreter and made
   every installed-wheel measurement fail with "measurement unavailable".
