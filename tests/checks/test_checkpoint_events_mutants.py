@@ -164,3 +164,111 @@ def test_run_state_hash_sentinel_strings_become_none() -> None:
     )
     out = cp._extract_run_state_checkpoints(context=ctx)  # type: ignore[arg-type]
     assert [o["hash"] for o in out] == [None, None, "<nonetype>", "NULL"]
+
+
+def test_event_baseline_follows_run_state_last_seq() -> None:
+    meta = CheckContext(
+        source_metadata={
+            "checkpoints": [
+                {"id": "a", "seq": 0, "hash": "h0"},
+                {"id": "b", "seq": 1, "hash": "h1"},
+            ]
+        }
+    )
+    ev = _e("checkpoint", "c", 3, checkpoint_id="k")
+    (f,) = check_checkpoint_gap([ev], context=meta)
+    assert dict(f.evidence or {})["expected_seq"] == 2
+
+
+def test_divergence_on_mapping_events_and_ids() -> None:
+    evs = [
+        {"kind": "checkpoint", "id": "a", "payload": {"seq": 1, "state_hash": "h1"}},
+        {"kind": "checkpoint", "id": "b", "payload": {"seq": 1, "state_hash": "h2"}},
+    ]
+    (f,) = cp.check_checkpoint_divergence(evs, context=CTX)
+    assert f.code == "SL202"
+    assert f.source.record_id == "b"
+    assert dict(f.evidence or {}) == {"hash_a": "h1", "hash_b": "h2", "seq": 1}
+
+
+def _chain(parent_of_leaf: str | None) -> list[Any]:
+    leaf = SimpleNamespace(
+        kind="message", id="leaf", parent_id=parent_of_leaf, source_location="f", source_line=1
+    )
+    boundary = SimpleNamespace(
+        kind="compaction_boundary",
+        id="bnd",
+        parent_id=None,
+        source_location="f",
+        source_line=2,
+        extra_fields={"coverage": {"covered_through_id": "leaf"}},
+    )
+    return [leaf, boundary]
+
+
+def test_coverage_ancestor_equal_to_boundary_is_non_contiguous() -> None:
+    (f,) = cp.check_compaction_coverage(_chain("bnd"), context=CTX)
+    assert f.code == "SL205"
+    assert dict(f.evidence or {})["non_contiguous"] is True
+    assert cp.check_compaction_coverage(_chain(None), context=CTX) == []
+
+
+def test_coverage_default_source_path_is_canonical_placeholder() -> None:
+    boundary = SimpleNamespace(
+        kind="compaction_boundary",
+        id="bnd",
+        parent_id=None,
+        extra_fields={"coverage": {"covered_through_id": "nope"}},
+    )
+    (f,) = cp.check_compaction_coverage([boundary], context=CTX)
+    assert f.source.path == "<canonical>"
+    assert dict(f.evidence or {})["missing"] is True
+
+
+def test_check_checkpoint_orders_by_code_before_location() -> None:
+    boundary = SimpleNamespace(
+        kind="compaction_boundary",
+        id="bnd",
+        parent_id=None,
+        source_location="f",
+        source_line=1,
+        extra_fields={"coverage": {"covered_through_id": "nope"}},
+    )
+    start = SimpleNamespace(
+        kind="run_start", id="rs", parent_id=None, source_location="f", source_line=9
+    )
+    out = cp.check_checkpoint([boundary, start], context=CTX)
+    assert [f.code for f in out] == ["SL201", "SL205"]
+    assert [f.source.line for f in out] == [9, 1]
+
+
+def test_gap_fingerprint_depends_on_every_context_field() -> None:
+    base = {"adapter_id": "ad", "adapter_version": "1", "profile_id": "pr", "profile_version": "2"}
+    runstate = {
+        "checkpoints": [
+            {"id": "a", "seq": 0, "hash": "h"},
+            {"id": "b", "seq": 3, "hash": None},
+            {"id": "c"},
+        ]
+    }
+    events = [
+        _e("run_start", "r", 1),
+        _e("checkpoint", "c1", 2, checkpoint_id="x", seq=0),
+        _e("checkpoint", "c2", 3, checkpoint_id="y", seq=5, state_hash="h"),
+        _e("checkpoint", "c3", 4, checkpoint_id="z", state_hash="h"),
+    ]
+
+    def run(ctx_fields: dict[str, str], meta: Any) -> list[str]:
+        ctx = CheckContext(**ctx_fields, source_metadata=meta)
+        return [
+            f.fingerprint
+            for f in check_checkpoint_gap(events, context=ctx, checkpoint_sensitivity="high")
+        ]
+
+    for meta in (None, runstate):
+        ref = run(base, meta)
+        assert len(ref) >= 3
+        for field in base:
+            other = run({**base, field: "zz"}, meta)
+            assert len(other) == len(ref)
+            assert all(a != b for a, b in zip(ref, other, strict=True)), field
