@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import os
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
+from sesslint.cli import main
 from sesslint.report import minimize_path
 from sesslint.scan import scan_path
 
@@ -95,3 +99,34 @@ def test_scan_path_uses_minimized_paths(tmp_path: Path) -> None:
         )
         assert "/Users/" not in f_res.path
         assert "/home/" not in f_res.path
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["a\x1b[31m\nFORGED.jsonl", "bad\udcff.jsonl", "me@example.com.jsonl", "x‮.jsonl"],
+)
+def test_hostile_file_names_render_as_hashed_labels(name: str) -> None:
+    """CL-16: names failing FR-081 or UTF-8 never reach a display label."""
+    shown = minimize_path(f"/outside/home/{name}", home=Path("/home/u"))
+    assert shown.startswith(".._") and "/redacted-" in shown
+    assert shown == minimize_path(f"/outside/home/{name}", home=Path("/home/u"))
+    shown.encode("utf-8")
+    assert minimize_path(f"/home/u/proj/{name}", home=Path("/home/u")).startswith(".._")
+
+
+def test_hostile_file_name_does_not_abort_a_directory_scan(tmp_path: Path) -> None:
+    """CL-16: one control-character file name failed the whole scan (exit 2)."""
+    fixture = Path(__file__).resolve().parents[2] / "fixtures" / "claude_code" / "basic.jsonl"
+    (tmp_path / "ok.jsonl").write_bytes(fixture.read_bytes())
+    (tmp_path / "a\x1b[31m\nFORGED.jsonl").write_bytes(fixture.read_bytes())
+    if os.name != "nt":
+        with open(os.path.join(os.fsencode(tmp_path), b"bad\xff.jsonl"), "wb") as fh:
+            fh.write(fixture.read_bytes())
+    for fmt in ("human", "json"):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = main(["check", str(tmp_path), "-f", fmt])
+        text = out.getvalue()
+        assert code in (0, 1), text
+        assert "\x1b" not in text and "FORGED" not in text
+        assert "ok.jsonl" in text

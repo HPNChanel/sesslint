@@ -126,6 +126,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--max-file-bytes` values above the platform's maximum read size (for example
   `10**23`) no longer end in an internal error in `check`, `triage`, stdin
   input or `outcome`: inputs are read in bounded chunks up to the limit.
+- Directory scans (`check DIR`, `stats`, MCP `sesslint_scan`) no longer abort when
+  one file name contains control characters, undecodable bytes, PII or
+  credential shapes. Such names now render as `.._<hash>/redacted-<hash>`
+  instead of failing the whole scan or reaching the output.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and
