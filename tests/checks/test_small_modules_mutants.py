@@ -266,3 +266,106 @@ def test_runner_attaches_events_source_to_supplied_context() -> None:
     evs = _Events([_se("a", line=1)])
     out = run_all_checks(evs, context=CheckContext(adapter_id="ad", adapter_version="1"))
     assert out == []
+
+
+def _size_events(n: int) -> _Events:
+    out = _Events([_se(f"e{i}", seq=i, line=i + 1) for i in range(n)])
+    return out
+
+
+class _SizedEvents(list):  # type: ignore[type-arg]
+    source = {"record_sizes": [100] * 8 + [10_000_000]}
+
+
+def test_runner_size_skip_names_both_checks_below_minimum() -> None:
+    _, cov = run_all_checks(
+        _size_events(3),
+        context=CheckContext(adapter_id="claude-code-jsonl", adapter_version="1"),
+        return_coverage=True,
+    )
+    skipped = {(s.check, s.reason, s.detail) for s in cov.skipped}
+    detail = "fewer than 8 records — size distribution not meaningful"
+    assert ("size", "adapter-not-applicable", detail) in skipped
+    assert ("SL011", "adapter-not-applicable", detail) in skipped
+    assert "size" not in cov.performed
+    assert "SL011" not in cov.performed
+
+
+@pytest.mark.parametrize("with_context", [False, True])
+def test_runner_feeds_events_source_into_size_check(with_context: bool) -> None:
+    evs = _SizedEvents(_se(f"e{i}", seq=i, line=i + 1) for i in range(9))
+    kwargs: dict[str, Any] = {}
+    if with_context:
+        kwargs["context"] = CheckContext(adapter_id="claude-code-jsonl", adapter_version="1")
+    else:
+        kwargs["adapter"] = "claude-code-jsonl"
+    out = run_all_checks(evs, **kwargs)
+    assert [f.code for f in out if f.code == "SL011"] == ["SL011"]
+
+
+def test_identity_object_events_use_attribute_ids_and_lines() -> None:
+    def obj(line: int) -> Any:
+        return SimpleNamespace(
+            id="dup",
+            source_line=line,
+            source_location="f.jsonl",
+            to_canonical_dict=lambda: {"id": "dup"},
+        )
+
+    (f,) = ident.check_identities([obj(5), obj(9)])
+    assert f.source.record_id == "dup"
+    assert f.source.line == 5
+    assert f.source.path == "<canonical>" or f.source.path == "f.jsonl"
+
+
+def test_diff_field_names_on_plain_mapping_events() -> None:
+    assert ident.diff_field_names([{"id": "a", "k": 1}, {"id": "a", "k": 2}]) == ["k"]
+
+
+def test_tp1_cap_sort_key_overflow_flag_and_coords() -> None:
+    from sesslint.codes import SL101, Repairability, Severity
+    from sesslint.finding import SourceRef, make_finding
+
+    def mk(evidence: Any, rec: str | None) -> Any:
+        return make_finding(
+            code=SL101,
+            severity=Severity.ERROR,
+            repairability=Repairability.MANUAL,
+            message_template="Orphan tool result for record {record_id}",
+            source=SourceRef(path="p", record_id=rec),
+            evidence=evidence,
+        )
+
+    assert tp1._cap_finding_sort_key(mk({"overflow": True}, "r"))[1] == 1
+    assert tp1._cap_finding_sort_key(mk({"k": 1}, "r"))[1] == 0
+    assert tp1._cap_finding_sort_key(mk(None, "r"))[1] == 0
+    for bad in (None, 0, -1, True, "3"):
+        assert tp1._resolve_source_coords(SimpleNamespace(source_line=bad), "p")[1] is None
+
+
+def test_checkpoint_run_state_projection_fallback_shapes() -> None:
+    from sesslint.checks import checkpoint as cp
+
+    chks = [{"id": "a", "seq": 0, "hash": "h"}]
+    ex = cp._extract_run_state_checkpoints
+    assert [c["id"] for c in ex(run_state_projection={"checkpoints": chks})] == ["a"]
+    assert ex(run_state_projection={"checkpoints": "abc"}) == []
+    assert ex(run_state_projection={"checkpoints": b"abc"}) == []
+    assert ex(run_state_projection={"CHECKPOINTS": chks}) == []
+    for sm in (
+        {"run_state": {"checkpoints": chks}},
+        {"metadata": {"checkpoints": chks}},
+        {"metadata": {"run_state": {"checkpoints": chks}}},
+        {"run_state_projection": {"checkpoints": chks}},
+    ):
+        ctx = SimpleNamespace(source_metadata=sm)
+        assert [c["id"] for c in ex(context=ctx)] == ["a"], sm  # type: ignore[arg-type]
+    for sm in (
+        {"run_state": {"checkpoints": "abc"}},
+        {"metadata": {"checkpoints": "abc"}},
+        {"metadata": {"run_state": {"checkpoints": "abc"}}},
+        {"run_state_projection": {"checkpoints": "abc"}},
+        {"checkpoints": "abc"},
+    ):
+        ctx = SimpleNamespace(source_metadata=sm)
+        assert ex(context=ctx) == [], sm  # type: ignore[arg-type]
