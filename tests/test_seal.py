@@ -546,3 +546,21 @@ def test_seal_schema_self_consistent() -> None:
     assert set(schema["required"]).issubset(set(e))
     allowed = set(schema["properties"])
     assert set(e).issubset(allowed)
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "1e400", '"\\ud800"'])
+def test_cli_seal_verify_non_canonical_extra_field_is_divergence(
+    tmp_path: Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CL-16: a value canonical JSON cannot encode is tampering, not a crash."""
+    ledger = tmp_path / "ledger.jsonl"
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
+    capsys.readouterr()
+    line = ledger.read_text().strip()
+    ledger.write_text(line[:-1] + ', "x": ' + value + "}\n")
+    assert seal.verify_ledger(ledger)[1]["kind"] == "malformed-line"  # type: ignore[index]
+    code = main(["seal", "--verify", str(ledger), "--json"])
+    assert code == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False
+    assert out["divergence"]["kind"] == "malformed-line"

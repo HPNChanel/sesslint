@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from sesslint._canonical_codec import canonical_json_bytes
+from sesslint.errors import SchemaError
 
 StrPath = str | os.PathLike[str]
 
@@ -246,7 +247,18 @@ def verify_lines(lines: list[tuple[int, str]]) -> dict[str, Any] | None:
                 "seq": seq,
                 "detail": "prev_sha256 does not bind to the previous entry hash",
             }
-        if entry["entry_sha256"] != _entry_hash(entry):
+        try:
+            digest = _entry_hash(entry)
+        except SchemaError:
+            # NaN/Infinity/lone surrogates in an unknown field: no sealed
+            # entry can contain them, so the line was edited (fail closed).
+            return {
+                "kind": "malformed-line",
+                "line": line_no,
+                "seq": seq,
+                "detail": "entry fields are malformed or missing",
+            }
+        if entry["entry_sha256"] != digest:
             return {
                 "kind": "hash-mismatch",
                 "line": line_no,
