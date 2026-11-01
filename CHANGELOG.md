@@ -111,6 +111,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MCP: a `tools/call` whose `path` is too long for the OS (`ENAMETOOLONG`)
   now returns an `io-error` tool result instead of crashing the stdio server.
+- MCP: requests with a non-finite (`NaN`/`Infinity`) or non-scalar `id`, batches,
+  bare scalars and objects with a wrong `jsonrpc` version now get a single
+  `-32600` Invalid Request response instead of invalid JSON output or silence.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and
