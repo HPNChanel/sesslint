@@ -366,12 +366,21 @@ def _maybe_append_seal(
     verdict: str,
     codes: Mapping[str, int],
     report_bytes: bytes,
+    artifact_sha256: str | None = None,
+    recheck_path: Path | None = None,
 ) -> int | None:
     """Append one seal-ledger line when ``--seal`` was passed.
 
     Returns an exit code only on failure (``2`` — sealing must never be
     silently skipped); returns None when the flag is absent or the append
     succeeded, so callers keep their normal exit path.
+
+    ``file_sha256`` is the digest of the bytes the command evaluated or
+    produced — ``artifact_bytes`` (the checked buffer) or ``artifact_sha256``
+    (captured by the caller) — never a later re-read of ``artifact_path``,
+    which only labels the line (B27). With ``recheck_path``, the artifact must
+    still hash to ``artifact_sha256`` (captured before the command read it):
+    a change means the evaluated bytes are unknown, so sealing refuses.
     """
     ledger = getattr(args, "seal", None)
     if ledger is None:
@@ -382,10 +391,15 @@ def _maybe_append_seal(
     try:
         if artifact_bytes is not None:
             file_sha = seal_mod.sha256_bytes(artifact_bytes)
-        elif artifact_path is not None:
-            file_sha = seal_mod.sha256_file(artifact_path)
+        elif artifact_sha256 is not None:
+            file_sha = artifact_sha256
+            if recheck_path is not None and seal_mod.sha256_file(recheck_path) != file_sha:
+                raise seal_mod.SealError(
+                    f"{recheck_path} changed on disk while it was evaluated — "
+                    "refusing to seal bytes that were not evaluated"
+                )
         else:
-            raise seal_mod.SealError("no artifact bytes or path to seal")
+            raise seal_mod.SealError("no evaluated artifact digest to seal")
         entry_path = (
             None
             if getattr(args, "seal_no_path", False) or artifact_path is None
@@ -2295,6 +2309,24 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
         format_opt = getattr(args, "format", "auto")
         profile_opt = getattr(args, "profile", "neutral")
 
+        # --seal binds the exact bytes checked: take one bounded snapshot and
+        # check that buffer, so a writer appending mid-check or before the
+        # seal cannot get unchecked bytes certified (B27).
+        seal_snapshot: bytes | None = None
+        if getattr(args, "seal", None) is not None:
+            from sesslint.adapters.load import read_source_snapshot
+            from sesslint.io import DEFAULT_MAX_FILE_BYTES
+
+            seal_snapshot = read_source_snapshot(target_path)
+            if seal_snapshot is None:
+                print(
+                    f"Error: --seal cannot snapshot {target_path} (not a readable regular "
+                    f"file of at most {DEFAULT_MAX_FILE_BYTES} bytes); the seal must bind "
+                    "the exact bytes checked.",
+                    file=sys.stderr,
+                )
+                return 2
+
         try:
             from sesslint.api import check_file
 
@@ -2309,6 +2341,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     select=_rule_codes_arg(args, "select"),
                     ignore=_rule_codes_arg(args, "ignore"),
                     baseline=check_baseline,
+                    snapshot=seal_snapshot,
                 )
             except (ValueError, KeyError) as err:
                 if "not permitted by profile" in str(err):
@@ -2328,7 +2361,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             seal_rc = _maybe_append_seal(
                 args,
                 tool="check",
-                artifact_bytes=None,
+                artifact_bytes=seal_snapshot,
                 artifact_path=target_path,
                 verdict=_check_seal_verdict(report),
                 codes=dict(report.counts.by_code),
@@ -2963,6 +2996,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 )
                 return 2
             if manifest is not None:
+                # Seal the digest of the bytes the repair wrote (the manifest
+                # binding), never a later re-read of the output path (B27).
                 seal_rc = _maybe_append_seal(
                     args,
                     tool="repair",
@@ -2971,6 +3006,7 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                     verdict="repaired",
                     codes={},
                     report_bytes=dump_manifest(manifest).encode("utf-8"),
+                    artifact_sha256=manifest.output_fingerprint,
                 )
                 if seal_rc is not None:
                     return seal_rc
@@ -3039,6 +3075,14 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
             from sesslint import api
             from sesslint.verify import render_verify_human
 
+            # --seal: digest the artifact before verify reads it; the seal
+            # re-checks it afterwards and refuses if it moved (B27).
+            seal_pre_sha: str | None = None
+            if getattr(args, "seal", None) is not None and Path(repaired_target).is_file():
+                from sesslint.seal import sha256_file as _seal_sha256_file
+
+                seal_pre_sha = _seal_sha256_file(repaired_target)
+
             verdict = api.verify(
                 source_path=source_target,
                 output_path=repaired_target,
@@ -3061,6 +3105,8 @@ def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
                 verdict="ok" if verdict.ok else "failed",
                 codes={},
                 report_bytes=verdict.to_json().encode("utf-8"),
+                artifact_sha256=seal_pre_sha,
+                recheck_path=Path(repaired_target),
             )
             if seal_rc is not None:
                 return seal_rc

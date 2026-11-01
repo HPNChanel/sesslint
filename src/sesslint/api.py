@@ -92,6 +92,7 @@ def check_file(
     select: Sequence[str] | None = None,
     ignore: Sequence[str] | None = None,
     baseline: Collection[str] | None = None,
+    snapshot: bytes | None = None,
 ) -> Report:
     """Evaluate a single session file artifact and return a frozen Report.
 
@@ -110,13 +111,25 @@ def check_file(
         ignore: Optional rule codes to skip (mutually exclusive with select).
         baseline: Optional finding fingerprints to suppress (baseline mode:
             the returned report describes only findings absent from the set).
+        snapshot: Optional in-memory copy of the file's bytes (at most
+            ``io.DEFAULT_MAX_FILE_BYTES``, e.g. from
+            ``adapters.load.read_source_snapshot``). Every stage then reads
+            this buffer instead of re-reading ``path``, so the report and its
+            ``source_fingerprint`` describe exactly these bytes even if the
+            file changes mid-check (B27, ``--seal``). Path semantics —
+            detection filename, display path, finding labels — are unchanged.
 
     Returns:
         A frozen Report dataclass with findings, counts, assurance, and limitation.
     """
+    if snapshot is not None:
+        from sesslint.io import DEFAULT_MAX_FILE_BYTES
+
+        if len(snapshot) > DEFAULT_MAX_FILE_BYTES:
+            raise ValueError("snapshot exceeds the reader size limit; check the path instead")
     return _check_impl(
         Path(path),
-        data=None,
+        data=snapshot,
         virtual_path=None,
         format=format,
         profile=profile,
@@ -226,6 +239,9 @@ def _check_impl(
 
     ``data is not None`` selects byte mode: ``virtual_path`` is the display
     path and every filesystem touch is replaced by a buffer/stream equivalent.
+    ``data`` without ``virtual_path`` is a snapshot of the real file at
+    ``target_path`` (B27): bytes come from the buffer, while names, labels and
+    detection heuristics stay those of the path.
     """
     validate_detection_thresholds(confidence_min, margin_min)
 
@@ -233,7 +249,7 @@ def _check_impl(
     # `is not None` form so Optional types narrow without a flag variable.
     display_path = virtual_path if virtual_path is not None else str(target_path)
     item_name = virtual_path if virtual_path is not None else target_path.name
-    item_stem = "stdin" if data is not None else target_path.stem
+    item_stem = "stdin" if virtual_path is not None else target_path.stem
 
     if data is None and not target_path.exists():
         raise FileNotFoundError(f"Path not found: {target_path}")
@@ -315,12 +331,17 @@ def _check_impl(
 
         # Content-only detection: a virtual source has no meaningful filename,
         # so heuristics see a neutral .jsonl name that opens content sniffing
-        # without privileging any vendor's filename signature.
+        # without privileging any vendor's filename signature. A real-file
+        # snapshot (B27) keeps the path's name and label, as resolve_format.
         resolved_fmt, detection_res, det_findings = resolve_format_bytes(
             format,
             data,
-            filename="stdin.jsonl",
-            display_path=display_path,
+            filename="stdin.jsonl" if virtual_path is not None else target_path.name,
+            display_path=(
+                display_path
+                if virtual_path is not None
+                else str(target_path).replace("\\", "/")
+            ),
             confidence_min=effective_cfg.confidence_min,
             margin_min=effective_cfg.margin_min,
         )
@@ -399,6 +420,11 @@ def _check_impl(
 
     adapter_findings: list[Finding] = list(det_findings)
     load_source: Path | io.BytesIO = io.BytesIO(data) if data is not None else target_path
+    if data is not None and virtual_path is None:
+        from sesslint.adapters.load import SourceSnapshot
+
+        # Named after the file, so finding labels match a path load (B27).
+        load_source = SourceSnapshot(data, target_path)
     events, loaded_findings = load_events_for_format(load_source, resolved_fmt)
     adapter_findings.extend(loaded_findings)
     # An empty/whitespace-only file is not a valid session of any format —

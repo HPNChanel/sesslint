@@ -23,20 +23,33 @@ Ledger rules:
   never extended (rotate via ``genesis_of`` instead).
 - Lines are content-free: hashes, verdict, per-code counts, minimized
   path (omittable via ``--seal-no-path``), self-reported time.
+- Appends are serialized by an exclusive OS lock on the sidecar
+  ``<LEDGER>.lock`` (``msvcrt.locking`` / ``fcntl.flock``, bounded wait):
+  concurrent ``--seal`` runs can never mint duplicate ``seq`` values (B26).
+  The kernel drops the lock when its holder exits, so a crashed run never
+  leaves a stale lock; the empty sidecar file itself is inert.
+- Lines are split on LF only (canonical JSON may carry raw U+2028 / U+0085
+  inside string values), and an append first terminates a final line that
+  lacks its LF so two entries are never glued together (B26).
 """
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
+import sys
+import time
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, cast
 
 from sesslint._canonical_codec import canonical_json_bytes
+from sesslint.errors import SesslintError
 
 StrPath = str | os.PathLike[str]
 
@@ -54,6 +67,12 @@ DIVERGENCE_KINDS: Final[frozenset[str]] = frozenset(
 )
 
 _CHUNK: Final[int] = 1024 * 1024
+
+# Append serialization (B26): sidecar lock file + bounded wait. The wait uses
+# the monotonic clock only for the deadline — no clock value reaches output.
+LOCK_SUFFIX: Final[str] = ".lock"
+LOCK_TIMEOUT_SECONDS: Final[float] = 30.0
+_LOCK_POLL_SECONDS: Final[float] = 0.05
 
 
 class SealError(Exception):
@@ -138,12 +157,16 @@ def build_entry(
         entry["path"] = path
     if genesis_of is not None:
         entry["genesis_of"] = genesis_of
-    entry["entry_sha256"] = _entry_hash(entry)
+    try:
+        entry["entry_sha256"] = _entry_hash(entry)
+    except (SesslintError, ValueError, RecursionError) as err:
+        # e.g. a path carrying lone surrogates (undecodable filename bytes).
+        raise SealError("entry fields cannot be serialized as canonical JSON") from err
     return entry
 
 
-def _iter_lines(path: Path) -> list[tuple[int, str]]:
-    """Read a ledger file into ``(line_number, raw_text)`` pairs.
+def _read_ledger_text(path: Path) -> str:
+    """Read a ledger file as UTF-8 text.
 
     Raises ``SealError`` on a missing/unreadable/non-UTF8 file — append
     never silently extends an unreadable ledger.
@@ -153,10 +176,25 @@ def _iter_lines(path: Path) -> list[tuple[int, str]]:
     except OSError as err:
         raise SealError(f"cannot read ledger {path}: {err}") from err
     try:
-        text = raw.decode("utf-8")
+        return raw.decode("utf-8")
     except UnicodeDecodeError as err:
         raise SealError(f"ledger {path} is not UTF-8: {err}") from err
-    return [(i, line) for i, line in enumerate(text.splitlines(), start=1) if line.strip()]
+
+
+def _split_ledger_lines(text: str) -> list[tuple[int, str]]:
+    """Split ledger text into non-blank ``(line_number, raw_text)`` pairs.
+
+    Splits on LF only: ``str.splitlines`` would also break on U+2028, U+2029,
+    U+0085 and other separators that canonical JSON (``ensure_ascii`` off)
+    emits raw inside string values such as ``path`` (B26).
+    """
+    return [(i, line) for i, line in enumerate(text.split("\n"), start=1) if line.strip()]
+
+
+def _iter_lines(path: Path) -> list[tuple[int, str]]:
+    """Read a ledger file into ``(line_number, raw_text)`` pairs (see
+    ``_read_ledger_text`` for the fail-closed read contract)."""
+    return _split_ledger_lines(_read_ledger_text(path))
 
 
 def _validate_entry_shape(entry: Any) -> str | None:
@@ -212,7 +250,16 @@ def verify_lines(lines: list[tuple[int, str]]) -> dict[str, Any] | None:
     for line_no, raw in lines:
         try:
             entry: Any = json.loads(raw)
-        except json.JSONDecodeError:
+        except RecursionError:
+            # Hostile nesting must surface as divergence, never a traceback (B26).
+            return {
+                "kind": "malformed-line",
+                "line": line_no,
+                "detail": "line nesting exceeds parser limits",
+            }
+        except ValueError:
+            # JSONDecodeError, oversized integer literals, and decode errors
+            # are all ValueError subclasses (B26).
             return {
                 "kind": "malformed-line",
                 "line": line_no,
@@ -244,7 +291,18 @@ def verify_lines(lines: list[tuple[int, str]]) -> dict[str, Any] | None:
                 "seq": seq,
                 "detail": "prev_sha256 does not bind to the previous entry hash",
             }
-        if entry["entry_sha256"] != _entry_hash(entry):
+        try:
+            recomputed = _entry_hash(entry)
+        except (SesslintError, ValueError, RecursionError):
+            # Extra fields that cannot be canonicalized (NaN, lone surrogates,
+            # hostile nesting) can never hash-verify (B26).
+            return {
+                "kind": "malformed-line",
+                "line": line_no,
+                "seq": seq,
+                "detail": "entry fields cannot be canonicalized",
+            }
+        if entry["entry_sha256"] != recomputed:
             return {
                 "kind": "hash-mismatch",
                 "line": line_no,
@@ -287,6 +345,7 @@ def append_seal(
     report_sha256: str,
     genesis_of: str | None = None,
     now: datetime | None = None,
+    lock_timeout: float = LOCK_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Append one sealed line to ``ledger`` after re-verifying the chain.
 
@@ -294,52 +353,144 @@ def append_seal(
     never extended — rotate to a new ledger bound via ``genesis_of``
     (allowed only on an empty/absent ledger). The append is a single
     write + fsync; the parent directory is synced on POSIX.
+
+    The read → verify → append sequence runs under an exclusive lock on
+    ``<ledger>.lock`` (B26): concurrent appenders serialize instead of both
+    claiming the same ``seq``. ``lock_timeout`` bounds the wait; expiry
+    raises ``SealError`` and nothing is written.
     """
     p = Path(ledger)
-    seq = 1
-    prev = GENESIS
-    if p.exists():
-        lines = _iter_lines(p)
-        divergence = verify_lines(lines)
-        if divergence is not None:
-            raise SealError(
-                f"ledger {p} is divergent at line {divergence['line']} "
-                f"({divergence['kind']}: {divergence['detail']}) — refusing to extend"
-            )
-        if lines:
-            last = json.loads(lines[-1][1])
-            seq = int(last["seq"]) + 1
-            prev = str(last["entry_sha256"])
-    if genesis_of is not None and seq != 1:
-        raise SealError("genesis_of binds only a ledger's first line (seq 1)")
+    parent = p.parent
+    if not parent.exists():
+        raise SealError(f"ledger directory does not exist: {parent}")
+    with _ledger_lock(p, timeout=lock_timeout):
+        seq = 1
+        prev = GENESIS
+        terminate_tail = False
+        if p.exists():
+            text = _read_ledger_text(p)
+            lines = _split_ledger_lines(text)
+            divergence = verify_lines(lines)
+            if divergence is not None:
+                raise SealError(
+                    f"ledger {p} is divergent at line {divergence['line']} "
+                    f"({divergence['kind']}: {divergence['detail']}) — refusing to extend"
+                )
+            if lines:
+                last = json.loads(lines[-1][1])
+                seq = int(last["seq"]) + 1
+                prev = str(last["entry_sha256"])
+            # A verified final line missing its LF would otherwise fuse with
+            # the appended entry into one unparseable line (B26).
+            terminate_tail = bool(text) and not text.endswith("\n")
+        if genesis_of is not None and seq != 1:
+            raise SealError("genesis_of binds only a ledger's first line (seq 1)")
 
-    entry = build_entry(
-        seq=seq,
-        prev_sha256=prev,
-        file_sha256=file_sha256,
-        path=path,
-        tool=tool,
-        verdict=verdict,
-        codes=codes,
-        report_sha256=report_sha256,
-        genesis_of=genesis_of,
-        now=now,
-    )
-    line = canonical_json_bytes(entry, newline=True)
-    try:
-        parent = p.parent
-        if not parent.exists():
-            raise SealError(f"ledger directory does not exist: {parent}")
-        with open(p, "ab") as fh:
-            fh.write(line)
-            fh.flush()
-            os.fsync(fh.fileno())
-        _sync_dir(parent)
-    except SealError:
-        raise
-    except OSError as err:
-        raise SealError(f"cannot append to ledger {p}: {err}") from err
+        entry = build_entry(
+            seq=seq,
+            prev_sha256=prev,
+            file_sha256=file_sha256,
+            path=path,
+            tool=tool,
+            verdict=verdict,
+            codes=codes,
+            report_sha256=report_sha256,
+            genesis_of=genesis_of,
+            now=now,
+        )
+        line = canonical_json_bytes(entry, newline=True)
+        if terminate_tail:
+            line = b"\n" + line
+        try:
+            with open(p, "ab") as fh:
+                fh.write(line)
+                fh.flush()
+                os.fsync(fh.fileno())
+            _sync_dir(parent)
+        except OSError as err:
+            raise SealError(f"cannot append to ledger {p}: {err}") from err
     return entry
+
+
+def lock_path_for(ledger: StrPath) -> Path:
+    """Sidecar lock file that serializes appends to ``ledger`` (B26)."""
+    p = Path(ledger)
+    return p.with_name(p.name + LOCK_SUFFIX)
+
+
+if sys.platform == "win32":
+    import msvcrt
+
+    def _try_lock(fd: int) -> bool:
+        """Non-blocking exclusive lock on byte 0 of ``fd``; False on contention."""
+        os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError as err:
+            if err.errno in (errno.EACCES, errno.EDEADLK):
+                return False
+            raise
+        return True
+
+    def _unlock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _try_lock(fd: int) -> bool:
+        """Non-blocking exclusive ``flock`` on ``fd``; False on contention."""
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return True
+
+    def _unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _ledger_lock(ledger: Path, *, timeout: float) -> Iterator[None]:
+    """Hold the exclusive append lock for ``ledger`` (B26).
+
+    The lock is an OS lock on a persistent sidecar file, never the file's
+    existence: the kernel releases it when the holder exits or crashes, so
+    there is no stale-lock state to clean up or guess about. Waiting is
+    bounded by ``timeout`` (monotonic clock, never reported); expiry or a
+    filesystem that cannot lock raises ``SealError`` — fail closed, never an
+    unserialized append.
+    """
+    lock_p = lock_path_for(ledger)
+    try:
+        fd = os.open(str(lock_p), os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError as err:
+        raise SealError(f"cannot open ledger lock {lock_p}: {err}") from err
+    try:
+        deadline = time.monotonic() + max(timeout, 0.0)
+        while True:
+            try:
+                acquired = _try_lock(fd)
+            except OSError as err:
+                raise SealError(f"cannot lock ledger {ledger}: {err}") from err
+            if acquired:
+                break
+            if time.monotonic() >= deadline:
+                raise SealError(
+                    f"ledger {ledger} is locked by another sesslint process "
+                    f"(waited {timeout:g}s) — nothing appended"
+                )
+            time.sleep(_LOCK_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            try:
+                _unlock(fd)
+            except OSError:
+                pass  # closing the descriptor releases the lock regardless
+    finally:
+        os.close(fd)
 
 
 def _sync_dir(path: Path) -> None:
@@ -382,6 +533,8 @@ def load_seal_schema() -> dict[str, Any]:
 __all__ = [
     "DIVERGENCE_KINDS",
     "GENESIS",
+    "LOCK_SUFFIX",
+    "LOCK_TIMEOUT_SECONDS",
     "SEAL_SCHEMA_ID",
     "SEAL_TOOLS",
     "SealError",
@@ -389,6 +542,7 @@ __all__ = [
     "build_entry",
     "get_seal_schema_path",
     "load_seal_schema",
+    "lock_path_for",
     "sha256_bytes",
     "sha256_file",
     "verify_ledger",
