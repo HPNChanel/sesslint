@@ -247,3 +247,21 @@ def test_no_values_leak_in_tool_results() -> None:
     sc = resp["result"]["structuredContent"]
     for finding in sc["findings"]:
         assert "payload" not in json.dumps(finding.get("evidence", {}))
+
+
+def test_overlong_path_is_iserror_result_not_a_crash() -> None:
+    """CL-16: ENAMETOOLONG from the existence probe must not kill the server."""
+    raw = _line(
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {"name": "sesslint_check", "arguments": {"path": "a" * 5000}},
+        }
+    )
+    resp = _call(raw)
+    assert resp["id"] == 10
+    assert resp["result"]["isError"] is True
+    out = io.BytesIO()
+    assert serve(io.BytesIO(raw + _line({"jsonrpc": "2.0", "id": 11, "method": "ping"})), out) == 0
+    assert [json.loads(x)["id"] for x in out.getvalue().splitlines()] == [10, 11]

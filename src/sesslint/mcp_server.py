@@ -277,10 +277,9 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     fmt_arg = arguments.get("format")
     fmt = None if fmt_arg in (None, "auto") else fmt_arg
 
-    if not path.exists():
-        return _tool_err("io-error: path does not exist")
-
     try:
+        if not path.exists():
+            return _tool_err("io-error: path does not exist")
         if name == "sesslint_check":
             if not path.is_file():
                 return _tool_err("usage-error: path is not a file")
