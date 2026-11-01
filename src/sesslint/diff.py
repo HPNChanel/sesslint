@@ -29,6 +29,8 @@ from typing import Any, Final, Literal, cast
 from sesslint._version import CLI_VERSION
 from sesslint.adapters.detect import resolve_format
 from sesslint.canonical import SessionEvent
+from sesslint.errors import FindingError
+from sesslint.finding import enforce_content_free_text
 
 DIFF_SCHEMA_VERSION: Final[str] = "sesslint.diff/v1"
 
@@ -177,6 +179,21 @@ def _delta_label(d: Delta) -> str:
     return label
 
 
+def _safe_id(raw: str | None) -> str:
+    """Echo an id only when it passes the content-free rules (FR-081).
+
+    Same policy as check findings: ids carrying control characters, line
+    breaks, PII or credential shapes are reported as ``<redacted>``.
+    """
+    if not raw:
+        return ""
+    try:
+        enforce_content_free_text(raw, context="id")
+    except FindingError:
+        return "<redacted>"
+    return raw
+
+
 def _fallback_key(ev: SessionEvent) -> tuple[str, str, str]:
     return (ev.kind, ev.parent_id or "", ev.content_identity_hash())
 
@@ -235,7 +252,7 @@ def diff_events(
             deltas.append(
                 Delta(
                     category="kind-changed",
-                    event_id=ea.id,
+                    event_id=_safe_id(ea.id),
                     a_index=i,
                     b_index=j,
                     detail={"kind_a": ea.kind, "kind_b": eb.kind},
@@ -245,17 +262,20 @@ def diff_events(
             deltas.append(
                 Delta(
                     category="parent-relinked",
-                    event_id=ea.id,
+                    event_id=_safe_id(ea.id),
                     a_index=i,
                     b_index=j,
-                    detail={"parent_a": ea.parent_id or "", "parent_b": eb.parent_id or ""},
+                    detail={
+                        "parent_a": _safe_id(ea.parent_id),
+                        "parent_b": _safe_id(eb.parent_id),
+                    },
                 )
             )
         if ea.content_identity_hash() != eb.content_identity_hash():
             deltas.append(
                 Delta(
                     category="content-changed",
-                    event_id=ea.id,
+                    event_id=_safe_id(ea.id),
                     a_index=i,
                     b_index=j,
                     detail={
@@ -273,7 +293,7 @@ def diff_events(
             deltas.append(
                 Delta(
                     category="seq-reordered",
-                    event_id=events_a[i].id,
+                    event_id=_safe_id(events_a[i].id),
                     a_index=i,
                     b_index=j,
                 )
@@ -286,7 +306,7 @@ def diff_events(
         deltas.append(
             Delta(
                 category="removed",
-                event_id=ev.id,
+                event_id=_safe_id(ev.id),
                 a_index=i,
                 b_index=None,
                 detail={"kind": ev.kind},
@@ -297,7 +317,7 @@ def diff_events(
             deltas.append(
                 Delta(
                     category="added",
-                    event_id=ev.id,
+                    event_id=_safe_id(ev.id),
                     a_index=None,
                     b_index=j,
                     detail={"kind": ev.kind},
