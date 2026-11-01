@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -114,12 +115,13 @@ def test_hostile_file_names_render_as_hashed_labels(name: str) -> None:
     assert minimize_path(f"/home/u/proj/{name}", home=Path("/home/u")).startswith(".._")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="NTFS rejects control characters in names")
 def test_hostile_file_name_does_not_abort_a_directory_scan(tmp_path: Path) -> None:
     """CL-16: one control-character file name failed the whole scan (exit 2)."""
     fixture = Path(__file__).resolve().parents[2] / "fixtures" / "claude_code" / "basic.jsonl"
     (tmp_path / "ok.jsonl").write_bytes(fixture.read_bytes())
     (tmp_path / "a\x1b[31m\nFORGED.jsonl").write_bytes(fixture.read_bytes())
-    if os.name != "nt":
+    if sys.platform != "darwin":  # APFS rejects non-UTF-8 names
         with open(os.path.join(os.fsencode(tmp_path), b"bad\xff.jsonl"), "wb") as fh:
             fh.write(fixture.read_bytes())
     for fmt in ("human", "json"):

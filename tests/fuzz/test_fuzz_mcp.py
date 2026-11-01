@@ -189,7 +189,8 @@ def test_mcp_always_answers_within_protocol(lines: list[bytes]) -> None:
             continue
         resp = _check_response(out)
         if must:
-            assert resp["id"] == rid or (rid != rid and resp["id"] is None)
+            nan_id = isinstance(rid, float) and math.isnan(rid)
+            assert resp["id"] == rid or (nan_id and resp["id"] is None)
         per_line.append(out)
 
     stdout = io.BytesIO()
