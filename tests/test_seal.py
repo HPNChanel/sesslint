@@ -10,6 +10,8 @@ and content-free guarantees (no transcript bytes in ledger lines).
 from __future__ import annotations
 
 import json
+import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -546,3 +548,60 @@ def test_seal_schema_self_consistent() -> None:
     assert set(schema["required"]).issubset(set(e))
     allowed = set(schema["properties"])
     assert set(e).issubset(allowed)
+
+
+# --- Canonicalization failures fail closed as seal errors --------------------
+
+
+def test_entry_with_unencodable_path_is_seal_error() -> None:
+    """A path that cannot be canonical JSON (lone surrogate from undecodable
+    filename bytes) is a SealError, never a leaked SchemaError."""
+    with pytest.raises(seal.SealError, match="canonical JSON"):
+        _entry(path="a\udcffb")
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        '"x": NaN',  # non-finite float: rejected by the canonical codec
+        '"path": "a\\udcffb"',  # lone surrogate after JSON decoding
+    ],
+    ids=["nan", "surrogate"],
+)
+def test_verify_uncanonicalizable_entry_is_divergence(extra: str) -> None:
+    """A tampered line whose fields cannot be canonicalized is reported as
+    a ``malformed-line`` divergence instead of escaping as an exception."""
+    raw = json.dumps(_entry())
+    tampered = raw[:-1] + ", " + extra + "}"
+    divergence = seal.verify_lines([(1, tampered)])
+    assert divergence is not None
+    assert divergence["kind"] == "malformed-line"
+    assert divergence["line"] == 1
+
+
+def test_cli_seal_verify_json_reports_uncanonicalizable_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger.jsonl"
+    main(["check", str(HEALTHY), "--adapter", "codex-rollout", "--seal", str(ledger)])
+    capsys.readouterr()
+    ledger.write_text(ledger.read_text().rstrip("\n")[:-1] + ', "x": NaN}\n')
+    code = main(["seal", "--verify", str(ledger), "--json"])
+    assert code == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False
+    assert out["divergence"]["kind"] == "malformed-line"
+
+
+@pytest.mark.skipif(sys.platform in ("win32", "darwin"), reason="needs non-UTF-8 filenames")
+def test_cli_check_seal_unencodable_path_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Sealing that cannot proceed exits 2 (seal failed), not 1."""
+    target = Path(os.fsdecode(bytes(tmp_path) + b"/a\xffb.jsonl"))
+    target.write_bytes(HEALTHY.read_bytes())
+    ledger = tmp_path / "ledger.jsonl"
+    code = main(["check", str(target), "--adapter", "codex-rollout", "--seal", str(ledger)])
+    assert code == 2
+    assert "seal failed" in capsys.readouterr().err
+    assert not ledger.exists() or ledger.read_bytes() == b""

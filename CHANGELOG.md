@@ -109,6 +109,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--seal` on a session whose file name is not valid UTF-8 now fails as a seal
+  error (`Error: seal failed: ...`, exit 2) instead of a schema validation error
+  with exit 1, which read like a findings gate. `seal --verify` reports a ledger
+  line whose fields cannot be canonicalized (for example `NaN` or a lone
+  surrogate added by an edit) as a `malformed-line` divergence (exit 1, and a
+  `divergence` object with `--json`) instead of failing without a result.
 - `check`, directory scans and `triage` with a forced `--adapter` now handle
   empty, whitespace-only and BOM-only input as auto-detection does: one SL001
   `Empty input: file contains no session records`, no repair command, and
