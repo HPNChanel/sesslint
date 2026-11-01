@@ -36,6 +36,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from sesslint._secret_families import (
+    SECRET_FAMILIES,
+    SECRET_FAMILY_IDS,
+    SECRET_FAMILY_SET_VERSION,
+    iter_family_spans,
+)
 from sesslint.codes import SL009
 from sesslint.finding import (
     Finding,
@@ -45,183 +51,76 @@ from sesslint.finding import (
     make_finding,
 )
 
-SECRET_FAMILY_SET_VERSION: Final[int] = 2
 MAX_SECRET_FINDINGS_PER_FILE: Final[int] = 64
 MAX_DIGESTS_PER_FINDING: Final[int] = 16
 
-# Family registry: ordered (family_id, compiled_bytes_pattern, value_group)
-# tuples. ``value_group`` selects the regex group holding the secret bytes —
-# for most families the whole match (0); for ``generic-credential-assignment``
-# the captured assigned value (1), so ``token: X`` and ``token=X`` digest the
-# same credential. Ordered data, not a dict, so iteration order is contract.
+# Family registry lives in ``sesslint._secret_families`` — the single source
+# of truth shared with discriminator redaction in ``adapters/safe_value.py``
+# (B14). Each entry carries the exact pattern, its ``value_group`` (the whole
+# match for vendor prefixes; the assigned value for
+# ``generic-credential-assignment``/``bearer-token``/Azure, so ``token: X``
+# and ``token=X`` digest the same credential), necessary literal anchors, and
+# gate data. Ordered data, not a dict, so iteration order is contract.
 #
-# Vendor-prefix families anchor with ``_TOKEN_BOUNDARY`` — a real credential
-# starts at a token boundary, while ``...Gsk-X``, ``xghp_y`` inside longer
+# Vendor-prefix families anchor at a token boundary — a real credential
+# starts at a boundary, while ``...Gsk-X``, ``xghp_y`` inside longer
 # base64url/random blobs are substring noise (on a real 9GB corpus every one
-# of 910 ``sk-``-shape hits was mid-token — zero boundary starts).
-_TOKEN_BOUNDARY: Final[bytes] = rb"(?<![A-Za-z0-9_-])"
-_SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = (
-    (
-        "anthropic-api-key",
-        re.compile(_TOKEN_BOUNDARY + rb"sk-ant-[A-Za-z0-9_-]{20,}"),
-        0,
-    ),
-    (
-        "openai-api-key",
-        re.compile(_TOKEN_BOUNDARY + rb"sk-[A-Za-z0-9]{20,}"),
-        0,
-    ),
-    (
-        "openrouter-api-key",
-        re.compile(_TOKEN_BOUNDARY + rb"sk-or-v1-[0-9a-f]{48,}"),
-        0,
-    ),
-    (
-        "github-pat-classic",
-        re.compile(_TOKEN_BOUNDARY + rb"ghp_[A-Za-z0-9]{36,}"),
-        0,
-    ),
-    (
-        "github-pat-fine-grained",
-        re.compile(_TOKEN_BOUNDARY + rb"github_pat_[A-Za-z0-9_]{22,}"),
-        0,
-    ),
-    (
-        "github-oauth-token",
-        re.compile(_TOKEN_BOUNDARY + rb"gh[osru]_[A-Za-z0-9]{36,}"),
-        0,
-    ),
-    (
-        "stripe-webhook-secret",
-        re.compile(_TOKEN_BOUNDARY + rb"whsec_[A-Za-z0-9]{24,}"),
-        0,
-    ),
-    (
-        "stripe-key",
-        re.compile(_TOKEN_BOUNDARY + rb"[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"),
-        0,
-    ),
-    (
-        "aws-access-key",
-        re.compile(_TOKEN_BOUNDARY + rb"(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
-        0,
-    ),
-    (
-        "supabase-pat",
-        re.compile(_TOKEN_BOUNDARY + rb"sbp_[0-9a-f]{40,}"),
-        0,
-    ),
-    (
-        "telegram-bot-token",
-        re.compile(_TOKEN_BOUNDARY + rb"\d{8,10}:[A-Za-z0-9_-]{35}\b"),
-        0,
-    ),
-    (
-        "jwt",
-        re.compile(
-            _TOKEN_BOUNDARY + rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
-        ),
-        0,
-    ),
-    (
-        # The digest covers the header plus the first base64 fragment when
-        # adjacent (JSON-escaped ``\n`` or real newline both count), so two
-        # different keys hash differently while the marker alone still flags.
-        "private-key-block",
-        re.compile(
-            _TOKEN_BOUNDARY
-            + rb"-----BEGIN [A-Z ]*PRIVATE KEY-----((?:\\n|\s)+[A-Za-z0-9+/=_-]{8,})?"
-        ),
-        0,
-    ),
-    (
-        # Keyword must end the key token (modulo quotes/dots) immediately
-        # before ':' or '=' — so `token_count`, `token_endpoint`,
-        # `secretary`, and `id_token_hint` never match, while
-        # `aws_secret_access_key` (ends in access_key) does. Punctuation
-        # between keyword and separator may be backslash-escaped (`\"` inside
-        # JSON string payloads), as may the opening quote of the value; the
-        # value group 1 stops at whitespace, quotes, commas, closing
-        # brackets, and backslashes so a trailing `\"` is never captured.
-        "generic-credential-assignment",
-        re.compile(
-            rb"(?:password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret"
-            rb"|private[_-]?key|auth[_-]?token|secret|token)(?:\\?[\"'.-])*\s*[:=]\s*"
-            rb"(?:\\?[\"'`])?([^\s\"'`,)\]}\\]{8,})",
-            re.IGNORECASE,
-        ),
-        1,
-    ),
+# of 910 ``sk-``-shape hits was mid-token — zero boundary starts). The
+# boundary is JSON-escape aware (B24): ``\n``/``\t``/``\u000a`` before a
+# token in raw JSON bytes count as separators.
+
+# Back-compat view: (family_id, reference_pattern, value_group) tuples.
+_SECRET_FAMILIES: Final[tuple[tuple[str, re.Pattern[bytes], int], ...]] = tuple(
+    (f.family_id, f.pattern, f.value_group) for f in SECRET_FAMILIES
 )
 
 # Bytes IGNORECASE folds ASCII only. The generic pattern's value character
 # class is case-independent, so matching a lowered shadow preserves every
 # span. Slice values from the original bytes below to preserve secret digests.
 # Keeping the original pattern above makes the equivalence testable (T-10).
-_GENERIC_ASSIGNMENT_LOWER: Final[re.Pattern[bytes]] = re.compile(
-    next(
-        pattern.pattern
-        for name, pattern, _ in _SECRET_FAMILIES
-        if name == "generic-credential-assignment"
-    )
+_GENERIC_ASSIGNMENT_LOWER: Final[re.Pattern[bytes]] = next(
+    f.scan_pattern for f in SECRET_FAMILIES if f.family_id == "generic-credential-assignment"
 )
-
-SECRET_FAMILY_IDS: Final[tuple[str, ...]] = tuple(f[0] for f in _SECRET_FAMILIES)
 
 # Necessary literals, never sufficient matches (T-10). Avoid running every
 # negative-lookbehind regex across a giant record merely because one family
 # made the window gate positive. The exact family regex remains authoritative.
 _FAMILY_LITERALS: Final[dict[str, tuple[bytes, ...]]] = {
-    "anthropic-api-key": (b"sk-ant-",),
-    "openai-api-key": (b"sk-",),
-    "openrouter-api-key": (b"sk-or-v1-",),
-    "github-pat-classic": (b"ghp_",),
-    "github-pat-fine-grained": (b"github_pat_",),
-    "github-oauth-token": (b"gho_", b"ghs_", b"ghr_", b"ghu_"),
-    "stripe-webhook-secret": (b"whsec_",),
-    "stripe-key": (b"sk_live_", b"sk_test_", b"rk_live_", b"rk_test_"),
-    "aws-access-key": (b"AKIA", b"ASIA"),
-    "supabase-pat": (b"sbp_",),
-    "jwt": (b"eyJ",),
-    "private-key-block": (b"PRIVATE KEY-----",),
+    f.family_id: f.anchors for f in SECRET_FAMILIES if f.anchors
 }
 
 # --- Gate layer ------------------------------------------------------------
 # Per-line regex scanning does not meet the perf contract (~75-190us/line on
 # the 250k-record/100MB bench). feed() therefore buffers records into a
 # bounded window and gates each window once with C-speed primitives: literal
-# ``in`` anchors, one narrow regex for telegram's digit:payload shape, and a
-# find-loop keyword check on lowered bytes. A miss skips all regex work for
-# the whole window; a hit re-scans the window's records through the same
-# superset checks per line and then the exact family patterns. The gate is a
-# strict superset of every family pattern — each family match necessarily
-# contains a literal anchor, the ``:<word>{35}`` tail, or a
-# keyword..separator assignment — so detection results are identical; only
-# the scan order changes.
+# ``in`` anchors, a few narrow regexes for families whose literal alone is
+# too common in random blobs (telegram's ``:``+35 tail, ``npm_``/``hf_``/
+# slack shapes), and a find-loop keyword check on lowered bytes. A miss
+# skips all regex work for the whole window; a hit re-scans the window's
+# records through the same superset checks per line and then the exact
+# family patterns. The gate is a strict superset of every family pattern —
+# each family match necessarily contains one of its gate literals, matches
+# its gate pattern, or is a keyword..separator assignment — so detection
+# results are identical; only the scan order changes. Gate data comes from
+# the shared family table (``gate_literals`` / ``gate_pattern``).
 _GATE_WINDOW_BYTES: Final[int] = 65_536
 
-_GATE_LITERALS: Final[tuple[bytes, ...]] = (
-    b"sk-",  # anthropic-api-key, openai-api-key, openrouter-api-key
-    b"k_live_",  # stripe-key sk_live_/rk_live_
-    b"k_test_",  # stripe-key sk_test_/rk_test_
-    b"ghp_",  # github-pat-classic
-    b"github_pat_",  # github-pat-fine-grained
-    b"gho_",  # github-oauth-token (gh[osru]_)
-    b"ghs_",
-    b"ghr_",
-    b"ghu_",
-    b"whsec_",  # stripe-webhook-secret
-    b"AKIA",  # aws-access-key
-    b"ASIA",
-    b"sbp_",  # supabase-pat
-    b"eyJ",  # jwt (real JWT headers are always exact-case ``eyJ``)
-    b"-----BEGIN",  # private-key-block
+_GATE_LITERALS: Final[tuple[bytes, ...]] = tuple(
+    dict.fromkeys(lit for f in SECRET_FAMILIES for lit in f.gate_literals)
+)
+_GATE_PATTERNS: Final[tuple[re.Pattern[bytes], ...]] = tuple(
+    f.gate_pattern for f in SECRET_FAMILIES if f.gate_pattern is not None
 )
 
 # telegram-bot-token family: ``\d{8,10}:[A-Za-z0-9_-]{35}`` — every match
 # contains ``:`` followed by 35 token-alphabet chars; that alone is the
-# superset gate (the digits-prefix check stays in the family pattern).
-_GATE_TOKEN_TAIL: Final[re.Pattern[bytes]] = re.compile(rb":[A-Za-z0-9_-]{35}")
+# superset gate (the digits-prefix check stays in the family pattern). It is
+# also the per-record prefilter for this anchorless family.
+_GATE_TOKEN_TAIL: Final[re.Pattern[bytes]] = next(
+    f.gate_pattern
+    for f in SECRET_FAMILIES
+    if f.family_id == "telegram-bot-token" and f.gate_pattern is not None
+)
 
 # Keyword roots for generic-credential-assignment, on lowered bytes. The
 # family's keyword alternatives each contain one of these roots
@@ -267,8 +166,9 @@ def _gate_maybe_contains_secret(data: bytes) -> bool:
     for anchor in _GATE_LITERALS:
         if anchor in data:
             return True
-    if _GATE_TOKEN_TAIL.search(data) is not None:
-        return True
+    for gate in _GATE_PATTERNS:
+        if gate.search(data) is not None:
+            return True
     return _kw_assignment_present(data.lower())
 
 
@@ -277,54 +177,10 @@ def _line_gate_maybe_contains_secret(raw: bytes) -> bool:
     for anchor in _GATE_LITERALS:
         if anchor in raw:
             return True
-    if _GATE_TOKEN_TAIL.search(raw) is not None:
-        return True
+    for gate in _GATE_PATTERNS:
+        if gate.search(raw) is not None:
+            return True
     return _kw_assignment_present(raw.lower())
-
-
-# Assigned values that are documentation placeholders, not credentials.
-# Uniform-character values (``xxxxxxxx``, ``********``) and wrapper forms
-# (``<VAR>``, ``${VAR}``, ``{VAR}``) are excluded separately by shape.
-_PLACEHOLDER_VALUES: Final[frozenset[bytes]] = frozenset(
-    {
-        b"redacted",
-        b"example",
-        b"placeholder",
-        b"changeme",
-        b"change-me",
-        b"password",
-        b"passwd",
-        b"secret",
-        b"token",
-        b"none",
-        b"null",
-        b"true",
-        b"false",
-        b"undefined",
-        b"unknown",
-        b"tbd",
-        b"n/a",
-    }
-)
-
-
-def _looks_like_placeholder(value: bytes) -> bool:
-    """Best-effort exclusion of documentation placeholders in assignments.
-
-    ``token: null`` / ``api_key = "xxxxxxxx"`` / ``password: ${VAR}`` are
-    configuration *shapes*, not leaked credentials. Precision beats recall:
-    when unsure, the value still counts as a hit.
-    """
-    v = value.lower().strip(b"\"'`")
-    if len(v) < 8:
-        return True
-    if len(set(v)) <= 2:
-        return True
-    if v[:1] in (b"<", b"{", b"[") or v.startswith(b"${"):
-        return True
-    if v.startswith((b"your-", b"your_", b"your.")):
-        return True
-    return v in _PLACEHOLDER_VALUES
 
 
 @dataclass(slots=True)
@@ -416,29 +272,22 @@ class SecretScanTracker:
         byte_end: int | None,
         record_ordinal: int | None,
     ) -> None:
-        """Run the exact family patterns over one record's raw bytes."""
-        for family_id, pattern, value_group in _SECRET_FAMILIES:
+        """Run the exact family patterns over one record's raw bytes.
+
+        ``iter_family_spans`` applies the JSON-escape-aware token boundary
+        (B24), co-occurrence markers, and placeholder/value vetoes; casefold
+        families match an ASCII-lowered shadow while spans slice the original
+        bytes, so digests stay case-sensitive (T-10).
+        """
+        for family in SECRET_FAMILIES:
+            family_id = family.family_id
             anchors = _FAMILY_LITERALS.get(family_id)
             if anchors is not None and not any(anchor in raw_bytes for anchor in anchors):
                 continue
             if family_id == "telegram-bot-token" and _GATE_TOKEN_TAIL.search(raw_bytes) is None:
                 continue
-            generic = family_id == "generic-credential-assignment"
-            matches = (
-                _GENERIC_ASSIGNMENT_LOWER.finditer(raw_bytes.lower())
-                if generic
-                else pattern.finditer(raw_bytes)
-            )
-            for match in matches:
-                secret_bytes = (
-                    raw_bytes[match.start(value_group) : match.end(value_group)]
-                    if generic
-                    else match.group(value_group)
-                )
-                if family_id == "generic-credential-assignment" and _looks_like_placeholder(
-                    secret_bytes
-                ):
-                    continue
+            for value_start, value_end in iter_family_spans(family, raw_bytes):
+                secret_bytes = raw_bytes[value_start:value_end]
                 key: _HitKey = (
                     record_ordinal,
                     line_number,
