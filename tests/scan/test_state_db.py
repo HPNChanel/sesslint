@@ -303,6 +303,22 @@ def test_reader_non_utf8_schema_error_is_malformed(tmp_path: Path, immutable: bo
     assert snap.schema_note == "malformed"
 
 
+@pytest.mark.parametrize("immutable", [False, True])
+def test_reader_non_utf8_row_text_is_malformed(tmp_path: Path, immutable: bool) -> None:
+    """Row text that is not UTF-8 (here b"locked\\xf4(") is malformed, never
+    "io-error" or "locked" from CPython's error text quoting the row."""
+    db = _mk_db(tmp_path, threads=[(UA, "rollout-a.jsonl")])
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO threads (id, rollout_path) VALUES (CAST(X'6c6f636b6564f428' AS TEXT), 'r')"
+    )
+    con.commit()
+    con.close()
+    snap = read_codex_state(db, immutable=immutable)
+    assert not snap.parse_ok
+    assert snap.schema_note == "malformed"
+
+
 def test_state_db_non_utf8_schema_reported_malformed(codex_home: Path) -> None:
     _rollout(codex_home / "sessions" / "2026" / "09" / "20", UA)
     _corrupt_schema_name(_mk_db(codex_home, threads=[(UA, "rollout-a.jsonl")]))
