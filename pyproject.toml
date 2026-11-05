@@ -50,7 +50,7 @@ dev = [
 packaging = [
     "pyinstaller>=6",
     "build==1.6.1",
-    "hatchling==1.32.4",
+    "hatchling==1.33.0",
 ]
 # Dev-time ONLY: scoped mutation testing (qa-infra T-02). POSIX-only tool
 # (mutmut 3 needs os.fork — run under WSL/Linux/macOS/CI, never native
