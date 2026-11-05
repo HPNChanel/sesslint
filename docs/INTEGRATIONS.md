@@ -347,7 +347,9 @@ Each verdict change prints one line — `healthy->invalid` with the rule codes
 Watch is a pure observer: it never writes to
 watched directories, never installs hooks, and Ctrl+C exits cleanly. Poll
 cost scales with file count; narrow the scope with an explicit path or
-`--agent` when watching large roots.
+`--agent` when watching large roots. Changes are detected from each file's
+size and modification time, so a same-size rewrite within the filesystem's
+timestamp granularity is picked up at the next size or mtime change.
 
 ## MCP server: `sesslint mcp`
 

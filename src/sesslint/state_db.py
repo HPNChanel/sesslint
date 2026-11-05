@@ -207,15 +207,22 @@ def read_codex_state(path: Path, *, immutable: bool = False) -> CodexStateSnapsh
                 skips += 1
                 reason_hashes.add(short_hash(reason if isinstance(reason, str) else ""))
     except sqlite3.OperationalError as err:
+        # CPython's own row-decode failure quotes the undecodable row text, so
+        # classify it before the substring test below can match that content.
         note = (
             "query-limit"
             if immutable and query_budget <= 0
+            else "malformed"
+            if str(err).startswith("Could not decode to UTF-8")
             else "locked"
             if "locked" in str(err).lower()
             else "io-error"
         )
         return _empty(parse_ok=False, note=note)
-    except sqlite3.DatabaseError:
+    except (sqlite3.DatabaseError, UnicodeDecodeError):
+        # A corrupted schema can put non-UTF-8 bytes into SQLite's own error
+        # text ("malformed database schema (<name>) ..."); CPython then raises
+        # UnicodeDecodeError while building the sqlite3 exception (3.11-3.14).
         return _empty(parse_ok=False, note="malformed")
     finally:
         con.close()

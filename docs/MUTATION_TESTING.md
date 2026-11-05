@@ -75,7 +75,22 @@ a triage queue, not a badge.
 
 ## Baseline
 
-The first completed scoped run establishes per-module survival rates in the
-internal task note (qa-infra T-02). Until a POSIX runner
-completes it, the baseline is **pending** — the maintainer's box is Windows
-without WSL, so the weekly CI job is the expected first real run.
+First complete scoped run: scheduled CI run
+[41296963489](https://github.com/HPNChanel/sesslint/actions/runs/41296963489)
+on `main` at `caa0fe4` (2026-11-01). Of 18,952 mutants, 17,955 were killed,
+815 survived, 152 had no covering test and 30 timed out (0 suspicious,
+0 skipped).
+
+| Area | Mutants | Survived | No tests | Timeout |
+| ---- | ------: | -------: | -------: | ------: |
+| `checks/` | 7,783 | 176 | 36 | 24 |
+| `repair/` | 5,859 | 463 | 81 | 1 |
+| `outcome/` | 3,874 | 134 | 6 | 1 |
+| `io.py` | 1,436 | 42 | 29 | 4 |
+
+The survivor queue is concentrated in `repair/recipes_conservative` (251),
+`repair/preconditions` (93), `outcome/engine` (60), `repair/recipes_salvage`
+(51 survived, 37 without tests) and `io.py` (42 survived, 29 without tests).
+Work it with the triage protocol above, repair modules first, and compare
+against the next scheduled run after each batch. Per-module rates stay in the
+internal task note (qa-infra T-02).

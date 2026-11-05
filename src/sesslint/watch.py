@@ -85,6 +85,13 @@ class _FileState:
 
 
 def _snapshot_file(path: Path) -> tuple[int, int] | None:
+    """``(st_mtime_ns, st_size)`` change signal for one path.
+
+    Known limit: a same-size rewrite that lands within the filesystem's
+    timestamp granularity (on Linux as coarse as the kernel tick) leaves both
+    fields unchanged, so it is seen only at the next size or mtime change.
+    Content is never hashed here, keeping each poll at one ``stat`` per file.
+    """
     try:
         st = path.stat()
     except OSError:

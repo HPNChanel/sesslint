@@ -150,8 +150,9 @@ def test_package_script_offline_no_network_imports() -> None:
 
 def test_packaging_files_outside_shipped_package() -> None:
     """Build tooling must live outside src/sesslint (never shipped in the wheel)."""
-    assert SPEC_PATH.is_file() and "src" not in SPEC_PATH.parts
-    assert PACKAGE_PY.is_file() and "src" not in PACKAGE_PY.parts
+    # Repo-relative parts: the checkout itself may live under a directory named "src".
+    assert SPEC_PATH.is_file() and "src" not in SPEC_PATH.relative_to(REPO_ROOT).parts
+    assert PACKAGE_PY.is_file() and "src" not in PACKAGE_PY.relative_to(REPO_ROOT).parts
     assert not (REPO_ROOT / "src" / "sesslint" / "package.py").exists()
 
 

@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PUBLIC_CHECKOUT_*` provider URLs in its HTML.
 - CI: name the single-build Python wheel smoke according to its actual scope;
   reproducible builds and complete installed acceptance remain separate gates.
+- A Codex `state_*.sqlite` holding non-UTF-8 text is reported as malformed
+  (SL402 `index-malformed`, `error_kind` `malformed`). Non-UTF-8 bytes in a
+  corrupted schema used to abort `scan`, `triage` or `doctor` with an internal
+  error (found by deep fuzzing); non-UTF-8 row text was reported as
+  `io-error`, or as `locked` when the text contained that word.
+- Tests: the `watch` fuzz harness stamps a deterministic mtime on every
+  scripted write, so replays no longer depend on the filesystem's timestamp
+  granularity; the packaging-layout test no longer fails when the checkout
+  path contains a directory named `src`.
+- Docs: `watch` documents that a same-size rewrite within the filesystem's
+  timestamp granularity is picked up at the next size or mtime change;
+  `docs/MUTATION_TESTING.md` records the first complete scoped baseline.
 
 ### Changed
 
