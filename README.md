@@ -281,6 +281,11 @@ chmod +x "$ASSET"
 "./$ASSET" version --json
 ```
 
+The Linux binary is x86-64 and links against glibc; it is built to start on
+glibc 2.17 or newer and has been run on Ubuntu 18.04+, Debian 10+,
+AlmaLinux 8+, Amazon Linux 2 and 2023, and Fedora 41. musl-based
+distributions such as Alpine are not supported; install from PyPI there.
+
 On Windows, compare `Get-FileHash -Algorithm SHA256 .\sesslint-*.exe` with
 the published checksum, then follow the PowerShell commands in the
 [starter kit](docs/STARTER_KIT.md). Verify signatures and provenance before

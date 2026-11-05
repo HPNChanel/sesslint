@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Release: the Linux binary is frozen from a python-build-standalone 3.11
+  interpreter instead of the runner's CPython, whose `libpython` needed
+  glibc 2.35. The binary now starts on glibc 2.17+ distributions such as
+  Ubuntu 18.04/20.04, Debian 10/11, RHEL/AlmaLinux 8/9 and Amazon Linux 2/2023;
+  the release also starts it on Ubuntu 18.04 before publishing. musl (Alpine)
+  remains unsupported.
 - Website: distinguish published downloads from candidate documentation and
   previews; unavailable release metadata no longer creates speculative download
   links. Signature and provenance instructions describe the selected asset set.

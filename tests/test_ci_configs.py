@@ -333,6 +333,20 @@ def test_release_workflow_binary_os_and_complete_signatures() -> None:
     assert "sha256sum -- *" in assemble
 
 
+def test_release_linux_binary_uses_portable_interpreter() -> None:
+    """The Linux binary is frozen from python-build-standalone, not the runner's CPython.
+
+    The runner's libpython needs the host glibc (2.35); the managed interpreter
+    targets glibc 2.17 symbols, and the release starts the binary on glibc 2.27.
+    """
+    binaries = _job_blocks(_release_content())["binaries"]
+    assert "astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081" in binaries
+    assert "--python-preference only-managed" in binaries
+    assert 'echo "$RUNNER_TEMP/pbs/bin" >> "$GITHUB_PATH"' in binaries
+    assert re.search(r"ubuntu:18\.04@sha256:[0-9a-f]{64}", binaries)
+    assert "--network none" in binaries
+
+
 def test_release_publication_requires_download_and_install_evidence() -> None:
     blocks = _job_blocks(_release_content())
     assert "published_verify.py" in blocks["pypi-verify"]
