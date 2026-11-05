@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = []
+
+[package]
+name = "sesslint-rust-workspace"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
