@@ -6,17 +6,23 @@ real checker. Properties: the returned count equals the transitions emitted,
 each path's transitions chain (``from_state`` is the previous ``to_state``), a
 fresh healthy file never emits, replaying the same script
 gives the same transitions, and no payload marker reaches an emitted line.
+
+Every scripted write or touch stamps the next tick of a virtual mtime clock:
+the fake ``sleep`` does not advance real time, and a same-size rewrite inside
+the host's timestamp granularity would otherwise be visible in one replay but
+not the next (see ``watch._snapshot_file``).
 """
 
 from __future__ import annotations
 
+import itertools
 import os
 import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from sesslint.progress import CancellationToken, OperationCancelled
@@ -34,7 +40,10 @@ _STEP = st.one_of(
 )
 
 
-def _apply(work: Path, step: tuple[object, ...]) -> None:
+_VIRTUAL_EPOCH_NS = 10**18  # 2001-09-09: never equal to a real mtime of the run
+
+
+def _apply(work: Path, step: tuple[object, ...], mtime_ns: int) -> None:
     kind = step[0]
     if kind == "idle":
         return
@@ -46,6 +55,7 @@ def _apply(work: Path, step: tuple[object, ...]) -> None:
         elif target.is_symlink():
             target.unlink()
         target.write_bytes(_mutated(adapter, ops))  # type: ignore[arg-type]
+        os.utime(target, ns=(mtime_ns, mtime_ns))
     elif kind == "delete":
         if target.is_dir() and not target.is_symlink():
             shutil.rmtree(target)
@@ -62,8 +72,7 @@ def _apply(work: Path, step: tuple[object, ...]) -> None:
             shutil.rmtree(target)
         target.symlink_to(work / "nowhere")
     elif kind == "touch" and target.is_file() and not target.is_symlink():
-        stat = target.stat()
-        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        os.utime(target, ns=(mtime_ns, mtime_ns))
 
 
 def _run(
@@ -73,12 +82,13 @@ def _run(
     try:
         (work / "t0.jsonl").write_bytes(initial)
         queue = iter(steps)
+        ticks = itertools.count(1)
         seen: list[WatchTransition] = []
 
         def sleep(_s: float) -> None:
             step = next(queue, None)
             if step is not None:
-                _apply(work, step)
+                _apply(work, step, _VIRTUAL_EPOCH_NS + next(ticks) * 1_000_000_000)
 
         count = watch(
             [work],
@@ -100,6 +110,17 @@ def _run(
     steps=st.lists(_STEP, max_size=7),
     adapter=_ADAPTERS,
     ops=OPS,
+)
+# Deep-fuzz replay mismatch (2 vs 3 transitions): two same-size writes to t1
+# landed in one coarse mtime tick in one run but not the next.
+@example(
+    steps=[
+        ("write", 1, "canonical", [("truncate", 0)]),
+        ("write", 1, "claude-code-jsonl", [("truncate", 0)]),
+        ("write", 1, "canonical", [("truncate", 1)]),
+    ],
+    adapter="canonical",
+    ops=[("truncate", 0)],
 )
 @settings(deadline=None, max_examples=40, suppress_health_check=[HealthCheck.too_slow])
 def test_watch_scripted_changes(

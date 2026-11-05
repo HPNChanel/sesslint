@@ -215,7 +215,10 @@ def read_codex_state(path: Path, *, immutable: bool = False) -> CodexStateSnapsh
             else "io-error"
         )
         return _empty(parse_ok=False, note=note)
-    except sqlite3.DatabaseError:
+    except (sqlite3.DatabaseError, UnicodeDecodeError):
+        # A corrupted schema can put non-UTF-8 bytes into SQLite's own error
+        # text ("malformed database schema (<name>) ..."); CPython then raises
+        # UnicodeDecodeError while building the sqlite3 exception (3.11-3.14).
         return _empty(parse_ok=False, note="malformed")
     finally:
         con.close()

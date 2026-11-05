@@ -276,6 +276,40 @@ def test_reader_symlink(tmp_path: Path) -> None:
     assert snap.schema_note == "symlink"
 
 
+def _corrupt_schema_name(db: Path) -> None:
+    """Give one schema row a non-UTF-8 name and unparsable SQL.
+
+    SQLite's error text then quotes that name ("malformed database schema
+    (\\xf4...)"), and CPython raises UnicodeDecodeError while building the
+    sqlite3 exception (found by deep fuzz).
+    """
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE z (a TEXT)")
+    con.execute("PRAGMA writable_schema = ON")
+    con.execute(
+        "UPDATE sqlite_master SET name = CAST(X'f428' AS TEXT), sql = 'CREATE TABLE x(' "
+        "WHERE name = 'z'"
+    )
+    con.commit()
+    con.close()
+
+
+@pytest.mark.parametrize("immutable", [False, True])
+def test_reader_non_utf8_schema_error_is_malformed(tmp_path: Path, immutable: bool) -> None:
+    db = _mk_db(tmp_path, threads=[(UA, "rollout-a.jsonl")])
+    _corrupt_schema_name(db)
+    snap = read_codex_state(db, immutable=immutable)
+    assert not snap.parse_ok
+    assert snap.schema_note == "malformed"
+
+
+def test_state_db_non_utf8_schema_reported_malformed(codex_home: Path) -> None:
+    _rollout(codex_home / "sessions" / "2026" / "09" / "20", UA)
+    _corrupt_schema_name(_mk_db(codex_home, threads=[(UA, "rollout-a.jsonl")]))
+    hits = _sl402(scan_path(codex_home, recursive=True), "state_1.sqlite")
+    assert [f.evidence["divergence"] for _, f in hits] == ["index-malformed"]
+
+
 def test_reader_content_columns_never_selected(tmp_path: Path) -> None:
     """Registry carries content columns — snapshot must never retain them."""
     db = _mk_db(tmp_path, threads=[(UA, "rollout-a.jsonl")])
