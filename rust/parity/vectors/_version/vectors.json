@@ -1,0 +1,17 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint._version",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "_version_py_sha256": "ae2c3cf49b52002187f1770b6c34b70afd9da4fd4c4f3434371aa0e9b4571d16",
+  "vectors": [
+    {
+      "id": "get_version_info_sorted_json",
+      "construct": {
+        "type": "get_version_info"
+      },
+      "expected": {
+        "json": "{\"adapters\": {\"canonical\": \"1.0.0\", \"claude-code-jsonl\": \"1.0.0\", \"codex-rollout\": \"1.0.0\", \"openai-agents\": \"1.0.0\"}, \"cli\": \"0.5.0\", \"profiles\": {\"claude-strict\": \"1.0.0\", \"neutral\": \"1.0.0\", \"openai-strict\": \"1.0.0\"}, \"schema_manifest\": \"sesslint.repair-manifest/v1\", \"schema_report\": \"sesslint.report/v1\", \"schema_session\": \"sesslint.session/v1\"}"
+      }
+    }
+  ]
+}
