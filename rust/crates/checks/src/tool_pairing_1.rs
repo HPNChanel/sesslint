@@ -1,9 +1,7 @@
 //! Generic tool-pairing integrity checks part 1 (SL101, SL102, SL103, SL104).
 //!
-//! Port of `src/sesslint/checks/tool_pairing_1.py` lines 1–496
+//! Port of `src/sesslint/checks/tool_pairing_1.py` lines 1–682
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice stops after [`check_reused`]. It does not port
-//! `check_multi_results`, `check_tool_pairing_1`, or `__all__`.
 //!
 //! This module implements four vendor-neutral tool-pairing rules over canonical events:
 //! - SL101 (Orphan tool result): tool_result has no matching tool call.
@@ -51,10 +49,11 @@
 //! [`make_finding`]. It does not emit SL101 through SL104. It does not use
 //! [`model::events::event_corr_id`].
 //!
-//! [`record_orphans`], [`record_dangling`], and [`record_reused`] collect
-//! records and do not call [`make_finding`]. [`check_orphans`],
-//! [`check_dangling`], and [`check_reused`] call [`make_finding`] only when
-//! that list is non-empty. The omitted fingerprint returns
+//! [`record_orphans`], [`record_dangling`], [`record_reused`], and
+//! [`record_multi_results`] collect records and do not call [`make_finding`].
+//! [`check_orphans`], [`check_dangling`], [`check_reused`], and
+//! [`check_multi_results`] call [`make_finding`] only when that list is
+//! non-empty. The omitted fingerprint returns
 //! [`FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
 //! [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
 //! `max_findings == -1` takes the overflow path because `0 <= -1` is false.
@@ -62,8 +61,20 @@
 //! slice does not append an overflow finding and does not invent a digest.
 //! Correlation walks sort a copy of the indexer key lists. They do not
 //! iterate the [`HashMap`]. This slice does not call
-//! [`crate::graph::cap_finding_sort_key`] or
-//! [`model::canonical::compute_content_hash`].
+//! [`crate::graph::cap_finding_sort_key`].
+//!
+//! A mapping result payload calls [`model::canonical::compute_content_hash`].
+//! That function always returns
+//! [`model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE`] and does not
+//! hash. The error is propagated immediately: later payloads are not
+//! scanned, repairability is not chosen, and [`make_finding`] is not
+//! called. Non-mapping payloads are stringified and are not hashed.
+//!
+//! [`check_tool_pairing_1`] calls [`check_orphans`], [`check_dangling`],
+//! [`check_reused`], then [`check_multi_results`]. The first family error
+//! is returned immediately. Successful lists are concatenated and sorted
+//! with [`cap_finding_sort_key`]. This function does not call
+//! [`cap_pairing_findings`] or [`make_finding`].
 //!
 //! # Recorded gaps
 //!
@@ -79,18 +90,24 @@
 //!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
 //! * Offender [`make_finding`] does not produce a digest
 //!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
-//! * A float `source_location`, `correlation_id`, or event `id` is
+//! * A mapping result payload calls
+//!   [`model::canonical::compute_content_hash`]
+//!   ([`model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE`]). This slice
+//!   does not hash and does not invent a digest.
+//! * A float `source_location`, `correlation_id`, event `id`, or
+//!   non-mapping payload is
 //!   [`model::events::PYTHON_FLOAT_STR_UNREPRESENTABLE`]. Rust `Display`
 //!   is not used.
-//! * A list or mapping `source_location`, `correlation_id`, or event `id`
-//!   is [`model::events::PYTHON_STR_UNREPRESENTABLE`]. A Python repr is not
+//! * A list or mapping `source_location`, `correlation_id`, or event `id`,
+//!   and a list non-mapping payload, are
+//!   [`model::events::PYTHON_STR_UNREPRESENTABLE`]. A Python repr is not
 //!   invented.
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
-use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity, SL101, SL102, SL103};
+use model::canonical::{compute_content_hash, CanonicalUnavailable, Payload, SessionEvent};
+use model::codes::{Repairability, Severity, SL101, SL102, SL103, SL104};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_UNREPRESENTABLE,
@@ -162,6 +179,7 @@ pub enum ToolPairing1Error {
     PythonIntUnbounded,
     PythonFloatStr,
     PythonStr,
+    Canonical(CanonicalUnavailable),
     Finding(FindingError),
 }
 
@@ -173,6 +191,7 @@ impl ToolPairing1Error {
             Self::PythonIntUnbounded => PYTHON_INT_UNBOUNDED,
             Self::PythonFloatStr => PYTHON_FLOAT_STR_UNREPRESENTABLE,
             Self::PythonStr => PYTHON_STR_UNREPRESENTABLE,
+            Self::Canonical(error) => error.message(),
             Self::Finding(error) => error.message(),
         }
     }
@@ -187,6 +206,7 @@ impl fmt::Display for ToolPairing1Error {
 impl Error for ToolPairing1Error {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Canonical(error) => Some(error),
             Self::Finding(error) => Some(error),
             Self::BorrowedLookup
             | Self::EvidenceNotAMap
@@ -200,6 +220,12 @@ impl Error for ToolPairing1Error {
 impl From<FindingError> for ToolPairing1Error {
     fn from(error: FindingError) -> Self {
         Self::Finding(error)
+    }
+}
+
+impl From<CanonicalUnavailable> for ToolPairing1Error {
+    fn from(error: CanonicalUnavailable) -> Self {
+        Self::Canonical(error)
     }
 }
 
@@ -1120,18 +1146,344 @@ fn reused_finding(record: &ReusedRecord, ctx: &CheckContext) -> Result<Finding, 
     })?)
 }
 
+/// One correlation id that would emit SL104. Does not call [`make_finding`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultiResultRecord {
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub related_ids: Vec<String>,
+    pub correlation_id: String,
+    pub count: i64,
+    pub event_ids: Vec<String>,
+    pub result_ids: Vec<String>,
+    pub result_indexes: Vec<i64>,
+    pub truncated: bool,
+    pub repairability: Repairability,
+}
+
+/// Python: `check_multi_results` record walk. Does not call [`make_finding`].
+///
+/// One record per correlation id whose result list length is greater than 1.
+/// Keys are a sorted copy of the indexer result-key list. A single result
+/// is silent. The id sample is truncated to [`MAX_INDEX_SAMPLE_SIZE`].
+/// A mapping payload returns
+/// [`model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE`] immediately.
+pub fn record_multi_results(
+    indexer: &ToolPairingIndexer<'_>,
+    source_path: &str,
+) -> Result<Vec<MultiResultRecord>, ToolPairing1Error> {
+    let mut records = Vec::new();
+    let mut result_corrs = indexer.results_keys().to_vec();
+    result_corrs.sort();
+    let sample_cap = sample_cap()?;
+    for corr in &result_corrs {
+        let occ = indexer.results(corr);
+        if occ.len() <= 1 {
+            continue;
+        }
+        let mut result_indexes = Vec::new();
+        let mut result_ids = Vec::new();
+        for &(idx, ev) in occ {
+            result_indexes.push(usize_to_i64(idx)?);
+            let ev_id = event_id_text(ev, idx, "result")?;
+            result_ids.push(safe_id(Some(&ev_id)));
+        }
+        let safe_corr = safe_id(Some(corr));
+        let first_ev = occ[0].1;
+        let first_ev_id = result_ids.first().map(String::as_str);
+        let rec_id = source_record_id(first_ev_id);
+        let (path, line) = resolve_source_coords(first_ev, source_path)?;
+        let sample_indexes = result_indexes.iter().copied().take(sample_cap).collect();
+        let sample_ids: Vec<String> = result_ids.iter().take(sample_cap).cloned().collect();
+        let count = usize_to_i64(occ.len())?;
+        let truncated = count > MAX_INDEX_SAMPLE_SIZE;
+        let mut fps = HashSet::new();
+        let mut res_event_count: usize = 0;
+        for &(_, ev) in occ {
+            fps.insert(payload_fingerprint(ev)?);
+            res_event_count = res_event_count
+                .checked_add(1)
+                .ok_or(ToolPairing1Error::PythonIntUnbounded)?;
+        }
+        let call_count = indexer.uses(corr).len();
+        let repairability = if call_count == 1 && res_event_count >= 2 && fps.len() == 1 {
+            Repairability::Deterministic
+        } else {
+            Repairability::Manual
+        };
+        records.push(MultiResultRecord {
+            path,
+            line,
+            record_id: rec_id,
+            related_ids: sample_ids.clone(),
+            correlation_id: safe_corr,
+            count,
+            event_ids: sample_ids.clone(),
+            result_ids: sample_ids,
+            result_indexes: sample_indexes,
+            truncated,
+            repairability,
+        });
+    }
+    Ok(records)
+}
+
+/// Python: `check_multi_results`.
+///
+/// Context `None` is [`CheckContext::default`]. A single result is silent.
+/// A non-empty record list calls [`make_finding`] with the fingerprint
+/// omitted; the first record returns [`FINGERPRINT_CODEC_UNAVAILABLE`].
+/// An empty list still calls [`cap_pairing_findings`].
+pub fn check_multi_results(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, ToolPairing1Error> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let indexer = ToolPairingIndexer::new(events, Some(source_path))?;
+    let records = record_multi_results(&indexer, source_path)?;
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.push(multi_finding(record, ctx)?);
+    }
+    cap_pairing_findings(findings, SL104, max_findings, Some(source_path), Some(ctx))
+}
+
+/// Python: `check_tool_pairing_1`.
+///
+/// Calls [`check_orphans`], [`check_dangling`], [`check_reused`], then
+/// [`check_multi_results`] with the same `source_path`,
+/// `max_findings_per_family`, and `context`. The first family error is
+/// returned immediately. Successful lists are concatenated and sorted with
+/// [`cap_finding_sort_key`]. This does not call [`cap_pairing_findings`] or
+/// [`make_finding`].
+pub fn check_tool_pairing_1(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings_per_family: Option<i64>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, ToolPairing1Error> {
+    let mut all_findings = Vec::new();
+    all_findings.extend(check_orphans(
+        events,
+        source_path,
+        max_findings_per_family,
+        context,
+    )?);
+    all_findings.extend(check_dangling(
+        events,
+        source_path,
+        max_findings_per_family,
+        context,
+    )?);
+    all_findings.extend(check_reused(
+        events,
+        source_path,
+        max_findings_per_family,
+        context,
+    )?);
+    all_findings.extend(check_multi_results(
+        events,
+        source_path,
+        max_findings_per_family,
+        context,
+    )?);
+    let mut keyed = Vec::new();
+    for finding in all_findings {
+        let key = cap_finding_sort_key(&finding)?;
+        keyed.push((key, finding));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, finding)| finding).collect())
+}
+
+/// Python: `check_dangling_calls = check_dangling`.
+pub use check_dangling as check_dangling_calls;
+/// Python: `check_sl102 = check_dangling`.
+pub use check_dangling as check_sl102;
+/// Python: `check_multiple_results = check_multi_results`.
+pub use check_multi_results as check_multiple_results;
+/// Python: `check_sl104 = check_multi_results`.
+pub use check_multi_results as check_sl104;
+/// Python: `check_orphan_results = check_orphans`.
+pub use check_orphans as check_orphan_results;
+/// Python: `check_sl101 = check_orphans`.
+pub use check_orphans as check_sl101;
+/// Python: `check_reused_ids = check_reused`.
+pub use check_reused as check_reused_ids;
+/// Python: `check_sl103 = check_reused`.
+pub use check_reused as check_sl103;
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 20] = [
+    "CALL_KINDS",
+    "MAX_INDEX_SAMPLE_SIZE",
+    "MAX_PAIRING_FINDINGS",
+    "MAX_PAIRING_SAMPLE_SIZE",
+    "RESULT_KINDS",
+    "cap_pairing_findings",
+    "check_dangling",
+    "check_dangling_calls",
+    "check_multi_results",
+    "check_multiple_results",
+    "check_orphan_results",
+    "check_orphans",
+    "check_reused",
+    "check_reused_ids",
+    "check_sl101",
+    "check_sl102",
+    "check_sl103",
+    "check_sl104",
+    "check_tool_pairing_1",
+    "compute_pairing_fingerprint",
+];
+
+fn payload_fingerprint(event: &EventValue) -> Result<String, ToolPairing1Error> {
+    match event {
+        EventValue::Session(session) => payload_value_fingerprint(&session.payload),
+        EventValue::Mapping(mapping) => match mapping.get("payload") {
+            Some(field) => field_payload_fingerprint(field),
+            None => Ok("None".to_owned()),
+        },
+        EventValue::Other => Ok("None".to_owned()),
+    }
+}
+
+fn payload_value_fingerprint(payload: &Payload) -> Result<String, ToolPairing1Error> {
+    if payload.is_map() {
+        return mapping_payload_hash(payload);
+    }
+    stringify_payload(payload)
+}
+
+fn field_payload_fingerprint(field: &EventField) -> Result<String, ToolPairing1Error> {
+    match field {
+        EventField::Mapping(mapping) => mapping_payload_hash(&mapping.to_payload()),
+        EventField::Null => Ok("None".to_owned()),
+        EventField::Bool(true) => Ok("True".to_owned()),
+        EventField::Bool(false) => Ok("False".to_owned()),
+        EventField::Int(number) => Ok(number.to_string()),
+        EventField::Str(text) => Ok(text.clone()),
+        EventField::Float(_) => Err(ToolPairing1Error::PythonFloatStr),
+        EventField::List(_) => Err(ToolPairing1Error::PythonStr),
+    }
+}
+
+fn mapping_payload_hash(payload: &Payload) -> Result<String, ToolPairing1Error> {
+    match compute_content_hash(payload) {
+        Ok(_digest) => Err(CanonicalUnavailable::payload_content_hash().into()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn stringify_payload(payload: &Payload) -> Result<String, ToolPairing1Error> {
+    if payload.is_null() {
+        return Ok("None".to_owned());
+    }
+    if let Some(flag) = payload.as_bool() {
+        return Ok(if flag {
+            "True".to_owned()
+        } else {
+            "False".to_owned()
+        });
+    }
+    if let Some(number) = payload.as_int() {
+        return Ok(number.to_string());
+    }
+    if let Some(text) = payload.as_str() {
+        return Ok(text.to_owned());
+    }
+    if payload.as_float().is_some() {
+        return Err(ToolPairing1Error::PythonFloatStr);
+    }
+    if payload.is_list() || payload.is_tuple() {
+        return Err(ToolPairing1Error::PythonStr);
+    }
+    mapping_payload_hash(payload)
+}
+
+fn multi_evidence(record: &MultiResultRecord) -> PyValue {
+    PyValue::map(vec![
+        (
+            PyValue::string("correlation_id"),
+            PyValue::string(record.correlation_id.clone()),
+        ),
+        (PyValue::string("count"), PyValue::int(record.count)),
+        (
+            PyValue::string("event_ids"),
+            PyValue::list(py_strings(&record.event_ids)),
+        ),
+        (
+            PyValue::string("result_ids"),
+            PyValue::list(py_strings(&record.result_ids)),
+        ),
+        (
+            PyValue::string("result_indexes"),
+            PyValue::list(
+                record
+                    .result_indexes
+                    .iter()
+                    .copied()
+                    .map(PyValue::int)
+                    .collect(),
+            ),
+        ),
+        (
+            PyValue::string("truncated"),
+            PyValue::bool_value(record.truncated),
+        ),
+    ])
+}
+
+fn multi_finding(
+    record: &MultiResultRecord,
+    ctx: &CheckContext,
+) -> Result<Finding, ToolPairing1Error> {
+    let source = pairing_source(&record.path, record.line, record.record_id.as_deref())?;
+    let (adapter_id, adapter_version, profile_id, profile_version) = context_fields(ctx);
+    Ok(make_finding(&MakeFindingInput {
+        code: PyValue::string(SL104),
+        severity: PyValue::severity(Severity::Error),
+        repairability: PyValue::repairability(record.repairability),
+        message_template: PyValue::string(MSG_SL104),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(py_strings(&record.related_ids)),
+        evidence: multi_evidence(record),
+        fingerprint: PyValue::None,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        ordinal: None,
+        context: None,
+    })?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_finding_sort_key, cap_pairing_findings, check_dangling, check_orphans, check_reused,
-        compute_pairing_fingerprint, record_dangling, record_orphans, record_reused,
-        resolve_source_coords, safe_id, source_record_id, ToolPairing1Error, ToolPairingIndexer,
-        CALL_KINDS, KIND_TOOL_CALL, KIND_TOOL_RESULT, KIND_TOOL_USE, MAX_INDEX_SAMPLE_SIZE,
-        MAX_PAIRING_FINDINGS, MAX_PAIRING_SAMPLE_SIZE, MSG_OVERFLOW, MSG_SL101, MSG_SL102,
-        MSG_SL103, MSG_SL104, RESULT_KINDS,
+        cap_finding_sort_key, cap_pairing_findings, check_dangling, check_dangling_calls,
+        check_multi_results, check_multiple_results, check_orphan_results, check_orphans,
+        check_reused, check_reused_ids, check_sl101, check_sl102, check_sl103, check_sl104,
+        check_tool_pairing_1, compute_pairing_fingerprint, record_dangling, record_multi_results,
+        record_orphans, record_reused, resolve_source_coords, safe_id, source_record_id,
+        ToolPairing1Error, ToolPairingIndexer, ALL, CALL_KINDS, KIND_TOOL_CALL, KIND_TOOL_RESULT,
+        KIND_TOOL_USE, MAX_INDEX_SAMPLE_SIZE, MAX_PAIRING_FINDINGS, MAX_PAIRING_SAMPLE_SIZE,
+        MSG_OVERFLOW, MSG_SL101, MSG_SL102, MSG_SL103, MSG_SL104, RESULT_KINDS,
     };
     use crate::context::CheckContext;
-    use model::canonical::SessionEvent;
+    use model::canonical::{SessionEvent, PAYLOAD_CONTENT_HASH_UNAVAILABLE};
     use model::codes::{Repairability, Severity, SL103};
     use model::events::{
         EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
@@ -1830,5 +2182,293 @@ mod tests {
         assert_eq!(records[0].call_ids[0], "call-0-synth");
         assert_eq!(records[0].call_ids[31], "call-31-synth");
         assert_eq!(records[0].call_indexes[31], 31);
+    }
+
+    fn result_map(id: &str, corr: &str) -> EventValue {
+        mapping(&[
+            ("kind", field_str(KIND_TOOL_RESULT)),
+            ("id", field_str(id)),
+            ("correlation_id", field_str(corr)),
+        ])
+    }
+
+    fn result_map_payload(id: &str, corr: &str, payload: EventField) -> EventValue {
+        mapping(&[
+            ("kind", field_str(KIND_TOOL_RESULT)),
+            ("id", field_str(id)),
+            ("correlation_id", field_str(corr)),
+            ("payload", payload),
+        ])
+    }
+
+    fn call_map(id: &str, corr: &str) -> EventValue {
+        mapping(&[
+            ("kind", field_str(KIND_TOOL_CALL)),
+            ("id", field_str(id)),
+            ("correlation_id", field_str(corr)),
+        ])
+    }
+
+    fn assert_hash_unavailable(err: ToolPairing1Error) {
+        assert_eq!(err.to_string(), PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+        assert_eq!(err.message(), PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+        assert!(!is_lower_hex16(&err.to_string()));
+        assert!(matches!(err, ToolPairing1Error::Canonical(_)));
+    }
+
+    fn same_item<T>(left: T, right: T) {
+        let _ = (left, right);
+    }
+
+    #[test]
+    fn one_result_is_silent_for_multi() {
+        let orphan = [result_map("res-a-synth", "corr-synth")];
+        assert!(check_multi_results(&orphan, None, None, None)
+            .unwrap()
+            .is_empty());
+        let paired = silent_pair();
+        assert!(check_multi_results(&paired, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn two_results_and_no_call_are_manual_and_the_check_returns_the_codec_error() {
+        let events = [
+            result_map("res-a-synth", "corr-synth"),
+            result_map("res-b-synth", "corr-synth"),
+        ];
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].repairability, Repairability::Manual);
+        assert_eq!(records[0].count, 2);
+        assert!(!records[0].truncated);
+        assert_eq!(
+            records[0].result_ids,
+            vec!["res-a-synth".to_owned(), "res-b-synth".to_owned()]
+        );
+        assert_eq!(records[0].event_ids, records[0].result_ids);
+        assert_eq!(records[0].result_indexes, vec![0, 1]);
+        assert_eq!(records[0].related_ids, records[0].result_ids);
+        assert_eq!(records[0].record_id.as_deref(), Some("res-a-synth"));
+        assert_eq!(records[0].correlation_id, "corr-synth");
+        assert_codec_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn two_results_one_call_and_null_payloads_are_deterministic_then_codec_error() {
+        let events = [
+            call_map("call-a-synth", "corr-synth"),
+            result_map_payload("res-a-synth", "corr-synth", EventField::Null),
+            result_map_payload("res-b-synth", "corr-synth", EventField::Null),
+        ];
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].repairability, Repairability::Deterministic);
+        assert_eq!(records[0].count, 2);
+        assert_codec_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
+        assert_codec_unavailable(check_tool_pairing_1(&events, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn two_results_one_call_and_a_mapping_payload_return_the_hash_error() {
+        let events = [
+            call_map("call-a-synth", "corr-synth"),
+            result_map_payload(
+                "res-a-synth",
+                "corr-synth",
+                EventField::Mapping(EventMapping::new(Vec::new())),
+            ),
+            result_map_payload("res-b-synth", "corr-synth", EventField::Null),
+        ];
+        assert_hash_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
+        assert_hash_unavailable(
+            record_multi_results(
+                &ToolPairingIndexer::new(&events, None).unwrap(),
+                "<canonical>",
+            )
+            .unwrap_err(),
+        );
+        assert_hash_unavailable(check_tool_pairing_1(&events, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn a_result_with_no_call_returns_the_orphan_codec_error_not_the_hash_error() {
+        let one = [session(KIND_TOOL_RESULT, Some("corr-synth"))];
+        assert_codec_unavailable(check_tool_pairing_1(&one, None, None, None).unwrap_err());
+
+        let two = [
+            session_named("res-a-synth", KIND_TOOL_RESULT, Some("corr-synth")),
+            session_named("res-b-synth", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        assert_hash_unavailable(check_multi_results(&two, None, None, None).unwrap_err());
+        assert_codec_unavailable(check_tool_pairing_1(&two, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn empty_input_returns_empty_from_the_aggregate_and_from_multi() {
+        assert!(check_tool_pairing_1(&[], None, None, None)
+            .unwrap()
+            .is_empty());
+        assert!(check_multi_results(&[], None, None, None)
+            .unwrap()
+            .is_empty());
+        assert_codec_unavailable(check_multi_results(&[], None, Some(-1), None).unwrap_err());
+        assert_codec_unavailable(check_tool_pairing_1(&[], None, Some(-1), None).unwrap_err());
+    }
+
+    #[test]
+    fn all_matches_the_python_list() {
+        assert_eq!(
+            ALL,
+            [
+                "CALL_KINDS",
+                "MAX_INDEX_SAMPLE_SIZE",
+                "MAX_PAIRING_FINDINGS",
+                "MAX_PAIRING_SAMPLE_SIZE",
+                "RESULT_KINDS",
+                "cap_pairing_findings",
+                "check_dangling",
+                "check_dangling_calls",
+                "check_multi_results",
+                "check_multiple_results",
+                "check_orphan_results",
+                "check_orphans",
+                "check_reused",
+                "check_reused_ids",
+                "check_sl101",
+                "check_sl102",
+                "check_sl103",
+                "check_sl104",
+                "check_tool_pairing_1",
+                "compute_pairing_fingerprint",
+            ]
+        );
+        same_item(check_orphan_results, check_orphans);
+        same_item(check_sl101, check_orphans);
+        same_item(check_dangling_calls, check_dangling);
+        same_item(check_sl102, check_dangling);
+        same_item(check_reused_ids, check_reused);
+        same_item(check_sl103, check_reused);
+        same_item(check_multiple_results, check_multi_results);
+        same_item(check_sl104, check_multi_results);
+    }
+
+    #[test]
+    fn multi_missing_id_is_the_placeholder_and_empty_string_is_kept() {
+        let events = [
+            mapping(&[
+                ("kind", field_str(KIND_TOOL_RESULT)),
+                ("correlation_id", field_str("corr-synth")),
+            ]),
+            mapping(&[
+                ("kind", field_str(KIND_TOOL_RESULT)),
+                ("correlation_id", field_str("corr-synth")),
+                ("id", field_str("")),
+            ]),
+        ];
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records[0].result_ids[0], "<result:0>");
+        assert_eq!(records[0].result_ids[1], "");
+        assert_eq!(records[0].record_id.as_deref(), Some("<result:0>"));
+        assert_eq!(records[0].related_ids, records[0].result_ids);
+    }
+
+    #[test]
+    fn multi_keeps_a_redacted_sample_id() {
+        let events = [
+            result_map("sk-0123456789abcdef", "corr-synth"),
+            result_map("res-b-synth", "corr-synth"),
+        ];
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records[0].result_ids[0], "<redacted>");
+        assert_eq!(records[0].related_ids[0], "<redacted>");
+        assert_eq!(records[0].record_id.as_deref(), Some("<redacted>"));
+    }
+
+    #[test]
+    fn multi_sample_truncates_at_thirty_two_and_count_is_full_length() {
+        let mut events = Vec::new();
+        for offset in 0..33 {
+            events.push(result_map(&format!("res-{offset}-synth"), "corr-synth"));
+        }
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records[0].count, 33);
+        assert!(records[0].truncated);
+        assert_eq!(records[0].result_ids.len(), 32);
+        assert_eq!(records[0].result_indexes.len(), 32);
+        assert_eq!(records[0].event_ids, records[0].result_ids);
+        assert_eq!(records[0].related_ids, records[0].result_ids);
+        assert_eq!(records[0].result_ids[0], "res-0-synth");
+        assert_eq!(records[0].result_ids[31], "res-31-synth");
+        assert_eq!(records[0].result_indexes[31], 31);
+    }
+
+    #[test]
+    fn multi_correlation_ids_are_sorted_and_the_first_is_the_codec_error() {
+        let events = [
+            result_map("res-z-synth", "z-corr-synth"),
+            result_map("res-z2-synth", "z-corr-synth"),
+            result_map("res-a-synth", "a-corr-synth"),
+            result_map("res-a2-synth", "a-corr-synth"),
+        ];
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        assert_eq!(indexer.results_keys(), &["z-corr-synth", "a-corr-synth"]);
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].correlation_id, "a-corr-synth");
+        assert_eq!(records[0].result_indexes, vec![2, 3]);
+        assert_eq!(records[1].correlation_id, "z-corr-synth");
+        assert_eq!(records[1].result_indexes, vec![0, 1]);
+        assert_codec_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn multi_float_and_list_payloads_are_typed_errors() {
+        let float_err = check_multi_results(
+            &[
+                result_map_payload("res-a-synth", "corr-synth", EventField::Float(1.5)),
+                result_map_payload("res-b-synth", "corr-synth", EventField::Null),
+            ],
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(float_err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(float_err, ToolPairing1Error::PythonFloatStr));
+        let list_err = check_multi_results(
+            &[
+                result_map_payload(
+                    "res-a-synth",
+                    "corr-synth",
+                    EventField::List(vec![field_str("a")]),
+                ),
+                result_map_payload("res-b-synth", "corr-synth", EventField::Null),
+            ],
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(list_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert!(matches!(list_err, ToolPairing1Error::PythonStr));
+    }
+
+    #[test]
+    fn identical_bool_payloads_with_one_call_are_deterministic() {
+        let events = [
+            call_map("call-a-synth", "corr-synth"),
+            result_map_payload("res-a-synth", "corr-synth", EventField::Bool(true)),
+            result_map_payload("res-b-synth", "corr-synth", EventField::Bool(true)),
+        ];
+        let indexer = ToolPairingIndexer::new(&events, None).unwrap();
+        let records = record_multi_results(&indexer, "<canonical>").unwrap();
+        assert_eq!(records[0].repairability, Repairability::Deterministic);
     }
 }
