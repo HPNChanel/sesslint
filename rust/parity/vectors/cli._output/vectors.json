@@ -1,0 +1,135 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._output",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "output_py_sha256": "6dfd52796f3f70018e749905cbf3ac81daffafea113b1646ee08e170b1bc4697",
+  "vectors": [
+    {
+      "id": "guard_rejects_output_same_as_input",
+      "construct": {
+        "type": "guard_destination",
+        "setup": "minimal_source",
+        "destination": "source.jsonl",
+        "files": [
+          "source.jsonl"
+        ],
+        "roots": []
+      },
+      "expected": {
+        "result": "error",
+        "display": "Error: --output/--write-baseline must not be an input path",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "guard_rejects_existing_file_inside_input_directory",
+      "construct": {
+        "type": "guard_destination",
+        "setup": "sessions_artifact",
+        "destination": "sessions/artifact.json",
+        "files": [
+          "sessions"
+        ],
+        "roots": [
+          "sessions"
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "display": "Error: --output must not replace an artifact inside an input directory",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "guard_error_order_input_path_before_inside_directory",
+      "construct": {
+        "type": "guard_destination",
+        "setup": "sessions_source",
+        "destination": "sessions/source.jsonl",
+        "files": [
+          "sessions",
+          "sessions/source.jsonl"
+        ],
+        "roots": [
+          "sessions"
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "display": "Error: --output/--write-baseline must not be an input path",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "guard_error_order_alias_before_input_path",
+      "construct": {
+        "type": "guard_destination",
+        "setup": "source_and_hardlink",
+        "destination": "alias.jsonl",
+        "files": [
+          "source.jsonl"
+        ],
+        "roots": []
+      },
+      "expected": {
+        "result": "error",
+        "display": "Error: --output/--write-baseline must not be a link alias",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "emit_text_without_output_returns_print_payload",
+      "construct": {
+        "type": "emit_text",
+        "text": "synthetic câu tiếng Việt",
+        "summary": "unused",
+        "command": "check"
+      },
+      "expected": {
+        "result": "stdout",
+        "text": "synthetic câu tiếng Việt\n"
+      }
+    },
+    {
+      "id": "preflight_skips_non_report_command",
+      "construct": {
+        "type": "preflight_report_outputs",
+        "setup": "minimal_source",
+        "command": "repair",
+        "path": "source.jsonl",
+        "output": "source.jsonl"
+      },
+      "expected": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "preflight_skips_report_command_without_destinations",
+      "construct": {
+        "type": "preflight_report_outputs",
+        "setup": "minimal_source",
+        "command": "check",
+        "path": "source.jsonl"
+      },
+      "expected": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "boundaries_skips_dash_scalar",
+      "construct": {
+        "type": "boundaries",
+        "command": "diff",
+        "a": "-",
+        "b": "right.jsonl"
+      },
+      "expected": {
+        "result": "boundaries",
+        "files": [
+          "right.jsonl"
+        ],
+        "roots": []
+      }
+    }
+  ]
+}
