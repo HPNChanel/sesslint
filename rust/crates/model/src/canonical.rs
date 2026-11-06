@@ -1,9 +1,11 @@
-//! Canonical session types, header parsing, and payload guards.
+//! Canonical session types, header parsing, payload guards, and session loaders.
 //!
-//! Port of `src/sesslint/canonical.py` lines 1–469
+//! Port of `src/sesslint/canonical.py` lines 1–785
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before `parse_session_event`. Dump and schema loaders are not in
-//! this slice. This module has no `__all__`.
+//! [`parse_session_event`], [`parse_session`], [`parse_session_lines`], and
+//! [`load_session_file`] follow the pin. [`dump_session`], [`dump_session_file`],
+//! [`get_session_schema_path`], and [`load_session_schema`] return
+//! [`CanonicalUnavailable`]. This module has no `__all__`.
 //!
 //! # Recorded gaps
 //!
@@ -19,20 +21,32 @@
 //! * [`validate_rfc3339_utc`] takes `&str`. A non-`str` timestamp is not
 //!   representable there. [`parse_session_header`] reports the same RFC3339
 //!   message for a non-string `created_at`, using Python `repr`, and does not
-//!   panic.
+//!   panic. [`parse_session_event`] does the same for `ts`.
 //! * [`validate_depth`] treats only a map, `list`, or `tuple` as a container.
 //!   Python `set` / `frozenset` are not containers there. This port has no set
 //!   variant. A set must not be encoded as a list.
 //! * Python `int` is unbounded. `seq`, `version`, `source_line`, and payload
-//!   ints are `i64`. A header `version` outside `i64` is not representable.
+//!   ints are `i64`. A JSON integer with no `.` and no exponent that does not
+//!   fit in `i64` is [`SchemaError`] (`JSON integer is outside i64`). It is not
+//!   truncated and it is not a malformed-JSON error, so [`load_session_file`]
+//!   does not fall through to the line parser. A header `version` outside
+//!   `i64` is not representable.
 //! * A header value uses [`Payload`]. A map is Python `dict`. Another mapping
 //!   class is not representable.
 //! * Payload map entries can repeat a key. Field lookup uses the last matching
 //!   string key. The unknown-field walk visits every entry in insertion order
-//!   and does not collapse duplicates the way a Python `dict` would.
+//!   and does not collapse duplicates the way a Python `dict` would. The JSON
+//!   reader keeps object keys in text order, including duplicates. Python
+//!   `dict` and `json.loads` cannot contain duplicate keys; the last value
+//!   wins there and the earlier entry disappears.
 //! * A non-string header key has no `startswith`. Python raises
 //!   `AttributeError`. This port returns [`SchemaError`]
 //!   (`Session header field name must be a string`) and does not panic.
+//! * A non-string event field name has no `startswith`. Python raises
+//!   `AttributeError`. This port returns [`SchemaError`]
+//!   (`Session event field name must be a string`) and does not panic. A
+//!   non-string key on a framed session does the same
+//!   (`Session field name must be a string`).
 //! * A map `RefCell` that is already borrowed yields the same cycle
 //!   [`SchemaError`] as [`validate_depth`]. Python has no `RefCell`.
 //! * Finite float `repr` follows Rust debug formatting, not Python's shortest
@@ -52,10 +66,37 @@
 //! * Python `payload_hash` uses truthiness (`content_hash or ...`), so `""`
 //!   would call the codec. This slice returns every `Some` hash unchanged and
 //!   takes the unavailable path only for `None`.
+//! * Malformed JSON keeps the prefixes `Malformed JSON on header line (line {n}): `
+//!   and `Malformed JSON on event line {n}: `. The detail tail is not Python's
+//!   `JSONDecodeError` text.
+//! * Invalid session bytes use the prefix `File encoding is not valid UTF-8: `.
+//!   The detail is `str::from_utf8`, not Python's `UnicodeDecodeError` text.
+//!   `utf-8-sig` strips one leading UTF-8 BOM.
+//! * A missing path, or a path that is not a file, returns [`SchemaError`]
+//!   whose Display is `Session file not found: {path}`. Python raises
+//!   `FileNotFoundError`. Rust `Path` display keeps the separators it was
+//!   given. This does not panic.
+//! * A lone UTF-16 surrogate in a JSON `\u` escape cannot be stored in a Rust
+//!   string. It is a malformed-JSON error. Python `json.loads` keeps the
+//!   surrogate code point.
+//! * A JSON number with `.` or an exponent is a float via Rust `f64`
+//!   conversion. `NaN`, `Infinity`, and `-Infinity` are accepted. Rounding
+//!   may differ from Python. The reader uses a heap stack and accepts nesting
+//!   deeper than [`MAX_PAYLOAD_DEPTH`]. [`validate_depth`] still reports
+//!   depth 101.
+//! * [`dump_session`] and [`dump_session_file`] return
+//!   [`CanonicalUnavailable`] for `canonical_json_bytes`.
+//!   [`dump_session_file`] does not create a directory or write a file.
+//!   `scan::atomic` is not callable from `model`.
+//! * [`get_session_schema_path`] and [`load_session_schema`] return
+//!   [`CanonicalUnavailable`] because `sesslint._resources.schema_path` is
+//!   not available. They do not read `schemas/`.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::errors::{SchemaError, UnknownFieldError, VersionError};
@@ -219,6 +260,9 @@ pub const CONTENT_IDENTITY_HASH_UNAVAILABLE: &str =
 pub const PAYLOAD_CONTENT_HASH_UNAVAILABLE: &str =
     "sesslint._canonical_codec.payload_content_hash is not available";
 
+/// Late import. Schema helpers do not read `schemas/`.
+pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
 /// Failure from a function this slice does not implement.
 ///
 /// [`Display`] is the message only.
@@ -254,6 +298,10 @@ impl CanonicalUnavailable {
 
     pub const fn payload_content_hash() -> Self {
         Self::new(PAYLOAD_CONTENT_HASH_UNAVAILABLE)
+    }
+
+    pub const fn schema_path() -> Self {
+        Self::new(SCHEMA_PATH_UNAVAILABLE)
     }
 
     pub const fn message(self) -> &'static str {
@@ -1211,10 +1259,26 @@ fn copy_known_mapping(value: &Payload, field: &str) -> Result<Payload, SchemaErr
     }
 }
 
-/// Python `str.strip()` emptiness. The character set is CPython
+/// Python `str.strip()`. The character set is CPython
 /// `_PyUnicode_IsWhitespace`, not Rust `trim` (which keeps U+001C..=U+001F).
+fn python_strip(text: &str) -> &str {
+    let start = text
+        .char_indices()
+        .find(|(_, ch)| !python_is_whitespace(*ch))
+        .map(|(index, _)| index);
+    let Some(start) = start else {
+        return "";
+    };
+    let end = text
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !python_is_whitespace(*ch))
+        .map_or(text.len(), |(index, ch)| index + ch.len_utf8());
+    &text[start..end]
+}
+
 fn python_strip_is_empty(text: &str) -> bool {
-    text.chars().all(python_is_whitespace)
+    python_strip(text).is_empty()
 }
 
 fn python_is_whitespace(ch: char) -> bool {
@@ -1376,19 +1440,1277 @@ fn python_float_repr(value: f64) -> String {
     }
 }
 
+/// Python: `parse_session_event`.
+///
+/// Check order follows the pin: mapping, required keys in
+/// [`REQUIRED_EVENT_FIELDS`] source order, the unknown-field walk, then
+/// `id`, `parent_id`, `seq`, `ts`, `actor`, `kind`, `payload`, and the
+/// optional fields. `seen_ids` of `None` skips the duplicate check. A
+/// duplicate is not inserted.
+pub fn parse_session_event(
+    obj: &Payload,
+    seen_ids: Option<&mut BTreeSet<String>>,
+) -> Result<SessionEvent, SchemaError> {
+    let entries = event_mapping_entries(obj)?;
+    require_event_fields(&entries)?;
+    let extra_fields = event_extra_fields(&entries)?;
+    let id = owned_event_id(&entries, seen_ids)?;
+    let parent_id = owned_parent_id(&entries, &id)?;
+    let seq = event_seq(&entries)?;
+    let ts = event_ts(&entries)?;
+    let actor = event_choice(&entries, "actor", VALID_ACTORS)?;
+    let kind = event_choice(&entries, "kind", VALID_KINDS)?;
+    let payload = event_payload(&entries)?;
+    let attributes = event_attributes(&entries)?;
+    let side_effects = event_side_effects(&entries, &payload)?;
+    Ok(SessionEvent {
+        id,
+        parent_id,
+        seq,
+        ts,
+        actor,
+        kind,
+        payload,
+        content_hash: attributes.content_hash,
+        correlation_id: attributes.correlation_id,
+        branch_id: attributes.branch_id,
+        interaction_id: attributes.interaction_id,
+        agent_id: attributes.agent_id,
+        execution_state: attributes.execution_state,
+        source_line: attributes.source_line,
+        source_record_hash: attributes.source_record_hash,
+        original_id: attributes.original_id,
+        source_adapter: attributes.source_adapter,
+        source_location: attributes.source_location,
+        side_effects,
+        extra_fields: Payload::map(extra_fields),
+    })
+}
+
+/// Python: `parse_session`.
+///
+/// A mapping that contains `header` is framed: `header` and `events` are
+/// known, and `experimental_` keys go to [`Session::extra_fields`]. Without
+/// `header`, every top-level field except `events` is the header input,
+/// including `experimental_` keys, and [`Session::extra_fields`] stays empty.
+/// Events share one seen-id set.
+pub fn parse_session(obj: &Payload) -> Result<Session, SchemaError> {
+    let entries = session_mapping_entries(obj)?;
+    if !contains_string_key(&entries, "events") {
+        return Err(SchemaError::new(
+            "Missing required field 'events' in session",
+        ));
+    }
+    let raw_events = session_entry(&entries, "events")?;
+    let event_values = session_event_values(raw_events)?;
+    let (header_input, extra_entries) = session_header_parts(&entries)?;
+    let header = parse_session_header(&header_input)?;
+    let mut seen_ids = BTreeSet::new();
+    let mut events = Vec::with_capacity(event_values.len());
+    for event_obj in event_values {
+        events.push(parse_session_event(&event_obj, Some(&mut seen_ids))?);
+    }
+    Ok(Session {
+        header,
+        events,
+        extra_fields: Payload::map(extra_entries),
+    })
+}
+
+/// Python: `parse_session_lines`.
+///
+/// Lines are numbered from 1 before blank lines are skipped. A line empty
+/// after Python `str.strip` is skipped. The first remaining line is a header.
+/// Later lines are events. JSON text is `json.loads`, not a canonical dump.
+/// The caller splits lines.
+pub fn parse_session_lines<I, S>(lines: I) -> Result<Session, SchemaError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut header = None;
+    let mut seen_ids = BTreeSet::new();
+    let mut events = Vec::new();
+    let mut offset: usize = 0;
+    for line in lines {
+        let line_number = line_number_from_offset(offset)?;
+        offset = offset
+            .checked_add(1)
+            .ok_or_else(|| SchemaError::new("Session stream line number exceeds u64"))?;
+        let stripped = python_strip(line.as_ref());
+        if stripped.is_empty() {
+            continue;
+        }
+        if header.is_none() {
+            let header_obj = read_line_json(stripped, LineRole::Header, line_number)?;
+            header = Some(parse_session_header(&header_obj)?);
+        } else {
+            let event_obj = read_line_json(stripped, LineRole::Event, line_number)?;
+            events.push(parse_session_event(&event_obj, Some(&mut seen_ids))?);
+        }
+    }
+    let Some(header) = header else {
+        return Err(SchemaError::new("Session stream contains no records"));
+    };
+    Ok(Session {
+        header,
+        events,
+        extra_fields: Payload::map(Vec::new()),
+    })
+}
+
+/// Python: `load_session_file`.
+///
+/// Reads `path` only. A non-file is [`SchemaError`] (`Session file not found`).
+/// Size is checked before the bytes are read. One leading UTF-8 BOM is
+/// stripped. Text that starts with `{` after Python `str.strip` is one JSON
+/// value; a mapping that contains `events` goes through [`parse_session`].
+/// A JSON syntax error falls through to [`parse_session_lines`] on `\n` only.
+pub fn load_session_file(path: impl AsRef<Path>) -> Result<Session, SchemaError> {
+    let path = path.as_ref();
+    let bytes = read_limited_session_file(path)?;
+    let text = match decode_utf8_sig(&bytes) {
+        Ok(text) => text,
+        Err(err) => {
+            return Err(SchemaError::new(format!(
+                "File encoding is not valid UTF-8: {err}"
+            )));
+        }
+    };
+    load_decoded_session(text, path)
+}
+
+/// Python: `dump_session`.
+///
+/// `sesslint._canonical_codec.canonical_json_bytes` is not available.
+/// This does not encode JSON.
+pub fn dump_session(_session: &Session) -> Result<String, CanonicalUnavailable> {
+    Err(CanonicalUnavailable::canonical_json_bytes())
+}
+
+/// Python: `dump_session_file`.
+///
+/// Fails before any filesystem change. `scan::atomic` is not callable from
+/// `model`. This does not create a directory or write a file.
+pub fn dump_session_file(_session: &Session, _path: &Path) -> Result<(), CanonicalUnavailable> {
+    Err(CanonicalUnavailable::canonical_json_bytes())
+}
+
+/// Python: `get_session_schema_path`.
+///
+/// `sesslint._resources.schema_path` is not available. This does not read
+/// `schemas/` and does not invent a filesystem path.
+pub fn get_session_schema_path() -> Result<PathBuf, CanonicalUnavailable> {
+    Err(CanonicalUnavailable::schema_path())
+}
+
+/// Python: `load_session_schema`.
+///
+/// Returns the same error as [`get_session_schema_path`] and does not read
+/// `schemas/`.
+pub fn load_session_schema() -> Result<Payload, CanonicalUnavailable> {
+    Err(CanonicalUnavailable::schema_path())
+}
+
+struct EventAttributes {
+    content_hash: Option<String>,
+    correlation_id: Option<String>,
+    branch_id: Option<String>,
+    interaction_id: Option<String>,
+    agent_id: Option<String>,
+    execution_state: Option<String>,
+    source_line: Option<i64>,
+    source_record_hash: Option<String>,
+    original_id: Option<String>,
+    source_adapter: Option<String>,
+    source_location: Option<String>,
+}
+
+fn event_mapping_entries(obj: &Payload) -> Result<Vec<(Payload, Payload)>, SchemaError> {
+    match copied_map_entries(obj)? {
+        Some(entries) => Ok(entries),
+        None => Err(SchemaError::new(format!(
+            "Session event must be a mapping, got {}",
+            payload_type_name(obj)
+        ))),
+    }
+}
+
+fn require_event_fields(entries: &[(Payload, Payload)]) -> Result<(), SchemaError> {
+    for key in REQUIRED_EVENT_FIELDS {
+        if !contains_string_key(entries, key) {
+            return Err(SchemaError::new(format!(
+                "Missing required event field '{key}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn event_extra_fields(
+    entries: &[(Payload, Payload)],
+) -> Result<Vec<(Payload, Payload)>, SchemaError> {
+    let mut extra = Vec::new();
+    for (key, value) in entries {
+        let Some(key_text) = key.as_str() else {
+            return Err(SchemaError::new(format!(
+                "Session event field name must be a string, got {}",
+                payload_repr(key)
+            )));
+        };
+        if KNOWN_EVENT_FIELDS.contains(&key_text) {
+            continue;
+        }
+        if key_text.starts_with("experimental_") {
+            extra.push((Payload::string(key_text), value.clone()));
+        } else {
+            return Err(UnknownFieldError::new(
+                format!("Unknown top-level field in event: '{key_text}'"),
+                Some(key_text.to_owned()),
+            )
+            .into());
+        }
+    }
+    Ok(extra)
+}
+
+fn owned_event_id(
+    entries: &[(Payload, Payload)],
+    mut seen_ids: Option<&mut BTreeSet<String>>,
+) -> Result<String, SchemaError> {
+    let raw = event_entry(entries, "id")?;
+    let event_id = match raw.as_str() {
+        Some(text) if !python_strip_is_empty(text) => text.to_owned(),
+        _ => {
+            return Err(SchemaError::new(format!(
+                "Event 'id' must be a non-empty string, got {}",
+                payload_repr(raw)
+            )));
+        }
+    };
+    if let Some(seen) = seen_ids.as_mut() {
+        if seen.contains(&event_id) {
+            return Err(SchemaError::new(format!(
+                "Duplicate event ID detected: '{event_id}'"
+            )));
+        }
+        seen.insert(event_id.clone());
+    }
+    Ok(event_id)
+}
+
+fn owned_parent_id(
+    entries: &[(Payload, Payload)],
+    event_id: &str,
+) -> Result<Option<String>, SchemaError> {
+    let raw = event_entry(entries, "parent_id")?;
+    if raw.is_null() {
+        return Ok(None);
+    }
+    let Some(text) = raw.as_str() else {
+        return Err(parent_id_type_error(raw));
+    };
+    if python_strip_is_empty(text) {
+        return Err(parent_id_type_error(raw));
+    }
+    if text == event_id {
+        return Err(SchemaError::new(format!(
+            "Event '{event_id}' has self-referencing parent_id"
+        )));
+    }
+    Ok(Some(text.to_owned()))
+}
+
+fn parent_id_type_error(raw: &Payload) -> SchemaError {
+    SchemaError::new(format!(
+        "Field 'parent_id' must be a string or None, got {}",
+        payload_repr(raw)
+    ))
+}
+
+fn event_seq(entries: &[(Payload, Payload)]) -> Result<i64, SchemaError> {
+    let raw = event_entry(entries, "seq")?;
+    match raw.as_int() {
+        Some(number) if number >= 0 => Ok(number),
+        _ => Err(SchemaError::new(format!(
+            "Field 'seq' must be a non-negative integer, got {}",
+            payload_repr(raw)
+        ))),
+    }
+}
+
+fn event_ts(entries: &[(Payload, Payload)]) -> Result<String, SchemaError> {
+    let raw = event_entry(entries, "ts")?;
+    let Some(text) = raw.as_str() else {
+        return Err(SchemaError::new(format!(
+            "Field 'ts' must be an RFC3339 UTC timestamp string, got {}",
+            payload_repr(raw)
+        )));
+    };
+    validate_rfc3339_utc(text, "ts")?;
+    Ok(text.to_owned())
+}
+
+fn event_choice(
+    entries: &[(Payload, Payload)],
+    field: &str,
+    allowed: &[&str],
+) -> Result<String, SchemaError> {
+    let raw = event_entry(entries, field)?;
+    if let Some(text) = raw.as_str() {
+        if allowed.contains(&text) {
+            return Ok(text.to_owned());
+        }
+    }
+    Err(SchemaError::new(format!(
+        "Invalid {field} '{}', expected one of {}",
+        python_display(raw),
+        python_sorted_str_list(allowed)
+    )))
+}
+
+fn event_payload(entries: &[(Payload, Payload)]) -> Result<Payload, SchemaError> {
+    let raw = event_entry(entries, "payload")?;
+    if !is_mapping(raw) {
+        return Err(SchemaError::new(format!(
+            "Field 'payload' must be a mapping, got {}",
+            payload_type_name(raw)
+        )));
+    }
+    validate_depth(raw)?;
+    copy_known_mapping(raw, "payload")
+}
+
+fn event_attributes(entries: &[(Payload, Payload)]) -> Result<EventAttributes, SchemaError> {
+    Ok(EventAttributes {
+        content_hash: optional_string(entries, "content_hash")?,
+        correlation_id: optional_string(entries, "correlation_id")?,
+        branch_id: optional_string(entries, "branch_id")?,
+        interaction_id: optional_string(entries, "interaction_id")?,
+        agent_id: optional_string(entries, "agent_id")?,
+        execution_state: event_execution_state(entries)?,
+        source_line: event_source_line(entries)?,
+        source_record_hash: optional_string(entries, "source_record_hash")?,
+        original_id: optional_string(entries, "original_id")?,
+        source_adapter: optional_string(entries, "source_adapter")?,
+        source_location: optional_string(entries, "source_location")?,
+    })
+}
+
+fn event_execution_state(entries: &[(Payload, Payload)]) -> Result<Option<String>, SchemaError> {
+    let Some(raw) = last_string_keyed(entries, "execution_state") else {
+        return Ok(None);
+    };
+    if raw.is_null() {
+        return Ok(None);
+    }
+    if let Some(text) = raw.as_str() {
+        if VALID_EXECUTION_STATES.contains(&text) {
+            return Ok(Some(text.to_owned()));
+        }
+    }
+    Err(SchemaError::new(format!(
+        "Invalid execution_state '{}', expected one of {}",
+        python_display(raw),
+        python_sorted_str_list(VALID_EXECUTION_STATES)
+    )))
+}
+
+fn event_source_line(entries: &[(Payload, Payload)]) -> Result<Option<i64>, SchemaError> {
+    let Some(raw) = last_string_keyed(entries, "source_line") else {
+        return Ok(None);
+    };
+    if raw.is_null() {
+        return Ok(None);
+    }
+    match raw.as_int() {
+        Some(number) if number >= 1 => Ok(Some(number)),
+        _ => Err(SchemaError::new(format!(
+            "Field 'source_line' must be a positive integer, got {}",
+            payload_repr(raw)
+        ))),
+    }
+}
+
+fn event_side_effects(
+    entries: &[(Payload, Payload)],
+    payload: &Payload,
+) -> Result<Option<String>, SchemaError> {
+    match last_string_keyed(entries, "side_effects") {
+        Some(value) if !value.is_null() => validate_side_effects_field(value),
+        _ => side_effects_from_payload(payload),
+    }
+}
+
+fn validate_side_effects_field(value: &Payload) -> Result<Option<String>, SchemaError> {
+    let Some(text) = value.as_str() else {
+        return Err(SchemaError::new(format!(
+            "Field 'side_effects' must be a string or None, got {}",
+            payload_repr(value)
+        )));
+    };
+    if VALID_SIDE_EFFECTS.contains(&text) {
+        return Ok(Some(text.to_owned()));
+    }
+    Err(SchemaError::new(format!(
+        "Field 'side_effects' must be one of {}, got {}",
+        python_sorted_str_list(VALID_SIDE_EFFECTS),
+        payload_repr(value)
+    )))
+}
+
+fn side_effects_from_payload(payload: &Payload) -> Result<Option<String>, SchemaError> {
+    let Some(entries) = copied_map_entries(payload)? else {
+        return Ok(None);
+    };
+    let Some(value) = last_string_keyed(&entries, "side_effects") else {
+        return Ok(None);
+    };
+    let Some(text) = value.as_str() else {
+        return Ok(None);
+    };
+    if VALID_SIDE_EFFECTS.contains(&text) {
+        Ok(Some(text.to_owned()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn optional_string(
+    entries: &[(Payload, Payload)],
+    field: &str,
+) -> Result<Option<String>, SchemaError> {
+    let Some(raw) = last_string_keyed(entries, field) else {
+        return Ok(None);
+    };
+    if raw.is_null() {
+        return Ok(None);
+    }
+    match raw.as_str() {
+        Some(text) => Ok(Some(text.to_owned())),
+        None => Err(SchemaError::new(format!(
+            "Field '{field}' must be a string or None, got {}",
+            payload_repr(raw)
+        ))),
+    }
+}
+
+fn event_entry<'a>(
+    entries: &'a [(Payload, Payload)],
+    key: &str,
+) -> Result<&'a Payload, SchemaError> {
+    last_string_keyed(entries, key)
+        .ok_or_else(|| SchemaError::new(format!("Missing required event field '{key}'")))
+}
+
+fn contains_string_key(entries: &[(Payload, Payload)], key: &str) -> bool {
+    entries
+        .iter()
+        .any(|(entry_key, _)| entry_key.as_str() == Some(key))
+}
+
+fn python_display(value: &Payload) -> String {
+    match value.as_str() {
+        Some(text) => text.to_owned(),
+        None => payload_repr(value),
+    }
+}
+
+fn python_sorted_str_list(items: &[&str]) -> String {
+    let mut ordered = items.to_vec();
+    ordered.sort_unstable();
+    let mut out = String::from("[");
+    for (index, item) in ordered.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_str_repr(item));
+    }
+    out.push(']');
+    out
+}
+
+fn session_mapping_entries(obj: &Payload) -> Result<Vec<(Payload, Payload)>, SchemaError> {
+    match copied_map_entries(obj)? {
+        Some(entries) => Ok(entries),
+        None => Err(SchemaError::new(format!(
+            "Session object must be a mapping, got {}",
+            payload_type_name(obj)
+        ))),
+    }
+}
+
+fn session_entry<'a>(
+    entries: &'a [(Payload, Payload)],
+    key: &str,
+) -> Result<&'a Payload, SchemaError> {
+    last_string_keyed(entries, key)
+        .ok_or_else(|| SchemaError::new(format!("Missing required field '{key}' in session")))
+}
+
+fn session_event_values(raw_events: &Payload) -> Result<Vec<Payload>, SchemaError> {
+    match &*raw_events.kind {
+        PayloadKind::List(items) => borrowed_sequence(items),
+        PayloadKind::Tuple(items) => Ok(items.clone()),
+        _ => Err(SchemaError::new(format!(
+            "Field 'events' must be a list or tuple, got {}",
+            payload_type_name(raw_events)
+        ))),
+    }
+}
+
+fn borrowed_sequence(items: &RefCell<Vec<Payload>>) -> Result<Vec<Payload>, SchemaError> {
+    match items.try_borrow() {
+        Ok(borrowed) => Ok(borrowed.iter().cloned().collect()),
+        Err(_) => Err(cycle_detected()),
+    }
+}
+
+fn session_header_parts(
+    entries: &[(Payload, Payload)],
+) -> Result<(Payload, Vec<(Payload, Payload)>), SchemaError> {
+    if contains_string_key(entries, "header") {
+        let extra = framed_session_extra(entries)?;
+        let raw_header = session_entry(entries, "header")?;
+        if !is_mapping(raw_header) {
+            return Err(SchemaError::new(format!(
+                "Field 'header' must be a mapping, got {}",
+                payload_type_name(raw_header)
+            )));
+        }
+        return Ok((raw_header.clone(), extra));
+    }
+    let flat = entries
+        .iter()
+        .filter(|(key, _)| key.as_str() != Some("events"))
+        .cloned()
+        .collect();
+    Ok((Payload::map(flat), Vec::new()))
+}
+
+fn framed_session_extra(
+    entries: &[(Payload, Payload)],
+) -> Result<Vec<(Payload, Payload)>, SchemaError> {
+    let mut extra = Vec::new();
+    for (key, value) in entries {
+        let Some(key_text) = key.as_str() else {
+            return Err(SchemaError::new(format!(
+                "Session field name must be a string, got {}",
+                payload_repr(key)
+            )));
+        };
+        if key_text == "header" || key_text == "events" {
+            continue;
+        }
+        if key_text.starts_with("experimental_") {
+            extra.push((Payload::string(key_text), value.clone()));
+        } else {
+            return Err(UnknownFieldError::new(
+                format!("Unknown top-level field in session: '{key_text}'"),
+                Some(key_text.to_owned()),
+            )
+            .into());
+        }
+    }
+    Ok(extra)
+}
+
+fn line_number_from_offset(offset: usize) -> Result<u64, SchemaError> {
+    let Ok(zero_based) = u64::try_from(offset) else {
+        return Err(SchemaError::new("Session stream line number exceeds u64"));
+    };
+    zero_based
+        .checked_add(1)
+        .ok_or_else(|| SchemaError::new("Session stream line number exceeds u64"))
+}
+
+#[derive(Clone, Copy)]
+enum LineRole {
+    Header,
+    Event,
+}
+
+fn read_line_json(text: &str, role: LineRole, line_number: u64) -> Result<Payload, SchemaError> {
+    match parse_json_document(text) {
+        Ok(value) => Ok(value),
+        Err(JsonRead::IntegerRange(detail)) => Err(SchemaError::new(detail)),
+        Err(JsonRead::Syntax(detail)) => Err(malformed_line(role, line_number, &detail)),
+    }
+}
+
+fn malformed_line(role: LineRole, line_number: u64, detail: &str) -> SchemaError {
+    match role {
+        LineRole::Header => SchemaError::new(format!(
+            "Malformed JSON on header line (line {line_number}): {detail}"
+        )),
+        LineRole::Event => SchemaError::new(format!(
+            "Malformed JSON on event line {line_number}: {detail}"
+        )),
+    }
+}
+
+fn read_limited_session_file(path: &Path) -> Result<Vec<u8>, SchemaError> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => return Err(session_file_not_found(path)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(session_file_not_found(path));
+        }
+        Err(err) => return Err(session_file_read_error(path, &err)),
+    };
+    let size = metadata.len();
+    if size > MAX_NON_STREAMING_BYTES {
+        return Err(SchemaError::new(format!(
+            "File size {size} bytes exceeds maximum non-streaming limit ({MAX_NON_STREAMING_BYTES} bytes); use streaming reader (TASK-005)"
+        )));
+    }
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(bytes),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(session_file_not_found(path)),
+        Err(err) => Err(session_file_read_error(path, &err)),
+    }
+}
+
+fn session_file_not_found(path: &Path) -> SchemaError {
+    SchemaError::new(format!("Session file not found: {}", path.display()))
+}
+
+fn session_file_read_error(path: &Path, err: &std::io::Error) -> SchemaError {
+    SchemaError::new(format!(
+        "Unable to read session file: {}: {err}",
+        path.display()
+    ))
+}
+
+fn decode_utf8_sig(bytes: &[u8]) -> Result<&str, std::str::Utf8Error> {
+    let body = match bytes {
+        [0xEF, 0xBB, 0xBF, rest @ ..] => rest,
+        _ => bytes,
+    };
+    std::str::from_utf8(body)
+}
+
+fn load_decoded_session(text: &str, path: &Path) -> Result<Session, SchemaError> {
+    let stripped = python_strip(text);
+    if stripped.is_empty() {
+        return Err(SchemaError::new(format!(
+            "Session file is empty: {}",
+            path.display()
+        )));
+    }
+    if let Some(session) = single_document_session(stripped)? {
+        return Ok(session);
+    }
+    parse_session_lines(text.split('\n'))
+}
+
+fn single_document_session(stripped: &str) -> Result<Option<Session>, SchemaError> {
+    if !stripped.starts_with('{') {
+        return Ok(None);
+    }
+    let data = match parse_json_document(stripped) {
+        Ok(data) => data,
+        Err(JsonRead::Syntax(_)) => return Ok(None),
+        Err(JsonRead::IntegerRange(detail)) => return Err(SchemaError::new(detail)),
+    };
+    if is_mapping(&data) && map_has_events(&data)? {
+        return Ok(Some(parse_session(&data)?));
+    }
+    Ok(None)
+}
+
+fn map_has_events(data: &Payload) -> Result<bool, SchemaError> {
+    match copied_map_entries(data)? {
+        Some(entries) => Ok(contains_string_key(&entries, "events")),
+        None => Ok(false),
+    }
+}
+
+enum JsonRead {
+    Syntax(String),
+    IntegerRange(String),
+}
+
+enum JsonStep {
+    Continue,
+    Done(Payload),
+}
+
+#[derive(Clone, Copy)]
+enum Expect {
+    Value { closer: Option<char> },
+    Key { allow_end: bool },
+    Colon,
+    CommaOrEnd { end: char },
+}
+
+#[derive(Clone, Copy)]
+enum ArrayState {
+    Start,
+    WantValue,
+    WantCommaOrEnd,
+}
+
+#[derive(Clone, Copy)]
+enum ObjectState {
+    Start,
+    WantKey,
+    WantColon,
+    WantValue,
+    WantCommaOrEnd,
+}
+
+enum Frame {
+    Array {
+        items: Vec<Payload>,
+        state: ArrayState,
+    },
+    Object {
+        entries: Vec<(Payload, Payload)>,
+        key: Option<Payload>,
+        state: ObjectState,
+    },
+}
+
+impl Frame {
+    fn expect(&self) -> Expect {
+        match self {
+            Self::Array { state, .. } => match state {
+                ArrayState::Start => Expect::Value { closer: Some(']') },
+                ArrayState::WantValue => Expect::Value { closer: None },
+                ArrayState::WantCommaOrEnd => Expect::CommaOrEnd { end: ']' },
+            },
+            Self::Object { state, .. } => match state {
+                ObjectState::Start => Expect::Key { allow_end: true },
+                ObjectState::WantKey => Expect::Key { allow_end: false },
+                ObjectState::WantColon => Expect::Colon,
+                ObjectState::WantValue => Expect::Value { closer: None },
+                ObjectState::WantCommaOrEnd => Expect::CommaOrEnd { end: '}' },
+            },
+        }
+    }
+
+    fn accept_value(&mut self, value: Payload) -> bool {
+        match self {
+            Self::Array { items, state } => {
+                items.push(value);
+                *state = ArrayState::WantCommaOrEnd;
+                true
+            }
+            Self::Object {
+                entries,
+                key,
+                state,
+            } => {
+                let Some(key) = key.take() else {
+                    return false;
+                };
+                entries.push((key, value));
+                *state = ObjectState::WantCommaOrEnd;
+                true
+            }
+        }
+    }
+
+    fn into_payload(self) -> Payload {
+        match self {
+            Self::Array { items, .. } => Payload::list(items),
+            Self::Object { entries, .. } => Payload::map(entries),
+        }
+    }
+}
+
+struct JsonParser<'a> {
+    source: &'a str,
+    index: usize,
+}
+
+impl<'a> JsonParser<'a> {
+    fn parse_document(source: &'a str) -> Result<Payload, JsonRead> {
+        let mut parser = Self { source, index: 0 };
+        parser.skip_ws();
+        if parser.peek_char().is_none() {
+            return Err(parser.syntax("expecting value"));
+        }
+        let value = parser.parse_value()?;
+        parser.skip_ws();
+        if parser.peek_char().is_some() {
+            return Err(parser.syntax("extra data"));
+        }
+        Ok(value)
+    }
+
+    /// Step budget, not a nesting cap. Each step consumes at least one byte.
+    fn parse_value(&mut self) -> Result<Payload, JsonRead> {
+        let mut frames = Vec::new();
+        let limit = self.source.len().saturating_mul(2).saturating_add(2);
+        for _ in 0..limit {
+            self.skip_ws();
+            match self.advance(&mut frames)? {
+                JsonStep::Continue => {}
+                JsonStep::Done(value) => return Ok(value),
+            }
+        }
+        Err(self.syntax("parser stalled"))
+    }
+
+    fn advance(&mut self, frames: &mut Vec<Frame>) -> Result<JsonStep, JsonRead> {
+        let expect = match frames.last() {
+            Some(frame) => frame.expect(),
+            None => Expect::Value { closer: None },
+        };
+        match expect {
+            Expect::Value { closer } => self.advance_value(frames, closer),
+            Expect::Key { allow_end } => self.advance_key(frames, allow_end),
+            Expect::Colon => self.advance_colon(frames),
+            Expect::CommaOrEnd { end } => self.advance_comma(frames, end),
+        }
+    }
+
+    fn advance_value(
+        &mut self,
+        frames: &mut Vec<Frame>,
+        closer: Option<char>,
+    ) -> Result<JsonStep, JsonRead> {
+        if let Some(end) = closer {
+            if self.peek_char() == Some(end) {
+                self.bump_char();
+                return self.finish_container(frames);
+            }
+        }
+        if matches!(self.peek_char(), Some('[' | '{')) {
+            self.push_container(frames)?;
+            return Ok(JsonStep::Continue);
+        }
+        if self.peek_char().is_none() {
+            return Err(self.syntax("expecting value"));
+        }
+        let scalar = self.parse_scalar()?;
+        self.deliver(frames, scalar)
+    }
+
+    fn advance_key(
+        &mut self,
+        frames: &mut Vec<Frame>,
+        allow_end: bool,
+    ) -> Result<JsonStep, JsonRead> {
+        let Some(ch) = self.peek_char() else {
+            return Err(self.syntax("expecting string key"));
+        };
+        if allow_end && ch == '}' {
+            self.bump_char();
+            return self.finish_container(frames);
+        }
+        if ch != '"' {
+            return Err(self.syntax("expecting string key"));
+        }
+        let text = self.parse_string()?;
+        match frames.last_mut() {
+            Some(Frame::Object { key, state, .. }) => {
+                *key = Some(Payload::string(text));
+                *state = ObjectState::WantColon;
+                Ok(JsonStep::Continue)
+            }
+            _ => Err(self.syntax("expecting string key")),
+        }
+    }
+
+    fn advance_colon(&mut self, frames: &mut [Frame]) -> Result<JsonStep, JsonRead> {
+        if self.peek_char() != Some(':') {
+            return Err(self.syntax("expecting colon"));
+        }
+        self.bump_char();
+        match frames.last_mut() {
+            Some(Frame::Object { state, .. }) => {
+                *state = ObjectState::WantValue;
+                Ok(JsonStep::Continue)
+            }
+            _ => Err(self.syntax("expecting colon")),
+        }
+    }
+
+    fn advance_comma(&mut self, frames: &mut Vec<Frame>, end: char) -> Result<JsonStep, JsonRead> {
+        let Some(ch) = self.peek_char() else {
+            return Err(self.syntax("expecting delimiter"));
+        };
+        if ch == ',' {
+            self.bump_char();
+            return self.after_comma(frames);
+        }
+        if ch == end {
+            self.bump_char();
+            return self.finish_container(frames);
+        }
+        Err(self.syntax("expecting delimiter"))
+    }
+
+    fn after_comma(&mut self, frames: &mut [Frame]) -> Result<JsonStep, JsonRead> {
+        match frames.last_mut() {
+            Some(Frame::Array { state, .. }) => {
+                *state = ArrayState::WantValue;
+                Ok(JsonStep::Continue)
+            }
+            Some(Frame::Object { state, .. }) => {
+                *state = ObjectState::WantKey;
+                Ok(JsonStep::Continue)
+            }
+            None => Err(self.syntax("expecting delimiter")),
+        }
+    }
+
+    fn push_container(&mut self, frames: &mut Vec<Frame>) -> Result<(), JsonRead> {
+        let Some(ch) = self.peek_char() else {
+            return Err(self.syntax("expecting value"));
+        };
+        self.bump_char();
+        let frame = match ch {
+            '[' => Frame::Array {
+                items: Vec::new(),
+                state: ArrayState::Start,
+            },
+            '{' => Frame::Object {
+                entries: Vec::new(),
+                key: None,
+                state: ObjectState::Start,
+            },
+            _ => return Err(self.syntax("expecting value")),
+        };
+        frames.push(frame);
+        Ok(())
+    }
+
+    fn finish_container(&mut self, frames: &mut Vec<Frame>) -> Result<JsonStep, JsonRead> {
+        let done = self.pop_frame(frames)?;
+        self.deliver(frames, done)
+    }
+
+    fn pop_frame(&mut self, frames: &mut Vec<Frame>) -> Result<Payload, JsonRead> {
+        match frames.pop() {
+            Some(frame) => Ok(frame.into_payload()),
+            None => Err(self.syntax("internal empty frame")),
+        }
+    }
+
+    fn deliver(&mut self, frames: &mut [Frame], value: Payload) -> Result<JsonStep, JsonRead> {
+        let accepted = if let Some(frame) = frames.last_mut() {
+            frame.accept_value(value)
+        } else {
+            return Ok(JsonStep::Done(value));
+        };
+        if accepted {
+            Ok(JsonStep::Continue)
+        } else {
+            Err(self.syntax("internal value slot"))
+        }
+    }
+
+    fn parse_scalar(&mut self) -> Result<Payload, JsonRead> {
+        match self.peek_char() {
+            Some('"') => Ok(Payload::string(self.parse_string()?)),
+            Some('t') => self.literal_payload("true", Payload::bool_value(true)),
+            Some('f') => self.literal_payload("false", Payload::bool_value(false)),
+            Some('n') => self.literal_payload("null", Payload::null()),
+            Some('N') => self.literal_payload("NaN", Payload::float(f64::NAN)),
+            Some('I') => self.literal_payload("Infinity", Payload::float(f64::INFINITY)),
+            Some('-' | '0'..='9') => self.parse_number(),
+            _ => Err(self.syntax("expecting value")),
+        }
+    }
+
+    fn literal_payload(&mut self, literal: &str, value: Payload) -> Result<Payload, JsonRead> {
+        self.eat_literal(literal)?;
+        Ok(value)
+    }
+
+    fn parse_string(&mut self) -> Result<String, JsonRead> {
+        if self.peek_char() != Some('"') {
+            return Err(self.syntax("expecting string"));
+        }
+        self.bump_char();
+        let mut out = String::new();
+        loop {
+            let Some(ch) = self.peek_char() else {
+                return Err(self.syntax("unterminated string"));
+            };
+            if ch == '"' {
+                self.bump_char();
+                return Ok(out);
+            }
+            if ch == '\\' {
+                self.bump_char();
+                self.parse_escape(&mut out)?;
+                continue;
+            }
+            if u32::from(ch) < 0x20 {
+                return Err(self.syntax("unescaped control character"));
+            }
+            out.push(ch);
+            self.bump_char();
+        }
+    }
+
+    fn parse_escape(&mut self, out: &mut String) -> Result<(), JsonRead> {
+        let Some(ch) = self.peek_char() else {
+            return Err(self.syntax("unterminated escape"));
+        };
+        self.bump_char();
+        match ch {
+            '"' | '\\' | '/' => out.push(ch),
+            'b' => out.push('\u{0008}'),
+            'f' => out.push('\u{000c}'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            'u' => self.push_unicode_escape(out)?,
+            _ => return Err(self.syntax("invalid escape")),
+        }
+        Ok(())
+    }
+
+    fn push_unicode_escape(&mut self, out: &mut String) -> Result<(), JsonRead> {
+        let code = self.read_hex4()?;
+        if (0xD800..=0xDBFF).contains(&code) {
+            if !self.starts_with_at("\\u") {
+                return Err(self.syntax("lone surrogate"));
+            }
+            self.index += 2;
+            let low = self.read_hex4()?;
+            let Some(ch) = paired_surrogate(code, low) else {
+                return Err(self.syntax("invalid surrogate pair"));
+            };
+            out.push(ch);
+            return Ok(());
+        }
+        if (0xDC00..=0xDFFF).contains(&code) {
+            return Err(self.syntax("lone surrogate"));
+        }
+        let Some(ch) = char::from_u32(code) else {
+            return Err(self.syntax("invalid code point"));
+        };
+        out.push(ch);
+        Ok(())
+    }
+
+    fn read_hex4(&mut self) -> Result<u32, JsonRead> {
+        let start = self.index;
+        let len = self.source.len();
+        if start > len {
+            return Err(self.syntax("invalid byte index"));
+        }
+        let Some(end) = start.checked_add(4) else {
+            return Err(self.syntax("short unicode escape"));
+        };
+        if end > len {
+            return Err(self.syntax("short unicode escape"));
+        }
+        let chunk = {
+            let bytes = self.source.as_bytes();
+            [
+                bytes[start],
+                bytes[start + 1],
+                bytes[start + 2],
+                bytes[start + 3],
+            ]
+        };
+        match hex4(chunk) {
+            Some(code) => {
+                self.index = end;
+                Ok(code)
+            }
+            None => Err(self.syntax("invalid unicode escape")),
+        }
+    }
+
+    fn parse_number(&mut self) -> Result<Payload, JsonRead> {
+        if self.starts_with_at("-Infinity") {
+            self.index += "-Infinity".len();
+            return Ok(Payload::float(f64::NEG_INFINITY));
+        }
+        let start = self.index;
+        if self.peek_char() == Some('-') {
+            self.bump_char();
+        }
+        if !self.consume_integer_part() {
+            return Err(self.syntax("invalid number"));
+        }
+        let mut is_float = false;
+        if self.peek_char() == Some('.') {
+            is_float = true;
+            self.bump_char();
+            if !self.consume_digits() {
+                return Err(self.syntax("invalid number"));
+            }
+        }
+        if matches!(self.peek_char(), Some('e' | 'E')) {
+            is_float = true;
+            self.bump_char();
+            if matches!(self.peek_char(), Some('+' | '-')) {
+                self.bump_char();
+            }
+            if !self.consume_digits() {
+                return Err(self.syntax("invalid number"));
+            }
+        }
+        let parsed = {
+            let Some(token) = self.source.get(start..self.index) else {
+                return Err(self.syntax("invalid number"));
+            };
+            if is_float {
+                token.parse::<f64>().ok().map(ParsedNumber::Float)
+            } else {
+                parse_i64_token(token).ok().map(ParsedNumber::Int)
+            }
+        };
+        match parsed {
+            Some(ParsedNumber::Float(value)) => Ok(Payload::float(value)),
+            Some(ParsedNumber::Int(value)) => Ok(Payload::int(value)),
+            None if is_float => Err(self.syntax("invalid number")),
+            None => Err(JsonRead::IntegerRange(
+                "JSON integer is outside i64".to_owned(),
+            )),
+        }
+    }
+
+    fn consume_integer_part(&mut self) -> bool {
+        match self.peek_char() {
+            Some('0') => {
+                self.bump_char();
+                true
+            }
+            Some('1'..='9') => {
+                let _ = self.consume_digits();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn consume_digits(&mut self) -> bool {
+        let start = self.index;
+        while matches!(self.peek_char(), Some('0'..='9')) {
+            self.bump_char();
+        }
+        self.index > start
+    }
+
+    fn eat_literal(&mut self, literal: &str) -> Result<(), JsonRead> {
+        if self.starts_with_at(literal) {
+            self.index += literal.len();
+            Ok(())
+        } else {
+            Err(self.syntax("invalid literal"))
+        }
+    }
+
+    fn starts_with_at(&self, literal: &str) -> bool {
+        self.source
+            .get(self.index..)
+            .is_some_and(|rest| rest.starts_with(literal))
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.source.get(self.index..)?.chars().next()
+    }
+
+    fn bump_char(&mut self) {
+        if let Some(ch) = self.peek_char() {
+            self.index += ch.len_utf8();
+        }
+    }
+
+    fn skip_ws(&mut self) {
+        while matches!(self.peek_char(), Some(' ' | '\t' | '\n' | '\r')) {
+            self.bump_char();
+        }
+    }
+
+    fn syntax(&self, reason: &str) -> JsonRead {
+        JsonRead::Syntax(format!("{reason} at byte {}", self.index))
+    }
+}
+
+enum ParsedNumber {
+    Int(i64),
+    Float(f64),
+}
+
+fn parse_json_document(source: &str) -> Result<Payload, JsonRead> {
+    JsonParser::parse_document(source)
+}
+
+fn parse_i64_token(token: &str) -> Result<i64, ()> {
+    let (negative, digits) = match token.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, token),
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(());
+    }
+    let mut value: i64 = 0;
+    for byte in digits.bytes() {
+        let digit = i64::from(byte - b'0');
+        value = if negative {
+            let Some(next) = value
+                .checked_mul(10)
+                .and_then(|item| item.checked_sub(digit))
+            else {
+                return Err(());
+            };
+            next
+        } else {
+            let Some(next) = value
+                .checked_mul(10)
+                .and_then(|item| item.checked_add(digit))
+            else {
+                return Err(());
+            };
+            next
+        };
+    }
+    Ok(value)
+}
+
+fn hex4(bytes: [u8; 4]) -> Option<u32> {
+    let mut code = 0u32;
+    for byte in bytes {
+        code = (code << 4) | hex_value(byte)?;
+    }
+    Some(code)
+}
+
+fn hex_value(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some(u32::from(byte - b'0')),
+        b'a'..=b'f' => Some(u32::from(byte - b'a') + 10),
+        b'A'..=b'F' => Some(u32::from(byte - b'A') + 10),
+        _ => None,
+    }
+}
+
+fn paired_surrogate(high: u32, low: u32) -> Option<char> {
+    if !(0xD800..=0xDBFF).contains(&high) || !(0xDC00..=0xDFFF).contains(&low) {
+        return None;
+    }
+    let code = 0x1_0000 + ((high - 0xD800) << 10) + (low - 0xDC00);
+    char::from_u32(code)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_bytes, compute_content_hash, copied_map_entries, parse_session_header,
-        reparse_identity_hashes, to_canonical_dict, to_canonical_json, validate_depth,
-        validate_rfc3339_utc, CanonicalEvent, CanonicalUnavailable, Payload, Session, SessionEvent,
-        SessionHeader, KNOWN_EVENT_FIELDS, KNOWN_HEADER_FIELDS, MAX_NON_STREAMING_BYTES,
-        MAX_PAYLOAD_DEPTH, MUTATING_TOOL_NAMES, PROVENANCE_FIELDS, READ_ONLY_TOOL_NAMES,
-        REQUIRED_EVENT_FIELDS, REQUIRED_HEADER_FIELDS, SCHEMA_VERSION, VALID_ACTORS,
-        VALID_EXECUTION_STATES, VALID_KINDS, VALID_SIDE_EFFECTS,
+        canonical_bytes, compute_content_hash, copied_map_entries, dump_session, dump_session_file,
+        get_session_schema_path, load_session_file, load_session_schema, parse_session,
+        parse_session_event, parse_session_header, parse_session_lines, reparse_identity_hashes,
+        to_canonical_dict, to_canonical_json, validate_depth, validate_rfc3339_utc, CanonicalEvent,
+        CanonicalUnavailable, Payload, Session, SessionEvent, SessionHeader, KNOWN_EVENT_FIELDS,
+        KNOWN_HEADER_FIELDS, MAX_NON_STREAMING_BYTES, MAX_PAYLOAD_DEPTH, MUTATING_TOOL_NAMES,
+        PROVENANCE_FIELDS, READ_ONLY_TOOL_NAMES, REQUIRED_EVENT_FIELDS, REQUIRED_HEADER_FIELDS,
+        SCHEMA_VERSION, VALID_ACTORS, VALID_EXECUTION_STATES, VALID_KINDS, VALID_SIDE_EFFECTS,
     };
     use crate::errors::SchemaError;
+    use std::collections::BTreeSet;
     use std::error::Error;
+    use std::io::Write;
 
     #[test]
     fn constants_match_the_pin_and_have_no_extras() {
@@ -2357,5 +3679,903 @@ mod tests {
         let list = Payload::list(Vec::new());
         assert!(list.push_list_item(list.clone()));
         list
+    }
+
+    const TS: &str = "2024-02-29T00:00:00Z";
+    const KIND_LIST: &str = concat!(
+        "['approval', 'checkpoint', 'compaction_boundary', 'error', 'handoff', ",
+        "'message', 'opaque', 'subagent_boundary', 'tool_call', 'tool_result', 'unknown']"
+    );
+
+    #[test]
+    fn minimal_event_keeps_an_unstripped_id_and_experimental_order() {
+        let payload = Payload::map(vec![(
+            Payload::string("body"),
+            Payload::string("synthetic-body"),
+        )]);
+        let obj = header(vec![
+            ("id", Payload::string("  evt-synthetic  ")),
+            ("parent_id", Payload::null()),
+            ("seq", Payload::int(0)),
+            ("ts", Payload::string(TS)),
+            ("actor", Payload::string("assistant")),
+            ("kind", Payload::string("tool_result")),
+            ("payload", payload.clone()),
+            ("experimental_b", Payload::string("bee")),
+            ("experimental_a", Payload::int(2)),
+            ("content_hash", Payload::string("")),
+            ("source_line", Payload::int(1)),
+        ]);
+        let parsed = parse_session_event(&obj, None).unwrap();
+        assert_eq!(parsed.id, "  evt-synthetic  ");
+        assert!(parsed.parent_id.is_none());
+        assert_eq!(parsed.seq, 0);
+        assert_eq!(parsed.ts, TS);
+        assert_eq!(parsed.actor, "assistant");
+        assert_eq!(parsed.kind, "tool_result");
+        assert_eq!(parsed.content_hash.as_deref(), Some(""));
+        assert_eq!(parsed.source_line, Some(1));
+        assert!(parsed.side_effects.is_none());
+        assert!(parsed.execution_state.is_none());
+        let extra = map_pairs(&parsed.extra_fields);
+        assert_eq!(extra[0].0.as_str(), Some("experimental_b"));
+        assert_eq!(extra[0].1.as_str(), Some("bee"));
+        assert_eq!(extra[1].0.as_str(), Some("experimental_a"));
+        assert_eq!(extra[1].1.as_int(), Some(2));
+        assert!(payload.push_map_entry(Payload::string("added"), Payload::null()));
+        assert_eq!(map_pairs(&parsed.payload).len(), 1);
+        assert_eq!(map_pairs(&payload).len(), 2);
+    }
+
+    #[test]
+    fn missing_id_is_reported_before_an_unknown_field() {
+        let obj = header(vec![
+            ("parent_id", Payload::null()),
+            ("seq", Payload::int(1)),
+            ("ts", Payload::string(TS)),
+            ("actor", Payload::string("user")),
+            ("kind", Payload::string("message")),
+            ("payload", Payload::map(Vec::new())),
+            ("rogue", Payload::string("nope")),
+        ]);
+        let err = parse_session_event(&obj, None).unwrap_err();
+        assert_eq!(err.code(), SchemaError::DEFAULT_CODE);
+        assert_eq!(err.to_string(), "Missing required event field 'id'");
+
+        let parent_missing = header(vec![
+            ("id", Payload::string("evt-synthetic")),
+            ("seq", Payload::int(1)),
+            ("rogue", Payload::string("nope")),
+            ("ts", Payload::string(TS)),
+            ("actor", Payload::string("user")),
+            ("kind", Payload::string("message")),
+            ("payload", Payload::map(Vec::new())),
+        ]);
+        assert_eq!(
+            parse_session_event(&parent_missing, None)
+                .unwrap_err()
+                .to_string(),
+            "Missing required event field 'parent_id'"
+        );
+    }
+
+    #[test]
+    fn unknown_event_field_is_sl302_before_a_bad_id() {
+        let obj = header(vec![
+            ("id", Payload::string("")),
+            ("parent_id", Payload::null()),
+            ("seq", Payload::int(1)),
+            ("ts", Payload::string(TS)),
+            ("actor", Payload::string("user")),
+            ("kind", Payload::string("message")),
+            ("payload", Payload::map(Vec::new())),
+            ("experimental_keep", Payload::string("yes")),
+            ("rogue", Payload::int(1)),
+        ]);
+        let err = parse_session_event(&obj, None).unwrap_err();
+        assert!(matches!(err, SchemaError::UnknownField(_)));
+        assert_eq!(err.field_name(), Some("rogue"));
+        assert_eq!(err.code(), "UNKNOWN_FIELD");
+        assert_eq!(
+            err.to_string(),
+            "Unknown top-level field in event: 'rogue' (code: UNKNOWN_FIELD / SL302)"
+        );
+        assert!(err.to_string().contains("SL302"));
+
+        let list = parse_session_event(&Payload::list(Vec::new()), None).unwrap_err();
+        assert_eq!(
+            list.to_string(),
+            "Session event must be a mapping, got list"
+        );
+        let bad_id = event_with(vec![("id", Payload::string("\n"))]);
+        assert_eq!(
+            parse_session_event(&bad_id, None).unwrap_err().to_string(),
+            "Event 'id' must be a non-empty string, got '\\n'"
+        );
+        let bad_ts = event_with(vec![("ts", Payload::int(1))]);
+        assert_eq!(
+            parse_session_event(&bad_ts, None).unwrap_err().to_string(),
+            "Field 'ts' must be an RFC3339 UTC timestamp string, got 1"
+        );
+        let bad_payload = event_with(vec![("payload", Payload::list(Vec::new()))]);
+        assert_eq!(
+            parse_session_event(&bad_payload, None)
+                .unwrap_err()
+                .to_string(),
+            "Field 'payload' must be a mapping, got list"
+        );
+    }
+
+    #[test]
+    fn non_string_event_key_does_not_panic() {
+        let mut entries = map_pairs(&minimal_event());
+        entries.push((Payload::int(7), Payload::string("synthetic")));
+        let obj = Payload::map(entries);
+        let err = parse_session_event(&obj, None).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Session event field name must be a string, got 7"
+        );
+    }
+
+    #[test]
+    fn duplicate_id_is_rejected_and_none_skips_the_check() {
+        let mut seen = BTreeSet::new();
+        let first = parse_session_event(&minimal_event(), Some(&mut seen)).unwrap();
+        assert_eq!(first.id, "evt-synthetic");
+        let err = parse_session_event(&minimal_event(), Some(&mut seen)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Duplicate event ID detected: 'evt-synthetic'"
+        );
+        assert_eq!(seen.len(), 1);
+        assert!(seen.contains("evt-synthetic"));
+        let skipped = parse_session_event(&minimal_event(), None).unwrap();
+        assert_eq!(skipped.id, "evt-synthetic");
+        assert_eq!(seen.len(), 1);
+
+        let last_wins = header(vec![
+            ("id", Payload::string("   ")),
+            ("id", Payload::string("evt-other")),
+            ("parent_id", Payload::null()),
+            ("seq", Payload::int(2)),
+            ("ts", Payload::string(TS)),
+            ("actor", Payload::string("user")),
+            ("kind", Payload::string("message")),
+            ("payload", Payload::map(Vec::new())),
+        ]);
+        let mut fresh = BTreeSet::new();
+        let parsed = parse_session_event(&last_wins, Some(&mut fresh)).unwrap();
+        assert_eq!(parsed.id, "evt-other");
+        assert!(fresh.contains("evt-other"));
+    }
+
+    #[test]
+    fn self_parent_is_rejected_after_the_id_is_recorded() {
+        let obj = event_with(vec![("parent_id", Payload::string("evt-synthetic"))]);
+        let mut seen = BTreeSet::new();
+        let err = parse_session_event(&obj, Some(&mut seen)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Event 'evt-synthetic' has self-referencing parent_id"
+        );
+        assert!(seen.contains("evt-synthetic"));
+
+        let blank = event_with(vec![("parent_id", Payload::string("   "))]);
+        assert_eq!(
+            parse_session_event(&blank, None).unwrap_err().to_string(),
+            "Field 'parent_id' must be a string or None, got '   '"
+        );
+        let number = event_with(vec![("parent_id", Payload::int(4))]);
+        assert_eq!(
+            parse_session_event(&number, None).unwrap_err().to_string(),
+            "Field 'parent_id' must be a string or None, got 4"
+        );
+        let other = event_with(vec![("parent_id", Payload::string("parent-synthetic"))]);
+        let parsed = parse_session_event(&other, None).unwrap();
+        assert_eq!(parsed.parent_id.as_deref(), Some("parent-synthetic"));
+    }
+
+    #[test]
+    fn bool_seq_is_not_a_non_negative_integer() {
+        for (value, rendered) in [
+            (Payload::bool_value(true), "True"),
+            (Payload::bool_value(false), "False"),
+            (Payload::int(-1), "-1"),
+            (Payload::float(1.0), "1.0"),
+        ] {
+            let obj = event_with(vec![("seq", value)]);
+            assert_eq!(
+                parse_session_event(&obj, None).unwrap_err().to_string(),
+                format!("Field 'seq' must be a non-negative integer, got {rendered}")
+            );
+        }
+    }
+
+    #[test]
+    fn bad_actor_kind_and_execution_state_use_the_alphabetical_list() {
+        let actor = event_with(vec![("actor", Payload::string("nope"))]);
+        assert_eq!(
+            parse_session_event(&actor, None).unwrap_err().to_string(),
+            "Invalid actor 'nope', expected one of ['assistant', 'system', 'tool', 'user']"
+        );
+        let actor_int = event_with(vec![("actor", Payload::int(1))]);
+        assert_eq!(
+            parse_session_event(&actor_int, None)
+                .unwrap_err()
+                .to_string(),
+            "Invalid actor '1', expected one of ['assistant', 'system', 'tool', 'user']"
+        );
+        assert!(!parse_session_event(&actor, None)
+            .unwrap_err()
+            .to_string()
+            .contains("['user', 'assistant', 'tool', 'system']"));
+
+        let kind = event_with(vec![("kind", Payload::string("nope"))]);
+        assert_eq!(
+            parse_session_event(&kind, None).unwrap_err().to_string(),
+            format!("Invalid kind 'nope', expected one of {KIND_LIST}")
+        );
+        let state = event_with(vec![("execution_state", Payload::string("nope"))]);
+        assert_eq!(
+            parse_session_event(&state, None).unwrap_err().to_string(),
+            "Invalid execution_state 'nope', expected one of ['aborted', 'failure', 'pending', 'success', 'unknown']"
+        );
+        let kept = event_with(vec![("execution_state", Payload::string("aborted"))]);
+        assert_eq!(
+            parse_session_event(&kept, None)
+                .unwrap()
+                .execution_state
+                .as_deref(),
+            Some("aborted")
+        );
+    }
+
+    #[test]
+    fn payload_side_effects_are_copied_only_when_the_field_is_absent() {
+        let copied = event_with(vec![(
+            "payload",
+            Payload::map(vec![
+                (Payload::string("side_effects"), Payload::string("possible")),
+                (Payload::string("note"), Payload::string("synthetic-note")),
+            ]),
+        )]);
+        let parsed = parse_session_event(&copied, None).unwrap();
+        assert_eq!(parsed.side_effects.as_deref(), Some("possible"));
+        let stored = map_pairs(&parsed.payload);
+        assert_eq!(stored[0].1.as_str(), Some("possible"));
+        assert_eq!(stored[1].1.as_str(), Some("synthetic-note"));
+        assert_ne!(parsed.content_hash.as_deref(), Some("possible"));
+
+        let invalid_copy = event_with(vec![(
+            "payload",
+            Payload::map(vec![(
+                Payload::string("side_effects"),
+                Payload::string("nope"),
+            )]),
+        )]);
+        assert!(parse_session_event(&invalid_copy, None)
+            .unwrap()
+            .side_effects
+            .is_none());
+        let number_copy = event_with(vec![(
+            "payload",
+            Payload::map(vec![(Payload::string("side_effects"), Payload::int(1))]),
+        )]);
+        assert!(parse_session_event(&number_copy, None)
+            .unwrap()
+            .side_effects
+            .is_none());
+        let other_key = event_with(vec![(
+            "payload",
+            Payload::map(vec![(Payload::string("note"), Payload::string("possible"))]),
+        )]);
+        assert!(parse_session_event(&other_key, None)
+            .unwrap()
+            .side_effects
+            .is_none());
+
+        let from_null = event_with(vec![
+            ("side_effects", Payload::null()),
+            (
+                "payload",
+                Payload::map(vec![(
+                    Payload::string("side_effects"),
+                    Payload::string("none"),
+                )]),
+            ),
+        ]);
+        assert_eq!(
+            parse_session_event(&from_null, None)
+                .unwrap()
+                .side_effects
+                .as_deref(),
+            Some("none")
+        );
+
+        let explicit = event_with(vec![
+            ("side_effects", Payload::string("unknown")),
+            (
+                "payload",
+                Payload::map(vec![(
+                    Payload::string("side_effects"),
+                    Payload::string("possible"),
+                )]),
+            ),
+        ]);
+        assert_eq!(
+            parse_session_event(&explicit, None)
+                .unwrap()
+                .side_effects
+                .as_deref(),
+            Some("unknown")
+        );
+
+        let membership = event_with(vec![("side_effects", Payload::string("bogus"))]);
+        assert_eq!(
+            parse_session_event(&membership, None)
+                .unwrap_err()
+                .to_string(),
+            "Field 'side_effects' must be one of ['none', 'possible', 'unknown'], got 'bogus'"
+        );
+        let typed = event_with(vec![("side_effects", Payload::int(3))]);
+        assert_eq!(
+            parse_session_event(&typed, None).unwrap_err().to_string(),
+            "Field 'side_effects' must be a string or None, got 3"
+        );
+    }
+
+    #[test]
+    fn optional_event_strings_use_the_pin_messages() {
+        for field in [
+            "content_hash",
+            "correlation_id",
+            "branch_id",
+            "interaction_id",
+            "agent_id",
+            "source_record_hash",
+            "original_id",
+            "source_adapter",
+            "source_location",
+        ] {
+            let obj = event_with(vec![(field, Payload::int(1))]);
+            assert_eq!(
+                parse_session_event(&obj, None).unwrap_err().to_string(),
+                format!("Field '{field}' must be a string or None, got 1")
+            );
+        }
+        let both = event_with(vec![
+            ("correlation_id", Payload::int(2)),
+            ("content_hash", Payload::int(1)),
+        ]);
+        assert_eq!(
+            parse_session_event(&both, None).unwrap_err().to_string(),
+            "Field 'content_hash' must be a string or None, got 1"
+        );
+        let cleared = event_with(vec![("agent_id", Payload::null())]);
+        assert!(parse_session_event(&cleared, None)
+            .unwrap()
+            .agent_id
+            .is_none());
+
+        let zero = event_with(vec![("source_line", Payload::int(0))]);
+        assert_eq!(
+            parse_session_event(&zero, None).unwrap_err().to_string(),
+            "Field 'source_line' must be a positive integer, got 0"
+        );
+        let flag = event_with(vec![("source_line", Payload::bool_value(true))]);
+        assert_eq!(
+            parse_session_event(&flag, None).unwrap_err().to_string(),
+            "Field 'source_line' must be a positive integer, got True"
+        );
+        let line = event_with(vec![("source_line", Payload::null())]);
+        assert!(parse_session_event(&line, None)
+            .unwrap()
+            .source_line
+            .is_none());
+
+        let deep = event_with(vec![
+            ("payload", nested_maps(101)),
+            ("content_hash", Payload::int(1)),
+        ]);
+        assert_eq!(
+            parse_session_event(&deep, None).unwrap_err().to_string(),
+            "Payload nesting depth 101 exceeds limit of 100"
+        );
+    }
+
+    #[test]
+    fn framed_and_flat_sessions_place_experimental_fields() {
+        let event = minimal_event();
+        let framed = header(vec![
+            (
+                "header",
+                header(vec![
+                    ("schema_version", Payload::string(SCHEMA_VERSION)),
+                    ("session_id", Payload::string("sess-synthetic")),
+                    ("created_at", Payload::string(TS)),
+                    ("experimental_inner", Payload::string("in-header")),
+                ]),
+            ),
+            ("experimental_outer", Payload::string("in-session")),
+            ("events", Payload::list(vec![event.clone()])),
+        ]);
+        let framed_session = parse_session(&framed).unwrap();
+        assert_eq!(framed_session.events.len(), 1);
+        assert_eq!(framed_session.events[0].id, "evt-synthetic");
+        let session_extra = map_pairs(&framed_session.extra_fields);
+        assert_eq!(session_extra[0].0.as_str(), Some("experimental_outer"));
+        assert_eq!(session_extra[0].1.as_str(), Some("in-session"));
+        let header_extra = map_pairs(&framed_session.header.extra_fields);
+        assert_eq!(header_extra[0].0.as_str(), Some("experimental_inner"));
+        assert_eq!(header_extra[0].1.as_str(), Some("in-header"));
+        assert_empty_map(&framed_session.header.metadata);
+
+        let flat = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string(TS)),
+            ("experimental_inner", Payload::string("in-header")),
+            ("events", Payload::tuple(vec![event])),
+        ]);
+        let flat_session = parse_session(&flat).unwrap();
+        assert_eq!(flat_session.events.len(), 1);
+        assert_empty_map(&flat_session.extra_fields);
+        let flat_header_extra = map_pairs(&flat_session.header.extra_fields);
+        assert_eq!(flat_header_extra[0].0.as_str(), Some("experimental_inner"));
+        assert_eq!(flat_header_extra[0].1.as_str(), Some("in-header"));
+
+        let rogue = header(vec![
+            ("header", minimal_header()),
+            ("rogue", Payload::string("nope")),
+            ("events", Payload::list(Vec::new())),
+        ]);
+        let err = parse_session(&rogue).unwrap_err();
+        assert_eq!(err.field_name(), Some("rogue"));
+        assert_eq!(
+            err.to_string(),
+            "Unknown top-level field in session: 'rogue' (code: UNKNOWN_FIELD / SL302)"
+        );
+
+        let flat_rogue = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string(TS)),
+            ("rogue", Payload::string("nope")),
+            ("events", Payload::list(Vec::new())),
+        ]);
+        assert_eq!(
+            parse_session(&flat_rogue).unwrap_err().to_string(),
+            "Unknown field 'rogue' in session header (code: UNKNOWN_FIELD / SL302)"
+        );
+
+        assert_eq!(
+            parse_session(&header(vec![("rogue", Payload::int(1))]))
+                .unwrap_err()
+                .to_string(),
+            "Missing required field 'events' in session"
+        );
+        assert_eq!(
+            parse_session(&header(vec![
+                ("rogue", Payload::int(1)),
+                ("events", Payload::string("nope")),
+            ]))
+            .unwrap_err()
+            .to_string(),
+            "Field 'events' must be a list or tuple, got str"
+        );
+        assert_eq!(
+            parse_session(&header(vec![
+                ("header", Payload::list(Vec::new())),
+                ("events", Payload::list(Vec::new())),
+            ]))
+            .unwrap_err()
+            .to_string(),
+            "Field 'header' must be a mapping, got list"
+        );
+        assert_eq!(
+            parse_session(&header(vec![
+                ("header", Payload::list(Vec::new())),
+                ("rogue", Payload::null()),
+                ("events", Payload::list(Vec::new())),
+            ]))
+            .unwrap_err()
+            .field_name(),
+            Some("rogue")
+        );
+        let non_string = Payload::map(vec![
+            (Payload::string("header"), minimal_header()),
+            (Payload::int(3), Payload::null()),
+            (Payload::string("events"), Payload::list(Vec::new())),
+        ]);
+        assert_eq!(
+            parse_session(&non_string).unwrap_err().to_string(),
+            "Session field name must be a string, got 3"
+        );
+        assert_eq!(
+            parse_session(&Payload::string("sess"))
+                .unwrap_err()
+                .to_string(),
+            "Session object must be a mapping, got str"
+        );
+        let duplicate = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string(TS)),
+            (
+                "events",
+                Payload::list(vec![minimal_event(), minimal_event()]),
+            ),
+        ]);
+        assert_eq!(
+            parse_session(&duplicate).unwrap_err().to_string(),
+            "Duplicate event ID detected: 'evt-synthetic'"
+        );
+    }
+
+    #[test]
+    fn blank_lines_keep_their_numbers_and_jsonl_parses_one_event() {
+        let header_json = format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"first-synthetic\",\"session_id\":\"sess-synthetic\",\"created_at\":\"{TS}\",\"experimental_b\":\"bee\",\"experimental_a\":\"ay\",\"experimental_x\":1,\"experimental_x\":2}}"
+        );
+        let event_json = format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":1,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{\"z\":1,\"a\":\"two\",\"note\":\"a\\nb\"}},\"experimental_flag\":\"on\"}}"
+        );
+        let session = parse_session_lines([
+            "\n",
+            "\u{001C}",
+            header_json.as_str(),
+            "\t",
+            event_json.as_str(),
+        ])
+        .unwrap();
+        assert_eq!(session.header.session_id, "sess-synthetic");
+        assert_eq!(session.header.schema_version, SCHEMA_VERSION);
+        assert_eq!(session.events.len(), 1);
+        assert_eq!(session.events[0].id, "evt-synthetic");
+        assert_empty_map(&session.extra_fields);
+        let extra = map_pairs(&session.header.extra_fields);
+        assert_eq!(extra.len(), 4);
+        assert_eq!(extra[0].0.as_str(), Some("experimental_b"));
+        assert_eq!(extra[0].1.as_str(), Some("bee"));
+        assert_eq!(extra[1].0.as_str(), Some("experimental_a"));
+        assert_eq!(extra[1].1.as_str(), Some("ay"));
+        assert_eq!(extra[2].0.as_str(), Some("experimental_x"));
+        assert_eq!(extra[2].1.as_int(), Some(1));
+        assert_eq!(extra[3].0.as_str(), Some("experimental_x"));
+        assert_eq!(extra[3].1.as_int(), Some(2));
+        let flag = map_pairs(&session.events[0].extra_fields);
+        assert_eq!(flag[0].0.as_str(), Some("experimental_flag"));
+        assert_eq!(flag[0].1.as_str(), Some("on"));
+        let payload = map_pairs(&session.events[0].payload);
+        assert_eq!(payload[0].0.as_str(), Some("z"));
+        assert_eq!(payload[0].1.as_int(), Some(1));
+        assert_eq!(payload[1].0.as_str(), Some("a"));
+        assert_eq!(payload[1].1.as_str(), Some("two"));
+        assert_eq!(payload[2].0.as_str(), Some("note"));
+        assert_eq!(payload[2].1.as_str(), Some("a\nb"));
+        assert!(session.events[0].side_effects.is_none());
+
+        let padded = format!("{header_json}\u{001C}");
+        assert_eq!(
+            parse_session_lines([padded.as_str()])
+                .unwrap()
+                .header
+                .session_id,
+            "sess-synthetic"
+        );
+
+        let bad_header = parse_session_lines(["", "{"]).unwrap_err();
+        let header_prefix = "Malformed JSON on header line (line 2): ";
+        assert!(bad_header.to_string().starts_with(header_prefix));
+        assert!(bad_header.to_string().len() > header_prefix.len());
+
+        let bad_event =
+            parse_session_lines(["\n", "\u{001C}", header_json.as_str(), "\t", "{"]).unwrap_err();
+        let event_prefix = "Malformed JSON on event line 5: ";
+        assert!(bad_event.to_string().starts_with(event_prefix));
+        assert!(bad_event.to_string().len() > event_prefix.len());
+        assert_eq!(
+            parse_session_lines(["", " \t", "\u{001C}"])
+                .unwrap_err()
+                .to_string(),
+            "Session stream contains no records"
+        );
+    }
+
+    #[test]
+    fn json_numbers_nan_and_out_of_range_integers() {
+        let header_json = synthetic_header_json();
+        let event_json = format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":-0,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{\"x\":NaN,\"y\":Infinity,\"z\":-Infinity,\"e\":1e2}}}}"
+        );
+        let session = parse_session_lines([header_json.as_str(), event_json.as_str()]).unwrap();
+        assert_eq!(session.events[0].seq, 0);
+        let payload = map_pairs(&session.events[0].payload);
+        assert!(payload[0].1.as_float().unwrap().is_nan());
+        assert_eq!(payload[1].1.as_float(), Some(f64::INFINITY));
+        assert_eq!(payload[2].1.as_float(), Some(f64::NEG_INFINITY));
+        assert!(payload[3].1.as_int().is_none());
+        assert_eq!(payload[3].1.as_float(), Some(100.0));
+
+        let max_seq = format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":9223372036854775807,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{}}}}"
+        );
+        assert_eq!(
+            parse_session_lines([header_json.as_str(), max_seq.as_str()])
+                .unwrap()
+                .events[0]
+                .seq,
+            i64::MAX
+        );
+        let min_seq = format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":-9223372036854775808,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{}}}}"
+        );
+        assert_eq!(
+            parse_session_lines([header_json.as_str(), min_seq.as_str()])
+                .unwrap_err()
+                .to_string(),
+            "Field 'seq' must be a non-negative integer, got -9223372036854775808"
+        );
+        let overflow = format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":9223372036854775808,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{}}}}"
+        );
+        let err = parse_session_lines([header_json.as_str(), overflow.as_str()]).unwrap_err();
+        assert_eq!(err.to_string(), "JSON integer is outside i64");
+        let emoji = format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-\\uD83D\\uDE00\",\"created_at\":\"{TS}\"}}"
+        );
+        assert_eq!(
+            parse_session_lines([emoji.as_str()])
+                .unwrap()
+                .header
+                .session_id,
+            "sess-\u{1F600}"
+        );
+        let lone = format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-\\uD800\",\"created_at\":\"{TS}\"}}"
+        );
+        let lone_err = parse_session_lines([lone.as_str()]).unwrap_err();
+        assert!(lone_err
+            .to_string()
+            .starts_with("Malformed JSON on header line (line 1): "));
+        let leading_zero = parse_session_lines(["01"]).unwrap_err();
+        assert!(leading_zero
+            .to_string()
+            .starts_with("Malformed JSON on header line (line 1): "));
+    }
+
+    #[test]
+    fn deep_json_metadata_uses_validate_depth() {
+        let ok = format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-synthetic\",\"created_at\":\"{TS}\",\"metadata\":{}}}",
+            nested_object_json(100)
+        );
+        assert!(parse_session_lines([ok.as_str()]).is_ok());
+        let too_deep = format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-synthetic\",\"created_at\":\"{TS}\",\"metadata\":{}}}",
+            nested_object_json(101)
+        );
+        assert_eq!(
+            parse_session_lines([too_deep.as_str()])
+                .unwrap_err()
+                .to_string(),
+            "Payload nesting depth 101 exceeds limit of 100"
+        );
+    }
+
+    #[test]
+    fn load_session_file_reports_a_missing_path() {
+        let dir = TempSessionDir::new("missing");
+        let path = dir.child("missing.json");
+        let err = load_session_file(&path).unwrap_err();
+        assert_eq!(err.code(), "SCHEMA");
+        assert_eq!(
+            err.to_string(),
+            format!("Session file not found: {}", path.display())
+        );
+        let directory = load_session_file(dir.path()).unwrap_err();
+        assert_eq!(
+            directory.to_string(),
+            format!("Session file not found: {}", dir.path().display())
+        );
+    }
+
+    #[test]
+    fn load_session_file_rejects_oversize_without_reading() {
+        let dir = TempSessionDir::new("oversize");
+        let path = dir.child("big.jsonl");
+        {
+            let mut file = std::fs::File::create(&path).unwrap();
+            file.write_all(&[0xFF]).unwrap();
+            file.set_len(MAX_NON_STREAMING_BYTES + 1).unwrap();
+        }
+        let err = load_session_file(&path).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "File size {} bytes exceeds maximum non-streaming limit ({} bytes); use streaming reader (TASK-005)",
+                MAX_NON_STREAMING_BYTES + 1,
+                MAX_NON_STREAMING_BYTES
+            )
+        );
+        assert!(!err.to_string().contains("UTF-8"));
+    }
+
+    #[test]
+    fn load_session_file_reads_bom_crlf_and_keeps_line_separators() {
+        let dir = TempSessionDir::new("encoding");
+        let header_json = synthetic_header_json();
+        let event_json = synthetic_event_json();
+
+        let empty = dir.child("empty.jsonl");
+        std::fs::write(&empty, "\u{001C}\n").unwrap();
+        assert_eq!(
+            load_session_file(&empty).unwrap_err().to_string(),
+            format!("Session file is empty: {}", empty.display())
+        );
+        let invalid = dir.child("bad.jsonl");
+        std::fs::write(&invalid, [0xFF, 0xFE]).unwrap();
+        let encoding = load_session_file(&invalid).unwrap_err();
+        let encoding_prefix = "File encoding is not valid UTF-8: ";
+        assert!(encoding.to_string().starts_with(encoding_prefix));
+        assert!(encoding.to_string().len() > encoding_prefix.len());
+
+        let bom = dir.child("bom.json");
+        let mut bom_bytes = vec![0xEF, 0xBB, 0xBF];
+        let body = format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-synthetic\",\"created_at\":\"{TS}\",\"events\":[{event_json}]}}"
+        );
+        bom_bytes.extend(body.as_bytes());
+        std::fs::write(&bom, bom_bytes).unwrap();
+        let bom_session = load_session_file(&bom).unwrap();
+        assert_eq!(bom_session.events.len(), 1);
+        assert_eq!(bom_session.header.session_id, "sess-synthetic");
+
+        let crlf = dir.child("crlf.jsonl");
+        std::fs::write(&crlf, format!("{header_json}\r\n{event_json}\r\n")).unwrap();
+        let crlf_session = load_session_file(&crlf).unwrap();
+        assert_eq!(crlf_session.events.len(), 1);
+        assert_eq!(crlf_session.events[0].id, "evt-synthetic");
+
+        let separators = dir.child("separators.jsonl");
+        let marked = format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":1,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{\"note\":\"a\u{2028}b\u{2029}c\u{0085}d\"}}}}"
+        );
+        let marked_text = format!("{header_json}\n{marked}\n");
+        assert_eq!(marked_text.chars().filter(|ch| *ch == '\n').count(), 2);
+        std::fs::write(&separators, marked_text.as_bytes()).unwrap();
+        let marked_session = load_session_file(&separators).unwrap();
+        assert_eq!(marked_session.events.len(), 1);
+        assert_eq!(
+            map_pairs(&marked_session.events[0].payload)[0].1.as_str(),
+            Some("a\u{2028}b\u{2029}c\u{0085}d")
+        );
+
+        let pretty = dir.child("pretty.json");
+        let pretty_text = format!(
+            "{{\n\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-synthetic\",\"created_at\":\"{TS}\",\"events\":[]\n}}\n"
+        );
+        std::fs::write(&pretty, pretty_text.as_bytes()).unwrap();
+        assert!(load_session_file(&pretty).unwrap().events.is_empty());
+
+        let header_only = dir.child("header.json");
+        std::fs::write(&header_only, header_json.as_bytes()).unwrap();
+        let header_session = load_session_file(&header_only).unwrap();
+        assert!(header_session.events.is_empty());
+        assert_eq!(header_session.header.session_id, "sess-synthetic");
+
+        let schema = dir.child("events-type.json");
+        std::fs::write(&schema, b"{\"events\":1}").unwrap();
+        assert_eq!(
+            load_session_file(&schema).unwrap_err().to_string(),
+            "Field 'events' must be a list or tuple, got int"
+        );
+    }
+
+    #[test]
+    fn dump_and_schema_loaders_do_not_touch_the_filesystem() {
+        let dir = TempSessionDir::new("untouched");
+        let session = parse_session(&header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string(TS)),
+            ("events", Payload::list(vec![minimal_event()])),
+        ]))
+        .unwrap();
+        let nested = dir.child("missing-parent").join("out.jsonl");
+        let dump_err = dump_session(&session).unwrap_err();
+        assert_eq!(
+            dump_err.to_string(),
+            "sesslint._canonical_codec.canonical_json_bytes is not available"
+        );
+        let file_err = dump_session_file(&session, &nested).unwrap_err();
+        assert_eq!(file_err.to_string(), dump_err.to_string());
+        assert!(!nested.exists());
+        assert!(!dir.child("missing-parent").exists());
+        assert_eq!(
+            get_session_schema_path().unwrap_err().to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert_eq!(
+            load_session_schema().unwrap_err().to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+    }
+
+    struct TempSessionDir {
+        path: std::path::PathBuf,
+    }
+
+    impl TempSessionDir {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "sesslint-rx-canonical-{label}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.path
+        }
+
+        fn child(&self, name: &str) -> std::path::PathBuf {
+            self.path.join(name)
+        }
+    }
+
+    impl Drop for TempSessionDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn map_pairs(value: &Payload) -> Vec<(Payload, Payload)> {
+        copied_map_entries(value).unwrap().unwrap()
+    }
+
+    fn minimal_event() -> Payload {
+        event_with(Vec::new())
+    }
+
+    fn event_with(extra: Vec<(&str, Payload)>) -> Payload {
+        let mut pairs = vec![
+            ("id", Payload::string("evt-synthetic")),
+            ("parent_id", Payload::null()),
+            ("seq", Payload::int(1)),
+            ("ts", Payload::string(TS)),
+            ("actor", Payload::string("user")),
+            ("kind", Payload::string("message")),
+            ("payload", Payload::map(Vec::new())),
+        ];
+        pairs.extend(extra);
+        header(pairs)
+    }
+
+    fn synthetic_header_json() -> String {
+        format!(
+            "{{\"schema_version\":\"{SCHEMA_VERSION}\",\"session_id\":\"sess-synthetic\",\"created_at\":\"{TS}\"}}"
+        )
+    }
+
+    fn synthetic_event_json() -> String {
+        format!(
+            "{{\"id\":\"evt-synthetic\",\"parent_id\":null,\"seq\":1,\"ts\":\"{TS}\",\"actor\":\"user\",\"kind\":\"message\",\"payload\":{{}}}}"
+        )
+    }
+
+    fn nested_object_json(depth: u32) -> String {
+        let mut text = String::new();
+        for _ in 0..depth {
+            text.push_str("{\"n\":");
+        }
+        text.push_str("null");
+        for _ in 0..depth {
+            text.push('}');
+        }
+        text
     }
 }
