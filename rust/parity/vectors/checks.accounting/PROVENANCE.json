@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.accounting parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.accounting/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "check_accounting uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python ints are unbounded and Rust uses checked i64 addition for counter sums.",
+    "A bool is not an int (bool, float, and negative int counter values are ignored per key)."
+  ]
+}
