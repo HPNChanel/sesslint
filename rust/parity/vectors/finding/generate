@@ -191,7 +191,10 @@ def vector_specs() -> list[dict[str, Any]]:
     )
     add(
         "enforce_api_key_shape",
-        {"type": "enforce_content_free_text", "text": "sk_live_sample"},
+        {
+            "type": "enforce_content_free_text",
+            "text": "slack_token_" + ("a" * 16),
+        },
     )
     add(
         "enforce_credential_assignment",

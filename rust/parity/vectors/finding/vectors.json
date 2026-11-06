@@ -109,11 +109,11 @@
       "id": "enforce_api_key_shape",
       "construct": {
         "type": "enforce_content_free_text",
-        "text": "sk_live_sample"
+        "text": "slack_token_aaaaaaaaaaaaaaaa"
       },
       "expected": {
         "ok": false,
-        "display": "Forbidden credential pattern (API key) in text: 'sk_live_sample'"
+        "display": "Forbidden credential pattern (API key) in text: 'slack_token_aaaaaaaaaaaaaaaa'"
       }
     },
     {
