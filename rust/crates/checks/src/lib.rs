@@ -6,7 +6,7 @@ mod error;
 
 pub use error::ChecksError;
 
-pub mod context {}
+pub mod context;
 pub mod hygiene {}
 pub mod indexes;
 pub mod checkpoint {}
