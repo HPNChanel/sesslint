@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.durable_prefix",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_durable_prefix_rs_sha256": "d8f230ca9534583298dacdf6cac1a866e0f8280083180b5ee55cf1da4e9584bd",
+  "vector_count": 6,
+  "vectors_sha256": "a252e1349887d344065677a0e80dd0dec0730679fedd4b201a994461d351e874",
+  "generator": "rust/parity/vectors/checks.durable_prefix/generate",
+  "known_parity_gaps": [
+    "trailing-non-durable, durable-gap, and missing-required-field call make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",
+    "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int. durable is exactly true.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key."
+  ]
+}
