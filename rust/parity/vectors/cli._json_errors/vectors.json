@@ -1,0 +1,408 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._json_errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "json_errors_py_sha256": "af5502d6bc92b7d4d7967edee7edb3012afbeebcacde052e7a7576aad55d5e1b",
+  "vectors": [
+    {
+      "id": "error_document_ascii_message",
+      "construct": {
+        "type": "error_document",
+        "message": "Command failed"
+      },
+      "expected": {
+        "document": "{\"code\": \"ERROR\", \"message\": \"Command failed\", \"verdict\": \"error\"}",
+        "bytes_sha256": "9c2e8c5970cd1905f5ae1df7277ad2e7aee883e3e7c28fef2e4a3a1a00abb04a",
+        "bytes_len": 66
+      }
+    },
+    {
+      "id": "error_document_cafe_unicode_escape",
+      "construct": {
+        "type": "error_document",
+        "message": "café"
+      },
+      "expected": {
+        "document": "{\"code\": \"ERROR\", \"message\": \"caf\\u00e9\", \"verdict\": \"error\"}",
+        "bytes_sha256": "1a2499a55efda430a674ef478c462c383dcd62047108519d22d906a0c29c5d27",
+        "bytes_len": 61
+      }
+    },
+    {
+      "id": "error_document_u007f_escape",
+      "construct": {
+        "type": "error_document",
+        "message": ""
+      },
+      "expected": {
+        "document": "{\"code\": \"ERROR\", \"message\": \"\\u007f\", \"verdict\": \"error\"}",
+        "bytes_sha256": "8a446cad40fc1c42c7fd701336c392738061fe1f22c5cbf9b0607e0705045d9e",
+        "bytes_len": 58
+      }
+    },
+    {
+      "id": "wants_json_args_json_true_wins",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format",
+          "text"
+        ],
+        "args": {
+          "json": true,
+          "output_format": "human"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_args_output_format_json",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format",
+          "text"
+        ],
+        "args": {
+          "json": false,
+          "output_format": "json"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_args_output_format_not_json",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--json"
+        ],
+        "args": {
+          "json": false,
+          "output_format": "human"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "wants_json_args_no_json_surface",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--json",
+          "--format",
+          "json"
+        ],
+        "args": {
+          "json_surface": false
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "wants_json_args_json_false_argv_json",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--json"
+        ],
+        "args": {
+          "json": false
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_argv_flag_json",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_argv_format_pair",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format",
+          "json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_argv_format_equals",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format=json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_argv_f_merged",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "-fjson"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_argv_f_space",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "-f",
+          "json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_last_format_token_wins_json",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format",
+          "text",
+          "--format",
+          "json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_last_format_token_wins_text",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format",
+          "json",
+          "--format",
+          "text"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "wants_json_argv_json_after_format",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--format",
+          "text",
+          "--json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_double_dash_stops_scan",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--",
+          "--json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "wants_json_double_dash_ignores_format",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--",
+          "--format",
+          "json"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "wants_json_json_before_double_dash",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "--json",
+          "--"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "wants_json_plain_scan_false",
+      "construct": {
+        "type": "wants_json",
+        "argv": [
+          "scan"
+        ],
+        "args": null
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "tracked_nonempty_non_whitespace",
+      "construct": {
+        "type": "tracked_stream",
+        "diagnostic_limit": 0,
+        "writes": [
+          "x"
+        ]
+      },
+      "expected": {
+        "nonempty": true,
+        "diagnostic": "",
+        "write_results": [
+          {
+            "ok": true,
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked_nonempty_whitespace_only",
+      "construct": {
+        "type": "tracked_stream",
+        "diagnostic_limit": 16,
+        "writes": [
+          " \n\t ",
+          "",
+          " \n"
+        ]
+      },
+      "expected": {
+        "nonempty": false,
+        "diagnostic": "",
+        "write_results": [
+          {
+            "ok": true,
+            "count": 4
+          },
+          {
+            "ok": true,
+            "count": 0
+          },
+          {
+            "ok": true,
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked_diagnostic_limit_and_strip",
+      "construct": {
+        "type": "tracked_stream",
+        "diagnostic_limit": 10,
+        "writes": [
+          "  hi\n"
+        ]
+      },
+      "expected": {
+        "nonempty": true,
+        "diagnostic": "hi",
+        "write_results": [
+          {
+            "ok": true,
+            "count": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked_write_non_integer_returns_len",
+      "construct": {
+        "type": "tracked_stream",
+        "diagnostic_limit": 8,
+        "writes": [
+          "café"
+        ],
+        "raw_mode": "non_integer"
+      },
+      "expected": {
+        "nonempty": true,
+        "diagnostic": "café",
+        "write_results": [
+          {
+            "ok": true,
+            "count": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracked_write_inner_error",
+      "construct": {
+        "type": "tracked_stream",
+        "diagnostic_limit": 8,
+        "writes": [
+          "x"
+        ],
+        "raw_mode": "fail"
+      },
+      "expected": {
+        "nonempty": true,
+        "diagnostic": "x",
+        "write_results": [
+          {
+            "ok": false,
+            "error": "OSError"
+          }
+        ]
+      }
+    }
+  ]
+}

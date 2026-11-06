@@ -1,0 +1,13 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._json_errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "json_errors_py_sha256": "af5502d6bc92b7d4d7967edee7edb3012afbeebcacde052e7a7576aad55d5e1b",
+  "vector_count": 25,
+  "vectors_sha256": "378da352dfa4137ddfb46c7143ecd98f285087fdda154b46fe9a027ddc8198ce",
+  "generator": "rust/parity/vectors/cli._json_errors/generate",
+  "known_gaps": [
+    "A lone UTF-16 surrogate cannot be stored in Rust str; no \\ud800 error_document vector.",
+    "Rust 1.91 makes std::env::set_var unsafe; parity vectors do not set SESSLINT_FORMAT (env fallback covered by cli unit tests in json_errors.rs)."
+  ]
+}
