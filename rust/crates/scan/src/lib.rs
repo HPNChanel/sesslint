@@ -6,7 +6,7 @@ mod error;
 
 pub use error::ScanError;
 
-pub mod atomic {}
+pub mod atomic;
 pub mod cache {}
 pub mod discovery;
 pub mod io {}
