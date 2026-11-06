@@ -110,19 +110,6 @@ def span_for_search(
     return match.span(group)
 
 
-def stripe_body_bytes(length: int) -> bytes:
-    if length < 16:
-        raise SystemExit("stripe body length must be >= 16")
-    out = bytearray()
-    while len(out) < length:
-        need = length - len(out)
-        chunk = min(8, need)
-        out.extend(b"a" * chunk)
-        if len(out) < length:
-            out.append(ord("-"))
-    return bytes(out)
-
-
 def decode_bytes_blob(obj: dict[str, Any]) -> bytes:
     if obj.get("kind") != "bytes_hex":
         raise SystemExit("expected bytes_hex blob")
@@ -192,11 +179,7 @@ def assemble_recipe(
         bl = recipe.get("body_length")
         if bl is not None:
             n = int(bl)
-            fill_spec = recipe["fill_byte"]
-            if fill_spec == "stripe_alternating":
-                out.extend(stripe_body_bytes(n))
-            else:
-                out.extend(bytes([int(fill_spec)]) * n)
+            out.extend(bytes([int(recipe["fill_byte"])]) * n)
     out.extend(decode_bytes_blob(recipe["tail"]))
     return bytes(out)
 
@@ -522,9 +505,8 @@ def build_vectors() -> list[dict[str, Any]]:
             },
         )
 
-    # --- stripe-key (four literals; alternating body avoids contiguous 16+ alnum) ---
+    # --- stripe-key (four literals; 16 alnum body after prefix; lead is boundary) ---
     fam = "stripe-key"
-    stripe_lengths = (17, 18, 19, 20)
     for idx in range(4):
         add(
             f"{fam}__match_literal_{idx}",
@@ -534,8 +516,8 @@ def build_vectors() -> list[dict[str, Any]]:
                 "family": fam,
                 "literal_index": idx,
                 "prefix_mode": {"kind": "family_literal"},
-                "body_length": stripe_lengths[idx],
-                "fill_byte": "stripe_alternating",
+                "body_length": 16,
+                "fill_byte": 97,
                 "tail": {"kind": "bytes_hex", "hex": ""},
             },
         )
@@ -561,8 +543,8 @@ def build_vectors() -> list[dict[str, Any]]:
                 "family": fam,
                 "literal_index": 0,
                 "prefix_mode": {"kind": "family_literal"},
-                "body_length": 17,
-                "fill_byte": "stripe_alternating",
+                "body_length": 16,
+                "fill_byte": 97,
                 "tail": {"kind": "bytes_hex", "hex": ""},
             },
         )

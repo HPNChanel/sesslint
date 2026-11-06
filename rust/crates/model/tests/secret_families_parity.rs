@@ -23,7 +23,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_SECRET_FAMILIES_RS_SHA256: &str =
     "23c97443724903cd5f848135e2d83e53d5ec798b865d4874e7d4968f7ac6e59f";
 const EXPECTED_VECTORS_SHA256: &str =
-    "65291af2e9c6ed0c0c2f9a56743c2d98c910451b7b9b198f832ddc34214badef";
+    "6f0cb2a50da4d160681891d90344ea20107a07f912e7bea466f4564754fead68";
 
 const EXPECTED_LITERAL_KEYS: [&str; 18] = [
     "anthropic-api-key",
@@ -255,18 +255,8 @@ fn assemble_recipe(recipe: &[(String, JsonValue)]) -> Result<Vec<u8>, ParseError
                 let n = usize::try_from(*n).map_err(|_| ParseError {
                     message: "body_length".into(),
                 })?;
-                let fill_spec = field_value(recipe, "fill_byte").ok_or_else(|| ParseError {
-                    message: "fill_byte".into(),
-                })?;
-                match fill_spec {
-                    JsonValue::Str(s) if s == "stripe_alternating" => {
-                        out.extend(stripe_alternating_body(n));
-                    }
-                    _ => {
-                        let fill = fill_byte_field(recipe, "fill_byte")?;
-                        out.extend(std::iter::repeat_n(fill, n));
-                    }
-                }
+                let fill = fill_byte_field(recipe, "fill_byte")?;
+                out.extend(std::iter::repeat_n(fill, n));
             }
             _ => {
                 return Err(ParseError {
@@ -411,18 +401,6 @@ fn decode_hex_nibble(byte: u8) -> Result<u8, ParseError> {
             message: "bad hex".into(),
         }),
     }
-}
-
-fn stripe_alternating_body(length: usize) -> Vec<u8> {
-    let mut out = Vec::new();
-    while out.len() < length {
-        let chunk = (length - out.len()).min(8);
-        out.extend(std::iter::repeat_n(b'a', chunk));
-        if out.len() < length {
-            out.push(b'-');
-        }
-    }
-    out
 }
 
 fn fill_byte_field(recipe: &[(String, JsonValue)], key: &str) -> Result<u8, ParseError> {

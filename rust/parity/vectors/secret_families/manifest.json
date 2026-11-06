@@ -4,7 +4,7 @@
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "secret_families_rs_sha256": "23c97443724903cd5f848135e2d83e53d5ec798b865d4874e7d4968f7ac6e59f",
   "vector_count": 127,
-  "vectors_sha256": "65291af2e9c6ed0c0c2f9a56743c2d98c910451b7b9b198f832ddc34214badef",
+  "vectors_sha256": "6f0cb2a50da4d160681891d90344ea20107a07f912e7bea466f4564754fead68",
   "generator": "rust/parity/vectors/secret_families/generate",
   "family_literal_keys": [
     "anthropic-api-key",
