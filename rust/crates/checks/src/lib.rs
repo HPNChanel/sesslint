@@ -33,6 +33,46 @@ pub mod builtin;
 pub mod assessment {}
 pub mod runner {}
 
+// `sesslint.profiles` package surface. Order is `profiles/__init__.py` `__all__`
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+#[rustfmt::skip]
+pub use builtin::{
+    ALL_RULES,
+    CLAUDE_STRICT_PROFILE,
+    NEUTRAL_PROFILE,
+    OPENAI_STRICT_PROFILE,
+    REGISTRY,
+};
+#[rustfmt::skip]
+pub use profile::{
+    EffectiveConfig,
+    Profile,
+    apply_rule_selection,
+    deselected_rules,
+    get_profile,
+    list_profiles,
+    require_canonical,
+    resolve_effective_config,
+    stamp_source_profile,
+};
+
+pub const PROFILES_ALL: [&str; 14] = [
+    "ALL_RULES",
+    "CLAUDE_STRICT_PROFILE",
+    "EffectiveConfig",
+    "NEUTRAL_PROFILE",
+    "OPENAI_STRICT_PROFILE",
+    "Profile",
+    "REGISTRY",
+    "apply_rule_selection",
+    "deselected_rules",
+    "get_profile",
+    "list_profiles",
+    "require_canonical",
+    "resolve_effective_config",
+    "stamp_source_profile",
+];
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -72,5 +112,43 @@ mod tests {
     /// Same function item: a re-export does not create a second `must_abstain`.
     fn same_item<T>(left: T, right: T) {
         let _ = (left, right);
+    }
+
+    #[test]
+    fn profiles_reexport_list_is_exactly_the_package_names() {
+        assert_eq!(
+            super::PROFILES_ALL,
+            [
+                "ALL_RULES",
+                "CLAUDE_STRICT_PROFILE",
+                "EffectiveConfig",
+                "NEUTRAL_PROFILE",
+                "OPENAI_STRICT_PROFILE",
+                "Profile",
+                "REGISTRY",
+                "apply_rule_selection",
+                "deselected_rules",
+                "get_profile",
+                "list_profiles",
+                "require_canonical",
+                "resolve_effective_config",
+                "stamp_source_profile",
+            ]
+        );
+        assert!(!super::PROFILES_ALL.contains(&"VALID_FORMATS"));
+        assert_eq!(super::ALL_RULES, super::builtin::ALL_RULES);
+        let registry_names: Vec<&str> = super::REGISTRY
+            .entries()
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        assert_eq!(
+            registry_names,
+            ["neutral", "claude-strict", "openai-strict"]
+        );
+        assert_eq!(
+            super::get_profile("neutral").unwrap_err().to_string(),
+            "sesslint.profiles.builtin is not available"
+        );
     }
 }
