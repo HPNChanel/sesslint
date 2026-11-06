@@ -14,4 +14,4 @@ pub mod precheck {}
 pub mod seal {}
 pub mod verify {}
 pub mod exporter {}
-pub mod preview {}
+pub mod preview;
