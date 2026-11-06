@@ -6,7 +6,7 @@ mod error;
 
 pub use error::CliError;
 
-pub mod errors {}
+pub mod errors;
 pub mod context {}
 pub mod json_errors {}
 pub mod options {}
