@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.foreign_shape module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+FOREIGN_SHAPE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+FOREIGN_SHAPE_RS_SHA256 = (
+    "8df1c3b0df23935677777332c903405c96168aa0511af4f977fb0e9afc9612eb"
+)
+MODULE = "sesslint.checks.foreign_shape"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "shape array or other calls make_finding with the fingerprint omitted. "
+    "Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",
+    "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int. first_ordinal is omitted when the ordinal is absent or < 0.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key.",
+    "The 8-hex provider hash is evidence on a firing record only. "
+    "sha256 of the stripped string openai is 7d3194f7. "
+    "Do not put a firing case in the required vectors.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_foreign_shape_py_blob() -> None:
+    pin = git_show_blob(f"{FOREIGN_SHAPE_PY_PIN}:src/sesslint/checks/foreign_shape.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/foreign_shape.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/foreign_shape.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_foreign_shape_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "foreign_shape.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != FOREIGN_SHAPE_RS_SHA256:
+        raise SystemExit(
+            "checks/src/foreign_shape.rs sha256 mismatch: "
+            f"expected {FOREIGN_SHAPE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_foreign_shape_module() -> types.ModuleType:
+    verify_foreign_shape_py_blob()
+    verify_foreign_shape_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{FOREIGN_SHAPE_PY_PIN}:src/sesslint/checks/foreign_shape.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_foreign_shape.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_foreign_shape_parity", tmp_path
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned foreign_shape.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    extra_fields: dict[str, Any],
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields=extra_fields,
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_construct_foreign_shape_check(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "foreign_shape_check",
+        "events": [encode_event(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    # No codex marker: silent.
+    ev_no_codex = [
+        session_event("evt-par-fs-nc-a", 0, "message", {}),
+        session_event("evt-par-fs-nc-b", 1, "message", {}),
+    ]
+    out.append(
+        {
+            "id": "no_codex_marker_empty_findings",
+            "construct": encode_construct_foreign_shape_check(ev_no_codex),
+            "expected": {
+                "findings_count": len(mod.check_foreign_shape(ev_no_codex)),
+                "record_is_none": True,
+            },
+        }
+    )
+
+    # reasoning with reasoning_content_shape the string "null": not in cited foreign set.
+    ev_shape_str_null = [
+        session_event(
+            "evt-par-fs-snull",
+            0,
+            "message",
+            {
+                "codex": {
+                    "item_type": "reasoning",
+                    "reasoning_content_shape": "null",
+                    "ordinal": 0,
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "reasoning_reasoning_content_shape_string_null_silent",
+            "construct": encode_construct_foreign_shape_check(ev_shape_str_null),
+            "expected": {
+                "findings_count": len(mod.check_foreign_shape(ev_shape_str_null)),
+                "record_is_none": True,
+            },
+        }
+    )
+
+    # Unknown item_type "message" with shape array: not a cited family — silent.
+    ev_unknown_message_shape_array = [
+        session_event(
+            "evt-par-fs-msg-arr",
+            0,
+            "message",
+            {
+                "codex": {
+                    "item_type": "message",
+                    "reasoning_content_shape": [1, 2],
+                    "ordinal": 0,
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "unknown_item_type_message_shape_array_silent",
+            "construct": encode_construct_foreign_shape_check(ev_unknown_message_shape_array),
+            "expected": {
+                "findings_count": len(
+                    mod.check_foreign_shape(ev_unknown_message_shape_array)
+                ),
+                "record_is_none": True,
+            },
+        }
+    )
+
+    # reasoning item, reasoning_content_shape key absent — silent.
+    ev_absent_shape = [
+        session_event(
+            "evt-par-fs-no-shape",
+            0,
+            "message",
+            {
+                "codex": {
+                    "item_type": "reasoning",
+                    "ordinal": 1,
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "reasoning_reasoning_content_shape_absent_silent",
+            "construct": encode_construct_foreign_shape_check(ev_absent_shape),
+            "expected": {
+                "findings_count": len(mod.check_foreign_shape(ev_absent_shape)),
+                "record_is_none": True,
+            },
+        }
+    )
+
+    # reasoning item, shape not a string (int) — silent.
+    ev_shape_not_str = [
+        session_event(
+            "evt-par-fs-shape-int",
+            0,
+            "message",
+            {
+                "codex": {
+                    "item_type": "reasoning",
+                    "reasoning_content_shape": 42,
+                    "ordinal": 0,
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "reasoning_reasoning_content_shape_not_string_silent",
+            "construct": encode_construct_foreign_shape_check(ev_shape_not_str),
+            "expected": {
+                "findings_count": len(mod.check_foreign_shape(ev_shape_not_str)),
+                "record_is_none": True,
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_foreign_shape_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_module(mod)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        fc = spec["expected"]["findings_count"]
+        if fc != 0:
+            raise SystemExit(
+                f'vector {spec["id"]!r} expected silent Python side; got findings_count={fc}'
+            )
+        if not spec["expected"]["record_is_none"]:
+            raise SystemExit(
+                f'vector {spec["id"]!r} expected record_is_none True on Python side'
+            )
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": spec["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_foreign_shape_rs_sha256": FOREIGN_SHAPE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_foreign_shape_rs_sha256": FOREIGN_SHAPE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.foreign_shape/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.foreign_shape parity "
+            "(stdlib-only vectors; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.foreign_shape/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

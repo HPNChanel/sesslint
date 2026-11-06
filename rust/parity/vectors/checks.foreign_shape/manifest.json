@@ -1,0 +1,16 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.foreign_shape",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_foreign_shape_rs_sha256": "8df1c3b0df23935677777332c903405c96168aa0511af4f977fb0e9afc9612eb",
+  "vector_count": 5,
+  "vectors_sha256": "b6550ebc47eab08413b2392cf55bc96cc63805244832baa8d956465aaae5f0e1",
+  "generator": "rust/parity/vectors/checks.foreign_shape/generate",
+  "known_parity_gaps": [
+    "shape array or other calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",
+    "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int. first_ordinal is omitted when the ordinal is absent or < 0.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key.",
+    "The 8-hex provider hash is evidence on a firing record only. sha256 of the stripped string openai is 7d3194f7. Do not put a firing case in the required vectors."
+  ]
+}
