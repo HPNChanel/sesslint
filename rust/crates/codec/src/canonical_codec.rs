@@ -1,7 +1,9 @@
 //! Canonical serialization and cryptographic hashing codec (T-01 / S1).
 //!
-//! Port of `src/sesslint/_canonical_codec.py` lines 1–307
+//! Port of `src/sesslint/_canonical_codec.py`
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Lines 1–307 are the codec type. Lines 310–393 are the module wrappers
+//! ([`resolve_active_codec`] through [`ALL`]).
 //!
 //! Byte contract for plain values: Python
 //! `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)`
@@ -10,11 +12,16 @@
 //! `sesslint.canonical.SessionEvent` is not ported. Content-identity methods fail closed
 //! instead of hashing a stand-in event. Provenance names are owned by that path and are
 //! not stripped from [`PurePythonCanonicalCodec::canonical_json_bytes`].
+//!
+//! Python binds `_ACTIVE_CODEC` at import. Rust has no import, so the cell is resolved
+//! on the first [`get_active_codec`] and then only [`set_active_codec`] replaces it.
+//! A later change to `SESSLINT_DISABLE_ACCEL` does not resolve again.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use model::errors::SchemaError;
 use sha2::{Digest, Sha256};
@@ -59,13 +66,15 @@ pub enum CanonicalError {
     Schema(SchemaError),
     /// Late import of an unported module. The string is a stable, content-free message.
     Unsupported(&'static str),
+    /// The active-codec [`Mutex`] was poisoned. This is not an input failure.
+    LockPoisoned(&'static str),
 }
 
 impl CanonicalError {
     pub fn message(&self) -> &str {
         match self {
             Self::Schema(error) => error.message(),
-            Self::Unsupported(message) => message,
+            Self::Unsupported(message) | Self::LockPoisoned(message) => message,
         }
     }
 
@@ -1330,8 +1339,210 @@ mod python_json {
     }
 }
 
+const DISABLE_ACCEL_ENV: &str = "SESSLINT_DISABLE_ACCEL";
+
+const DISABLE_ACCEL_TOKENS: [&str; 3] = ["1", "true", "yes"];
+
+const ACTIVE_LOCK_POISONED: &str = "active canonical codec lock is poisoned";
+
+fn accel_disabled(raw: Option<&str>) -> bool {
+    raw.is_some_and(|value| DISABLE_ACCEL_TOKENS.contains(&value.trim()))
+}
+
+fn read_disable_accel_flag() -> Option<String> {
+    // `NotPresent` and `NotUnicode` are both "not a disable token".
+    // The caller then takes the missing-accel fallback, which is the pure codec.
+    std::env::var(DISABLE_ACCEL_ENV).ok()
+}
+
+fn resolve_from_disable_flag(raw: Option<&str>) -> PurePythonCanonicalCodec {
+    if accel_disabled(raw) {
+        return PurePythonCanonicalCodec::new();
+    }
+    // `import sesslint._accel` is not linked. Python's `except Exception`
+    // (including a missing module) falls through to the pure codec.
+    // That miss is not [`CanonicalError::Unsupported`].
+    fallback_pure_codec()
+}
+
+fn fallback_pure_codec() -> PurePythonCanonicalCodec {
+    PurePythonCanonicalCodec::new()
+}
+
+fn materialize(tree: &Tree) -> Result<Value, CanonicalError> {
+    let mut values = Vec::with_capacity(tree.nodes.len());
+    for node in &tree.nodes {
+        let next = materialize_node(node, &values)?;
+        values.push(next);
+    }
+    values
+        .get(tree.root)
+        .cloned()
+        .ok_or_else(|| CanonicalError::schema(NORMALIZE_UNDERFLOW))
+}
+
+fn materialize_node(node: &Node, values: &[Value]) -> Result<Value, CanonicalError> {
+    match node {
+        Node::Null => Ok(Value::null()),
+        Node::Bool(item) => Ok(Value::bool(*item)),
+        Node::Int(item) => Ok(Value::Int(item.clone())),
+        Node::Float(item) => Ok(Value::float(*item)),
+        Node::String(item) => Ok(Value::string(item.clone())),
+        Node::Array(items) => {
+            let mut array = Vec::with_capacity(items.len());
+            for id in items {
+                array.push(copied_child(values, *id)?);
+            }
+            Ok(Value::array(array))
+        }
+        Node::Object(entries) => {
+            let mut object = Vec::with_capacity(entries.len());
+            for (key, id) in entries {
+                object.push((ObjectKey::string(key.clone()), copied_child(values, *id)?));
+            }
+            Ok(Value::object(object))
+        }
+    }
+}
+
+fn copied_child(values: &[Value], index: usize) -> Result<Value, CanonicalError> {
+    values
+        .get(index)
+        .cloned()
+        .ok_or_else(|| CanonicalError::schema(NORMALIZE_UNDERFLOW))
+}
+
+impl PurePythonCanonicalCodec {
+    fn reify_normalized(&self, obj: &Value) -> Result<Value, CanonicalError> {
+        let tree = normalize_tree(obj).map_err(NormalizeError::into_public)?;
+        materialize(&tree)
+    }
+}
+
+/// Python `_resolve_active_codec`.
+///
+/// A stripped `SESSLINT_DISABLE_ACCEL` of `1`, `true`, or `yes` returns the
+/// pure codec. Otherwise the missing `sesslint._accel` module is the
+/// `except Exception` path and also returns the pure codec.
+pub fn resolve_active_codec() -> PurePythonCanonicalCodec {
+    resolve_from_disable_flag(read_disable_accel_flag().as_deref())
+}
+
+/// Shared handle for the active [`CanonicalCodec`].
+///
+/// Python returns the module instance. This `Arc` is that identity:
+/// [`set_active_codec`] stores it and [`get_active_codec`] returns it.
+pub type SharedCodec = Arc<dyn CanonicalCodec + Send + Sync>;
+
+/// Python `_ACTIVE_CODEC`.
+///
+/// Empty until the first [`get_active_codec`] or any [`set_active_codec`].
+/// Resolution runs only while the cell is empty. A later environment change
+/// does not resolve again.
+static ACTIVE_CODEC: Mutex<Option<SharedCodec>> = Mutex::new(None);
+
+/// Python `_DEFAULT_PURE_CODEC`. [`normalize_canonical`] uses this, not the cell.
+const DEFAULT_PURE_CODEC: PurePythonCanonicalCodec = PurePythonCanonicalCodec::new();
+
+fn lock_active() -> Result<MutexGuard<'static, Option<SharedCodec>>, CanonicalError> {
+    ACTIVE_CODEC
+        .lock()
+        .map_err(|_| CanonicalError::LockPoisoned(ACTIVE_LOCK_POISONED))
+}
+
+#[cfg(test)]
+fn clear_active_codec() -> Result<(), CanonicalError> {
+    let mut cell = lock_active()?;
+    *cell = None;
+    Ok(())
+}
+
+/// Python `get_active_codec`.
+///
+/// Resolves on the first call when the cell is empty. Later calls return that
+/// handle. A poisoned lock is [`CanonicalError::LockPoisoned`].
+pub fn get_active_codec() -> Result<SharedCodec, CanonicalError> {
+    let mut cell = lock_active()?;
+    if let Some(codec) = cell.as_ref() {
+        return Ok(Arc::clone(codec));
+    }
+    let resolved: SharedCodec = Arc::new(resolve_active_codec());
+    *cell = Some(Arc::clone(&resolved));
+    Ok(resolved)
+}
+
+/// Python `set_active_codec`.
+///
+/// Replaces the cell. A later [`get_active_codec`] returns this handle and
+/// does not read `SESSLINT_DISABLE_ACCEL` again. A set before the first get
+/// skips resolution. A poisoned lock is [`CanonicalError::LockPoisoned`].
+pub fn set_active_codec(codec: SharedCodec) -> Result<(), CanonicalError> {
+    let mut cell = lock_active()?;
+    *cell = Some(codec);
+    Ok(())
+}
+
+/// Python `normalize_canonical`.
+///
+/// Uses the default pure codec (`_DEFAULT_PURE_CODEC`), not the active cell.
+/// Object keys come out in the sorted order `normalize_tree` already stores
+/// in a `BTreeMap`. Python's `_normalize` dict keeps insertion order and sorts
+/// only inside `json.dumps`. There is no external `seen` argument: cycle
+/// identity stays inside that normalizer.
+pub fn normalize_canonical(obj: &Value) -> Result<Value, CanonicalError> {
+    DEFAULT_PURE_CODEC.reify_normalized(obj)
+}
+
+/// Python `canonical_json_bytes`. Delegates to the active codec.
+pub fn canonical_json_bytes(obj: &Value, newline: bool) -> Result<Vec<u8>, CanonicalError> {
+    get_active_codec()?.canonical_json_bytes(obj, newline)
+}
+
+/// Python `content_identity_bytes`.
+///
+/// `SessionEvent` is not ported, so this takes no event and does not hash a
+/// plain JSON object in its place. The active pure codec returns
+/// [`CanonicalError::Unsupported`] with
+/// `sesslint.canonical.SessionEvent is not available`.
+pub fn content_identity_bytes() -> Result<Vec<u8>, CanonicalError> {
+    get_active_codec()?.content_identity_bytes()
+}
+
+/// Python `content_identity_hash`. Same `SessionEvent` gap as
+/// [`content_identity_bytes`].
+pub fn content_identity_hash() -> Result<String, CanonicalError> {
+    get_active_codec()?.content_identity_hash()
+}
+
+/// Python `payload_content_hash`. Delegates to the active codec.
+pub fn payload_content_hash(payload: &Value) -> Result<String, CanonicalError> {
+    get_active_codec()?.payload_content_hash(payload)
+}
+
+/// Python `plan_fingerprint`. Delegates to the active codec.
+pub fn plan_fingerprint(plan_data: &Value, policy: Option<&str>) -> Result<String, CanonicalError> {
+    get_active_codec()?.plan_fingerprint(plan_data, policy)
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 11] = [
+    "CODEC_INTERFACE_VERSION",
+    "CanonicalCodec",
+    "PurePythonCanonicalCodec",
+    "canonical_json_bytes",
+    "content_identity_bytes",
+    "content_identity_hash",
+    "get_active_codec",
+    "normalize_canonical",
+    "payload_content_hash",
+    "plan_fingerprint",
+    "set_active_codec",
+];
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     fn codec() -> PurePythonCanonicalCodec {
@@ -1689,5 +1900,239 @@ mod tests {
             value = Value::array(vec![value]);
         }
         value
+    }
+
+    fn lock_cell_tests() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    struct RestorePureCodec;
+
+    impl Drop for RestorePureCodec {
+        fn drop(&mut self) {
+            let _ = set_active_codec(Arc::new(PurePythonCanonicalCodec::new()));
+        }
+    }
+
+    fn key_names(value: &Value) -> Vec<String> {
+        let Value::Object(cell) = value else {
+            panic!("expected object");
+        };
+        cell.borrow()
+            .iter()
+            .map(|(key, _)| match key {
+                ObjectKey::String(name) => name.clone(),
+                ObjectKey::NonString(python_repr) => panic!("non-string key {python_repr}"),
+            })
+            .collect()
+    }
+
+    struct InstalledCodec {
+        name: &'static str,
+        json: &'static [u8],
+    }
+
+    impl CanonicalCodec for InstalledCodec {
+        fn codec_name(&self) -> &str {
+            self.name
+        }
+
+        fn codec_version(&self) -> &str {
+            CODEC_INTERFACE_VERSION
+        }
+
+        fn canonical_json_bytes(
+            &self,
+            _obj: &Value,
+            _newline: bool,
+        ) -> Result<Vec<u8>, CanonicalError> {
+            Ok(self.json.to_vec())
+        }
+
+        fn content_identity_bytes(&self) -> Result<Vec<u8>, CanonicalError> {
+            Err(CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE))
+        }
+
+        fn content_identity_hash(&self) -> Result<String, CanonicalError> {
+            Err(CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE))
+        }
+
+        fn payload_content_hash(&self, _payload: &Value) -> Result<String, CanonicalError> {
+            Ok("sha256:installed".to_string())
+        }
+
+        fn plan_fingerprint(
+            &self,
+            _plan_data: &Value,
+            _policy: Option<&str>,
+        ) -> Result<String, CanonicalError> {
+            Ok("installed-plan".to_string())
+        }
+    }
+
+    #[test]
+    fn disable_accel_and_missing_accel_return_the_pure_codec() {
+        assert!(accel_disabled(Some("1")));
+        assert!(accel_disabled(Some("true")));
+        assert!(accel_disabled(Some("yes")));
+        assert!(accel_disabled(Some("  yes  ")));
+        assert!(accel_disabled(Some("\t1\n")));
+        assert!(!accel_disabled(None));
+        assert!(!accel_disabled(Some("")));
+        assert!(!accel_disabled(Some("   ")));
+        assert!(!accel_disabled(Some("TRUE")));
+        assert!(!accel_disabled(Some("Yes")));
+        assert!(!accel_disabled(Some("0")));
+        assert!(!accel_disabled(Some("no")));
+
+        for raw in [
+            Some("1"),
+            Some(" true "),
+            Some("yes"),
+            None,
+            Some(""),
+            Some("TRUE"),
+            Some("no"),
+        ] {
+            let codec = resolve_from_disable_flag(raw);
+            assert_eq!(codec.codec_name(), PurePythonCanonicalCodec::CODEC_NAME);
+            assert_eq!(codec.codec_version(), CODEC_INTERFACE_VERSION);
+        }
+
+        let live = resolve_active_codec();
+        assert_eq!(live.codec_name(), "pure_python");
+        assert_eq!(live.codec_version(), "1.0.0");
+    }
+
+    #[test]
+    fn set_then_get_round_trips_and_skips_reresolve() {
+        let _lock = lock_cell_tests();
+        let _restore = RestorePureCodec;
+        clear_active_codec().unwrap();
+        let resolved = get_active_codec().unwrap();
+        assert_eq!(resolved.codec_name(), "pure_python");
+        assert!(Arc::ptr_eq(&resolved, &get_active_codec().unwrap()));
+        let installed: SharedCodec = Arc::new(InstalledCodec {
+            name: "installed",
+            json: b"installed",
+        });
+        set_active_codec(Arc::clone(&installed)).unwrap();
+        let got = get_active_codec().unwrap();
+        assert!(Arc::ptr_eq(&installed, &got));
+        assert_eq!(got.codec_name(), "installed");
+        assert_eq!(got.codec_version(), CODEC_INTERFACE_VERSION);
+        assert_eq!(
+            canonical_json_bytes(&Value::int(1), false).unwrap(),
+            b"installed"
+        );
+        assert_eq!(
+            payload_content_hash(&Value::object(vec![])).unwrap(),
+            "sha256:installed"
+        );
+        assert_eq!(
+            plan_fingerprint(&Value::object(vec![]), Some("conservative")).unwrap(),
+            "installed-plan"
+        );
+        assert_eq!(resolve_active_codec().codec_name(), "pure_python");
+        assert!(Arc::ptr_eq(&installed, &get_active_codec().unwrap()));
+    }
+
+    #[test]
+    fn free_canonical_json_bytes_matches_pure_golden_a1() {
+        let _lock = lock_cell_tests();
+        let _restore = RestorePureCodec;
+        set_active_codec(Arc::new(PurePythonCanonicalCodec::new())).unwrap();
+        let value = obj(vec![("a", Value::int(1))]);
+        let free = canonical_json_bytes(&value, false).unwrap();
+        let pure = PurePythonCanonicalCodec::new()
+            .canonical_json_bytes(&value, false)
+            .unwrap();
+        assert_eq!(free, pure);
+        assert_eq!(free, br#"{"a":1}"#);
+    }
+
+    #[test]
+    fn normalize_canonical_sorts_keys_on_the_default_codec() {
+        let _lock = lock_cell_tests();
+        let _restore = RestorePureCodec;
+        set_active_codec(Arc::new(InstalledCodec {
+            name: "installed",
+            json: b"installed",
+        }))
+        .unwrap();
+        assert_eq!(
+            canonical_json_bytes(&Value::int(1), false).unwrap(),
+            b"installed"
+        );
+
+        let value = obj(vec![
+            ("b", obj(vec![("z", Value::int(1)), ("m", Value::int(2))])),
+            ("a", Value::int(0)),
+        ]);
+        let normalized = normalize_canonical(&value).unwrap();
+        assert_eq!(key_names(&normalized), ["a", "b"]);
+        let nested = match &normalized {
+            Value::Object(cell) => cell.borrow()[1].1.clone(),
+            other => panic!("expected object, got {other:?}"),
+        };
+        assert_eq!(key_names(&nested), ["m", "z"]);
+
+        let dataclass = Value::dataclass(vec![
+            Field::new("note", Value::null()),
+            Field::new("actor", Value::string("user")),
+            Field::new(
+                "extra_fields",
+                Value::object(vec![(key("experimental_mode"), Value::bool(true))]),
+            ),
+        ]);
+        assert_eq!(
+            key_names(&normalize_canonical(&dataclass).unwrap()),
+            ["actor", "experimental_mode"]
+        );
+
+        let bad = Value::object(vec![(ObjectKey::non_string("3"), Value::int(1))]);
+        assert_eq!(
+            normalize_canonical(&bad).unwrap_err().message(),
+            "Non-string dictionary key rejected by SessLint codec: 3"
+        );
+    }
+
+    #[test]
+    fn free_content_identity_bytes_returns_unsupported() {
+        let _lock = lock_cell_tests();
+        let _restore = RestorePureCodec;
+        set_active_codec(Arc::new(PurePythonCanonicalCodec::new())).unwrap();
+        let error = content_identity_bytes().unwrap_err();
+        assert_eq!(
+            error,
+            CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE)
+        );
+        assert_eq!(
+            error.message(),
+            "sesslint.canonical.SessionEvent is not available"
+        );
+        assert_eq!(error, content_identity_hash().unwrap_err());
+    }
+
+    #[test]
+    fn all_exports_match_python_dunder_all_in_order() {
+        assert_eq!(
+            ALL,
+            [
+                "CODEC_INTERFACE_VERSION",
+                "CanonicalCodec",
+                "PurePythonCanonicalCodec",
+                "canonical_json_bytes",
+                "content_identity_bytes",
+                "content_identity_hash",
+                "get_active_codec",
+                "normalize_canonical",
+                "payload_content_hash",
+                "plan_fingerprint",
+                "set_active_codec",
+            ]
+        );
+        assert_eq!(ALL.len(), 11);
     }
 }
