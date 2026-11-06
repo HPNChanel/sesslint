@@ -1,9 +1,8 @@
-//! Checkpoint and continuation integrity checks (SL201, SL202, SL203).
+//! Checkpoint and continuation integrity checks (SL201, SL202, SL203, SL205).
 //!
-//! Port of `src/sesslint/checks/checkpoint.py` lines 1–685 and 688–990
+//! Port of `src/sesslint/checks/checkpoint.py` lines 1–1189
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice ports helpers through [`coverage_pointer`]. It does not port
-//! `check_compaction_coverage`, `check_checkpoint`, or `__all__`.
+//! This slice ports through [`check_checkpoint`] and [`ALL`].
 //!
 //! [`compute_checkpoint_fingerprint`] hashes locally. It is not a finding
 //! digest and does not call [`make_finding`].
@@ -37,6 +36,23 @@
 //! before events and priors are read.
 //!
 //! [`coverage_pointer`] does not call [`make_finding`].
+//!
+//! [`compaction_coverage_records`] does not call [`make_finding`]. No
+//! coverage claim makes [`check_compaction_coverage`] return `Ok([])`
+//! without building the id map and without [`cap_checkpoint_findings`],
+//! including when `max_findings` is `-1`. Claims that are all silent call
+//! [`cap_checkpoint_findings`] with [`SL205`]. One or more rows call
+//! [`make_finding`] once, with the fingerprint omitted, and return
+//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. The cap is not called on that path.
+//! A digest is not invented.
+//!
+//! [`check_checkpoint`] calls [`extract_run_state_projection`] once, then
+//! the gap, the divergence, the continuation, and the coverage. It does not
+//! cap the combined list. A real finding cannot be built, so the only
+//! success is every family silent: `Ok([])`. The first family that would
+//! call [`make_finding`], including an empty-cap overflow at
+//! `max_findings_per_family == -1`, stops the run. Later families are not
+//! called.
 //!
 //! Sort key is `(code, overflow flag, source.record_id or "", fingerprint)`.
 //! Overflow is 1 only when evidence `overflow` is JSON true. This module
@@ -99,13 +115,18 @@
 //!   U+001C..=U+001F as space. A string of only those controls stays present.
 //!   A failed payload-map borrow is [`BORROWED_LOOKUP`]. A non-string
 //!   `covered_through_id` is `None`.
+//! * [`check_checkpoint`] stops at the first family that would call
+//!   [`make_finding`], including an empty-cap overflow. Python runs every
+//!   family, then sorts the combined list with the checkpoint cap key.
+//!   This port does not return that combined list. Several rows in one
+//!   family call [`make_finding`] once, on the first row.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
 use model::canonical::{MapLookup, Payload, SessionEvent};
-use model::codes::{Repairability, Severity, SL201, SL202, SL203};
+use model::codes::{Repairability, Severity, SL201, SL202, SL203, SL205};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
@@ -947,6 +968,461 @@ pub fn coverage_pointer(event: &EventValue) -> Result<Option<String>, Checkpoint
         EventValue::Mapping(mapping) => Ok(coverage_from_event_mapping(mapping)),
         EventValue::Other => Ok(None),
     }
+}
+
+/// One SL205 coverage gap. Does not call [`make_finding`].
+///
+/// Evidence key order is [`CompactionCoverageRecord::evidence_keys`].
+/// `record_id` and `boundary_id` are the same [`safe_id`] text. A missing
+/// boundary id is `"<redacted>"`. A boundary id string keeps surrounding
+/// spaces. `covered_through_id` is [`safe_id`] of the coverage pointer.
+/// `related_ids` is that boundary id, then that covered id.
+/// `boundary_index` and `record_ordinal` are both the boundary's enumerate
+/// index. `missing` and `non_contiguous` are JSON bools.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompactionCoverageRecord {
+    pub code: &'static str,
+    pub severity: Severity,
+    pub repairability: Repairability,
+    pub message_template: &'static str,
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: String,
+    pub boundary_id: String,
+    pub covered_through_id: String,
+    pub missing: bool,
+    pub non_contiguous: bool,
+    pub boundary_index: i64,
+    pub record_ordinal: i64,
+    pub adapter_id: String,
+    pub adapter_version: String,
+    pub profile_id: String,
+    pub profile_version: String,
+}
+
+impl CompactionCoverageRecord {
+    /// Evidence keys in insertion order.
+    pub fn evidence_keys(&self) -> Vec<&'static str> {
+        vec![
+            "record_id",
+            "boundary_id",
+            "covered_through_id",
+            "missing",
+            "non_contiguous",
+            "boundary_index",
+            "record_ordinal",
+        ]
+    }
+
+    /// Boundary id, then covered id. Both already went through [`safe_id`].
+    pub fn related_ids(&self) -> (&str, &str) {
+        (&self.boundary_id, &self.covered_through_id)
+    }
+}
+
+/// Coverage rows for [`check_compaction_coverage`], before [`make_finding`].
+///
+/// [`CompactionCoverageRows::NoClaims`] means the id map was not built.
+/// [`CompactionCoverageRows::Silent`] means at least one claim existed and
+/// every claim was skipped. [`CompactionCoverageRows::Rows`] is non-empty
+/// by construction and stays in encounter order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CompactionCoverageRows {
+    NoClaims,
+    Silent,
+    Rows(Vec<CompactionCoverageRecord>),
+}
+
+/// SL205 rows before the cap.
+///
+/// A claim is an event whose [`get_event_kind`] is exactly
+/// [`KIND_COMPACTION`] and whose [`coverage_pointer`] is [`Some`].
+/// Pointerless boundaries are not claims. The id map is built only after
+/// at least one claim exists. [`get_event_id`] of [`None`] is omitted.
+/// A string key is kept, bool `true` is `True`, and an int is decimal.
+/// A float or list is the existing typed error. The same key can have
+/// several indexes. Keys are not stripped.
+///
+/// No leaf indexes sets `missing`. More than one leaf index skips the claim.
+/// A single leaf at or after the boundary sets `non_contiguous`. Otherwise
+/// the parent walk uses [`SessionEvent::parent_id`]: [`None`] is a root.
+/// A mapping `parent_id` that is null or missing is a root. A string parent
+/// is looked up as that exact string. Bool `true` is `True`. An int is
+/// decimal. A float or list is the existing typed error. No parent indexes,
+/// or more than one, sets `non_contiguous` and stops. A parent index at or
+/// after the boundary does the same. A parent index already visited,
+/// including the leaf, stops quietly. A cycle does not emit.
+///
+/// Omitted `source_path` is `"<canonical>"`. Omitted `context` is
+/// [`CheckContext::default`]. Does not call [`make_finding`].
+pub fn compaction_coverage_records(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    context: Option<&CheckContext>,
+) -> Result<CompactionCoverageRows, CheckpointError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let mut slot = None;
+    let ctx = borrowed_context(context, &mut slot);
+    let claims = coverage_claims(events)?;
+    if claims.is_empty() {
+        return Ok(CompactionCoverageRows::NoClaims);
+    }
+    let id_to_indices = coverage_id_map(events)?;
+    let mut records = Vec::new();
+    for claim in &claims {
+        if let Some(record) = coverage_gap(events, &id_to_indices, claim, source_path, ctx)? {
+            records.push(record);
+        }
+    }
+    if records.is_empty() {
+        Ok(CompactionCoverageRows::Silent)
+    } else {
+        Ok(CompactionCoverageRows::Rows(records))
+    }
+}
+
+/// Python: `check_compaction_coverage`.
+///
+/// No claim returns `Ok([])` and does not build the id map or call
+/// [`cap_checkpoint_findings`], including when `max_findings` is `-1`.
+/// Claims that are all silent call [`cap_checkpoint_findings`] with
+/// [`SL205`]. One or more rows call [`make_finding`] once, with the
+/// fingerprint omitted, and return [`FINGERPRINT_CODEC_UNAVAILABLE`].
+/// The cap is not called on that path. A digest is not invented.
+pub fn check_compaction_coverage(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, CheckpointError> {
+    match compaction_coverage_records(events, source_path, context)? {
+        CompactionCoverageRows::NoClaims => Ok(Vec::new()),
+        CompactionCoverageRows::Silent => {
+            cap_checkpoint_findings(Vec::new(), SL205, max_findings, source_path, context)
+        }
+        CompactionCoverageRows::Rows(records) => match records.first() {
+            Some(record) => emit_coverage(record),
+            None => cap_checkpoint_findings(Vec::new(), SL205, max_findings, source_path, context),
+        },
+    }
+}
+
+/// Python: `check_checkpoint`.
+///
+/// Calls [`extract_run_state_projection`] once, then the gap, the
+/// divergence, the continuation, and the coverage. `checkpoint_sensitivity`
+/// goes only to the gap. `max_findings_per_family` goes to the gap, the
+/// divergence, and the coverage. Continuation does not receive the
+/// projection. Coverage does not receive the projection or the sensitivity.
+///
+/// The pure builders decide whether a family has rows. An empty gap or
+/// divergence list calls that family's check so the cap can return `Ok([])`
+/// or the `max_findings_per_family == -1` codec error. A non-empty list
+/// calls [`make_finding`] once and stops. Continuation receives
+/// [`Sl201Prior::Records`] and [`Sl202Prior::Records`] of empty slices when
+/// those families produced no rows. An empty supplied prior is not
+/// recomputed. Compaction triggers still run. One continuation record calls
+/// [`make_finding`] once and stops.
+///
+/// This does not cap the combined list. A real finding cannot be built, so
+/// the only success is every family silent: `Ok([])`. The first family that
+/// would call [`make_finding`], including an empty-cap overflow, stops the
+/// run. Later families are not called.
+pub fn check_checkpoint(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings_per_family: Option<i64>,
+    checkpoint_sensitivity: Option<&str>,
+    context: Option<&CheckContext>,
+    run_state_projection: Option<&EventMapping>,
+) -> Result<Vec<Finding>, CheckpointError> {
+    let mut slot = None;
+    let ctx = borrowed_context(context, &mut slot);
+    let projection = extract_run_state_projection(Some(ctx), Some(events), run_state_projection)?;
+    let attached = projection.as_ref();
+
+    let gaps = checkpoint_gap_records(
+        events,
+        source_path,
+        checkpoint_sensitivity,
+        Some(ctx),
+        attached,
+    )?;
+    if let Some(record) = gaps.first() {
+        return emit_first_gap(record);
+    }
+    check_checkpoint_gap(
+        events,
+        source_path,
+        max_findings_per_family,
+        checkpoint_sensitivity,
+        Some(ctx),
+        attached,
+    )?;
+
+    let divergences = checkpoint_divergence_records(events, source_path, Some(ctx), attached)?;
+    if let Some(record) = divergences.first() {
+        return emit_divergence(record);
+    }
+    check_checkpoint_divergence(
+        events,
+        source_path,
+        max_findings_per_family,
+        Some(ctx),
+        attached,
+    )?;
+
+    let prior_sl201: &[CheckpointGapRecord] = &[];
+    let prior_sl202: &[CheckpointDivergenceRecord] = &[];
+    if let Some(record) = unsafe_continuation_record(
+        events,
+        source_path,
+        Some(Sl201Prior::Records(prior_sl201)),
+        Some(Sl202Prior::Records(prior_sl202)),
+        Some(ctx),
+    )? {
+        return emit_continuation(&record);
+    }
+
+    match compaction_coverage_records(events, source_path, Some(ctx))? {
+        CompactionCoverageRows::NoClaims => Ok(Vec::new()),
+        CompactionCoverageRows::Silent => {
+            check_compaction_coverage(events, source_path, max_findings_per_family, Some(ctx))
+        }
+        CompactionCoverageRows::Rows(records) => match records.first() {
+            Some(record) => emit_coverage(record),
+            None => {
+                check_compaction_coverage(events, source_path, max_findings_per_family, Some(ctx))
+            }
+        },
+    }
+}
+
+/// Python: `check_sl202 = check_checkpoint_divergence`.
+pub use check_checkpoint_divergence as check_sl202;
+/// Python: `check_sl201 = check_checkpoint_gap`.
+pub use check_checkpoint_gap as check_sl201;
+/// Python: `check_sl205 = check_compaction_coverage`.
+pub use check_compaction_coverage as check_sl205;
+/// Python: `check_sl203 = check_unsafe_continuation`.
+#[allow(clippy::unsafe_removed_from_name)]
+pub use check_unsafe_continuation as check_sl203;
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 12] = [
+    "MAX_CHECKPOINT_FINDINGS",
+    "cap_checkpoint_findings",
+    "check_checkpoint",
+    "check_checkpoint_divergence",
+    "check_checkpoint_gap",
+    "check_compaction_coverage",
+    "check_sl201",
+    "check_sl202",
+    "check_sl203",
+    "check_sl205",
+    "check_unsafe_continuation",
+    "compute_checkpoint_fingerprint",
+];
+
+struct CoverageClaim {
+    index: i64,
+    covered_id: String,
+}
+
+fn coverage_claims(events: &[EventValue]) -> Result<Vec<CoverageClaim>, CheckpointError> {
+    let mut claims = Vec::new();
+    for (idx, event) in events.iter().enumerate() {
+        if get_event_kind(event)?.as_deref() != Some(KIND_COMPACTION) {
+            continue;
+        }
+        let Some(covered_id) = coverage_pointer(event)? else {
+            continue;
+        };
+        claims.push(CoverageClaim {
+            index: usize_to_i64(idx)?,
+            covered_id,
+        });
+    }
+    Ok(claims)
+}
+
+fn coverage_id_map(events: &[EventValue]) -> Result<BTreeMap<String, Vec<i64>>, CheckpointError> {
+    let mut id_to_indices: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    for (idx, event) in events.iter().enumerate() {
+        let Some(raw_id) = get_event_id(event) else {
+            continue;
+        };
+        let key = python_id_string(&raw_id)?;
+        id_to_indices
+            .entry(key)
+            .or_default()
+            .push(usize_to_i64(idx)?);
+    }
+    Ok(id_to_indices)
+}
+
+fn coverage_gap(
+    events: &[EventValue],
+    id_to_indices: &BTreeMap<String, Vec<i64>>,
+    claim: &CoverageClaim,
+    source_path: &str,
+    ctx: &CheckContext,
+) -> Result<Option<CompactionCoverageRecord>, CheckpointError> {
+    let mut missing = false;
+    let mut non_contiguous = false;
+    match id_to_indices.get(&claim.covered_id).map(Vec::as_slice) {
+        None | Some([]) => missing = true,
+        Some([leaf_idx]) => {
+            let leaf_idx = *leaf_idx;
+            if leaf_idx >= claim.index
+                || coverage_chain_breaks(events, id_to_indices, leaf_idx, claim.index)?
+            {
+                non_contiguous = true;
+            }
+        }
+        Some(_) => return Ok(None),
+    }
+    if !missing && !non_contiguous {
+        return Ok(None);
+    }
+    let boundary = event_at(events, claim.index)?;
+    let (path, line) = resolve_source_coords(boundary, source_path)?;
+    let boundary_id = safe_id(boundary_id_text(boundary)?.as_deref());
+    let covered_through_id = safe_id(Some(&claim.covered_id));
+    Ok(Some(CompactionCoverageRecord {
+        code: SL205,
+        severity: Severity::Warning,
+        repairability: Repairability::Manual,
+        message_template: MSG_SL205,
+        path,
+        line,
+        record_id: boundary_id.clone(),
+        boundary_id,
+        covered_through_id,
+        missing,
+        non_contiguous,
+        boundary_index: claim.index,
+        record_ordinal: claim.index,
+        adapter_id: ctx.adapter_id().to_owned(),
+        adapter_version: ctx.adapter_version().to_owned(),
+        profile_id: ctx.profile_id().to_owned(),
+        profile_version: ctx.profile_version().to_owned(),
+    }))
+}
+
+fn coverage_chain_breaks(
+    events: &[EventValue],
+    id_to_indices: &BTreeMap<String, Vec<i64>>,
+    leaf_idx: i64,
+    boundary_idx: i64,
+) -> Result<bool, CheckpointError> {
+    let mut visited = BTreeSet::from([leaf_idx]);
+    let mut current = leaf_idx;
+    loop {
+        let event = event_at(events, current)?;
+        let Some(parent_key) = parent_lookup_key(event)? else {
+            return Ok(false);
+        };
+        let Some([parent_idx]) = id_to_indices.get(&parent_key).map(Vec::as_slice) else {
+            return Ok(true);
+        };
+        if *parent_idx >= boundary_idx {
+            return Ok(true);
+        }
+        if !visited.insert(*parent_idx) {
+            return Ok(false);
+        }
+        current = *parent_idx;
+    }
+}
+
+fn parent_lookup_key(event: &EventValue) -> Result<Option<String>, CheckpointError> {
+    match event {
+        EventValue::Session(session) => Ok(session.parent_id.clone()),
+        EventValue::Mapping(mapping) => match mapping.get("parent_id") {
+            None | Some(EventField::Null) => Ok(None),
+            Some(field) => Ok(Some(python_id_string(field)?)),
+        },
+        EventValue::Other => Ok(None),
+    }
+}
+
+fn boundary_id_text(event: &EventValue) -> Result<Option<String>, CheckpointError> {
+    match event {
+        EventValue::Session(session) => Ok(Some(session.id.clone())),
+        EventValue::Mapping(mapping) => match mapping.get("id") {
+            None | Some(EventField::Null) => Ok(None),
+            Some(field) => Ok(Some(python_id_string(field)?)),
+        },
+        EventValue::Other => Ok(None),
+    }
+}
+
+fn event_at(events: &[EventValue], index: i64) -> Result<&EventValue, CheckpointError> {
+    let index = usize::try_from(index).map_err(|_| CheckpointError::PythonIntUnbounded)?;
+    events.get(index).ok_or(CheckpointError::PythonIntUnbounded)
+}
+
+fn emit_coverage(record: &CompactionCoverageRecord) -> Result<Vec<Finding>, CheckpointError> {
+    let evidence = coverage_evidence(record);
+    let source = SourceRef::try_new(
+        &record.path,
+        record.line.map(SourceLine::Int),
+        Some(record.record_id.as_str()),
+    )?;
+    omitted_fingerprint(make_finding(&MakeFindingInput {
+        code: PyValue::string(record.code),
+        severity: PyValue::severity(record.severity),
+        repairability: PyValue::repairability(record.repairability),
+        message_template: PyValue::string(record.message_template),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(vec![
+            PyValue::string(record.boundary_id.clone()),
+            PyValue::string(record.covered_through_id.clone()),
+        ]),
+        evidence,
+        fingerprint: PyValue::None,
+        adapter_id: Some(record.adapter_id.clone()),
+        adapter_version: Some(record.adapter_version.clone()),
+        profile_id: Some(record.profile_id.clone()),
+        profile_version: Some(record.profile_version.clone()),
+        ordinal: None,
+        context: None,
+    }))
+}
+
+fn coverage_evidence(record: &CompactionCoverageRecord) -> PyValue {
+    PyValue::map(vec![
+        (
+            PyValue::string("record_id"),
+            PyValue::string(record.record_id.clone()),
+        ),
+        (
+            PyValue::string("boundary_id"),
+            PyValue::string(record.boundary_id.clone()),
+        ),
+        (
+            PyValue::string("covered_through_id"),
+            PyValue::string(record.covered_through_id.clone()),
+        ),
+        (
+            PyValue::string("missing"),
+            PyValue::bool_value(record.missing),
+        ),
+        (
+            PyValue::string("non_contiguous"),
+            PyValue::bool_value(record.non_contiguous),
+        ),
+        (
+            PyValue::string("boundary_index"),
+            PyValue::int(record.boundary_index),
+        ),
+        (
+            PyValue::string("record_ordinal"),
+            PyValue::int(record.record_ordinal),
+        ),
+    ])
 }
 
 const CAUSE_COMPACTION: &str = "compaction";
@@ -2458,19 +2934,21 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_checkpoint_findings, cap_finding_sort_key, check_checkpoint_divergence,
-        check_checkpoint_gap, check_unsafe_continuation, checkpoint_divergence_records,
-        checkpoint_gap_records, compute_checkpoint_fingerprint, coverage_pointer,
-        extract_checkpoint_fields, extract_run_state_checkpoints, extract_run_state_projection,
-        get_event_id, get_event_kind, resolve_source_coords, safe_id, source_record_id,
-        unsafe_continuation_record, CheckpointError, CheckpointItem, Sl201Prior, Sl202Prior,
+        cap_checkpoint_findings, cap_finding_sort_key, check_checkpoint,
+        check_checkpoint_divergence, check_checkpoint_gap, check_compaction_coverage, check_sl205,
+        check_unsafe_continuation, checkpoint_divergence_records, checkpoint_gap_records,
+        compaction_coverage_records, compute_checkpoint_fingerprint, coverage_evidence,
+        coverage_pointer, extract_checkpoint_fields, extract_run_state_checkpoints,
+        extract_run_state_projection, get_event_id, get_event_kind, resolve_source_coords, safe_id,
+        source_record_id, unsafe_continuation_record, CheckpointError, CheckpointItem,
+        CompactionCoverageRecord, CompactionCoverageRows, Sl201Prior, Sl202Prior, ALL,
         KIND_CHECKPOINT, KIND_COMPACTION, KIND_RUN_START, MAX_CHECKPOINT_FINDINGS, MSG_OVERFLOW,
         MSG_SL201, MSG_SL202, MSG_SL203, MSG_SL205, PYTHON_INT_UNBOUNDED, TOOL_KINDS,
         VARIANT_OVERFLOW,
     };
     use crate::context::CheckContext;
     use model::canonical::{Payload, SessionEvent};
-    use model::codes::{Repairability, Severity, SL201, SL202, SL203};
+    use model::codes::{Repairability, Severity, SL201, SL202, SL203, SL205};
     use model::events::{
         EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_UNREPRESENTABLE,
@@ -4298,5 +4776,429 @@ mod tests {
             )])),
         )]));
         assert_eq!(coverage_pointer(&non_string).unwrap(), None);
+    }
+
+    fn coverage_extra(covered: &str) -> Payload {
+        Payload::map(vec![(
+            Payload::string("coverage"),
+            Payload::map(vec![(
+                Payload::string("covered_through_id"),
+                Payload::string(covered),
+            )]),
+        )])
+    }
+
+    fn boundary_event(id: &str, covered: Option<&str>) -> EventValue {
+        let mut event = SessionEvent::new(
+            id,
+            None,
+            0,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            "compaction_boundary",
+        );
+        if let Some(covered) = covered {
+            event.extra_fields = coverage_extra(covered);
+        }
+        EventValue::from_session(event)
+    }
+
+    fn message_parent(id: &str, parent: Option<&str>) -> EventValue {
+        EventValue::from_session(SessionEvent::new(
+            id,
+            parent.map(str::to_owned),
+            0,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            "message",
+        ))
+    }
+
+    fn coverage_rows(events: &[EventValue]) -> Vec<CompactionCoverageRecord> {
+        match compaction_coverage_records(events, None, Some(&synth_context())).unwrap() {
+            CompactionCoverageRows::Rows(records) => records,
+            CompactionCoverageRows::NoClaims => panic!("expected coverage rows, got no claims"),
+            CompactionCoverageRows::Silent => panic!("expected coverage rows, got silent claims"),
+        }
+    }
+
+    fn assert_silent_claims(events: &[EventValue]) {
+        assert!(matches!(
+            compaction_coverage_records(events, None, None).unwrap(),
+            CompactionCoverageRows::Silent
+        ));
+        assert!(check_compaction_coverage(events, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn no_compaction_claims_stays_empty_at_max_minus_one() {
+        let mut message = session("evt-msg-synth");
+        message.extra_fields = coverage_extra("missing-synth");
+        let float_id = EventValue::Mapping(EventMapping::new(vec![
+            ("id".to_owned(), EventField::Float(1.5)),
+            ("kind".to_owned(), EventField::Str("message".to_owned())),
+        ]));
+        let events = [EventValue::from_session(message), float_id];
+        assert!(matches!(
+            compaction_coverage_records(&events, None, None).unwrap(),
+            CompactionCoverageRows::NoClaims
+        ));
+        let out = check_compaction_coverage(&events, None, Some(-1), None).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn pointerless_compaction_boundary_is_silent_at_max_minus_one() {
+        let events = [EventValue::Mapping(EventMapping::new(vec![
+            (
+                "kind".to_owned(),
+                EventField::Str("compaction_boundary".to_owned()),
+            ),
+            ("id".to_owned(), EventField::Float(1.5)),
+        ]))];
+        assert!(matches!(
+            compaction_coverage_records(&events, None, None).unwrap(),
+            CompactionCoverageRows::NoClaims
+        ));
+        let out = check_compaction_coverage(&events, None, Some(-1), None).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn missing_covered_id_emits_and_the_check_returns_the_codec_error() {
+        let events = [boundary_event("z-bound-synth", Some("a-missing-synth"))];
+        let records = coverage_rows(&events);
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.code, SL205);
+        assert_eq!(record.severity, Severity::Warning);
+        assert_eq!(record.repairability, Repairability::Manual);
+        assert_eq!(record.message_template, MSG_SL205);
+        assert!(record.missing);
+        assert!(!record.non_contiguous);
+        assert_eq!(record.boundary_index, 0);
+        assert_eq!(record.record_ordinal, 0);
+        assert_eq!(record.record_id, safe_id(Some("z-bound-synth")));
+        assert_eq!(record.boundary_id, record.record_id);
+        assert_eq!(record.covered_through_id, safe_id(Some("a-missing-synth")));
+        assert_eq!(
+            record.related_ids(),
+            (
+                record.boundary_id.as_str(),
+                record.covered_through_id.as_str()
+            )
+        );
+        assert_eq!(
+            record.evidence_keys(),
+            [
+                "record_id",
+                "boundary_id",
+                "covered_through_id",
+                "missing",
+                "non_contiguous",
+                "boundary_index",
+                "record_ordinal",
+            ]
+        );
+        assert_eq!(
+            coverage_evidence(record),
+            PyValue::map(vec![
+                (
+                    PyValue::string("record_id"),
+                    PyValue::string(record.record_id.clone()),
+                ),
+                (
+                    PyValue::string("boundary_id"),
+                    PyValue::string(record.boundary_id.clone()),
+                ),
+                (
+                    PyValue::string("covered_through_id"),
+                    PyValue::string(record.covered_through_id.clone()),
+                ),
+                (PyValue::string("missing"), PyValue::bool_value(true)),
+                (
+                    PyValue::string("non_contiguous"),
+                    PyValue::bool_value(false),
+                ),
+                (PyValue::string("boundary_index"), PyValue::int(0)),
+                (PyValue::string("record_ordinal"), PyValue::int(0)),
+            ])
+        );
+        assert_eq!(record.adapter_id, "synth-adapter-01");
+        assert_eq!(record.path, "<canonical>");
+        assert_codec(
+            check_compaction_coverage(&events, None, None, Some(&synth_context())).unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn duplicated_leaf_id_is_silent() {
+        let events = [
+            boundary_event("bound-synth", Some("leaf-synth")),
+            message_parent("leaf-synth", None),
+            message_parent("leaf-synth", None),
+        ];
+        assert_silent_claims(&events);
+    }
+
+    #[test]
+    fn leaf_at_or_after_the_boundary_is_non_contiguous() {
+        let at_boundary = [boundary_event("bound-synth", Some("bound-synth"))];
+        let at_rows = coverage_rows(&at_boundary);
+        assert!(!at_rows[0].missing);
+        assert!(at_rows[0].non_contiguous);
+        assert_eq!(at_rows[0].boundary_index, 0);
+        assert_eq!(at_rows[0].record_ordinal, 0);
+        assert_codec(check_compaction_coverage(&at_boundary, None, None, None).unwrap_err());
+
+        let after = [
+            boundary_event("bound-synth", Some("later-synth")),
+            message_parent("later-synth", None),
+        ];
+        let after_rows = coverage_rows(&after);
+        assert!(!after_rows[0].missing);
+        assert!(after_rows[0].non_contiguous);
+        assert_eq!(after_rows[0].boundary_index, 0);
+        assert_codec(check_compaction_coverage(&after, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn parent_at_or_after_the_boundary_is_non_contiguous() {
+        let at_boundary = [
+            message_parent("leaf-synth", Some("bound-synth")),
+            boundary_event("bound-synth", Some("leaf-synth")),
+        ];
+        let at_rows = coverage_rows(&at_boundary);
+        assert!(!at_rows[0].missing);
+        assert!(at_rows[0].non_contiguous);
+        assert_eq!(at_rows[0].boundary_index, 1);
+        assert_eq!(at_rows[0].record_ordinal, 1);
+        assert_codec(check_compaction_coverage(&at_boundary, None, None, None).unwrap_err());
+
+        let after = [
+            message_parent("leaf-synth", Some("after-synth")),
+            boundary_event("bound-synth", Some("leaf-synth")),
+            message_parent("after-synth", None),
+        ];
+        let after_rows = coverage_rows(&after);
+        assert!(after_rows[0].non_contiguous);
+        assert_eq!(after_rows[0].boundary_index, 1);
+        assert_eq!(after_rows[0].record_ordinal, after_rows[0].boundary_index);
+        assert_codec(check_compaction_coverage(&after, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn parent_cycle_is_silent() {
+        let events = [
+            message_parent("a-synth", Some("b-synth")),
+            message_parent("b-synth", Some("a-synth")),
+            boundary_event("bound-synth", Some("a-synth")),
+        ];
+        assert_silent_claims(&events);
+    }
+
+    #[test]
+    fn root_parent_of_none_is_silent_and_max_minus_one_caps() {
+        let events = [
+            message_parent("leaf-synth", None),
+            boundary_event("bound-synth", Some("leaf-synth")),
+        ];
+        assert_silent_claims(&events);
+        assert_codec(check_compaction_coverage(&events, None, Some(-1), None).unwrap_err());
+
+        let chain = [
+            message_parent("root-synth", None),
+            message_parent("leaf-synth", Some("root-synth")),
+            boundary_event("bound-synth", Some("leaf-synth")),
+        ];
+        assert_silent_claims(&chain);
+
+        let null_parent = [
+            EventValue::Mapping(EventMapping::new(vec![
+                ("id".to_owned(), EventField::Str("leaf-synth".to_owned())),
+                ("kind".to_owned(), EventField::Str("message".to_owned())),
+                ("parent_id".to_owned(), EventField::Null),
+            ])),
+            boundary_event("bound-synth", Some("leaf-synth")),
+        ];
+        assert_silent_claims(&null_parent);
+    }
+
+    #[test]
+    fn boundary_id_of_none_is_redacted() {
+        let events = [EventValue::Mapping(EventMapping::new(vec![
+            (
+                "kind".to_owned(),
+                EventField::Str("compaction_boundary".to_owned()),
+            ),
+            (
+                "extra_fields".to_owned(),
+                EventField::Mapping(EventMapping::new(vec![(
+                    "coverage".to_owned(),
+                    EventField::Mapping(EventMapping::new(vec![(
+                        "covered_through_id".to_owned(),
+                        EventField::Str("covered-synth".to_owned()),
+                    )])),
+                )])),
+            ),
+        ]))];
+        let records = coverage_rows(&events);
+        assert_eq!(records[0].record_id, "<redacted>");
+        assert_eq!(records[0].boundary_id, "<redacted>");
+        assert_eq!(records[0].related_ids().0, "<redacted>");
+        assert_eq!(records[0].related_ids().1, safe_id(Some("covered-synth")));
+        assert!(records[0].missing);
+        assert!(!records[0].non_contiguous);
+        assert_codec(check_compaction_coverage(&events, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn covered_id_keeps_surrounding_spaces() {
+        let events = [
+            message_parent("a-covered-synth", None),
+            boundary_event("  z-bound-synth  ", Some("  a-covered-synth  ")),
+        ];
+        let records = coverage_rows(&events);
+        assert!(records[0].missing);
+        assert!(!records[0].non_contiguous);
+        assert_eq!(records[0].boundary_id, safe_id(Some("  z-bound-synth  ")));
+        assert_eq!(records[0].record_id, records[0].boundary_id);
+        assert_eq!(
+            records[0].covered_through_id,
+            safe_id(Some("  a-covered-synth  "))
+        );
+        assert_eq!(
+            records[0].related_ids(),
+            (
+                records[0].boundary_id.as_str(),
+                records[0].covered_through_id.as_str()
+            )
+        );
+        assert_eq!(records[0].boundary_index, 1);
+        assert_codec(check_compaction_coverage(&events, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn id_and_parent_string_forms_are_exact() {
+        let bool_leaf = EventValue::Mapping(EventMapping::new(vec![
+            ("id".to_owned(), EventField::Str("leaf-synth".to_owned())),
+            ("kind".to_owned(), EventField::Str("message".to_owned())),
+            ("parent_id".to_owned(), EventField::Bool(true)),
+        ]));
+        let bool_parent = EventValue::Mapping(EventMapping::new(vec![
+            ("id".to_owned(), EventField::Bool(true)),
+            ("kind".to_owned(), EventField::Str("message".to_owned())),
+        ]));
+        let bool_events = [
+            bool_leaf,
+            bool_parent,
+            boundary_event("bound-synth", Some("leaf-synth")),
+        ];
+        assert_silent_claims(&bool_events);
+
+        let int_leaf = EventValue::Mapping(EventMapping::new(vec![
+            ("id".to_owned(), EventField::Int(7)),
+            ("kind".to_owned(), EventField::Str("message".to_owned())),
+        ]));
+        let int_events = [int_leaf, boundary_event("bound-synth", Some("7"))];
+        assert_silent_claims(&int_events);
+    }
+
+    #[test]
+    fn float_or_list_id_and_parent_are_typed_errors() {
+        let float_id = [
+            boundary_event("bound-synth", Some("missing-synth")),
+            EventValue::Mapping(EventMapping::new(vec![
+                ("id".to_owned(), EventField::Float(1.5)),
+                ("kind".to_owned(), EventField::Str("message".to_owned())),
+            ])),
+        ];
+        let float_err = check_compaction_coverage(&float_id, None, None, None).unwrap_err();
+        assert_eq!(float_err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(float_err, CheckpointError::PythonFloatStr));
+
+        let list_parent = [
+            EventValue::Mapping(EventMapping::new(vec![
+                ("id".to_owned(), EventField::Str("leaf-synth".to_owned())),
+                ("kind".to_owned(), EventField::Str("message".to_owned())),
+                (
+                    "parent_id".to_owned(),
+                    EventField::List(vec![EventField::Str("parent-synth".to_owned())]),
+                ),
+            ])),
+            boundary_event("bound-synth", Some("leaf-synth")),
+        ];
+        let list_err = check_compaction_coverage(&list_parent, None, None, None).unwrap_err();
+        assert_eq!(list_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert!(matches!(list_err, CheckpointError::PythonStr));
+    }
+
+    #[test]
+    fn check_checkpoint_of_empty_events_follows_the_cap() {
+        let empty = check_checkpoint(&[], None, None, None, None, None).unwrap();
+        assert!(empty.is_empty());
+        assert_codec(check_checkpoint(&[], None, Some(-1), None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn check_checkpoint_run_start_without_checkpoint_is_the_gap_codec_error() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            boundary_event("bound-synth", Some("missing-synth")),
+            EventValue::Mapping(EventMapping::new(vec![
+                ("id".to_owned(), EventField::Float(1.5)),
+                ("kind".to_owned(), EventField::Str("message".to_owned())),
+            ])),
+        ];
+        assert_codec(check_checkpoint(&events, None, None, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn check_checkpoint_reaches_coverage_when_earlier_families_are_silent() {
+        let events = [boundary_event("bound-synth", Some("missing-synth"))];
+        assert_codec(check_checkpoint(&events, None, None, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn all_lists_the_twelve_checkpoint_names_in_order() {
+        assert_eq!(ALL.len(), 12);
+        assert_eq!(
+            ALL,
+            [
+                "MAX_CHECKPOINT_FINDINGS",
+                "cap_checkpoint_findings",
+                "check_checkpoint",
+                "check_checkpoint_divergence",
+                "check_checkpoint_gap",
+                "check_compaction_coverage",
+                "check_sl201",
+                "check_sl202",
+                "check_sl203",
+                "check_sl205",
+                "check_unsafe_continuation",
+                "compute_checkpoint_fingerprint",
+            ]
+        );
+    }
+
+    #[test]
+    fn check_sl205_is_check_compaction_coverage() {
+        let alias = check_sl205
+            as fn(
+                &[EventValue],
+                Option<&str>,
+                Option<i64>,
+                Option<&CheckContext>,
+            ) -> Result<Vec<Finding>, CheckpointError>;
+        let target = check_compaction_coverage
+            as fn(
+                &[EventValue],
+                Option<&str>,
+                Option<i64>,
+                Option<&CheckContext>,
+            ) -> Result<Vec<Finding>, CheckpointError>;
+        assert!(std::ptr::fn_addr_eq(alias, target));
     }
 }
