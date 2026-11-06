@@ -1,0 +1,12 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.policy",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_lib_rs_sha256": "96e315021816ea1f6770bf0d97e3ca1600f5d695b3fa556c61b398b364746804",
+  "vector_count": 5,
+  "vectors_sha256": "d842847fc7f091503cdf568021450fdf3d687c93a1c1a81fabdf2866714c9b54",
+  "generator": "rust/parity/vectors/policy/generate",
+  "known_parity_gaps": [
+    "TOOL_KINDS is a frozenset in Python; iteration order is not a contract; vectors record sorted membership for comparison"
+  ]
+}
