@@ -2,6 +2,7 @@
 //!
 //! Port of `src/sesslint/finding.py` lines 1–939
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! `__all__` is lines 942-969 of that pin ([`ALL`]), in declaration order.
 //! Lines 429–657 build the fingerprint preimage and stop before hashing.
 //! Lines 660–939 are [`make_finding`], [`parse_finding_dict`], and the schema
 //! loaders. Schema IO is refused because `sesslint._resources` is not ported.
@@ -14,7 +15,9 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
 
-use crate::codes::{get_code_info, is_valid_code, Repairability, Severity, ALL_CODES};
+pub use crate::codes::{
+    get_code_info, is_valid_code, Code, CodeInfo, Repairability, Severity, ALL_CODES, CODE_REGISTRY,
+};
 use crate::errors::FindingError;
 
 /// Python: `SCHEMA_VERSION` (`SchemaVersionLiteral`).
@@ -3913,6 +3916,36 @@ pub fn load_finding_schema() -> FindingError {
     FindingError::new(SCHEMA_RESOURCE_UNAVAILABLE)
 }
 
+/// Python `__all__` (finding.py lines 942-969), declaration order.
+pub const ALL: [&str; 26] = [
+    "ALL_CODES",
+    "CODE_REGISTRY",
+    "MAX_MESSAGE_LENGTH",
+    "SCHEMA_VERSION",
+    "SEVERITY_ORDER",
+    "TRUNCATION_MARKER",
+    "CANONICAL_EVIDENCE_KEYS",
+    "Code",
+    "CodeInfo",
+    "Finding",
+    "Repairability",
+    "Severity",
+    "SourceRef",
+    "_canonical_evidence_for_fingerprint",
+    "compute_finding_fingerprint",
+    "compute_fingerprint",
+    "enforce_content_free_text",
+    "finding_sort_key",
+    "fingerprint_finding",
+    "get_code_info",
+    "get_finding_schema_path",
+    "is_valid_code",
+    "load_finding_schema",
+    "make_finding",
+    "parse_finding_dict",
+    "sort_findings",
+];
+
 fn resolve_severity(value: &PyValue, default: Severity) -> Result<Severity, FindingError> {
     match value {
         PyValue::None => Ok(default),
@@ -4413,7 +4446,7 @@ fn python_str(value: &PyValue) -> String {
 mod tests {
     use super::{
         enforce_content_free_evidence_recursive, enforce_content_free_text, python_str_repr,
-        Evidence, EvidenceKey, SourceLine, SourceRef, ALLOWED_TEMPLATE_VARS,
+        Evidence, EvidenceKey, SourceLine, SourceRef, ALL, ALLOWED_TEMPLATE_VARS,
         CONTENT_REJECT_PATTERN, CONTROL_CHAR_PATTERN, CREDENTIAL_ASSIGN_PATTERN,
         DANGEROUS_UNICODE_CATEGORIES, DEFAULT_TEXT_CONTEXT, EMAIL_PATTERN, FINGERPRINT_PATTERN,
         MAX_MESSAGE_LENGTH, SCHEMA_VERSION, SET_ITERATION_DEVIATION, SEVERITY_ORDER,
@@ -4457,6 +4490,44 @@ mod tests {
         );
         assert_eq!(UNCOVERED_DANGEROUS_CODE_POINTS.len(), 0);
         assert!(SET_ITERATION_DEVIATION.contains("set"));
+    }
+
+    #[test]
+    fn all_matches_pinned_finding_export_order() {
+        assert_eq!(ALL.len(), 26);
+        assert_eq!(ALL[0], "ALL_CODES");
+        assert_eq!(ALL[25], "sort_findings");
+        assert_eq!(
+            ALL,
+            [
+                "ALL_CODES",
+                "CODE_REGISTRY",
+                "MAX_MESSAGE_LENGTH",
+                "SCHEMA_VERSION",
+                "SEVERITY_ORDER",
+                "TRUNCATION_MARKER",
+                "CANONICAL_EVIDENCE_KEYS",
+                "Code",
+                "CodeInfo",
+                "Finding",
+                "Repairability",
+                "Severity",
+                "SourceRef",
+                "_canonical_evidence_for_fingerprint",
+                "compute_finding_fingerprint",
+                "compute_fingerprint",
+                "enforce_content_free_text",
+                "finding_sort_key",
+                "fingerprint_finding",
+                "get_code_info",
+                "get_finding_schema_path",
+                "is_valid_code",
+                "load_finding_schema",
+                "make_finding",
+                "parse_finding_dict",
+                "sort_findings",
+            ]
+        );
     }
 
     #[test]
