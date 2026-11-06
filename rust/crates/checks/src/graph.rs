@@ -1,13 +1,18 @@
 //! Generic parent-graph integrity helpers (SL004, SL005, SL006, SL007).
 //!
-//! Port of `src/sesslint/checks/graph.py` lines 1–308
+//! Port of `src/sesslint/checks/graph.py` lines 1–512
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice stops before `cap_graph_findings`. It does not port
-//! `check_missing_parent`, `check_cycles`, `check_components`, `check_heads`,
-//! or `check_graph`.
+//! This slice stops at the end of `check_missing_parent`. It does not port
+//! `check_cycles`, `check_components`, `check_heads`, or `check_graph`.
 //!
 //! Parent matching is exact id equality. No `startswith` and no prefix.
-//! A parent is never invented by prefix. `None` branch equals `None`.
+//! A parent is never invented by prefix, proximity, or content. `None`
+//! branch equals `None`.
+//!
+//! [`check_missing_parent`] and overflow [`cap_graph_findings`] call
+//! [`make_finding`] with the fingerprint omitted. That returns the codec
+//! error and does not produce a digest. This module does not substitute
+//! [`compute_graph_fingerprint`].
 //!
 //! # Recorded gaps
 //!
@@ -15,20 +20,33 @@
 //!   (`model::events::PYTHON_FLOAT_STR_UNREPRESENTABLE` /
 //!   `model::events::PYTHON_STR_UNREPRESENTABLE`). The getter returns `None`
 //!   and does not invent a Python repr.
+//! * A float or container `parent_id` on [`OccurrenceGraph`] is the same
+//!   typed error. That parent is skipped; a Python repr is not invented,
+//!   and the id is not treated as a root.
 //! * [`same_compaction_segment`] cannot run `events.index(a)` on
 //!   [`EventValue`] ([`PYTHON_EVENT_INDEX_UNREPRESENTABLE`]). An event
 //!   endpoint with no seq returns false and does not guess a list index.
 //! * [`EvidenceLookup::Borrowed`] is not a missing overflow/id key
 //!   ([`BORROWED_LOOKUP`]).
+//! * A graph count that does not fit in `i64` is [`COUNT_UNREPRESENTABLE`].
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::error::Error;
 use std::fmt;
 
 use model::canonical::SessionEvent;
-use model::events::{EventField, EventValue};
-use model::finding::{enforce_content_free_text, EvidenceLookup, Finding};
+use model::codes::{Repairability, Severity, SL004};
+use model::errors::FindingError;
+use model::events::{
+    EventField, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_UNREPRESENTABLE,
+};
+use model::finding::{
+    enforce_content_free_text, make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue,
+    SourceLine, SourceRef,
+};
 use sha2::{Digest, Sha256};
+
+use crate::context::CheckContext;
 
 /// Python: `MAX_GRAPH_FINDINGS`.
 pub const MAX_GRAPH_FINDINGS: usize = 500;
@@ -65,16 +83,27 @@ pub const PYTHON_EVENT_INDEX_UNREPRESENTABLE: &str =
 /// [`EvidenceLookup::Borrowed`] is not a missing key.
 pub const BORROWED_LOOKUP: &str = "A borrowed map lookup is not a missing key";
 
+/// A `usize` count that does not fit in `i64`.
+pub const COUNT_UNREPRESENTABLE: &str = "A graph count does not fit in i64";
+
 /// Failure from this slice. [`Display`] is the message only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphError {
     BorrowedLookup,
+    PythonFloatStr,
+    PythonStr,
+    CountUnrepresentable,
+    Finding(FindingError),
 }
 
 impl GraphError {
-    pub const fn message(self) -> &'static str {
+    pub fn message(&self) -> &str {
         match self {
             Self::BorrowedLookup => BORROWED_LOOKUP,
+            Self::PythonFloatStr => PYTHON_FLOAT_STR_UNREPRESENTABLE,
+            Self::PythonStr => PYTHON_STR_UNREPRESENTABLE,
+            Self::CountUnrepresentable => COUNT_UNREPRESENTABLE,
+            Self::Finding(error) => error.message(),
         }
     }
 }
@@ -85,7 +114,23 @@ impl fmt::Display for GraphError {
     }
 }
 
-impl Error for GraphError {}
+impl Error for GraphError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Finding(error) => Some(error),
+            Self::BorrowedLookup
+            | Self::PythonFloatStr
+            | Self::PythonStr
+            | Self::CountUnrepresentable => None,
+        }
+    }
+}
+
+impl From<FindingError> for GraphError {
+    fn from(error: FindingError) -> Self {
+        Self::Finding(error)
+    }
+}
 
 /// Python `str(x)` inputs for [`compute_graph_fingerprint`].
 ///
@@ -417,6 +462,294 @@ pub fn find_qualifying_parent_candidates(
     (qualifying_indices, rejected_decoys, confinement, reason)
 }
 
+/// One first-occurrence node. Walk order is [`OccurrenceGraph::id_order`].
+#[derive(Debug)]
+struct OccurrenceRecord<'a> {
+    id: String,
+    index: usize,
+    parent: Option<String>,
+    event: &'a EventValue,
+}
+
+/// Python: `_OccurrenceGraph`.
+///
+/// First-seen order is the record vec. Membership is the id set. A
+/// [`std::collections::BTreeMap`] is not the walk order.
+#[derive(Debug)]
+pub struct OccurrenceGraph<'a> {
+    records: Vec<OccurrenceRecord<'a>>,
+    ids: HashSet<String>,
+    primary_source_path: String,
+}
+
+impl<'a> OccurrenceGraph<'a> {
+    /// Index `events` in walk order. A non-string id is skipped. An id that
+    /// is empty after strip is skipped. The first id wins.
+    pub fn new(events: &'a [EventValue], default_path: &str) -> Result<Self, GraphError> {
+        let mut records = Vec::new();
+        let mut ids = HashSet::new();
+        for (idx, event) in events.iter().enumerate() {
+            let Some((id, parent)) = event_id_and_parent(event)? else {
+                continue;
+            };
+            if ids.contains(&id) {
+                continue;
+            }
+            ids.insert(id.clone());
+            records.push(OccurrenceRecord {
+                id,
+                index: idx,
+                parent,
+                event,
+            });
+        }
+        Ok(Self {
+            records,
+            ids,
+            primary_source_path: default_path.replace('\\', "/"),
+        })
+    }
+
+    pub fn id_order(&self) -> impl Iterator<Item = &str> {
+        self.records.iter().map(|record| record.id.as_str())
+    }
+
+    pub fn contains_id(&self, id: &str) -> bool {
+        self.ids.contains(id)
+    }
+
+    pub fn index_of(&self, id: &str) -> Option<usize> {
+        self.records
+            .iter()
+            .find(|record| record.id == id)
+            .map(|record| record.index)
+    }
+
+    pub fn primary_source_path(&self) -> &str {
+        &self.primary_source_path
+    }
+}
+
+/// Python: `cap_graph_findings`.
+///
+/// Omitted `max_findings` is [`MAX_GRAPH_FINDINGS`]. Omitted `source_path`
+/// is `"<canonical>"`. Omitted `context` is [`CheckContext::default`].
+/// Under the cap, the sorted list is returned and [`make_finding`] is not
+/// called. Over the cap, [`make_finding`] is called with the fingerprint
+/// omitted; that codec error is propagated.
+pub fn cap_graph_findings(
+    findings: Vec<Finding>,
+    code: &str,
+    max_findings: Option<usize>,
+    source_path: Option<&str>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, GraphError> {
+    let max_findings = max_findings.unwrap_or(MAX_GRAPH_FINDINGS);
+    let source_path = source_path.unwrap_or("<canonical>");
+
+    let mut keyed = Vec::new();
+    for finding in findings {
+        let key = cap_finding_sort_key(&finding)?;
+        keyed.push((key, finding));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    let sorted: Vec<Finding> = keyed.into_iter().map(|(_, finding)| finding).collect();
+
+    if sorted.len() <= max_findings {
+        return Ok(sorted);
+    }
+
+    let total_count = sorted.len();
+    let truncated_count = total_count - max_findings;
+    let mut kept: Vec<Finding> = sorted.into_iter().take(max_findings).collect();
+    let ctx = context.cloned().unwrap_or_default();
+    let norm_source_path = source_path.replace('\\', "/");
+    let source = SourceRef::try_new(&norm_source_path, None, None)?;
+    let overflow_finding = make_finding(&MakeFindingInput {
+        code: PyValue::string(code),
+        severity: PyValue::severity(Severity::Warning),
+        repairability: PyValue::repairability(Repairability::Manual),
+        message_template: PyValue::string(MSG_OVERFLOW),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(Vec::new()),
+        evidence: PyValue::map(vec![
+            (
+                PyValue::string("cap"),
+                PyValue::int(usize_to_i64(max_findings)?),
+            ),
+            (PyValue::string("overflow"), PyValue::bool_value(true)),
+            (
+                PyValue::string("total_count"),
+                PyValue::int(usize_to_i64(total_count)?),
+            ),
+            (
+                PyValue::string("truncated_count"),
+                PyValue::int(usize_to_i64(truncated_count)?),
+            ),
+            (
+                PyValue::string("variant"),
+                PyValue::string("overflow-summary"),
+            ),
+        ]),
+        fingerprint: PyValue::None,
+        adapter_id: Some(ctx.adapter_id().to_owned()),
+        adapter_version: Some(ctx.adapter_version().to_owned()),
+        profile_id: Some(ctx.profile_id().to_owned()),
+        profile_version: Some(ctx.profile_version().to_owned()),
+        ordinal: None,
+        context: None,
+    })?;
+    kept.push(overflow_finding);
+    Ok(kept)
+}
+
+/// Python: `_resolve_source_coords`.
+///
+/// A `source_location` is used only when `default_path` is `"<canonical>"`
+/// and the location is present. A line is kept only when it is a non-bool
+/// int ≥ 1.
+pub fn resolve_source_coords(
+    event: &EventValue,
+    default_path: &str,
+) -> Result<(String, Option<i64>), GraphError> {
+    let first_loc = source_field(event, "source_location");
+    let resolved_path = if default_path != "<canonical>" {
+        default_path.to_owned()
+    } else if let Some(field) = first_loc.as_ref() {
+        match location_text(field)? {
+            Some(text) => text,
+            None => default_path.to_owned(),
+        }
+    } else {
+        default_path.to_owned()
+    }
+    .replace('\\', "/");
+
+    let raw_line = source_field(event, "source_line");
+    let line_num = match raw_line {
+        Some(EventField::Int(number)) if number >= 1 => Some(number),
+        _ => None,
+    };
+    Ok((resolved_path, line_num))
+}
+
+/// Python: `check_missing_parent` (SL004).
+///
+/// `parent_id is None` is a root. An empty-string parent is missing. A
+/// parent present anywhere in the first-occurrence set, including a later
+/// event and a self-parent, does not fire. Missing-parent evidence does
+/// not search for another parent. [`make_finding`] is called with the
+/// fingerprint omitted; the codec error is propagated. A session with no
+/// missing parent returns an empty list and does not call [`make_finding`].
+pub fn check_missing_parent<'a>(
+    events: &'a [EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<usize>,
+    context: Option<&CheckContext>,
+    occurrence_graph: Option<&OccurrenceGraph<'a>>,
+) -> Result<Vec<Finding>, GraphError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let max_findings = max_findings.unwrap_or(MAX_GRAPH_FINDINGS);
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_graph;
+    let graph = match occurrence_graph {
+        Some(value) => value,
+        None => {
+            owned_graph = OccurrenceGraph::new(events, source_path)?;
+            &owned_graph
+        }
+    };
+
+    let mut findings = Vec::new();
+    for record in &graph.records {
+        let Some(parent_id) = record.parent.as_deref() else {
+            continue;
+        };
+        if graph.ids.contains(parent_id) {
+            continue;
+        }
+
+        let (resolved_path, line_num) = resolve_source_coords(record.event, source_path)?;
+        let clean_rec_id = safe_id(&record.id);
+        let clean_parent_id = safe_id(parent_id);
+
+        let mut related = vec![PyValue::string(clean_rec_id.clone())];
+        let stripped_parent = clean_parent_id.trim();
+        if !stripped_parent.is_empty() {
+            related.push(PyValue::string(stripped_parent));
+        }
+
+        let source = SourceRef::try_new(
+            &resolved_path,
+            line_num.map(SourceLine::Int),
+            Some(clean_rec_id.as_str()),
+        )?;
+
+        let evidence = PyValue::map(vec![
+            (PyValue::string("id"), PyValue::string(clean_rec_id)),
+            (
+                PyValue::string("index"),
+                PyValue::int(usize_to_i64(record.index)?),
+            ),
+            (
+                PyValue::string("parent_id"),
+                PyValue::string(clean_parent_id),
+            ),
+            (
+                PyValue::string("match_rule"),
+                PyValue::string("full-equality"),
+            ),
+            (
+                PyValue::string("confinement"),
+                PyValue::map(vec![
+                    (PyValue::string("branch"), PyValue::bool_value(false)),
+                    (PyValue::string(CONF_SEG_KEY), PyValue::bool_value(false)),
+                ]),
+            ),
+            (PyValue::string("candidate_count"), PyValue::int(0)),
+            (
+                PyValue::string("rejected_decoys"),
+                PyValue::list(Vec::new()),
+            ),
+            (PyValue::string("reason"), PyValue::string("no_full_match")),
+        ]);
+
+        findings.push(make_finding(&MakeFindingInput {
+            code: PyValue::string(SL004),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message_template: PyValue::string(MSG_SL004),
+            template_args: PyValue::None,
+            source: PyValue::source(source),
+            related_ids: PyValue::list(related),
+            evidence,
+            fingerprint: PyValue::None,
+            adapter_id: Some(ctx.adapter_id().to_owned()),
+            adapter_version: Some(ctx.adapter_version().to_owned()),
+            profile_id: Some(ctx.profile_id().to_owned()),
+            profile_version: Some(ctx.profile_version().to_owned()),
+            ordinal: None,
+            context: None,
+        })?);
+    }
+
+    cap_graph_findings(
+        findings,
+        SL004,
+        Some(max_findings),
+        Some(source_path),
+        Some(ctx),
+    )
+}
+
 fn overflow_flag(finding: &Finding) -> Result<i32, GraphError> {
     let Some(evidence) = finding.evidence() else {
         return Ok(0);
@@ -499,15 +832,92 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
     out
 }
 
+fn event_id_and_parent(event: &EventValue) -> Result<Option<(String, Option<String>)>, GraphError> {
+    let raw_id = match event {
+        EventValue::Session(session) => EventField::Str(session.id.clone()),
+        EventValue::Mapping(mapping) => match mapping.get("id") {
+            Some(value) => value.clone(),
+            None => return Ok(None),
+        },
+        EventValue::Other => return Ok(None),
+    };
+    let EventField::Str(id_str) = raw_id else {
+        return Ok(None);
+    };
+    if id_str.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let raw_parent = match event {
+        EventValue::Session(session) => session
+            .parent_id
+            .as_deref()
+            .map(|text| EventField::Str(text.to_owned())),
+        EventValue::Mapping(mapping) => mapping.get("parent_id").cloned(),
+        EventValue::Other => None,
+    };
+    let parent = match raw_parent {
+        None | Some(EventField::Null) => None,
+        Some(EventField::Str(text)) => Some(text),
+        Some(EventField::Bool(true)) => Some("True".to_owned()),
+        Some(EventField::Bool(false)) => Some("False".to_owned()),
+        Some(EventField::Int(number)) => Some(number.to_string()),
+        Some(EventField::Float(_)) => return Err(GraphError::PythonFloatStr),
+        Some(EventField::List(_) | EventField::Mapping(_)) => return Err(GraphError::PythonStr),
+    };
+    Ok(Some((id_str, parent)))
+}
+
+fn source_field(event: &EventValue, field: &str) -> Option<EventField> {
+    match event {
+        EventValue::Session(session) => match field {
+            "source_location" => session.source_location.clone().map(EventField::Str),
+            "source_line" => session.source_line.map(EventField::Int),
+            _ => None,
+        },
+        EventValue::Mapping(mapping) => mapping.get(field).cloned(),
+        EventValue::Other => None,
+    }
+}
+
+fn location_text(field: &EventField) -> Result<Option<String>, GraphError> {
+    match field {
+        EventField::Null | EventField::Bool(false) => Ok(None),
+        EventField::Bool(true) => Ok(Some("True".to_owned())),
+        EventField::Int(0) => Ok(None),
+        EventField::Int(number) => Ok(Some(number.to_string())),
+        EventField::Str(text) if text.is_empty() => Ok(None),
+        EventField::Str(text) => Ok(Some(text.clone())),
+        EventField::Float(number) if *number == 0.0 => Ok(None),
+        EventField::Float(_) => Err(GraphError::PythonFloatStr),
+        EventField::List(items) if items.is_empty() => Ok(None),
+        EventField::Mapping(mapping) if mapping.entries().is_empty() => Ok(None),
+        EventField::List(_) | EventField::Mapping(_) => Err(GraphError::PythonStr),
+    }
+}
+
+fn usize_to_i64(value: usize) -> Result<i64, GraphError> {
+    i64::try_from(value).map_err(|_| GraphError::CountUnrepresentable)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_graph_fingerprint, event_seq_safe, find_qualifying_parent_candidates,
-        is_qualifying_parent_candidate, safe_id, same_compaction_segment, Confinement,
-        GraphEndpoint, GraphScalar, CONF_SEG_KEY, PYTHON_EVENT_INDEX_UNREPRESENTABLE,
+        cap_graph_findings, check_missing_parent, compute_graph_fingerprint, event_seq_safe,
+        find_qualifying_parent_candidates, is_qualifying_parent_candidate, safe_id,
+        same_compaction_segment, Confinement, GraphEndpoint, GraphError, GraphScalar,
+        OccurrenceGraph, CONF_SEG_KEY, MSG_SL004, PYTHON_EVENT_INDEX_UNREPRESENTABLE,
     };
+    use crate::context::CheckContext;
     use model::canonical::SessionEvent;
-    use model::events::{EventField, EventMapping, EventValue};
+    use model::codes::{Repairability, Severity, SL004};
+    use model::events::{
+        EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        PYTHON_STR_UNREPRESENTABLE,
+    };
+    use model::finding::{
+        make_finding, MakeFindingInput, PyValue, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+    };
 
     fn mapping(entries: &[(&str, EventField)]) -> EventValue {
         EventValue::Mapping(EventMapping::new(
@@ -799,5 +1209,187 @@ mod tests {
             PYTHON_EVENT_INDEX_UNREPRESENTABLE,
             "EventValue cannot be searched by Python equality; a missing seq does not guess an index"
         );
+    }
+
+    fn finding_with_id(record_id: &str, fingerprint: &str) -> model::finding::Finding {
+        let source = SourceRef::try_new("<canonical>", None, Some(record_id)).unwrap();
+        make_finding(&MakeFindingInput {
+            code: PyValue::string(SL004),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message_template: PyValue::string(MSG_SL004),
+            template_args: PyValue::None,
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(vec![PyValue::string(record_id)]),
+            evidence: PyValue::None,
+            fingerprint: PyValue::string(fingerprint),
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            context: None,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn none_parent_and_present_parent_return_no_findings() {
+        let events = vec![
+            event("parent-synthetic", None, 0, Some("main"), "message"),
+            event(
+                "child-synthetic",
+                Some("parent-synthetic"),
+                1,
+                Some("main"),
+                "message",
+            ),
+        ];
+        let findings = check_missing_parent(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn later_parent_and_self_parent_do_not_fire() {
+        let later = vec![
+            event(
+                "child-synthetic",
+                Some("later-synthetic"),
+                0,
+                Some("main"),
+                "message",
+            ),
+            event("later-synthetic", None, 1, Some("main"), "message"),
+        ];
+        let later_findings = check_missing_parent(&later, None, None, None, None).unwrap();
+        assert!(later_findings.is_empty());
+
+        let r#loop = vec![event(
+            "loop-synthetic",
+            Some("loop-synthetic"),
+            0,
+            Some("main"),
+            "message",
+        )];
+        let loop_findings = check_missing_parent(&r#loop, None, None, None, None).unwrap();
+        assert!(loop_findings.is_empty());
+    }
+
+    #[test]
+    fn empty_string_parent_returns_the_codec_error() {
+        let events = vec![event(
+            "child-synthetic",
+            Some(""),
+            0,
+            Some("main"),
+            "message",
+        )];
+        let err = check_missing_parent(&events, None, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!is_lower_hex16(&err.to_string()));
+        assert!(!matches!(err, GraphError::BorrowedLookup));
+    }
+
+    #[test]
+    fn duplicate_id_keeps_the_first_index() {
+        let events = vec![
+            event("dup-synthetic", None, 0, Some("main"), "message"),
+            event("other-synthetic", None, 1, Some("main"), "message"),
+            event(
+                "dup-synthetic",
+                Some("missing-synthetic"),
+                2,
+                Some("main"),
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert_eq!(graph.index_of("dup-synthetic"), Some(0));
+        assert_ne!(graph.index_of("dup-synthetic"), Some(2));
+        let order: Vec<&str> = graph.id_order().collect();
+        assert_eq!(order, vec!["dup-synthetic", "other-synthetic"]);
+        let findings = check_missing_parent(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn non_string_id_is_skipped() {
+        let events = vec![
+            mapping(&[
+                ("id", EventField::Bool(true)),
+                ("parent_id", EventField::Null),
+                ("seq", EventField::Int(0)),
+                ("kind", field_str("message")),
+            ]),
+            mapping(&[
+                ("id", EventField::Int(7)),
+                ("parent_id", field_str("missing-synthetic")),
+                ("seq", EventField::Int(1)),
+                ("kind", field_str("message")),
+            ]),
+            event("keep-synthetic", None, 2, Some("main"), "message"),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(!graph.contains_id("True"));
+        assert!(!graph.contains_id("7"));
+        let order: Vec<&str> = graph.id_order().collect();
+        assert_eq!(order, vec!["keep-synthetic"]);
+        let findings = check_missing_parent(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn cap_under_the_limit_sorts_and_does_not_call_make_finding() {
+        let first = finding_with_id("evt-b-synthetic", "bbbbbbbbbbbbbbbb");
+        let second = finding_with_id("evt-a-synthetic", "aaaaaaaaaaaaaaaa");
+        let out = cap_graph_findings(
+            vec![first, second],
+            SL004,
+            None,
+            None,
+            Some(&CheckContext::default()),
+        )
+        .unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].source().record_id(), Some("evt-a-synthetic"));
+        assert_eq!(out[1].source().record_id(), Some("evt-b-synthetic"));
+        assert_eq!(out[0].fingerprint(), "aaaaaaaaaaaaaaaa");
+        assert_eq!(out[1].fingerprint(), "bbbbbbbbbbbbbbbb");
+        assert!(is_lower_hex16(out[0].fingerprint()));
+        assert!(is_lower_hex16(out[1].fingerprint()));
+    }
+
+    #[test]
+    fn cap_over_the_limit_returns_the_codec_error() {
+        let first = finding_with_id("evt-b-synthetic", "bbbbbbbbbbbbbbbb");
+        let second = finding_with_id("evt-a-synthetic", "aaaaaaaaaaaaaaaa");
+        let err = cap_graph_findings(vec![first, second], SL004, Some(1), None, None).unwrap_err();
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    #[test]
+    fn float_or_container_parent_is_a_typed_error() {
+        let float_parent = vec![mapping(&[
+            ("id", field_str("child-synthetic")),
+            ("parent_id", EventField::Float(1.5)),
+            ("seq", EventField::Int(0)),
+            ("kind", field_str("message")),
+        ])];
+        let float_err = OccurrenceGraph::new(&float_parent, "<canonical>").unwrap_err();
+        assert_eq!(float_err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        let container_parent = vec![mapping(&[
+            ("id", field_str("child-synthetic")),
+            (
+                "parent_id",
+                EventField::List(vec![field_str("missing-synthetic")]),
+            ),
+            ("seq", EventField::Int(0)),
+            ("kind", field_str("message")),
+        ])];
+        let container_err = OccurrenceGraph::new(&container_parent, "<canonical>").unwrap_err();
+        assert_eq!(container_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
     }
 }
