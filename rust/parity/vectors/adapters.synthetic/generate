@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.synthetic parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SYNTHETIC_SHA256 = "fc48d39ad8de88f70b8d2beaa26fae019487cca4bec04b5f3e80ca6026ae20eb"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "check_event: sesslint.canonical.SessionEvent is not ported; Rust check_event "
+        "returns CheckEventError without registering an event — no vector."
+    ),
+    (
+        "unicode_nd_digits: Python str.isdigit and default re \\d accept Unicode decimal "
+        "digits (e.g. U+0661); Rust port accepts ASCII 0-9 only — documented gap, not a "
+        "required vector."
+    ),
+    (
+        "lone_surrogate_source_hint: Python encode(errors='replace') can hash a lone "
+        "surrogate; Rust str cannot hold one — no vector."
+    ),
+]
+
+SYNTH_A = "sesslint:synthetic:adapter:0:12345678"
+SYNTH_B = "sesslint:synthetic:adapter:1:87654321"
+SYNTH_CLAUDE = "sesslint:synthetic:claude_code:0:deadbeef"
+SYNTH_OPENAI = "sesslint:synthetic:openai_agents:1:cafebabe"
+SYNTH_COLLIDE_LO = "sesslint:synthetic:a:0:aaaaaaaa"
+SYNTH_COLLIDE_HI = "sesslint:synthetic:z:0:bbbbbbbb"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_synthetic_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "adapters" / "synthetic.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != SYNTHETIC_SHA256:
+        raise SystemExit(
+            f"synthetic.py sha256 mismatch: expected {SYNTHETIC_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.adapters import synthetic as syn  # noqa: WPS433
+    from sesslint.errors import AdapterError  # noqa: WPS433
+
+    return syn, AdapterError
+
+
+def vector_specs(syn: Any, AdapterError: Any) -> list[dict[str, Any]]:
+    advance = syn._advance_synthetic_id
+    prefix = syn.SYNTHETIC_ID_PREFIX
+
+    def ok(value: Any) -> dict[str, Any]:
+        return {"result": "ok", "value": value}
+
+    def adapter_error(message: str) -> dict[str, Any]:
+        return {
+            "result": "error",
+            "raises": "AdapterError",
+            "display": message,
+        }
+
+    def run_guard(steps: list[dict[str, Any]]) -> dict[str, Any]:
+        guard = syn.SyntheticIdCollisionGuard()
+        for step in steps:
+            action = step["action"]
+            if action == "register_real":
+                try:
+                    guard.register_real(step["event_id"])
+                except AdapterError as exc:
+                    return adapter_error(str(exc))
+            elif action == "register_synthetic":
+                try:
+                    guard.register_synthetic(step["event_id"])
+                except AdapterError as exc:
+                    return adapter_error(str(exc))
+            elif action == "register":
+                try:
+                    guard.register(step["event_id"], is_synthetic=step["is_synthetic"])
+                except AdapterError as exc:
+                    return adapter_error(str(exc))
+            elif action == "assert_no_collision":
+                try:
+                    guard.assert_no_collision()
+                except AdapterError as exc:
+                    return adapter_error(str(exc))
+            else:
+                raise ValueError(f"unknown guard action: {action}")
+        return ok(None)
+
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "synthetic_event_id_ascii_hint",
+        {
+            "type": "synthetic_event_id",
+            "adapter": "claude_code",
+            "ordinal": 42,
+            "source_hint": "synthetic-hint",
+            "payload_len": 128,
+        },
+        ok(
+            syn.synthetic_event_id(
+                "claude_code", 42, source_hint="synthetic-hint", payload_len=128
+            )
+        ),
+    )
+
+    add(
+        "synthetic_event_id_negative_ordinal",
+        {
+            "type": "synthetic_event_id",
+            "adapter": "test",
+            "ordinal": -3,
+            "source_hint": "synthetic-hint",
+            "payload_len": 0,
+        },
+        ok(syn.synthetic_event_id("test", -3, source_hint="synthetic-hint", payload_len=0)),
+    )
+
+    add(
+        "synthetic_event_id_non_ascii_letter_hint",
+        {
+            "type": "synthetic_event_id",
+            "adapter": "test",
+            "ordinal": 1,
+            "source_hint": "synthetic-hint-\u00e9",
+            "payload_len": 16,
+        },
+        ok(
+            syn.synthetic_event_id(
+                "test", 1, source_hint="synthetic-hint-\u00e9", payload_len=16
+            )
+        ),
+    )
+
+    add(
+        "synthetic_event_id_defaults_empty",
+        {
+            "type": "synthetic_event_id",
+            "adapter": "test",
+            "ordinal": 0,
+            "source_hint": "",
+            "payload_len": 0,
+        },
+        ok(syn.synthetic_event_id("test", 0, source_hint="", payload_len=0)),
+    )
+
+    add(
+        "is_synthetic_id_prefix_with_tail",
+        {"type": "is_synthetic_id", "event_id": f"{prefix}any:1:abc"},
+        ok(True),
+    )
+
+    add(
+        "is_synthetic_id_prefix_only",
+        {"type": "is_synthetic_id", "event_id": prefix},
+        ok(True),
+    )
+
+    add(
+        "is_synthetic_id_sesslint_synthetic_without_colon",
+        {"type": "is_synthetic_id", "event_id": "sesslint:synthetic"},
+        ok(False),
+    )
+
+    add(
+        "is_synthetic_id_sesslint_synthetic_x",
+        {"type": "is_synthetic_id", "event_id": "sesslint:synthetic-x:0:abcd1234"},
+        ok(False),
+    )
+
+    add(
+        "is_synthetic_id_empty",
+        {"type": "is_synthetic_id", "event_id": ""},
+        ok(False),
+    )
+
+    add(
+        "advance_reserved_ascii_ordinal_increments_keeps_digest",
+        {
+            "type": "advance_synthetic_id",
+            "candidate_id": f"{prefix}adapter_test:3:12345678",
+        },
+        ok(advance(f"{prefix}adapter_test:3:12345678")),
+    )
+
+    add(
+        "advance_reserved_leading_zero_ordinal",
+        {
+            "type": "advance_synthetic_id",
+            "candidate_id": "sesslint:synthetic:adapter:08:deadbeef",
+        },
+        ok(advance("sesslint:synthetic:adapter:08:deadbeef")),
+    )
+
+    add(
+        "advance_negative_reserved_ordinal_appends_suffix",
+        {
+            "type": "advance_synthetic_id",
+            "candidate_id": "sesslint:synthetic:test:-1:deadbeef",
+        },
+        ok(advance("sesslint:synthetic:test:-1:deadbeef")),
+    )
+
+    add(
+        "advance_bare_appends_one",
+        {"type": "advance_synthetic_id", "candidate_id": "rec_item_text"},
+        ok(advance("rec_item_text")),
+    )
+
+    add(
+        "advance_ascii_digit_suffix",
+        {"type": "advance_synthetic_id", "candidate_id": "rec_item_call_2"},
+        ok(advance("rec_item_call_2")),
+    )
+
+    add(
+        "advance_leading_zero_suffix",
+        {"type": "advance_synthetic_id", "candidate_id": "foo_00"},
+        ok(advance("foo_00")),
+    )
+
+    add(
+        "advance_single_digit_rollover",
+        {"type": "advance_synthetic_id", "candidate_id": "foo_9"},
+        ok(advance("foo_9")),
+    )
+
+    add(
+        "advance_vulgar_fraction_not_digit",
+        {"type": "advance_synthetic_id", "candidate_id": "item_\u00bd"},
+        ok(advance("item_\u00bd")),
+    )
+
+    add(
+        "guard_clean_then_assert_no_collision",
+        {
+            "type": "guard_run",
+            "steps": [
+                {"action": "register_real", "event_id": SYNTH_A},
+                {"action": "register_real", "event_id": SYNTH_B},
+                {"action": "register_synthetic", "event_id": SYNTH_CLAUDE},
+                {"action": "register_synthetic", "event_id": SYNTH_OPENAI},
+                {"action": "register_real", "event_id": SYNTH_A},
+                {"action": "register_synthetic", "event_id": SYNTH_CLAUDE},
+                {"action": "assert_no_collision"},
+            ],
+        },
+        ok(None),
+    )
+
+    add(
+        "guard_register_synthetic_collides_prior_real",
+        {
+            "type": "guard_run",
+            "steps": [
+                {"action": "register_real", "event_id": SYNTH_CLAUDE},
+                {"action": "register_synthetic", "event_id": SYNTH_CLAUDE},
+            ],
+        },
+        run_guard(
+            [
+                {"action": "register_real", "event_id": SYNTH_CLAUDE},
+                {"action": "register_synthetic", "event_id": SYNTH_CLAUDE},
+            ]
+        ),
+    )
+
+    add(
+        "guard_register_real_collides_prior_synthetic",
+        {
+            "type": "guard_run",
+            "steps": [
+                {"action": "register_synthetic", "event_id": SYNTH_OPENAI},
+                {"action": "register_real", "event_id": SYNTH_OPENAI},
+            ],
+        },
+        run_guard(
+            [
+                {"action": "register_synthetic", "event_id": SYNTH_OPENAI},
+                {"action": "register_real", "event_id": SYNTH_OPENAI},
+            ]
+        ),
+    )
+
+    add(
+        "guard_register_dispatches_is_synthetic_flag",
+        {
+            "type": "guard_run",
+            "steps": [
+                {"action": "register", "event_id": SYNTH_A, "is_synthetic": False},
+                {"action": "register", "event_id": SYNTH_B, "is_synthetic": True},
+                {"action": "register", "event_id": SYNTH_A, "is_synthetic": True},
+            ],
+        },
+        run_guard(
+            [
+                {"action": "register", "event_id": SYNTH_A, "is_synthetic": False},
+                {"action": "register", "event_id": SYNTH_B, "is_synthetic": True},
+                {"action": "register", "event_id": SYNTH_A, "is_synthetic": True},
+            ]
+        ),
+    )
+
+    def preloaded_assert_no_collision(
+        real_ids: list[str], synthetic_ids: list[str]
+    ) -> dict[str, Any]:
+        guard = syn.SyntheticIdCollisionGuard()
+        guard._seen_real_ids.update(real_ids)
+        guard._seen_synthetic_ids.update(synthetic_ids)
+        try:
+            guard.assert_no_collision()
+        except AdapterError as exc:
+            return adapter_error(str(exc))
+        return ok(None)
+
+    add(
+        "guard_assert_no_collision_lexicographic_first",
+        {
+            "type": "guard_preloaded_assert_no_collision",
+            "real_ids": [SYNTH_COLLIDE_HI, SYNTH_COLLIDE_LO],
+            "synthetic_ids": [SYNTH_COLLIDE_HI, SYNTH_COLLIDE_LO],
+        },
+        preloaded_assert_no_collision(
+            [SYNTH_COLLIDE_HI, SYNTH_COLLIDE_LO],
+            [SYNTH_COLLIDE_HI, SYNTH_COLLIDE_LO],
+        ),
+    )
+
+    return vectors
+
+
+def main() -> int:
+    syn, AdapterError = load_synthetic_module()
+    _ = AdapterError  # referenced in vector_specs closure
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(syn, AdapterError)
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.adapters.synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "synthetic_py_sha256": SYNTHETIC_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.adapters.synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "synthetic_py_sha256": SYNTHETIC_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/adapters.synthetic/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.synthetic parity (reserved namespace IDs and "
+            "collision guard only)."
+        ),
+        "generator": "rust/parity/vectors/adapters.synthetic/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

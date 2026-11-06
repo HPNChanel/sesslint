@@ -1,0 +1,335 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "synthetic_py_sha256": "fc48d39ad8de88f70b8d2beaa26fae019487cca4bec04b5f3e80ca6026ae20eb",
+  "vectors": [
+    {
+      "id": "synthetic_event_id_ascii_hint",
+      "construct": {
+        "type": "synthetic_event_id",
+        "adapter": "claude_code",
+        "ordinal": 42,
+        "source_hint": "synthetic-hint",
+        "payload_len": 128
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:claude_code:42:0e21956c"
+      }
+    },
+    {
+      "id": "synthetic_event_id_negative_ordinal",
+      "construct": {
+        "type": "synthetic_event_id",
+        "adapter": "test",
+        "ordinal": -3,
+        "source_hint": "synthetic-hint",
+        "payload_len": 0
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:test:-3:f5a7161d"
+      }
+    },
+    {
+      "id": "synthetic_event_id_non_ascii_letter_hint",
+      "construct": {
+        "type": "synthetic_event_id",
+        "adapter": "test",
+        "ordinal": 1,
+        "source_hint": "synthetic-hint-é",
+        "payload_len": 16
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:test:1:6ad91f3b"
+      }
+    },
+    {
+      "id": "synthetic_event_id_defaults_empty",
+      "construct": {
+        "type": "synthetic_event_id",
+        "adapter": "test",
+        "ordinal": 0,
+        "source_hint": "",
+        "payload_len": 0
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:test:0:1d770858"
+      }
+    },
+    {
+      "id": "is_synthetic_id_prefix_with_tail",
+      "construct": {
+        "type": "is_synthetic_id",
+        "event_id": "sesslint:synthetic:any:1:abc"
+      },
+      "expected": {
+        "result": "ok",
+        "value": true
+      }
+    },
+    {
+      "id": "is_synthetic_id_prefix_only",
+      "construct": {
+        "type": "is_synthetic_id",
+        "event_id": "sesslint:synthetic:"
+      },
+      "expected": {
+        "result": "ok",
+        "value": true
+      }
+    },
+    {
+      "id": "is_synthetic_id_sesslint_synthetic_without_colon",
+      "construct": {
+        "type": "is_synthetic_id",
+        "event_id": "sesslint:synthetic"
+      },
+      "expected": {
+        "result": "ok",
+        "value": false
+      }
+    },
+    {
+      "id": "is_synthetic_id_sesslint_synthetic_x",
+      "construct": {
+        "type": "is_synthetic_id",
+        "event_id": "sesslint:synthetic-x:0:abcd1234"
+      },
+      "expected": {
+        "result": "ok",
+        "value": false
+      }
+    },
+    {
+      "id": "is_synthetic_id_empty",
+      "construct": {
+        "type": "is_synthetic_id",
+        "event_id": ""
+      },
+      "expected": {
+        "result": "ok",
+        "value": false
+      }
+    },
+    {
+      "id": "advance_reserved_ascii_ordinal_increments_keeps_digest",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "sesslint:synthetic:adapter_test:3:12345678"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:adapter_test:4:12345678"
+      }
+    },
+    {
+      "id": "advance_reserved_leading_zero_ordinal",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "sesslint:synthetic:adapter:08:deadbeef"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:adapter:9:deadbeef"
+      }
+    },
+    {
+      "id": "advance_negative_reserved_ordinal_appends_suffix",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "sesslint:synthetic:test:-1:deadbeef"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "sesslint:synthetic:test:-1:deadbeef_1"
+      }
+    },
+    {
+      "id": "advance_bare_appends_one",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "rec_item_text"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "rec_item_text_1"
+      }
+    },
+    {
+      "id": "advance_ascii_digit_suffix",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "rec_item_call_2"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "rec_item_call_3"
+      }
+    },
+    {
+      "id": "advance_leading_zero_suffix",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "foo_00"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "foo_1"
+      }
+    },
+    {
+      "id": "advance_single_digit_rollover",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "foo_9"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "foo_10"
+      }
+    },
+    {
+      "id": "advance_vulgar_fraction_not_digit",
+      "construct": {
+        "type": "advance_synthetic_id",
+        "candidate_id": "item_½"
+      },
+      "expected": {
+        "result": "ok",
+        "value": "item_½_1"
+      }
+    },
+    {
+      "id": "guard_clean_then_assert_no_collision",
+      "construct": {
+        "type": "guard_run",
+        "steps": [
+          {
+            "action": "register_real",
+            "event_id": "sesslint:synthetic:adapter:0:12345678"
+          },
+          {
+            "action": "register_real",
+            "event_id": "sesslint:synthetic:adapter:1:87654321"
+          },
+          {
+            "action": "register_synthetic",
+            "event_id": "sesslint:synthetic:claude_code:0:deadbeef"
+          },
+          {
+            "action": "register_synthetic",
+            "event_id": "sesslint:synthetic:openai_agents:1:cafebabe"
+          },
+          {
+            "action": "register_real",
+            "event_id": "sesslint:synthetic:adapter:0:12345678"
+          },
+          {
+            "action": "register_synthetic",
+            "event_id": "sesslint:synthetic:claude_code:0:deadbeef"
+          },
+          {
+            "action": "assert_no_collision"
+          }
+        ]
+      },
+      "expected": {
+        "result": "ok",
+        "value": null
+      }
+    },
+    {
+      "id": "guard_register_synthetic_collides_prior_real",
+      "construct": {
+        "type": "guard_run",
+        "steps": [
+          {
+            "action": "register_real",
+            "event_id": "sesslint:synthetic:claude_code:0:deadbeef"
+          },
+          {
+            "action": "register_synthetic",
+            "event_id": "sesslint:synthetic:claude_code:0:deadbeef"
+          }
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AdapterError",
+        "display": "Synthetic ID collision: synthetic ID 'sesslint:synthetic:claude_code:0:deadbeef' collides with a previously seen real ID"
+      }
+    },
+    {
+      "id": "guard_register_real_collides_prior_synthetic",
+      "construct": {
+        "type": "guard_run",
+        "steps": [
+          {
+            "action": "register_synthetic",
+            "event_id": "sesslint:synthetic:openai_agents:1:cafebabe"
+          },
+          {
+            "action": "register_real",
+            "event_id": "sesslint:synthetic:openai_agents:1:cafebabe"
+          }
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AdapterError",
+        "display": "Synthetic ID collision: real ID 'sesslint:synthetic:openai_agents:1:cafebabe' collides with a previously generated synthetic ID"
+      }
+    },
+    {
+      "id": "guard_register_dispatches_is_synthetic_flag",
+      "construct": {
+        "type": "guard_run",
+        "steps": [
+          {
+            "action": "register",
+            "event_id": "sesslint:synthetic:adapter:0:12345678",
+            "is_synthetic": false
+          },
+          {
+            "action": "register",
+            "event_id": "sesslint:synthetic:adapter:1:87654321",
+            "is_synthetic": true
+          },
+          {
+            "action": "register",
+            "event_id": "sesslint:synthetic:adapter:0:12345678",
+            "is_synthetic": true
+          }
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AdapterError",
+        "display": "Synthetic ID collision: synthetic ID 'sesslint:synthetic:adapter:0:12345678' collides with a previously seen real ID"
+      }
+    },
+    {
+      "id": "guard_assert_no_collision_lexicographic_first",
+      "construct": {
+        "type": "guard_preloaded_assert_no_collision",
+        "real_ids": [
+          "sesslint:synthetic:z:0:bbbbbbbb",
+          "sesslint:synthetic:a:0:aaaaaaaa"
+        ],
+        "synthetic_ids": [
+          "sesslint:synthetic:z:0:bbbbbbbb",
+          "sesslint:synthetic:a:0:aaaaaaaa"
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AdapterError",
+        "display": "Synthetic ID collision: ID 'sesslint:synthetic:a:0:aaaaaaaa' exists in both real and synthetic namespaces"
+      }
+    }
+  ]
+}
