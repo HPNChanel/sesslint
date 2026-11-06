@@ -4,6 +4,6 @@
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "finding_py_sha256": "5a0a7218512b36ccc6bd7fb1568dd95e81dc5b74d4685d14acdd4f2d0d911d7a",
   "vector_count": 22,
-  "vectors_sha256": "533361b74556dd29ce9d2543fe06d2088858639b8445f388c95f0d5f855588a1",
+  "vectors_sha256": "7cb9141141ffd5bbcf39df93e63ecdd751a959a035dc689c71e2697bb3719220",
   "generator": "rust/parity/vectors/finding/generate"
 }
