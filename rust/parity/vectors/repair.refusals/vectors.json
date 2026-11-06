@@ -1,0 +1,390 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.refusals",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "refusals_rs_sha256": "0b534e8290a41b4f8363d535f693eb9845f2b9b50da1ce2a1962ff1091b5ee03",
+  "known_parity_gaps": [
+    "Citation digit runs: Python re \\d matches Unicode category Nd (e.g. U+0661); Rust accepts ASCII digits only — parity not required for those citations.",
+    "RefusalRationale with a non-str rationale: Python __post_init__ raises ValueError; Rust RefusalRationale::try_new takes &str — parity not required for that branch.",
+    "REFUSAL_CODES: Python frozenset iteration order is not a contract; vectors record sorted membership only — parity not required on iteration order.",
+    "refusal_rationale_for: Python returns Optional; invalid rows fail at import. Rust returns Result because a bad registered row must not become None — parity on that API shape is not required here."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "REFUSAL_CODES",
+          "REFUSAL_REGISTRY",
+          "RefusalRationale",
+          "refusal_rationale_for"
+        ]
+      }
+    },
+    {
+      "id": "registry_insertion_order",
+      "construct": {
+        "type": "registry_rows"
+      },
+      "expected": {
+        "rows": [
+          {
+            "code": "SL001",
+            "rationale": "malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content",
+            "demand_citation": "AC-004",
+            "salvage_path": "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' (recipe torn-record-excision; per-line malformed records only)"
+          },
+          {
+            "code": "SL007",
+            "rationale": "multiple plausible session heads cannot be disambiguated without inventing session lineage; choosing one would silently rewrite structure",
+            "demand_citation": "Non-goal #13",
+            "salvage_path": null
+          },
+          {
+            "code": "SL008",
+            "rationale": "non-monotonic timestamps may reflect legitimate clock skew or source ordering; rewriting timestamps or reordering records would fabricate causal timing data",
+            "demand_citation": "Non-goal #13",
+            "salvage_path": null
+          },
+          {
+            "code": "SL009",
+            "rationale": "secret-shaped material requires credential rotation and operator-side removal; rewriting or redacting the persisted record would mutate evidence without revoking the exposed credential",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL010",
+            "rationale": "interleaved writer markers are forensic evidence of concurrent writers, not a defect to edit out; rewriting markers or reordering records would fabricate provenance",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL011",
+            "rationale": "a size outlier is evidence, not a defect; dropping or truncating the oversized record would destroy data the tool cannot judge",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL101",
+            "rationale": "orphan result may be the sole evidence of a completed external action; conservative repair refuses to delete it or synthesize a matching call",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' (recipe orphan-result-drop)"
+          },
+          {
+            "code": "SL103",
+            "rationale": "conflicting tool-call IDs admit multiple incompatible resolutions; choosing one would invent pairing semantics",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL105",
+            "rationale": "reversed call/result order may encode provider or adapter semantics; reordering would rewrite record order without proof",
+            "demand_citation": "Non-goal #13",
+            "salvage_path": null
+          },
+          {
+            "code": "SL106",
+            "rationale": "cross-branch pairing concerns lineage and execution ownership; relinking would rewrite branch structure without evidence",
+            "demand_citation": "Non-goal #13",
+            "salvage_path": null
+          },
+          {
+            "code": "SL107",
+            "rationale": "provider adjacency rules are defined by the selected replay profile; generic repair cannot know deployment provider semantics",
+            "demand_citation": "FR-038",
+            "salvage_path": "re-run 'sesslint check {path} --profile <id>' matching the deployment provider"
+          },
+          {
+            "code": "SL201",
+            "rationale": "checkpoint/history divergence requires runtime continuation semantics owned by the upstream runtime, which SessLint must not replace",
+            "demand_citation": "Non-goal #11",
+            "salvage_path": null
+          },
+          {
+            "code": "SL202",
+            "rationale": "accepted terminal output durability cannot be reconstructed; repair risks duplicate model execution or losing accepted evidence",
+            "demand_citation": "Non-goal #2",
+            "salvage_path": null
+          },
+          {
+            "code": "SL203",
+            "rationale": "external side-effect status cannot be determined from session data; abstention is mandatory under every repair policy",
+            "demand_citation": "FR-060",
+            "salvage_path": null
+          },
+          {
+            "code": "SL301",
+            "rationale": "unsupported format version must not be approximated by the nearest known schema version",
+            "demand_citation": "FR-023",
+            "salvage_path": "export the session via a supported adapter version or upgrade SessLint, then re-run 'sesslint check {path}'"
+          },
+          {
+            "code": "SL302",
+            "rationale": "unknown critical record may carry identity, parentage, pairing, continuation, or compaction semantics; discarding or rewriting it would require guessing",
+            "demand_citation": "FR-021",
+            "salvage_path": null
+          },
+          {
+            "code": "SL204",
+            "rationale": "usage counters are accounting evidence; correcting a divergent total would require knowing which side of the ledger is corrupt",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL205",
+            "rationale": "coverage claims cannot be repaired by guessing which span a summary truly covers; fabricating a pointer would invent lineage",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL206",
+            "rationale": "a durable-prefix violation is a vendor resume-contract failure; dropping the non-durable tail or synthesizing missing fields would edit evidence to match a contract the file never satisfied",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL207",
+            "rationale": "context pressure is advisory evidence against a declared window; truncating or dropping content to buy headroom would destroy the very context the operator needs to checkpoint",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL208",
+            "rationale": "snapshot divergence means two vendor-written claims disagree; choosing the authoritative one would edit evidence toward a contract the file never satisfied",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL303",
+            "rationale": "duplicated keys admit multiple incompatible resolutions; choosing the winning value would invent record semantics",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL304",
+            "rationale": "mid-file schema drift means two schema generations may coexist; normalizing one record's schema would invent which generation it belongs to",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL305",
+            "rationale": "a foreign-shape record is only provable against a cited replay vocabulary; rewriting it to the expected shape would discard provider-persisted fields and invent record semantics",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": "the vendor-documented manual path rewrites the offending field to the replay vocabulary's expected value after backup - SessLint performs no rewrite"
+          },
+          {
+            "code": "SL306",
+            "rationale": "unrecognized metadata is advisory; its semantics are not a basis for rewriting or discarding a vendor record",
+            "demand_citation": "FR-021",
+            "salvage_path": null
+          },
+          {
+            "code": "SL401",
+            "rationale": "a missing or ambiguous resume target means the real predecessor file is unknown; fabricating a link target would invent lineage",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": null
+          },
+          {
+            "code": "SL402",
+            "rationale": "session-index divergence is vendor metadata drift, not ledger corruption; rewriting, rebuilding, or deleting the vendor index would mutate agent-owned state SessLint must not touch",
+            "demand_citation": "Conservative policy MUST refuse",
+            "salvage_path": "the session file is intact and explicit-ID resume may still work; back up then remove the stale vendor index to force a vendor rebuild - SessLint performs no deletion or mutation"
+          }
+        ]
+      }
+    },
+    {
+      "id": "refusal_codes_sorted_membership",
+      "construct": {
+        "type": "refusal_codes_sorted"
+      },
+      "expected": {
+        "codes": [
+          "SL001",
+          "SL007",
+          "SL008",
+          "SL009",
+          "SL010",
+          "SL011",
+          "SL101",
+          "SL103",
+          "SL105",
+          "SL106",
+          "SL107",
+          "SL201",
+          "SL202",
+          "SL203",
+          "SL204",
+          "SL205",
+          "SL206",
+          "SL207",
+          "SL208",
+          "SL301",
+          "SL302",
+          "SL303",
+          "SL304",
+          "SL305",
+          "SL306",
+          "SL401",
+          "SL402"
+        ]
+      }
+    },
+    {
+      "id": "refusal_rationale_for_SL001",
+      "construct": {
+        "type": "refusal_rationale_for",
+        "code": "SL001"
+      },
+      "expected": {
+        "kind": "some",
+        "row": {
+          "code": "SL001",
+          "rationale": "malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content",
+          "demand_citation": "AC-004",
+          "salvage_path": "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' (recipe torn-record-excision; per-line malformed records only)"
+        }
+      }
+    },
+    {
+      "id": "refusal_rationale_for_SL101",
+      "construct": {
+        "type": "refusal_rationale_for",
+        "code": "SL101"
+      },
+      "expected": {
+        "kind": "some",
+        "row": {
+          "code": "SL101",
+          "rationale": "orphan result may be the sole evidence of a completed external action; conservative repair refuses to delete it or synthesize a matching call",
+          "demand_citation": "Conservative policy MUST refuse",
+          "salvage_path": "run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' (recipe orphan-result-drop)"
+        }
+      }
+    },
+    {
+      "id": "refusal_rationale_for_SL203",
+      "construct": {
+        "type": "refusal_rationale_for",
+        "code": "SL203"
+      },
+      "expected": {
+        "kind": "some",
+        "row": {
+          "code": "SL203",
+          "rationale": "external side-effect status cannot be determined from session data; abstention is mandatory under every repair policy",
+          "demand_citation": "FR-060",
+          "salvage_path": null
+        }
+      }
+    },
+    {
+      "id": "refusal_rationale_for_SL999",
+      "construct": {
+        "type": "refusal_rationale_for",
+        "code": "SL999"
+      },
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "id": "refusal_rationale_for_SL003",
+      "construct": {
+        "type": "refusal_rationale_for",
+        "code": "SL003"
+      },
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "id": "sl101_render_default_path",
+      "construct": {
+        "type": "render",
+        "code": "SL101",
+        "path": null
+      },
+      "expected": {
+        "text": "orphan result may be the sole evidence of a completed external action; conservative repair refuses to delete it or synthesize a matching call (DEMAND: Conservative policy MUST refuse); salvage path: run 'sesslint repair <file> --policy salvage --acknowledge-side-effects' (recipe orphan-result-drop)"
+      }
+    },
+    {
+      "id": "sl101_render_session_jsonl",
+      "construct": {
+        "type": "render",
+        "code": "SL101",
+        "path": "session.jsonl"
+      },
+      "expected": {
+        "text": "orphan result may be the sole evidence of a completed external action; conservative repair refuses to delete it or synthesize a matching call (DEMAND: Conservative policy MUST refuse); salvage path: run 'sesslint repair session.jsonl --policy salvage --acknowledge-side-effects' (recipe orphan-result-drop)"
+      }
+    },
+    {
+      "id": "sl203_render",
+      "construct": {
+        "type": "render",
+        "code": "SL203",
+        "path": null
+      },
+      "expected": {
+        "text": "external side-effect status cannot be determined from session data; abstention is mandatory under every repair policy (DEMAND: FR-060)"
+      }
+    },
+    {
+      "id": "try_new_unknown_code_sl999",
+      "construct": {
+        "type": "try_new_error",
+        "code": "SL999",
+        "rationale": "x",
+        "demand_citation": "AC-004",
+        "salvage_path": null
+      },
+      "expected": {
+        "message": "Refusal rationale references unknown code: 'SL999'"
+      }
+    },
+    {
+      "id": "try_new_empty_rationale",
+      "construct": {
+        "type": "try_new_error",
+        "code": "SL001",
+        "rationale": "   ",
+        "demand_citation": "AC-004",
+        "salvage_path": null
+      },
+      "expected": {
+        "message": "Refusal rationale for SL001 must be non-empty"
+      }
+    },
+    {
+      "id": "try_new_unrecognized_citation",
+      "construct": {
+        "type": "try_new_error",
+        "code": "SL001",
+        "rationale": "malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content",
+        "demand_citation": "some docs",
+        "salvage_path": null
+      },
+      "expected": {
+        "message": "Refusal citation for SL001 is not a recognized DEMAND anchor: 'some docs'"
+      }
+    },
+    {
+      "id": "try_new_empty_salvage_path",
+      "construct": {
+        "type": "try_new_error",
+        "code": "SL001",
+        "rationale": "malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content",
+        "demand_citation": "AC-004",
+        "salvage_path": "   "
+      },
+      "expected": {
+        "message": "Refusal salvage_path for SL001 must be non-empty or None"
+      }
+    }
+  ]
+}

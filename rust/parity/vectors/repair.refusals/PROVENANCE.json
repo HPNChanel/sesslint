@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.refusals parity (module __all__, registry rows, REFUSAL_CODES sorted membership, refusal_rationale_for, render, try_new errors).",
+  "generator": "rust/parity/vectors/repair.refusals/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "Citation digit runs: Python re \\d matches Unicode category Nd (e.g. U+0661); Rust accepts ASCII digits only \u2014 parity not required for those citations.",
+    "RefusalRationale with a non-str rationale: Python __post_init__ raises ValueError; Rust RefusalRationale::try_new takes &str \u2014 parity not required for that branch.",
+    "REFUSAL_CODES: Python frozenset iteration order is not a contract; vectors record sorted membership only \u2014 parity not required on iteration order.",
+    "refusal_rationale_for: Python returns Optional; invalid rows fail at import. Rust returns Result because a bad registered row must not become None \u2014 parity on that API shape is not required here."
+  ]
+}
