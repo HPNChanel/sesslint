@@ -568,6 +568,14 @@ pub enum MapLookup {
     Present(Payload),
 }
 
+/// Walk of every string key in a [`Payload`] map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapWalk {
+    NotAMap,
+    Borrowed,
+    Done,
+}
+
 /// JSON-like payload node.
 ///
 /// Containers are `Rc` so a cycle has one identity, matching Python `id()`.
@@ -719,6 +727,34 @@ impl Payload {
             Some(value) => MapLookup::Present(value),
             None => MapLookup::Absent,
         }
+    }
+
+    /// Visit each string key once. The last value wins. Order is first-seen.
+    /// A non-string key is skipped. [`MapWalk::Borrowed`] is a failed borrow,
+    /// not an empty map.
+    pub fn walk_string_entries(&self, mut visit: impl FnMut(&str, &Payload)) -> MapWalk {
+        let PayloadKind::Map(entries) = &*self.kind else {
+            return MapWalk::NotAMap;
+        };
+        let borrowed = match entries.try_borrow() {
+            Ok(borrowed) => borrowed,
+            Err(_) => return MapWalk::Borrowed,
+        };
+        let mut last: Vec<(&str, usize)> = Vec::new();
+        for (index, (key, _)) in borrowed.iter().enumerate() {
+            let Some(text) = key.as_str() else {
+                continue;
+            };
+            if let Some(slot) = last.iter_mut().find(|(name, _)| *name == text) {
+                slot.1 = index;
+            } else {
+                last.push((text, index));
+            }
+        }
+        for (text, index) in last {
+            visit(text, &borrowed[index].1);
+        }
+        MapWalk::Done
     }
 
     fn is_container(&self) -> bool {
@@ -2777,6 +2813,31 @@ mod tests {
         assert!(Payload::list(Vec::new()).is_list());
         assert!(Payload::tuple(Vec::new()).is_tuple());
         assert!(!Payload::string("x").is_map());
+    }
+
+    #[test]
+    fn walk_string_entries_keeps_the_last_value_in_first_seen_order() {
+        use super::MapWalk;
+
+        let payload = Payload::map(vec![
+            (Payload::string("alpha"), Payload::int(1)),
+            (Payload::int(7), Payload::int(9)),
+            (Payload::string("alpha"), Payload::int(4)),
+            (Payload::string("beta"), Payload::int(2)),
+        ]);
+        let mut seen = Vec::new();
+        let walk = payload.walk_string_entries(|key, value| {
+            seen.push((key.to_owned(), value.as_int()));
+        });
+        assert_eq!(walk, MapWalk::Done);
+        assert_eq!(
+            seen,
+            vec![("alpha".to_owned(), Some(4)), ("beta".to_owned(), Some(2)),]
+        );
+        assert_eq!(
+            Payload::list(Vec::new()).walk_string_entries(|_, _| {}),
+            MapWalk::NotAMap
+        );
     }
 
     #[test]
