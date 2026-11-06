@@ -1,0 +1,9 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.version",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "version_py_sha256": "e9ab7e2611701c733315e40b218b70f807463f1ad35f4310b05e23b548328c30",
+  "vector_count": 3,
+  "vectors_sha256": "12454e70d7d062f1a908889c1f7de054e4ae1f6962a32d028c8a07aee7aa6ef4",
+  "generator": "rust/parity/vectors/cli.version/generate"
+}
