@@ -1,0 +1,16 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.canonical",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "canonical_rs_sha256": "270270841371d0646ead0a3cb97dde7840f18c8d8aa6eac470072deb747cd7cb",
+  "vector_count": 12,
+  "vectors_sha256": "fd186786bcba05ed841b25111b5b5be039fd47acb2e699f2043be746b38e81c3",
+  "generator": "rust/parity/vectors/canonical/generate",
+  "known_parity_gaps": [
+    "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error because model cannot depend on codec or adapters; Python performs the real call \u2014 parity not required here.",
+    "get_session_schema_path and load_session_schema: Rust does not read schemas/ \u2014 parity not required here.",
+    "The text after the colon in a JSON syntax error and in a UTF-8 decode error: parity on detail tail is not required.",
+    "FileNotFoundError versus SchemaError for a missing file: parity on exception type is not required; a missing-file vector may compare message text only.",
+    "Unicode Nd timestamp digits, a non-str timestamp, an int outside i64, a non-string object key, frozenset iteration order, and a set used as a payload container: parity not required here."
+  ]
+}

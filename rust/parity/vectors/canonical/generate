@@ -1,0 +1,411 @@
+#!/usr/bin/env python3
+"""Generate sesslint.canonical parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import sys
+from pathlib import Path
+import tempfile
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CANONICAL_RS_SHA256 = (
+    "270270841371d0646ead0a3cb97dde7840f18c8d8aa6eac470072deb747cd7cb"
+)
+
+KNOWN_PARITY_GAPS = [
+    (
+        "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, "
+        "normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust "
+        "returns a typed unavailable error because model cannot depend on codec or adapters; "
+        "Python performs the real call — parity not required here."
+    ),
+    (
+        "get_session_schema_path and load_session_schema: Rust does not read schemas/ — parity "
+        "not required here."
+    ),
+    (
+        "The text after the colon in a JSON syntax error and in a UTF-8 decode error: parity on "
+        "detail tail is not required."
+    ),
+    (
+        "FileNotFoundError versus SchemaError for a missing file: parity on exception type is not "
+        "required; a missing-file vector may compare message text only."
+    ),
+    (
+        "Unicode Nd timestamp digits, a non-str timestamp, an int outside i64, a non-string "
+        "object key, frozenset iteration order, and a set used as a payload container: parity not "
+        "required here."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def verify_canonical_py_blob() -> None:
+    root = repo_root()
+    canonical_py = root / "src" / "sesslint" / "canonical.py"
+    raw = canonical_py.read_bytes()
+    header = b"blob " + str(len(raw)).encode() + b"\0"
+    blob = hashlib.sha1(header + raw).hexdigest()
+    expected = "0aacb8e5b76db3f52f3f8e14d2931ff36adfd1ed"
+    if blob != expected:
+        raise SystemExit(
+            f"src/sesslint/canonical.py git blob mismatch: expected {expected}, got {blob}"
+        )
+
+
+def verify_canonical_rs_sha256() -> None:
+    root = repo_root()
+    rs_path = root / "rust" / "crates" / "model" / "src" / "canonical.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != CANONICAL_RS_SHA256:
+        raise SystemExit(
+            "canonical.rs sha256 mismatch: "
+            f"expected {CANONICAL_RS_SHA256}, got {digest}"
+        )
+
+
+def load_canonical_module() -> Any:
+    verify_canonical_py_blob()
+    verify_canonical_rs_sha256()
+    root = repo_root()
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint import canonical  # noqa: WPS433
+
+    return canonical
+
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def run_vector(canonical: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "parse_session_header":
+        return session_header_to_value(canonical.parse_session_header(construct["value"]))
+    if kind == "parse_session_header_error":
+        try:
+            canonical.parse_session_header(construct["value"])
+        except Exception as exc:  # noqa: BLE001 — parity surface
+            return {"error": str(exc)}
+        raise AssertionError("expected parse_session_header to raise")
+    if kind == "parse_session_event":
+        seen = construct.get("seen_ids_before")
+        seen_set = set(seen) if seen is not None else None
+        return session_event_to_value(
+            canonical.parse_session_event(construct["value"], seen_ids=seen_set)
+        )
+    if kind == "parse_session_event_error":
+        seen = construct.get("seen_ids_before")
+        seen_set = set(seen) if seen is not None else None
+        try:
+            canonical.parse_session_event(construct["value"], seen_ids=seen_set)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        raise AssertionError("expected parse_session_event to raise")
+    if kind == "parse_session":
+        return session_to_value(canonical.parse_session(construct["value"]))
+    if kind == "parse_session_lines":
+        lines = construct["lines"]
+        return session_to_value(canonical.parse_session_lines(lines))
+    if kind == "load_session_file_bytes":
+        raw = base64.b64decode(construct["file_bytes_b64"])
+        with tempfile.NamedTemporaryFile(
+            suffix=".jsonl", delete=False, dir=None
+        ) as tmp:
+            path = Path(tmp.name)
+        try:
+            path.write_bytes(raw)
+            return session_to_value(canonical.load_session_file(path))
+        finally:
+            path.unlink(missing_ok=True)
+    if kind == "validate_rfc3339_direct":
+        ts = construct["ts"]
+        field = construct["field"]
+        try:
+            canonical._validate_rfc3339_utc(ts, field)
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def session_header_to_value(header: Any) -> dict[str, Any]:
+    return {
+        "schema_version": header.schema_version,
+        "session_id": header.session_id,
+        "created_at": header.created_at,
+        "title": header.title,
+        "metadata": dict(header.metadata),
+        "source": source_to_value(header.source),
+        "version": header.version,
+        "extra_fields": dict(header.extra_fields),
+    }
+
+
+def source_to_value(source: Any) -> Any:
+    if source is None:
+        return None
+    if isinstance(source, str):
+        return source
+    return dict(source)
+
+
+def session_event_to_value(event: Any) -> dict[str, Any]:
+    return {
+        "id": event.id,
+        "parent_id": event.parent_id,
+        "seq": event.seq,
+        "ts": event.ts,
+        "actor": event.actor,
+        "kind": event.kind,
+        "payload": dict(event.payload),
+        "content_hash": event.content_hash,
+        "correlation_id": event.correlation_id,
+        "branch_id": event.branch_id,
+        "interaction_id": event.interaction_id,
+        "agent_id": event.agent_id,
+        "execution_state": event.execution_state,
+        "source_line": event.source_line,
+        "source_record_hash": event.source_record_hash,
+        "original_id": event.original_id,
+        "source_adapter": event.source_adapter,
+        "source_location": event.source_location,
+        "side_effects": event.side_effects,
+        "extra_fields": dict(event.extra_fields),
+    }
+
+
+def session_to_value(session: Any) -> dict[str, Any]:
+    return {
+        "header": session_header_to_value(session.header),
+        "events": [session_event_to_value(ev) for ev in session.events],
+        "extra_fields": dict(session.extra_fields),
+    }
+
+
+def vector_specs(canonical: Any) -> list[dict[str, Any]]:
+    ts = "2020-01-01T00:00:00Z"
+    bad_cal_ts = "2021-02-29T00:00:00Z"
+    sid = "sess-parity-synthetic"
+    header_min = {
+        "schema_version": canonical.SCHEMA_VERSION,
+        "session_id": sid,
+        "created_at": ts,
+    }
+    event_min = {
+        "id": "evt-1",
+        "parent_id": None,
+        "seq": 0,
+        "ts": ts,
+        "actor": "user",
+        "kind": "message",
+        "payload": {},
+    }
+
+    specs: list[dict[str, Any]] = []
+
+    specs.append(
+        {
+            "id": "header_minimal_parsed_fields",
+            "construct": {"type": "parse_session_header", "value": header_min},
+        }
+    )
+
+    specs.append(
+        {
+            "id": "header_bad_schema_version_sl301_suffix",
+            "construct": {
+                "type": "parse_session_header_error",
+                "value": {
+                    "schema_version": "sesslint.session/v0",
+                    "session_id": sid,
+                    "created_at": ts,
+                },
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "event_minimal",
+            "construct": {"type": "parse_session_event", "value": event_min},
+        }
+    )
+
+    specs.append(
+        {
+            "id": "event_duplicate_id",
+            "construct": {
+                "type": "parse_session_event_error",
+                "value": event_min,
+                "seen_ids_before": ["evt-1"],
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "event_self_parent",
+            "construct": {
+                "type": "parse_session_event_error",
+                "value": {
+                    **event_min,
+                    "id": "evt-self",
+                    "parent_id": "evt-self",
+                },
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "event_bad_actor_sorted_expected_actors",
+            "construct": {
+                "type": "parse_session_event_error",
+                "value": {**event_min, "id": "evt-bad-actor", "actor": "nope"},
+            },
+        }
+    )
+
+    framed = {
+        "header": {
+            **header_min,
+            "experimental_h": "in-header-framed",
+        },
+        "experimental_s": "session-level-framed",
+        "events": [event_min],
+    }
+    specs.append(
+        {
+            "id": "session_framed_experimental_fields",
+            "construct": {"type": "parse_session", "value": framed},
+        }
+    )
+
+    flat = {
+        **header_min,
+        "experimental_h": "in-header-flat",
+        "events": [event_min],
+    }
+    specs.append(
+        {
+            "id": "session_flat_experimental_fields",
+            "construct": {"type": "parse_session", "value": flat},
+        }
+    )
+
+    jsonl_text = (
+        json.dumps(header_min, separators=(",", ":"), sort_keys=True)
+        + "\n\n"
+        + json.dumps(event_min, separators=(",", ":"), sort_keys=True)
+        + "\n"
+    )
+    specs.append(
+        {
+            "id": "parse_session_lines_blank_line_one_event",
+            "construct": {"type": "parse_session_lines", "lines": jsonl_text.split("\n")},
+        }
+    )
+
+    file_bytes = jsonl_text.encode("utf-8")
+    specs.append(
+        {
+            "id": "load_session_file_small_jsonl",
+            "construct": {"type": "load_session_file_bytes", "file_bytes_b64": b64(file_bytes)},
+        }
+    )
+
+    specs.append(
+        {
+            "id": "validate_rfc3339_utc_ok_leap_day",
+            "construct": {
+                "type": "validate_rfc3339_direct",
+                "ts": "2024-02-29T00:00:00Z",
+                "field": "created_at",
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "validate_rfc3339_utc_calendar_fail_original_ts_in_message",
+            "construct": {
+                "type": "validate_rfc3339_direct",
+                "ts": bad_cal_ts,
+                "field": "created_at",
+            },
+        }
+    )
+
+    return specs
+
+
+def main() -> int:
+    canonical = load_canonical_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs(canonical):
+        construct = spec["construct"]
+        expected = run_vector(canonical, construct)
+        vectors.append({"id": spec["id"], "construct": construct, "expected": expected})
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.canonical",
+        "python_commit": PYTHON_COMMIT,
+        "canonical_rs_sha256": CANONICAL_RS_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.canonical",
+        "python_commit": PYTHON_COMMIT,
+        "canonical_rs_sha256": CANONICAL_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/canonical/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.canonical parity (parse_session_header, parse_session_event, "
+            "parse_session, parse_session_lines, load_session_file, validate_rfc3339_utc)."
+        ),
+        "generator": "rust/parity/vectors/canonical/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
