@@ -1,0 +1,582 @@
+#!/usr/bin/env python3
+"""Fail-closed parity runner for one pinned Python sesslint (RX-P1.3a).
+
+Stdlib only. Scratch checkouts stay under rust/parity/run-work/ and are not
+committed. The ignore pattern recorded by this owned file is:
+
+rust/parity/run-work/
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+EXPECTED_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+# Scratch worktree. Do not commit this directory.
+SCRATCH_IGNORE = "rust/parity/run-work/"
+PREFERRED_FIXTURE = "fixtures/sessions/minimal-valid.jsonl"
+MAX_CAPTURE = 2_000_000
+SUMMARY_KEYS = (
+    "pin",
+    "fixture",
+    "python_exit",
+    "rust_exit",
+    "compare",
+    "python_stdout_sha256",
+    "python_stderr_sha256",
+)
+
+HERE = Path(__file__).resolve().parent
+PIN_PATH = HERE / "PIN"
+WORK = HERE / "run-work"
+
+
+def emit(fields: dict[str, str]) -> None:
+    for key in SUMMARY_KEYS:
+        sys.stdout.write(f"{key}={fields[key]}\n")
+    sys.stdout.flush()
+
+
+def refuse(reason: str, pin: str = "absent", fixture: str = "absent") -> int:
+    sys.stderr.write(f"reason={reason}\n")
+    emit(
+        {
+            "pin": pin,
+            "fixture": fixture,
+            "python_exit": "absent",
+            "rust_exit": "absent",
+            "compare": "abstain",
+            "python_stdout_sha256": "absent",
+            "python_stderr_sha256": "absent",
+        }
+    )
+    return 2
+
+
+def child_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def load_pin() -> str | None:
+    expected = f"{EXPECTED_PIN}\n".encode("ascii")
+    try:
+        if PIN_PATH.stat().st_size != len(expected):
+            return None
+        data = PIN_PATH.read_bytes()
+    except OSError:
+        return None
+    if data != expected:
+        return None
+    return EXPECTED_PIN
+
+
+def run_git(
+    args: list[str], cwd: Path, timeout: int = 120
+) -> subprocess.CompletedProcess[bytes] | None:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=child_env(),
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def git_head(cwd: Path) -> str | None:
+    proc = run_git(["rev-parse", "HEAD"], cwd)
+    if proc is None or proc.returncode != 0:
+        return None
+    text = proc.stdout.decode("ascii", "replace").strip()
+    if len(text) != 40:
+        return None
+    return text
+
+
+def repo_root() -> Path | None:
+    proc = run_git(["rev-parse", "--show-toplevel"], HERE)
+    if proc is None or proc.returncode != 0:
+        return None
+    text = proc.stdout.decode("utf-8", "replace").strip()
+    if not text:
+        return None
+    return Path(text)
+
+
+def ensure_worktree(repo: Path, pin: str) -> str | None:
+    """Return None when WORK is a checkout of pin. Never deletes a tree."""
+    if WORK.exists():
+        head = git_head(WORK)
+        if head is None:
+            return "worktree_invalid"
+        if head != pin:
+            return "worktree_pin_mismatch"
+        return None
+    probed = run_git(["cat-file", "-e", f"{pin}^{{commit}}"], repo)
+    if probed is None or probed.returncode != 0:
+        return "pin_unknown"
+    added = run_git(
+        ["-C", str(repo), "worktree", "add", "--detach", str(WORK), pin],
+        repo,
+        timeout=600,
+    )
+    if added is None or added.returncode != 0:
+        return "worktree_add_failed"
+    if git_head(WORK) != pin:
+        return "worktree_pin_mismatch"
+    return None
+
+
+def venv_python(venv: Path) -> Path:
+    if os.name == "nt":
+        return venv / "Scripts" / "python.exe"
+    return venv / "bin" / "python"
+
+
+def sesslint_bin(venv: Path) -> Path | None:
+    folder = venv / ("Scripts" if os.name == "nt" else "bin")
+    names = ("sesslint.exe", "sesslint") if os.name == "nt" else ("sesslint",)
+    for name in names:
+        path = folder / name
+        if path.is_file():
+            return path
+    return None
+
+
+def hatchling_site_packages() -> str | None:
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import pathlib, hatchling; "
+                "print(pathlib.Path(hatchling.__file__).resolve().parents[1])"
+            ),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    if probe.returncode != 0:
+        return None
+    text = probe.stdout.decode("utf-8", "replace").strip()
+    if not text or "\n" in text or "\r" in text:
+        return None
+    if not Path(text).is_dir():
+        return None
+    return text
+
+
+def assert_no_runtime_deps(work: Path) -> str | None:
+    path = work / "pyproject.toml"
+    try:
+        if path.stat().st_size > 1_000_000:
+            return "pyproject_unexpected"
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        return "pyproject_unreadable"
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return "pyproject_unexpected"
+    deps = project.get("dependencies", [])
+    if deps == []:
+        return None
+    return "runtime_deps_present"
+
+
+def metadata_declares_deps(venv: Path, work: Path) -> bool:
+    candidates: list[Path] = []
+    site = venv / "Lib" / "site-packages"
+    if not site.is_dir():
+        lib = venv / "lib"
+        site = next(lib.glob("python*/site-packages"), lib) if lib.is_dir() else site
+    if site.is_dir():
+        candidates.extend(site.glob("sesslint*.dist-info/METADATA"))
+        candidates.extend(site.glob("sesslint*.dist-info/requires.txt"))
+    candidates.extend(work.glob("*.egg-info/requires.txt"))
+    candidates.extend(work.glob("*.egg-info/PKG-INFO"))
+    candidates.extend(work.glob("src/*.egg-info/requires.txt"))
+    candidates.extend(work.glob("src/*.egg-info/PKG-INFO"))
+    for path in candidates:
+        try:
+            if path.stat().st_size > 1_000_000:
+                return True
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return True
+        in_extra = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if path.name == "requires.txt" and stripped.startswith("["):
+                in_extra = True
+                continue
+            if stripped.startswith("Requires-Dist:"):
+                marker = stripped.partition(";")[2]
+                if "extra" in marker:
+                    continue
+                return True
+            if path.name == "requires.txt" and stripped and not stripped.startswith("#") and not in_extra:
+                return True
+    return False
+
+
+@contextmanager
+def windows_build_site(venv: Path, site: str) -> Iterator[None]:
+    """Expose the base hatchling install only while pip builds, then restore."""
+    pth = next(venv.glob("python*._pth"), None)
+    if pth is None:
+        yield
+        return
+    original = pth.read_bytes()
+    lines = original.decode("utf-8").splitlines()
+    if site not in lines:
+        lines.append(site)
+        pth.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+    try:
+        yield
+    finally:
+        pth.write_bytes(original)
+
+
+def pip_editable(
+    py: Path, work: Path, venv: Path, site: str | None, *, isolate: bool
+) -> str | None:
+    env = child_env()
+    command = [
+        str(py),
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-deps",
+    ]
+    if not isolate:
+        command.append("--no-build-isolation")
+        if site and os.name != "nt":
+            env["PYTHONPATH"] = site
+    command.extend(["-e", "."])
+    try:
+        if not isolate and site and os.name == "nt":
+            with windows_build_site(venv, site):
+                proc = subprocess.run(
+                    command,
+                    cwd=work,
+                    env=env,
+                    capture_output=True,
+                    check=False,
+                    timeout=300,
+                )
+        else:
+            proc = subprocess.run(
+                command,
+                cwd=work,
+                env=env,
+                capture_output=True,
+                check=False,
+                timeout=300,
+            )
+    except (OSError, subprocess.TimeoutExpired):
+        return "pip_install_failed"
+    if proc.returncode != 0:
+        target = venv / ("pip-isolated-stderr.txt" if isolate else "pip-local-stderr.txt")
+        try:
+            target.write_bytes(proc.stderr[:4000])
+        except OSError:
+            return "pip_install_failed"
+        return "pip_install_failed"
+    return None
+
+
+def install_editable(py: Path, work: Path, venv: Path) -> str | None:
+    reason = assert_no_runtime_deps(work)
+    if reason is not None:
+        return reason
+    site = hatchling_site_packages()
+    if site is not None:
+        local = pip_editable(py, work, venv, site, isolate=False)
+        if local is None:
+            return None
+    return pip_editable(py, work, venv, None, isolate=True)
+
+
+def python_ok(py: Path, code: str) -> bool:
+    try:
+        proc = subprocess.run(
+            [str(py), "-c", code],
+            cwd=WORK,
+            env=child_env(),
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+def ensure_venv(work: Path) -> str | None:
+    venv = work / ".venv"
+    py = venv_python(venv)
+    if not py.is_file():
+        try:
+            created = subprocess.run(
+                [sys.executable, "-m", "venv", str(venv)],
+                capture_output=True,
+                check=False,
+                timeout=180,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return "venv_failed"
+        if created.returncode != 0 or not py.is_file():
+            return "venv_failed"
+    if sesslint_bin(venv) is None:
+        installed = install_editable(py, work, venv)
+        if installed is not None:
+            return installed
+    if sesslint_bin(venv) is None:
+        return "sesslint_missing"
+    if metadata_declares_deps(venv, work):
+        return "runtime_deps_present"
+    if python_ok(py, "import hatchling"):
+        return "venv_not_isolated"
+    if not python_ok(py, "import sesslint.cli"):
+        return "sesslint_import_failed"
+    return None
+
+
+def provenance_is_synthetic(path: Path) -> bool:
+    try:
+        if path.stat().st_size > 65_536:
+            return False
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and data.get("contains_real_data") is False
+
+
+def normalize_fixture(value: str) -> str | None:
+    raw = value.replace("\\", "/")
+    if raw.startswith("/") or (len(raw) >= 2 and raw[1] == ":"):
+        return None
+    parts = [part for part in raw.split("/") if part not in ("", ".")]
+    if not parts or any(part == ".." for part in parts) or parts[0] != "fixtures":
+        return None
+    return "/".join(parts)
+
+
+def fixture_allowed(work: Path, rel: str) -> bool:
+    normalized = normalize_fixture(rel)
+    if normalized is None:
+        return False
+    full = (work / Path(normalized)).resolve()
+    root = (work / "fixtures").resolve()
+    if not full.is_file() or root not in full.parents:
+        return False
+    cursor = full.parent
+    while True:
+        provenance = cursor / "PROVENANCE.json"
+        if provenance.is_file():
+            return provenance_is_synthetic(provenance)
+        if cursor.resolve() == root:
+            return False
+        if cursor.parent == cursor:
+            return False
+        cursor = cursor.parent
+
+
+def choose_fixture(work: Path) -> str | None:
+    if fixture_allowed(work, PREFERRED_FIXTURE):
+        return PREFERRED_FIXTURE
+    found: list[str] = []
+    fixtures = work / "fixtures"
+    if not fixtures.is_dir():
+        return None
+    for provenance in fixtures.rglob("PROVENANCE.json"):
+        if not provenance_is_synthetic(provenance):
+            continue
+        for path in provenance.parent.rglob("*.jsonl"):
+            if not path.is_file():
+                continue
+            rel = path.resolve().relative_to(work.resolve()).as_posix()
+            if fixture_allowed(work, rel):
+                found.append(rel)
+    if not found:
+        return None
+    return sorted(set(found))[0]
+
+
+def content_flag(argv: list[str]) -> bool:
+    for token in argv:
+        if token.split("=", 1)[0] == "--include-content":
+            return True
+    return False
+
+
+def resolve_invocation(
+    work: Path, fixture_arg: str | None, rest: list[str]
+) -> tuple[str, list[str]] | None:
+    if fixture_arg is not None:
+        fixture = normalize_fixture(fixture_arg)
+        if fixture is None or not fixture_allowed(work, fixture):
+            return None
+        argv = rest if rest else ["check", fixture]
+    elif rest:
+        fixture = next((item for item in rest if fixture_allowed(work, item)), None)
+        if fixture is None:
+            return None
+        argv = rest
+    else:
+        fixture = choose_fixture(work)
+        if fixture is None:
+            return None
+        argv = ["check", fixture]
+    normalized = normalize_fixture(fixture) or fixture
+    if normalized not in argv and fixture not in argv:
+        return None
+    if content_flag(argv):
+        return None
+    return normalized, argv
+
+
+def capture(command: list[str], cwd: Path) -> tuple[int, bytes, bytes] | None:
+    try:
+        proc = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=child_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError:
+        return None
+    try:
+        out, err = proc.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        return None
+    if proc.returncode is None or len(out) > MAX_CAPTURE or len(err) > MAX_CAPTURE:
+        return None
+    return proc.returncode, out, err
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def resolve_rust_bin(value: str) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="run", add_help=False)
+    parser.add_argument("--rust-bin", default=None)
+    parser.add_argument("--fixture", default=None)
+    parser.add_argument("rest", nargs=argparse.REMAINDER)
+    return parser.parse_args(argv)
+
+
+def scratch_path_ok(repo: Path) -> bool:
+    try:
+        rel = WORK.resolve().relative_to(repo.resolve()).as_posix()
+    except ValueError:
+        return False
+    return rel == SCRATCH_IGNORE.rstrip("/")
+
+
+def main(argv: list[str]) -> int:
+    if sys.version_info < (3, 11):
+        return refuse("python_too_old")
+    pin = load_pin()
+    if pin is None:
+        return refuse("pin_mismatch", pin="refused")
+    repo = repo_root()
+    if repo is None or not scratch_path_ok(repo):
+        return refuse("repo_mismatch", pin=pin)
+    args = parse_args(argv)
+    work_reason = ensure_worktree(repo, pin)
+    if work_reason is not None:
+        return refuse(work_reason, pin=pin)
+    venv_reason = ensure_venv(WORK)
+    if venv_reason is not None:
+        return refuse(venv_reason, pin=pin)
+    if git_head(WORK) != pin:
+        return refuse("worktree_pin_mismatch", pin=pin)
+    resolved = resolve_invocation(WORK, args.fixture, list(args.rest))
+    if resolved is None:
+        return refuse("fixture_refused", pin=pin)
+    fixture, command = resolved
+    exe = sesslint_bin(WORK / ".venv")
+    if exe is None:
+        return refuse("sesslint_missing", pin=pin, fixture=fixture)
+    captured = capture([str(exe), *command], WORK)
+    if captured is None:
+        return refuse("python_run_failed", pin=pin, fixture=fixture)
+    python_code, python_out, python_err = captured
+    rust_exit = "absent"
+    rust_out_hash = ""
+    rust_err_hash = ""
+    if args.rust_bin is not None:
+        rust_path = resolve_rust_bin(args.rust_bin)
+        if not rust_path.is_file():
+            sys.stderr.write("reason=rust_bin_missing\n")
+            emit(
+                {
+                    "pin": pin,
+                    "fixture": fixture,
+                    "python_exit": str(python_code),
+                    "rust_exit": "absent",
+                    "compare": "abstain",
+                    "python_stdout_sha256": sha256(python_out),
+                    "python_stderr_sha256": sha256(python_err),
+                }
+            )
+            return 2
+        rust_captured = capture([str(rust_path), *command], WORK)
+        if rust_captured is None:
+            return refuse("rust_run_failed", pin=pin, fixture=fixture)
+        rust_code, rust_out, rust_err = rust_captured
+        rust_exit = str(rust_code)
+        rust_out_hash = sha256(rust_out)
+        rust_err_hash = sha256(rust_err)
+        del rust_out, rust_err
+    fields = {
+        "pin": pin,
+        "fixture": fixture,
+        "python_exit": str(python_code),
+        "rust_exit": rust_exit,
+        "compare": "abstain",
+        "python_stdout_sha256": sha256(python_out),
+        "python_stderr_sha256": sha256(python_err),
+    }
+    del python_out, python_err
+    emit(fields)
+    if rust_out_hash:
+        sys.stdout.write(f"rust_stdout_sha256={rust_out_hash}\n")
+        sys.stdout.write(f"rust_stderr_sha256={rust_err_hash}\n")
+        sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
