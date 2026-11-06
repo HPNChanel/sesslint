@@ -8,7 +8,7 @@ pub use error::CliError;
 
 pub mod context;
 pub mod errors;
-pub mod json_errors {}
+pub mod json_errors;
 pub mod options {}
 pub mod output;
 pub mod progress;
