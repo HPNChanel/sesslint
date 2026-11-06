@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.writers module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+WRITERS_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CHECKS_WRITERS_RS_SHA256 = (
+    "b5250a9a6fc864986ddb43bc57a3ee2f7d304041cb8e7d9989c3bd2c1c4eecf5"
+)
+MODULE = "sesslint.checks.writers"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "An interleave calls make_finding with the fingerprint omitted; Rust returns "
+    "FINGERPRINT_CODEC_UNAVAILABLE; Python emits one SL010 finding.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_writers_py_blob() -> None:
+    pin = git_show_blob(f"{WRITERS_PY_PIN}:src/sesslint/checks/writers.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/writers.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/writers.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_writers_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "writers.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != CHECKS_WRITERS_RS_SHA256:
+        raise SystemExit(
+            "checks/src/writers.rs sha256 mismatch: "
+            f"expected {CHECKS_WRITERS_RS_SHA256}, got {digest}"
+        )
+
+
+def load_writers_module() -> types.ModuleType:
+    verify_writers_py_blob()
+    verify_writers_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{WRITERS_PY_PIN}:src/sesslint/checks/writers.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_writers.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_writers_parity",
+            tmp_path,
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned writers.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    *,
+    source_line: int | None,
+    extra_fields: dict[str, Any] | None = None,
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind="message",
+        payload={},
+        correlation_id=None,
+        branch_id=None,
+        source_line=source_line,
+        extra_fields=dict(extra_fields) if extra_fields else {},
+    )
+
+
+def writer_extra(instance: str | None, version: str | None) -> dict[str, Any]:
+    inner: dict[str, Any] = {}
+    if instance is not None:
+        inner["instance"] = instance
+    if version is not None:
+        inner["version"] = version
+    return {"writer": inner}
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "parent_id": ev.parent_id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "correlation_id": ev.correlation_id,
+        "branch_id": ev.branch_id,
+        "source_line": ev.source_line,
+        "payload": dict(ev.payload) if ev.payload else {},
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_writer_events(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": [encode_event_session(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def assert_silent(mod: Any, events: list[Any], *, case_id: str) -> None:
+    out = mod.check_writers(events, source_path="synth.jsonl", context=None)
+    if out:
+        raise SystemExit(
+            f"vector {case_id!r}: expected silent check_writers; got {len(out)} findings"
+        )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    marker_hash = mod._marker_hash
+    hi = marker_hash("i:alpha-synth")
+    hv = marker_hash("v:beta-synth")
+    if hi != "c6aff657":
+        raise SystemExit(f"marker_hash i:alpha-synth: expected c6aff657, got {hi!r}")
+    if hv != "de823d83":
+        raise SystemExit(f"marker_hash v:beta-synth: expected de823d83, got {hv!r}")
+
+    expected_all = list(mod.__all__)
+    if expected_all != ["check_writers"]:
+        raise SystemExit(f"unexpected __all__: {expected_all!r}")
+
+    out: list[dict[str, Any]] = []
+
+    # 1) empty input
+    assert_silent(mod, [], case_id="empty_input_silent")
+    out.append(
+        {
+            "id": "empty_input_silent",
+            "construct": {
+                "type": "writer_check_events",
+                "source_path": "synth.jsonl",
+                "events": [],
+            },
+            "expected": {"check_writers_len": 0},
+        }
+    )
+
+    # 2) three events, no writer extra, lines 1–3
+    no_writer = [
+        session_event("e-nw-0", 0, source_line=1, extra_fields={}),
+        session_event("e-nw-1", 1, source_line=2, extra_fields={}),
+        session_event("e-nw-2", 2, source_line=3, extra_fields={}),
+    ]
+    assert_silent(mod, no_writer, case_id="three_events_no_writer_extra_silent")
+    out.append(
+        {
+            "id": "three_events_no_writer_extra_silent",
+            "construct": encode_writer_events(no_writer),
+            "expected": {"check_writers_len": 0},
+        }
+    )
+
+    # 3) instance alpha-synth on lines 1, 2, 3
+    triple_a = [
+        session_event(
+            "e-tr-0",
+            0,
+            source_line=1,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+        session_event(
+            "e-tr-1",
+            1,
+            source_line=2,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+        session_event(
+            "e-tr-2",
+            2,
+            source_line=3,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+    ]
+    assert_silent(mod, triple_a, case_id="triple_instance_alpha_synth_lines_123_silent")
+    out.append(
+        {
+            "id": "triple_instance_alpha_synth_lines_123_silent",
+            "construct": encode_writer_events(triple_a),
+            "expected": {"check_writers_len": 0},
+        }
+    )
+
+    # 4) line1 instance alpha, line2–3 version beta-synth (ordered upgrade)
+    alpha_then_beta = [
+        session_event(
+            "e-ab-0",
+            0,
+            source_line=1,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+        session_event(
+            "e-ab-1",
+            1,
+            source_line=2,
+            extra_fields=writer_extra(None, "beta-synth"),
+        ),
+        session_event(
+            "e-ab-2",
+            2,
+            source_line=3,
+            extra_fields=writer_extra(None, "beta-synth"),
+        ),
+    ]
+    assert_silent(mod, alpha_then_beta, case_id="instance_alpha_versions_beta_ordered_silent")
+    out.append(
+        {
+            "id": "instance_alpha_versions_beta_ordered_silent",
+            "construct": encode_writer_events(alpha_then_beta),
+            "expected": {"check_writers_len": 0},
+        }
+    )
+
+    # 5) instance alpha, version beta, instance gamma — three distinct markers, ordered
+    abg = [
+        session_event(
+            "e-abg-0",
+            0,
+            source_line=1,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+        session_event(
+            "e-abg-1",
+            1,
+            source_line=2,
+            extra_fields=writer_extra(None, "beta-synth"),
+        ),
+        session_event(
+            "e-abg-2",
+            2,
+            source_line=3,
+            extra_fields=writer_extra("gamma-synth", None),
+        ),
+    ]
+    assert_silent(
+        mod,
+        abg,
+        case_id="instance_alpha_version_beta_instance_gamma_ordered_silent",
+    )
+    out.append(
+        {
+            "id": "instance_alpha_version_beta_instance_gamma_ordered_silent",
+            "construct": encode_writer_events(abg),
+            "expected": {"check_writers_len": 0},
+        }
+    )
+
+    # 6) two events on line 1 (same marker, second deduped), then version on line 2
+    dup_line = [
+        session_event(
+            "e-d1-0",
+            0,
+            source_line=1,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+        session_event(
+            "e-d1-1",
+            1,
+            source_line=1,
+            extra_fields=writer_extra("alpha-synth", None),
+        ),
+        session_event(
+            "e-d1-2",
+            2,
+            source_line=2,
+            extra_fields=writer_extra(None, "beta-synth"),
+        ),
+    ]
+    assert_silent(mod, dup_line, case_id="two_same_line_instance_then_version_next_line_silent")
+    out.append(
+        {
+            "id": "two_same_line_instance_then_version_next_line_silent",
+            "construct": encode_writer_events(dup_line),
+            "expected": {"check_writers_len": 0},
+        }
+    )
+
+    # 7) constants + marker hashes (re-uses empty-input silence)
+    assert_silent(mod, [], case_id="constants_marker_hashes_silent")
+    out.append(
+        {
+            "id": "constants_marker_hashes_silent",
+            "construct": {
+                "type": "writer_check_events",
+                "source_path": "synth.jsonl",
+                "events": [],
+            },
+            "expected": {
+                "check_writers_len": 0,
+                "marker_hash_i_alpha_synth": "c6aff657",
+                "marker_hash_v_beta_synth": "de823d83",
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_writers_module()
+    out_dir = Path(__file__).resolve().parent
+
+    expected_all = list(mod.__all__)
+    if expected_all != ["check_writers"]:
+        raise SystemExit(f"writers __all__ mismatch: {expected_all!r}")
+
+    vectors = vectors_from_module(mod)
+
+    for spec in vectors:
+        cid = spec["id"]
+        ex = spec["expected"]
+        if "check_writers_len" in ex and ex["check_writers_len"] != 0:
+            raise SystemExit(f"vector {cid!r}: check_writers_len must be 0 for silent vectors")
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_writers_rs_sha256": CHECKS_WRITERS_RS_SHA256,
+        "python_all": expected_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_writers_rs_sha256": CHECKS_WRITERS_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.writers/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.writers parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.writers/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
