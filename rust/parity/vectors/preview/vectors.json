@@ -1,0 +1,626 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.preview",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "preview_py_sha256": "13f05663816b930c1df1d6297740168545b9b702fd3e2abdf67f25df1a54f5a9",
+  "known_parity_gaps": [
+    "repair_preview: Rust returns EvidenceError::Unsupported; Python calls sesslint.batch._plan_detail and sesslint.report.minimize_path.",
+    "get_preview_schema_path: Rust returns EvidenceError::Unsupported; Python calls sesslint._resources.schema_path.",
+    "load_preview_schema: Rust returns EvidenceError::Unsupported; Python reads schemas/sesslint.preview.v1.json."
+  ],
+  "vectors": [
+    {
+      "id": "preview_version_constant",
+      "construct": {
+        "type": "PREVIEW_VERSION"
+      },
+      "expected": {
+        "value": "sesslint.preview/v1"
+      }
+    },
+    {
+      "id": "recipe_actions_declaration_order",
+      "construct": {
+        "type": "RECIPE_ACTIONS"
+      },
+      "expected": {
+        "names": [
+          "terminal-suffix-discard",
+          "torn-terminal-record-discard",
+          "torn-compaction-project",
+          "side-effect-unknown-truncate",
+          "identical-duplicate-collapse",
+          "duplicate-projection-removal",
+          "proven-unique-parent-restore",
+          "compaction-projection-reunion",
+          "orphan-result-drop",
+          "torn-record-excision",
+          "unresolvable-branch-amputate",
+          "identical-duplicate-drop",
+          "seq-renumber"
+        ]
+      }
+    },
+    {
+      "id": "unknown_recipe_action_drop",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "brand-new-recipe",
+            "target_finding_fp": "fp-synth-unknown",
+            "target_index": null,
+            "seq": 0
+          }
+        ],
+        "findings": [],
+        "events": []
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "drop",
+            "reason_code": "SL000",
+            "recipe": "brand-new-recipe",
+            "seq": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "bounded_id_none_and_empty",
+      "construct": {
+        "type": "bounded_id",
+        "values": [
+          null,
+          ""
+        ]
+      },
+      "expected": {
+        "results": [
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "id": "bounded_id_non_string_absent",
+      "construct": {
+        "type": "bounded_id",
+        "values": [
+          0,
+          1.5,
+          [],
+          {}
+        ]
+      },
+      "expected": {
+        "results": [
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "id": "bounded_id_cap_eighty_scalars",
+      "construct": {
+        "type": "bounded_id",
+        "values": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        ]
+      },
+      "expected": {
+        "results": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        ]
+      }
+    },
+    {
+      "id": "bounded_id_known_event",
+      "construct": {
+        "type": "bounded_id",
+        "values": [
+          "ev-synth-01"
+        ]
+      },
+      "expected": {
+        "results": [
+          "ev-synth-01"
+        ]
+      }
+    },
+    {
+      "id": "deltas_happy_path_maps_recipe_event_and_line",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "identical-duplicate-collapse",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": 0,
+            "seq": 0
+          },
+          {
+            "recipe": "seq-renumber",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": 0,
+            "seq": 1
+          }
+        ],
+        "findings": [
+          {
+            "fingerprint": "fp-synth-aaaa",
+            "code": "SL003",
+            "line": 4,
+            "record_id": "rec-synth-01"
+          }
+        ],
+        "events": [
+          {
+            "id": "ev-synth-01",
+            "kind": "message"
+          }
+        ]
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "dedupe",
+            "reason_code": "SL003",
+            "recipe": "identical-duplicate-collapse",
+            "event_id": "ev-synth-01",
+            "kind": "message",
+            "source_line": 4,
+            "seq": 0
+          },
+          {
+            "action": "normalize",
+            "reason_code": "SL003",
+            "recipe": "seq-renumber",
+            "event_id": "ev-synth-01",
+            "kind": "message",
+            "source_line": 4,
+            "seq": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing_finding_uses_sl000",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "missing-fp",
+            "target_index": null,
+            "seq": 0
+          }
+        ],
+        "findings": [],
+        "events": []
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "drop",
+            "reason_code": "SL000",
+            "recipe": "orphan-result-drop",
+            "seq": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate_fingerprint_last_finding_wins",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": null,
+            "seq": 0
+          }
+        ],
+        "findings": [
+          {
+            "fingerprint": "fp-synth-aaaa",
+            "code": "SL001",
+            "line": 1
+          },
+          {
+            "fingerprint": "fp-synth-aaaa",
+            "code": "SL003",
+            "line": 9
+          }
+        ],
+        "events": []
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "drop",
+            "reason_code": "SL003",
+            "recipe": "orphan-result-drop",
+            "source_line": 9,
+            "seq": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "source_line_requires_int_at_least_one",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-a",
+            "target_index": null,
+            "seq": 0
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-b",
+            "target_index": null,
+            "seq": 1
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-c",
+            "target_index": null,
+            "seq": 2
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-d",
+            "target_index": null,
+            "seq": 3
+          }
+        ],
+        "findings": [
+          {
+            "fingerprint": "fp-a",
+            "code": "SL001",
+            "line": null
+          },
+          {
+            "fingerprint": "fp-b",
+            "code": "SL001",
+            "line": 0
+          },
+          {
+            "fingerprint": "fp-c",
+            "code": "SL001",
+            "line": -3
+          },
+          {
+            "fingerprint": "fp-d",
+            "code": "SL001",
+            "line": 2
+          }
+        ],
+        "events": []
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "drop",
+            "reason_code": "SL001",
+            "recipe": "orphan-result-drop",
+            "seq": 0
+          },
+          {
+            "action": "drop",
+            "reason_code": "SL001",
+            "recipe": "orphan-result-drop",
+            "seq": 1
+          },
+          {
+            "action": "drop",
+            "reason_code": "SL001",
+            "recipe": "orphan-result-drop",
+            "seq": 2
+          },
+          {
+            "action": "drop",
+            "reason_code": "SL001",
+            "recipe": "orphan-result-drop",
+            "source_line": 2,
+            "seq": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "event_index_requires_int_inside_slice",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": null,
+            "seq": 0
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": -1,
+            "seq": 1
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": 1,
+            "seq": 2
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": 0,
+            "seq": 3
+          }
+        ],
+        "findings": [
+          {
+            "fingerprint": "fp-synth-aaaa",
+            "code": "SL003",
+            "line": 1
+          }
+        ],
+        "events": [
+          {
+            "id": "ev-synth-01",
+            "kind": "message"
+          }
+        ]
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "drop",
+            "reason_code": "SL003",
+            "recipe": "orphan-result-drop",
+            "source_line": 1,
+            "seq": 0
+          },
+          {
+            "action": "drop",
+            "reason_code": "SL003",
+            "recipe": "orphan-result-drop",
+            "source_line": 1,
+            "seq": 1
+          },
+          {
+            "action": "drop",
+            "reason_code": "SL003",
+            "recipe": "orphan-result-drop",
+            "source_line": 1,
+            "seq": 2
+          },
+          {
+            "action": "drop",
+            "reason_code": "SL003",
+            "recipe": "orphan-result-drop",
+            "event_id": "ev-synth-01",
+            "kind": "message",
+            "source_line": 1,
+            "seq": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "event_id_falls_back_to_record_id",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": 0,
+            "seq": 0
+          }
+        ],
+        "findings": [
+          {
+            "fingerprint": "fp-synth-aaaa",
+            "code": "SL003",
+            "line": 1,
+            "record_id": "rec-synth-01"
+          }
+        ],
+        "events": [
+          {
+            "id": "",
+            "kind": "message"
+          }
+        ]
+      },
+      "expected": {
+        "deltas": [
+          {
+            "action": "drop",
+            "reason_code": "SL003",
+            "recipe": "orphan-result-drop",
+            "event_id": "rec-synth-01",
+            "kind": "message",
+            "source_line": 1,
+            "seq": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sort_is_seq_then_action_then_source_line",
+      "construct": {
+        "type": "deltas_for_plan",
+        "steps": [
+          {
+            "recipe": "seq-renumber",
+            "target_finding_fp": "fp-n",
+            "target_index": null,
+            "seq": 1
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-high",
+            "target_index": null,
+            "seq": 1
+          },
+          {
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp-low",
+            "target_index": null,
+            "seq": 1
+          },
+          {
+            "recipe": "identical-duplicate-collapse",
+            "target_finding_fp": "fp-synth-aaaa",
+            "target_index": null,
+            "seq": 0
+          }
+        ],
+        "findings": [
+          {
+            "fingerprint": "fp-n",
+            "code": "SL001",
+            "line": null
+          },
+          {
+            "fingerprint": "fp-high",
+            "code": "SL001",
+            "line": 9
+          },
+          {
+            "fingerprint": "fp-low",
+            "code": "SL001",
+            "line": 3
+          },
+          {
+            "fingerprint": "fp-synth-aaaa",
+            "code": "SL003",
+            "line": null
+          }
+        ],
+        "events": []
+      },
+      "expected": {
+        "sort_keys": [
+          [
+            "dedupe",
+            0,
+            0
+          ],
+          [
+            "drop",
+            1,
+            3
+          ],
+          [
+            "drop",
+            1,
+            9
+          ],
+          [
+            "normalize",
+            1,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "id": "delta_to_dict_omits_seq_and_absent_optionals",
+      "construct": {
+        "type": "PreviewDelta_to_dict",
+        "variant": "sparse_and_full"
+      },
+      "expected": {
+        "sparse_keys": [
+          "action",
+          "reason_code",
+          "recipe"
+        ],
+        "full_keys": [
+          "action",
+          "reason_code",
+          "recipe",
+          "event_id",
+          "kind",
+          "source_line"
+        ]
+      }
+    },
+    {
+      "id": "blocked_to_dict_key_order",
+      "construct": {
+        "type": "PreviewBlocked_to_dict"
+      },
+      "expected": {
+        "keys": [
+          "code",
+          "finding_fp",
+          "reason"
+        ]
+      }
+    },
+    {
+      "id": "counts_first_seen_after_sort_not_alphabetical",
+      "construct": {
+        "type": "PreviewDoc_counts",
+        "steps": [
+          "normalize",
+          "drop"
+        ]
+      },
+      "expected": {
+        "count_keys": [
+          "normalize",
+          "drop"
+        ]
+      }
+    },
+    {
+      "id": "preview_doc_to_json_indent_sort_keys_ensure_ascii",
+      "construct": {
+        "type": "PreviewDoc_to_json"
+      },
+      "expected": {
+        "json": "{\n  \"blocked\": [\n    {\n      \"code\": \"SL203\",\n      \"finding_fp\": \"fp-synth-aaaa\",\n      \"reason\": \"caf\\u00e9\"\n    }\n  ],\n  \"counts\": {\n    \"drop\": 1\n  },\n  \"plan_fingerprint\": \"plan-fp-synth\",\n  \"policy\": \"conservative\",\n  \"schema\": \"sesslint.preview/v1\",\n  \"source\": \"synthetic-preview.jsonl\",\n  \"steps\": [\n    {\n      \"action\": \"drop\",\n      \"event_id\": \"ev-synth-01\",\n      \"kind\": \"message\",\n      \"reason_code\": \"SL000\",\n      \"recipe\": \"brand-new-recipe\",\n      \"source_line\": 3\n    }\n  ]\n}",
+        "refused": true
+      }
+    },
+    {
+      "id": "render_human_uses_dashes_for_missing_fields",
+      "construct": {
+        "type": "PreviewDoc_render_human"
+      },
+      "expected": {
+        "empty": "Preview: synthetic-preview.jsonl\n  plan fingerprint: plan-fp-synth  policy: conservative\n  no changes planned",
+        "sparse": "Preview: synthetic-preview.jsonl\n  plan fingerprint: plan-fp-synth  policy: conservative\n  steps (1):\n    drop: - (-, line -) [SL000]\n  blocked (1):\n    [SL203] synthetic-refuse",
+        "empty_refused": false,
+        "sparse_refused": true
+      }
+    },
+    {
+      "id": "deltas_do_not_copy_payload_fields",
+      "construct": {
+        "type": "PreviewDoc_payload_absent"
+      },
+      "expected": {
+        "json": "{\n  \"blocked\": [],\n  \"counts\": {\n    \"dedupe\": 1\n  },\n  \"plan_fingerprint\": \"plan-fp-synth\",\n  \"policy\": \"conservative\",\n  \"schema\": \"sesslint.preview/v1\",\n  \"source\": \"synthetic-preview.jsonl\",\n  \"steps\": [\n    {\n      \"action\": \"dedupe\",\n      \"event_id\": \"ev-synth-01\",\n      \"kind\": \"message\",\n      \"reason_code\": \"SL003\",\n      \"recipe\": \"identical-duplicate-collapse\",\n      \"source_line\": 1\n    }\n  ]\n}",
+        "contains_payload": false,
+        "contains_content": false
+      }
+    }
+  ]
+}

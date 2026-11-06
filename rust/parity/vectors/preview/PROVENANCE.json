@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.preview parity (bounded ids, plan deltas, PreviewDoc JSON and human render only).",
+  "generator": "rust/parity/vectors/preview/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "repair_preview: Rust returns EvidenceError::Unsupported; Python calls sesslint.batch._plan_detail and sesslint.report.minimize_path.",
+    "get_preview_schema_path: Rust returns EvidenceError::Unsupported; Python calls sesslint._resources.schema_path.",
+    "load_preview_schema: Rust returns EvidenceError::Unsupported; Python reads schemas/sesslint.preview.v1.json."
+  ]
+}
