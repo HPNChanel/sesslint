@@ -1,0 +1,18 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.policy.abstention",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "abstention_rs_sha256": "46b681a6b615bd59d73730b402e73b76fc5b007d41766a3517500ee683c5f824",
+  "vector_count": 25,
+  "vectors_sha256": "45a1044b70c25dcc3ce5c0e0326a34508bc51ccdb8ffeded3cc8020568e974ea",
+  "generator": "rust/parity/vectors/policy.abstention/generate",
+  "known_parity_gaps": [
+    "a missing or empty content_hash, because Python hashes and Rust returns a typed unavailable error",
+    "a bool used as an evidence index or a range endpoint",
+    "Python str(float), str(list), and str(dict)",
+    "reason order when more than one correlation id is present, because Python iterates a set",
+    "the order of the in-region tool walk, because Python iterates a set",
+    "an inclusive span wider than 1048576, and a range that ends at i64::MAX",
+    "side-effect-None; extract_side_effects already returns the string unknown"
+  ]
+}
