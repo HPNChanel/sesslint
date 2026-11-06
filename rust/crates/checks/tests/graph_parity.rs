@@ -98,7 +98,9 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter().any(|item| matches!(item, JsonValue::Str(s) if s.contains("FINGERPRINT_CODEC_UNAVAILABLE"))),
+        gaps.iter().any(
+            |item| matches!(item, JsonValue::Str(s) if s.contains("FINGERPRINT_CODEC_UNAVAILABLE"))
+        ),
         "expected fingerprint codec gap in known_parity_gaps"
     );
 }
@@ -121,7 +123,8 @@ fn assert_case(case: &VectorCase) {
                 case.id
             );
             assert_eq!(
-                i64_field(&case.expected, "MAX_MEMBER_SAMPLE_SIZE").expect("MAX_MEMBER_SAMPLE_SIZE"),
+                i64_field(&case.expected, "MAX_MEMBER_SAMPLE_SIZE")
+                    .expect("MAX_MEMBER_SAMPLE_SIZE"),
                 MAX_MEMBER_SAMPLE_SIZE as i64,
                 "{}",
                 case.id
@@ -144,8 +147,11 @@ fn assert_case(case: &VectorCase) {
         }
         "is_qualifying_parent_candidate" => {
             let events = decode_event_list(&case.construct, "events");
-            let candidate = event_value_from_construct(object_field(&case.construct, "candidate").expect("candidate"));
-            let child = event_value_from_construct(object_field(&case.construct, "child").expect("child"));
+            let candidate = event_value_from_construct(
+                object_field(&case.construct, "candidate").expect("candidate"),
+            );
+            let child =
+                event_value_from_construct(object_field(&case.construct, "child").expect("child"));
             let missing = optional_string_construct(&case.construct, "missing_parent_id");
             let (q, reason) = graph::is_qualifying_parent_candidate(
                 &candidate,
@@ -168,7 +174,8 @@ fn assert_case(case: &VectorCase) {
         }
         "find_qualifying_parent_candidates" => {
             let events = decode_event_list(&case.construct, "events");
-            let child = event_value_from_construct(object_field(&case.construct, "child").expect("child"));
+            let child =
+                event_value_from_construct(object_field(&case.construct, "child").expect("child"));
             let target_idx = usize_field(&case.construct, "target_idx").expect("target_idx");
             let missing = optional_string_construct(&case.construct, "missing_parent_id");
             let (qi, rej, conf, reason) = graph::find_qualifying_parent_candidates(
@@ -194,8 +201,14 @@ fn assert_case(case: &VectorCase) {
         }
         "same_compaction_segment" => {
             let events = decode_event_list(&case.construct, "events");
-            let a = decode_graph_endpoint(object_field(&case.construct, "endpoint_a").expect("endpoint_a"), &events);
-            let b = decode_graph_endpoint(object_field(&case.construct, "endpoint_b").expect("endpoint_b"), &events);
+            let a = decode_graph_endpoint(
+                object_field(&case.construct, "endpoint_a").expect("endpoint_a"),
+                &events,
+            );
+            let b = decode_graph_endpoint(
+                object_field(&case.construct, "endpoint_b").expect("endpoint_b"),
+                &events,
+            );
             let got = graph::same_compaction_segment(&events, a, b);
             assert_eq!(
                 got,
@@ -204,7 +217,11 @@ fn assert_case(case: &VectorCase) {
                 case.id
             );
         }
-        "check_missing_parent" | "check_cycles" | "check_components" | "check_heads" | "check_graph" => {
+        "check_missing_parent"
+        | "check_cycles"
+        | "check_components"
+        | "check_heads"
+        | "check_graph" => {
             let events = decode_event_list(&case.construct, "events");
             let source_path = optional_string_construct(&case.construct, "source_path")
                 .unwrap_or_else(|| "<canonical>".to_owned());
@@ -222,33 +239,18 @@ fn assert_case(case: &VectorCase) {
                     None,
                     None,
                 ),
-                "check_cycles" => graph::check_cycles(
-                    &events,
-                    Some(source_path.as_str()),
-                    None,
-                    None,
-                    None,
-                ),
-                "check_components" => graph::check_components(
-                    &events,
-                    Some(source_path.as_str()),
-                    None,
-                    None,
-                    None,
-                ),
-                "check_heads" => graph::check_heads(
-                    &events,
-                    Some(source_path.as_str()),
-                    None,
-                    None,
-                    None,
-                ),
-                "check_graph" => graph::check_graph(
-                    &events,
-                    Some(source_path.as_str()),
-                    None,
-                    None,
-                ),
+                "check_cycles" => {
+                    graph::check_cycles(&events, Some(source_path.as_str()), None, None, None)
+                }
+                "check_components" => {
+                    graph::check_components(&events, Some(source_path.as_str()), None, None, None)
+                }
+                "check_heads" => {
+                    graph::check_heads(&events, Some(source_path.as_str()), None, None, None)
+                }
+                "check_graph" => {
+                    graph::check_graph(&events, Some(source_path.as_str()), None, None)
+                }
                 _ => unreachable!(),
             };
             let got = empty.unwrap_or_else(|err| panic!("{}: {err}", case.id));
@@ -325,10 +327,7 @@ fn assert_confinement(
     );
 }
 
-fn optional_string_construct(
-    construct: &[(String, JsonValue)],
-    key: &str,
-) -> Option<String> {
+fn optional_string_construct(construct: &[(String, JsonValue)], key: &str) -> Option<String> {
     match lookup(construct, key) {
         None | Some(JsonValue::Null) => None,
         Some(JsonValue::Str(s)) => Some(s.clone()),
