@@ -9,7 +9,7 @@ pub use error::ChecksError;
 pub mod context;
 pub mod hygiene {}
 pub mod indexes;
-pub mod checkpoint {}
+pub mod checkpoint;
 pub mod accounting;
 pub mod compaction_snapshot;
 pub mod context_pressure;
