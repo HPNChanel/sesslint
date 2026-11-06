@@ -1,18 +1,18 @@
 //! Generic parent-graph integrity helpers (SL004, SL005, SL006, SL007).
 //!
-//! Port of `src/sesslint/checks/graph.py` lines 1–782
+//! Port of `src/sesslint/checks/graph.py` lines 1–948
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice stops at the end of `check_components`. It does not port
-//! `check_heads` or `check_graph`.
+//! This slice includes [`check_heads`] and [`check_graph`].
 //!
 //! Parent matching is exact id equality. No `startswith` and no prefix.
 //! A parent is never invented by prefix, proximity, or content. `None`
 //! branch equals `None`.
 //!
-//! [`check_missing_parent`], [`check_cycles`], [`check_components`], and
-//! overflow [`cap_graph_findings`] call [`make_finding`] with the fingerprint
-//! omitted. That returns the codec error and does not produce a digest.
-//! This module does not substitute [`compute_graph_fingerprint`].
+//! [`check_missing_parent`], [`check_cycles`], [`check_components`],
+//! [`check_heads`], and overflow [`cap_graph_findings`] call [`make_finding`]
+//! with the fingerprint omitted. That returns the codec error and does not
+//! produce a digest. This module does not substitute
+//! [`compute_graph_fingerprint`].
 //!
 //! # Recorded gaps
 //!
@@ -24,8 +24,8 @@
 //!   typed error. That parent is skipped; a Python repr is not invented,
 //!   and the id is not treated as a root.
 //! * A float or container `kind` is not a Python repr. It is not `opaque`
-//!   or `compaction_boundary`, so the SL006 non-conversational skip does
-//!   not apply.
+//!   or `compaction_boundary`, so the SL006 non-conversational skip and the
+//!   SL007 non-head skip do not apply.
 //! * [`same_compaction_segment`] cannot run `events.index(a)` on
 //!   [`EventValue`] ([`PYTHON_EVENT_INDEX_UNREPRESENTABLE`]). An event
 //!   endpoint with no seq returns false and does not guess a list index.
@@ -33,12 +33,12 @@
 //!   ([`BORROWED_LOOKUP`]).
 //! * A graph count that does not fit in `i64` is [`COUNT_UNREPRESENTABLE`].
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
 use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity, SL004, SL005, SL006};
+use model::codes::{Repairability, Severity, SL004, SL005, SL006, SL007};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_UNREPRESENTABLE,
@@ -1181,6 +1181,222 @@ pub fn check_components<'a>(
     )
 }
 
+/// Sorted ambiguous head ids. Does not call [`make_finding`].
+///
+/// Empty id set returns empty before the scan. A referenced node is not a
+/// head. An `opaque` or `compaction_boundary` leaf is not a head. Ambiguity
+/// is more than one remaining leaf in the same branch group. `None` is its
+/// own group and is not the text `"None"`.
+pub fn ambiguous_head_ids(graph: &OccurrenceGraph<'_>) -> Vec<String> {
+    if graph.records.is_empty() {
+        return Vec::new();
+    }
+
+    let mut referenced_as_parent: HashSet<&str> = HashSet::new();
+    for id in graph.id_order() {
+        if let Some(parent) = graph.parent_of(id) {
+            if graph.contains_id(parent) {
+                referenced_as_parent.insert(parent);
+            }
+        }
+    }
+
+    let mut heads_by_branch: HashMap<Option<String>, Vec<String>> = HashMap::new();
+    for id in graph.id_order() {
+        if referenced_as_parent.contains(id) {
+            continue;
+        }
+        let Some(event) = graph.event_of(id) else {
+            continue;
+        };
+        if kind_is_non_conversational(event) {
+            continue;
+        }
+        heads_by_branch
+            .entry(event_branch_safe(event))
+            .or_default()
+            .push(id.to_owned());
+    }
+
+    let mut heads: Vec<String> = heads_by_branch
+        .into_values()
+        .filter(|branch_heads| branch_heads.len() > 1)
+        .flatten()
+        .collect();
+    heads.sort();
+    heads
+}
+
+/// Python: `check_heads` (SL007).
+///
+/// No ambiguous branch returns an empty list and does not call
+/// [`make_finding`]. Ambiguous heads call [`make_finding`] with the
+/// fingerprint omitted; that codec error is propagated. After a successful
+/// [`make_finding`], [`cap_graph_findings`] is called.
+pub fn check_heads<'a>(
+    events: &'a [EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<usize>,
+    context: Option<&CheckContext>,
+    occurrence_graph: Option<&OccurrenceGraph<'a>>,
+) -> Result<Vec<Finding>, GraphError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let max_findings = max_findings.unwrap_or(MAX_GRAPH_FINDINGS);
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_graph;
+    let graph = match occurrence_graph {
+        Some(value) => value,
+        None => {
+            owned_graph = OccurrenceGraph::new(events, source_path)?;
+            &owned_graph
+        }
+    };
+
+    if graph.records.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let heads = ambiguous_head_ids(graph);
+    let Some(primary_id) = heads.first() else {
+        return Ok(Vec::new());
+    };
+    let Some(event) = graph.event_of(primary_id) else {
+        return Ok(Vec::new());
+    };
+    let (resolved_path, line_num) = resolve_source_coords(event, source_path)?;
+    let clean_rec_id = safe_id(primary_id);
+    let safe_heads: Vec<PyValue> = heads
+        .iter()
+        .map(|node| PyValue::string(safe_id(node)))
+        .collect();
+    let related: Vec<PyValue> = sorted_unique_safe_ids(&heads)
+        .into_iter()
+        .map(PyValue::string)
+        .collect();
+
+    let source = SourceRef::try_new(
+        &resolved_path,
+        line_num.map(SourceLine::Int),
+        Some(clean_rec_id.as_str()),
+    )?;
+
+    let evidence = PyValue::map(vec![
+        (
+            PyValue::string("count"),
+            PyValue::int(usize_to_i64(heads.len())?),
+        ),
+        (PyValue::string("heads"), PyValue::list(safe_heads)),
+    ]);
+
+    let finding = make_finding(&MakeFindingInput {
+        code: PyValue::string(SL007),
+        severity: PyValue::severity(Severity::Warning),
+        repairability: PyValue::repairability(Repairability::Manual),
+        message_template: PyValue::string(MSG_SL007),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::list(related),
+        evidence,
+        fingerprint: PyValue::None,
+        adapter_id: Some(ctx.adapter_id().to_owned()),
+        adapter_version: Some(ctx.adapter_version().to_owned()),
+        profile_id: Some(ctx.profile_id().to_owned()),
+        profile_version: Some(ctx.profile_version().to_owned()),
+        ordinal: None,
+        context: None,
+    })?;
+
+    cap_graph_findings(
+        vec![finding],
+        SL007,
+        Some(max_findings),
+        Some(source_path),
+        Some(ctx),
+    )
+}
+
+/// Python: `check_graph`.
+///
+/// Builds one [`OccurrenceGraph`] and passes that same graph to
+/// [`check_missing_parent`], [`check_cycles`], [`check_components`], and
+/// [`check_heads`], in that order. The first error propagates. The four
+/// lists are concatenated and sorted by [`cap_finding_sort_key`]. The
+/// combined list is not capped a second time.
+pub fn check_graph(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings_per_family: Option<usize>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, GraphError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let graph = OccurrenceGraph::new(events, source_path)?;
+
+    let sl004_findings = check_missing_parent(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        context,
+        Some(&graph),
+    )?;
+    let sl005_findings = check_cycles(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        context,
+        Some(&graph),
+    )?;
+    let sl006_findings = check_components(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        context,
+        Some(&graph),
+    )?;
+    let sl007_findings = check_heads(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        context,
+        Some(&graph),
+    )?;
+
+    let mut all_findings = sl004_findings;
+    all_findings.extend(sl005_findings);
+    all_findings.extend(sl006_findings);
+    all_findings.extend(sl007_findings);
+
+    let mut keyed = Vec::new();
+    for finding in all_findings {
+        let key = cap_finding_sort_key(&finding)?;
+        keyed.push((key, finding));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, finding)| finding).collect())
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 12] = [
+    "MAX_GRAPH_FINDINGS",
+    "MAX_MEMBER_SAMPLE_SIZE",
+    "cap_graph_findings",
+    "check_components",
+    "check_cycles",
+    "check_graph",
+    "check_heads",
+    "check_missing_parent",
+    "compute_graph_fingerprint",
+    "find_qualifying_parent_candidates",
+    "is_qualifying_parent_candidate",
+    "same_compaction_segment",
+];
+
 fn overflow_flag(finding: &Finding) -> Result<i32, GraphError> {
     let Some(evidence) = finding.evidence() else {
         return Ok(0);
@@ -1249,6 +1465,13 @@ fn kind_is_compaction_boundary(ev: &EventValue) -> bool {
     matches!(
         event_get(ev, "kind"),
         Some(EventField::Str(ref kind)) if kind == "compaction_boundary"
+    )
+}
+
+fn kind_is_non_conversational(ev: &EventValue) -> bool {
+    matches!(
+        event_get(ev, "kind"),
+        Some(EventField::Str(ref kind)) if NON_CONVERSATIONAL_KINDS.contains(&kind.as_str())
     )
 }
 
@@ -1402,11 +1625,11 @@ fn sorted_unique_safe_ids(ids: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_graph_findings, check_components, check_cycles, check_missing_parent,
-        compute_graph_fingerprint, cycle_paths, event_seq_safe, extra_components,
-        find_qualifying_parent_candidates, is_qualifying_parent_candidate, safe_id,
-        same_compaction_segment, Confinement, GraphEndpoint, GraphError, GraphScalar,
-        OccurrenceGraph, CONF_SEG_KEY, MSG_SL004, PYTHON_EVENT_INDEX_UNREPRESENTABLE,
+        ambiguous_head_ids, cap_graph_findings, check_components, check_cycles, check_graph,
+        check_heads, check_missing_parent, compute_graph_fingerprint, cycle_paths, event_seq_safe,
+        extra_components, find_qualifying_parent_candidates, is_qualifying_parent_candidate,
+        safe_id, same_compaction_segment, Confinement, GraphEndpoint, GraphError, GraphScalar,
+        OccurrenceGraph, ALL, CONF_SEG_KEY, MSG_SL004, PYTHON_EVENT_INDEX_UNREPRESENTABLE,
     };
     use crate::context::CheckContext;
     use model::canonical::SessionEvent;
@@ -2140,5 +2363,181 @@ mod tests {
         assert_codec_unavailable(err);
         let findings = check_components(&events, None, None, None, None).unwrap();
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn one_head_per_branch_is_not_ambiguous() {
+        let events = vec![
+            event("root-synthetic", None, 0, Some("main-synthetic"), "message"),
+            event(
+                "main-tip-synthetic",
+                Some("root-synthetic"),
+                1,
+                Some("main-synthetic"),
+                "message",
+            ),
+            event(
+                "side-tip-synthetic",
+                Some("root-synthetic"),
+                2,
+                Some("side-synthetic"),
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(ambiguous_head_ids(&graph).is_empty());
+        let findings = check_heads(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn two_none_branch_leaves_are_ambiguous_and_check_heads_is_codec_error() {
+        let events = vec![
+            event("evt-b-synthetic", None, 0, None, "message"),
+            event("evt-a-synthetic", None, 1, None, "message"),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert_eq!(
+            ambiguous_head_ids(&graph),
+            vec!["evt-a-synthetic".to_owned(), "evt-b-synthetic".to_owned()]
+        );
+        let err = check_heads(&events, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn two_leaves_on_the_same_named_branch_return_codec_error() {
+        let events = vec![
+            event(
+                "evt-b-synthetic",
+                None,
+                0,
+                Some("main-synthetic"),
+                "message",
+            ),
+            event(
+                "evt-a-synthetic",
+                None,
+                1,
+                Some("main-synthetic"),
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert_eq!(
+            ambiguous_head_ids(&graph),
+            vec!["evt-a-synthetic".to_owned(), "evt-b-synthetic".to_owned()]
+        );
+        let err = check_heads(&events, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn none_branch_tip_and_named_branch_tip_are_not_ambiguous() {
+        let events = vec![
+            event("none-tip-synthetic", None, 0, None, "message"),
+            event(
+                "side-tip-synthetic",
+                None,
+                1,
+                Some("side-synthetic"),
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(ambiguous_head_ids(&graph).is_empty());
+        let findings = check_heads(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn opaque_leaf_is_not_a_head() {
+        let events = vec![
+            event("msg-synthetic", None, 0, None, "message"),
+            event("opaque-synthetic", None, 1, None, "opaque"),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(ambiguous_head_ids(&graph).is_empty());
+        let findings = check_heads(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn clean_parent_child_chain_makes_check_graph_empty() {
+        let events = vec![
+            event("parent-synthetic", None, 0, None, "message"),
+            event(
+                "child-synthetic",
+                Some("parent-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+        ];
+        let findings = check_graph(&events, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn self_loop_makes_check_graph_return_codec_error() {
+        let events = vec![event(
+            "loop-synthetic",
+            Some("loop-synthetic"),
+            0,
+            None,
+            "message",
+        )];
+        let err = check_graph(&events, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn two_none_branch_leaves_under_one_parent_make_check_graph_return_codec_error() {
+        let events = vec![
+            event("parent-synthetic", None, 0, None, "message"),
+            event(
+                "evt-b-synthetic",
+                Some("parent-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+            event(
+                "evt-a-synthetic",
+                Some("parent-synthetic"),
+                2,
+                None,
+                "message",
+            ),
+        ];
+        let missing = check_missing_parent(&events, None, None, None, None).unwrap();
+        assert!(missing.is_empty());
+        let cycles = check_cycles(&events, None, None, None, None).unwrap();
+        assert!(cycles.is_empty());
+        let components = check_components(&events, None, None, None, None).unwrap();
+        assert!(components.is_empty());
+        let err = check_graph(&events, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn all_matches_the_pin_order() {
+        assert_eq!(
+            ALL,
+            [
+                "MAX_GRAPH_FINDINGS",
+                "MAX_MEMBER_SAMPLE_SIZE",
+                "cap_graph_findings",
+                "check_components",
+                "check_cycles",
+                "check_graph",
+                "check_heads",
+                "check_missing_parent",
+                "compute_graph_fingerprint",
+                "find_qualifying_parent_candidates",
+                "is_qualifying_parent_candidate",
+                "same_compaction_segment",
+            ]
+        );
     }
 }
