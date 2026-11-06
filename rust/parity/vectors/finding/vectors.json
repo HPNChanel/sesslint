@@ -1,0 +1,506 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.finding",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "finding_py_sha256": "5a0a7218512b36ccc6bd7fb1568dd95e81dc5b74d4685d14acdd4f2d0d911d7a",
+  "vectors": [
+    {
+      "id": "all_export_order",
+      "construct": {
+        "type": "ALL"
+      },
+      "expected": {
+        "names": [
+          "ALL_CODES",
+          "CODE_REGISTRY",
+          "MAX_MESSAGE_LENGTH",
+          "SCHEMA_VERSION",
+          "SEVERITY_ORDER",
+          "TRUNCATION_MARKER",
+          "CANONICAL_EVIDENCE_KEYS",
+          "Code",
+          "CodeInfo",
+          "Finding",
+          "Repairability",
+          "Severity",
+          "SourceRef",
+          "_canonical_evidence_for_fingerprint",
+          "compute_finding_fingerprint",
+          "compute_fingerprint",
+          "enforce_content_free_text",
+          "finding_sort_key",
+          "fingerprint_finding",
+          "get_code_info",
+          "get_finding_schema_path",
+          "is_valid_code",
+          "load_finding_schema",
+          "make_finding",
+          "parse_finding_dict",
+          "sort_findings"
+        ]
+      }
+    },
+    {
+      "id": "enforce_ascii_accept",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "safe_marker"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "enforce_eacute_accept",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "café_marker"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "enforce_control_before_email",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "x\tu@x.co",
+        "context": "t"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Forbidden control or newline characters in t: 'x\\tu@x.co'"
+      }
+    },
+    {
+      "id": "enforce_email",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "u@v.co"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Forbidden content-bearing pattern (e.g., email/PII) in text: 'u@v.co'"
+      }
+    },
+    {
+      "id": "enforce_private_key_banner",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "-----BEGIN RSA KEY-----"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Forbidden credential pattern (private key) in text: '-----BEGIN RSA KEY-----'"
+      }
+    },
+    {
+      "id": "enforce_bearer_token",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "Bearer abcdefghijklmnopqrst"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Forbidden credential pattern (bearer token) in text: 'Bearer abcdefghijklmnopqrst'"
+      }
+    },
+    {
+      "id": "enforce_api_key_shape",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "sk_live_sample"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Forbidden credential pattern (API key) in text: 'sk_live_sample'"
+      }
+    },
+    {
+      "id": "enforce_credential_assignment",
+      "construct": {
+        "type": "enforce_content_free_text",
+        "text": "password=secretvalue"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Forbidden credential pattern (credential assignment) in text: 'password=secretvalue'"
+      }
+    },
+    {
+      "id": "sourceref_backslash_and_strip",
+      "construct": {
+        "type": "SourceRef_try",
+        "path": "  a\\\\b\\\\c  ",
+        "line": 1
+      },
+      "expected": {
+        "ok": true,
+        "path": "a//b//c",
+        "line": 1,
+        "record_id": null
+      }
+    },
+    {
+      "id": "sourceref_empty_path",
+      "construct": {
+        "type": "SourceRef_try",
+        "path": ""
+      },
+      "expected": {
+        "ok": false,
+        "display": "SourceRef.path must be a non-empty string, got ''"
+      }
+    },
+    {
+      "id": "sourceref_whitespace_path",
+      "construct": {
+        "type": "SourceRef_try",
+        "path": "   "
+      },
+      "expected": {
+        "ok": false,
+        "display": "SourceRef.path must be a non-empty string, got '   '"
+      }
+    },
+    {
+      "id": "sourceref_line_zero",
+      "construct": {
+        "type": "SourceRef_try",
+        "path": "p",
+        "line": 0
+      },
+      "expected": {
+        "ok": false,
+        "display": "SourceRef.line must be a positive integer or None, got 0"
+      }
+    },
+    {
+      "id": "sourceref_line_bool",
+      "construct": {
+        "type": "SourceRef_try",
+        "path": "p",
+        "line": true
+      },
+      "expected": {
+        "ok": false,
+        "display": "SourceRef.line must be a positive integer or None, got True"
+      }
+    },
+    {
+      "id": "sourceref_line_one",
+      "construct": {
+        "type": "SourceRef_try",
+        "path": "p",
+        "line": 1
+      },
+      "expected": {
+        "ok": true,
+        "path": "p",
+        "line": 1,
+        "record_id": null
+      }
+    },
+    {
+      "id": "sort_findings_path_line_severity",
+      "construct": {
+        "type": "sort_findings",
+        "findings": [
+          {
+            "code": "SL001",
+            "severity": "error",
+            "repairability": "manual",
+            "message": "m",
+            "source": {
+              "path": "p"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef"
+          },
+          {
+            "code": "SL001",
+            "severity": "fatal",
+            "repairability": "manual",
+            "message": "m",
+            "source": {
+              "path": "p",
+              "line": 1
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef"
+          },
+          {
+            "code": "SL001",
+            "severity": "warning",
+            "repairability": "manual",
+            "message": "m",
+            "source": {
+              "path": "p"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef"
+          },
+          {
+            "code": "SL001",
+            "severity": "info",
+            "repairability": "manual",
+            "message": "m",
+            "source": {
+              "path": "p",
+              "line": 1
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef"
+          },
+          {
+            "code": "SL001",
+            "severity": "info",
+            "repairability": "manual",
+            "message": "m",
+            "source": {
+              "path": "b"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef"
+          },
+          {
+            "code": "SL001",
+            "severity": "error",
+            "repairability": "manual",
+            "message": "m",
+            "source": {
+              "path": "a"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef"
+          }
+        ]
+      },
+      "expected": {
+        "order": [
+          {
+            "severity": "error",
+            "path": "a",
+            "line": null,
+            "code": "SL001"
+          },
+          {
+            "severity": "info",
+            "path": "b",
+            "line": null,
+            "code": "SL001"
+          },
+          {
+            "severity": "error",
+            "path": "p",
+            "line": null,
+            "code": "SL001"
+          },
+          {
+            "severity": "warning",
+            "path": "p",
+            "line": null,
+            "code": "SL001"
+          },
+          {
+            "severity": "fatal",
+            "path": "p",
+            "line": 1,
+            "code": "SL001"
+          },
+          {
+            "severity": "info",
+            "path": "p",
+            "line": 1,
+            "code": "SL001"
+          }
+        ]
+      }
+    },
+    {
+      "id": "make_finding_fingerprint_default_severity",
+      "construct": {
+        "type": "make_finding",
+        "code": "SL011",
+        "severity_omitted": true,
+        "message_template": "L{line}",
+        "source": {
+          "path": "p",
+          "line": 2
+        },
+        "related_ids": [],
+        "fingerprint": "0123456789abcdef"
+      },
+      "expected": {
+        "ok": true,
+        "message": "L2",
+        "severity": "info",
+        "fingerprint": "0123456789abcdef",
+        "repairability": "manual"
+      }
+    },
+    {
+      "id": "make_finding_unknown_code",
+      "construct": {
+        "type": "make_finding",
+        "code": "SL999",
+        "message_template": "{line}",
+        "source": {
+          "path": "p",
+          "line": 1
+        },
+        "fingerprint": "0123456789abcdef"
+      },
+      "expected": {
+        "ok": false,
+        "display": "Unknown finding code: 'SL999'. Must be one of ['SL001', 'SL002', 'SL003', 'SL004', 'SL005', 'SL006', 'SL007', 'SL008', 'SL009', 'SL010', 'SL011', 'SL101', 'SL102', 'SL103', 'SL104', 'SL105', 'SL106', 'SL107', 'SL108', 'SL201', 'SL202', 'SL203', 'SL204', 'SL205', 'SL206', 'SL207', 'SL208', 'SL301', 'SL302', 'SL303', 'SL304', 'SL305', 'SL306', 'SL401', 'SL402']"
+      }
+    },
+    {
+      "id": "parse_round_trip_complete",
+      "construct": {
+        "type": "parse_finding_dict",
+        "obj": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "syn-msg",
+          "source": {
+            "path": "sp",
+            "line": 3,
+            "record_id": "rid1"
+          },
+          "related_ids": [
+            "b",
+            "a"
+          ],
+          "fingerprint": "fedcba9876543210",
+          "message_template": "tpl-{line}",
+          "evidence": {
+            "note": "ev"
+          }
+        }
+      },
+      "expected": {
+        "ok": true,
+        "to_dict": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "syn-msg",
+          "source": {
+            "path": "sp",
+            "line": 3,
+            "record_id": "rid1"
+          },
+          "related_ids": [
+            "a",
+            "b"
+          ],
+          "fingerprint": "fedcba9876543210",
+          "message_template": "tpl-{line}",
+          "evidence": {
+            "note": "ev"
+          }
+        }
+      }
+    },
+    {
+      "id": "parse_remediation_without_message",
+      "construct": {
+        "type": "parse_finding_dict",
+        "obj": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "source": {
+            "path": "sp",
+            "line": 3,
+            "record_id": "rid1"
+          },
+          "related_ids": [
+            "b",
+            "a"
+          ],
+          "fingerprint": "fedcba9876543210",
+          "remediation": "rem-only"
+        }
+      },
+      "expected": {
+        "ok": true,
+        "to_dict": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "rem-only",
+          "source": {
+            "path": "sp",
+            "line": 3,
+            "record_id": "rid1"
+          },
+          "related_ids": [
+            "a",
+            "b"
+          ],
+          "fingerprint": "fedcba9876543210"
+        }
+      }
+    },
+    {
+      "id": "parse_span_when_source_absent",
+      "construct": {
+        "type": "parse_finding_dict",
+        "obj": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "m",
+          "source": null,
+          "span": {
+            "path": "px",
+            "line": 2,
+            "record_id": null
+          },
+          "related_ids": [],
+          "fingerprint": "0123456789abcdef"
+        }
+      },
+      "expected": {
+        "ok": true,
+        "to_dict": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "m",
+          "source": {
+            "path": "px",
+            "line": 2,
+            "record_id": null
+          },
+          "related_ids": [],
+          "fingerprint": "0123456789abcdef"
+        }
+      }
+    },
+    {
+      "id": "parse_reject_schema_version",
+      "construct": {
+        "type": "parse_finding_dict",
+        "obj": {
+          "schema_version": "nope",
+          "code": "SL001"
+        }
+      },
+      "expected": {
+        "ok": false,
+        "display": "Unsupported finding schema_version 'nope', expected 'sesslint.finding/v1'"
+      }
+    }
+  ]
+}

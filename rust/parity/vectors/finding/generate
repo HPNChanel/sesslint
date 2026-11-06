@@ -1,0 +1,479 @@
+#!/usr/bin/env python3
+"""Generate sesslint.finding parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+FINDING_PY_SHA256 = (
+    "5a0a7218512b36ccc6bd7fb1568dd95e81dc5b74d4685d14acdd4f2d0d911d7a"
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_finding_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "finding.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != FINDING_PY_SHA256:
+        raise SystemExit(
+            f"finding.py sha256 mismatch: expected {FINDING_PY_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.finding as finding  # noqa: WPS433
+
+    return finding
+
+
+def finding_to_plain_dict(finding: Any) -> dict[str, Any]:
+    """Round-trip payload matching Python ``Finding.to_dict()``."""
+    return finding.to_dict()
+
+
+def build_expected(finding_mod: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    from sesslint.errors import FindingError  # noqa: WPS433
+
+    kind = construct["type"]
+
+    if kind == "ALL":
+        import sesslint.finding as fm  # noqa: WPS433
+
+        return {"names": list(fm.__all__)}
+
+    if kind == "enforce_content_free_text":
+        text = construct["text"]
+        context = construct.get("context", "text")
+        try:
+            finding_mod.enforce_content_free_text(text, context=context)
+        except FindingError as exc:
+            return {"ok": False, "display": str(exc)}
+        return {"ok": True}
+
+    if kind == "SourceRef_try":
+        from sesslint.finding import SourceRef  # noqa: WPS433
+
+        path = construct["path"]
+        raw_line = construct.get("line", None)
+        kwargs: dict[str, Any] = {"path": path}
+        if "line" in construct:
+            kwargs["line"] = raw_line
+        try:
+            ref = SourceRef(**kwargs)
+        except FindingError as exc:
+            return {"ok": False, "display": str(exc)}
+        out: dict[str, Any] = {"ok": True, "path": ref.path}
+        if ref.line is None:
+            out["line"] = None
+        else:
+            out["line"] = ref.line
+        if ref.record_id is None:
+            out["record_id"] = None
+        else:
+            out["record_id"] = ref.record_id
+        return out
+
+    if kind == "sort_findings":
+        from sesslint.finding import Finding, SourceRef  # noqa: WPS433
+        from sesslint.codes import Repairability, Severity  # noqa: WPS433
+
+        ordered: list[dict[str, Any]] = []
+        for item in construct["findings"]:
+            src = item["source"]
+            line = src.get("line", None)
+            f = Finding(
+                code=item["code"],
+                severity=Severity(item["severity"]),
+                repairability=Repairability(item["repairability"]),
+                message=item["message"],
+                source=SourceRef(src["path"], line, src.get("record_id")),
+                related_ids=tuple(item.get("related_ids", ())),
+                fingerprint=item["fingerprint"],
+            )
+            ordered.append(f)
+        sorted_findings = finding_mod.sort_findings(ordered)
+        keys: list[dict[str, Any]] = []
+        for f in sorted_findings:
+            keys.append(
+                {
+                    "severity": f.severity.value,
+                    "path": f.source.path,
+                    "line": f.source.line,
+                    "code": f.code,
+                }
+            )
+        return {"order": keys}
+
+    if kind == "make_finding":
+        from sesslint.finding import SourceRef  # noqa: WPS433
+        from sesslint.codes import Severity  # noqa: WPS433
+
+        src = construct["source"]
+        line = src.get("line", None)
+        source = SourceRef(src["path"], line, src.get("record_id"))
+        kwargs: dict[str, Any] = {
+            "code": construct["code"],
+            "message_template": construct["message_template"],
+            "source": source,
+            "related_ids": construct.get("related_ids", ()),
+            "fingerprint": construct["fingerprint"],
+        }
+        if construct.get("severity_omitted"):
+            pass
+        else:
+            if "severity" in construct:
+                kwargs["severity"] = construct["severity"]
+        if "repairability" in construct:
+            kwargs["repairability"] = construct["repairability"]
+        if "template_args" in construct:
+            kwargs["template_args"] = construct["template_args"]
+
+        try:
+            got = finding_mod.make_finding(**kwargs)
+        except FindingError as exc:
+            return {"ok": False, "display": str(exc)}
+        return {
+            "ok": True,
+            "message": got.message,
+            "severity": got.severity.value,
+            "fingerprint": got.fingerprint,
+            "repairability": got.repairability.value,
+        }
+
+    if kind == "parse_finding_dict":
+        obj = construct["obj"]
+        try:
+            got = finding_mod.parse_finding_dict(obj)
+        except FindingError as exc:
+            return {"ok": False, "display": str(exc)}
+        return {"ok": True, "to_dict": finding_to_plain_dict(got)}
+
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    from sesslint.finding import SCHEMA_VERSION  # noqa: WPS433
+
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct})
+
+    add("all_export_order", {"type": "ALL"})
+
+    add("enforce_ascii_accept", {"type": "enforce_content_free_text", "text": "safe_marker"})
+    add("enforce_eacute_accept", {"type": "enforce_content_free_text", "text": "caf\u00e9_marker"})
+    add(
+        "enforce_control_before_email",
+        {"type": "enforce_content_free_text", "text": "x\tu@x.co", "context": "t"},
+    )
+    add(
+        "enforce_email",
+        {"type": "enforce_content_free_text", "text": "u@v.co"},
+    )
+    add(
+        "enforce_private_key_banner",
+        {"type": "enforce_content_free_text", "text": "-----BEGIN RSA KEY-----"},
+    )
+    add(
+        "enforce_bearer_token",
+        {"type": "enforce_content_free_text", "text": "Bearer abcdefghijklmnopqrst"},
+    )
+    add(
+        "enforce_api_key_shape",
+        {"type": "enforce_content_free_text", "text": "sk_live_sample"},
+    )
+    add(
+        "enforce_credential_assignment",
+        {"type": "enforce_content_free_text", "text": "password=secretvalue"},
+    )
+
+    add(
+        "sourceref_backslash_and_strip",
+        {"type": "SourceRef_try", "path": "  a\\\\b\\\\c  ", "line": 1},
+    )
+    add("sourceref_empty_path", {"type": "SourceRef_try", "path": ""})
+    add("sourceref_whitespace_path", {"type": "SourceRef_try", "path": "   "})
+    add("sourceref_line_zero", {"type": "SourceRef_try", "path": "p", "line": 0})
+    add("sourceref_line_bool", {"type": "SourceRef_try", "path": "p", "line": True})
+    add("sourceref_line_one", {"type": "SourceRef_try", "path": "p", "line": 1})
+
+    add(
+        "sort_findings_path_line_severity",
+        {
+            "type": "sort_findings",
+            "findings": [
+                {
+                    "code": "SL001",
+                    "severity": "error",
+                    "repairability": "manual",
+                    "message": "m",
+                    "source": {"path": "p"},
+                    "related_ids": (),
+                    "fingerprint": "0123456789abcdef",
+                },
+                {
+                    "code": "SL001",
+                    "severity": "fatal",
+                    "repairability": "manual",
+                    "message": "m",
+                    "source": {"path": "p", "line": 1},
+                    "related_ids": (),
+                    "fingerprint": "0123456789abcdef",
+                },
+                {
+                    "code": "SL001",
+                    "severity": "warning",
+                    "repairability": "manual",
+                    "message": "m",
+                    "source": {"path": "p"},
+                    "related_ids": (),
+                    "fingerprint": "0123456789abcdef",
+                },
+                {
+                    "code": "SL001",
+                    "severity": "info",
+                    "repairability": "manual",
+                    "message": "m",
+                    "source": {"path": "p", "line": 1},
+                    "related_ids": (),
+                    "fingerprint": "0123456789abcdef",
+                },
+                {
+                    "code": "SL001",
+                    "severity": "info",
+                    "repairability": "manual",
+                    "message": "m",
+                    "source": {"path": "b"},
+                    "related_ids": (),
+                    "fingerprint": "0123456789abcdef",
+                },
+                {
+                    "code": "SL001",
+                    "severity": "error",
+                    "repairability": "manual",
+                    "message": "m",
+                    "source": {"path": "a"},
+                    "related_ids": (),
+                    "fingerprint": "0123456789abcdef",
+                },
+            ],
+        },
+    )
+
+    add(
+        "make_finding_fingerprint_default_severity",
+        {
+            "type": "make_finding",
+            "code": "SL011",
+            "severity_omitted": True,
+            "message_template": "L{line}",
+            "source": {"path": "p", "line": 2},
+            "related_ids": (),
+            "fingerprint": "0123456789abcdef",
+        },
+    )
+
+    add(
+        "make_finding_unknown_code",
+        {
+            "type": "make_finding",
+            "code": "SL999",
+            "message_template": "{line}",
+            "source": {"path": "p", "line": 1},
+            "fingerprint": "0123456789abcdef",
+        },
+    )
+
+    sample = {
+        "schema_version": SCHEMA_VERSION,
+        "code": "SL001",
+        "severity": "error",
+        "repairability": "manual",
+        "message": "syn-msg",
+        "source": {"path": "sp", "line": 3, "record_id": "rid1"},
+        "related_ids": ["b", "a"],
+        "fingerprint": "fedcba9876543210",
+        "message_template": "tpl-{line}",
+        "evidence": {"note": "ev"},
+    }
+    add("parse_round_trip_complete", {"type": "parse_finding_dict", "obj": sample})
+
+    sample_rem = {k: v for k, v in sample.items() if k != "message"}
+    sample_rem["remediation"] = "rem-only"
+    sample_rem.pop("message_template", None)
+    sample_rem.pop("evidence", None)
+    add("parse_remediation_without_message", {"type": "parse_finding_dict", "obj": sample_rem})
+
+    add(
+        "parse_span_when_source_absent",
+        {
+            "type": "parse_finding_dict",
+            "obj": {
+                "schema_version": SCHEMA_VERSION,
+                "code": "SL001",
+                "severity": "error",
+                "repairability": "manual",
+                "message": "m",
+                "source": None,
+                "span": {"path": "px", "line": 2, "record_id": None},
+                "related_ids": [],
+                "fingerprint": "0123456789abcdef",
+            },
+        },
+    )
+
+    add(
+        "parse_reject_schema_version",
+        {
+            "type": "parse_finding_dict",
+            "obj": {"schema_version": "nope", "code": "SL001"},
+        },
+    )
+
+    return specs
+
+
+def main() -> int:
+    finding_mod = load_finding_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(finding_mod, row["construct"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.finding",
+        "python_commit": PYTHON_COMMIT,
+        "finding_py_sha256": FINDING_PY_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.finding",
+        "python_commit": PYTHON_COMMIT,
+        "finding_py_sha256": FINDING_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/finding/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    gaps = [
+        {
+            "id": "compute_finding_fingerprint_unavailable",
+            "detail": (
+                "When make_finding omits a fingerprint hash, Python uses "
+                "sesslint.determinism.canonical_json_bytes; Rust returns exactly "
+                "'sesslint.determinism.canonical_json_bytes is not available' "
+                "and does not build a digest. Parity does not assert a hex digest."
+            ),
+        },
+        {
+            "id": "schema_path_unavailable",
+            "detail": (
+                "get_finding_schema_path and load_finding_schema require "
+                "sesslint._resources.schema_path; Rust returns "
+                "'sesslint._resources.schema_path is not available' and does "
+                "not read schemas/."
+            ),
+        },
+        {
+            "id": "related_ids_set_order",
+            "detail": (
+                "Python set and frozenset order is not stable; which bad "
+                "related_ids item is reported first is not a required vector. "
+                "A successful related_ids result is still sorted."
+            ),
+        },
+        {
+            "id": "evidence_non_string_cast",
+            "detail": (
+                "A non-string evidence variant: Python typing.cast returns the "
+                "raw value; Rust returns FindingError. Not a required vector."
+            ),
+        },
+        {
+            "id": "template_line_unicode_nd",
+            "detail": (
+                "Template line strings that use Unicode Nd digits are rejected "
+                "by Rust. Not a required vector."
+            ),
+        },
+        {
+            "id": "explicit_bool_ordinal",
+            "detail": (
+                "An explicit bool ordinal is not representable in Rust. "
+                "Not a required vector."
+            ),
+        },
+        {
+            "id": "lone_surrogates_and_i64",
+            "detail": (
+                "Lone surrogates and integers outside i64 are not representable. "
+                "Not a required vector."
+            ),
+        },
+        {
+            "id": "from_dict_exception_kind",
+            "detail": (
+                "Finding.from_dict raises KeyError, ValueError, or TypeError in "
+                "Python and FindingError in Rust; exception type parity is not required."
+            ),
+        },
+        {
+            "id": "fingerprint_context_narrowing",
+            "detail": (
+                "FingerprintContext has only adapter_id, adapter_version, "
+                "profile_id, and profile_version; the rest of CheckContext is "
+                "not required."
+            ),
+        },
+    ]
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.finding parity (exported names, "
+            "content-free text, SourceRef, ordering, constructors, parsing)."
+        ),
+        "generator": "rust/parity/vectors/finding/generate",
+        "known_parity_gaps": gaps,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
