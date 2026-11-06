@@ -1,0 +1,14 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.profiles.builtin",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_builtin_rs_sha256": "8ac5a563c81e05189577d1177425b26dab911fb1fed4338f7c0abf0c235312fd",
+  "checks_profile_rs_sha256": "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c",
+  "vector_count": 6,
+  "vectors_sha256": "d6dde7b002e10949a133fd4750f12892f74d434f36fb81f735552e25bc7441b5",
+  "generator": "rust/parity/vectors/profiles.builtin/generate",
+  "known_parity_gaps": [
+    "checks::profile::get_profile is not wired to this registry. It still returns sesslint.profiles.builtin is not available. Python get_profile returns the registered profile.",
+    "REGISTRY.get of a missing name is None. Python dict lookup raises KeyError. Do not require the KeyError text."
+  ]
+}
