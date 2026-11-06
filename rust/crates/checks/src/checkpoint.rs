@@ -1,10 +1,10 @@
 //! Checkpoint and continuation integrity checks (SL201, SL202, SL203).
 //!
-//! Port of `src/sesslint/checks/checkpoint.py` lines 1–397
+//! Port of `src/sesslint/checks/checkpoint.py` lines 1–685
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice is constants and helpers through
-//! [`extract_run_state_checkpoints`]. It does not port `check_` functions,
-//! SL201/SL202/SL203 detection, or `__all__`.
+//! This slice ports helpers through [`extract_run_state_checkpoints`] and
+//! [`check_checkpoint_gap`]. It does not port `check_checkpoint_divergence`,
+//! unsafe continuation, compaction coverage, `check_checkpoint`, or `__all__`.
 //!
 //! [`compute_checkpoint_fingerprint`] hashes locally. It is not a finding
 //! digest and does not call [`make_finding`].
@@ -15,6 +15,13 @@
 //! [`FINGERPRINT_CODEC_UNAVAILABLE`]. That error is propagated. This module
 //! does not append a synthetic overflow finding and does not return the kept
 //! prefix as if that finding existed.
+//!
+//! [`checkpoint_gap_records`] does not call [`make_finding`].
+//! [`check_checkpoint_gap`] uses that list. An empty list calls
+//! [`cap_checkpoint_findings`]. A non-empty list calls [`make_finding`] once,
+//! with the fingerprint omitted, and returns
+//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. It does not keep a prefix, invent a
+//! digest, or call [`cap_checkpoint_findings`] on that path.
 //!
 //! Sort key is `(code, overflow flag, source.record_id or "", fingerprint)`.
 //! Overflow is 1 only when evidence `overflow` is JSON true. This module
@@ -27,8 +34,9 @@
 //!
 //! # Recorded gaps
 //!
-//! * Python `int` is unbounded. Counts that do not fit in `i64` are
-//!   [`PYTHON_INT_UNBOUNDED`], not a wrap and not a panic.
+//! * Python `int` is unbounded. Counts and checkpoint sequence arithmetic
+//!   that do not fit in `i64` are [`PYTHON_INT_UNBOUNDED`], not a wrap and
+//!   not a panic.
 //! * [`EvidenceLookup::Borrowed`] is a failed borrow, not a missing
 //!   `overflow` key ([`BORROWED_LOOKUP`]).
 //! * [`EvidenceLookup::NotAMap`] is 0 for the overflow flag. Python would
@@ -42,14 +50,23 @@
 //!   branch does not read a mapping.
 //! * Overflow [`make_finding`] does not produce a digest
 //!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
-//! * A list of events has no `source` attribute. This slice does not scan
-//!   events for a run-state projection or for checkpoints.
+//! * A list of events has no `source` attribute.
+//!   [`extract_run_state_projection`] and
+//!   [`extract_run_state_checkpoints`] do not scan events.
+//!   [`checkpoint_gap_records`] walks events for checkpoint and run-start
+//!   kinds only.
 //! * [`CheckContext::source_metadata`] is a [`BTreeMap`]. That candidate's
 //!   own key order is sorted. A serde_json object nested inside a value
 //!   keeps [`serde_json::Map`] order. This slice does not scan events to
 //!   recover insertion order.
 //! * [`extract_run_state_checkpoints`] does not call
 //!   [`extract_run_state_projection`] or [`make_finding`].
+//!   [`checkpoint_gap_records`] calls both extractors and does not call
+//!   [`make_finding`].
+//! * A float nested in an attached `run_state` projection has no
+//!   [`PyValue`] form. [`check_checkpoint_gap`] returns
+//!   [`PYTHON_FLOAT_STR_UNREPRESENTABLE`] for that evidence and does not
+//!   call [`make_finding`].
 //! * A seq string with a non-ASCII character is
 //!   [`PYTHON_ISDIGIT_UNICODE`]. Python `str.isdigit` accepts Unicode Nd.
 //!   This slice does not guess a Unicode numeric value.
@@ -59,7 +76,7 @@ use std::error::Error;
 use std::fmt;
 
 use model::canonical::{MapLookup, Payload, SessionEvent};
-use model::codes::{Repairability, Severity};
+use model::codes::{Repairability, Severity, SL201};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
@@ -67,7 +84,7 @@ use model::events::{
 };
 use model::finding::{
     enforce_content_free_text, make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue,
-    SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+    SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -577,6 +594,561 @@ pub fn extract_run_state_checkpoints(
     }
 }
 
+/// One SL201 gap. Does not call [`make_finding`].
+///
+/// Evidence key order is [`CheckpointGapRecord::evidence_keys`]: `at_index`,
+/// `expected_seq`, `found_seq`, then `sensitivity` when present, then
+/// `source` when present, then `run_state` when the projection result is
+/// [`Some`], including an empty mapping.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckpointGapRecord {
+    pub code: &'static str,
+    pub severity: Severity,
+    pub repairability: Repairability,
+    pub message_template: &'static str,
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub at_index: i64,
+    pub expected_seq: i64,
+    pub found_seq: Option<i64>,
+    pub source: Option<String>,
+    pub sensitivity: Option<String>,
+    pub run_state: Option<EventMapping>,
+    pub adapter_id: String,
+    pub adapter_version: String,
+    pub profile_id: String,
+    pub profile_version: String,
+}
+
+impl CheckpointGapRecord {
+    /// Evidence keys in insertion order.
+    pub fn evidence_keys(&self) -> Vec<&'static str> {
+        let mut keys = Vec::with_capacity(6);
+        keys.push("at_index");
+        keys.push("expected_seq");
+        keys.push("found_seq");
+        if self.sensitivity.is_some() {
+            keys.push("sensitivity");
+        }
+        if self.source.is_some() {
+            keys.push("source");
+        }
+        if self.run_state.is_some() {
+            keys.push("run_state");
+        }
+        keys
+    }
+}
+
+/// Gap rows for [`check_checkpoint_gap`], before the cap.
+///
+/// Omitted `source_path` is `"<canonical>"`. Omitted
+/// `checkpoint_sensitivity` is `"default"`. Omitted `context` is
+/// [`CheckContext::default`]. Typed errors from the two run-state
+/// extractors propagate before any row. Does not call [`make_finding`].
+pub fn checkpoint_gap_records(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    checkpoint_sensitivity: Option<&str>,
+    context: Option<&CheckContext>,
+    run_state_projection: Option<&EventMapping>,
+) -> Result<Vec<CheckpointGapRecord>, CheckpointError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let sensitivity = checkpoint_sensitivity.unwrap_or("default");
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let projection = extract_run_state_projection(Some(ctx), Some(events), run_state_projection)?;
+    let rs_checkpoints =
+        extract_run_state_checkpoints(Some(ctx), Some(events), run_state_projection)?;
+    let event_seqs = event_checkpoint_seqs(events)?;
+    let min_event_seq = event_seqs.iter().next().copied();
+    let sorted = sort_run_state(rs_checkpoints)?;
+    let build = GapCtx {
+        events,
+        source_path,
+        sensitivity,
+        context: ctx,
+        projection: projection.as_ref(),
+        event_seqs: &event_seqs,
+    };
+    let mut records = Vec::new();
+    let last_rs_seq = build.append_run_state(&mut records, &sorted)?;
+    let last_checkpoint_seq = seed_last_checkpoint_seq(&sorted, min_event_seq, last_rs_seq)?;
+    let has_seen_checkpoint = !sorted.is_empty();
+    build.append_events(&mut records, has_seen_checkpoint, last_checkpoint_seq)?;
+    Ok(records)
+}
+
+/// Python: `check_checkpoint_gap`.
+///
+/// An empty gap list calls [`cap_checkpoint_findings`] and returns that
+/// result. A non-empty list calls [`make_finding`] once with the fingerprint
+/// omitted and returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. The kept prefix is
+/// not returned. A digest is not invented. [`cap_checkpoint_findings`] is
+/// not called on that path.
+pub fn check_checkpoint_gap(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    checkpoint_sensitivity: Option<&str>,
+    context: Option<&CheckContext>,
+    run_state_projection: Option<&EventMapping>,
+) -> Result<Vec<Finding>, CheckpointError> {
+    let records = checkpoint_gap_records(
+        events,
+        source_path,
+        checkpoint_sensitivity,
+        context,
+        run_state_projection,
+    )?;
+    match records.first() {
+        None => cap_checkpoint_findings(Vec::new(), SL201, max_findings, source_path, context),
+        Some(record) => emit_first_gap(record),
+    }
+}
+
+struct GapParts<'a> {
+    path: &'a str,
+    line: Option<i64>,
+    record_id: Option<&'a str>,
+    at_index: i64,
+    expected_seq: i64,
+    found_seq: Option<i64>,
+    source: Option<&'static str>,
+    sensitivity: Option<&'static str>,
+}
+
+struct GapCtx<'a> {
+    events: &'a [EventValue],
+    source_path: &'a str,
+    sensitivity: &'a str,
+    context: &'a CheckContext,
+    projection: Option<&'a EventMapping>,
+    event_seqs: &'a BTreeSet<i64>,
+}
+
+impl GapCtx<'_> {
+    fn push(&self, records: &mut Vec<CheckpointGapRecord>, parts: GapParts<'_>) {
+        records.push(CheckpointGapRecord {
+            code: SL201,
+            severity: Severity::Error,
+            repairability: Repairability::Manual,
+            message_template: MSG_SL201,
+            path: parts.path.to_owned(),
+            line: parts.line,
+            record_id: parts.record_id.map(str::to_owned),
+            at_index: parts.at_index,
+            expected_seq: parts.expected_seq,
+            found_seq: parts.found_seq,
+            source: parts.source.map(str::to_owned),
+            sensitivity: parts.sensitivity.map(str::to_owned),
+            run_state: self.projection.cloned(),
+            adapter_id: self.context.adapter_id().to_owned(),
+            adapter_version: self.context.adapter_version().to_owned(),
+            profile_id: self.context.profile_id().to_owned(),
+            profile_version: self.context.profile_version().to_owned(),
+        });
+    }
+
+    fn append_run_state(
+        &self,
+        records: &mut Vec<CheckpointGapRecord>,
+        sorted: &[EventMapping],
+    ) -> Result<Option<i64>, CheckpointError> {
+        let mut last_rs_seq: Option<i64> = None;
+        for record in sorted {
+            let seq = normalized_seq(record)?;
+            let index = normalized_index(record)?;
+            let raw_id = normalized_id(record)?;
+            let rec_id = source_record_id(raw_id.as_deref());
+            let covered = seq.is_some_and(|value| self.event_seqs.contains(&value));
+            let missing_hash = normalized_hash_missing(record);
+            if missing_hash && !covered {
+                self.push(
+                    records,
+                    GapParts {
+                        path: self.source_path,
+                        line: Some(1),
+                        record_id: rec_id.as_deref(),
+                        at_index: index,
+                        expected_seq: next_seq(last_rs_seq)?,
+                        found_seq: seq,
+                        source: Some("run_state"),
+                        sensitivity: None,
+                    },
+                );
+            }
+            if let Some(value) = seq {
+                // A covered seq emits neither gap, then still advances `last_rs_seq`.
+                if !covered {
+                    if let Some(last) = last_rs_seq {
+                        if seq_jumps(value, last)? {
+                            self.push(
+                                records,
+                                GapParts {
+                                    path: self.source_path,
+                                    line: Some(1),
+                                    record_id: rec_id.as_deref(),
+                                    at_index: index,
+                                    expected_seq: next_seq(Some(last))?,
+                                    found_seq: Some(value),
+                                    source: Some("run_state"),
+                                    sensitivity: None,
+                                },
+                            );
+                        }
+                    }
+                }
+                last_rs_seq = Some(value);
+            } else if self.sensitivity == "high" {
+                self.push(
+                    records,
+                    GapParts {
+                        path: self.source_path,
+                        line: Some(1),
+                        record_id: rec_id.as_deref(),
+                        at_index: index,
+                        expected_seq: next_seq(last_rs_seq)?,
+                        found_seq: None,
+                        source: Some("run_state"),
+                        sensitivity: Some("high"),
+                    },
+                );
+            }
+        }
+        Ok(last_rs_seq)
+    }
+
+    fn append_events(
+        &self,
+        records: &mut Vec<CheckpointGapRecord>,
+        mut has_seen_checkpoint: bool,
+        mut last_checkpoint_seq: Option<i64>,
+    ) -> Result<(), CheckpointError> {
+        for (idx, event) in self.events.iter().enumerate() {
+            let idx = usize_to_i64(idx)?;
+            let kind = get_event_kind(event)?.unwrap_or_else(|| "unknown".to_owned());
+            let run_start = is_run_start_kind(&kind);
+            if !run_start && kind != KIND_CHECKPOINT {
+                continue;
+            }
+            let ev_id = event_id_string(event, idx)?;
+            let rec_id = source_record_id(Some(&ev_id));
+            let (path, line) = resolve_source_coords(event, self.source_path)?;
+            if run_start {
+                if !has_seen_checkpoint {
+                    self.push(
+                        records,
+                        GapParts {
+                            path: &path,
+                            line,
+                            record_id: rec_id.as_deref(),
+                            at_index: idx,
+                            expected_seq: 0,
+                            found_seq: None,
+                            source: None,
+                            sensitivity: None,
+                        },
+                    );
+                }
+                continue;
+            }
+            let (_chk_id, seq, state_hash) = extract_checkpoint_fields(event)?;
+            has_seen_checkpoint = true;
+            if state_hash.as_ref().is_none_or(String::is_empty) {
+                self.push(
+                    records,
+                    GapParts {
+                        path: &path,
+                        line,
+                        record_id: rec_id.as_deref(),
+                        at_index: idx,
+                        expected_seq: next_seq(last_checkpoint_seq)?,
+                        found_seq: seq,
+                        source: None,
+                        sensitivity: None,
+                    },
+                );
+            }
+            if let Some(value) = seq {
+                if let Some(last) = last_checkpoint_seq {
+                    if seq_jumps(value, last)? {
+                        self.push(
+                            records,
+                            GapParts {
+                                path: &path,
+                                line,
+                                record_id: rec_id.as_deref(),
+                                at_index: idx,
+                                expected_seq: next_seq(Some(last))?,
+                                found_seq: Some(value),
+                                source: None,
+                                sensitivity: None,
+                            },
+                        );
+                    }
+                }
+                last_checkpoint_seq = Some(value);
+            } else if self.sensitivity == "high" {
+                // A null seq does not advance `last_checkpoint_seq`.
+                self.push(
+                    records,
+                    GapParts {
+                        path: &path,
+                        line,
+                        record_id: rec_id.as_deref(),
+                        at_index: idx,
+                        expected_seq: next_seq(last_checkpoint_seq)?,
+                        found_seq: None,
+                        source: None,
+                        sensitivity: Some("high"),
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+fn emit_first_gap(record: &CheckpointGapRecord) -> Result<Vec<Finding>, CheckpointError> {
+    let evidence = gap_evidence(record)?;
+    let source = SourceRef::try_new(
+        &record.path,
+        record.line.map(SourceLine::Int),
+        record.record_id.as_deref(),
+    )?;
+    match make_finding(&MakeFindingInput {
+        code: PyValue::string(record.code),
+        severity: PyValue::severity(record.severity),
+        repairability: PyValue::repairability(record.repairability),
+        message_template: PyValue::string(record.message_template),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: PyValue::None,
+        adapter_id: Some(record.adapter_id.clone()),
+        adapter_version: Some(record.adapter_version.clone()),
+        profile_id: Some(record.profile_id.clone()),
+        profile_version: Some(record.profile_version.clone()),
+        ordinal: None,
+        context: None,
+    }) {
+        Err(error) => Err(error.into()),
+        Ok(_finding) => Err(CheckpointError::Finding(FindingError::new(
+            FINGERPRINT_CODEC_UNAVAILABLE,
+        ))),
+    }
+}
+
+fn gap_evidence(record: &CheckpointGapRecord) -> Result<PyValue, CheckpointError> {
+    let keys = record.evidence_keys();
+    let mut entries = Vec::with_capacity(keys.len());
+    for key in keys {
+        entries.push((PyValue::string(key), evidence_value(record, key)?));
+    }
+    Ok(PyValue::map(entries))
+}
+
+fn evidence_value(record: &CheckpointGapRecord, key: &str) -> Result<PyValue, CheckpointError> {
+    match key {
+        "at_index" => Ok(PyValue::int(record.at_index)),
+        "expected_seq" => Ok(PyValue::int(record.expected_seq)),
+        "found_seq" => Ok(match record.found_seq {
+            Some(seq) => PyValue::int(seq),
+            None => PyValue::None,
+        }),
+        "sensitivity" => match &record.sensitivity {
+            Some(text) => Ok(PyValue::string(text.clone())),
+            None => Err(CheckpointError::PythonStr),
+        },
+        "source" => match &record.source {
+            Some(text) => Ok(PyValue::string(text.clone())),
+            None => Err(CheckpointError::PythonStr),
+        },
+        "run_state" => match &record.run_state {
+            Some(projection) => mapping_to_py(projection),
+            None => Err(CheckpointError::PythonStr),
+        },
+        _ => Err(CheckpointError::PythonStr),
+    }
+}
+
+fn mapping_to_py(mapping: &EventMapping) -> Result<PyValue, CheckpointError> {
+    let mut entries = Vec::with_capacity(mapping.entries().len());
+    for (key, value) in mapping.entries() {
+        entries.push((PyValue::string(key.clone()), field_to_py(value)?));
+    }
+    Ok(PyValue::map(entries))
+}
+
+fn field_to_py(field: &EventField) -> Result<PyValue, CheckpointError> {
+    match field {
+        EventField::Null => Ok(PyValue::None),
+        EventField::Bool(flag) => Ok(PyValue::bool_value(*flag)),
+        EventField::Int(number) => Ok(PyValue::int(*number)),
+        EventField::Float(_) => Err(CheckpointError::PythonFloatStr),
+        EventField::Str(text) => Ok(PyValue::string(text.clone())),
+        EventField::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(field_to_py(item)?);
+            }
+            Ok(PyValue::list(out))
+        }
+        EventField::Mapping(mapping) => mapping_to_py(mapping),
+    }
+}
+
+fn event_checkpoint_seqs(events: &[EventValue]) -> Result<BTreeSet<i64>, CheckpointError> {
+    let mut seqs = BTreeSet::new();
+    for event in events {
+        if !raw_kind_is_checkpoint(event) {
+            continue;
+        }
+        let (_id, seq, _hash) = extract_checkpoint_fields(event)?;
+        if let Some(seq) = seq {
+            seqs.insert(seq);
+        }
+    }
+    Ok(seqs)
+}
+
+/// Kind test for the event-checkpoint seq set only.
+///
+/// A [`SessionEvent`] uses its `kind` string. A mapping has no kind
+/// attribute, so this reads the `kind` key and compares with `==`. It does
+/// not stringify. Bool `true` is not [`KIND_CHECKPOINT`].
+fn raw_kind_is_checkpoint(event: &EventValue) -> bool {
+    match event {
+        EventValue::Session(session) => session.kind == KIND_CHECKPOINT,
+        EventValue::Mapping(mapping) => match mapping.get("kind") {
+            Some(EventField::Str(text)) => text == KIND_CHECKPOINT,
+            _ => false,
+        },
+        EventValue::Other => false,
+    }
+}
+
+fn sort_run_state(records: Vec<EventMapping>) -> Result<Vec<EventMapping>, CheckpointError> {
+    let mut keyed = Vec::with_capacity(records.len());
+    for record in records {
+        let seq = normalized_seq(&record)?;
+        let index = normalized_index(&record)?;
+        // Null seqs sort last. `false < true` matches Python `False < True`.
+        keyed.push(((seq.is_none(), seq.unwrap_or(0), index), record));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, record)| record).collect())
+}
+
+/// When `min_event_seq` is present and nothing is strictly smaller, the
+/// baseline stays absent. This does not fall through to `last_rs_seq`.
+fn seed_last_checkpoint_seq(
+    sorted: &[EventMapping],
+    min_event_seq: Option<i64>,
+    last_rs_seq: Option<i64>,
+) -> Result<Option<i64>, CheckpointError> {
+    if sorted.is_empty() {
+        return Ok(None);
+    }
+    if let Some(min_seq) = min_event_seq {
+        let mut preceding: Option<i64> = None;
+        for record in sorted {
+            if let Some(seq) = normalized_seq(record)? {
+                if seq < min_seq {
+                    preceding = Some(match preceding {
+                        Some(current) => current.max(seq),
+                        None => seq,
+                    });
+                }
+            }
+        }
+        return Ok(preceding);
+    }
+    Ok(last_rs_seq)
+}
+
+fn normalized_seq(record: &EventMapping) -> Result<Option<i64>, CheckpointError> {
+    match record.get("seq") {
+        None | Some(EventField::Null) | Some(EventField::Bool(_)) => Ok(None),
+        Some(EventField::Int(number)) => Ok(Some(*number)),
+        Some(EventField::Float(_)) => Err(CheckpointError::PythonFloatStr),
+        Some(EventField::Str(_) | EventField::List(_) | EventField::Mapping(_)) => {
+            Err(CheckpointError::PythonStr)
+        }
+    }
+}
+
+fn normalized_index(record: &EventMapping) -> Result<i64, CheckpointError> {
+    match record.get("index") {
+        Some(EventField::Int(number)) => Ok(*number),
+        Some(EventField::Float(_)) => Err(CheckpointError::PythonFloatStr),
+        _ => Err(CheckpointError::PythonStr),
+    }
+}
+
+fn normalized_id(record: &EventMapping) -> Result<Option<String>, CheckpointError> {
+    match record.get("id") {
+        None | Some(EventField::Null) => Ok(None),
+        Some(field) => Ok(Some(python_id_string(field)?)),
+    }
+}
+
+fn normalized_hash_missing(record: &EventMapping) -> bool {
+    match record.get("hash") {
+        None | Some(EventField::Null) => true,
+        Some(EventField::Str(text)) => text.is_empty(),
+        Some(_) => false,
+    }
+}
+
+fn next_seq(last: Option<i64>) -> Result<i64, CheckpointError> {
+    match last {
+        Some(seq) => seq
+            .checked_add(1)
+            .ok_or(CheckpointError::PythonIntUnbounded),
+        None => Ok(0),
+    }
+}
+
+fn seq_jumps(seq: i64, last: i64) -> Result<bool, CheckpointError> {
+    let delta = seq
+        .checked_sub(last)
+        .ok_or(CheckpointError::PythonIntUnbounded)?;
+    Ok(delta > 1)
+}
+
+fn event_id_string(event: &EventValue, index: i64) -> Result<String, CheckpointError> {
+    match get_event_id(event) {
+        None => Ok(format!("<event:{index}>")),
+        Some(field) => python_id_string(&field),
+    }
+}
+
+fn python_id_string(field: &EventField) -> Result<String, CheckpointError> {
+    match field {
+        EventField::Null => Ok("None".to_owned()),
+        EventField::Bool(true) => Ok("True".to_owned()),
+        EventField::Bool(false) => Ok("False".to_owned()),
+        EventField::Int(number) => Ok(number.to_string()),
+        EventField::Str(text) => Ok(text.clone()),
+        EventField::Float(_) => Err(CheckpointError::PythonFloatStr),
+        EventField::List(_) | EventField::Mapping(_) => Err(CheckpointError::PythonStr),
+    }
+}
+
+fn is_run_start_kind(kind: &str) -> bool {
+    KIND_RUN_START.contains(&kind)
+}
+
 enum RawCheckpointList<'a> {
     Json(&'a [Value]),
     Fields(&'a [EventField]),
@@ -1057,12 +1629,13 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_checkpoint_findings, cap_finding_sort_key, compute_checkpoint_fingerprint,
-        extract_checkpoint_fields, extract_run_state_checkpoints, extract_run_state_projection,
-        get_event_id, get_event_kind, resolve_source_coords, safe_id, source_record_id,
-        CheckpointError, CheckpointItem, KIND_CHECKPOINT, KIND_COMPACTION, KIND_RUN_START,
-        MAX_CHECKPOINT_FINDINGS, MSG_OVERFLOW, MSG_SL201, MSG_SL202, MSG_SL203, MSG_SL205,
-        TOOL_KINDS, VARIANT_OVERFLOW,
+        cap_checkpoint_findings, cap_finding_sort_key, check_checkpoint_gap,
+        checkpoint_gap_records, compute_checkpoint_fingerprint, extract_checkpoint_fields,
+        extract_run_state_checkpoints, extract_run_state_projection, get_event_id, get_event_kind,
+        resolve_source_coords, safe_id, source_record_id, CheckpointError, CheckpointItem,
+        KIND_CHECKPOINT, KIND_COMPACTION, KIND_RUN_START, MAX_CHECKPOINT_FINDINGS, MSG_OVERFLOW,
+        MSG_SL201, MSG_SL202, MSG_SL203, MSG_SL205, PYTHON_INT_UNBOUNDED, TOOL_KINDS,
+        VARIANT_OVERFLOW,
     };
     use crate::context::CheckContext;
     use model::canonical::{Payload, SessionEvent};
@@ -1105,6 +1678,64 @@ mod tests {
 
     fn session(id: &str) -> SessionEvent {
         SessionEvent::new(id, None, 0, "2024-02-29T00:00:00Z", "assistant", "message")
+    }
+
+    fn kinded(id: &str, kind: &str) -> EventValue {
+        EventValue::from_session(SessionEvent::new(
+            id,
+            None,
+            0,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            kind,
+        ))
+    }
+
+    fn checkpoint_session(id: &str, seq: i64, hash: Option<&str>) -> EventValue {
+        let mut event = SessionEvent::new(
+            id,
+            None,
+            seq,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            "checkpoint",
+        );
+        if let Some(hash) = hash {
+            event.payload =
+                Payload::map(vec![(Payload::string("state_hash"), Payload::string(hash))]);
+        }
+        EventValue::from_session(event)
+    }
+
+    fn checkpoint_mapping(id: &str, seq: Option<i64>, hash: Option<&str>) -> EventValue {
+        let mut entries = vec![
+            ("kind".to_owned(), EventField::Str("checkpoint".to_owned())),
+            ("id".to_owned(), EventField::Str(id.to_owned())),
+        ];
+        if let Some(seq) = seq {
+            entries.push(("seq".to_owned(), EventField::Int(seq)));
+        }
+        if let Some(hash) = hash {
+            entries.push(("state_hash".to_owned(), EventField::Str(hash.to_owned())));
+        }
+        EventValue::Mapping(EventMapping::new(entries))
+    }
+
+    fn assert_codec(err: CheckpointError) {
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    fn synth_context() -> CheckContext {
+        CheckContext::new(
+            "synth-adapter-01",
+            "9.9.9-synth",
+            "synth-profile-01",
+            "2026.01-synth",
+            None,
+            2000,
+        )
     }
 
     #[test]
@@ -1869,5 +2500,372 @@ mod tests {
         let ctx = ctx_meta(json!({"checkpoints": []}));
         let out = extract_run_state_checkpoints(Some(&ctx), Some(&events), None).unwrap();
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn empty_events_and_no_projection_return_empty() {
+        let records = checkpoint_gap_records(&[], None, None, None, None).unwrap();
+        assert!(records.is_empty());
+        let findings = check_checkpoint_gap(&[], None, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn empty_events_with_max_minus_one_return_codec_error() {
+        let records = checkpoint_gap_records(&[], None, None, None, None).unwrap();
+        assert!(records.is_empty());
+        let err = check_checkpoint_gap(&[], None, Some(-1), None, None, None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn run_start_without_checkpoint_emits_gap_and_codec_error() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            kinded("evt-hyphen-synth", "run-start"),
+            kinded("evt-cont-synth", "continuation"),
+        ];
+        let ctx = synth_context();
+        let records = checkpoint_gap_records(&events, None, None, Some(&ctx), None).unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].at_index, 0);
+        assert_eq!(records[0].expected_seq, 0);
+        assert_eq!(records[0].found_seq, None);
+        assert!(records[0].source.is_none());
+        assert_eq!(records[0].line, None);
+        assert_eq!(records[0].path, "<canonical>");
+        assert_eq!(records[0].record_id.as_deref(), Some("evt-run-synth"));
+        assert_eq!(records[0].code, SL201);
+        assert_eq!(records[0].severity, Severity::Error);
+        assert_eq!(records[0].repairability, Repairability::Manual);
+        assert_eq!(records[0].message_template, MSG_SL201);
+        assert_eq!(records[0].adapter_id, "synth-adapter-01");
+        assert_eq!(records[0].adapter_version, "9.9.9-synth");
+        assert_eq!(records[0].profile_id, "synth-profile-01");
+        assert_eq!(records[0].profile_version, "2026.01-synth");
+        assert_eq!(
+            records[0].evidence_keys().as_slice(),
+            ["at_index", "expected_seq", "found_seq"].as_slice()
+        );
+        assert_eq!(records[1].at_index, 1);
+        assert_eq!(records[2].at_index, 2);
+        assert_eq!(records[1].found_seq, None);
+        assert_eq!(records[2].found_seq, None);
+        assert!(records[1].source.is_none());
+        assert!(records[2].source.is_none());
+        let err = check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn bool_true_kind_is_not_a_checkpoint() {
+        let events = [
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Bool(true)),
+                (
+                    "id".to_owned(),
+                    EventField::Str("evt-bool-synth".to_owned()),
+                ),
+            ])),
+            kinded("evt-run-synth", "run_start"),
+        ];
+        let records = checkpoint_gap_records(&events, None, None, None, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].at_index, 1);
+        assert!(records[0].source.is_none());
+    }
+
+    #[test]
+    fn checkpoint_before_run_start_suppresses_resumption_gap() {
+        let events = [
+            checkpoint_session("evt-chk-synth", 0, Some("ab")),
+            kinded("evt-run-synth", "run_start"),
+        ];
+        let records = checkpoint_gap_records(&events, None, None, None, None).unwrap();
+        assert!(records.is_empty());
+        let findings = check_checkpoint_gap(&events, None, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn non_empty_run_state_list_makes_run_start_silent() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "rs-null-synth", "hash": "ab", "seq": null}]
+        }));
+        let events = [kinded("evt-run-synth", "run_start")];
+        let records =
+            checkpoint_gap_records(&events, None, Some("default"), Some(&ctx), None).unwrap();
+        assert!(records.is_empty());
+        let findings =
+            check_checkpoint_gap(&events, None, None, Some("default"), Some(&ctx), None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn missing_event_hash_emits_found_seq_without_source() {
+        let events = [
+            checkpoint_session("evt-chk-synth", 3, None),
+            kinded("evt-run-synth", "run_start"),
+        ];
+        let records = checkpoint_gap_records(&events, None, None, None, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].at_index, 0);
+        assert_eq!(records[0].expected_seq, 0);
+        assert_eq!(records[0].found_seq, Some(3));
+        assert!(records[0].source.is_none());
+        assert!(records[0].sensitivity.is_none());
+        let err = check_checkpoint_gap(&events, None, None, None, None, None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn event_seq_jump_fires_only_when_delta_exceeds_one() {
+        let jumped = [
+            checkpoint_session("evt-chk-0-synth", 0, Some("ab")),
+            checkpoint_session("evt-chk-2-synth", 2, Some("cd")),
+        ];
+        let records = checkpoint_gap_records(&jumped, None, None, None, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].at_index, 1);
+        assert_eq!(records[0].expected_seq, 1);
+        assert_eq!(records[0].found_seq, Some(2));
+        assert!(records[0].source.is_none());
+        let err = check_checkpoint_gap(&jumped, None, None, None, None, None).unwrap_err();
+        assert_codec(err);
+
+        let adjacent = [
+            checkpoint_session("evt-chk-0-synth", 0, Some("ab")),
+            checkpoint_session("evt-chk-1-synth", 1, Some("cd")),
+        ];
+        let records = checkpoint_gap_records(&adjacent, None, None, None, None).unwrap();
+        assert!(records.is_empty());
+        let findings = check_checkpoint_gap(&adjacent, None, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn high_sensitivity_null_seq_emits_and_default_does_not() {
+        let events = [
+            checkpoint_session("evt-chk-0-synth", 0, Some("ab")),
+            checkpoint_mapping("evt-sens-synth", None, Some("cd")),
+            checkpoint_session("evt-chk-2-synth", 2, Some("ef")),
+        ];
+        let high = checkpoint_gap_records(&events, None, Some("high"), None, None).unwrap();
+        assert_eq!(high.len(), 2);
+        assert_eq!(high[0].at_index, 1);
+        assert_eq!(high[0].expected_seq, 1);
+        assert_eq!(high[0].found_seq, None);
+        assert_eq!(high[0].sensitivity.as_deref(), Some("high"));
+        assert!(high[0].source.is_none());
+        assert_eq!(
+            high[0].evidence_keys().as_slice(),
+            ["at_index", "expected_seq", "found_seq", "sensitivity"].as_slice()
+        );
+        assert_eq!(high[1].at_index, 2);
+        assert_eq!(high[1].expected_seq, 1);
+        assert_eq!(high[1].found_seq, Some(2));
+        assert!(high[1].sensitivity.is_none());
+        assert!(high[1].source.is_none());
+
+        let defaulted = checkpoint_gap_records(&events, None, Some("default"), None, None).unwrap();
+        assert_eq!(defaulted.len(), 1);
+        assert!(defaulted[0].sensitivity.is_none());
+        assert_eq!(defaulted[0].found_seq, Some(2));
+
+        let upper = checkpoint_gap_records(&events, None, Some("HIGH"), None, None).unwrap();
+        assert_eq!(upper.len(), 1);
+        assert!(upper.iter().all(|record| record.sensitivity.is_none()));
+    }
+
+    #[test]
+    fn covered_run_state_seq_skips_missing_hash_and_still_advances() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-covered-synth", "seq": 1, "hash": ""},
+                {"id": "rs-open-synth", "seq": 3, "hash": ""}
+            ]
+        }));
+        let events = [checkpoint_session("evt-chk-synth", 1, Some("ab"))];
+        let records = checkpoint_gap_records(&events, None, None, Some(&ctx), None).unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records.iter().all(|record| record.found_seq != Some(1)));
+        assert_eq!(records[0].at_index, 1);
+        assert_eq!(records[0].expected_seq, 2);
+        assert_eq!(records[0].found_seq, Some(3));
+        assert_eq!(records[0].source.as_deref(), Some("run_state"));
+        assert_eq!(records[1].expected_seq, 2);
+        assert_eq!(records[1].found_seq, Some(3));
+        let err = check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn uncovered_empty_hash_uses_original_index_and_line_one() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-late-synth", "seq": 5, "hash": ""},
+                {"id": "rs-early-synth", "seq": 1, "hash": ""}
+            ]
+        }));
+        let empty = EventMapping::new(Vec::new());
+        let records =
+            checkpoint_gap_records(&[], Some("a\\b"), None, Some(&ctx), Some(&empty)).unwrap();
+        assert_eq!(records[0].at_index, 1);
+        assert_eq!(records[0].expected_seq, 0);
+        assert_eq!(records[0].found_seq, Some(1));
+        assert_eq!(records[0].source.as_deref(), Some("run_state"));
+        assert_eq!(records[0].line, Some(1));
+        assert_eq!(records[0].path, "a\\b");
+        assert_eq!(records[0].run_state.as_ref(), Some(&empty));
+        assert_eq!(
+            records[0].evidence_keys().as_slice(),
+            [
+                "at_index",
+                "expected_seq",
+                "found_seq",
+                "source",
+                "run_state"
+            ]
+            .as_slice()
+        );
+        assert_eq!(records[1].at_index, 0);
+        assert_eq!(records[1].found_seq, Some(5));
+        assert_eq!(records[2].at_index, 0);
+        assert_eq!(records[2].expected_seq, 2);
+        let err = check_checkpoint_gap(&[], Some("a\\b"), None, None, Some(&ctx), Some(&empty))
+            .unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn null_run_state_seqs_sort_after_numbered_seqs() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-null-synth", "seq": null, "hash": "ab"},
+                {"id": "rs-num-synth", "seq": 4, "hash": ""}
+            ]
+        }));
+        let records = checkpoint_gap_records(&[], None, Some("high"), Some(&ctx), None).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].at_index, 1);
+        assert_eq!(records[0].expected_seq, 0);
+        assert_eq!(records[0].found_seq, Some(4));
+        assert!(records[0].sensitivity.is_none());
+        assert_eq!(records[0].source.as_deref(), Some("run_state"));
+        assert_eq!(records[1].at_index, 0);
+        assert_eq!(records[1].expected_seq, 5);
+        assert_eq!(records[1].found_seq, None);
+        assert_eq!(records[1].sensitivity.as_deref(), Some("high"));
+        assert_eq!(records[1].source.as_deref(), Some("run_state"));
+        assert_eq!(
+            records[1].evidence_keys().as_slice(),
+            [
+                "at_index",
+                "expected_seq",
+                "found_seq",
+                "sensitivity",
+                "source"
+            ]
+            .as_slice()
+        );
+    }
+
+    #[test]
+    fn null_run_state_seq_can_emit_missing_hash_and_sensitivity() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "rs-null-synth", "hash": ""}]
+        }));
+        let high = checkpoint_gap_records(&[], None, Some("high"), Some(&ctx), None).unwrap();
+        assert_eq!(high.len(), 2);
+        assert_eq!(high[0].found_seq, None);
+        assert!(high[0].sensitivity.is_none());
+        assert_eq!(high[0].source.as_deref(), Some("run_state"));
+        assert_eq!(high[1].found_seq, None);
+        assert_eq!(high[1].sensitivity.as_deref(), Some("high"));
+        assert_eq!(high[1].source.as_deref(), Some("run_state"));
+
+        let defaulted =
+            checkpoint_gap_records(&[], None, Some("default"), Some(&ctx), None).unwrap();
+        assert_eq!(defaulted.len(), 1);
+        assert!(defaulted[0].sensitivity.is_none());
+        assert_eq!(defaulted[0].source.as_deref(), Some("run_state"));
+    }
+
+    #[test]
+    fn min_event_seq_without_smaller_run_state_does_not_jump() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "rs-base-synth", "seq": 10, "hash": "ab"}]
+        }));
+        let events = [
+            checkpoint_session("evt-high-synth", 12, Some("ab")),
+            checkpoint_session("evt-low-synth", 0, Some("cd")),
+        ];
+        let records = checkpoint_gap_records(&events, None, None, Some(&ctx), None).unwrap();
+        assert!(records.is_empty());
+        let findings = check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn explicit_empty_projection_attaches_run_state() {
+        let events = [kinded("evt-run-synth", "run_start")];
+        let empty = EventMapping::new(Vec::new());
+        let records = checkpoint_gap_records(&events, None, None, None, Some(&empty)).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].at_index, 0);
+        assert!(records[0].source.is_none());
+        assert_eq!(records[0].run_state.as_ref(), Some(&empty));
+        assert_eq!(
+            records[0].evidence_keys().as_slice(),
+            ["at_index", "expected_seq", "found_seq", "run_state"].as_slice()
+        );
+        let err = check_checkpoint_gap(&events, None, None, None, None, Some(&empty)).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn float_run_state_id_is_typed_error_and_does_not_call_make_finding() {
+        let ctx = ctx_meta(json!({"checkpoints": [{"id": 1.5}]}));
+        let err = checkpoint_gap_records(&[], None, None, Some(&ctx), None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonFloatStr));
+        let err = check_checkpoint_gap(&[], None, None, None, Some(&ctx), None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonFloatStr));
+    }
+
+    #[test]
+    fn i64_overflow_is_unbounded_not_a_panic() {
+        let add_ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-max-synth", "seq": i64::MAX, "hash": "ab"},
+                {"id": "rs-null-synth", "hash": ""}
+            ]
+        }));
+        let err = checkpoint_gap_records(&[], None, None, Some(&add_ctx), None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_INT_UNBOUNDED);
+        assert!(matches!(err, CheckpointError::PythonIntUnbounded));
+        let err = check_checkpoint_gap(&[], None, None, None, Some(&add_ctx), None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_INT_UNBOUNDED);
+
+        let sub_ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-neg-synth", "seq": -1, "hash": "ab"},
+                {"id": "rs-max-synth", "seq": i64::MAX, "hash": "cd"}
+            ]
+        }));
+        let err = checkpoint_gap_records(&[], None, None, Some(&sub_ctx), None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_INT_UNBOUNDED);
+        assert!(matches!(err, CheckpointError::PythonIntUnbounded));
+
+        let events = [
+            checkpoint_session("evt-neg-synth", -1, Some("ab")),
+            checkpoint_session("evt-max-synth", i64::MAX, Some("cd")),
+        ];
+        let err = checkpoint_gap_records(&events, None, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_INT_UNBOUNDED);
+        let err = check_checkpoint_gap(&events, None, None, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_INT_UNBOUNDED);
+        assert!(matches!(err, CheckpointError::PythonIntUnbounded));
     }
 }
