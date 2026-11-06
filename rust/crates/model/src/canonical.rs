@@ -559,6 +559,15 @@ fn is_gregorian_leap(year: u32) -> bool {
     (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
+/// Read of one string key from a [`Payload`] map.
+#[derive(Clone, Debug)]
+pub enum MapLookup {
+    NotAMap,
+    Borrowed,
+    Absent,
+    Present(Payload),
+}
+
 /// JSON-like payload node.
 ///
 /// Containers are `Rc` so a cycle has one identity, matching Python `id()`.
@@ -675,6 +684,40 @@ impl Payload {
         match &*self.kind {
             PayloadKind::Str(value) => Some(value.as_str()),
             _ => None,
+        }
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(&*self.kind, PayloadKind::List(_))
+    }
+
+    pub fn is_tuple(&self) -> bool {
+        matches!(&*self.kind, PayloadKind::Tuple(_))
+    }
+
+    pub fn is_map(&self) -> bool {
+        matches!(&*self.kind, PayloadKind::Map(_))
+    }
+
+    /// Last matching string key wins. A non-string key is ignored.
+    /// [`MapLookup::Borrowed`] is a failed borrow, not a missing key.
+    pub fn map_string(&self, key: &str) -> MapLookup {
+        let PayloadKind::Map(entries) = &*self.kind else {
+            return MapLookup::NotAMap;
+        };
+        let borrowed = match entries.try_borrow() {
+            Ok(borrowed) => borrowed,
+            Err(_) => return MapLookup::Borrowed,
+        };
+        let mut found = None;
+        for (entry_key, value) in borrowed.iter() {
+            if entry_key.as_str() == Some(key) {
+                found = Some(value.clone());
+            }
+        }
+        match found {
+            Some(value) => MapLookup::Present(value),
+            None => MapLookup::Absent,
         }
     }
 
@@ -2711,6 +2754,30 @@ mod tests {
     use std::collections::BTreeSet;
     use std::error::Error;
     use std::io::Write;
+
+    #[test]
+    fn map_string_keeps_the_last_duplicate_and_rejects_a_list() {
+        use super::MapLookup;
+
+        let payload = Payload::map(vec![
+            (Payload::string("side_effects"), Payload::string("none")),
+            (Payload::int(1), Payload::string("ignored")),
+            (Payload::string("side_effects"), Payload::string("possible")),
+        ]);
+        match payload.map_string("side_effects") {
+            MapLookup::Present(value) => assert_eq!(value.as_str(), Some("possible")),
+            other => panic!("expected the last string value, got {other:?}"),
+        }
+        assert!(matches!(payload.map_string("missing"), MapLookup::Absent));
+        assert!(matches!(
+            Payload::list(Vec::new()).map_string("side_effects"),
+            MapLookup::NotAMap
+        ));
+        assert!(payload.is_map());
+        assert!(Payload::list(Vec::new()).is_list());
+        assert!(Payload::tuple(Vec::new()).is_tuple());
+        assert!(!Payload::string("x").is_map());
+    }
 
     #[test]
     fn constants_match_the_pin_and_have_no_extras() {

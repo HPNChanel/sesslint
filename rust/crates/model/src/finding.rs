@@ -1222,6 +1222,15 @@ impl EvidenceKey {
     }
 }
 
+/// Read of one string key from an [`Evidence`] map.
+#[derive(Clone, Debug)]
+pub enum EvidenceLookup {
+    NotAMap,
+    Borrowed,
+    Absent,
+    Present(Evidence),
+}
+
 /// Evidence tree the content-free walker understands.
 ///
 /// Containers are `Rc` so a cycle has one identity, matching Python `id()`.
@@ -1313,6 +1322,49 @@ impl Evidence {
             true
         } else {
             false
+        }
+    }
+
+    pub fn is_map(&self) -> bool {
+        matches!(&*self.kind, EvidenceKind::Map(_))
+    }
+
+    /// A bool is not an int. [`EvidenceKind::Bool`] stays `None`.
+    pub fn as_int(&self) -> Option<i64> {
+        match &*self.kind {
+            EvidenceKind::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match &*self.kind {
+            EvidenceKind::Str(value) => Some(value.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Last matching string key wins. A non-string key is ignored.
+    /// [`EvidenceLookup::Borrowed`] is a failed borrow, not a missing key.
+    pub fn map_string(&self, key: &str) -> EvidenceLookup {
+        let EvidenceKind::Map(entries) = &*self.kind else {
+            return EvidenceLookup::NotAMap;
+        };
+        let borrowed = match entries.try_borrow() {
+            Ok(borrowed) => borrowed,
+            Err(_) => return EvidenceLookup::Borrowed,
+        };
+        let mut found = None;
+        for (entry_key, value) in borrowed.iter() {
+            if let EvidenceKey::Text(text) = entry_key {
+                if text == key {
+                    found = Some(value.clone());
+                }
+            }
+        }
+        match found {
+            Some(value) => EvidenceLookup::Present(value),
+            None => EvidenceLookup::Absent,
         }
     }
 
@@ -4454,6 +4506,38 @@ mod tests {
     };
     use crate::codes::Severity;
     use std::error::Error;
+
+    #[test]
+    fn evidence_map_string_keeps_the_last_int_and_not_a_bool() {
+        use super::EvidenceLookup;
+
+        let evidence = Evidence::map(vec![
+            (EvidenceKey::text("record_ordinal"), Evidence::int(1)),
+            (EvidenceKey::NonString, Evidence::int(9)),
+            (EvidenceKey::text("record_ordinal"), Evidence::int(4)),
+            (EvidenceKey::text("flag"), Evidence::bool_value(true)),
+        ]);
+        match evidence.map_string("record_ordinal") {
+            EvidenceLookup::Present(value) => assert_eq!(value.as_int(), Some(4)),
+            other => panic!("expected the last int, got {other:?}"),
+        }
+        match evidence.map_string("flag") {
+            EvidenceLookup::Present(value) => {
+                assert_eq!(value.as_int(), None);
+                assert_eq!(value.as_str(), None);
+            }
+            other => panic!("expected the bool value, got {other:?}"),
+        }
+        assert!(matches!(
+            evidence.map_string("missing"),
+            EvidenceLookup::Absent
+        ));
+        assert!(matches!(
+            Evidence::list(Vec::new()).map_string("record_ordinal"),
+            EvidenceLookup::NotAMap
+        ));
+        assert!(evidence.is_map());
+    }
 
     fn reject(text: &str, expected: &str) {
         let err = enforce_content_free_text(text, DEFAULT_TEXT_CONTEXT).unwrap_err();
