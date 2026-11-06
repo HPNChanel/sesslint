@@ -11,12 +11,12 @@
 //! Port of `src/sesslint/codes.py` lines 1–148
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! `CODE_REGISTRY` ports lines 151–569 of the same pin.
-//!
-//! Lookup helpers are a later card. Python imports
-//! `FindingError` in this range but does not use it; this module does not either.
+//! `ALL_CODES` / `is_valid_code` / `get_code_info` port lines 571–588.
 
 use std::error::Error;
 use std::fmt;
+
+use crate::errors::FindingError;
 
 /// Classification of finding impact on session viability.
 ///
@@ -382,7 +382,7 @@ pub struct CodeInfo {
 ///
 /// Port of `src/sesslint/codes.py` lines 151–569
 /// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-/// This table is not a map. A later card sorts codes when it formats an error.
+/// This table is not a map. Unknown-code errors sort [`ALL_CODES`] explicitly.
 pub const CODE_REGISTRY: [CodeInfo; 35] = [
     CodeInfo {
         code: SL001,
@@ -701,6 +701,47 @@ pub const CODE_REGISTRY: [CodeInfo; 35] = [
     },
 ];
 
+const fn codes_from_registry() -> [&'static str; 35] {
+    let mut codes = [""; 35];
+    let mut i = 0;
+    while i < CODE_REGISTRY.len() {
+        codes[i] = CODE_REGISTRY[i].code;
+        i += 1;
+    }
+    codes
+}
+
+/// Python `ALL_CODES: Final[frozenset[str]] = frozenset(CODE_REGISTRY.keys())`.
+///
+/// Stored as a declaration-order table so membership is equality search, not
+/// HashSet iteration. Ordinary `str` sort of these zero-padded codes matches
+/// this order; unknown-code formatting still sorts explicitly.
+pub const ALL_CODES: [&str; 35] = codes_from_registry();
+
+/// Return True if code is a registered detector reason.
+pub fn is_valid_code(code: &str) -> bool {
+    ALL_CODES.contains(&code)
+}
+
+/// Retrieve metadata for a registered detector code.
+///
+/// Raises:
+///     FindingError: If the code is not in the registry.
+pub fn get_code_info(code: &str) -> Result<CodeInfo, FindingError> {
+    for info in CODE_REGISTRY {
+        if info.code == code {
+            return Ok(info);
+        }
+    }
+    let mut valid_sorted = ALL_CODES;
+    valid_sorted.sort_unstable();
+    Err(FindingError::new(format!(
+        "Unknown detector code: {}. Must be one of {}",
+        python_str_repr(code),
+        python_str_list_repr(&valid_sorted),
+    )))
+}
+
 /// Python `repr(s)` for `str` (quote rule + common escapes). Used so Display
 /// matches `f"Unknown severity {s!r}, expected one of {valid}"` byte-for-byte.
 fn python_str_repr(s: &str) -> String {
@@ -738,11 +779,12 @@ fn python_str_list_repr(values: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Code, CodeInfo, Repairability, Severity, CODE_REGISTRY, SL001, SL002, SL003, SL004, SL005,
-        SL006, SL007, SL008, SL009, SL010, SL011, SL101, SL102, SL103, SL104, SL105, SL106, SL107,
-        SL108, SL201, SL202, SL203, SL204, SL205, SL206, SL207, SL208, SL301, SL302, SL303, SL304,
-        SL305, SL306, SL401, SL402,
+        get_code_info, is_valid_code, Code, CodeInfo, Repairability, Severity, ALL_CODES,
+        CODE_REGISTRY, SL001, SL002, SL003, SL004, SL005, SL006, SL007, SL008, SL009, SL010, SL011,
+        SL101, SL102, SL103, SL104, SL105, SL106, SL107, SL108, SL201, SL202, SL203, SL204, SL205,
+        SL206, SL207, SL208, SL301, SL302, SL303, SL304, SL305, SL306, SL401, SL402,
     };
+    use crate::errors::FindingError;
     use std::error::Error;
     use std::str::FromStr;
 
@@ -932,5 +974,53 @@ mod tests {
             CODE_REGISTRY[17].summary,
             "Pair exists but does not satisfy the selected provider’s placement rule."
         );
+    }
+
+    #[test]
+    fn all_codes_is_registry_key_set_without_hashset_iteration() {
+        assert_eq!(ALL_CODES.len(), 35);
+        for (code, info) in ALL_CODES.iter().zip(CODE_REGISTRY.iter()) {
+            assert_eq!(*code, info.code);
+        }
+        let mut sorted = ALL_CODES;
+        sorted.sort_unstable();
+        assert_eq!(sorted, ALL_CODES);
+    }
+
+    #[test]
+    fn is_valid_code_accepts_sl001_and_rejects_unknown() {
+        assert!(is_valid_code(SL001));
+        assert!(!is_valid_code("SL999"));
+        assert!(!is_valid_code(""));
+    }
+
+    #[test]
+    fn get_code_info_returns_sl203_row() {
+        let info = get_code_info(SL203).expect("SL203 is registered");
+        assert_eq!(info, CODE_REGISTRY[21]);
+        assert_eq!(info.code, SL203);
+        assert_eq!(info.name, "Unknown side-effect state");
+        assert_eq!(
+            info.summary,
+            "Repair would require assuming whether execution occurred."
+        );
+        assert_eq!(info.default_severity, Severity::Error);
+        assert_eq!(info.default_repairability, Repairability::Manual);
+        assert_eq!(info.category, "checkpoint");
+        assert_eq!(
+            info.override_policy,
+            "Conservative policy hard stop: automated repair must abstain when side effects are unknown."
+        );
+    }
+
+    #[test]
+    fn get_code_info_unknown_display_matches_python() {
+        const SORTED_CODES: &str = "['SL001', 'SL002', 'SL003', 'SL004', 'SL005', 'SL006', 'SL007', 'SL008', 'SL009', 'SL010', 'SL011', 'SL101', 'SL102', 'SL103', 'SL104', 'SL105', 'SL106', 'SL107', 'SL108', 'SL201', 'SL202', 'SL203', 'SL204', 'SL205', 'SL206', 'SL207', 'SL208', 'SL301', 'SL302', 'SL303', 'SL304', 'SL305', 'SL306', 'SL401', 'SL402']";
+        let err = get_code_info("SL999").expect_err("SL999 is not registered");
+        let expected = format!("Unknown detector code: 'SL999'. Must be one of {SORTED_CODES}");
+        assert_eq!(err.to_string(), expected);
+        assert_eq!(err.message(), expected);
+        assert!(err.source().is_none());
+        let _typed: FindingError = err;
     }
 }
