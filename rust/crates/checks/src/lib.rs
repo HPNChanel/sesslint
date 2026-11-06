@@ -28,7 +28,7 @@ pub mod abstention;
 #[rustfmt::skip]
 pub use abstention::{SAFE_SIDE_EFFECT, TOOL_KINDS, Abstention, must_abstain};
 pub mod profile;
-pub mod config {}
+pub mod config;
 pub mod builtin;
 pub mod assessment {}
 pub mod runner {}
