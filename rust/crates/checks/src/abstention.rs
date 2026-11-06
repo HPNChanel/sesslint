@@ -1,10 +1,12 @@
 //! Side-effect abstention data (TASK-017, DEV-013).
 //!
-//! Port of `src/sesslint/policy/abstention.py` lines 1–400
+//! Port of `src/sesslint/policy/abstention.py` lines 1–508
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops at the end of `check_step_scope`. `SL203` is the exact code `"SL203"`.
+//! This slice adds `should_abstain_from_repair`, `must_abstain`, and `__all__`
+//! ([`ALL`]). `SL203` is the exact code `"SL203"`.
 //! A finding with that code blocks [`check_step_scope`] even when the affected
-//! region is disjoint. This slice does not add a bypass, delete, or skip for it.
+//! region is disjoint, and both repair decisions abstain with only
+//! `"SL203 present"`. This slice does not add a bypass, delete, or skip for it.
 //!
 //! # Recorded gaps
 //!
@@ -41,6 +43,22 @@
 //!   treated as identical. Nothing is hashed.
 //! * [`check_step_scope`] takes the caller step as a generic value. No planner
 //!   type is imported.
+//! * [`should_abstain_from_repair`] and [`must_abstain`] return [`Result`].
+//!   An [`event_kind`] error, an [`extract_side_effects`] error, and a
+//!   [`check_step_scope`] error propagate and are not stored as reasons.
+//!   `SL203` returns before either walk, so a later event error does not
+//!   replace `"SL203 present"`.
+//! * Python `must_abstain` turns a missing side-effect object into `"unknown"`,
+//!   while `should_abstain_from_repair` would format that object as `None`.
+//!   [`extract_side_effects`] already returns the string `"unknown"` and does
+//!   not return a missing value. Both decisions append `side-effect-{value}`
+//!   from that string. This slice does not emit `side-effect-None`.
+//! * Rust has no default arguments. Callers pass `policy`,
+//!   `acknowledge_side_effects`, `step`, `recipe_region_fn`, and
+//!   `excludes_execution_dependence`. The Python defaults are `"conservative"`,
+//!   `False`, `None`, `None`, and `False`. `allow_unknown_side_effects`
+//!   defaults to `False` in Python and is required here. `step: None` is
+//!   Python `None`. No precomputed ambiguous set is passed.
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -822,6 +840,131 @@ pub fn check_step_scope<Step>(
     Ok((true, None))
 }
 
+/// Shared tool walk for salvage abstention and [`must_abstain`].
+///
+/// Appends `side-effect-{value} at index {idx}` for every tool whose side
+/// effects are not [`SAFE_SIDE_EFFECT`]. The walk does not stop at the first
+/// hit. A message is not a tool. An [`event_kind`] or [`extract_side_effects`]
+/// error propagates.
+fn append_tool_side_effect_reasons(
+    events: &[EventValue],
+    reasons: &mut Vec<String>,
+) -> Result<(), AbstentionError> {
+    for (idx, ev) in events.iter().enumerate() {
+        let raw_kind = event_kind(ev)?;
+        if raw_kind
+            .as_deref()
+            .is_some_and(|kind| TOOL_KINDS.contains(&kind))
+        {
+            let raw_se = extract_side_effects(ev, raw_kind.as_deref())?;
+            if raw_se != SAFE_SIDE_EFFECT {
+                reasons.push(format!("side-effect-{raw_se} at index {idx}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn has_sl203(findings: &[Finding]) -> bool {
+    findings.iter().any(|finding| finding.code() == SL203_CODE)
+}
+
+/// Python: `should_abstain_from_repair`.
+///
+/// `SL203` returns immediately with abstain true and the only reason
+/// `"SL203 present"`, before policy-specific reasons. Salvage without
+/// `acknowledge_side_effects` records every non-`none` tool side effect.
+/// Conservative with a step calls [`check_step_scope`] and, when the step is
+/// not disjoint, appends that reason or [`SIDE_EFFECT_SCOPE_UNPROVEN`] when
+/// the reason is absent. Conservative with `step: None`, and any other policy,
+/// add no further reason. A tool with side effects does not abstain in those
+/// cases. `abstain` is true exactly when `reasons` is non-empty.
+///
+/// # Errors
+///
+/// A [`check_step_scope`] error or an [`event_kind`] error propagates. It is
+/// not turned into an abstention. An [`extract_side_effects`] error on the
+/// salvage walk propagates the same way.
+pub fn should_abstain_from_repair<Step>(
+    findings: &[Finding],
+    events: &[EventValue],
+    policy: &str,
+    acknowledge_side_effects: bool,
+    step: Option<&Step>,
+    recipe_region_fn: Option<&RecipeRegionFn<'_, Step>>,
+    excludes_execution_dependence: bool,
+) -> Result<Abstention, AbstentionError> {
+    if has_sl203(findings) {
+        return Ok(Abstention::new(true, ["SL203 present"]));
+    }
+
+    let mut reasons = Vec::new();
+    if policy == "salvage" && !acknowledge_side_effects {
+        append_tool_side_effect_reasons(events, &mut reasons)?;
+    } else if policy == "conservative" {
+        if let Some(step) = step {
+            let (is_disjoint, refusal_reason) = check_step_scope(
+                step,
+                events,
+                recipe_region_fn,
+                Some(findings),
+                excludes_execution_dependence,
+                None,
+            )?;
+            if !is_disjoint {
+                let reason = match refusal_reason {
+                    Some(text) => text,
+                    None => SIDE_EFFECT_SCOPE_UNPROVEN,
+                };
+                reasons.push(reason.to_owned());
+            }
+        }
+    }
+
+    Ok(Abstention::new(!reasons.is_empty(), reasons))
+}
+
+/// Python: `must_abstain`.
+///
+/// `SL203` returns immediately with only `"SL203 present"`. When
+/// `allow_unknown_side_effects` is false, the same tool walk appends every
+/// non-`none` reason, including `"possible"`. When the flag is true, tools
+/// are not scanned.
+///
+/// # Errors
+///
+/// An [`event_kind`] or [`extract_side_effects`] error on that walk
+/// propagates. The flag skips the walk, so those errors are not raised while
+/// it is true. `SL203` returns before the walk.
+pub fn must_abstain(
+    findings: &[Finding],
+    events: &[EventValue],
+    allow_unknown_side_effects: bool,
+) -> Result<Abstention, AbstentionError> {
+    if has_sl203(findings) {
+        return Ok(Abstention::new(true, ["SL203 present"]));
+    }
+
+    let mut reasons = Vec::new();
+    if !allow_unknown_side_effects {
+        append_tool_side_effect_reasons(events, &mut reasons)?;
+    }
+    Ok(Abstention::new(!reasons.is_empty(), reasons))
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 9] = [
+    "SAFE_SIDE_EFFECT",
+    "TOOL_KINDS",
+    "Abstention",
+    "AffectedRegion",
+    "AmbiguousEvents",
+    "check_step_scope",
+    "find_ambiguous_events",
+    "must_abstain",
+    "should_abstain_from_repair",
+];
+
 struct ToolSite {
     index: usize,
     id: Option<String>,
@@ -1124,10 +1267,11 @@ mod tests {
     use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 
     use super::{
-        check_step_scope, extract_side_effects, find_ambiguous_events, Abstention,
-        AbstentionDictValue, AbstentionError, AffectedRegion, AmbiguousEvents, PyInt, RangesInput,
-        MAX_INCLUSIVE_SPAN, PYTHON_BOOL_IS_NOT_INT, RANGE_SPAN_TOO_LARGE, SAFE_SIDE_EFFECT,
-        SIDE_EFFECT_SCOPE_UNPROVEN, TOOL_KINDS,
+        check_step_scope, extract_side_effects, find_ambiguous_events, must_abstain,
+        should_abstain_from_repair, Abstention, AbstentionDictValue, AbstentionError,
+        AffectedRegion, AmbiguousEvents, PyInt, RangesInput, ALL, MAX_INCLUSIVE_SPAN,
+        PYTHON_BOOL_IS_NOT_INT, RANGE_SPAN_TOO_LARGE, SAFE_SIDE_EFFECT, SIDE_EFFECT_SCOPE_UNPROVEN,
+        TOOL_KINDS,
     };
 
     #[test]
@@ -1865,6 +2009,322 @@ mod tests {
         assert_eq!(kept.reasons(), ["zeta".to_owned(), "alpha".to_owned()]);
     }
 
+    #[test]
+    fn all_matches_the_pin_order() {
+        assert_eq!(
+            ALL,
+            [
+                "SAFE_SIDE_EFFECT",
+                "TOOL_KINDS",
+                "Abstention",
+                "AffectedRegion",
+                "AmbiguousEvents",
+                "check_step_scope",
+                "find_ambiguous_events",
+                "must_abstain",
+                "should_abstain_from_repair",
+            ]
+        );
+    }
+
+    #[test]
+    fn sl203_abstains_with_only_that_reason() {
+        let finding = finding_with("SL203", None, PyValue::None);
+        let events = vec![
+            event_with(vec![("kind".to_owned(), EventField::Float(1.0))]),
+            side_effect_tool("tool_call", "possible"),
+        ];
+        let findings = std::slice::from_ref(&finding);
+        let step = 4_i64;
+        for policy in ["conservative", "salvage", "other"] {
+            let decision = should_abstain_from_repair(
+                findings,
+                &events,
+                policy,
+                false,
+                Some(&step),
+                None,
+                false,
+            )
+            .unwrap();
+            assert!(decision.abstain(), "{policy}");
+            assert_eq!(decision.reasons(), ["SL203 present".to_owned()], "{policy}");
+        }
+        let must = must_abstain(findings, &events, false).unwrap();
+        assert!(must.abstain());
+        assert_eq!(must.reasons(), ["SL203 present".to_owned()]);
+    }
+
+    #[test]
+    fn conservative_without_a_step_does_not_abstain_for_possible() {
+        let events = vec![side_effect_tool("tool_call", "possible")];
+        let near = finding_with("SL204", None, PyValue::None);
+        let decision = should_abstain_from_repair::<()>(
+            std::slice::from_ref(&near),
+            &events,
+            "conservative",
+            false,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        assert!(!decision.abstain());
+        assert!(decision.reasons().is_empty());
+    }
+
+    #[test]
+    fn conservative_unproven_step_abstains_with_scope_reason() {
+        let events = vec![side_effect_tool("tool_call", "possible")];
+        let region = AffectedRegion::new(
+            std::iter::empty::<PyInt>(),
+            std::iter::empty::<String>(),
+            RangesInput::Sequence(Vec::new()),
+            true,
+        )
+        .unwrap();
+        let step = 5_i64;
+        let callback = |_step: &i64, _events: &[EventValue]| Ok(Some(region.clone()));
+        let decision = should_abstain_from_repair(
+            &[],
+            &events,
+            "conservative",
+            false,
+            Some(&step),
+            Some(&callback),
+            false,
+        )
+        .unwrap();
+        assert!(decision.abstain());
+        assert_eq!(
+            decision.reasons(),
+            ["side-effect-scope-unproven".to_owned()]
+        );
+    }
+
+    #[test]
+    fn conservative_proven_read_only_region_does_not_abstain() {
+        let events = vec![
+            tool_corr("tool_call", "read", "c-read", "call-read", None),
+            tool_corr("tool_result", "read", "c-read", "result-read", None),
+        ];
+        let region = AffectedRegion::new(
+            [PyInt::Int(0)],
+            std::iter::empty::<String>(),
+            RangesInput::Sequence(Vec::new()),
+            false,
+        )
+        .unwrap();
+        let step = 1_i64;
+        let callback = |_step: &i64, _events: &[EventValue]| Ok(Some(region.clone()));
+        let decision = should_abstain_from_repair(
+            &[],
+            &events,
+            "conservative",
+            false,
+            Some(&step),
+            Some(&callback),
+            false,
+        )
+        .unwrap();
+        assert!(!decision.abstain());
+        assert!(decision.reasons().is_empty());
+    }
+
+    #[test]
+    fn excludes_execution_dependence_is_passed_through() {
+        let events = vec![
+            tool_corr(
+                "tool_call",
+                "bash",
+                "c-effect",
+                "call-effect",
+                Some("possible"),
+            ),
+            tool_corr("tool_result", "bash", "c-effect", "result-effect", None),
+        ];
+        let region = AffectedRegion::new(
+            [PyInt::Int(0)],
+            std::iter::empty::<String>(),
+            RangesInput::Sequence(Vec::new()),
+            false,
+        )
+        .unwrap();
+        let step = 2_i64;
+        let callback = |_step: &i64, _events: &[EventValue]| Ok(Some(region.clone()));
+        let blocked = should_abstain_from_repair(
+            &[],
+            &events,
+            "conservative",
+            false,
+            Some(&step),
+            Some(&callback),
+            false,
+        )
+        .unwrap();
+        assert!(blocked.abstain());
+        assert_eq!(blocked.reasons(), [SIDE_EFFECT_SCOPE_UNPROVEN.to_owned()]);
+        let allowed = should_abstain_from_repair(
+            &[],
+            &events,
+            "conservative",
+            false,
+            Some(&step),
+            Some(&callback),
+            true,
+        )
+        .unwrap();
+        assert!(!allowed.abstain());
+        assert!(allowed.reasons().is_empty());
+    }
+
+    #[test]
+    fn salvage_without_acknowledge_records_the_tool_index() {
+        let events = vec![
+            event_with(vec![(
+                "kind".to_owned(),
+                EventField::Str("message".to_owned()),
+            )]),
+            side_effect_tool("tool_use", "possible"),
+        ];
+        let decision =
+            should_abstain_from_repair::<()>(&[], &events, "salvage", false, None, None, false)
+                .unwrap();
+        assert!(decision.abstain());
+        assert_eq!(
+            decision.reasons(),
+            ["side-effect-possible at index 1".to_owned()]
+        );
+    }
+
+    #[test]
+    fn salvage_with_acknowledge_does_not_abstain() {
+        let events = vec![side_effect_tool("tool_call", "possible")];
+        let decision =
+            should_abstain_from_repair::<()>(&[], &events, "salvage", true, None, None, false)
+                .unwrap();
+        assert!(!decision.abstain());
+        assert!(decision.reasons().is_empty());
+    }
+
+    #[test]
+    fn other_policy_does_not_abstain_without_sl203() {
+        let events = vec![side_effect_tool("tool_call", "possible")];
+        let step = 1_i64;
+        let decision =
+            should_abstain_from_repair(&[], &events, "other", false, Some(&step), None, false)
+                .unwrap();
+        assert!(!decision.abstain());
+        assert!(decision.reasons().is_empty());
+    }
+
+    #[test]
+    fn must_abstain_defaults_to_unknown_side_effects() {
+        let unknown = must_abstain(&[], &[tool_event("tool_call", "bash")], false).unwrap();
+        assert!(unknown.abstain());
+        assert_eq!(
+            unknown.reasons(),
+            ["side-effect-unknown at index 0".to_owned()]
+        );
+        let read = must_abstain(&[], &[tool_event("tool_call", "read")], false).unwrap();
+        assert!(!read.abstain());
+        assert!(read.reasons().is_empty());
+    }
+
+    #[test]
+    fn must_abstain_allow_flag_skips_possible() {
+        let events = vec![
+            side_effect_tool("tool_call", "possible"),
+            event_with(vec![("kind".to_owned(), EventField::Float(1.0))]),
+        ];
+        let decision = must_abstain(&[], &events, true).unwrap();
+        assert!(!decision.abstain());
+        assert!(decision.reasons().is_empty());
+    }
+
+    #[test]
+    fn message_event_does_not_abstain() {
+        let events = vec![event_with(vec![
+            ("kind".to_owned(), EventField::Str("message".to_owned())),
+            (
+                "side_effects".to_owned(),
+                EventField::Str("possible".to_owned()),
+            ),
+        ])];
+        let salvage =
+            should_abstain_from_repair::<()>(&[], &events, "salvage", false, None, None, false)
+                .unwrap();
+        assert!(!salvage.abstain());
+        assert!(salvage.reasons().is_empty());
+        let must = must_abstain(&[], &events, false).unwrap();
+        assert!(!must.abstain());
+        assert!(must.reasons().is_empty());
+    }
+
+    #[test]
+    fn side_effect_walk_appends_every_reason_in_order() {
+        let events = vec![
+            side_effect_tool("tool_call", "unknown"),
+            event_with(vec![
+                ("kind".to_owned(), EventField::Str("message".to_owned())),
+                (
+                    "side_effects".to_owned(),
+                    EventField::Str("possible".to_owned()),
+                ),
+            ]),
+            tool_event("tool_call", "read"),
+            side_effect_tool("tool_result", "possible"),
+        ];
+        let want = [
+            "side-effect-unknown at index 0".to_owned(),
+            "side-effect-possible at index 3".to_owned(),
+        ];
+        let salvage =
+            should_abstain_from_repair::<()>(&[], &events, "salvage", false, None, None, false)
+                .unwrap();
+        assert!(salvage.abstain());
+        assert_eq!(salvage.reasons(), want);
+        let must = must_abstain(&[], &events, false).unwrap();
+        assert!(must.abstain());
+        assert_eq!(must.reasons(), want);
+    }
+
+    #[test]
+    fn event_kind_error_propagates_and_is_not_abstain() {
+        let events = vec![event_with(vec![(
+            "kind".to_owned(),
+            EventField::Float(1.0),
+        )])];
+        let salvage =
+            should_abstain_from_repair::<()>(&[], &events, "salvage", false, None, None, false)
+                .unwrap_err();
+        assert_eq!(salvage, AbstentionError::Event(EventError::PythonFloatStr));
+
+        let region = AffectedRegion::new(
+            std::iter::empty::<PyInt>(),
+            std::iter::empty::<String>(),
+            RangesInput::Sequence(Vec::new()),
+            false,
+        )
+        .unwrap();
+        let step = 1_i64;
+        let callback = |_step: &i64, _events: &[EventValue]| Ok(Some(region.clone()));
+        let scoped = should_abstain_from_repair(
+            &[],
+            &events,
+            "conservative",
+            false,
+            Some(&step),
+            Some(&callback),
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(scoped, AbstentionError::Event(EventError::PythonFloatStr));
+
+        let must = must_abstain(&[], &events, false).unwrap_err();
+        assert_eq!(must, AbstentionError::Event(EventError::PythonFloatStr));
+    }
+
     fn event_with(entries: Vec<(String, EventField)>) -> EventValue {
         EventValue::Mapping(EventMapping::new(entries))
     }
@@ -1874,6 +2334,16 @@ mod tests {
             "side_effects".to_owned(),
             EventField::Str(text.to_owned()),
         )])
+    }
+
+    fn side_effect_tool(kind: &str, side_effects: &str) -> EventValue {
+        event_with(vec![
+            ("kind".to_owned(), EventField::Str(kind.to_owned())),
+            (
+                "side_effects".to_owned(),
+                EventField::Str(side_effects.to_owned()),
+            ),
+        ])
     }
 
     fn tool_event(kind: &str, name: &str) -> EventValue {
