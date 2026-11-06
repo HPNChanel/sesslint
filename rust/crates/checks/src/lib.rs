@@ -20,7 +20,7 @@ pub mod identity;
 pub mod ordering;
 pub mod size;
 pub mod tool_pairing_1;
-pub mod tool_pairing_2 {}
+pub mod tool_pairing_2;
 pub mod writers {}
 pub mod abstention;
 // `sesslint.policy` package surface. Order is `policy/__init__.py` `__all__`
