@@ -1,9 +1,9 @@
 //! Checkpoint and continuation integrity checks (SL201, SL202, SL203).
 //!
-//! Port of `src/sesslint/checks/checkpoint.py` lines 1–262
+//! Port of `src/sesslint/checks/checkpoint.py` lines 1–397
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! This slice is constants and helpers through
-//! [`extract_run_state_projection`]. It does not port `check_` functions,
+//! [`extract_run_state_checkpoints`]. It does not port `check_` functions,
 //! SL201/SL202/SL203 detection, or `__all__`.
 //!
 //! [`compute_checkpoint_fingerprint`] hashes locally. It is not a finding
@@ -43,9 +43,16 @@
 //! * Overflow [`make_finding`] does not produce a digest
 //!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
 //! * A list of events has no `source` attribute. This slice does not scan
-//!   events for a run-state projection.
-//! * [`CheckContext::source_metadata`] is a [`BTreeMap`]. Copy order is
-//!   that map's key order, not a Python `dict` insertion order.
+//!   events for a run-state projection or for checkpoints.
+//! * [`CheckContext::source_metadata`] is a [`BTreeMap`]. That candidate's
+//!   own key order is sorted. A serde_json object nested inside a value
+//!   keeps [`serde_json::Map`] order. This slice does not scan events to
+//!   recover insertion order.
+//! * [`extract_run_state_checkpoints`] does not call
+//!   [`extract_run_state_projection`] or [`make_finding`].
+//! * A seq string with a non-ASCII character is
+//!   [`PYTHON_ISDIGIT_UNICODE`]. Python `str.isdigit` accepts Unicode Nd.
+//!   This slice does not guess a Unicode numeric value.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -107,6 +114,9 @@ pub const PYTHON_INT_UNBOUNDED: &str =
 /// [`EvidenceLookup::Borrowed`] is not a missing key.
 pub const BORROWED_LOOKUP: &str = "A borrowed map lookup is not a missing key";
 
+/// Python `str.isdigit` accepts Unicode Nd. This slice accepts ASCII `0`–`9`.
+pub const PYTHON_ISDIGIT_UNICODE: &str = "seq string parsing accepts ASCII digits only. Python str.isdigit accepts Unicode Nd digits such as U+0661; those are rejected and are not treated as digits";
+
 /// Failure from this slice. [`Display`] is the message only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckpointError {
@@ -114,6 +124,7 @@ pub enum CheckpointError {
     PythonIntUnbounded,
     PythonFloatStr,
     PythonStr,
+    PythonIsdigitUnicode,
     Finding(FindingError),
 }
 
@@ -124,6 +135,7 @@ impl CheckpointError {
             Self::PythonIntUnbounded => PYTHON_INT_UNBOUNDED,
             Self::PythonFloatStr => PYTHON_FLOAT_STR_UNREPRESENTABLE,
             Self::PythonStr => PYTHON_STR_UNREPRESENTABLE,
+            Self::PythonIsdigitUnicode => PYTHON_ISDIGIT_UNICODE,
             Self::Finding(error) => error.message(),
         }
     }
@@ -142,7 +154,8 @@ impl Error for CheckpointError {
             Self::BorrowedLookup
             | Self::PythonIntUnbounded
             | Self::PythonFloatStr
-            | Self::PythonStr => None,
+            | Self::PythonStr
+            | Self::PythonIsdigitUnicode => None,
         }
     }
 }
@@ -506,6 +519,265 @@ pub fn extract_run_state_projection(
     Ok(None)
 }
 
+/// Python: `_extract_run_state_checkpoints`.
+///
+/// Does not call [`extract_run_state_projection`]. A list of events has no
+/// `.source`. Do not scan `events`. An empty checkpoints list is a found
+/// sequence: later fallbacks are not read. A string or bytes `checkpoints`
+/// value is not a sequence of items.
+///
+/// `source_metadata` is a [`BTreeMap`], so that candidate's own key order
+/// is sorted. A serde_json object nested inside a value keeps
+/// [`serde_json::Map`] order. Do not scan events to recover insertion order.
+///
+/// Each record has keys `hash`, `id`, `index`, `seq` in that order. This
+/// function does not call [`make_finding`].
+pub fn extract_run_state_checkpoints(
+    context: Option<&CheckContext>,
+    events: Option<&[EventValue]>,
+    run_state_projection: Option<&EventMapping>,
+) -> Result<Vec<EventMapping>, CheckpointError> {
+    // A list of events has no `source` attribute. Do not scan events.
+    let _ = events;
+
+    let mut raw_list: Option<RawCheckpointList<'_>> = None;
+    let meta = context.and_then(CheckContext::source_metadata);
+    if let Some(candidate) = meta {
+        raw_list = sequence_from_candidate(candidate);
+    }
+
+    if raw_list.is_none() {
+        if let Some(projection) = run_state_projection {
+            if let Some(items) = field_as_sequence(projection.get("checkpoints")) {
+                raw_list = Some(RawCheckpointList::Fields(items));
+            }
+        }
+    }
+
+    if raw_list.is_none() {
+        if let Some(candidate) = meta {
+            if let Some(Value::Object(rsp)) = candidate.get("run_state_projection") {
+                if let Some(items) = json_as_sequence(rsp.get("checkpoints")) {
+                    raw_list = Some(RawCheckpointList::Json(items));
+                }
+            }
+        }
+    }
+
+    let Some(raw_list) = raw_list else {
+        return Ok(Vec::new());
+    };
+    if raw_list.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    match raw_list {
+        RawCheckpointList::Json(items) => records_from_json_items(items),
+        RawCheckpointList::Fields(items) => records_from_field_items(items),
+    }
+}
+
+enum RawCheckpointList<'a> {
+    Json(&'a [Value]),
+    Fields(&'a [EventField]),
+}
+
+impl RawCheckpointList<'_> {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Json(items) => items.is_empty(),
+            Self::Fields(items) => items.is_empty(),
+        }
+    }
+}
+
+fn sequence_from_candidate(candidate: &BTreeMap<String, Value>) -> Option<RawCheckpointList<'_>> {
+    if let Some(items) = json_as_sequence(candidate.get("checkpoints")) {
+        return Some(RawCheckpointList::Json(items));
+    }
+    if let Some(Value::Object(run_state)) = candidate.get("run_state") {
+        if let Some(items) = json_as_sequence(run_state.get("checkpoints")) {
+            return Some(RawCheckpointList::Json(items));
+        }
+    }
+    if let Some(Value::Object(inner)) = candidate.get("metadata") {
+        if let Some(items) = json_as_sequence(inner.get("checkpoints")) {
+            return Some(RawCheckpointList::Json(items));
+        }
+        if let Some(Value::Object(run_state)) = inner.get("run_state") {
+            if let Some(items) = json_as_sequence(run_state.get("checkpoints")) {
+                return Some(RawCheckpointList::Json(items));
+            }
+        }
+    }
+    None
+}
+
+fn json_as_sequence(value: Option<&Value>) -> Option<&[Value]> {
+    match value {
+        Some(Value::Array(items)) => Some(items.as_slice()),
+        _ => None,
+    }
+}
+
+fn field_as_sequence(value: Option<&EventField>) -> Option<&[EventField]> {
+    match value {
+        Some(EventField::List(items)) => Some(items.as_slice()),
+        _ => None,
+    }
+}
+
+fn records_from_json_items(items: &[Value]) -> Result<Vec<EventMapping>, CheckpointError> {
+    let mut out = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let index = usize_to_i64(index)?;
+        let event = match item {
+            Value::Object(object) => EventValue::Mapping(json_object_to_mapping(object)?),
+            _ => EventValue::Other,
+        };
+        out.push(record_from_event_value(&event, index)?);
+    }
+    Ok(out)
+}
+
+fn records_from_field_items(items: &[EventField]) -> Result<Vec<EventMapping>, CheckpointError> {
+    let mut out = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let index = usize_to_i64(index)?;
+        let event = match item {
+            EventField::Mapping(mapping) => EventValue::Mapping(mapping.clone()),
+            _ => EventValue::Other,
+        };
+        out.push(record_from_event_value(&event, index)?);
+    }
+    Ok(out)
+}
+
+fn record_from_event_value(item: &EventValue, index: i64) -> Result<EventMapping, CheckpointError> {
+    let (chk_id, seq, state_hash) = match item {
+        EventValue::Mapping(mapping) => mapping_run_state_fields(mapping),
+        EventValue::Session(session) => session_run_state_fields(session),
+        EventValue::Other => (None, None, None),
+    };
+    let chk_id_str = match chk_id.as_ref() {
+        None => run_state_synth_id(index),
+        Some(field) => match python_str_keep_original(field)? {
+            Some(text) => text,
+            None => run_state_synth_id(index),
+        },
+    };
+    let seq_val = parse_run_state_seq(seq.as_ref())?;
+    let hash_str = run_state_hash_str(state_hash.as_ref())?;
+    Ok(run_state_record(hash_str, chk_id_str, index, seq_val))
+}
+
+fn mapping_run_state_fields(
+    mapping: &EventMapping,
+) -> (Option<EventField>, Option<EventField>, Option<EventField>) {
+    let chk_id = match mapping.get("id") {
+        None | Some(EventField::Null) => mapping.get("checkpoint_id").cloned(),
+        Some(value) => Some(value.clone()),
+    };
+    let seq = if mapping_contains(mapping, "seq") {
+        mapping.get("seq").cloned()
+    } else if mapping_contains(mapping, "checkpoint_seq") {
+        mapping.get("checkpoint_seq").cloned()
+    } else {
+        None
+    };
+    let state_hash = match mapping.get("hash") {
+        None | Some(EventField::Null) => match mapping.get("state_hash") {
+            None | Some(EventField::Null) => mapping.get("payload_hash").cloned(),
+            Some(value) => Some(value.clone()),
+        },
+        Some(value) => Some(value.clone()),
+    };
+    (chk_id, seq, state_hash)
+}
+
+fn session_run_state_fields(
+    session: &SessionEvent,
+) -> (Option<EventField>, Option<EventField>, Option<EventField>) {
+    // Fields the struct does not have stay missing. Do not read extra_fields.
+    (
+        Some(EventField::Str(session.id.clone())),
+        Some(EventField::Int(session.seq)),
+        None,
+    )
+}
+
+fn run_state_synth_id(index: i64) -> String {
+    format!("chk-runstate-{index}")
+}
+
+fn parse_run_state_seq(seq: Option<&EventField>) -> Result<Option<i64>, CheckpointError> {
+    match seq {
+        None
+        | Some(EventField::Null)
+        | Some(EventField::Bool(_))
+        | Some(EventField::Float(_))
+        | Some(EventField::List(_))
+        | Some(EventField::Mapping(_)) => Ok(None),
+        Some(EventField::Int(number)) => Ok(Some(*number)),
+        Some(EventField::Str(text)) => parse_run_state_seq_str(text),
+    }
+}
+
+fn parse_run_state_seq_str(text: &str) -> Result<Option<i64>, CheckpointError> {
+    let stripped = text.trim();
+    if stripped.is_empty() {
+        return Ok(None);
+    }
+    if !stripped.is_ascii() {
+        return Err(CheckpointError::PythonIsdigitUnicode);
+    }
+    if !stripped.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Ok(None);
+    }
+    stripped
+        .parse::<i64>()
+        .map(Some)
+        .map_err(|_| CheckpointError::PythonIntUnbounded)
+}
+
+fn run_state_hash_str(field: Option<&EventField>) -> Result<Option<String>, CheckpointError> {
+    let Some(text) = optional_python_str(field)? else {
+        return Ok(None);
+    };
+    let stripped = text.trim();
+    if stripped.is_empty() || matches!(stripped, "<NoneType>" | "<null>" | "None" | "null") {
+        Ok(None)
+    } else {
+        Ok(Some(stripped.to_owned()))
+    }
+}
+
+fn run_state_record(
+    hash: Option<String>,
+    id: String,
+    index: i64,
+    seq: Option<i64>,
+) -> EventMapping {
+    EventMapping::new(vec![
+        (
+            "hash".to_owned(),
+            match hash {
+                Some(text) => EventField::Str(text),
+                None => EventField::Null,
+            },
+        ),
+        ("id".to_owned(), EventField::Str(id)),
+        ("index".to_owned(), EventField::Int(index)),
+        (
+            "seq".to_owned(),
+            match seq {
+                Some(number) => EventField::Int(number),
+                None => EventField::Null,
+            },
+        ),
+    ])
+}
+
 fn overflow_flag(finding: &Finding) -> Result<i32, CheckpointError> {
     let Some(evidence) = finding.evidence() else {
         return Ok(0);
@@ -786,10 +1058,11 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
 mod tests {
     use super::{
         cap_checkpoint_findings, cap_finding_sort_key, compute_checkpoint_fingerprint,
-        extract_checkpoint_fields, extract_run_state_projection, get_event_id, get_event_kind,
-        resolve_source_coords, safe_id, source_record_id, CheckpointError, CheckpointItem,
-        KIND_CHECKPOINT, KIND_COMPACTION, KIND_RUN_START, MAX_CHECKPOINT_FINDINGS, MSG_OVERFLOW,
-        MSG_SL201, MSG_SL202, MSG_SL203, MSG_SL205, TOOL_KINDS, VARIANT_OVERFLOW,
+        extract_checkpoint_fields, extract_run_state_checkpoints, extract_run_state_projection,
+        get_event_id, get_event_kind, resolve_source_coords, safe_id, source_record_id,
+        CheckpointError, CheckpointItem, KIND_CHECKPOINT, KIND_COMPACTION, KIND_RUN_START,
+        MAX_CHECKPOINT_FINDINGS, MSG_OVERFLOW, MSG_SL201, MSG_SL202, MSG_SL203, MSG_SL205,
+        TOOL_KINDS, VARIANT_OVERFLOW,
     };
     use crate::context::CheckContext;
     use model::canonical::{Payload, SessionEvent};
@@ -1298,5 +1571,303 @@ mod tests {
         let ctx = CheckContext::create(None, None, None, None, Some(meta));
         let out = extract_run_state_projection(Some(&ctx), Some(&[]), None).unwrap();
         assert_eq!(out, None);
+    }
+
+    fn ctx_meta(value: Value) -> CheckContext {
+        let Value::Object(object) = value else {
+            panic!("expected object metadata");
+        };
+        CheckContext::create(None, None, None, None, Some(object.into_iter().collect()))
+    }
+
+    fn mapping_chk(entries: Vec<(&str, EventField)>) -> EventField {
+        EventField::Mapping(EventMapping::new(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        ))
+    }
+
+    fn record_keys(record: &EventMapping) -> Vec<&str> {
+        record.keys().collect()
+    }
+
+    fn record_id(record: &EventMapping) -> &str {
+        match record.get("id") {
+            Some(EventField::Str(text)) => text,
+            other => panic!("expected string id, got {other:?}"),
+        }
+    }
+
+    fn record_hash(record: &EventMapping) -> Option<&str> {
+        match record.get("hash") {
+            Some(EventField::Null) | None => None,
+            Some(EventField::Str(text)) => Some(text.as_str()),
+            other => panic!("expected string or null hash, got {other:?}"),
+        }
+    }
+
+    fn record_seq(record: &EventMapping) -> Option<i64> {
+        match record.get("seq") {
+            Some(EventField::Null) | None => None,
+            Some(EventField::Int(number)) => Some(*number),
+            other => panic!("expected int or null seq, got {other:?}"),
+        }
+    }
+
+    fn record_index(record: &EventMapping) -> i64 {
+        match record.get("index") {
+            Some(EventField::Int(number)) => *number,
+            other => panic!("expected int index, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_state_no_candidates_and_no_projection_returns_empty() {
+        let out = extract_run_state_checkpoints(None, None, None).unwrap();
+        assert!(out.is_empty());
+        let ctx = CheckContext::create(None, None, None, None, None);
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn run_state_empty_checkpoints_do_not_read_projection() {
+        let ctx = ctx_meta(json!({"checkpoints": []}));
+        let projection = EventMapping::new(vec![(
+            "checkpoints".to_owned(),
+            EventField::List(vec![mapping_chk(vec![(
+                "id",
+                EventField::Str("proj-chk-synth".to_owned()),
+            )])]),
+        )]);
+        let out = extract_run_state_checkpoints(Some(&ctx), None, Some(&projection)).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn run_state_string_checkpoints_fall_through_to_run_state() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": "not-a-sequence",
+            "run_state": {"checkpoints": [{"id": "rs-chk-synth"}]}
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "rs-chk-synth");
+    }
+
+    #[test]
+    fn run_state_direct_checkpoints_win_over_run_state() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "direct-chk-synth"}],
+            "run_state": {"checkpoints": [{"id": "rs-chk-synth"}]}
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "direct-chk-synth");
+    }
+
+    #[test]
+    fn run_state_nested_metadata_checkpoints_when_top_has_no_sequence() {
+        let ctx = ctx_meta(json!({
+            "metadata": {"checkpoints": [{"id": "nested-chk-synth"}]}
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "nested-chk-synth");
+    }
+
+    #[test]
+    fn run_state_nested_metadata_run_state_when_metadata_checkpoints_absent() {
+        let ctx = ctx_meta(json!({
+            "metadata": {"run_state": {"checkpoints": [{"id": "meta-rs-chk-synth"}]}}
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "meta-rs-chk-synth");
+    }
+
+    #[test]
+    fn run_state_explicit_projection_only_when_metadata_has_no_sequence() {
+        let ctx = ctx_meta(json!({"other": "no-sequence"}));
+        let projection = EventMapping::new(vec![(
+            "checkpoints".to_owned(),
+            EventField::List(vec![mapping_chk(vec![(
+                "id",
+                EventField::Str("proj-chk-synth".to_owned()),
+            )])]),
+        )]);
+        let out = extract_run_state_checkpoints(Some(&ctx), None, Some(&projection)).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "proj-chk-synth");
+
+        let ctx_direct = ctx_meta(json!({"checkpoints": [{"id": "direct-chk-synth"}]}));
+        let out =
+            extract_run_state_checkpoints(Some(&ctx_direct), None, Some(&projection)).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "direct-chk-synth");
+    }
+
+    #[test]
+    fn run_state_metadata_projection_only_when_argument_has_no_sequence() {
+        let ctx = ctx_meta(json!({
+            "run_state_projection": {"checkpoints": [{"id": "meta-proj-chk-synth"}]}
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "meta-proj-chk-synth");
+
+        let projection = EventMapping::new(vec![(
+            "checkpoints".to_owned(),
+            EventField::List(vec![mapping_chk(vec![(
+                "id",
+                EventField::Str("arg-proj-chk-synth".to_owned()),
+            )])]),
+        )]);
+        let out = extract_run_state_checkpoints(Some(&ctx), None, Some(&projection)).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "arg-proj-chk-synth");
+
+        let empty_proj = EventMapping::new(Vec::new());
+        let out = extract_run_state_checkpoints(Some(&ctx), None, Some(&empty_proj)).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(record_id(&out[0]), "meta-proj-chk-synth");
+    }
+
+    #[test]
+    fn run_state_mapping_id_wins_over_checkpoint_id() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "id-synth", "checkpoint_id": "checkpoint-id-synth"}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(record_id(&out[0]), "id-synth");
+
+        let ctx_missing = ctx_meta(json!({
+            "checkpoints": [{"checkpoint_id": "checkpoint-id-synth"}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx_missing), None, None).unwrap();
+        assert_eq!(record_id(&out[0]), "checkpoint-id-synth");
+    }
+
+    #[test]
+    fn run_state_whitespace_id_and_kept_spaces() {
+        let ctx = ctx_meta(json!({"checkpoints": [{"id": "   "}]}));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(record_id(&out[0]), "chk-runstate-0");
+
+        let ctx_kept = ctx_meta(json!({"checkpoints": [{"id": "  id-synth  "}]}));
+        let out = extract_run_state_checkpoints(Some(&ctx_kept), None, None).unwrap();
+        assert_eq!(record_id(&out[0]), "  id-synth  ");
+    }
+
+    #[test]
+    fn run_state_seq_null_absent_zero_and_bool() {
+        let ctx_null = ctx_meta(json!({
+            "checkpoints": [{"seq": null, "checkpoint_seq": 9}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx_null), None, None).unwrap();
+        assert_eq!(record_seq(&out[0]), None);
+
+        let ctx_absent = ctx_meta(json!({
+            "checkpoints": [{"checkpoint_seq": 4}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx_absent), None, None).unwrap();
+        assert_eq!(record_seq(&out[0]), Some(4));
+
+        let ctx_zero = ctx_meta(json!({"checkpoints": [{"seq": 0}]}));
+        let out = extract_run_state_checkpoints(Some(&ctx_zero), None, None).unwrap();
+        assert_eq!(record_seq(&out[0]), Some(0));
+
+        let ctx_bool = ctx_meta(json!({"checkpoints": [{"seq": true}]}));
+        let out = extract_run_state_checkpoints(Some(&ctx_bool), None, None).unwrap();
+        assert_eq!(record_seq(&out[0]), None);
+    }
+
+    #[test]
+    fn run_state_hash_empty_state_hash_strip_and_null_string() {
+        let ctx_empty = ctx_meta(json!({
+            "checkpoints": [{"hash": "", "state_hash": "state-synth"}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx_empty), None, None).unwrap();
+        assert_eq!(record_hash(&out[0]), None);
+
+        let ctx_state = ctx_meta(json!({
+            "checkpoints": [{"state_hash": "state-synth"}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx_state), None, None).unwrap();
+        assert_eq!(record_hash(&out[0]), Some("state-synth"));
+
+        let ctx_spaces = ctx_meta(json!({"checkpoints": [{"hash": "  ab  "}]}));
+        let out = extract_run_state_checkpoints(Some(&ctx_spaces), None, None).unwrap();
+        assert_eq!(record_hash(&out[0]), Some("ab"));
+
+        let ctx_null = ctx_meta(json!({"checkpoints": [{"hash": "null"}]}));
+        let out = extract_run_state_checkpoints(Some(&ctx_null), None, None).unwrap();
+        assert_eq!(record_hash(&out[0]), None);
+    }
+
+    #[test]
+    fn run_state_string_and_null_items_emit_rows() {
+        let ctx = ctx_meta(json!({"checkpoints": ["item-synth", null]}));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(record_id(&out[0]), "chk-runstate-0");
+        assert_eq!(record_index(&out[0]), 0);
+        assert_eq!(record_seq(&out[0]), None);
+        assert_eq!(record_hash(&out[0]), None);
+        assert_eq!(record_id(&out[1]), "chk-runstate-1");
+        assert_eq!(record_index(&out[1]), 1);
+        assert_eq!(record_seq(&out[1]), None);
+        assert_eq!(record_hash(&out[1]), None);
+    }
+
+    #[test]
+    fn run_state_ascii_seq_string_and_negative_string() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"seq": " 007 "}, {"seq": "-3"}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(record_seq(&out[0]), Some(7));
+        assert_eq!(record_seq(&out[1]), None);
+    }
+
+    #[test]
+    fn run_state_float_id_is_typed_error() {
+        let ctx = ctx_meta(json!({"checkpoints": [{"id": 1.5}]}));
+        let err = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonFloatStr));
+    }
+
+    #[test]
+    fn run_state_output_key_order_is_hash_id_index_seq() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "id-synth", "seq": 1, "hash": "ab"}]
+        }));
+        let out = extract_run_state_checkpoints(Some(&ctx), None, None).unwrap();
+        assert_eq!(record_keys(&out[0]), ["hash", "id", "index", "seq"]);
+        assert_eq!(out[0].entries().len(), 4);
+    }
+
+    #[test]
+    fn run_state_events_are_not_scanned() {
+        let event_chk = EventValue::Mapping(EventMapping::new(vec![(
+            "checkpoints".to_owned(),
+            EventField::List(vec![mapping_chk(vec![(
+                "id",
+                EventField::Str("event-chk-synth".to_owned()),
+            )])]),
+        )]));
+        let events = [event_chk];
+        let out = extract_run_state_checkpoints(None, Some(&events), None).unwrap();
+        assert!(out.is_empty());
+
+        let mut event = session("evt-chk-synth");
+        event.kind = "checkpoint".to_owned();
+        let events = [EventValue::from_session(event)];
+        let ctx = ctx_meta(json!({"checkpoints": []}));
+        let out = extract_run_state_checkpoints(Some(&ctx), Some(&events), None).unwrap();
+        assert!(out.is_empty());
     }
 }
