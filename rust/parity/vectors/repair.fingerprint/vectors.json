@@ -1,0 +1,106 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.fingerprint",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "fingerprint_rs_sha256": "e7553e1c6b9f72b238c99b89ef8c4147216c9764674b7d2cb9518c0b6d4ce12f",
+  "known_parity_gaps": [
+    "canonical_json_bytes / plan inputs: JSON Number NaN and Infinity (Python float); Rust float codec rejects them — parity not required here.",
+    "canonical_json_bytes: Unicode string containing a lone surrogate (U+D800); Rust Value string is valid Unicode — parity not required here.",
+    "canonical_json_bytes: integers outside i64; Rust Value uses i64 — parity not required here.",
+    "compute_plan_fingerprint: non-mapping plan. Python may raise TypeError from Mapping; Rust returns codec CanonicalError — if exception text differs from codec error, parity on message is not required."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "canonical_json_bytes",
+          "compute_plan_fingerprint"
+        ]
+      }
+    },
+    {
+      "id": "plan_fp_small_policy_omitted",
+      "construct": {
+        "type": "compute_plan_fingerprint",
+        "value": {
+          "id": "s1"
+        }
+      },
+      "expected": {
+        "digest": "0f92a1d1205a7cfc95890d04e7fb6d31cad73d6a84a7a1fb242d37935b5998bf"
+      }
+    },
+    {
+      "id": "plan_fp_small_policy_conservative",
+      "construct": {
+        "type": "compute_plan_fingerprint",
+        "value": {
+          "id": "s1"
+        },
+        "policy": "conservative"
+      },
+      "expected": {
+        "digest": "6aabd0bfc1b8101bf6b6c84a01d877a5b2c142bb4926b68b3c012991826ff81c"
+      }
+    },
+    {
+      "id": "plan_fp_extra_fingerprint_policy_omitted",
+      "construct": {
+        "type": "compute_plan_fingerprint",
+        "value": {
+          "id": "s1",
+          "fingerprint": "marker"
+        }
+      },
+      "expected": {
+        "digest": "0f92a1d1205a7cfc95890d04e7fb6d31cad73d6a84a7a1fb242d37935b5998bf"
+      }
+    },
+    {
+      "id": "plan_fp_extra_fingerprint_policy_conservative",
+      "construct": {
+        "type": "compute_plan_fingerprint",
+        "value": {
+          "id": "s1",
+          "fingerprint": "marker"
+        },
+        "policy": "conservative"
+      },
+      "expected": {
+        "digest": "6aabd0bfc1b8101bf6b6c84a01d877a5b2c142bb4926b68b3c012991826ff81c"
+      }
+    },
+    {
+      "id": "canonical_json_non_ascii_newline_true",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "value": {
+          "id": "s1",
+          "label": "Tiếng"
+        },
+        "newline": true
+      },
+      "expected": {
+        "bytes_b64": "eyJpZCI6InMxIiwibGFiZWwiOiJUaeG6v25nIn0K"
+      }
+    },
+    {
+      "id": "canonical_json_non_ascii_newline_false",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "value": {
+          "id": "s1",
+          "label": "Tiếng"
+        },
+        "newline": false
+      },
+      "expected": {
+        "bytes_b64": "eyJpZCI6InMxIiwibGFiZWwiOiJUaeG6v25nIn0="
+      }
+    }
+  ]
+}
