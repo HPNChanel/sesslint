@@ -11,7 +11,7 @@ pub mod codes;
 pub mod errors;
 pub mod version;
 pub mod secret_families {}
-pub mod finding {}
+pub mod finding;
 pub mod canonical {}
 pub mod events {}
 pub mod reference {}
