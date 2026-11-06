@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.context_pressure",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_context_pressure_rs_sha256": "ebbbb259b2b972e4266d5817e19560e9b5f46f5800cd99f80884c52df53df507",
+  "vector_count": 5,
+  "vectors_sha256": "b8b30e3b7d2be2bcdb36ac3599cb2539830e022089e2e9786e1a157c6d94a45a",
+  "generator": "rust/parity/vectors/checks.context_pressure/generate",
+  "known_parity_gaps": [
+    "A real under-15% marker calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (known gap).",
+    "Python int is unbounded. Rust checked i64 overflow on window - occupancy, headroom * 20, and window * 3 is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key."
+  ]
+}
