@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.atomic atomic_write_bytes/text parity (fixed payloads, temp-dir scenarios only).",
+  "generator": "rust/parity/vectors/atomic/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "lone_surrogate_encoding: Rust str cannot hold a lone surrogate; no vector.",
+    "exclusive_race_after_existence_check: dest created after the check may be replaced by Windows rename; no vector."
+  ]
+}

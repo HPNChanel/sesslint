@@ -1,0 +1,13 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.atomic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "atomic_py_sha256": "94064b211d3f8298e34a5e71fb6b6ef9ae766147e1ef7d43827c63631b2f6609",
+  "vector_count": 15,
+  "vectors_sha256": "f7b9a1f0ee2753878df69a5a0f65b47b97d6d6ea0acf7019f48f079b42b246ca",
+  "generator": "rust/parity/vectors/atomic/generate",
+  "known_parity_gaps": [
+    "lone_surrogate_encoding: Rust str cannot hold a lone surrogate; no vector.",
+    "exclusive_race_after_existence_check: dest created after the check may be replaced by Windows rename; no vector."
+  ]
+}
