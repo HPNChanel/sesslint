@@ -7,7 +7,7 @@ mod error;
 pub use error::AdaptersError;
 
 pub mod links {}
-pub mod synthetic {}
+pub mod synthetic;
 pub mod safe_value {}
 pub mod drift {}
 pub mod metadata {}
