@@ -1337,6 +1337,14 @@ impl Evidence {
         }
     }
 
+    /// An int is not a bool. [`EvidenceKind::Int`] stays `None`.
+    pub fn as_bool(&self) -> Option<bool> {
+        match &*self.kind {
+            EvidenceKind::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     pub fn as_str(&self) -> Option<&str> {
         match &*self.kind {
             EvidenceKind::Str(value) => Some(value.as_str()),
@@ -4537,6 +4545,15 @@ mod tests {
             EvidenceLookup::NotAMap
         ));
         assert!(evidence.is_map());
+    }
+
+    #[test]
+    fn evidence_as_bool_reads_a_bool_and_not_an_int() {
+        assert_eq!(Evidence::bool_value(true).as_bool(), Some(true));
+        assert_eq!(Evidence::bool_value(false).as_bool(), Some(false));
+        assert_eq!(Evidence::int(1).as_bool(), None);
+        assert_eq!(Evidence::string("True").as_bool(), None);
+        assert_eq!(Evidence::none_value().as_bool(), None);
     }
 
     fn reject(text: &str, expected: &str) {

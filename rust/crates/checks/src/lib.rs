@@ -10,7 +10,7 @@ pub mod context;
 pub mod hygiene {}
 pub mod indexes;
 pub mod checkpoint {}
-pub mod graph {}
+pub mod graph;
 pub mod accounting {}
 pub mod compaction_snapshot {}
 pub mod context_pressure {}
