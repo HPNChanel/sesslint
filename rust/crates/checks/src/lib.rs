@@ -22,7 +22,7 @@ pub mod size {}
 pub mod tool_pairing_1 {}
 pub mod tool_pairing_2 {}
 pub mod writers {}
-pub mod abstention {}
+pub mod abstention;
 pub mod profile {}
 pub mod config {}
 pub mod builtin {}
