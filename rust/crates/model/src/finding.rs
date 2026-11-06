@@ -1,8 +1,9 @@
 //! Content-free text checks, [`SourceRef`], the evidence walker, and [`Finding`].
 //!
-//! Port of `src/sesslint/finding.py` lines 1–426
+//! Port of `src/sesslint/finding.py` lines 1–657
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before `CANONICAL_EVIDENCE_KEYS`. Does not port `make_finding`.
+//! Lines 429–657 build the fingerprint preimage and stop before `make_finding`.
+//! This crate does not call `canonical_json_bytes` and does not hash.
 //!
 //! Finding envelope, severity/repairability taxonomies, fingerprinting, and
 //! deterministic ordering.
@@ -3160,6 +3161,383 @@ fn related_from_dict(value: Option<&DictValue>) -> Result<PyValue, FindingError>
     }
 }
 
+/// Orchestrator decision: hashing stays in the codec crate.
+///
+/// [`compute_finding_fingerprint`] builds the preimage and then returns
+/// [`FindingError`] with this message. It does not hash and it does not panic.
+pub const FINGERPRINT_CODEC_UNAVAILABLE: &str =
+    "sesslint.determinism.canonical_json_bytes is not available";
+
+/// Fingerprint identity is not `sesslint.checks.context.CheckContext`.
+///
+/// This crate reads `adapter_id`, `adapter_version`, `profile_id`, and
+/// `profile_version` only.
+pub const FINGERPRINT_CONTEXT_NARROWING: &str = "Fingerprint context is not sesslint.checks.context.CheckContext. The preimage reads only adapter_id, adapter_version, profile_id, and profile_version";
+
+/// Python `bool` subclasses `int`, so an explicit ordinal can be `True` or `False`.
+///
+/// `Option<i64>` cannot represent that. Evidence `True`, `False`, negatives, and
+/// a missing `record_ordinal` stay absent. Zero is kept.
+pub const EXPLICIT_ORDINAL_BOOL_UNREPRESENTABLE: &str = "An explicit fingerprint ordinal bool is not representable. The parameter is Option<i64>. Evidence True, False, negative, and missing stay absent; zero is kept";
+
+/// [`CANONICAL_EVIDENCE_KEYS`] is sorted by code point.
+///
+/// Python `frozenset` has no iteration order. The fingerprint path sorts the
+/// evidence keys. It does not iterate the frozenset.
+pub const CANONICAL_EVIDENCE_KEYS_SORTED: &str = "CANONICAL_EVIDENCE_KEYS is a sorted slice. Python frozenset has no iteration order. The fingerprint path sorts evidence keys, not the frozenset";
+
+/// Allowlisted structural evidence keys (FR-046, FR-081).
+///
+/// Membership uses binary search on this sorted slice. See
+/// [`CANONICAL_EVIDENCE_KEYS_SORTED`].
+pub const CANONICAL_EVIDENCE_KEYS: [&str; 80] = [
+    "actual_seq",
+    "at_index",
+    "boundary_index",
+    "byte_end",
+    "byte_offset",
+    "call_agent_id",
+    "call_branch_id",
+    "call_ids",
+    "call_indexes",
+    "call_interaction_id",
+    "candidate_count",
+    "caused_by",
+    "classification",
+    "coerced",
+    "component_index",
+    "component_members",
+    "component_size",
+    "confinement",
+    "correlation_id",
+    "count",
+    "critical",
+    "cycle_events",
+    "cycle_length",
+    "cycle_nodes",
+    "cycle_parent_edges",
+    "detail",
+    "differing_fields",
+    "drift_kind",
+    "event_id",
+    "event_ids",
+    "expected_seq",
+    "field",
+    "file_median_bytes",
+    "first_unsafe_index",
+    "format",
+    "head_count",
+    "head_ids",
+    "id",
+    "index",
+    "intervening_count",
+    "intervening_kinds",
+    "key_path",
+    "link_index",
+    "link_kind",
+    "match_len",
+    "match_rule",
+    "match_sha256",
+    "observed_format",
+    "observed_marker",
+    "occurrence_count",
+    "overflow",
+    "parent_id",
+    "previous_marker",
+    "profile",
+    "ratio",
+    "reason",
+    "record_bytes",
+    "record_index",
+    "record_ordinal",
+    "rejected_decoys",
+    "resolution",
+    "result_agent_id",
+    "result_branch_id",
+    "result_id",
+    "result_ids",
+    "result_indexes",
+    "result_interaction_id",
+    "schema",
+    "scope_mismatch",
+    "secret_family",
+    "secret_family_set",
+    "seq",
+    "state_hash_a",
+    "state_hash_b",
+    "target",
+    "truncated",
+    "type_truncated",
+    "use_id",
+    "use_index",
+    "variant",
+];
+
+/// Adapter and profile fields the fingerprint preimage reads.
+///
+/// See [`FINGERPRINT_CONTEXT_NARROWING`]. Strings are copied as stored.
+/// Overrides are stripped with `python_strip`; these fields are not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FingerprintContext {
+    pub adapter_id: String,
+    pub adapter_version: String,
+    pub profile_id: String,
+    pub profile_version: String,
+}
+
+/// One slot of the ten-element fingerprint preimage (FR-046, DEV-004).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FingerprintPreimageSlot {
+    Text(String),
+    /// Python `None`. Canonical JSON would write null. This is not the sort-key `-1`.
+    NoneValue,
+    Int(i64),
+    /// Allowlisted pairs in lexicographic key order. Nested key order is unchanged.
+    Evidence(Vec<(String, Evidence)>),
+}
+
+/// Body of `compute_finding_fingerprint` before the codec import.
+///
+/// Slots, in order: code, adapter id, adapter version, profile id, profile
+/// version, path, line, ordinal, record id, canonical evidence subset.
+/// Severity, repairability, `message_template`, and `related_ids` are accepted
+/// and omitted. The rendered message is omitted too.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FindingFingerprintPreimage {
+    slots: [FingerprintPreimageSlot; 10],
+}
+
+impl FindingFingerprintPreimage {
+    /// The ten preimage slots, in contract order.
+    #[must_use]
+    pub fn slots(&self) -> &[FingerprintPreimageSlot; 10] {
+        &self.slots
+    }
+}
+
+/// Extract the content-free evidence subset (FR-046, FR-081).
+///
+/// `None` or an empty mapping returns an empty mapping, matching `if not evidence`.
+/// Other keys are walked in lexicographic order. A key is kept only when it is
+/// in [`CANONICAL_EVIDENCE_KEYS`]. Values are the stored evidence values.
+/// Nested maps keep their own key order. Non-string keys are dropped.
+fn canonical_evidence_for_fingerprint(evidence: Option<&Evidence>) -> Vec<(String, Evidence)> {
+    let Some(evidence) = evidence else {
+        return Vec::new();
+    };
+    let Some(entries) = evidence.map_entries() else {
+        return Vec::new();
+    };
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let mut keyed = Vec::new();
+    for (key, value) in entries {
+        if let EvidenceKey::Text(text) = key {
+            keyed.push((text, value));
+        }
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut subset = Vec::new();
+    for (key, value) in keyed {
+        if !evidence_key_allowed(&key) {
+            continue;
+        }
+        if let Some((existing, stored)) = subset.last_mut() {
+            if existing == &key {
+                *stored = value;
+                continue;
+            }
+        }
+        subset.push((key, value));
+    }
+    subset
+}
+
+fn evidence_key_allowed(key: &str) -> bool {
+    CANONICAL_EVIDENCE_KEYS.binary_search(&key).is_ok()
+}
+
+/// `int` and not `bool`, and `>= 0`. Otherwise the fingerprint ordinal stays absent.
+///
+/// The sort key maps those cases to `-1`. This function leaves them absent.
+fn evidence_ordinal_for_fingerprint(evidence: &Evidence) -> Option<i64> {
+    let entries = evidence.map_entries()?;
+    let mut found = None;
+    for (key, value) in entries {
+        if let EvidenceKey::Text(text) = key {
+            if text == "record_ordinal" {
+                found = Some(value);
+            }
+        }
+    }
+    match found.as_ref().map(|value| &*value.kind) {
+        Some(EvidenceKind::Int(ordinal)) if *ordinal >= 0 => Some(*ordinal),
+        _ => None,
+    }
+}
+
+fn fingerprint_label(override_value: Option<&str>, context_value: Option<&str>) -> String {
+    if let Some(raw) = override_value {
+        let stripped = python_strip(raw);
+        if !stripped.is_empty() {
+            return stripped.to_owned();
+        }
+    }
+    match context_value {
+        Some(value) => value.to_owned(),
+        None => "unknown".to_owned(),
+    }
+}
+
+/// Preimage for [`compute_finding_fingerprint`] (FR-046, DEV-004).
+///
+/// `severity`, `repairability`, `message_template`, and `related_ids` are
+/// accepted for older callers and are not slots. See
+/// [`EXPLICIT_ORDINAL_BOOL_UNREPRESENTABLE`] for the ordinal parameter.
+/// A missing line or ordinal is [`FingerprintPreimageSlot::NoneValue`], not `-1`.
+/// Path backslashes are replaced with `/` again after [`SourceRef`] normalization.
+#[allow(clippy::too_many_arguments)]
+#[must_use = "preimage is the fingerprint contract"]
+pub fn finding_fingerprint_preimage<S, R, I>(
+    code: &str,
+    source: &SourceRef,
+    adapter_id: Option<&str>,
+    adapter_version: Option<&str>,
+    profile_id: Option<&str>,
+    profile_version: Option<&str>,
+    ordinal: Option<i64>,
+    evidence: Option<&Evidence>,
+    severity: S,
+    repairability: R,
+    message_template: Option<&str>,
+    related_ids: I,
+    context: Option<&FingerprintContext>,
+) -> FindingFingerprintPreimage {
+    std::mem::drop((severity, repairability, message_template, related_ids));
+    let adapter_id = fingerprint_label(adapter_id, context.map(|ctx| ctx.adapter_id.as_str()));
+    let adapter_version = fingerprint_label(
+        adapter_version,
+        context.map(|ctx| ctx.adapter_version.as_str()),
+    );
+    let profile_id = fingerprint_label(profile_id, context.map(|ctx| ctx.profile_id.as_str()));
+    let profile_version = fingerprint_label(
+        profile_version,
+        context.map(|ctx| ctx.profile_version.as_str()),
+    );
+    let path = source.path().replace('\\', "/");
+    let ordinal_slot = ordinal.or_else(|| evidence.and_then(evidence_ordinal_for_fingerprint));
+    let slots = [
+        FingerprintPreimageSlot::Text(code.to_owned()),
+        FingerprintPreimageSlot::Text(adapter_id),
+        FingerprintPreimageSlot::Text(adapter_version),
+        FingerprintPreimageSlot::Text(profile_id),
+        FingerprintPreimageSlot::Text(profile_version),
+        FingerprintPreimageSlot::Text(path),
+        match source.line() {
+            Some(line) => FingerprintPreimageSlot::Int(line),
+            None => FingerprintPreimageSlot::NoneValue,
+        },
+        match ordinal_slot {
+            Some(value) => FingerprintPreimageSlot::Int(value),
+            None => FingerprintPreimageSlot::NoneValue,
+        },
+        match source.record_id() {
+            Some(record_id) => FingerprintPreimageSlot::Text(record_id.to_owned()),
+            None => FingerprintPreimageSlot::NoneValue,
+        },
+        FingerprintPreimageSlot::Evidence(canonical_evidence_for_fingerprint(evidence)),
+    ];
+    FindingFingerprintPreimage { slots }
+}
+
+/// Compute the fingerprint preimage, then refuse the codec step (FR-046).
+///
+/// The result is [`FindingError`] with [`FINGERPRINT_CODEC_UNAVAILABLE`].
+/// The digest is left unimplemented: this crate cannot call
+/// `sesslint.determinism.canonical_json_bytes`.
+#[allow(clippy::too_many_arguments)]
+#[must_use = "codec is unavailable; this error is the result"]
+pub fn compute_finding_fingerprint<S, R, I>(
+    code: &str,
+    source: &SourceRef,
+    adapter_id: Option<&str>,
+    adapter_version: Option<&str>,
+    profile_id: Option<&str>,
+    profile_version: Option<&str>,
+    ordinal: Option<i64>,
+    evidence: Option<&Evidence>,
+    severity: S,
+    repairability: R,
+    message_template: Option<&str>,
+    related_ids: I,
+    context: Option<&FingerprintContext>,
+) -> FindingError {
+    let preimage = finding_fingerprint_preimage(
+        code,
+        source,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        ordinal,
+        evidence,
+        severity,
+        repairability,
+        message_template,
+        related_ids,
+        context,
+    );
+    let _built = preimage.slots().len();
+    FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE)
+}
+
+/// Python: `compute_fingerprint = compute_finding_fingerprint`.
+pub use compute_finding_fingerprint as compute_fingerprint;
+
+/// Return the stored 16-hex fingerprint, or rebuild the preimage and refuse to hash.
+///
+/// Pass `without_fingerprint = false` to return [`Finding::fingerprint`] and
+/// skip the preimage. Python's default is `True` (recompute). Rust has no
+/// default arguments, so pass `true` to rebuild. Recompute forwards the
+/// finding's severity, repairability, template (or message), and related ids,
+/// and leaves the explicit ordinal absent so evidence can supply it.
+#[must_use = "recompute returns the unavailable-codec error"]
+pub fn fingerprint_finding(
+    finding: &Finding,
+    without_fingerprint: bool,
+    adapter_id: Option<&str>,
+    adapter_version: Option<&str>,
+    profile_id: Option<&str>,
+    profile_version: Option<&str>,
+    context: Option<&FingerprintContext>,
+) -> Result<String, FindingError> {
+    if !without_fingerprint {
+        return Ok(finding.fingerprint().to_owned());
+    }
+    let severity = finding.severity();
+    let repairability = finding.repairability();
+    let message_template = match finding.message_template() {
+        Some(template) => template,
+        None => finding.message(),
+    };
+    Err(compute_finding_fingerprint(
+        finding.code(),
+        finding.source(),
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        None,
+        finding.evidence(),
+        &severity,
+        &repairability,
+        Some(message_template),
+        finding.related_ids(),
+        context,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -4348,5 +4726,475 @@ mod finding_port {
         } else {
             panic!("U+2028/U+2029 were not stripped; record the strip gap without changing python_strip");
         }
+    }
+}
+
+#[cfg(test)]
+mod fingerprint_preimage {
+    use super::{
+        canonical_evidence_for_fingerprint, compute_finding_fingerprint, compute_fingerprint,
+        finding_fingerprint_preimage, fingerprint_finding, Evidence, EvidenceKey, Finding,
+        FindingFingerprintPreimage, FindingInput, FingerprintContext, FingerprintPreimageSlot,
+        PyValue, SourceLine, SourceRef, CANONICAL_EVIDENCE_KEYS, CANONICAL_EVIDENCE_KEYS_SORTED,
+        EXPLICIT_ORDINAL_BOOL_UNREPRESENTABLE, FINGERPRINT_CODEC_UNAVAILABLE,
+        FINGERPRINT_CONTEXT_NARROWING, SCHEMA_VERSION,
+    };
+    use crate::codes::{Repairability, Severity};
+
+    struct Args<'a> {
+        source: &'a SourceRef,
+        adapter_id: Option<&'a str>,
+        adapter_version: Option<&'a str>,
+        profile_id: Option<&'a str>,
+        profile_version: Option<&'a str>,
+        ordinal: Option<i64>,
+        evidence: Option<&'a Evidence>,
+        context: Option<&'a FingerprintContext>,
+    }
+
+    fn source(path: &str, line: Option<i64>, record_id: Option<&str>) -> SourceRef {
+        SourceRef::try_new(path, line.map(SourceLine::Int), record_id).unwrap()
+    }
+
+    fn args(source: &SourceRef) -> Args<'_> {
+        Args {
+            source,
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            evidence: None,
+            context: None,
+        }
+    }
+
+    fn build(args: Args<'_>) -> FindingFingerprintPreimage {
+        finding_fingerprint_preimage(
+            "SL001",
+            args.source,
+            args.adapter_id,
+            args.adapter_version,
+            args.profile_id,
+            args.profile_version,
+            args.ordinal,
+            args.evidence,
+            "severity-marker-rx",
+            "repairability-marker-rx",
+            Some("template-marker-rx"),
+            &["related-marker-rx"],
+            args.context,
+        )
+    }
+
+    fn label(preimage: &FindingFingerprintPreimage, index: usize) -> &str {
+        match &preimage.slots()[index] {
+            FingerprintPreimageSlot::Text(text) => text,
+            other => panic!("slot {index} is {other:?}"),
+        }
+    }
+
+    fn evidence_of(preimage: &FindingFingerprintPreimage) -> &[(String, Evidence)] {
+        match &preimage.slots()[9] {
+            FingerprintPreimageSlot::Evidence(entries) => entries.as_slice(),
+            other => panic!("slot 9 is {other:?}"),
+        }
+    }
+
+    #[test]
+    fn canonical_evidence_keys_are_the_sorted_allowlist() {
+        assert_eq!(CANONICAL_EVIDENCE_KEYS.len(), 80);
+        assert_eq!(CANONICAL_EVIDENCE_KEYS[0], "actual_seq");
+        assert_eq!(CANONICAL_EVIDENCE_KEYS[79], "variant");
+        for pair in CANONICAL_EVIDENCE_KEYS.windows(2) {
+            assert!(
+                pair[0] < pair[1],
+                "out of order: {} then {}",
+                pair[0],
+                pair[1]
+            );
+        }
+        for key in CANONICAL_EVIDENCE_KEYS {
+            assert!(CANONICAL_EVIDENCE_KEYS.binary_search(&key).is_ok());
+        }
+        assert!(CANONICAL_EVIDENCE_KEYS
+            .binary_search(&"record_ordinal")
+            .is_ok());
+        assert!(CANONICAL_EVIDENCE_KEYS.binary_search(&"variant").is_ok());
+        assert!(CANONICAL_EVIDENCE_KEYS.binary_search(&"message").is_err());
+        assert!(CANONICAL_EVIDENCE_KEYS_SORTED.contains("sorted"));
+        assert!(CANONICAL_EVIDENCE_KEYS_SORTED.contains("frozenset"));
+    }
+
+    #[test]
+    fn empty_and_none_evidence_yield_an_empty_subset() {
+        assert!(canonical_evidence_for_fingerprint(None).is_empty());
+        let empty = Evidence::map(Vec::new());
+        assert!(canonical_evidence_for_fingerprint(Some(&empty)).is_empty());
+
+        let source = source("a.jsonl", Some(1), None);
+        for evidence in [None, Some(&empty)] {
+            let mut call = args(&source);
+            call.evidence = evidence;
+            let preimage = build(call);
+            assert_eq!(preimage.slots().len(), 10);
+            assert!(evidence_of(&preimage).is_empty());
+            assert!(matches!(
+                preimage.slots()[9],
+                FingerprintPreimageSlot::Evidence(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn evidence_subset_sorts_later_key_first_and_drops_the_rest() {
+        let nested = Evidence::map(vec![
+            (EvidenceKey::text("z-nested"), Evidence::int(1)),
+            (EvidenceKey::text("a-nested"), Evidence::int(2)),
+        ]);
+        let reversed = Evidence::map(vec![
+            (EvidenceKey::text("a-nested"), Evidence::int(2)),
+            (EvidenceKey::text("z-nested"), Evidence::int(1)),
+        ]);
+        let later = Evidence::string("later-key");
+        let evidence = Evidence::map(vec![
+            (EvidenceKey::NonString, Evidence::int(7)),
+            (EvidenceKey::text("use_index"), later.clone()),
+            (
+                EvidenceKey::text("message"),
+                Evidence::string("dropped-marker"),
+            ),
+            (EvidenceKey::text("actual_seq"), nested.clone()),
+        ]);
+        let subset = canonical_evidence_for_fingerprint(Some(&evidence));
+        assert_eq!(
+            subset,
+            vec![
+                ("actual_seq".to_owned(), nested.clone()),
+                ("use_index".to_owned(), later),
+            ]
+        );
+        assert_eq!(&subset[0].1, &nested);
+        assert_ne!(&subset[0].1, &reversed);
+        assert!(!format!("{subset:?}").contains("dropped-marker"));
+        assert!(!format!("{subset:?}").contains("message"));
+
+        let source = source("a.jsonl", Some(1), None);
+        let mut call = args(&source);
+        call.evidence = Some(&evidence);
+        let preimage = build(call);
+        assert_eq!(evidence_of(&preimage), subset.as_slice());
+    }
+
+    #[test]
+    fn missing_versions_are_unknown_not_empty() {
+        let source = source("a.jsonl", Some(1), Some("rec-1"));
+        let missing = build(args(&source));
+        let mut blank = args(&source);
+        blank.adapter_id = Some("   ");
+        blank.adapter_version = Some("");
+        blank.profile_id = Some("");
+        blank.profile_version = Some("  ");
+        let blank = build(blank);
+        let mut explicit = args(&source);
+        explicit.adapter_id = Some("unknown");
+        explicit.adapter_version = Some("unknown");
+        explicit.profile_id = Some("unknown");
+        explicit.profile_version = Some("unknown");
+        let explicit = build(explicit);
+        let mut unicode_space = args(&source);
+        unicode_space.adapter_id = Some("\u{001c}");
+        unicode_space.adapter_version = Some("\u{001c}\u{001d}");
+        unicode_space.profile_id = Some("\u{001e}");
+        unicode_space.profile_version = Some("\u{001f}");
+        let unicode_space = build(unicode_space);
+
+        assert_eq!(missing, blank);
+        assert_eq!(missing, explicit);
+        assert_eq!(missing, unicode_space);
+        assert_eq!(label(&missing, 1), "unknown");
+        assert_eq!(label(&missing, 2), "unknown");
+        assert_eq!(label(&missing, 3), "unknown");
+        assert_eq!(label(&missing, 4), "unknown");
+        assert_ne!(label(&missing, 2), "");
+        assert_ne!(label(&missing, 4), "");
+    }
+
+    #[test]
+    fn whitespace_override_falls_through_to_context() {
+        assert!(FINGERPRINT_CONTEXT_NARROWING.contains("CheckContext"));
+        assert!(FINGERPRINT_CONTEXT_NARROWING.contains("adapter_version"));
+        let source = source("a.jsonl", Some(1), None);
+        let context = FingerprintContext {
+            adapter_id: "ctx-adapter".to_owned(),
+            adapter_version: "ctx-adapter-version".to_owned(),
+            profile_id: "ctx-profile".to_owned(),
+            profile_version: " ctx-profile-version ".to_owned(),
+        };
+        let mut call = args(&source);
+        call.adapter_id = Some(" \t\u{001c}");
+        call.adapter_version = Some("\u{001c}\u{001d}\u{001e}\u{001f}");
+        call.profile_id = Some("   ");
+        call.profile_version = Some("\n\t ");
+        call.context = Some(&context);
+        let preimage = build(call);
+        assert_eq!(label(&preimage, 1), "ctx-adapter");
+        assert_eq!(label(&preimage, 2), "ctx-adapter-version");
+        assert_eq!(label(&preimage, 3), "ctx-profile");
+        assert_eq!(label(&preimage, 4), " ctx-profile-version ");
+        assert_ne!(label(&preimage, 2), "unknown");
+        assert_ne!(label(&preimage, 4), "");
+    }
+
+    #[test]
+    fn nonempty_override_wins_over_context() {
+        let source = source("a.jsonl", Some(1), None);
+        let context = FingerprintContext {
+            adapter_id: "ctx-adapter".to_owned(),
+            adapter_version: "ctx-adapter-version".to_owned(),
+            profile_id: "ctx-profile".to_owned(),
+            profile_version: "ctx-profile-version".to_owned(),
+        };
+        let mut call = args(&source);
+        call.adapter_id = Some("  over-adapter  ");
+        call.adapter_version = Some(" over-adapter-version ");
+        call.profile_id = Some("over-profile");
+        call.profile_version = Some("\tover-profile-version\t");
+        call.context = Some(&context);
+        let preimage = build(call);
+        assert_eq!(label(&preimage, 1), "over-adapter");
+        assert_eq!(label(&preimage, 2), "over-adapter-version");
+        assert_eq!(label(&preimage, 3), "over-profile");
+        assert_eq!(label(&preimage, 4), "over-profile-version");
+        assert_ne!(label(&preimage, 2), "ctx-adapter-version");
+        assert_ne!(label(&preimage, 4), "ctx-profile-version");
+    }
+
+    #[test]
+    fn ordinal_bool_is_absent_zero_is_kept_and_explicit_negative_stays() {
+        assert!(EXPLICIT_ORDINAL_BOOL_UNREPRESENTABLE.contains("bool"));
+        let source = source("a.jsonl", Some(3), None);
+
+        let yes = Evidence::map(vec![(
+            EvidenceKey::text("record_ordinal"),
+            Evidence::bool_value(true),
+        )]);
+        let mut call = args(&source);
+        call.evidence = Some(&yes);
+        let preimage = build(call);
+        assert_eq!(preimage.slots()[6], FingerprintPreimageSlot::Int(3));
+        assert_eq!(preimage.slots()[8], FingerprintPreimageSlot::NoneValue);
+        assert_eq!(label(&preimage, 5), "a.jsonl");
+        assert_eq!(preimage.slots()[7], FingerprintPreimageSlot::NoneValue);
+        assert_ne!(preimage.slots()[7], FingerprintPreimageSlot::Int(1));
+        assert_ne!(preimage.slots()[7], FingerprintPreimageSlot::Int(-1));
+        assert_eq!(
+            evidence_of(&preimage),
+            [("record_ordinal".to_owned(), Evidence::bool_value(true))].as_slice()
+        );
+
+        let no = Evidence::map(vec![(
+            EvidenceKey::text("record_ordinal"),
+            Evidence::bool_value(false),
+        )]);
+        let mut call = args(&source);
+        call.evidence = Some(&no);
+        let preimage = build(call);
+        assert_eq!(preimage.slots()[7], FingerprintPreimageSlot::NoneValue);
+        assert_ne!(preimage.slots()[7], FingerprintPreimageSlot::Int(0));
+
+        let zero = Evidence::map(vec![(
+            EvidenceKey::text("record_ordinal"),
+            Evidence::int(0),
+        )]);
+        let mut call = args(&source);
+        call.evidence = Some(&zero);
+        let preimage = build(call);
+        assert_eq!(preimage.slots()[7], FingerprintPreimageSlot::Int(0));
+
+        let negative = Evidence::map(vec![(
+            EvidenceKey::text("record_ordinal"),
+            Evidence::int(-5),
+        )]);
+        let mut call = args(&source);
+        call.evidence = Some(&negative);
+        let preimage = build(call);
+        assert_eq!(preimage.slots()[7], FingerprintPreimageSlot::NoneValue);
+        assert_ne!(preimage.slots()[7], FingerprintPreimageSlot::Int(-1));
+        assert_eq!(
+            evidence_of(&preimage),
+            [("record_ordinal".to_owned(), Evidence::int(-5))].as_slice()
+        );
+
+        let kept = Evidence::map(vec![(
+            EvidenceKey::text("record_ordinal"),
+            Evidence::int(9),
+        )]);
+        let mut call = args(&source);
+        call.evidence = Some(&kept);
+        call.ordinal = Some(-4);
+        let preimage = build(call);
+        assert_eq!(preimage.slots()[7], FingerprintPreimageSlot::Int(-4));
+        assert_eq!(
+            evidence_of(&preimage),
+            [("record_ordinal".to_owned(), Evidence::int(9))].as_slice()
+        );
+
+        let other = Evidence::map(vec![(
+            EvidenceKey::text("variant"),
+            Evidence::string("synthetic-variant"),
+        )]);
+        let mut call = args(&source);
+        call.evidence = Some(&other);
+        let preimage = build(call);
+        assert_eq!(preimage.slots()[7], FingerprintPreimageSlot::NoneValue);
+        assert_ne!(preimage.slots()[7], FingerprintPreimageSlot::Int(-1));
+    }
+
+    #[test]
+    fn ignored_arguments_stay_out_of_the_ten_slots() {
+        let source = source(r"dir\child.jsonl", None, Some("rec-9"));
+        let preimage = build(args(&source));
+        assert_eq!(
+            preimage.slots(),
+            &[
+                FingerprintPreimageSlot::Text("SL001".to_owned()),
+                FingerprintPreimageSlot::Text("unknown".to_owned()),
+                FingerprintPreimageSlot::Text("unknown".to_owned()),
+                FingerprintPreimageSlot::Text("unknown".to_owned()),
+                FingerprintPreimageSlot::Text("unknown".to_owned()),
+                FingerprintPreimageSlot::Text("dir/child.jsonl".to_owned()),
+                FingerprintPreimageSlot::NoneValue,
+                FingerprintPreimageSlot::NoneValue,
+                FingerprintPreimageSlot::Text("rec-9".to_owned()),
+                FingerprintPreimageSlot::Evidence(Vec::new()),
+            ]
+        );
+        assert_ne!(preimage.slots()[6], FingerprintPreimageSlot::Int(-1));
+        assert_ne!(preimage.slots()[7], FingerprintPreimageSlot::Int(-1));
+        assert!(!label(&preimage, 5).contains('\\'));
+        let rendered = format!("{preimage:?}");
+        for marker in [
+            "severity-marker-rx",
+            "repairability-marker-rx",
+            "template-marker-rx",
+            "related-marker-rx",
+        ] {
+            assert!(!rendered.contains(marker), "{marker} entered the preimage");
+        }
+    }
+
+    #[test]
+    fn stored_fingerprint_is_returned_when_recompute_is_off() {
+        let finding = stored_finding();
+        let context = FingerprintContext {
+            adapter_id: "ctx-adapter".to_owned(),
+            adapter_version: "ctx-adapter-version".to_owned(),
+            profile_id: "ctx-profile".to_owned(),
+            profile_version: "ctx-profile-version".to_owned(),
+        };
+        let stored = fingerprint_finding(
+            &finding,
+            false,
+            Some(" \t\u{001c}"),
+            None,
+            Some(""),
+            Some("\u{001c}"),
+            Some(&context),
+        )
+        .unwrap();
+        assert_eq!(stored, finding.fingerprint());
+        assert_eq!(stored, "0123456789abcdef");
+        assert_eq!(stored.len(), 16);
+        assert!(stored
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')));
+    }
+
+    #[test]
+    fn codec_unavailable_message_is_returned_instead_of_a_digest() {
+        let finding = stored_finding();
+        let recomputed =
+            fingerprint_finding(&finding, true, None, None, None, None, None).unwrap_err();
+        assert_eq!(
+            recomputed.message(),
+            "sesslint.determinism.canonical_json_bytes is not available"
+        );
+        assert_eq!(recomputed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(recomputed.code(), "FINDING");
+        assert!(!is_fingerprint_hex(recomputed.message()));
+
+        let direct = compute_finding_fingerprint(
+            finding.code(),
+            finding.source(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            finding.evidence(),
+            "severity-marker-rx",
+            "repairability-marker-rx",
+            Some("template-marker-rx"),
+            &["related-marker-rx"],
+            None,
+        );
+        assert_eq!(direct.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!is_fingerprint_hex(direct.message()));
+
+        let alias = compute_fingerprint(
+            finding.code(),
+            finding.source(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            finding.evidence(),
+            "severity-marker-rx",
+            "repairability-marker-rx",
+            Some("template-marker-rx"),
+            finding.related_ids(),
+            None,
+        );
+        assert_eq!(alias.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(alias.to_string(), direct.to_string());
+    }
+
+    fn is_fingerprint_hex(text: &str) -> bool {
+        let bytes = text.as_bytes();
+        bytes.len() == 16
+            && bytes
+                .iter()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    }
+
+    fn stored_finding() -> Finding {
+        Finding::try_new(FindingInput {
+            code: PyValue::string("SL001"),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message: PyValue::string("synthetic marker"),
+            source: PyValue::source(source(r"dir\child.jsonl", None, Some("rec-9"))),
+            related_ids: PyValue::list(vec![PyValue::string("related-from-finding")]),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence: PyValue::map(vec![
+                (PyValue::string("record_ordinal"), PyValue::bool_value(true)),
+                (
+                    PyValue::string("message"),
+                    PyValue::string("dropped-marker"),
+                ),
+                (
+                    PyValue::string("variant"),
+                    PyValue::map(vec![
+                        (PyValue::string("z-nested"), PyValue::int(1)),
+                        (PyValue::string("a-nested"), PyValue::int(2)),
+                    ]),
+                ),
+            ]),
+        })
+        .unwrap()
     }
 }
