@@ -13,8 +13,8 @@ pub mod checkpoint {}
 pub mod accounting;
 pub mod compaction_snapshot;
 pub mod context_pressure;
+pub mod durable_prefix;
 pub mod graph;
-pub mod durable_prefix {}
 pub mod foreign_shape {}
 pub mod identity {}
 pub mod ordering {}
