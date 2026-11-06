@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.secret_families parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/secret_families/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}
