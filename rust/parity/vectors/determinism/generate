@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""Generate sesslint.determinism parity vectors from the pinned worktree module."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DETERMINISM_PY_SHA256 = (
+    "29738711c24991243a7bd38de59665f9e1bb85b5aa38c4dbb1c62901ae153a08"
+)
+
+KNOWN_PARITY_GAPS: list[str] = [
+    (
+        "NaN, Infinity: canonical_json_bytes rejects non-finite floats; "
+        "Rust codec error text may differ from Python json module errors - "
+        "do not assert message parity for these cases."
+    ),
+    (
+        "Lone surrogate in a JSON string: Python json may accept invalid "
+        "Unicode; Rust canonical codec behavior may differ - not asserted here."
+    ),
+    (
+        "stable_sort_findings with a non-Finding item: Python raises TypeError; "
+        "Rust only accepts Finding and does not model mixed lists."
+    ),
+    (
+        "JSON integers outside i64: Rust Value uses i64; very large integers "
+        "are not represented in the Rust parity harness."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_determinism_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "determinism.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != DETERMINISM_PY_SHA256:
+        raise SystemExit(
+            f"determinism.py sha256 mismatch: expected {DETERMINISM_PY_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.determinism as det  # noqa: WPS433
+
+    return det
+
+
+def b64(data: bytes) -> str:
+    return base64.standard_b64encode(data).decode("ascii")
+
+
+def ok_bytes(data: bytes) -> dict[str, Any]:
+    return {"result": "ok", "bytes_b64": b64(data)}
+
+
+def sort_key_to_json(key: Any) -> list[Any]:
+    """Serialize finding_sort_key tuple to JSON (tuple -> list for related_ids)."""
+    (
+        norm_path,
+        line_val,
+        ordinal_val,
+        sev_rank,
+        code,
+        rec_val,
+        fingerprint,
+        related_ids,
+        message,
+        repairability,
+    ) = key
+    return [
+        norm_path,
+        line_val,
+        ordinal_val,
+        sev_rank,
+        code,
+        rec_val,
+        fingerprint,
+        list(related_ids),
+        message,
+        repairability,
+    ]
+
+
+def minimal_finding_dict(*, path: str, message_template: str | None) -> dict[str, Any]:
+    """Synthetic Finding as dict (content-free markers only)."""
+    return {
+        "schema_version": "sesslint.finding/v1",
+        "code": "SL001",
+        "severity": "error",
+        "repairability": "manual",
+        "message": "synthetic marker",
+        "source": {"path": path, "line": 1, "record_id": None},
+        "related_ids": [],
+        "fingerprint": "0123456789abcdef",
+        "message_template": message_template,
+    }
+
+
+def vector_specs(det: Any) -> list[dict[str, Any]]:
+    from sesslint.finding import Finding  # noqa: WPS433
+
+    canonical_json_bytes = det.canonical_json_bytes
+    finding_sort_key = det.finding_sort_key
+    repeat_hash = det.repeat_hash
+    stable_sort_findings = det.stable_sort_findings
+
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    # --- canonical_json_bytes: out-of-order keys, non-ASCII value ---
+    obj_out_of_order = {"zz": 1, "aa": "café"}
+    add(
+        "determinism_canonical_json_bytes_newline_true",
+        {
+            "type": "canonical_json_bytes",
+            "shape": "json",
+            "value": obj_out_of_order,
+            "newline": True,
+        },
+        ok_bytes(canonical_json_bytes(obj_out_of_order, newline=True)),
+    )
+    add(
+        "determinism_canonical_json_bytes_newline_false",
+        {
+            "type": "canonical_json_bytes",
+            "shape": "json",
+            "value": obj_out_of_order,
+            "newline": False,
+        },
+        ok_bytes(canonical_json_bytes(obj_out_of_order, newline=False)),
+    )
+
+    # --- finding_sort_key ---
+    f_b = Finding.from_dict(minimal_finding_dict(path="parity/b/syn.jsonl", message_template=None))
+    f_a = Finding.from_dict(minimal_finding_dict(path="parity/a/syn.jsonl", message_template=None))
+    kb = finding_sort_key(f_b)
+    ka = finding_sort_key(f_a)
+    if not (ka < kb):
+        raise SystemExit("expected finding_sort_key(a) < finding_sort_key(b)")
+    add(
+        "determinism_finding_sort_key_path_order",
+        {
+            "type": "finding_sort_key",
+            "left": minimal_finding_dict(path="parity/b/syn.jsonl", message_template=None),
+            "right": minimal_finding_dict(path="parity/a/syn.jsonl", message_template=None),
+        },
+        {
+            "left_key": sort_key_to_json(kb),
+            "right_key": sort_key_to_json(ka),
+            "cmp": "left_gt_right",
+        },
+    )
+
+    # --- repeat_hash: bytes, text, small JSON object ---
+    raw_bytes = b"\xff\xfe\x00"
+    text = "caf\u00e9"
+    small_obj = {"z": 1, "a": "synthetic"}
+
+    add(
+        "determinism_repeat_hash_bytes",
+        {"type": "repeat_hash", "shape": "bytes", "data_b64": b64(raw_bytes)},
+        {"digest": repeat_hash(raw_bytes)},
+    )
+    add(
+        "determinism_repeat_hash_text",
+        {"type": "repeat_hash", "shape": "text", "text": text},
+        {"digest": repeat_hash(text)},
+    )
+    json_digest = repeat_hash(small_obj)
+    canon_with_nl = canonical_json_bytes(small_obj, newline=True)
+    expect_obj_digest = hashlib.sha256(canon_with_nl).hexdigest()
+    if json_digest != expect_obj_digest:
+        raise SystemExit("repeat_hash object digest mismatch internal check")
+    add(
+        "determinism_repeat_hash_json_object",
+        {"type": "repeat_hash", "shape": "json", "value": small_obj},
+        {"digest": json_digest},
+    )
+
+    # --- stable_sort_findings: path order + stability for equal keys ---
+    fb = Finding.from_dict(
+        minimal_finding_dict(path="parity/stab/b.jsonl", message_template=None)
+    )
+    fa_second = Finding.from_dict(
+        minimal_finding_dict(
+            path="parity/stab/a.jsonl",
+            message_template="synthetic second",
+        )
+    )
+    fa_first = Finding.from_dict(
+        minimal_finding_dict(
+            path="parity/stab/a.jsonl",
+            message_template="synthetic first",
+        )
+    )
+    if finding_sort_key(fa_second) != finding_sort_key(fa_first):
+        raise SystemExit("expected equal finding_sort_key for stability pair")
+
+    ordered = stable_sort_findings([fb, fa_second, fa_first])
+    add(
+        "determinism_stable_sort_paths_and_stability",
+        {
+            "type": "stable_sort_findings",
+            "findings": [
+                minimal_finding_dict(path="parity/stab/b.jsonl", message_template=None),
+                minimal_finding_dict(
+                    path="parity/stab/a.jsonl",
+                    message_template="synthetic second",
+                ),
+                minimal_finding_dict(
+                    path="parity/stab/a.jsonl",
+                    message_template="synthetic first",
+                ),
+            ],
+        },
+        {
+            "ordered_paths": [f.source.path for f in ordered],
+            "ordered_message_templates": [
+                f.message_template for f in ordered
+            ],
+        },
+    )
+
+    # --- module __all__ ---
+    add(
+        "determinism_module_all_export_order",
+        {"type": "module_all"},
+        {"result": "ok", "names": list(det.__all__)},
+    )
+
+    return specs
+
+
+def main() -> int:
+    det = load_determinism_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs(det)
+    vectors: list[dict[str, Any]] = []
+    for row in specs:
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": row["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.determinism",
+        "python_commit": PYTHON_COMMIT,
+        "determinism_py_sha256": DETERMINISM_PY_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.determinism",
+        "python_commit": PYTHON_COMMIT,
+        "determinism_py_sha256": DETERMINISM_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/determinism/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.determinism parity vectors (hashes and structural "
+            "fields only, no session payloads)."
+        ),
+        "generator": "rust/parity/vectors/determinism/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
