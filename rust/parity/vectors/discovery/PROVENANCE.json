@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic relative paths for sesslint.discovery candidate_in_layout parity.",
+  "generator": "rust/parity/vectors/discovery/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}
