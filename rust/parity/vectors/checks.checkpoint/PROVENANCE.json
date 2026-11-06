@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.checkpoint parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.checkpoint/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "A real SL201, SL202, SL203, or SL205 row calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits the finding.",
+    "check_checkpoint stops at the first family that would call make_finding. Python runs every family and sorts the combined list.",
+    "An empty gap or divergence list with max_findings -1 takes the overflow path. Rust returns the codec error. Python emits an overflow finding.",
+    "A float or list used where Python would call str is a typed error. Rust does not invent the Python repr.",
+    "A seq string of Unicode digits is a typed error. Python str.isdigit accepts Unicode Nd."
+  ]
+}
