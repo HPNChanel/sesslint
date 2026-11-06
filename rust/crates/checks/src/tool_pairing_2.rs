@@ -1,6 +1,6 @@
 //! Generic tool-pairing integrity checks part 2 (SL105, SL106, SL107, SL108).
 //!
-//! Port of `src/sesslint/checks/tool_pairing_2.py` lines 1–326
+//! Port of `src/sesslint/checks/tool_pairing_2.py`
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
 //! This module implements four vendor-neutral tool-pairing placement and order rules over
@@ -25,13 +25,17 @@
 //! - Correlation IDs flagged with cardinality errors (SL103 reused or SL104 multi-result) are
 //!   skipped here (precedence belongs to TASK-014).
 //!
-//! This slice ports placement helpers, [`ToolPairing2Indexer`],
+//! This module ports placement helpers, [`ToolPairing2Indexer`],
 //! [`extract_scope`], [`record_reversed_order`], [`check_reversed_order`],
-//! [`record_cross_branch`], [`check_cross_branch`], and
-//! [`resolve_rule_severity`]. It does not port `check_adjacency`,
-//! `check_compaction_split`, `check_tool_pairing_2`, or `__all__`. It does
-//! not import `sesslint.profiles`. [`resolve_rule_severity`] does not
-//! invent `rule_severities`.
+//! [`record_cross_branch`], [`check_cross_branch`], [`record_adjacency`],
+//! [`check_adjacency`], [`record_compaction_split`],
+//! [`check_compaction_split`], [`check_tool_pairing_2`], the four aliases,
+//! [`ALL`], and [`resolve_rule_severity`]. It does not import
+//! `sesslint.profiles`. [`resolve_rule_severity`] does not invent
+//! `rule_severities`. A string profile on adjacency or compaction with
+//! omitted severity returns [`PROFILES_UNAVAILABLE`] before the walk and
+//! does not call [`cap_pairing_findings`]. Python's missing-module except
+//! is not followed.
 //!
 //! [`compute_pairing_fingerprint`] hashes locally:
 //! `sha256("{code}|{comma-join of sorted unique items}")` then the first 16
@@ -83,7 +87,7 @@ use std::error::Error;
 use std::fmt;
 
 use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity, SL105, SL106};
+use model::codes::{Repairability, Severity, SL105, SL106, SL107, SL108};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
@@ -1345,14 +1349,461 @@ fn cross_branch_finding(
     })?)
 }
 
+/// One non-adjacent pair that would emit SL107. Does not call [`make_finding`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdjacencyRecord {
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub related_ids: Vec<String>,
+    pub correlation_id: String,
+    pub intervening_count: i64,
+    pub intervening_kinds: Vec<String>,
+    pub result_index: i64,
+    pub use_index: i64,
+}
+
+/// One compaction-split pair that would emit SL108. Does not call [`make_finding`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompactionSplitRecord {
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub related_ids: Vec<String>,
+    pub boundary_index: i64,
+    pub correlation_id: String,
+    pub result_index: i64,
+    pub use_index: i64,
+    pub repairability: Repairability,
+}
+
+/// Python: `check_adjacency` record walk. Does not call [`make_finding`].
+///
+/// Only clean pairs. Walks [`ToolPairing2Indexer::clean_corrs`] in stored
+/// sorted order. Silent when `max(index) - min(index) <= 1`. Intervening
+/// kinds are `event_kinds[min + 1 .. max]`. All-transparent gaps are
+/// silent. `intervening_count` is the non-transparent count, not the full
+/// gap length. `intervening_kinds` is the sorted unique non-transparent
+/// set, then the first [`MAX_INTERVENING_KINDS_SAMPLE`].
+pub fn record_adjacency(
+    indexer: &ToolPairing2Indexer<'_>,
+    source_path: &str,
+) -> Result<Vec<AdjacencyRecord>, ToolPairing2Error> {
+    let mut records = Vec::new();
+    for corr in indexer.clean_corrs() {
+        let Some(&(use_idx, use_ev)) = indexer.uses(corr).first() else {
+            continue;
+        };
+        let Some(&(res_idx, _)) = indexer.results(corr).first() else {
+            continue;
+        };
+        let min_idx = use_idx.min(res_idx);
+        let max_idx = use_idx.max(res_idx);
+        if max_idx - min_idx <= 1 {
+            continue;
+        }
+        let intervening = &indexer.event_kinds()[min_idx + 1..max_idx];
+        if intervening
+            .iter()
+            .all(|kind| is_adjacency_transparent_kind(kind))
+        {
+            continue;
+        }
+        let mut intervening_count: i64 = 0;
+        let mut unique = HashSet::new();
+        for kind in intervening {
+            if is_adjacency_transparent_kind(kind) {
+                continue;
+            }
+            intervening_count = intervening_count
+                .checked_add(1)
+                .ok_or(ToolPairing2Error::PythonIntUnbounded)?;
+            unique.insert(kind.clone());
+        }
+        let mut intervening_kinds: Vec<String> = unique.into_iter().collect();
+        intervening_kinds.sort();
+        let sample_cap = usize::try_from(MAX_INTERVENING_KINDS_SAMPLE)
+            .map_err(|_| ToolPairing2Error::PythonIntUnbounded)?;
+        if intervening_kinds.len() > sample_cap {
+            intervening_kinds.truncate(sample_cap);
+        }
+        let use_id_str = optional_event_id(use_ev)?;
+        let safe_corr = safe_id(Some(corr));
+        let rec_id = source_record_id(use_id_str.as_deref());
+        let (path, line) = resolve_source_coords(use_ev, source_path)?;
+        records.push(AdjacencyRecord {
+            path,
+            line,
+            record_id: rec_id,
+            related_ids: related_ids(&safe_corr),
+            correlation_id: safe_corr,
+            intervening_count,
+            intervening_kinds,
+            result_index: usize_to_i64(res_idx)?,
+            use_index: usize_to_i64(use_idx)?,
+        });
+    }
+    Ok(records)
+}
+
+/// Python: `check_adjacency`.
+///
+/// An explicit [`Severity`] is used and [`resolve_rule_severity`] is not
+/// called, even when `profile` is a string. [`Severity`] `None` calls
+/// [`resolve_rule_severity`] with [`SL107`] and default [`Severity::Warning`]
+/// before the walk. A string profile then returns [`PROFILES_UNAVAILABLE`]
+/// and does not call [`cap_pairing_findings`].
+#[allow(clippy::too_many_arguments)]
+pub fn check_adjacency(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    profile: RuleSeverityProfile<'_>,
+    severity: Option<Severity>,
+    context: Option<&CheckContext>,
+    indexer: Option<&ToolPairing2Indexer<'_>>,
+) -> Result<Vec<Finding>, ToolPairing2Error> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_indexer;
+    let indexer = match indexer {
+        Some(value) => value,
+        None => {
+            owned_indexer = ToolPairing2Indexer::new(events, Some(source_path))?;
+            &owned_indexer
+        }
+    };
+    let target_severity =
+        explicit_or_resolved_severity(SL107, profile, severity, Severity::Warning)?;
+    let records = record_adjacency(indexer, source_path)?;
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.push(adjacency_finding(record, ctx, target_severity)?);
+    }
+    cap_pairing_findings(findings, SL107, max_findings, Some(source_path), Some(ctx))
+}
+
+/// Python: `check_compaction_split` record walk. Does not call [`make_finding`].
+///
+/// Only clean pairs. A boundary counts only when its stored index is
+/// strictly between min and max. Walks compaction indices in stored
+/// encounter order. The first match is `boundary_index`. One boundary is
+/// [`Repairability::Deterministic`]. Two or more is
+/// [`Repairability::LossyExplicit`].
+pub fn record_compaction_split(
+    indexer: &ToolPairing2Indexer<'_>,
+    source_path: &str,
+) -> Result<Vec<CompactionSplitRecord>, ToolPairing2Error> {
+    let mut records = Vec::new();
+    for corr in indexer.clean_corrs() {
+        let Some(&(use_idx, use_ev)) = indexer.uses(corr).first() else {
+            continue;
+        };
+        let Some(&(res_idx, _)) = indexer.results(corr).first() else {
+            continue;
+        };
+        let min_idx = use_idx.min(res_idx);
+        let max_idx = use_idx.max(res_idx);
+        let mut first_boundary = None;
+        let mut split_count: i64 = 0;
+        for &k in indexer.compaction_indices() {
+            if min_idx < k && k < max_idx {
+                if first_boundary.is_none() {
+                    first_boundary = Some(k);
+                }
+                split_count = split_count
+                    .checked_add(1)
+                    .ok_or(ToolPairing2Error::PythonIntUnbounded)?;
+            }
+        }
+        let Some(first_boundary_idx) = first_boundary else {
+            continue;
+        };
+        let repairability = if split_count == 1 {
+            Repairability::Deterministic
+        } else {
+            Repairability::LossyExplicit
+        };
+        let use_id_str = optional_event_id(use_ev)?;
+        let safe_corr = safe_id(Some(corr));
+        let rec_id = source_record_id(use_id_str.as_deref());
+        let (path, line) = resolve_source_coords(use_ev, source_path)?;
+        records.push(CompactionSplitRecord {
+            path,
+            line,
+            record_id: rec_id,
+            related_ids: related_ids(&safe_corr),
+            boundary_index: usize_to_i64(first_boundary_idx)?,
+            correlation_id: safe_corr,
+            result_index: usize_to_i64(res_idx)?,
+            use_index: usize_to_i64(use_idx)?,
+            repairability,
+        });
+    }
+    Ok(records)
+}
+
+/// Python: `check_compaction_split`.
+///
+/// An explicit [`Severity`] is used and [`resolve_rule_severity`] is not
+/// called, even when `profile` is a string. [`Severity`] `None` calls
+/// [`resolve_rule_severity`] with [`SL108`] and default [`Severity::Warning`]
+/// before the walk. A string profile then returns [`PROFILES_UNAVAILABLE`]
+/// and does not call [`cap_pairing_findings`].
+#[allow(clippy::too_many_arguments)]
+pub fn check_compaction_split(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    profile: RuleSeverityProfile<'_>,
+    severity: Option<Severity>,
+    context: Option<&CheckContext>,
+    indexer: Option<&ToolPairing2Indexer<'_>>,
+) -> Result<Vec<Finding>, ToolPairing2Error> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_indexer;
+    let indexer = match indexer {
+        Some(value) => value,
+        None => {
+            owned_indexer = ToolPairing2Indexer::new(events, Some(source_path))?;
+            &owned_indexer
+        }
+    };
+    let target_severity =
+        explicit_or_resolved_severity(SL108, profile, severity, Severity::Warning)?;
+    let records = record_compaction_split(indexer, source_path)?;
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.push(compaction_split_finding(record, ctx, target_severity)?);
+    }
+    cap_pairing_findings(findings, SL108, max_findings, Some(source_path), Some(ctx))
+}
+
+/// Python: `check_tool_pairing_2`.
+///
+/// Builds one [`ToolPairing2Indexer`] and passes that same indexer to
+/// reversed, cross-branch, adjacency, and compaction, in that order.
+/// Cross-branch may mutate components; later checks see that indexer.
+/// `profile` is passed only to adjacency and compaction. No severity
+/// override is passed. The first family error returns immediately.
+/// Successful lists are concatenated and sorted with
+/// [`cap_finding_sort_key`]. This does not call [`cap_pairing_findings`]
+/// or [`make_finding`].
+pub fn check_tool_pairing_2(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings_per_family: Option<i64>,
+    profile: RuleSeverityProfile<'_>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, ToolPairing2Error> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let mut indexer = ToolPairing2Indexer::new(events, Some(source_path))?;
+    let mut all_findings = Vec::new();
+    all_findings.extend(check_reversed_order(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        context,
+        Some(&indexer),
+    )?);
+    all_findings.extend(check_cross_branch(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        context,
+        Some(&mut indexer),
+    )?);
+    all_findings.extend(check_adjacency(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        profile,
+        None,
+        context,
+        Some(&indexer),
+    )?);
+    all_findings.extend(check_compaction_split(
+        events,
+        Some(source_path),
+        max_findings_per_family,
+        profile,
+        None,
+        context,
+        Some(&indexer),
+    )?);
+    let mut keyed = Vec::new();
+    for finding in all_findings {
+        let key = cap_finding_sort_key(&finding)?;
+        keyed.push((key, finding));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, finding)| finding).collect())
+}
+
+/// Python: `check_sl107 = check_adjacency`.
+pub use check_adjacency as check_sl107;
+/// Python: `check_sl108 = check_compaction_split`.
+pub use check_compaction_split as check_sl108;
+/// Python: `check_sl106 = check_cross_branch`.
+pub use check_cross_branch as check_sl106;
+/// Python: `check_sl105 = check_reversed_order`.
+pub use check_reversed_order as check_sl105;
+
+/// Python `__all__`, in that order. [`ADJACENCY_TRANSPARENT_KINDS`] is not in `ALL`.
+pub const ALL: [&str; 18] = [
+    "CALL_KINDS",
+    "COMPACTION_KINDS",
+    "MAX_INDEX_SAMPLE_SIZE",
+    "MAX_INTERVENING_KINDS_SAMPLE",
+    "MAX_PAIRING_FINDINGS",
+    "RESULT_KINDS",
+    "TOOL_KINDS",
+    "cap_pairing_findings",
+    "check_adjacency",
+    "check_compaction_split",
+    "check_cross_branch",
+    "check_reversed_order",
+    "check_sl105",
+    "check_sl106",
+    "check_sl107",
+    "check_sl108",
+    "check_tool_pairing_2",
+    "compute_pairing_fingerprint",
+];
+
+fn is_adjacency_transparent_kind(kind: &str) -> bool {
+    ADJACENCY_TRANSPARENT_KINDS.contains(&kind)
+}
+
+fn explicit_or_resolved_severity(
+    code: &str,
+    profile: RuleSeverityProfile<'_>,
+    severity: Option<Severity>,
+    default_severity: Severity,
+) -> Result<Severity, ToolPairing2Error> {
+    match severity {
+        Some(value) => Ok(value),
+        None => resolve_rule_severity(code, profile, default_severity),
+    }
+}
+
+fn adjacency_evidence(record: &AdjacencyRecord) -> PyValue {
+    PyValue::map(vec![
+        (
+            PyValue::string("correlation_id"),
+            PyValue::string(record.correlation_id.clone()),
+        ),
+        (
+            PyValue::string("intervening_count"),
+            PyValue::int(record.intervening_count),
+        ),
+        (
+            PyValue::string("intervening_kinds"),
+            PyValue::list(py_strings(&record.intervening_kinds)),
+        ),
+        (
+            PyValue::string("result_index"),
+            PyValue::int(record.result_index),
+        ),
+        (PyValue::string("use_index"), PyValue::int(record.use_index)),
+    ])
+}
+
+fn compaction_split_evidence(record: &CompactionSplitRecord) -> PyValue {
+    PyValue::map(vec![
+        (
+            PyValue::string("boundary_index"),
+            PyValue::int(record.boundary_index),
+        ),
+        (
+            PyValue::string("correlation_id"),
+            PyValue::string(record.correlation_id.clone()),
+        ),
+        (
+            PyValue::string("result_index"),
+            PyValue::int(record.result_index),
+        ),
+        (PyValue::string("use_index"), PyValue::int(record.use_index)),
+    ])
+}
+
+fn adjacency_finding(
+    record: &AdjacencyRecord,
+    ctx: &CheckContext,
+    severity: Severity,
+) -> Result<Finding, ToolPairing2Error> {
+    let source = pairing_source(&record.path, record.line, record.record_id.as_deref())?;
+    let (adapter_id, adapter_version, profile_id, profile_version) = context_fields(ctx);
+    Ok(make_finding(&MakeFindingInput {
+        code: PyValue::string(SL107),
+        severity: PyValue::severity(severity),
+        repairability: PyValue::repairability(Repairability::Manual),
+        message_template: PyValue::string(MSG_SL107),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(py_strings(&record.related_ids)),
+        evidence: adjacency_evidence(record),
+        fingerprint: PyValue::None,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        ordinal: None,
+        context: None,
+    })?)
+}
+
+fn compaction_split_finding(
+    record: &CompactionSplitRecord,
+    ctx: &CheckContext,
+    severity: Severity,
+) -> Result<Finding, ToolPairing2Error> {
+    let source = pairing_source(&record.path, record.line, record.record_id.as_deref())?;
+    let (adapter_id, adapter_version, profile_id, profile_version) = context_fields(ctx);
+    Ok(make_finding(&MakeFindingInput {
+        code: PyValue::string(SL108),
+        severity: PyValue::severity(severity),
+        repairability: PyValue::repairability(record.repairability),
+        message_template: PyValue::string(MSG_SL108),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(py_strings(&record.related_ids)),
+        evidence: compaction_split_evidence(record),
+        fingerprint: PyValue::None,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        ordinal: None,
+        context: None,
+    })?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_finding_sort_key, cap_pairing_findings, check_cross_branch, check_reversed_order,
-        compute_pairing_fingerprint, extract_scope, record_cross_branch, record_reversed_order,
+        cap_finding_sort_key, cap_pairing_findings, check_adjacency, check_compaction_split,
+        check_cross_branch, check_reversed_order, check_sl105, check_sl106, check_sl107,
+        check_sl108, check_tool_pairing_2, compute_pairing_fingerprint, extract_scope,
+        record_adjacency, record_compaction_split, record_cross_branch, record_reversed_order,
         resolve_rule_severity, resolve_source_coords, safe_id, source_record_id, DisjointSet,
         RuleSeverityProfile, ToolPairing2Error, ToolPairing2Indexer, ADJACENCY_TRANSPARENT_KINDS,
-        CALL_KINDS, COMPACTION_KINDS, KIND_COMPACTION, KIND_TOOL_CALL, KIND_TOOL_RESULT,
+        ALL, CALL_KINDS, COMPACTION_KINDS, KIND_COMPACTION, KIND_TOOL_CALL, KIND_TOOL_RESULT,
         KIND_TOOL_USE, MAX_INDEX_SAMPLE_SIZE, MAX_INTERVENING_KINDS_SAMPLE, MAX_PAIRING_FINDINGS,
         MSG_OVERFLOW, MSG_SL105, MSG_SL106, MSG_SL107, MSG_SL108, PROFILES_UNAVAILABLE,
         RESULT_KINDS, TOOL_KINDS,
@@ -2322,5 +2773,369 @@ mod tests {
             .unwrap_err();
         assert_eq!(other.to_string(), PROFILES_UNAVAILABLE);
         assert!(matches!(other, ToolPairing2Error::ProfilesUnavailable));
+    }
+
+    fn same_item<T>(left: T, right: T) {
+        let _ = (left, right);
+    }
+
+    #[test]
+    fn adjacency_message_gap_record_and_codec_error() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-msg-synthetic", "message", None),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let records = record_adjacency(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].intervening_count, 1);
+        assert_eq!(records[0].intervening_kinds, vec!["message".to_owned()]);
+        assert_eq!(records[0].use_index, 0);
+        assert_eq!(records[0].result_index, 2);
+        assert_eq!(records[0].correlation_id, "corr-synth");
+        assert_eq!(records[0].related_ids, vec!["corr-synth".to_owned()]);
+        assert_eq!(records[0].record_id.as_deref(), Some("evt-call-synthetic"));
+        assert_codec_unavailable(
+            check_adjacency(
+                &events,
+                None,
+                None,
+                RuleSeverityProfile::None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn adjacency_transparent_tool_call_is_empty() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session(
+                "evt-other-synthetic",
+                KIND_TOOL_CALL,
+                Some("corr-other-synth"),
+            ),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert!(record_adjacency(&indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_adjacency(
+            &events,
+            None,
+            None,
+            RuleSeverityProfile::None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
+    fn adjacency_no_gap_is_empty() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert_eq!(indexer.uses("corr-synth")[0].0, 0);
+        assert_eq!(indexer.results("corr-synth")[0].0, 1);
+        assert!(record_adjacency(&indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_adjacency(
+            &events,
+            None,
+            None,
+            RuleSeverityProfile::None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
+    fn adjacency_explicit_warning_with_string_profile_is_ok() {
+        assert!(check_adjacency(
+            &[],
+            None,
+            None,
+            RuleSeverityProfile::Name("neutral"),
+            Some(Severity::Warning),
+            None,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+        assert!(check_compaction_split(
+            &[],
+            None,
+            None,
+            RuleSeverityProfile::Name("neutral"),
+            Some(Severity::Warning),
+            None,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
+    fn adjacency_omitted_severity_string_profile_is_profiles_error() {
+        let err = check_adjacency(
+            &[],
+            None,
+            None,
+            RuleSeverityProfile::Name("neutral"),
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), PROFILES_UNAVAILABLE);
+        assert_eq!(err.message(), "sesslint.profiles is not available");
+        assert!(matches!(err, ToolPairing2Error::ProfilesUnavailable));
+        let compact_err = check_compaction_split(
+            &[],
+            None,
+            None,
+            RuleSeverityProfile::Name("neutral"),
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(compact_err.message(), "sesslint.profiles is not available");
+        assert!(matches!(
+            compact_err,
+            ToolPairing2Error::ProfilesUnavailable
+        ));
+    }
+
+    #[test]
+    fn adjacency_empty_default_max_is_ok_negative_max_is_codec_error() {
+        assert!(
+            check_adjacency(&[], None, None, RuleSeverityProfile::None, None, None, None,)
+                .unwrap()
+                .is_empty()
+        );
+        assert_codec_unavailable(
+            check_adjacency(
+                &[],
+                None,
+                Some(-1),
+                RuleSeverityProfile::None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err(),
+        );
+        assert!(check_compaction_split(
+            &[],
+            None,
+            None,
+            RuleSeverityProfile::None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+        assert_codec_unavailable(
+            check_compaction_split(
+                &[],
+                None,
+                Some(-1),
+                RuleSeverityProfile::None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err(),
+        );
+        assert!(
+            check_tool_pairing_2(&[], None, None, RuleSeverityProfile::None, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn compaction_one_boundary_is_deterministic_and_codec_error() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-bound-synthetic", KIND_COMPACTION, None),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let records = record_compaction_split(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].repairability, Repairability::Deterministic);
+        assert_eq!(records[0].boundary_index, 1);
+        assert_eq!(records[0].use_index, 0);
+        assert_eq!(records[0].result_index, 2);
+        assert_eq!(records[0].record_id.as_deref(), Some("evt-call-synthetic"));
+        assert_codec_unavailable(
+            check_compaction_split(
+                &events,
+                None,
+                None,
+                RuleSeverityProfile::None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn compaction_two_boundaries_is_lossy_explicit_first_index() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-bound-a-synthetic", KIND_COMPACTION, None),
+            session("evt-bound-b-synthetic", KIND_COMPACTION, None),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert_eq!(indexer.compaction_indices(), &[1, 2]);
+        let records = record_compaction_split(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].repairability, Repairability::LossyExplicit);
+        assert_eq!(records[0].boundary_index, 1);
+    }
+
+    #[test]
+    fn compaction_boundary_on_call_index_is_silent() {
+        let events = [
+            session("evt-bound-synthetic", KIND_COMPACTION, None),
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+            session("evt-bound-after-synthetic", KIND_COMPACTION, None),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert_eq!(indexer.uses("corr-synth")[0].0, 1);
+        assert_eq!(indexer.compaction_indices(), &[0, 3]);
+        assert!(record_compaction_split(&indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_compaction_split(
+            &events,
+            None,
+            None,
+            RuleSeverityProfile::None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
+    fn aggregator_clean_adjacent_same_component_is_empty() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session_with_parent(
+                "evt-result-synthetic",
+                Some("evt-call-synthetic"),
+                KIND_TOOL_RESULT,
+                Some("corr-synth"),
+            ),
+        ];
+        assert!(
+            check_tool_pairing_2(&events, None, None, RuleSeverityProfile::None, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn aggregator_different_components_string_profile_is_codec_error() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let err = check_tool_pairing_2(
+            &events,
+            None,
+            None,
+            RuleSeverityProfile::Name("neutral"),
+            None,
+        )
+        .unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn aggregator_message_gap_same_component_string_profile_is_profiles_error() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session_with_parent(
+                "evt-msg-synthetic",
+                Some("evt-call-synthetic"),
+                "message",
+                None,
+            ),
+            session_with_parent(
+                "evt-result-synthetic",
+                Some("evt-call-synthetic"),
+                KIND_TOOL_RESULT,
+                Some("corr-synth"),
+            ),
+        ];
+        let err = check_tool_pairing_2(
+            &events,
+            None,
+            None,
+            RuleSeverityProfile::Name("neutral"),
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), PROFILES_UNAVAILABLE);
+        assert_eq!(err.message(), "sesslint.profiles is not available");
+        assert!(matches!(err, ToolPairing2Error::ProfilesUnavailable));
+    }
+
+    #[test]
+    fn all_matches_the_python_list() {
+        assert_eq!(
+            ALL,
+            [
+                "CALL_KINDS",
+                "COMPACTION_KINDS",
+                "MAX_INDEX_SAMPLE_SIZE",
+                "MAX_INTERVENING_KINDS_SAMPLE",
+                "MAX_PAIRING_FINDINGS",
+                "RESULT_KINDS",
+                "TOOL_KINDS",
+                "cap_pairing_findings",
+                "check_adjacency",
+                "check_compaction_split",
+                "check_cross_branch",
+                "check_reversed_order",
+                "check_sl105",
+                "check_sl106",
+                "check_sl107",
+                "check_sl108",
+                "check_tool_pairing_2",
+                "compute_pairing_fingerprint",
+            ]
+        );
+        assert!(!ALL.contains(&"ADJACENCY_TRANSPARENT_KINDS"));
+        same_item(check_sl105, check_reversed_order);
+        same_item(check_sl106, check_cross_branch);
+        same_item(check_sl107, check_adjacency);
+        same_item(check_sl108, check_compaction_split);
     }
 }
