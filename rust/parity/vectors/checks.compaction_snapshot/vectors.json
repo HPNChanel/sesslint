@@ -1,0 +1,850 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.compaction_snapshot",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_compaction_snapshot_rs_sha256": "ae86c60f5a595e8f955a4f109f2d7e4438a85b9603dd6cb54c1baacb6ba3db88",
+  "known_parity_gaps": [
+    "check_compaction_snapshot uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python int is unbounded; Rust uses checked i64 for indexes and occurrence counts (PYTHON_INT_UNBOUNDED).",
+    "A bool is not an int. A float or other non-string kind is not a boundary.",
+    "MapWalk::Borrowed and ListWalk::Borrowed are failed borrows, not empty collections."
+  ],
+  "vectors": [
+    {
+      "id": "module_dunder_all",
+      "construct": {
+        "type": "module_dunder_all"
+      },
+      "expected": {
+        "names": [
+          "check_compaction_snapshot"
+        ]
+      }
+    },
+    {
+      "id": "no_codex_marker_empty_findings",
+      "construct": {
+        "type": "compaction_snapshot_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-nc-a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-nc-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "divergences_count": 0
+      }
+    },
+    {
+      "id": "same_type_same_call_id_empty_findings",
+      "construct": {
+        "type": "compaction_snapshot_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-match-d"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "function_call"
+                            }
+                          ],
+                          [
+                            "call_id",
+                            {
+                              "t": "str",
+                              "v": "corr-par-csnap-a"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-match-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "guardian_items",
+                            {
+                              "t": "list",
+                              "items": [
+                                {
+                                  "t": "map",
+                                  "entries": [
+                                    [
+                                      "id",
+                                      {
+                                        "t": "str",
+                                        "v": "evt-par-csnap-match-d"
+                                      }
+                                    ],
+                                    [
+                                      "type",
+                                      {
+                                        "t": "str",
+                                        "v": "function_call"
+                                      }
+                                    ],
+                                    [
+                                      "call_id",
+                                      {
+                                        "t": "str",
+                                        "v": "corr-par-csnap-a"
+                                      }
+                                    ]
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "divergences_count": 0
+      }
+    },
+    {
+      "id": "snapshot_only_id_empty_findings",
+      "construct": {
+        "type": "compaction_snapshot_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-so-d"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-so-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "guardian_items",
+                            {
+                              "t": "list",
+                              "items": [
+                                {
+                                  "t": "map",
+                                  "entries": [
+                                    [
+                                      "id",
+                                      {
+                                        "t": "str",
+                                        "v": "evt-par-csnap-so-d"
+                                      }
+                                    ],
+                                    [
+                                      "type",
+                                      {
+                                        "t": "str",
+                                        "v": "message"
+                                      }
+                                    ]
+                                  ]
+                                },
+                                {
+                                  "t": "map",
+                                  "entries": [
+                                    [
+                                      "id",
+                                      {
+                                        "t": "str",
+                                        "v": "evt-par-csnap-so-inherited"
+                                      }
+                                    ],
+                                    [
+                                      "type",
+                                      {
+                                        "t": "str",
+                                        "v": "reasoning"
+                                      }
+                                    ]
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "divergences_count": 0
+      }
+    },
+    {
+      "id": "durable_absent_from_snapshot_empty_findings",
+      "construct": {
+        "type": "compaction_snapshot_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-abs-a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-abs-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-abs-bound"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "guardian_items",
+                            {
+                              "t": "list",
+                              "items": [
+                                {
+                                  "t": "map",
+                                  "entries": [
+                                    [
+                                      "id",
+                                      {
+                                        "t": "str",
+                                        "v": "evt-par-csnap-abs-a"
+                                      }
+                                    ],
+                                    [
+                                      "type",
+                                      {
+                                        "t": "str",
+                                        "v": "message"
+                                      }
+                                    ]
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "divergences_count": 0
+      }
+    },
+    {
+      "id": "guardian_items_tuple_not_list_empty_findings",
+      "construct": {
+        "type": "compaction_snapshot_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-tuple-d"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ],
+                          [
+                            "call_id",
+                            {
+                              "t": "str",
+                              "v": "corr-par-csnap-tuple"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-tuple-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ],
+                          [
+                            "call_id",
+                            {
+                              "t": "str",
+                              "v": "corr-par-csnap-tuple"
+                            }
+                          ],
+                          [
+                            "guardian_items",
+                            {
+                              "t": "tuple",
+                              "items": [
+                                {
+                                  "t": "map",
+                                  "entries": [
+                                    [
+                                      "id",
+                                      {
+                                        "t": "str",
+                                        "v": "evt-par-csnap-tuple-d"
+                                      }
+                                    ],
+                                    [
+                                      "type",
+                                      {
+                                        "t": "str",
+                                        "v": "reasoning"
+                                      }
+                                    ],
+                                    [
+                                      "call_id",
+                                      {
+                                        "t": "str",
+                                        "v": "corr-par-csnap-tuple"
+                                      }
+                                    ]
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "divergences_count": 0
+      }
+    },
+    {
+      "id": "non_string_kind_not_boundary_empty_findings",
+      "construct": {
+        "type": "compaction_snapshot_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-kind-d"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-csnap-kind-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "float",
+                  "v": 1.25
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "guardian_items",
+                            {
+                              "t": "list",
+                              "items": [
+                                {
+                                  "t": "map",
+                                  "entries": [
+                                    [
+                                      "id",
+                                      {
+                                        "t": "str",
+                                        "v": "evt-par-csnap-kind-d"
+                                      }
+                                    ],
+                                    [
+                                      "type",
+                                      {
+                                        "t": "str",
+                                        "v": "message"
+                                      }
+                                    ]
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "divergences_count": 0
+      }
+    }
+  ]
+}
