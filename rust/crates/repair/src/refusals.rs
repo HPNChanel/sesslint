@@ -1,23 +1,32 @@
 //! Documented, content-free rationale for an intentional repair refusal.
 //!
-//! Port of `src/sesslint/repair/refusals.py` lines 1-118
+//! Port of `src/sesslint/repair/refusals.py`
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before `REFUSAL_REGISTRY` (line 121). That registry is not ported.
+//! Citation matchers are lines 1-118. `REFUSAL_REGISTRY`, `REFUSAL_CODES`,
+//! `refusal_rationale_for`, and `__all__` are lines 121-387.
+//! Registry order is declaration order. SL302 stays before SL204. SL203 stays.
 //! This module does not invent a bypass for SL203.
 //!
 //! No I/O. Rationale text is policy text. Invalid input returns [`RefusalError`]
-//! and does not panic.
+//! and does not panic. A code absent from the registry is `Ok(None)`.
 
 use std::error::Error;
 use std::fmt;
 
 use model::errors::FindingError;
 
-/// `REFUSAL_REGISTRY` at `refusals.py` line 121 is not ported.
+/// Python `REFUSAL_CODES` is a `frozenset`. Iteration order is not a contract.
 ///
-/// This module stops after [`RefusalRationale::render`]. It does not invent a
-/// bypass for SL203.
-pub const REFUSAL_REGISTRY_NOT_PORTED: &str = "REFUSAL_REGISTRY at refusals.py line 121 is not ported. This module stops after RefusalRationale::render and does not invent a bypass for SL203.";
+/// [`REFUSAL_CODES`] follows [`REFUSAL_REGISTRY`] declaration order. SL302 stays
+/// before SL204. This slice is not sorted. Set-style comparisons sort both sides.
+pub const REFUSAL_CODES_ITERATION: &str = "REFUSAL_CODES is a Python frozenset, so its iteration order is not a contract. This slice is declaration order and is not sorted. Set-style comparisons sort both sides.";
+
+/// Python validates every registry row at import and raises `ValueError`.
+///
+/// [`refusal_rationale_for`] returns [`Result`]. A row that fails
+/// [`RefusalRationale::try_new`] is `Err`. It is not `Ok(None)`. `None` would
+/// hide SL203. This function does not panic.
+pub const REGISTRY_VALIDATED_AT_IMPORT: &str = "Python raises ValueError at import when a REFUSAL_REGISTRY row fails RefusalRationale. refusal_rationale_for returns Result. A failed registered row is Err, not None. None would hide SL203.";
 
 /// Python `__post_init__` raises `ValueError` for an unknown code, an empty
 /// rationale, an unrecognized citation, and an empty salvage path.
@@ -202,6 +211,248 @@ impl RefusalRationale {
     }
 }
 
+/// Raw fields of one [`REFUSAL_REGISTRY`] row, in pin declaration order.
+///
+/// Python stores a constructed `RefusalRationale`. This row keeps the pin
+/// text. [`refusal_rationale_for`] builds it with [`RefusalRationale::try_new`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefusalRegistryRow {
+    /// Detector code. The same string is the registry key.
+    pub code: &'static str,
+    /// Policy rationale copied from the pin.
+    pub rationale: &'static str,
+    /// DEMAND.md anchor copied from the pin.
+    pub demand_citation: &'static str,
+    /// Operator hint. `None` is Python `None`. SL203 is `None`.
+    pub salvage_path: Option<&'static str>,
+}
+
+/// Python: `REFUSAL_REGISTRY`, insertion order.
+///
+/// SL302 stays before SL204. Rows are raw pin fields. Construction is
+/// [`RefusalRationale::try_new`] inside [`refusal_rationale_for`].
+pub const REFUSAL_REGISTRY: [RefusalRegistryRow; 27] = [
+    RefusalRegistryRow {
+        code: "SL001",
+        rationale: "malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content",
+        demand_citation: "AC-004",
+        salvage_path: Some("run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' (recipe torn-record-excision; per-line malformed records only)"),
+    },
+    RefusalRegistryRow {
+        code: "SL007",
+        rationale: "multiple plausible session heads cannot be disambiguated without inventing session lineage; choosing one would silently rewrite structure",
+        demand_citation: "Non-goal #13",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL008",
+        rationale: "non-monotonic timestamps may reflect legitimate clock skew or source ordering; rewriting timestamps or reordering records would fabricate causal timing data",
+        demand_citation: "Non-goal #13",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL009",
+        rationale: "secret-shaped material requires credential rotation and operator-side removal; rewriting or redacting the persisted record would mutate evidence without revoking the exposed credential",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL010",
+        rationale: "interleaved writer markers are forensic evidence of concurrent writers, not a defect to edit out; rewriting markers or reordering records would fabricate provenance",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL011",
+        rationale: "a size outlier is evidence, not a defect; dropping or truncating the oversized record would destroy data the tool cannot judge",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL101",
+        rationale: "orphan result may be the sole evidence of a completed external action; conservative repair refuses to delete it or synthesize a matching call",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: Some("run 'sesslint repair {path} --policy salvage --acknowledge-side-effects' (recipe orphan-result-drop)"),
+    },
+    RefusalRegistryRow {
+        code: "SL103",
+        rationale: "conflicting tool-call IDs admit multiple incompatible resolutions; choosing one would invent pairing semantics",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL105",
+        rationale: "reversed call/result order may encode provider or adapter semantics; reordering would rewrite record order without proof",
+        demand_citation: "Non-goal #13",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL106",
+        rationale: "cross-branch pairing concerns lineage and execution ownership; relinking would rewrite branch structure without evidence",
+        demand_citation: "Non-goal #13",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL107",
+        rationale: "provider adjacency rules are defined by the selected replay profile; generic repair cannot know deployment provider semantics",
+        demand_citation: "FR-038",
+        salvage_path: Some("re-run 'sesslint check {path} --profile <id>' matching the deployment provider"),
+    },
+    RefusalRegistryRow {
+        code: "SL201",
+        rationale: "checkpoint/history divergence requires runtime continuation semantics owned by the upstream runtime, which SessLint must not replace",
+        demand_citation: "Non-goal #11",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL202",
+        rationale: "accepted terminal output durability cannot be reconstructed; repair risks duplicate model execution or losing accepted evidence",
+        demand_citation: "Non-goal #2",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL203",
+        rationale: "external side-effect status cannot be determined from session data; abstention is mandatory under every repair policy",
+        demand_citation: "FR-060",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL301",
+        rationale: "unsupported format version must not be approximated by the nearest known schema version",
+        demand_citation: "FR-023",
+        salvage_path: Some("export the session via a supported adapter version or upgrade SessLint, then re-run 'sesslint check {path}'"),
+    },
+    RefusalRegistryRow {
+        code: "SL302",
+        rationale: "unknown critical record may carry identity, parentage, pairing, continuation, or compaction semantics; discarding or rewriting it would require guessing",
+        demand_citation: "FR-021",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL204",
+        rationale: "usage counters are accounting evidence; correcting a divergent total would require knowing which side of the ledger is corrupt",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL205",
+        rationale: "coverage claims cannot be repaired by guessing which span a summary truly covers; fabricating a pointer would invent lineage",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL206",
+        rationale: "a durable-prefix violation is a vendor resume-contract failure; dropping the non-durable tail or synthesizing missing fields would edit evidence to match a contract the file never satisfied",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL207",
+        rationale: "context pressure is advisory evidence against a declared window; truncating or dropping content to buy headroom would destroy the very context the operator needs to checkpoint",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL208",
+        rationale: "snapshot divergence means two vendor-written claims disagree; choosing the authoritative one would edit evidence toward a contract the file never satisfied",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL303",
+        rationale: "duplicated keys admit multiple incompatible resolutions; choosing the winning value would invent record semantics",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL304",
+        rationale: "mid-file schema drift means two schema generations may coexist; normalizing one record's schema would invent which generation it belongs to",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL305",
+        rationale: "a foreign-shape record is only provable against a cited replay vocabulary; rewriting it to the expected shape would discard provider-persisted fields and invent record semantics",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: Some("the vendor-documented manual path rewrites the offending field to the replay vocabulary's expected value after backup - SessLint performs no rewrite"),
+    },
+    RefusalRegistryRow {
+        code: "SL306",
+        rationale: "unrecognized metadata is advisory; its semantics are not a basis for rewriting or discarding a vendor record",
+        demand_citation: "FR-021",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL401",
+        rationale: "a missing or ambiguous resume target means the real predecessor file is unknown; fabricating a link target would invent lineage",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: None,
+    },
+    RefusalRegistryRow {
+        code: "SL402",
+        rationale: "session-index divergence is vendor metadata drift, not ledger corruption; rewriting, rebuilding, or deleting the vendor index would mutate agent-owned state SessLint must not touch",
+        demand_citation: "Conservative policy MUST refuse",
+        salvage_path: Some("the session file is intact and explicit-ID resume may still work; back up then remove the stale vendor index to force a vendor rebuild - SessLint performs no deletion or mutation"),
+    },
+];
+
+const fn codes_from_registry() -> [&'static str; 27] {
+    let mut codes = [""; 27];
+    let mut index = 0;
+    while index < REFUSAL_REGISTRY.len() {
+        codes[index] = REFUSAL_REGISTRY[index].code;
+        index += 1;
+    }
+    codes
+}
+
+/// Python: `REFUSAL_CODES = frozenset(REFUSAL_REGISTRY.keys())`.
+///
+/// A frozenset has no iteration contract ([`REFUSAL_CODES_ITERATION`]). This
+/// slice is [`REFUSAL_REGISTRY`] declaration order and is not sorted.
+pub const REFUSAL_CODES: [&str; 27] = codes_from_registry();
+
+/// Return the documented refusal rationale for a detector code.
+///
+/// Python: `refusal_rationale_for(code) -> RefusalRationale | None`.
+/// A code that is not in [`REFUSAL_REGISTRY`] is `Ok(None)` (Python `None`).
+/// A code that is in the table is `Ok(Some(row))` when
+/// [`RefusalRationale::try_new`] succeeds.
+///
+/// Python builds the registry at import and raises `ValueError` if a row is
+/// invalid ([`REGISTRY_VALIDATED_AT_IMPORT`]). This function returns [`Result`]
+/// and does not panic. A registered row that fails `try_new` is `Err`. It is
+/// not `Ok(None)`. `None` would hide SL203.
+///
+/// There is no delete, skip, or policy argument. SL203 stays.
+/// Lookup is equality search in declaration order. There is no `HashMap`.
+///
+/// # Errors
+///
+/// Returns [`RefusalError`] when the matching row fails `try_new`.
+pub fn refusal_rationale_for(code: &str) -> Result<Option<RefusalRationale>, RefusalError> {
+    for row in &REFUSAL_REGISTRY {
+        if row.code == code {
+            return RefusalRationale::try_new(
+                row.code,
+                row.rationale,
+                row.demand_citation,
+                row.salvage_path,
+            )
+            .map(Some);
+        }
+    }
+    Ok(None)
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 4] = [
+    "REFUSAL_CODES",
+    "REFUSAL_REGISTRY",
+    "RefusalRationale",
+    "refusal_rationale_for",
+];
+
 /// Python: `_is_valid_citation`.
 ///
 /// True when the whole string matches one accepted DEMAND anchor. Digit runs
@@ -382,8 +633,9 @@ fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_valid_citation, RefusalError, RefusalRationale, CITATION_UNICODE_DIGIT_GAP,
-        NON_STRING_RATIONALE_UNREPRESENTABLE, PYTHON_VALUE_ERROR, REFUSAL_REGISTRY_NOT_PORTED,
+        is_valid_citation, refusal_rationale_for, RefusalError, RefusalRationale, ALL,
+        CITATION_UNICODE_DIGIT_GAP, NON_STRING_RATIONALE_UNREPRESENTABLE, PYTHON_VALUE_ERROR,
+        REFUSAL_CODES, REFUSAL_CODES_ITERATION, REFUSAL_REGISTRY, REGISTRY_VALIDATED_AT_IMPORT,
     };
     use std::error::Error;
 
@@ -535,10 +787,144 @@ mod tests {
 
     #[test]
     fn recorded_gaps_stay_explicit() {
-        assert!(REFUSAL_REGISTRY_NOT_PORTED.contains("not ported"));
-        assert!(REFUSAL_REGISTRY_NOT_PORTED.contains("SL203"));
         assert!(NON_STRING_RATIONALE_UNREPRESENTABLE.contains("not representable"));
         assert!(NON_STRING_RATIONALE_UNREPRESENTABLE.contains("ValueError"));
         assert!(NON_STRING_RATIONALE_UNREPRESENTABLE.contains("does not panic"));
+        assert!(REFUSAL_CODES_ITERATION.contains("frozenset"));
+        assert!(REFUSAL_CODES_ITERATION.contains("declaration order"));
+        assert!(REFUSAL_CODES_ITERATION.contains("not sorted"));
+        assert!(REGISTRY_VALIDATED_AT_IMPORT.contains("import"));
+        assert!(REGISTRY_VALIDATED_AT_IMPORT.contains("ValueError"));
+        assert!(REGISTRY_VALIDATED_AT_IMPORT.contains("Result"));
+        assert!(REGISTRY_VALIDATED_AT_IMPORT.contains("Err"));
+        assert!(REGISTRY_VALIDATED_AT_IMPORT.contains("not None"));
+        assert!(REGISTRY_VALIDATED_AT_IMPORT.contains("SL203"));
+    }
+
+    const DECLARATION_ORDER: [&str; 27] = [
+        "SL001", "SL007", "SL008", "SL009", "SL010", "SL011", "SL101", "SL103", "SL105", "SL106",
+        "SL107", "SL201", "SL202", "SL203", "SL301", "SL302", "SL204", "SL205", "SL206", "SL207",
+        "SL208", "SL303", "SL304", "SL305", "SL306", "SL401", "SL402",
+    ];
+
+    #[test]
+    fn registry_codes_are_unique_and_in_declaration_order() {
+        assert_eq!(
+            ALL,
+            [
+                "REFUSAL_CODES",
+                "REFUSAL_REGISTRY",
+                "RefusalRationale",
+                "refusal_rationale_for",
+            ]
+        );
+        assert_eq!(REFUSAL_CODES, DECLARATION_ORDER);
+        assert_eq!(REFUSAL_REGISTRY.map(|row| row.code), DECLARATION_ORDER);
+        for (left, code) in REFUSAL_CODES.iter().enumerate() {
+            for other in REFUSAL_CODES.iter().skip(left + 1) {
+                assert_ne!(code, other, "{code}");
+            }
+        }
+        let sl302 = DECLARATION_ORDER
+            .iter()
+            .position(|code| *code == "SL302")
+            .expect("SL302");
+        assert_eq!(DECLARATION_ORDER[sl302 + 1], "SL204");
+        let mut sorted_codes = REFUSAL_CODES;
+        sorted_codes.sort_unstable();
+        assert_ne!(REFUSAL_CODES, sorted_codes);
+    }
+
+    #[test]
+    fn refusal_codes_set_comparison_sorts_both_sides() {
+        let mut from_registry = REFUSAL_REGISTRY.map(|row| row.code);
+        let mut from_codes = REFUSAL_CODES;
+        from_registry.sort_unstable();
+        from_codes.sort_unstable();
+        assert_eq!(from_registry, from_codes);
+        let mut expected = DECLARATION_ORDER;
+        expected.sort_unstable();
+        assert_eq!(from_codes, expected);
+    }
+
+    #[test]
+    fn sl001_citation_and_salvage() {
+        let row = refusal_rationale_for("SL001")
+            .expect("lookup")
+            .expect("SL001");
+        assert_eq!(row.demand_citation(), "AC-004");
+        let salvage = row.salvage_path().expect("salvage");
+        assert!(salvage.contains("--policy salvage"));
+        assert!(salvage.contains("--acknowledge-side-effects"));
+        assert!(salvage.contains("torn-record-excision"));
+    }
+
+    #[test]
+    fn sl101_citation_salvage_and_render() {
+        let row = refusal_rationale_for("SL101")
+            .expect("lookup")
+            .expect("SL101");
+        assert_eq!(row.demand_citation(), "Conservative policy MUST refuse");
+        let salvage = row.salvage_path().expect("salvage");
+        assert!(salvage.contains("--policy salvage"));
+        assert!(salvage.contains("--acknowledge-side-effects"));
+        assert!(salvage.contains("orphan-result-drop"));
+        let rendered = row.render(Some("session.jsonl"));
+        assert!(rendered.contains("sesslint repair session.jsonl --policy salvage"));
+        assert!(!rendered.contains("{path}"));
+    }
+
+    #[test]
+    fn sl203_stays_with_fr060_and_no_salvage() {
+        let row = refusal_rationale_for("SL203")
+            .expect("lookup")
+            .expect("SL203");
+        assert_eq!(row.code(), "SL203");
+        assert_eq!(row.demand_citation(), "FR-060");
+        assert_eq!(row.salvage_path(), None);
+        let rendered = row.render(None);
+        assert!(rendered.contains("DEMAND: FR-060"));
+        assert!(!rendered.contains("salvage path"));
+        assert!(REFUSAL_CODES.contains(&"SL203"));
+    }
+
+    #[test]
+    fn sl301_and_sl302_citations() {
+        let sl301 = refusal_rationale_for("SL301")
+            .expect("lookup")
+            .expect("SL301");
+        let sl302 = refusal_rationale_for("SL302")
+            .expect("lookup")
+            .expect("SL302");
+        assert_eq!(sl301.demand_citation(), "FR-023");
+        assert_eq!(sl302.demand_citation(), "FR-021");
+    }
+
+    #[test]
+    fn unknown_codes_are_none() {
+        assert_eq!(refusal_rationale_for("SL999").expect("lookup"), None);
+        assert_eq!(refusal_rationale_for("SL003").expect("lookup"), None);
+    }
+
+    #[test]
+    fn every_registry_row_constructs() {
+        assert_eq!(REFUSAL_REGISTRY.len(), DECLARATION_ORDER.len());
+        for row in &REFUSAL_REGISTRY {
+            let built = RefusalRationale::try_new(
+                row.code,
+                row.rationale,
+                row.demand_citation,
+                row.salvage_path,
+            )
+            .unwrap_or_else(|err| panic!("{}: {err}", row.code));
+            let found = refusal_rationale_for(row.code)
+                .unwrap_or_else(|err| panic!("{}: {err}", row.code))
+                .unwrap_or_else(|| panic!("{} returned None", row.code));
+            assert_eq!(found, built);
+            assert_eq!(found.code(), row.code);
+            assert_eq!(found.rationale(), row.rationale);
+            assert_eq!(found.demand_citation(), row.demand_citation);
+            assert_eq!(found.salvage_path(), row.salvage_path);
+        }
     }
 }
