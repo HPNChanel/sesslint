@@ -3,3 +3,6 @@ name = "checks"
 version = "0.0.0"
 edition = "2021"
 publish = false
+
+[dependencies]
+serde_json = "1"

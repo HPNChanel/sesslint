@@ -8,7 +8,7 @@ pub use error::ChecksError;
 
 pub mod context {}
 pub mod hygiene {}
-pub mod indexes {}
+pub mod indexes;
 pub mod checkpoint {}
 pub mod graph {}
 pub mod accounting {}
