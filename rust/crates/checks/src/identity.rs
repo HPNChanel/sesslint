@@ -1,10 +1,8 @@
-//! Vendor-neutral SL003 identity helpers: fingerprint, field-name diff, and cap.
+//! Vendor-neutral SL003 identity helpers: fingerprint, field-name diff, cap,
+//! and duplicate grouping.
 //!
-//! Port of `src/sesslint/checks/identity.py` lines 1–136
+//! Port of `src/sesslint/checks/identity.py` through the pin `__all__`
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice ends at the return of [`cap_findings`]. It does not include
-//! `check_identities`. The pin `__all__` is after this slice and names that
-//! function; this module does not invent `ALL`.
 //!
 //! [`compute_identity_fingerprint`] hashes locally. It is not a finding
 //! digest and does not call [`make_finding`].
@@ -28,6 +26,20 @@
 //!
 //! [`identity_overflow`] describes overflow evidence without hashing.
 //!
+//! [`identity_groups`] groups duplicate ids without hashing. Indexes stay
+//! in walk order. Evidence indexes are truncated to
+//! [`MAX_RECORD_INDEXES_IN_EVIDENCE`]. Emit order is sorted id text.
+//! [`check_identities`] does not use [`model::events::event_id`].
+//!
+//! A [`SessionEvent`] duplicate calls [`SessionEvent::to_canonical_dict`]
+//! and returns that error for the first duplicate id in sorted order. A
+//! mapping duplicate returns
+//! [`model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE`] without building
+//! a dict and without hashing. This slice does not call [`make_finding`]
+//! on a duplicate and does not invent identical-duplicate or
+//! conflicting-duplicate. No duplicate group returns an empty list;
+//! [`cap_findings`] on that empty list does not call [`make_finding`].
+//!
 //! # Recorded gaps
 //!
 //! * Python `int` is unbounded. Counts that do not fit in `i64` are
@@ -43,13 +55,30 @@
 //!   field names are not invented.
 //! * Overflow [`make_finding`] does not produce a digest
 //!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
-
+//! * A float id is [`model::events::PYTHON_FLOAT_STR_UNREPRESENTABLE`].
+//!   Rust `Display` is not used.
+//! * A list or mapping id is [`model::events::PYTHON_STR_UNREPRESENTABLE`].
+//!   A Python repr is not invented.
+//! * Duplicate [`SessionEvent`] members call
+//!   [`SessionEvent::to_canonical_dict`]
+//!   ([`model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE`]). Later ids are
+//!   not classified.
+//! * Duplicate mappings do not drop provenance fields or `seq` into a
+//!   dict ([`model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE`]).
+//! * `content_identity_hash` and `canonical_bytes` are not hashed.
+//! * `enforce_content_free_text` runs after the hash in Python, so it is
+//!   not reached. A credential-shaped duplicate still returns the
+//!   canonical error first.
+use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
-use model::canonical::{CanonicalUnavailable, SessionEvent};
+use model::canonical::{canonical_bytes, to_canonical_json, CanonicalUnavailable, SessionEvent};
 use model::codes::{Repairability, Severity, SL003};
 use model::errors::FindingError;
+use model::events::{
+    EventField, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_UNREPRESENTABLE,
+};
 use model::finding::{
     make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue, SourceRef,
     FINGERPRINT_CODEC_UNAVAILABLE,
@@ -96,6 +125,8 @@ pub enum IdentityError {
     BorrowedLookup,
     EvidenceNotAMap,
     PythonIntUnbounded,
+    PythonFloatStr,
+    PythonStr,
     Canonical(CanonicalUnavailable),
     Finding(FindingError),
 }
@@ -106,6 +137,8 @@ impl IdentityError {
             Self::BorrowedLookup => BORROWED_LOOKUP,
             Self::EvidenceNotAMap => EVIDENCE_NOT_A_MAP,
             Self::PythonIntUnbounded => PYTHON_INT_UNBOUNDED,
+            Self::PythonFloatStr => PYTHON_FLOAT_STR_UNREPRESENTABLE,
+            Self::PythonStr => PYTHON_STR_UNREPRESENTABLE,
             Self::Canonical(error) => error.message(),
             Self::Finding(error) => error.message(),
         }
@@ -123,7 +156,11 @@ impl Error for IdentityError {
         match self {
             Self::Canonical(error) => Some(error),
             Self::Finding(error) => Some(error),
-            Self::BorrowedLookup | Self::EvidenceNotAMap | Self::PythonIntUnbounded => None,
+            Self::BorrowedLookup
+            | Self::EvidenceNotAMap
+            | Self::PythonIntUnbounded
+            | Self::PythonFloatStr
+            | Self::PythonStr => None,
         }
     }
 }
@@ -312,6 +349,155 @@ pub fn cap_findings(
     }
 }
 
+/// Duplicate-id group without hashing. No payload content.
+///
+/// `indexes` is the walk-order prefix truncated to
+/// [`MAX_RECORD_INDEXES_IN_EVIDENCE`]. `truncated` is true when the raw
+/// count is larger. `coerced` is true when any member's id was a non-string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdentityGroup {
+    pub id: String,
+    pub indexes: Vec<i64>,
+    pub first_index: i64,
+    pub coerced: bool,
+    pub truncated: bool,
+}
+
+struct ResolvedId {
+    id: String,
+    coerced: bool,
+}
+
+/// Duplicate groups in sorted id order. Does not hash.
+pub fn identity_groups(events: &[EventValue]) -> Result<Vec<IdentityGroup>, IdentityError> {
+    let mut occurrences: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    let mut coerced_ids: HashSet<String> = HashSet::new();
+
+    for (idx_usize, event) in events.iter().enumerate() {
+        let idx = usize_to_i64(idx_usize)?;
+        let Some(resolved) = resolved_event_id(event)? else {
+            continue;
+        };
+        if resolved.coerced {
+            coerced_ids.insert(resolved.id.clone());
+        }
+        occurrences.entry(resolved.id).or_default().push(idx);
+    }
+
+    let cap = usize::try_from(MAX_RECORD_INDEXES_IN_EVIDENCE)
+        .map_err(|_| IdentityError::PythonIntUnbounded)?;
+    let mut groups = Vec::new();
+    for (id, indexes) in occurrences {
+        if indexes.len() < 2 {
+            continue;
+        }
+        let Some(&first_index) = indexes.first() else {
+            continue;
+        };
+        let truncated = indexes.len() > cap;
+        let coerced = coerced_ids.contains(&id);
+        groups.push(IdentityGroup {
+            id,
+            indexes: indexes.into_iter().take(cap).collect(),
+            first_index,
+            coerced,
+            truncated,
+        });
+    }
+    Ok(groups)
+}
+
+/// Python: `check_identities`.
+///
+/// Omitted `source_path` is `"<canonical>"`. Omitted `max_findings` is
+/// [`MAX_IDENTITY_FINDINGS`]. Omitted `context` is
+/// [`CheckContext::default`]. Classification needs canonical JSON and does
+/// not hash. A duplicate returns the first typed codec error in sorted id
+/// order and does not call [`make_finding`].
+pub fn check_identities(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, IdentityError> {
+    if events.is_empty() {
+        return Ok(Vec::new());
+    }
+    let groups = identity_groups(events)?;
+    for group in &groups {
+        classify_duplicate_group(events, group)?;
+    }
+    cap_findings(Vec::new(), max_findings, source_path, context)
+}
+
+fn classify_duplicate_group(
+    events: &[EventValue],
+    group: &IdentityGroup,
+) -> Result<(), IdentityError> {
+    for index in &group.indexes {
+        let idx = usize::try_from(*index).map_err(|_| IdentityError::PythonIntUnbounded)?;
+        let Some(event) = events.get(idx) else {
+            continue;
+        };
+        classify_duplicate_event(event)?;
+    }
+    Ok(())
+}
+
+fn classify_duplicate_event(event: &EventValue) -> Result<(), IdentityError> {
+    match event {
+        EventValue::Session(session) => match session.to_canonical_dict() {
+            Err(error) => Err(error.into()),
+            Ok(()) => match to_canonical_json(session) {
+                Err(error) => Err(error.into()),
+                Ok(_json) => Err(CanonicalUnavailable::canonical_json_bytes().into()),
+            },
+        },
+        EventValue::Mapping(_) => Err(CanonicalUnavailable::canonical_json_bytes().into()),
+        EventValue::Other => match canonical_bytes(event) {
+            Err(error) => Err(error.into()),
+            Ok(_bytes) => Err(CanonicalUnavailable::canonical_json_bytes().into()),
+        },
+    }
+}
+
+fn resolved_event_id(event: &EventValue) -> Result<Option<ResolvedId>, IdentityError> {
+    match event {
+        EventValue::Session(session) => Ok(string_id(&session.id, false)),
+        EventValue::Mapping(mapping) => match mapping.get("id") {
+            None | Some(EventField::Null) => Ok(None),
+            Some(EventField::Str(text)) => Ok(string_id(text, false)),
+            Some(EventField::Bool(true)) => Ok(string_id("True", true)),
+            Some(EventField::Bool(false)) => Ok(string_id("False", true)),
+            Some(EventField::Int(number)) => Ok(string_id(&number.to_string(), true)),
+            Some(EventField::Float(_)) => Err(IdentityError::PythonFloatStr),
+            Some(EventField::List(_) | EventField::Mapping(_)) => Err(IdentityError::PythonStr),
+        },
+        EventValue::Other => Ok(None),
+    }
+}
+
+fn string_id(id: &str, coerced: bool) -> Option<ResolvedId> {
+    if id.trim().is_empty() {
+        None
+    } else {
+        Some(ResolvedId {
+            id: id.to_owned(),
+            coerced,
+        })
+    }
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 6] = [
+    "MAX_IDENTITY_FINDINGS",
+    "MAX_RECORD_INDEXES_IN_EVIDENCE",
+    "cap_findings",
+    "check_identities",
+    "compute_identity_fingerprint",
+    "diff_field_names",
+];
+
 /// Python: `_cap_finding_sort_key`.
 ///
 /// `(code, record id, fingerprint)`. Record id is `source.record_id`, or
@@ -361,13 +547,20 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_findings, compute_identity_fingerprint, diff_field_names, identity_overflow,
-        IdentityError, MAX_IDENTITY_FINDINGS, MAX_RECORD_INDEXES_IN_EVIDENCE, MSG_CONFLICTING,
-        MSG_IDENTICAL, MSG_OVERFLOW, VARIANT_OVERFLOW,
+        cap_findings, check_identities, compute_identity_fingerprint, diff_field_names,
+        identity_groups, identity_overflow, IdentityError, ALL, MAX_IDENTITY_FINDINGS,
+        MAX_RECORD_INDEXES_IN_EVIDENCE, MSG_CONFLICTING, MSG_IDENTICAL, MSG_OVERFLOW,
+        VARIANT_OVERFLOW,
     };
     use crate::context::CheckContext;
-    use model::canonical::{SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE};
+    use model::canonical::{
+        SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
+    };
     use model::codes::{Repairability, Severity, SL003};
+    use model::events::{
+        EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        PYTHON_STR_UNREPRESENTABLE,
+    };
     use model::finding::{
         Finding, FindingInput, PyValue, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE, SCHEMA_VERSION,
     };
@@ -404,6 +597,14 @@ mod tests {
 
     fn session(id: &str) -> SessionEvent {
         SessionEvent::new(id, None, 0, "2024-02-29T00:00:00Z", "assistant", "message")
+    }
+
+    fn session_value(id: &str) -> EventValue {
+        EventValue::from_session(session(id))
+    }
+
+    fn mapping_id(id: EventField) -> EventValue {
+        EventValue::Mapping(EventMapping::new(vec![("id".to_owned(), id)]))
     }
 
     #[test]
@@ -547,5 +748,201 @@ mod tests {
         let err = cap_findings(Vec::new(), Some(-1), None, None).unwrap_err();
         assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
         assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    #[test]
+    fn all_is_the_pin_order() {
+        assert_eq!(
+            ALL,
+            [
+                "MAX_IDENTITY_FINDINGS",
+                "MAX_RECORD_INDEXES_IN_EVIDENCE",
+                "cap_findings",
+                "check_identities",
+                "compute_identity_fingerprint",
+                "diff_field_names",
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_input_is_silent() {
+        let out = check_identities(&[], None, None, None).unwrap();
+        assert!(out.is_empty());
+        assert!(identity_groups(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn two_different_string_ids_are_silent() {
+        let events = [
+            session_value("evt-a-synthetic"),
+            session_value("evt-b-synthetic"),
+        ];
+        let out = check_identities(&events, None, None, None).unwrap();
+        assert!(out.is_empty());
+        assert!(identity_groups(&events).unwrap().is_empty());
+    }
+
+    #[test]
+    fn empty_and_whitespace_ids_are_ignored() {
+        let events = [
+            session_value(""),
+            session_value("   "),
+            session_value("\t"),
+            mapping_id(EventField::Str(String::new())),
+            mapping_id(EventField::Str(" \n ".to_owned())),
+            mapping_id(EventField::Null),
+            EventValue::Mapping(EventMapping::new(Vec::new())),
+            EventValue::Other,
+            session_value("evt-only-synthetic"),
+        ];
+        let out = check_identities(&events, None, None, None).unwrap();
+        assert!(out.is_empty());
+        assert!(identity_groups(&events).unwrap().is_empty());
+    }
+
+    #[test]
+    fn spaced_string_and_trimmed_string_are_different() {
+        let events = [session_value(" a "), session_value("a")];
+        let out = check_identities(&events, None, None, None).unwrap();
+        assert!(out.is_empty());
+        assert!(identity_groups(&events).unwrap().is_empty());
+    }
+
+    #[test]
+    fn two_session_events_with_the_same_id_are_canonical_unavailable() {
+        let events = [
+            session_value("evt-dup-synthetic"),
+            session_value("evt-dup-synthetic"),
+        ];
+        let err = check_identities(&events, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert_eq!(err.message(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert!(matches!(err, IdentityError::Canonical(_)));
+        assert!(!matches!(err, IdentityError::Finding(_)));
+        assert!(!is_lower_hex16(&err.to_string()));
+        assert!(!err.to_string().contains("identical"));
+        assert!(!err.to_string().contains("conflicting"));
+    }
+
+    #[test]
+    fn two_mappings_with_the_same_string_id_are_json_bytes_unavailable() {
+        let events = [
+            mapping_id(EventField::Str("evt-map-synthetic".to_owned())),
+            mapping_id(EventField::Str("evt-map-synthetic".to_owned())),
+        ];
+        let err = check_identities(&events, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert_eq!(err.message(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert!(matches!(err, IdentityError::Canonical(_)));
+        assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    #[test]
+    fn bool_true_id_is_silent_once_and_json_bytes_error_when_duplicated() {
+        let one = [mapping_id(EventField::Bool(true))];
+        assert!(check_identities(&one, None, None, None).unwrap().is_empty());
+        assert!(identity_groups(&one).unwrap().is_empty());
+
+        let two = [
+            mapping_id(EventField::Bool(true)),
+            mapping_id(EventField::Bool(true)),
+        ];
+        let groups = identity_groups(&two).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].id, "True");
+        assert_eq!(groups[0].indexes, vec![0, 1]);
+        assert_eq!(groups[0].first_index, 0);
+        assert!(groups[0].coerced);
+        assert!(!groups[0].truncated);
+        let err = check_identities(&two, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    #[test]
+    fn float_id_and_list_id_are_typed_errors() {
+        let float_err =
+            check_identities(&[mapping_id(EventField::Float(1.0))], None, None, None).unwrap_err();
+        assert_eq!(float_err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert_eq!(float_err.message(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(float_err, IdentityError::PythonFloatStr));
+        assert!(!is_lower_hex16(&float_err.to_string()));
+
+        let list_err = check_identities(
+            &[mapping_id(EventField::List(Vec::new()))],
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(list_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert_eq!(list_err.message(), PYTHON_STR_UNREPRESENTABLE);
+        assert!(matches!(list_err, IdentityError::PythonStr));
+        assert!(!is_lower_hex16(&list_err.to_string()));
+
+        let mapping_err = check_identities(
+            &[mapping_id(EventField::Mapping(EventMapping::new(
+                Vec::new(),
+            )))],
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(mapping_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert!(matches!(mapping_err, IdentityError::PythonStr));
+    }
+
+    #[test]
+    fn duplicate_ids_return_the_canonical_error_of_a_first() {
+        let events = [
+            session_value("b"),
+            session_value("a"),
+            session_value("b"),
+            session_value("a"),
+        ];
+        let groups = identity_groups(&events).unwrap();
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].id, "a");
+        assert_eq!(groups[0].indexes, vec![1, 3]);
+        assert_eq!(groups[0].first_index, 1);
+        assert_eq!(groups[1].id, "b");
+        assert_eq!(groups[1].indexes, vec![0, 2]);
+        let err = check_identities(&events, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert!(!matches!(err, IdentityError::Finding(_)));
+        assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    #[test]
+    fn negative_int_id_is_coerced_decimal_text() {
+        let one = [mapping_id(EventField::Int(-7))];
+        assert!(check_identities(&one, None, None, None).unwrap().is_empty());
+        let two = [
+            mapping_id(EventField::Int(-7)),
+            mapping_id(EventField::Int(-7)),
+        ];
+        let groups = identity_groups(&two).unwrap();
+        assert_eq!(groups[0].id, "-7");
+        assert!(groups[0].coerced);
+        let err = check_identities(&two, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+    }
+
+    #[test]
+    fn evidence_indexes_truncate_at_the_cap() {
+        let events: Vec<EventValue> = (0..33)
+            .map(|_| session_value("evt-cap-synthetic"))
+            .collect();
+        let groups = identity_groups(&events).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].indexes.len(), 32);
+        assert_eq!(groups[0].indexes[0], 0);
+        assert_eq!(groups[0].indexes[31], 31);
+        assert_eq!(groups[0].first_index, 0);
+        assert!(groups[0].truncated);
+        let err = check_identities(&events, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
     }
 }
