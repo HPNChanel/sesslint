@@ -1,18 +1,17 @@
-//! Content-free text checks, [`SourceRef`], and the evidence walker.
+//! Content-free text checks, [`SourceRef`], the evidence walker, and [`Finding`].
 //!
-//! Port of `src/sesslint/finding.py` lines 1–187
+//! Port of `src/sesslint/finding.py` lines 1–426
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before the `Finding` class. Does not port `make_finding`.
+//! Stops before `CANONICAL_EVIDENCE_KEYS`. Does not port `make_finding`.
 //!
 //! Finding envelope, severity/repairability taxonomies, fingerprinting, and
-//! deterministic ordering. This slice ports the frozen [`SourceRef`] model and
-//! the content-free guards generic detectors use.
+//! deterministic ordering.
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
 
-use crate::codes::Severity;
+use crate::codes::{is_valid_code, Repairability, Severity, ALL_CODES};
 use crate::errors::FindingError;
 
 /// Python: `SCHEMA_VERSION` (`SchemaVersionLiteral`).
@@ -1230,6 +1229,12 @@ pub struct Evidence {
 #[derive(Debug)]
 enum EvidenceKind {
     Str(String),
+    /// Python `int` that is not `bool`.
+    Int(i64),
+    Bool(bool),
+    /// Python `None`. Distinct from [`EvidenceKind::Ignored`] so readers can tell.
+    NoneValue,
+    Bytes(Vec<u8>),
     Ignored,
     Map(RefCell<Vec<(EvidenceKey, Evidence)>>),
     List(RefCell<Vec<Evidence>>),
@@ -1245,6 +1250,22 @@ impl Evidence {
 
     pub fn ignored() -> Self {
         Self::from_kind(EvidenceKind::Ignored)
+    }
+
+    pub fn int(value: i64) -> Self {
+        Self::from_kind(EvidenceKind::Int(value))
+    }
+
+    pub fn bool_value(value: bool) -> Self {
+        Self::from_kind(EvidenceKind::Bool(value))
+    }
+
+    pub fn none_value() -> Self {
+        Self::from_kind(EvidenceKind::NoneValue)
+    }
+
+    pub fn bytes(value: impl Into<Vec<u8>>) -> Self {
+        Self::from_kind(EvidenceKind::Bytes(value.into()))
     }
 
     pub fn map(entries: Vec<(EvidenceKey, Evidence)>) -> Self {
@@ -1729,7 +1750,12 @@ fn walk(
 ) -> Result<(), FindingError> {
     match &*val.kind {
         EvidenceKind::Str(text) => enforce_content_free_text(text, context),
-        EvidenceKind::Ignored => Ok(()),
+        // Scalars are not inspected. `int` / `bool` / `None` stay distinct for readers.
+        EvidenceKind::Ignored
+        | EvidenceKind::Int(_)
+        | EvidenceKind::Bool(_)
+        | EvidenceKind::NoneValue
+        | EvidenceKind::Bytes(_) => Ok(()),
         EvidenceKind::Map(entries) => {
             let copied = {
                 let borrowed = entries.borrow();
@@ -1838,12 +1864,1299 @@ fn sorted_set_items(items: &[Evidence]) -> Vec<Evidence> {
 fn set_sort_key(item: &Evidence) -> (u8, String) {
     match &*item.kind {
         EvidenceKind::Str(text) => (0, text.clone()),
-        EvidenceKind::Ignored => (1, String::new()),
+        EvidenceKind::Ignored
+        | EvidenceKind::Int(_)
+        | EvidenceKind::Bool(_)
+        | EvidenceKind::NoneValue
+        | EvidenceKind::Bytes(_) => (1, String::new()),
         EvidenceKind::Map(_) => (2, String::new()),
         EvidenceKind::List(_) => (3, String::new()),
         EvidenceKind::Tuple(_) => (4, String::new()),
         EvidenceKind::Set(_) => (5, String::new()),
         EvidenceKind::FrozenSet(_) => (6, String::new()),
+    }
+}
+
+/// `Finding.related_ids` uniques the raw values (`set`), then this port walks
+/// strings in code-point order and other hashable items in input order.
+///
+/// Python set iteration is not stable, so the first rejected item can differ.
+/// Uniqueness is on the raw values: `" a "` and `"a"` both remain, and the
+/// sorted tuple can contain duplicates. Items are not uniqued again after strip.
+pub const RELATED_IDS_SET_ORDER_DEVIATION: &str = "Finding.related_ids uniques raw values with set equality, then walks strings in code-point order before other hashable items in input order. Python set order is not stable, so the first rejected item can differ. Values are not uniqued after strip, so ' a ' and 'a' can both remain";
+
+/// `Finding.from_dict` raises `KeyError`, `ValueError`, or `TypeError` before
+/// `__post_init__`. Rust returns [`FindingError`] and does not panic.
+pub const FROM_DICT_EXCEPTION_DEVIATION: &str = "Finding.from_dict raises KeyError for a missing code, severity, repairability, message, fingerprint, or source.path; ValueError from Severity() or Repairability() on a bad enum value; and TypeError from tuple(related_ids) when related_ids is not iterable. Those happen before __post_init__. Rust returns FindingError and does not panic";
+
+/// `Finding.variant` is `typing.cast`. A non-string value is returned as-is.
+/// Rust returns [`FindingError`] instead of that raw value.
+pub const VARIANT_CAST_DEVIATION: &str = "Finding.variant uses typing.cast and returns a non-string evidence value unchanged; Rust returns FindingError instead of that raw value";
+
+/// `sort_findings` only sees [`Finding`] values. Python can raise `TypeError`
+/// while ordering a non-Finding. Rust does not panic to imitate that.
+pub const SORT_FINDINGS_TYPE_DEVIATION: &str = "sort_findings only represents Finding values. Python may raise TypeError while ordering a non-Finding; Rust does not panic to imitate that";
+
+/// Python `==` compares every dataclass field. Ordering uses the sort key.
+/// Rust [`Eq`] stays structural and [`Ord`] uses the sort key, so they disagree
+/// when only a non-key field differs (for example `message_template`).
+pub const FINDING_EQ_ORD_DEVIATION: &str = "Python Finding equality is dataclass field equality, while ordering uses the sort key. Rust Eq stays structural and Ord uses the sort key";
+
+const FINGERPRINT_ERROR_PREFIX: &str =
+    "Finding.fingerprint must be a 16-character lowercase hex string matching ^[0-9a-f]{16}$, got ";
+
+/// Python object passed into [`Finding::try_new`].
+///
+/// Wrong types stay representable so the `isinstance` branches can fail closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PyValue {
+    Str(String),
+    Int(i64),
+    Bool(bool),
+    Bytes(Vec<u8>),
+    None,
+    Severity(Severity),
+    Repairability(Repairability),
+    Source(SourceRef),
+    List(Vec<PyValue>),
+    Tuple(Vec<PyValue>),
+    Set(Vec<PyValue>),
+    FrozenSet(Vec<PyValue>),
+    Map(Vec<(PyValue, PyValue)>),
+}
+
+impl PyValue {
+    pub fn string(value: impl Into<String>) -> Self {
+        Self::Str(value.into())
+    }
+
+    pub fn int(value: i64) -> Self {
+        Self::Int(value)
+    }
+
+    pub fn bool_value(value: bool) -> Self {
+        Self::Bool(value)
+    }
+
+    pub fn bytes(value: impl Into<Vec<u8>>) -> Self {
+        Self::Bytes(value.into())
+    }
+
+    pub fn list(items: Vec<PyValue>) -> Self {
+        Self::List(items)
+    }
+
+    pub fn tuple(items: Vec<PyValue>) -> Self {
+        Self::Tuple(items)
+    }
+
+    pub fn set(items: Vec<PyValue>) -> Self {
+        Self::Set(items)
+    }
+
+    pub fn map(entries: Vec<(PyValue, PyValue)>) -> Self {
+        Self::Map(entries)
+    }
+
+    pub fn severity(value: Severity) -> Self {
+        Self::Severity(value)
+    }
+
+    pub fn repairability(value: Repairability) -> Self {
+        Self::Repairability(value)
+    }
+
+    pub fn source(value: SourceRef) -> Self {
+        Self::Source(value)
+    }
+}
+
+/// One JSON-like value in [`Finding::to_dict`] / [`Finding::from_dict`].
+///
+/// Map entries keep input order. This is not a `HashMap` or a `BTreeMap`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DictValue {
+    Str(String),
+    Int(i64),
+    Bool(bool),
+    None,
+    Bytes(Vec<u8>),
+    List(Vec<DictValue>),
+    Tuple(Vec<DictValue>),
+    Set(Vec<DictValue>),
+    FrozenSet(Vec<DictValue>),
+    Map(Vec<(String, DictValue)>),
+}
+
+/// Total order of a [`Finding`] (FR-094). Field order is the comparison order.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FindingSortKey {
+    pub path: String,
+    pub line: i64,
+    pub ordinal: i64,
+    pub severity_rank: i64,
+    pub code: String,
+    pub record_id: String,
+    pub fingerprint: String,
+    pub related_ids: Vec<String>,
+    pub message: String,
+    pub repairability: String,
+}
+
+/// Fields for [`Finding::try_new`], including values Python would reject.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FindingInput {
+    pub code: PyValue,
+    pub severity: PyValue,
+    pub repairability: PyValue,
+    pub message: PyValue,
+    pub source: PyValue,
+    pub related_ids: PyValue,
+    pub fingerprint: PyValue,
+    pub schema_version: PyValue,
+    pub message_template: PyValue,
+    pub evidence: PyValue,
+}
+
+/// Immutable finding envelope capturing an integrity defect.
+///
+/// Ordering is [`finding_sort_key`] (FR-094). [`Eq`] compares the stored fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Finding {
+    code: String,
+    severity: Severity,
+    repairability: Repairability,
+    message: String,
+    source: SourceRef,
+    related_ids: Vec<String>,
+    fingerprint: String,
+    schema_version: String,
+    message_template: Option<String>,
+    evidence: Option<Evidence>,
+}
+
+impl Finding {
+    /// Validate in the pinned `__post_init__` order and store the normalized form.
+    pub fn try_new(input: FindingInput) -> Result<Self, FindingError> {
+        let FindingInput {
+            code,
+            severity,
+            repairability,
+            message,
+            source,
+            related_ids,
+            fingerprint,
+            schema_version,
+            message_template,
+            evidence,
+        } = input;
+
+        let code = match &code {
+            PyValue::Str(text) if is_valid_code(text) => text.clone(),
+            other => return Err(invalid_code(other)),
+        };
+        let severity = match &severity {
+            PyValue::Severity(value) => *value,
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.severity must be a Severity enum, got {}",
+                    python_repr(other)
+                )));
+            }
+        };
+        let repairability = match &repairability {
+            PyValue::Repairability(value) => *value,
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.repairability must be a Repairability enum, got {}",
+                    python_repr(other)
+                )));
+            }
+        };
+        let message = match &message {
+            PyValue::Str(text) if !python_strip(text).is_empty() => text.clone(),
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.message must be a non-empty string, got {}",
+                    python_type_name(other)
+                )));
+            }
+        };
+        let length = message.chars().count();
+        if length > max_message_chars() {
+            return Err(FindingError::new(format!(
+                "Finding.message exceeds maximum length of {MAX_MESSAGE_LENGTH} characters (length: {length})"
+            )));
+        }
+        enforce_content_free_text(&message, "Finding.message")?;
+
+        let source = match source {
+            PyValue::Source(source) => source,
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.source must be a SourceRef, got {}",
+                    python_type_name(&other)
+                )));
+            }
+        };
+
+        let fingerprint = match &fingerprint {
+            PyValue::Str(text) if is_lower_hex_fingerprint(text) => text.clone(),
+            other => {
+                let mut rendered = FINGERPRINT_ERROR_PREFIX.to_owned();
+                rendered.push_str(&python_repr(other));
+                return Err(FindingError::new(rendered));
+            }
+        };
+
+        let schema_version = match &schema_version {
+            PyValue::Str(text) if text == SCHEMA_VERSION => text.clone(),
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.schema_version must be '{SCHEMA_VERSION}', got {}",
+                    python_repr(other)
+                )));
+            }
+        };
+
+        let message_template = match &message_template {
+            PyValue::None => None,
+            PyValue::Str(text) if !python_strip(text).is_empty() => {
+                enforce_content_free_text(text, "Finding.message_template")?;
+                Some(text.clone())
+            }
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.message_template must be a non-empty string or None, got {}",
+                    python_type_name(other)
+                )));
+            }
+        };
+
+        let related_ids = normalize_related_ids(&related_ids)?;
+        let evidence = normalize_evidence(&evidence)?;
+
+        Ok(Self {
+            code,
+            severity,
+            repairability,
+            message,
+            source,
+            related_ids,
+            fingerprint,
+            schema_version,
+            message_template,
+            evidence,
+        })
+    }
+
+    /// Reconstruct a finding from [`Self::to_dict`] order.
+    ///
+    /// Missing keys and bad enum strings return [`FindingError`]. See
+    /// [`FROM_DICT_EXCEPTION_DEVIATION`].
+    pub fn from_dict(entries: &[(&str, DictValue)]) -> Result<Self, FindingError> {
+        let source_entries = match lookup(entries, "source") {
+            Some(DictValue::Map(map)) => map.as_slice(),
+            _ => {
+                return Err(FindingError::new(
+                    "Finding.from_dict requires a 'source' mapping".to_owned(),
+                ));
+            }
+        };
+        let code = dict_to_py(require(entries, "code")?);
+        let severity = PyValue::Severity(parse_severity(require(entries, "severity")?)?);
+        let repairability =
+            PyValue::Repairability(parse_repairability(require(entries, "repairability")?)?);
+        let message = dict_to_py(require(entries, "message")?);
+        let source = PyValue::Source(source_from_dict(source_entries)?);
+        let related_ids = related_from_dict(lookup(entries, "related_ids"))?;
+        let fingerprint = dict_to_py(require(entries, "fingerprint")?);
+        let schema_version = match lookup(entries, "schema_version") {
+            None => PyValue::string(SCHEMA_VERSION),
+            Some(value) => dict_to_py(value),
+        };
+        let message_template = match lookup(entries, "message_template") {
+            None | Some(DictValue::None) => PyValue::None,
+            Some(value) => dict_to_py(value),
+        };
+        let evidence = match lookup(entries, "evidence") {
+            None | Some(DictValue::None) => PyValue::None,
+            Some(value) => dict_to_py(value),
+        };
+        Self::try_new(FindingInput {
+            code,
+            severity,
+            repairability,
+            message,
+            source,
+            related_ids,
+            fingerprint,
+            schema_version,
+            message_template,
+            evidence,
+        })
+    }
+
+    /// Canonical dictionary. Keys follow the Python literal, not alphabetical order.
+    ///
+    /// `message_template` and `evidence` are omitted when `None`. Evidence keys
+    /// keep input order.
+    pub fn to_dict(&self) -> Vec<(&'static str, DictValue)> {
+        let mut entries = vec![
+            (
+                "schema_version",
+                DictValue::Str(self.schema_version.clone()),
+            ),
+            ("code", DictValue::Str(self.code.clone())),
+            (
+                "severity",
+                DictValue::Str(self.severity.as_str().to_owned()),
+            ),
+            (
+                "repairability",
+                DictValue::Str(self.repairability.as_str().to_owned()),
+            ),
+            ("message", DictValue::Str(self.message.clone())),
+            ("source", source_to_dict(&self.source)),
+            (
+                "related_ids",
+                DictValue::List(
+                    self.related_ids
+                        .iter()
+                        .cloned()
+                        .map(DictValue::Str)
+                        .collect(),
+                ),
+            ),
+            ("fingerprint", DictValue::Str(self.fingerprint.clone())),
+        ];
+        if let Some(template) = &self.message_template {
+            entries.push(("message_template", DictValue::Str(template.clone())));
+        }
+        if let Some(evidence) = &self.evidence {
+            entries.push(("evidence", evidence_to_dict(evidence)));
+        }
+        entries
+    }
+
+    pub fn code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn severity(&self) -> Severity {
+        self.severity
+    }
+
+    pub fn repairability(&self) -> Repairability {
+        self.repairability
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn source(&self) -> &SourceRef {
+        &self.source
+    }
+
+    pub fn related_ids(&self) -> &[String] {
+        &self.related_ids
+    }
+
+    pub fn fingerprint(&self) -> &str {
+        &self.fingerprint
+    }
+
+    pub fn schema_version(&self) -> &str {
+        &self.schema_version
+    }
+
+    pub fn message_template(&self) -> Option<&str> {
+        self.message_template.as_deref()
+    }
+
+    pub fn evidence(&self) -> Option<&Evidence> {
+        self.evidence.as_ref()
+    }
+
+    /// `evidence["variant"]` when that value is a string.
+    ///
+    /// A missing key yields `Ok(None)`. A non-string yields [`FindingError`];
+    /// see [`VARIANT_CAST_DEVIATION`].
+    pub fn variant(&self) -> Result<Option<String>, FindingError> {
+        let Some(evidence) = &self.evidence else {
+            return Ok(None);
+        };
+        match evidence.variant_lookup() {
+            VariantLookup::Absent => Ok(None),
+            VariantLookup::Text(text) => Ok(Some(text)),
+            VariantLookup::NotString(rendered) => Err(FindingError::new(format!(
+                "Finding.variant is not a string; Python cast returns the raw value {rendered}"
+            ))),
+        }
+    }
+}
+
+impl PartialOrd for Finding {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Finding {
+    fn cmp(&self, other: &Self) -> Ordering {
+        finding_sort_key(self).cmp(&finding_sort_key(other))
+    }
+}
+
+/// Pure sort key. See [`FINDING_EQ_ORD_DEVIATION`] for how this differs from [`Eq`].
+pub fn finding_sort_key(finding: &Finding) -> FindingSortKey {
+    let ordinal = finding
+        .evidence
+        .as_ref()
+        .map(Evidence::record_ordinal)
+        .unwrap_or(-1);
+    FindingSortKey {
+        path: finding.source.path().replace('\\', "/"),
+        line: finding.source.line().unwrap_or(-1),
+        ordinal,
+        severity_rank: severity_rank(finding.severity),
+        code: finding.code.clone(),
+        record_id: finding.source.record_id().unwrap_or("").to_owned(),
+        fingerprint: finding.fingerprint.clone(),
+        related_ids: finding.related_ids.clone(),
+        message: finding.message.clone(),
+        repairability: finding.repairability.as_str().to_owned(),
+    }
+}
+
+/// Return a new vec sorted by [`finding_sort_key`]. The input slice is not modified.
+///
+/// The sort is stable. See [`SORT_FINDINGS_TYPE_DEVIATION`].
+#[must_use]
+pub fn sort_findings(findings: &[Finding]) -> Vec<Finding> {
+    let mut ordered = findings.to_vec();
+    ordered.sort();
+    ordered
+}
+
+enum VariantLookup {
+    Absent,
+    Text(String),
+    NotString(String),
+}
+
+impl Evidence {
+    fn map_entries(&self) -> Option<Vec<(EvidenceKey, Evidence)>> {
+        match &*self.kind {
+            EvidenceKind::Map(entries) => Some(entries.borrow().clone()),
+            _ => None,
+        }
+    }
+
+    /// Python: `int` and not `bool`, and `>= 0`. Otherwise `-1`.
+    fn record_ordinal(&self) -> i64 {
+        let Some(entries) = self.map_entries() else {
+            return -1;
+        };
+        let mut found = None;
+        for (key, value) in entries {
+            if let EvidenceKey::Text(text) = key {
+                if text == "record_ordinal" {
+                    found = Some(value);
+                }
+            }
+        }
+        match found.as_ref().map(|value| &*value.kind) {
+            Some(EvidenceKind::Int(ordinal)) if *ordinal >= 0 => *ordinal,
+            _ => -1,
+        }
+    }
+
+    fn variant_lookup(&self) -> VariantLookup {
+        let Some(entries) = self.map_entries() else {
+            return VariantLookup::Absent;
+        };
+        let mut found = None;
+        for (key, value) in entries {
+            if let EvidenceKey::Text(text) = key {
+                if text == "variant" {
+                    found = Some(value);
+                }
+            }
+        }
+        match found {
+            None => VariantLookup::Absent,
+            Some(value) => match &*value.kind {
+                EvidenceKind::Str(text) => VariantLookup::Text(text.clone()),
+                _ => VariantLookup::NotString(evidence_repr(&value)),
+            },
+        }
+    }
+}
+
+impl PartialEq for Evidence {
+    fn eq(&self, other: &Self) -> bool {
+        let mut stack = Vec::new();
+        evidence_eq(self, other, &mut stack)
+    }
+}
+
+impl Eq for Evidence {}
+
+fn evidence_eq(
+    left: &Evidence,
+    right: &Evidence,
+    stack: &mut Vec<(*const EvidenceKind, *const EvidenceKind)>,
+) -> bool {
+    let left_ptr = Rc::as_ptr(&left.kind);
+    let right_ptr = Rc::as_ptr(&right.kind);
+    if left_ptr == right_ptr {
+        return true;
+    }
+    if stack
+        .iter()
+        .any(|(seen_left, seen_right)| *seen_left == left_ptr && *seen_right == right_ptr)
+    {
+        return true;
+    }
+    stack.push((left_ptr, right_ptr));
+    let equal = evidence_kind_eq(&left.kind, &right.kind, stack);
+    let _ = stack.pop();
+    equal
+}
+
+fn evidence_kind_eq(
+    left: &EvidenceKind,
+    right: &EvidenceKind,
+    stack: &mut Vec<(*const EvidenceKind, *const EvidenceKind)>,
+) -> bool {
+    match (left, right) {
+        (EvidenceKind::Str(left), EvidenceKind::Str(right)) => left == right,
+        (EvidenceKind::Int(left), EvidenceKind::Int(right)) => left == right,
+        (EvidenceKind::Bool(left), EvidenceKind::Bool(right)) => left == right,
+        (EvidenceKind::Bytes(left), EvidenceKind::Bytes(right)) => left == right,
+        (EvidenceKind::NoneValue, EvidenceKind::NoneValue)
+        | (EvidenceKind::Ignored, EvidenceKind::Ignored) => true,
+        (EvidenceKind::Map(left), EvidenceKind::Map(right)) => {
+            let left_entries = left.borrow().clone();
+            let right_entries = right.borrow().clone();
+            left_entries.len() == right_entries.len()
+                && left_entries
+                    .iter()
+                    .zip(right_entries.iter())
+                    .all(|(left_entry, right_entry)| {
+                        left_entry.0 == right_entry.0
+                            && evidence_eq(&left_entry.1, &right_entry.1, stack)
+                    })
+        }
+        (EvidenceKind::List(left), EvidenceKind::List(right)) => {
+            let left_items = left.borrow().clone();
+            let right_items = right.borrow().clone();
+            evidence_slice_eq(&left_items, &right_items, stack)
+        }
+        (EvidenceKind::Tuple(left), EvidenceKind::Tuple(right))
+        | (EvidenceKind::Set(left), EvidenceKind::Set(right))
+        | (EvidenceKind::FrozenSet(left), EvidenceKind::FrozenSet(right)) => {
+            evidence_slice_eq(left, right, stack)
+        }
+        _ => false,
+    }
+}
+
+fn evidence_slice_eq(
+    left: &[Evidence],
+    right: &[Evidence],
+    stack: &mut Vec<(*const EvidenceKind, *const EvidenceKind)>,
+) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(left_item, right_item)| evidence_eq(left_item, right_item, stack))
+}
+
+fn severity_rank(severity: Severity) -> i64 {
+    for (kind, rank) in SEVERITY_ORDER {
+        if kind == severity {
+            return rank;
+        }
+    }
+    match severity {
+        Severity::Fatal => 0,
+        Severity::Error => 1,
+        Severity::Warning => 2,
+        Severity::Info => 3,
+    }
+}
+
+fn max_message_chars() -> usize {
+    match usize::try_from(MAX_MESSAGE_LENGTH) {
+        Ok(value) => value,
+        Err(_) => usize::MAX,
+    }
+}
+
+fn is_lower_hex_fingerprint(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() == 16
+        && bytes
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn invalid_code(value: &PyValue) -> FindingError {
+    FindingError::new(format!(
+        "Finding.code must be a registered detector code, got {}. Must be one of {}",
+        python_repr(value),
+        registered_codes_repr()
+    ))
+}
+
+fn registered_codes_repr() -> String {
+    let mut codes = ALL_CODES.to_vec();
+    codes.sort_unstable();
+    let mut out = String::from("[");
+    for (index, code) in codes.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_str_repr(code));
+    }
+    out.push(']');
+    out
+}
+
+fn python_type_name(value: &PyValue) -> &'static str {
+    match value {
+        PyValue::Str(_) => "str",
+        PyValue::Int(_) => "int",
+        PyValue::Bool(_) => "bool",
+        PyValue::Bytes(_) => "bytes",
+        PyValue::None => "NoneType",
+        PyValue::Severity(_) => "Severity",
+        PyValue::Repairability(_) => "Repairability",
+        PyValue::Source(_) => "SourceRef",
+        PyValue::List(_) => "list",
+        PyValue::Tuple(_) => "tuple",
+        PyValue::Set(_) => "set",
+        PyValue::FrozenSet(_) => "frozenset",
+        PyValue::Map(_) => "dict",
+    }
+}
+
+fn python_repr(value: &PyValue) -> String {
+    python_repr_depth(value, 0)
+}
+
+fn python_repr_depth(value: &PyValue, depth: usize) -> String {
+    if depth >= 6 {
+        return "...".to_owned();
+    }
+    match value {
+        PyValue::Str(text) => python_str_repr(text),
+        PyValue::Int(number) => number.to_string(),
+        PyValue::Bool(true) => "True".to_owned(),
+        PyValue::Bool(false) => "False".to_owned(),
+        PyValue::Bytes(bytes) => python_bytes_repr(bytes),
+        PyValue::None => "None".to_owned(),
+        PyValue::Severity(severity) => severity_member_repr(*severity),
+        PyValue::Repairability(repairability) => repairability_member_repr(*repairability),
+        PyValue::Source(source) => source_member_repr(source),
+        PyValue::List(items) => sequence_repr("[", "]", items, depth, false),
+        PyValue::Tuple(items) => sequence_repr("(", ")", items, depth, true),
+        PyValue::Set(items) => braced_repr("set", items, depth),
+        PyValue::FrozenSet(items) => braced_repr("frozenset", items, depth),
+        PyValue::Map(entries) => map_repr(entries, depth),
+    }
+}
+
+fn sequence_repr(open: &str, close: &str, items: &[PyValue], depth: usize, tuple: bool) -> String {
+    let mut out = String::from(open);
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_repr_depth(item, depth + 1));
+    }
+    if tuple && items.len() == 1 {
+        out.push(',');
+    }
+    out.push_str(close);
+    out
+}
+
+fn braced_repr(empty_name: &str, items: &[PyValue], depth: usize) -> String {
+    if items.is_empty() {
+        return format!("{empty_name}()");
+    }
+    let mut rendered: Vec<String> = items
+        .iter()
+        .map(|item| python_repr_depth(item, depth + 1))
+        .collect();
+    rendered.sort();
+    format!("{{{}}}", rendered.join(", "))
+}
+
+fn map_repr(entries: &[(PyValue, PyValue)], depth: usize) -> String {
+    if entries.is_empty() {
+        return "{}".to_owned();
+    }
+    let mut out = String::from("{");
+    for (index, (key, value)) in entries.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_repr_depth(key, depth + 1));
+        out.push_str(": ");
+        out.push_str(&python_repr_depth(value, depth + 1));
+    }
+    out.push('}');
+    out
+}
+
+fn python_bytes_repr(bytes: &[u8]) -> String {
+    let mut decoded = String::new();
+    for byte in bytes {
+        decoded.push(char::from(*byte));
+    }
+    let use_double = decoded.contains('\'') && !decoded.contains('"');
+    let quote = if use_double { '"' } else { '\'' };
+    let mut out = String::from("b");
+    out.push(quote);
+    for byte in bytes {
+        match *byte {
+            b'\\' => out.push_str("\\\\"),
+            b'\t' => out.push_str("\\t"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\'' if !use_double => out.push_str("\\'"),
+            b'"' if use_double => out.push_str("\\\""),
+            32..=126 => out.push(char::from(*byte)),
+            other => {
+                out.push_str("\\x");
+                out.push(HEX_DIGITS[usize::from(other >> 4)]);
+                out.push(HEX_DIGITS[usize::from(other & 0x0f)]);
+            }
+        }
+    }
+    out.push(quote);
+    out
+}
+
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
+fn severity_member_repr(severity: Severity) -> String {
+    let name = match severity {
+        Severity::Fatal => "FATAL",
+        Severity::Error => "ERROR",
+        Severity::Warning => "WARNING",
+        Severity::Info => "INFO",
+    };
+    format!("<Severity.{name}: '{}'>", severity.as_str())
+}
+
+fn repairability_member_repr(repairability: Repairability) -> String {
+    let name = match repairability {
+        Repairability::Deterministic => "DETERMINISTIC",
+        Repairability::LossyExplicit => "LOSSY_EXPLICIT",
+        Repairability::Manual => "MANUAL",
+        Repairability::Unsupported => "UNSUPPORTED",
+    };
+    format!("<Repairability.{name}: '{}'>", repairability.as_str())
+}
+
+fn source_member_repr(source: &SourceRef) -> String {
+    let line = match source.line() {
+        Some(value) => value.to_string(),
+        None => "None".to_owned(),
+    };
+    let record_id = match source.record_id() {
+        Some(value) => python_str_repr(value),
+        None => "None".to_owned(),
+    };
+    format!(
+        "SourceRef(path={}, line={line}, record_id={record_id})",
+        python_str_repr(source.path())
+    )
+}
+
+fn normalize_related_ids(value: &PyValue) -> Result<Vec<String>, FindingError> {
+    let items = related_items(value)?;
+    for item in &items {
+        if let Some(type_name) = unhashable_type_name(item) {
+            return Err(FindingError::new(format!(
+                "Finding.related_ids item is not hashable (Python raises TypeError: unhashable type: '{type_name}')"
+            )));
+        }
+    }
+    let unique = dedupe_raw(&items);
+    let mut strings = Vec::new();
+    let mut others = Vec::new();
+    for item in &unique {
+        if matches!(item, PyValue::Str(_)) {
+            strings.push(item);
+        } else {
+            others.push(item);
+        }
+    }
+    strings.sort_by(|left, right| match (left, right) {
+        (PyValue::Str(left_text), PyValue::Str(right_text)) => left_text.cmp(right_text),
+        _ => Ordering::Equal,
+    });
+    let mut cleaned = Vec::new();
+    for item in strings.into_iter().chain(others) {
+        match item {
+            PyValue::Str(text) if !python_strip(text).is_empty() => {
+                let stripped = python_strip(text).to_owned();
+                enforce_content_free_text(&stripped, "Finding.related_ids")?;
+                cleaned.push(stripped);
+            }
+            other => {
+                return Err(FindingError::new(format!(
+                    "Finding.related_ids items must be non-empty strings, got {}",
+                    python_repr(other)
+                )));
+            }
+        }
+    }
+    cleaned.sort();
+    Ok(cleaned)
+}
+
+fn related_items(value: &PyValue) -> Result<Vec<PyValue>, FindingError> {
+    match value {
+        PyValue::List(items)
+        | PyValue::Tuple(items)
+        | PyValue::Set(items)
+        | PyValue::FrozenSet(items) => Ok(items.clone()),
+        PyValue::Map(entries) => Ok(entries.iter().map(|(key, _)| key.clone()).collect()),
+        other => Err(FindingError::new(format!(
+            "Finding.related_ids must be an iterable of strings, got {}",
+            python_type_name(other)
+        ))),
+    }
+}
+
+fn unhashable_type_name(value: &PyValue) -> Option<&'static str> {
+    match value {
+        PyValue::List(_) => Some("list"),
+        PyValue::Map(_) => Some("dict"),
+        PyValue::Set(_) => Some("set"),
+        PyValue::Tuple(items) | PyValue::FrozenSet(items) => {
+            items.iter().find_map(unhashable_type_name)
+        }
+        PyValue::Str(_)
+        | PyValue::Int(_)
+        | PyValue::Bool(_)
+        | PyValue::Bytes(_)
+        | PyValue::None
+        | PyValue::Severity(_)
+        | PyValue::Repairability(_)
+        | PyValue::Source(_) => None,
+    }
+}
+
+fn dedupe_raw(items: &[PyValue]) -> Vec<PyValue> {
+    let mut unique = Vec::new();
+    for item in items {
+        if unique.iter().any(|existing| py_eq(existing, item)) {
+            continue;
+        }
+        unique.push(item.clone());
+    }
+    unique
+}
+
+fn py_eq(left: &PyValue, right: &PyValue) -> bool {
+    match (left, right) {
+        (PyValue::Str(left), PyValue::Str(right)) => left == right,
+        (PyValue::Int(left), PyValue::Int(right)) => left == right,
+        (PyValue::Bool(left), PyValue::Bool(right)) => left == right,
+        (PyValue::Bool(true), PyValue::Int(1)) | (PyValue::Int(1), PyValue::Bool(true)) => true,
+        (PyValue::Bool(false), PyValue::Int(0)) | (PyValue::Int(0), PyValue::Bool(false)) => true,
+        (PyValue::None, PyValue::None) => true,
+        (PyValue::Bytes(left), PyValue::Bytes(right)) => left == right,
+        (PyValue::Severity(left), PyValue::Severity(right)) => left == right,
+        (PyValue::Repairability(left), PyValue::Repairability(right)) => left == right,
+        (PyValue::Source(left), PyValue::Source(right)) => left == right,
+        (PyValue::Tuple(left), PyValue::Tuple(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(item, other)| py_eq(item, other))
+        }
+        (PyValue::FrozenSet(left), PyValue::FrozenSet(right)) => frozenset_eq(left, right),
+        _ => false,
+    }
+}
+
+fn frozenset_eq(left: &[PyValue], right: &[PyValue]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .all(|item| right.iter().any(|other| py_eq(item, other)))
+}
+
+fn normalize_evidence(value: &PyValue) -> Result<Option<Evidence>, FindingError> {
+    match value {
+        PyValue::None => Ok(None),
+        PyValue::Map(entries) => Ok(Some(evidence_from_py_map(entries)?)),
+        other => Err(FindingError::new(format!(
+            "Finding.evidence must be a mapping or None, got {}",
+            python_type_name(other)
+        ))),
+    }
+}
+
+fn evidence_from_py_map(entries: &[(PyValue, PyValue)]) -> Result<Evidence, FindingError> {
+    let mut stored = Vec::with_capacity(entries.len());
+    for (key, value) in entries {
+        let PyValue::Str(text) = key else {
+            return Err(FindingError::new(
+                "Finding.evidence keys must be non-empty strings".to_owned(),
+            ));
+        };
+        if python_strip(text).is_empty() {
+            return Err(FindingError::new(
+                "Finding.evidence keys must be non-empty strings".to_owned(),
+            ));
+        }
+        let key_repr = python_str_repr(text);
+        enforce_content_free_text(text, &format!("Finding.evidence key {key_repr}"))?;
+        let child = py_to_evidence(value);
+        enforce_content_free_evidence_recursive(
+            &child,
+            &format!("Finding.evidence value for {key_repr}"),
+        )?;
+        stored.push((EvidenceKey::text(text.clone()), child));
+    }
+    Ok(Evidence::map(stored))
+}
+
+fn py_to_evidence(value: &PyValue) -> Evidence {
+    match value {
+        PyValue::Str(text) => Evidence::string(text.clone()),
+        PyValue::Int(number) => Evidence::int(*number),
+        PyValue::Bool(flag) => Evidence::bool_value(*flag),
+        PyValue::None => Evidence::none_value(),
+        PyValue::Bytes(bytes) => Evidence::bytes(bytes.clone()),
+        PyValue::List(items) => Evidence::list(items.iter().map(py_to_evidence).collect()),
+        PyValue::Tuple(items) => Evidence::tuple(items.iter().map(py_to_evidence).collect()),
+        PyValue::Set(items) => Evidence::set(items.iter().map(py_to_evidence).collect()),
+        PyValue::FrozenSet(items) => {
+            Evidence::frozenset(items.iter().map(py_to_evidence).collect())
+        }
+        PyValue::Map(entries) => {
+            let mapped = entries
+                .iter()
+                .map(|(key, child)| {
+                    let evidence_key = match key {
+                        PyValue::Str(text) => EvidenceKey::text(text.clone()),
+                        _ => EvidenceKey::NonString,
+                    };
+                    (evidence_key, py_to_evidence(child))
+                })
+                .collect();
+            Evidence::map(mapped)
+        }
+        PyValue::Severity(_) | PyValue::Repairability(_) | PyValue::Source(_) => {
+            Evidence::ignored()
+        }
+    }
+}
+
+fn evidence_repr(value: &Evidence) -> String {
+    evidence_repr_depth(value, 0)
+}
+
+fn evidence_repr_depth(value: &Evidence, depth: usize) -> String {
+    if depth >= 6 {
+        return "...".to_owned();
+    }
+    match &*value.kind {
+        EvidenceKind::Str(text) => python_str_repr(text),
+        EvidenceKind::Int(number) => number.to_string(),
+        EvidenceKind::Bool(true) => "True".to_owned(),
+        EvidenceKind::Bool(false) => "False".to_owned(),
+        EvidenceKind::NoneValue => "None".to_owned(),
+        EvidenceKind::Bytes(bytes) => python_bytes_repr(bytes),
+        EvidenceKind::Ignored => "<ignored>".to_owned(),
+        EvidenceKind::List(items) => {
+            let cloned = items.borrow().clone();
+            evidence_sequence_repr("[", "]", &cloned, depth, false)
+        }
+        EvidenceKind::Tuple(items) => evidence_sequence_repr("(", ")", items, depth, true),
+        EvidenceKind::Set(items) => evidence_braced_repr(items, depth),
+        EvidenceKind::FrozenSet(items) => evidence_braced_repr(items, depth),
+        EvidenceKind::Map(entries) => {
+            let cloned = entries.borrow().clone();
+            if cloned.is_empty() {
+                return "{}".to_owned();
+            }
+            let mut out = String::from("{");
+            for (index, (key, child)) in cloned.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                match key {
+                    EvidenceKey::Text(text) => out.push_str(&python_str_repr(text)),
+                    EvidenceKey::NonString => out.push_str("<non-string>"),
+                }
+                out.push_str(": ");
+                out.push_str(&evidence_repr_depth(child, depth + 1));
+            }
+            out.push('}');
+            out
+        }
+    }
+}
+
+fn evidence_sequence_repr(
+    open: &str,
+    close: &str,
+    items: &[Evidence],
+    depth: usize,
+    tuple: bool,
+) -> String {
+    let mut out = String::from(open);
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&evidence_repr_depth(item, depth + 1));
+    }
+    if tuple && items.len() == 1 {
+        out.push(',');
+    }
+    out.push_str(close);
+    out
+}
+
+fn evidence_braced_repr(items: &[Evidence], depth: usize) -> String {
+    if items.is_empty() {
+        return "set()".to_owned();
+    }
+    let mut rendered: Vec<String> = items
+        .iter()
+        .map(|item| evidence_repr_depth(item, depth + 1))
+        .collect();
+    rendered.sort();
+    format!("{{{}}}", rendered.join(", "))
+}
+
+fn evidence_to_dict(value: &Evidence) -> DictValue {
+    evidence_to_dict_depth(value, 0)
+}
+
+fn evidence_to_dict_depth(value: &Evidence, depth: usize) -> DictValue {
+    if depth > 32 {
+        return DictValue::None;
+    }
+    match &*value.kind {
+        EvidenceKind::Str(text) => DictValue::Str(text.clone()),
+        EvidenceKind::Int(number) => DictValue::Int(*number),
+        EvidenceKind::Bool(flag) => DictValue::Bool(*flag),
+        EvidenceKind::NoneValue | EvidenceKind::Ignored => DictValue::None,
+        EvidenceKind::Bytes(bytes) => DictValue::Bytes(bytes.clone()),
+        EvidenceKind::List(items) => {
+            let cloned = items.borrow().clone();
+            DictValue::List(
+                cloned
+                    .iter()
+                    .map(|item| evidence_to_dict_depth(item, depth + 1))
+                    .collect(),
+            )
+        }
+        EvidenceKind::Tuple(items) => DictValue::Tuple(
+            items
+                .iter()
+                .map(|item| evidence_to_dict_depth(item, depth + 1))
+                .collect(),
+        ),
+        EvidenceKind::Set(items) => DictValue::Set(
+            items
+                .iter()
+                .map(|item| evidence_to_dict_depth(item, depth + 1))
+                .collect(),
+        ),
+        EvidenceKind::FrozenSet(items) => DictValue::FrozenSet(
+            items
+                .iter()
+                .map(|item| evidence_to_dict_depth(item, depth + 1))
+                .collect(),
+        ),
+        EvidenceKind::Map(entries) => {
+            let cloned = entries.borrow().clone();
+            DictValue::Map(
+                cloned
+                    .iter()
+                    .map(|(key, child)| {
+                        let name = match key {
+                            EvidenceKey::Text(text) => text.clone(),
+                            EvidenceKey::NonString => "<non-string>".to_owned(),
+                        };
+                        (name, evidence_to_dict_depth(child, depth + 1))
+                    })
+                    .collect(),
+            )
+        }
+    }
+}
+
+fn source_to_dict(source: &SourceRef) -> DictValue {
+    DictValue::Map(vec![
+        ("path".to_owned(), DictValue::Str(source.path().to_owned())),
+        (
+            "line".to_owned(),
+            match source.line() {
+                Some(line) => DictValue::Int(line),
+                None => DictValue::None,
+            },
+        ),
+        (
+            "record_id".to_owned(),
+            match source.record_id() {
+                Some(record_id) => DictValue::Str(record_id.to_owned()),
+                None => DictValue::None,
+            },
+        ),
+    ])
+}
+
+fn dict_to_py(value: &DictValue) -> PyValue {
+    match value {
+        DictValue::Str(text) => PyValue::string(text.clone()),
+        DictValue::Int(number) => PyValue::int(*number),
+        DictValue::Bool(flag) => PyValue::bool_value(*flag),
+        DictValue::None => PyValue::None,
+        DictValue::Bytes(bytes) => PyValue::bytes(bytes.clone()),
+        DictValue::List(items) => PyValue::List(items.iter().map(dict_to_py).collect()),
+        DictValue::Tuple(items) => PyValue::Tuple(items.iter().map(dict_to_py).collect()),
+        DictValue::Set(items) => PyValue::Set(items.iter().map(dict_to_py).collect()),
+        DictValue::FrozenSet(items) => PyValue::FrozenSet(items.iter().map(dict_to_py).collect()),
+        DictValue::Map(entries) => PyValue::Map(
+            entries
+                .iter()
+                .map(|(key, child)| (PyValue::string(key.clone()), dict_to_py(child)))
+                .collect(),
+        ),
+    }
+}
+
+fn lookup<'a, K: AsRef<str>>(entries: &'a [(K, DictValue)], key: &str) -> Option<&'a DictValue> {
+    entries
+        .iter()
+        .rev()
+        .find(|(entry_key, _)| entry_key.as_ref() == key)
+        .map(|(_, value)| value)
+}
+
+fn require<'a, K: AsRef<str>>(
+    entries: &'a [(K, DictValue)],
+    key: &str,
+) -> Result<&'a DictValue, FindingError> {
+    lookup(entries, key).ok_or_else(|| missing_key(key))
+}
+
+fn missing_key(key: &str) -> FindingError {
+    FindingError::new(format!(
+        "missing required key {} (Python raises KeyError)",
+        python_str_repr(key)
+    ))
+}
+
+fn invalid_enum(kind: &str, value: &DictValue) -> FindingError {
+    FindingError::new(format!(
+        "{} is not a valid {kind} (Python raises ValueError)",
+        python_repr(&dict_to_py(value))
+    ))
+}
+
+fn parse_severity(value: &DictValue) -> Result<Severity, FindingError> {
+    match value {
+        DictValue::Str(text) => Severity::parse(text).map_err(|_| invalid_enum("Severity", value)),
+        _ => Err(invalid_enum("Severity", value)),
+    }
+}
+
+fn parse_repairability(value: &DictValue) -> Result<Repairability, FindingError> {
+    match value {
+        DictValue::Str(text) => {
+            Repairability::parse(text).map_err(|_| invalid_enum("Repairability", value))
+        }
+        _ => Err(invalid_enum("Repairability", value)),
+    }
+}
+
+fn source_from_dict(entries: &[(String, DictValue)]) -> Result<SourceRef, FindingError> {
+    let path = match lookup(entries, "path") {
+        Some(DictValue::Str(text)) => text.clone(),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "SourceRef.path must be a non-empty string, got {}",
+                python_repr(&dict_to_py(other))
+            )));
+        }
+        None => return Err(missing_key("path")),
+    };
+    let line = match lookup(entries, "line") {
+        None | Some(DictValue::None) => None,
+        Some(DictValue::Int(value)) => Some(SourceLine::Int(*value)),
+        Some(DictValue::Bool(value)) => Some(SourceLine::Bool(*value)),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "SourceRef.line must be a positive integer or None, got {}",
+                python_repr(&dict_to_py(other))
+            )));
+        }
+    };
+    let record_id = match lookup(entries, "record_id") {
+        None | Some(DictValue::None) => None,
+        Some(DictValue::Str(text)) => Some(text.clone()),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "SourceRef.record_id must be non-empty string or None, got {}",
+                python_repr(&dict_to_py(other))
+            )));
+        }
+    };
+    SourceRef::try_new(&path, line, record_id.as_deref())
+}
+
+fn related_from_dict(value: Option<&DictValue>) -> Result<PyValue, FindingError> {
+    let Some(value) = value else {
+        return Ok(PyValue::tuple(Vec::new()));
+    };
+    match value {
+        DictValue::List(items) => Ok(PyValue::List(items.iter().map(dict_to_py).collect())),
+        DictValue::Tuple(items) => Ok(PyValue::Tuple(items.iter().map(dict_to_py).collect())),
+        DictValue::Set(items) => Ok(PyValue::Set(items.iter().map(dict_to_py).collect())),
+        DictValue::FrozenSet(items) => {
+            Ok(PyValue::FrozenSet(items.iter().map(dict_to_py).collect()))
+        }
+        DictValue::Str(text) => Ok(PyValue::Tuple(
+            text.chars().map(|ch| PyValue::string(ch.to_string())).collect(),
+        )),
+        DictValue::Bytes(bytes) => Ok(PyValue::Tuple(
+            bytes
+                .iter()
+                .map(|byte| PyValue::int(i64::from(*byte)))
+                .collect(),
+        )),
+        DictValue::Map(entries) => Ok(PyValue::List(
+            entries
+                .iter()
+                .map(|(key, _)| PyValue::string(key.clone()))
+                .collect(),
+        )),
+        other => Err(FindingError::new(format!(
+            "Finding.from_dict related_ids is not iterable (Python raises TypeError: '{}' object is not iterable)",
+            python_type_name(&dict_to_py(other))
+        ))),
     }
 }
 
@@ -2322,5 +3635,718 @@ mod tests {
             err.to_string(),
             "Forbidden content-bearing pattern (e.g., email/PII) in evidence[0]: 'a@example.com'"
         );
+    }
+}
+
+#[cfg(test)]
+mod finding_port {
+    use super::{
+        finding_sort_key, python_strip, sort_findings, DictValue, Finding, FindingInput, PyValue,
+        SourceLine, SourceRef, FINDING_EQ_ORD_DEVIATION, FROM_DICT_EXCEPTION_DEVIATION,
+        RELATED_IDS_SET_ORDER_DEVIATION, SCHEMA_VERSION, SEVERITY_ORDER,
+        SORT_FINDINGS_TYPE_DEVIATION, VARIANT_CAST_DEVIATION,
+    };
+    use crate::codes::{Repairability, Severity, ALL_CODES};
+    use std::cmp::Ordering;
+    use std::error::Error;
+
+    fn source(path: &str, line: Option<i64>, record_id: Option<&str>) -> SourceRef {
+        let line = line.map(SourceLine::Int);
+        SourceRef::try_new(path, line, record_id).unwrap()
+    }
+
+    fn base() -> FindingInput {
+        FindingInput {
+            code: PyValue::string("SL001"),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message: PyValue::string("synthetic marker"),
+            source: PyValue::source(source("a.jsonl", Some(1), None)),
+            related_ids: PyValue::tuple(Vec::new()),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence: PyValue::None,
+        }
+    }
+
+    fn built(input: FindingInput) -> Finding {
+        Finding::try_new(input).unwrap()
+    }
+
+    fn err(input: FindingInput) -> String {
+        let error = Finding::try_new(input).unwrap_err();
+        assert_eq!(error.code(), "FINDING");
+        assert!(error.source().is_none());
+        error.to_string()
+    }
+
+    fn strings(items: &[&str]) -> PyValue {
+        PyValue::list(items.iter().copied().map(PyValue::string).collect())
+    }
+
+    #[test]
+    fn happy_path_round_trip_preserves_python_field_order() {
+        let mut input = base();
+        input.message = PyValue::string("  synthetic marker  ");
+        input.message_template = PyValue::string("  synthetic template  ");
+        input.related_ids = strings(&["evt-2", "evt-1", "evt-1"]);
+        input.source = PyValue::source(source("a.jsonl", Some(2), Some("rec-1")));
+        input.evidence = PyValue::map(vec![
+            (PyValue::string("b"), PyValue::string("beta")),
+            (PyValue::string("a"), PyValue::string("alpha")),
+            (
+                PyValue::string("variant"),
+                PyValue::string("synthetic-variant"),
+            ),
+            (PyValue::string("record_ordinal"), PyValue::int(3)),
+        ]);
+        let finding = built(input);
+        assert_eq!(finding.message(), "  synthetic marker  ");
+        assert_eq!(finding.message_template(), Some("  synthetic template  "));
+        assert_eq!(
+            finding.related_ids(),
+            ["evt-1".to_owned(), "evt-2".to_owned()]
+        );
+        assert_eq!(finding.schema_version(), SCHEMA_VERSION);
+        assert_eq!(
+            finding.variant().unwrap(),
+            Some("synthetic-variant".to_owned())
+        );
+        assert_eq!(finding_sort_key(&finding).ordinal, 3);
+
+        let dict = finding.to_dict();
+        let keys: Vec<&str> = dict.iter().map(|(key, _)| *key).collect();
+        assert_eq!(
+            keys,
+            [
+                "schema_version",
+                "code",
+                "severity",
+                "repairability",
+                "message",
+                "source",
+                "related_ids",
+                "fingerprint",
+                "message_template",
+                "evidence",
+            ]
+        );
+        let DictValue::Map(source_entries) = &dict[5].1 else {
+            panic!("source must be a mapping");
+        };
+        assert_eq!(
+            source_entries
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>(),
+            ["path", "line", "record_id"]
+        );
+        assert_eq!(dict[2].1, DictValue::Str("error".to_owned()));
+        assert_eq!(dict[3].1, DictValue::Str("manual".to_owned()));
+        let DictValue::Map(evidence) = &dict[9].1 else {
+            panic!("evidence must be a mapping");
+        };
+        assert_eq!(
+            evidence
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>(),
+            ["b", "a", "variant", "record_ordinal"]
+        );
+        let again = Finding::from_dict(&dict).unwrap();
+        assert_eq!(again, finding);
+    }
+
+    #[test]
+    fn validation_follows_post_init_order() {
+        let mut input = base();
+        input.code = PyValue::string("NOPE");
+        input.severity = PyValue::string("error");
+        input.message = PyValue::string("");
+        let message = err(input);
+        assert!(message.starts_with(
+            "Finding.code must be a registered detector code, got 'NOPE'. Must be one of "
+        ));
+        assert!(message.contains("['SL001', 'SL002'"));
+        assert!(message.contains("', '"));
+        assert!(message.ends_with("'SL402']"));
+        assert!(!message.contains('"'));
+        let mut codes = ALL_CODES.to_vec();
+        let declaration = codes.clone();
+        codes.sort_unstable();
+        assert_eq!(codes, declaration);
+        assert!(message.contains("'SL001', 'SL002', 'SL003'"));
+
+        let mut input = base();
+        input.code = PyValue::int(3);
+        assert!(err(input).contains("got 3. Must be one of ['SL001'"));
+
+        let mut input = base();
+        input.code = PyValue::string("");
+        assert!(err(input).contains("got ''. Must be one of "));
+
+        let mut input = base();
+        input.severity = PyValue::string("error");
+        input.repairability = PyValue::int(1);
+        assert_eq!(
+            err(input),
+            "Finding.severity must be a Severity enum, got 'error'"
+        );
+
+        let mut input = base();
+        input.severity = PyValue::repairability(Repairability::Manual);
+        assert_eq!(
+            err(input),
+            "Finding.severity must be a Severity enum, got <Repairability.MANUAL: 'manual'>"
+        );
+
+        let mut input = base();
+        input.repairability = PyValue::string("manual");
+        assert_eq!(
+            err(input),
+            "Finding.repairability must be a Repairability enum, got 'manual'"
+        );
+
+        let mut input = base();
+        input.message = PyValue::int(4);
+        assert_eq!(
+            err(input),
+            "Finding.message must be a non-empty string, got int"
+        );
+        let mut input = base();
+        input.message = PyValue::None;
+        assert_eq!(
+            err(input),
+            "Finding.message must be a non-empty string, got NoneType"
+        );
+        let mut input = base();
+        input.message = PyValue::bool_value(true);
+        assert_eq!(
+            err(input),
+            "Finding.message must be a non-empty string, got bool"
+        );
+        for blank in ["", "   ", &" ".repeat(501)] {
+            let mut input = base();
+            input.message = PyValue::string(blank);
+            assert_eq!(
+                err(input),
+                "Finding.message must be a non-empty string, got str"
+            );
+        }
+
+        let mut input = base();
+        input.message = PyValue::string("x".repeat(501));
+        assert_eq!(
+            err(input),
+            "Finding.message exceeds maximum length of 500 characters (length: 501)"
+        );
+        let wide = "é".repeat(501);
+        assert_eq!(wide.len(), 1002);
+        let mut input = base();
+        input.message = PyValue::string(wide);
+        assert_eq!(
+            err(input),
+            "Finding.message exceeds maximum length of 500 characters (length: 501)"
+        );
+        let mut input = base();
+        input.message = PyValue::string(format!("\n{}", "x".repeat(500)));
+        assert_eq!(
+            err(input),
+            "Finding.message exceeds maximum length of 500 characters (length: 501)"
+        );
+        let mut input = base();
+        input.message = PyValue::string("x".repeat(500));
+        assert_eq!(built(input).message().chars().count(), 500);
+        let mut input = base();
+        input.message = PyValue::string("é".repeat(500));
+        assert_eq!(built(input).message().chars().count(), 500);
+
+        let mut input = base();
+        input.message = PyValue::string("\nx");
+        assert_eq!(
+            err(input),
+            "Forbidden control or newline characters in Finding.message: '\\nx'"
+        );
+        let mut input = base();
+        input.message = PyValue::string("user@example.com");
+        assert_eq!(
+            err(input),
+            "Forbidden content-bearing pattern (e.g., email/PII) in Finding.message: 'user@example.com'"
+        );
+
+        let mut input = base();
+        input.source = PyValue::string("a.jsonl");
+        assert_eq!(err(input), "Finding.source must be a SourceRef, got str");
+
+        for (fingerprint, rendered) in [
+            ("0123456789ABCDEF", "'0123456789ABCDEF'"),
+            ("0123456789abcde", "'0123456789abcde'"),
+            ("0123456789abcdef0", "'0123456789abcdef0'"),
+            ("", "''"),
+        ] {
+            let mut input = base();
+            input.fingerprint = PyValue::string(fingerprint);
+            assert_eq!(
+                err(input),
+                format!(
+                    "Finding.fingerprint must be a 16-character lowercase hex string matching ^[0-9a-f]{{16}}$, got {rendered}"
+                )
+            );
+        }
+        let mut input = base();
+        input.fingerprint = PyValue::int(123);
+        assert_eq!(
+            err(input),
+            "Finding.fingerprint must be a 16-character lowercase hex string matching ^[0-9a-f]{16}$, got 123"
+        );
+        let mut input = base();
+        input.fingerprint = PyValue::bytes(b"0123456789abcdef".to_vec());
+        assert_eq!(
+            err(input),
+            "Finding.fingerprint must be a 16-character lowercase hex string matching ^[0-9a-f]{16}$, got b'0123456789abcdef'"
+        );
+
+        let mut input = base();
+        input.schema_version = PyValue::string("other");
+        assert_eq!(
+            err(input),
+            "Finding.schema_version must be 'sesslint.finding/v1', got 'other'"
+        );
+        let mut input = base();
+        input.schema_version = PyValue::int(1);
+        assert_eq!(
+            err(input),
+            "Finding.schema_version must be 'sesslint.finding/v1', got 1"
+        );
+
+        let mut input = base();
+        input.message_template = PyValue::int(8);
+        assert_eq!(
+            err(input),
+            "Finding.message_template must be a non-empty string or None, got int"
+        );
+        for blank in ["", "   "] {
+            let mut input = base();
+            input.message_template = PyValue::string(blank);
+            assert_eq!(
+                err(input),
+                "Finding.message_template must be a non-empty string or None, got str"
+            );
+        }
+        let mut input = base();
+        input.message_template = PyValue::string("user@example.com");
+        assert_eq!(
+            err(input),
+            "Forbidden content-bearing pattern (e.g., email/PII) in Finding.message_template: 'user@example.com'"
+        );
+
+        let mut input = base();
+        input.related_ids = PyValue::string("abc");
+        assert_eq!(
+            err(input),
+            "Finding.related_ids must be an iterable of strings, got str"
+        );
+        let mut input = base();
+        input.related_ids = PyValue::bytes(b"ab".to_vec());
+        assert_eq!(
+            err(input),
+            "Finding.related_ids must be an iterable of strings, got bytes"
+        );
+        let mut input = base();
+        input.related_ids = PyValue::int(9);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids must be an iterable of strings, got int"
+        );
+        let mut input = base();
+        input.related_ids = strings(&[""]);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids items must be non-empty strings, got ''"
+        );
+        let mut input = base();
+        input.related_ids = strings(&["   "]);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids items must be non-empty strings, got '   '"
+        );
+        let mut input = base();
+        input.related_ids = PyValue::list(vec![PyValue::string(""), PyValue::int(1)]);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids items must be non-empty strings, got ''"
+        );
+        let mut input = base();
+        input.related_ids =
+            PyValue::list(vec![PyValue::string("user@example.com"), PyValue::int(1)]);
+        assert_eq!(
+            err(input),
+            "Forbidden content-bearing pattern (e.g., email/PII) in Finding.related_ids: 'user@example.com'"
+        );
+        assert!(RELATED_IDS_SET_ORDER_DEVIATION.contains("set"));
+        let mut input = base();
+        input.related_ids = PyValue::list(vec![PyValue::bool_value(true), PyValue::int(1)]);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids items must be non-empty strings, got True"
+        );
+        let mut input = base();
+        input.related_ids = PyValue::list(vec![PyValue::int(1), PyValue::bool_value(true)]);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids items must be non-empty strings, got 1"
+        );
+        let mut input = base();
+        input.related_ids = strings(&[" a ", "a"]);
+        assert_eq!(built(input).related_ids(), ["a".to_owned(), "a".to_owned()]);
+        let mut input = base();
+        input.related_ids = PyValue::list(vec![PyValue::list(Vec::new())]);
+        assert_eq!(
+            err(input),
+            "Finding.related_ids item is not hashable (Python raises TypeError: unhashable type: 'list')"
+        );
+
+        let mut input = base();
+        input.evidence = PyValue::list(Vec::new());
+        assert_eq!(
+            err(input),
+            "Finding.evidence must be a mapping or None, got list"
+        );
+        for key in ["", "   ", "\n"] {
+            let mut input = base();
+            input.evidence = PyValue::map(vec![(PyValue::string(key), PyValue::string("ok"))]);
+            assert_eq!(
+                err(input),
+                "Finding.evidence keys must be non-empty strings"
+            );
+        }
+        let mut input = base();
+        input.evidence = PyValue::map(vec![(PyValue::int(1), PyValue::string("ok"))]);
+        assert_eq!(
+            err(input),
+            "Finding.evidence keys must be non-empty strings"
+        );
+        let mut input = base();
+        input.evidence = PyValue::map(vec![(PyValue::string("a\nb"), PyValue::string("ok"))]);
+        assert_eq!(
+            err(input),
+            "Forbidden control or newline characters in Finding.evidence key 'a\\nb': 'a\\nb'"
+        );
+        let mut input = base();
+        input.evidence = PyValue::map(vec![(
+            PyValue::string("rows"),
+            PyValue::list(vec![PyValue::string("user@example.com")]),
+        )]);
+        assert_eq!(
+            err(input),
+            "Forbidden content-bearing pattern (e.g., email/PII) in Finding.evidence value for 'rows'[0]: 'user@example.com'"
+        );
+    }
+
+    #[test]
+    fn variant_absent_string_and_non_string() {
+        let finding = built(base());
+        assert_eq!(finding.variant().unwrap(), None);
+
+        let mut input = base();
+        input.evidence = PyValue::map(vec![(PyValue::string("other"), PyValue::int(1))]);
+        assert_eq!(built(input).variant().unwrap(), None);
+
+        let mut input = base();
+        input.evidence = PyValue::map(vec![(PyValue::string("variant"), PyValue::int(4))]);
+        let message = err_variant(input);
+        assert_eq!(
+            message,
+            "Finding.variant is not a string; Python cast returns the raw value 4"
+        );
+        let mut input = base();
+        input.evidence = PyValue::map(vec![(
+            PyValue::string("variant"),
+            PyValue::bool_value(false),
+        )]);
+        assert_eq!(
+            err_variant(input),
+            "Finding.variant is not a string; Python cast returns the raw value False"
+        );
+        assert!(VARIANT_CAST_DEVIATION.contains("cast"));
+    }
+
+    fn err_variant(input: FindingInput) -> String {
+        built(input).variant().unwrap_err().to_string()
+    }
+
+    #[test]
+    fn from_dict_uses_defaults_and_reports_python_exceptions() {
+        assert!(FROM_DICT_EXCEPTION_DEVIATION.contains("KeyError"));
+        assert!(FROM_DICT_EXCEPTION_DEVIATION.contains("ValueError"));
+        let source_only = [(
+            "source",
+            DictValue::Map(vec![(
+                "path".to_owned(),
+                DictValue::Str("a.jsonl".to_owned()),
+            )]),
+        )];
+        assert_eq!(
+            Finding::from_dict(&[]).unwrap_err().to_string(),
+            "Finding.from_dict requires a 'source' mapping"
+        );
+        assert_eq!(
+            Finding::from_dict(&[("source", DictValue::Str("a.jsonl".to_owned()))])
+                .unwrap_err()
+                .to_string(),
+            "Finding.from_dict requires a 'source' mapping"
+        );
+        assert_eq!(
+            Finding::from_dict(&source_only).unwrap_err().to_string(),
+            "missing required key 'code' (Python raises KeyError)"
+        );
+
+        let mut entries = required_entries();
+        entries.retain(|(key, _)| *key != "severity");
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "missing required key 'severity' (Python raises KeyError)"
+        );
+
+        let mut entries = required_entries();
+        replace(&mut entries, "severity", DictValue::Str("nope".to_owned()));
+        entries.retain(|(key, _)| *key != "message");
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "'nope' is not a valid Severity (Python raises ValueError)"
+        );
+        let mut entries = required_entries();
+        replace(&mut entries, "severity", DictValue::Int(1));
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "1 is not a valid Severity (Python raises ValueError)"
+        );
+        let mut entries = required_entries();
+        replace(
+            &mut entries,
+            "repairability",
+            DictValue::Str("nope".to_owned()),
+        );
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "'nope' is not a valid Repairability (Python raises ValueError)"
+        );
+
+        let mut entries = required_entries();
+        entries.retain(|(key, _)| *key != "message");
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "missing required key 'message' (Python raises KeyError)"
+        );
+        let mut entries = required_entries();
+        entries.retain(|(key, _)| *key != "fingerprint");
+        replace(
+            &mut entries,
+            "source",
+            DictValue::Map(vec![
+                ("path".to_owned(), DictValue::Str("a.jsonl".to_owned())),
+                ("line".to_owned(), DictValue::Int(0)),
+            ]),
+        );
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "SourceRef.line must be a positive integer or None, got 0"
+        );
+        let mut entries = required_entries();
+        entries.retain(|(key, _)| *key != "fingerprint");
+        entries.push(("related_ids", DictValue::None));
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "Finding.from_dict related_ids is not iterable (Python raises TypeError: 'NoneType' object is not iterable)"
+        );
+        let mut entries = required_entries();
+        entries.retain(|(key, _)| *key != "fingerprint");
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "missing required key 'fingerprint' (Python raises KeyError)"
+        );
+        let mut entries = required_entries();
+        entries.push(("related_ids", DictValue::Bytes(b"ab".to_vec())));
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap_err().to_string(),
+            "Finding.related_ids items must be non-empty strings, got 97"
+        );
+
+        let finding = Finding::from_dict(&required_entries()).unwrap();
+        assert!(finding.related_ids().is_empty());
+        assert_eq!(finding.schema_version(), SCHEMA_VERSION);
+        assert_eq!(finding.message_template(), None);
+        assert!(finding.evidence().is_none());
+        assert_eq!(finding.source().line(), None);
+        assert_eq!(finding.source().record_id(), None);
+        assert_eq!(finding.source().path(), "a.jsonl");
+
+        let mut entries = required_entries();
+        entries.push(("related_ids", DictValue::Str("ba".to_owned())));
+        assert_eq!(
+            Finding::from_dict(&entries).unwrap().related_ids(),
+            ["a".to_owned(), "b".to_owned()]
+        );
+    }
+
+    fn required_entries() -> Vec<(&'static str, DictValue)> {
+        vec![
+            ("code", DictValue::Str("SL001".to_owned())),
+            ("severity", DictValue::Str("error".to_owned())),
+            ("repairability", DictValue::Str("manual".to_owned())),
+            ("message", DictValue::Str("synthetic marker".to_owned())),
+            (
+                "source",
+                DictValue::Map(vec![(
+                    "path".to_owned(),
+                    DictValue::Str("a.jsonl".to_owned()),
+                )]),
+            ),
+            ("fingerprint", DictValue::Str("0123456789abcdef".to_owned())),
+        ]
+    }
+
+    fn replace(entries: &mut [(&str, DictValue)], key: &str, value: DictValue) {
+        for (entry_key, entry_value) in entries {
+            if *entry_key == key {
+                *entry_value = value;
+                return;
+            }
+        }
+        panic!("missing test key");
+    }
+
+    #[test]
+    fn sort_order_is_total_and_stable() {
+        assert!(SORT_FINDINGS_TYPE_DEVIATION.contains("TypeError"));
+        let late = built({
+            let mut input = base();
+            input.source = PyValue::source(source("c.jsonl", Some(1), None));
+            input
+        });
+        let mid = built({
+            let mut input = base();
+            input.source = PyValue::source(source(r"b\z.jsonl", Some(1), None));
+            input
+        });
+        let early = built(base());
+        assert_eq!(mid.source().path(), "b/z.jsonl");
+        assert_eq!(finding_sort_key(&mid).path, "b/z.jsonl");
+        let sorted = sort_findings(&[late.clone(), mid.clone(), early.clone()]);
+        assert_eq!(
+            sorted
+                .iter()
+                .map(|finding| finding.source().path())
+                .collect::<Vec<_>>(),
+            ["a.jsonl", "b/z.jsonl", "c.jsonl"]
+        );
+
+        let none_line = built({
+            let mut input = base();
+            input.source = PyValue::source(source("a.jsonl", None, None));
+            input
+        });
+        let line_one = built(base());
+        assert_eq!(finding_sort_key(&none_line).line, -1);
+        assert!(finding_sort_key(&none_line).line < 0);
+        assert!(sort_findings(&[line_one, none_line.clone()])[0] == none_line);
+
+        let tagged = |template: &str, evidence: PyValue| {
+            let mut input = base();
+            input.message_template = PyValue::string(template);
+            input.evidence = evidence;
+            built(input)
+        };
+        let ordinal =
+            |value: PyValue| PyValue::map(vec![(PyValue::string("record_ordinal"), value)]);
+        let one = tagged("one", ordinal(PyValue::int(1)));
+        let zero = tagged("zero", ordinal(PyValue::int(0)));
+        let yes = tagged("yes", ordinal(PyValue::bool_value(true)));
+        let neg = tagged("neg", ordinal(PyValue::int(-5)));
+        let none = tagged("none", PyValue::None);
+        let no = tagged("no", ordinal(PyValue::bool_value(false)));
+        let text = tagged("text", ordinal(PyValue::string("1")));
+        assert_eq!(finding_sort_key(&yes).ordinal, -1);
+        assert_eq!(finding_sort_key(&no).ordinal, -1);
+        assert_eq!(finding_sort_key(&neg).ordinal, -1);
+        assert_eq!(finding_sort_key(&text).ordinal, -1);
+        assert_eq!(finding_sort_key(&zero).ordinal, 0);
+        let order = sort_findings(&[one, zero, yes, neg, none]);
+        assert_eq!(
+            order
+                .iter()
+                .map(|finding| finding.message_template().unwrap())
+                .collect::<Vec<_>>(),
+            ["yes", "neg", "none", "zero", "one"]
+        );
+
+        let mut severities = Vec::new();
+        for severity in [
+            Severity::Info,
+            Severity::Warning,
+            Severity::Error,
+            Severity::Fatal,
+        ] {
+            let mut input = base();
+            input.severity = PyValue::severity(severity);
+            severities.push(built(input));
+        }
+        let sorted = sort_findings(&severities);
+        assert_eq!(
+            sorted
+                .iter()
+                .map(|finding| finding.severity())
+                .collect::<Vec<_>>(),
+            [
+                Severity::Fatal,
+                Severity::Error,
+                Severity::Warning,
+                Severity::Info,
+            ]
+        );
+        for (severity, rank) in SEVERITY_ORDER {
+            let mut input = base();
+            input.severity = PyValue::severity(severity);
+            assert_eq!(finding_sort_key(&built(input)).severity_rank, rank);
+        }
+
+        let mut alpha = base();
+        alpha.message_template = PyValue::string("alpha marker");
+        let mut beta = base();
+        beta.message_template = PyValue::string("beta marker");
+        let alpha = built(alpha);
+        let beta = built(beta);
+        assert_ne!(alpha, beta);
+        assert_eq!(alpha.cmp(&beta), Ordering::Equal);
+        assert!(FINDING_EQ_ORD_DEVIATION.contains("sort key"));
+        let stable = sort_findings(&[beta.clone(), alpha.clone()]);
+        assert_eq!(stable[0].message_template(), Some("beta marker"));
+        assert_eq!(stable[1].message_template(), Some("alpha marker"));
+
+        let mut second = base();
+        second.fingerprint = PyValue::string("0123456789abcdee");
+        let mut first = base();
+        first.fingerprint = PyValue::string("0123456789abcdde");
+        let pair = sort_findings(&[built(second), built(first)]);
+        assert_eq!(pair[0].fingerprint(), "0123456789abcdde");
+        assert!(pair[0] < pair[1]);
+        assert!(pair[1] >= pair[0]);
+    }
+
+    #[test]
+    fn line_separator_only_message_does_not_pass() {
+        let text = "\u{2028}\u{2029}";
+        let mut input = base();
+        input.message = PyValue::string(text);
+        let result = Finding::try_new(input);
+        if python_strip(text).is_empty() {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "Finding.message must be a non-empty string, got str"
+            );
+        } else {
+            panic!("U+2028/U+2029 were not stripped; record the strip gap without changing python_strip");
+        }
     }
 }
