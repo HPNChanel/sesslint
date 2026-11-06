@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -38,6 +39,7 @@ SUMMARY_KEYS = (
 HERE = Path(__file__).resolve().parent
 PIN_PATH = HERE / "PIN"
 WORK = HERE / "run-work"
+_COMPARE: object | None = None
 
 
 def emit(fields: dict[str, str]) -> None:
@@ -488,8 +490,24 @@ def resolve_rust_bin(value: str) -> Path:
     return path
 
 
+def compare_module() -> object:
+    global _COMPARE
+    if _COMPARE is not None:
+        return _COMPARE
+    path = HERE / "compare.py"
+    spec = importlib.util.spec_from_file_location("_parity_compare", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("compare_load_failed")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    _COMPARE = mod
+    return mod
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="run", add_help=False)
+    parser.add_argument("--strict", action="store_true")
     parser.add_argument("--rust-bin", default=None)
     parser.add_argument("--fixture", default=None)
     parser.add_argument("rest", nargs=argparse.REMAINDER)
@@ -536,6 +554,9 @@ def main(argv: list[str]) -> int:
     rust_exit = "absent"
     rust_out_hash = ""
     rust_err_hash = ""
+    rust_code: int | None = None
+    rust_out = b""
+    rust_err = b""
     if args.rust_bin is not None:
         rust_path = resolve_rust_bin(args.rust_bin)
         if not rust_path.is_file():
@@ -559,23 +580,37 @@ def main(argv: list[str]) -> int:
         rust_exit = str(rust_code)
         rust_out_hash = sha256(rust_out)
         rust_err_hash = sha256(rust_err)
-        del rust_out, rust_err
+    cmp_mod = compare_module()
+    compare_label = "abstain"
+    diff = None
+    if rust_code is not None:
+        left = cmp_mod.Capture(python_out, python_err, python_code)
+        right = cmp_mod.Capture(rust_out, rust_err, rust_code)
+        diff = cmp_mod.compare(left, right)
+        compare_label = "match" if diff.equal else "mismatch"
     fields = {
         "pin": pin,
         "fixture": fixture,
         "python_exit": str(python_code),
         "rust_exit": rust_exit,
-        "compare": "abstain",
+        "compare": compare_label,
         "python_stdout_sha256": sha256(python_out),
         "python_stderr_sha256": sha256(python_err),
     }
-    del python_out, python_err
     emit(fields)
     if rust_out_hash:
         sys.stdout.write(f"rust_stdout_sha256={rust_out_hash}\n")
         sys.stdout.write(f"rust_stderr_sha256={rust_err_hash}\n")
         sys.stdout.flush()
-    return 0
+    if diff is not None and not diff.equal:
+        sys.stderr.write(cmp_mod.format_diff(diff))
+    exit_code = 0
+    if args.strict:
+        if rust_code is None:
+            exit_code = 1
+        elif diff is not None and not diff.equal:
+            exit_code = cmp_mod.status_code(diff)
+    return exit_code
 
 
 if __name__ == "__main__":
