@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint._canonical_codec parity vectors (JSON shapes only, no session payloads).",
+  "generator": "rust/parity/vectors/_canonical_codec/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "normalize_canonical_key_order: Rust reify uses BTreeMap sorted keys; Python dict normalization keeps insertion order until json.dumps sort_keys. Parity compares canonical_json_bytes only, not normalize_canonical map order.",
+    "session_event_content_identity: SessionEvent is not ported; content_identity_bytes/hash return Unsupported until the type exists.",
+    "active_codec_env: parity does not set SESSLINT_DISABLE_ACCEL or call set_active_codec; unit tests cover those paths."
+  ]
+}
