@@ -1,0 +1,512 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._context parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import sys
+from argparse import Namespace
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CONTEXT_SHA256 = "333e2b5cc857a22387ed5f67e22806491ebdfdabaef970f006d97aff32253667"
+
+SYNTHETIC_ERR = "synthetic-err"
+SYNTHETIC_WARN = "synthetic-warn"
+SYNTHETIC_INFO = "synthetic-info"
+SYNTHETIC_DEBUG = "synthetic-debug"
+SYNTHETIC_BAD_FORMAT = "synthetic-bad-format"
+SYNTHETIC_SELECT = "synthetic-select"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_context_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "_context.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != CONTEXT_SHA256:
+        raise SystemExit(
+            f"_context.py sha256 mismatch: expected {CONTEXT_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.cli._context as context  # noqa: WPS433
+
+    return context
+
+
+def encode_default(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return {"kind": "none"}
+    if isinstance(value, bool):
+        return {"kind": "bool", "value": value}
+    if isinstance(value, int):
+        return {"kind": "int", "value": value}
+    if isinstance(value, str):
+        return {"kind": "str", "value": value}
+    raise TypeError(f"unsupported default {value!r}")
+
+
+def encode_setting(setting: Any) -> dict[str, Any]:
+    value = setting.value
+    if value is None:
+        encoded: object = None
+    elif isinstance(value, bool):
+        encoded = value
+    elif isinstance(value, int):
+        encoded = value
+    else:
+        encoded = str(value)
+    return {"value": encoded, "source": setting.source}
+
+
+def subparser_with_format_choices(choices: tuple[str, ...]) -> argparse.ArgumentParser:
+    sub = argparse.ArgumentParser()
+    sub.add_argument(
+        "-f",
+        "--format",
+        dest="output_format",
+        choices=list(choices),
+    )
+    return sub
+
+
+def subparser_json_only() -> argparse.ArgumentParser:
+    sub = argparse.ArgumentParser()
+    sub.add_argument("--json", action="store_true")
+    return sub
+
+
+def subparser_no_format() -> argparse.ArgumentParser:
+    sub = argparse.ArgumentParser()
+    sub.add_argument(
+        "--policy",
+        dest="policy",
+        choices=["conservative"],
+    )
+    return sub
+
+
+def args_from_mapping(values: dict[str, Any]) -> Namespace:
+    return Namespace(**values)
+
+
+def build_expected(context: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "resolve_output_format":
+        args = args_from_mapping(spec.get("args", {}))
+        env = spec.get("env", {})
+        sub_spec = spec.get("subparser")
+        sub = None
+        if sub_spec == "format_human_json_ndjson":
+            sub = subparser_with_format_choices(("human", "json", "ndjson"))
+        elif sub_spec == "format_human_json":
+            sub = subparser_with_format_choices(("human", "json"))
+        elif sub_spec == "json_only":
+            sub = subparser_json_only()
+        elif sub_spec == "no_format":
+            sub = subparser_no_format()
+        elif sub_spec is None:
+            sub = None
+        else:
+            raise ValueError(f"unknown subparser spec: {sub_spec}")
+        try:
+            setting = context._resolve_output_format(args, env, None, sub)
+        except Exception as err:  # noqa: BLE001 — parity harness
+            from sesslint.cli._errors import CliError  # noqa: WPS433
+
+            if not isinstance(err, CliError):
+                raise
+            return {
+                "result": "error",
+                "exit_code": err.exit_code,
+                "message": err.message,
+            }
+        return {"result": "ok", "setting": encode_setting(setting)}
+
+    if kind == "cli_supplied":
+        args = args_from_mapping(spec["args"])
+        name = spec["name"]
+        supplied = context._cli_supplied(args, name)
+        if supplied is None:
+            return {"supplied": False, "value": None}
+        return {"supplied": True, "value": supplied}
+
+    if kind == "cli_context_channel":
+        quiet = bool(spec["quiet"])
+        verbose = bool(spec["verbose"])
+        channel = spec["channel"]
+        message = spec["message"]
+        buf = io.StringIO()
+        cli_ctx = context.CliContext(
+            quiet=quiet,
+            verbose=verbose,
+            config_path=None,
+            settings={},
+            stderr=buf,
+        )
+        if channel == "error":
+            cli_ctx.error(message)
+        elif channel == "warn":
+            cli_ctx.warn(message)
+        elif channel == "info":
+            cli_ctx.info(message)
+        elif channel == "debug":
+            cli_ctx.debug(message)
+        else:
+            raise ValueError(f"unknown channel: {channel}")
+        return {"stderr": buf.getvalue()}
+
+    if kind == "setting_specs":
+        rows: list[dict[str, Any]] = []
+        for name, env_var, cfg_key, default in context.SETTING_SPECS:
+            rows.append(
+                {
+                    "name": name,
+                    "env_var": env_var,
+                    "config_key": cfg_key,
+                    "default": encode_default(default),
+                }
+            )
+        return {"rows": rows}
+
+    if kind == "scoped_commands":
+        out: dict[str, list[str]] = {}
+        for key, commands in context._SCOPED_TO_COMMANDS.items():
+            out[key] = sorted(commands)
+        return {"commands": out}
+
+    if kind == "format_choices":
+        sub_spec = spec.get("subparser")
+        sub = None
+        if sub_spec == "format_human_json":
+            sub = subparser_with_format_choices(("human", "json"))
+        elif sub_spec == "json_only":
+            sub = subparser_json_only()
+        elif sub_spec == "no_format":
+            sub = subparser_no_format()
+        elif sub_spec is None:
+            sub = None
+        else:
+            raise ValueError(f"unknown subparser spec: {sub_spec}")
+        choices = context._format_choices(sub)
+        if choices is None:
+            return {"choices": None}
+        return {"choices": list(choices)}
+
+    if kind == "progress_callback":
+        quiet = bool(spec["quiet"])
+        verbose = bool(spec["verbose"])
+        isatty = bool(spec["isatty"])
+        args = args_from_mapping(spec.get("args", {}))
+        buf = io.StringIO()
+        buf.isatty = lambda: isatty  # type: ignore[attr-defined]
+        cli_ctx = context.CliContext(
+            quiet=quiet,
+            verbose=verbose,
+            config_path=None,
+            settings={},
+            stderr=buf,
+        )
+        cb = cli_ctx.progress_callback(args)
+        if cb is None:
+            return {"kind": "none"}
+        if cb.__class__.__name__ == "TtyProgress":
+            return {"kind": "tty"}
+        return {"kind": "ndjson"}
+
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    env_json = {"SESSLINT_FORMAT": "json"}
+    return [
+        {
+            "id": "resolve_output_format_json_beats_flag_and_env",
+            "construct": {
+                "type": "resolve_output_format",
+                "args": {"json": True, "output_format": "human"},
+                "env": env_json,
+                "subparser": "format_human_json_ndjson",
+            },
+        },
+        {
+            "id": "resolve_output_format_flag_beats_env",
+            "construct": {
+                "type": "resolve_output_format",
+                "args": {"output_format": "human"},
+                "env": env_json,
+                "subparser": "format_human_json_ndjson",
+            },
+        },
+        {
+            "id": "resolve_output_format_valid_env",
+            "construct": {
+                "type": "resolve_output_format",
+                "args": {},
+                "env": env_json,
+                "subparser": "format_human_json_ndjson",
+            },
+        },
+        {
+            "id": "resolve_output_format_default_human",
+            "construct": {
+                "type": "resolve_output_format",
+                "args": {},
+                "env": {},
+                "subparser": "format_human_json_ndjson",
+            },
+        },
+        {
+            "id": "resolve_output_format_invalid_env_message",
+            "construct": {
+                "type": "resolve_output_format",
+                "args": {},
+                "env": {"SESSLINT_FORMAT": SYNTHETIC_BAD_FORMAT},
+                "subparser": "format_human_json",
+            },
+        },
+        {
+            "id": "resolve_output_format_env_ignored_without_choices",
+            "construct": {
+                "type": "resolve_output_format",
+                "args": {},
+                "env": {"SESSLINT_FORMAT": SYNTHETIC_BAD_FORMAT},
+                "subparser": "no_format",
+            },
+        },
+        {
+            "id": "cli_supplied_missing_is_unset",
+            "construct": {
+                "type": "cli_supplied",
+                "name": "skip_undetected",
+                "args": {},
+            },
+        },
+        {
+            "id": "cli_supplied_false_is_unset",
+            "construct": {
+                "type": "cli_supplied",
+                "name": "skip_undetected",
+                "args": {"skip_undetected": False},
+            },
+        },
+        {
+            "id": "cli_supplied_true_and_zero_supplied",
+            "construct": {
+                "type": "cli_supplied",
+                "name": "max_files",
+                "args": {"max_files": 0},
+            },
+        },
+        {
+            "id": "cli_supplied_true_bool",
+            "construct": {
+                "type": "cli_supplied",
+                "name": "skip_undetected",
+                "args": {"skip_undetected": True},
+            },
+        },
+        {
+            "id": "cli_supplied_str_value",
+            "construct": {
+                "type": "cli_supplied",
+                "name": "select",
+                "args": {"select": SYNTHETIC_SELECT},
+            },
+        },
+        {
+            "id": "cli_context_error_always_prints",
+            "construct": {
+                "type": "cli_context_channel",
+                "quiet": True,
+                "verbose": False,
+                "channel": "error",
+                "message": SYNTHETIC_ERR,
+            },
+        },
+        {
+            "id": "cli_context_warn_info_hidden_when_quiet",
+            "construct": {
+                "type": "cli_context_channel",
+                "quiet": True,
+                "verbose": False,
+                "channel": "warn_then_info",
+                "message": SYNTHETIC_WARN,
+            },
+        },
+        {
+            "id": "cli_context_warn_info_visible_when_loud",
+            "construct": {
+                "type": "cli_context_channel",
+                "quiet": False,
+                "verbose": False,
+                "channel": "warn_then_info",
+                "message": SYNTHETIC_WARN,
+            },
+        },
+        {
+            "id": "cli_context_debug_only_when_verbose",
+            "construct": {
+                "type": "cli_context_channel",
+                "quiet": True,
+                "verbose": True,
+                "channel": "debug",
+                "message": SYNTHETIC_DEBUG,
+            },
+        },
+        {
+            "id": "cli_context_debug_silent_without_verbose",
+            "construct": {
+                "type": "cli_context_channel",
+                "quiet": False,
+                "verbose": False,
+                "channel": "debug",
+                "message": SYNTHETIC_DEBUG,
+            },
+        },
+        {
+            "id": "setting_specs_declaration_order",
+            "construct": {"type": "setting_specs"},
+        },
+        {
+            "id": "scoped_commands_policy_and_fail_on",
+            "construct": {"type": "scoped_commands"},
+        },
+        {
+            "id": "format_choices_explicit",
+            "construct": {
+                "type": "format_choices",
+                "subparser": "format_human_json",
+            },
+        },
+        {
+            "id": "format_choices_implicit_json_only",
+            "construct": {"type": "format_choices", "subparser": "json_only"},
+        },
+        {
+            "id": "format_choices_absent",
+            "construct": {"type": "format_choices", "subparser": "no_format"},
+        },
+        {
+            "id": "progress_callback_ndjson",
+            "construct": {
+                "type": "progress_callback",
+                "quiet": False,
+                "verbose": False,
+                "isatty": True,
+                "args": {"progress_json": True},
+            },
+        },
+        {
+            "id": "progress_callback_none_when_quiet",
+            "construct": {
+                "type": "progress_callback",
+                "quiet": True,
+                "verbose": False,
+                "isatty": True,
+                "args": {},
+            },
+        },
+        {
+            "id": "progress_callback_tty_when_isatty",
+            "construct": {
+                "type": "progress_callback",
+                "quiet": False,
+                "verbose": False,
+                "isatty": True,
+                "args": {},
+            },
+        },
+    ]
+
+
+def build_expected_for_row(context: Any, row: dict[str, Any]) -> dict[str, Any]:
+    construct = dict(row["construct"])
+    if construct.get("type") == "cli_context_channel" and construct.get("channel") == "warn_then_info":
+        quiet = bool(construct["quiet"])
+        verbose = bool(construct["verbose"])
+        buf = io.StringIO()
+        cli_ctx = context.CliContext(
+            quiet=quiet,
+            verbose=verbose,
+            config_path=None,
+            settings={},
+            stderr=buf,
+        )
+        cli_ctx.warn(SYNTHETIC_WARN)
+        cli_ctx.info(SYNTHETIC_INFO)
+        return {"stderr": buf.getvalue()}
+    return build_expected(context, construct)
+
+
+def main() -> int:
+    context = load_context_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected_for_row(context, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._context",
+        "python_commit": PYTHON_COMMIT,
+        "context_py_sha256": CONTEXT_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._context",
+        "python_commit": PYTHON_COMMIT,
+        "context_py_sha256": CONTEXT_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._context/generate",
+        "known_gaps": [
+            "build_context calls sesslint.config.load_config; Rust returns ContextError::Unsupported"
+        ],
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic cli._context setting resolution, stderr channels, and parser metadata parity.",
+        "generator": "rust/parity/vectors/cli._context/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
