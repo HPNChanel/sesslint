@@ -1,10 +1,9 @@
 //! Checkpoint and continuation integrity checks (SL201, SL202, SL203).
 //!
-//! Port of `src/sesslint/checks/checkpoint.py` lines 1–685
+//! Port of `src/sesslint/checks/checkpoint.py` lines 1–685 and 688–990
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice ports helpers through [`extract_run_state_checkpoints`] and
-//! [`check_checkpoint_gap`]. It does not port `check_checkpoint_divergence`,
-//! unsafe continuation, compaction coverage, `check_checkpoint`, or `__all__`.
+//! This slice ports helpers through [`coverage_pointer`]. It does not port
+//! `check_compaction_coverage`, `check_checkpoint`, or `__all__`.
 //!
 //! [`compute_checkpoint_fingerprint`] hashes locally. It is not a finding
 //! digest and does not call [`make_finding`].
@@ -22,6 +21,22 @@
 //! with the fingerprint omitted, and returns
 //! [`FINGERPRINT_CODEC_UNAVAILABLE`]. It does not keep a prefix, invent a
 //! digest, or call [`cap_checkpoint_findings`] on that path.
+//!
+//! [`checkpoint_divergence_records`] does not call [`make_finding`].
+//! [`check_checkpoint_divergence`] uses that list. An empty list calls
+//! [`cap_checkpoint_findings`] with [`SL202`]. A non-empty list calls
+//! [`make_finding`] once, with the fingerprint omitted, and returns
+//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. It does not invent a digest or call
+//! [`cap_checkpoint_findings`] on that path.
+//!
+//! [`unsafe_continuation_record`] does not call [`make_finding`].
+//! [`check_unsafe_continuation`] returns `Ok([])` when there is no record and
+//! does not call [`cap_checkpoint_findings`]. One record calls [`make_finding`]
+//! once, with the fingerprint omitted, and returns
+//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. Adapter `codex-rollout` returns `Ok([])`
+//! before events and priors are read.
+//!
+//! [`coverage_pointer`] does not call [`make_finding`].
 //!
 //! Sort key is `(code, overflow flag, source.record_id or "", fingerprint)`.
 //! Overflow is 1 only when evidence `overflow` is JSON true. This module
@@ -70,21 +85,35 @@
 //! * A seq string with a non-ASCII character is
 //!   [`PYTHON_ISDIGIT_UNICODE`]. Python `str.isdigit` accepts Unicode Nd.
 //!   This slice does not guess a Unicode numeric value.
+//! * A bool is not an int. An SL201 `at_index` of true does not become 1.
+//!   An SL202 `seq` of true does not equal checkpoint seq 1. A float `seq`
+//!   does not equal an int seq.
+//! * A trigger index below 0 selects the first event index strictly greater
+//!   than it. Index `-1` starts at event 0. Negative indexes do not wrap.
+//! * [`EvidenceLookup::Borrowed`] while reading a prior finding is
+//!   [`BORROWED_LOOKUP`], not a missing key.
+//! * A float nested in a divergence `run_state` projection has no [`PyValue`]
+//!   form. [`check_checkpoint_divergence`] returns
+//!   [`PYTHON_FLOAT_STR_UNREPRESENTABLE`] and does not call [`make_finding`].
+//! * [`coverage_pointer`] uses [`str::trim`]. Python `str.strip` also treats
+//!   U+001C..=U+001F as space. A string of only those controls stays present.
+//!   A failed payload-map borrow is [`BORROWED_LOOKUP`]. A non-string
+//!   `covered_through_id` is `None`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
 use model::canonical::{MapLookup, Payload, SessionEvent};
-use model::codes::{Repairability, Severity, SL201};
+use model::codes::{Repairability, Severity, SL201, SL202, SL203};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
     PYTHON_STR_UNREPRESENTABLE,
 };
 use model::finding::{
-    enforce_content_free_text, make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue,
-    SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+    enforce_content_free_text, make_finding, Evidence, EvidenceLookup, Finding, MakeFindingInput,
+    PyValue, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -712,6 +741,806 @@ pub fn check_checkpoint_gap(
         None => cap_checkpoint_findings(Vec::new(), SL201, max_findings, source_path, context),
         Some(record) => emit_first_gap(record),
     }
+}
+
+/// One SL202 divergence. Does not call [`make_finding`].
+///
+/// Run-state evidence keys are `hash_a`, `hash_b`, `seq`, `source`, then
+/// `run_state` when the projection result is [`Some`], including an empty
+/// mapping. Event evidence omits `source` and appends `run_state` in the same
+/// case. `hash_a` and `hash_b` are the first 16 characters. A shorter hash
+/// stays whole. The seen-seq map stores the full hash.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckpointDivergenceRecord {
+    pub code: &'static str,
+    pub severity: Severity,
+    pub repairability: Repairability,
+    pub message_template: &'static str,
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub hash_a: String,
+    pub hash_b: String,
+    pub seq: i64,
+    pub source: Option<String>,
+    pub run_state: Option<EventMapping>,
+    pub adapter_id: String,
+    pub adapter_version: String,
+    pub profile_id: String,
+    pub profile_version: String,
+}
+
+impl CheckpointDivergenceRecord {
+    /// Evidence keys in insertion order.
+    pub fn evidence_keys(&self) -> Vec<&'static str> {
+        let mut keys = Vec::with_capacity(5);
+        keys.push("hash_a");
+        keys.push("hash_b");
+        keys.push("seq");
+        if self.source.is_some() {
+            keys.push("source");
+        }
+        if self.run_state.is_some() {
+            keys.push("run_state");
+        }
+        keys
+    }
+}
+
+/// Divergence rows for [`check_checkpoint_divergence`], before the cap.
+///
+/// Omitted `source_path` is `"<canonical>"`. Omitted `context` is
+/// [`CheckContext::default`]. Typed errors from the two run-state extractors
+/// propagate before any row. Does not call [`make_finding`].
+pub fn checkpoint_divergence_records(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    context: Option<&CheckContext>,
+    run_state_projection: Option<&EventMapping>,
+) -> Result<Vec<CheckpointDivergenceRecord>, CheckpointError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let mut slot = None;
+    let ctx = borrowed_context(context, &mut slot);
+    let projection = extract_run_state_projection(Some(ctx), Some(events), run_state_projection)?;
+    let rs_checkpoints =
+        extract_run_state_checkpoints(Some(ctx), Some(events), run_state_projection)?;
+    let sorted = sort_run_state(rs_checkpoints)?;
+    let build = DivergenceBuild {
+        source_path,
+        context: ctx,
+        projection: projection.as_ref(),
+    };
+    let mut seen = BTreeMap::new();
+    let mut records = Vec::new();
+    push_run_state_divergence(&mut seen, &mut records, &build, &sorted)?;
+    push_event_divergence(&mut seen, &mut records, &build, events)?;
+    Ok(records)
+}
+
+/// Python: `check_checkpoint_divergence`.
+///
+/// An empty divergence list calls [`cap_checkpoint_findings`] with [`SL202`].
+/// A non-empty list calls [`make_finding`] once with the fingerprint omitted
+/// and returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. A digest is not invented.
+/// [`cap_checkpoint_findings`] is not called on that path.
+pub fn check_checkpoint_divergence(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    context: Option<&CheckContext>,
+    run_state_projection: Option<&EventMapping>,
+) -> Result<Vec<Finding>, CheckpointError> {
+    let records =
+        checkpoint_divergence_records(events, source_path, context, run_state_projection)?;
+    match records.first() {
+        None => cap_checkpoint_findings(Vec::new(), SL202, max_findings, source_path, context),
+        Some(record) => emit_divergence(record),
+    }
+}
+
+/// Supplied SL201 priors. [`None`] recomputes via [`checkpoint_gap_records`].
+///
+/// An empty slice is supplied: it is not recomputed. [`Sl201Prior::Findings`]
+/// reads evidence. A bool `at_index` is not an int.
+#[derive(Clone, Copy, Debug)]
+pub enum Sl201Prior<'a> {
+    Records(&'a [CheckpointGapRecord]),
+    Findings(&'a [Finding]),
+}
+
+/// Supplied SL202 priors. [`None`] recomputes via
+/// [`checkpoint_divergence_records`].
+///
+/// An empty slice is supplied: it is not recomputed. A run-state row uses
+/// index `-1`. Every exact checkpoint whose seq equals the prior seq is a
+/// trigger, not only the first.
+#[derive(Clone, Copy, Debug)]
+pub enum Sl202Prior<'a> {
+    Records(&'a [CheckpointDivergenceRecord]),
+    Findings(&'a [Finding]),
+}
+
+/// The one SL203 continuation, or nothing. Does not call [`make_finding`].
+///
+/// Evidence keys are `caused_by`, then `first_unsafe_index`. `caused_by` is
+/// the unique causes whose trigger index is strictly less than the unsafe
+/// index, sorted by Unicode code point: `SL201`, `SL202`, `compaction`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnsafeContinuationRecord {
+    pub code: &'static str,
+    pub severity: Severity,
+    pub repairability: Repairability,
+    pub message_template: &'static str,
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub caused_by: Vec<String>,
+    pub first_unsafe_index: i64,
+    pub adapter_id: String,
+    pub adapter_version: String,
+    pub profile_id: String,
+    pub profile_version: String,
+}
+
+impl UnsafeContinuationRecord {
+    /// Evidence keys in insertion order.
+    pub fn evidence_keys(&self) -> Vec<&'static str> {
+        vec!["caused_by", "first_unsafe_index"]
+    }
+}
+
+/// Python: `check_unsafe_continuation`, before [`make_finding`].
+///
+/// Adapter `codex-rollout` returns [`None`] before events and priors are
+/// read. Omitted priors use [`checkpoint_gap_records`] and
+/// [`checkpoint_divergence_records`]. This does not call
+/// [`check_checkpoint_gap`] or [`check_checkpoint_divergence`]. Does not call
+/// [`make_finding`].
+pub fn unsafe_continuation_record<'a>(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    prior_sl201: Option<Sl201Prior<'a>>,
+    prior_sl202: Option<Sl202Prior<'a>>,
+    context: Option<&CheckContext>,
+) -> Result<Option<UnsafeContinuationRecord>, CheckpointError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let mut slot = None;
+    let ctx = borrowed_context(context, &mut slot);
+    if ctx.adapter_id() == "codex-rollout" {
+        return Ok(None);
+    }
+    let mut triggers = Vec::new();
+    extend_sl201(&mut triggers, events, source_path, ctx, prior_sl201)?;
+    extend_sl202(&mut triggers, events, source_path, ctx, prior_sl202)?;
+    append_compaction_triggers(&mut triggers, events, ctx)?;
+    finish_continuation(&triggers, events, source_path, ctx)
+}
+
+/// Python: `check_unsafe_continuation`.
+///
+/// No record is `Ok([])` and does not call [`cap_checkpoint_findings`]. One
+/// record calls [`make_finding`] once with the fingerprint omitted and
+/// returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. The finding is not returned.
+pub fn check_unsafe_continuation<'a>(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    prior_sl201: Option<Sl201Prior<'a>>,
+    prior_sl202: Option<Sl202Prior<'a>>,
+    context: Option<&CheckContext>,
+) -> Result<Vec<Finding>, CheckpointError> {
+    match unsafe_continuation_record(events, source_path, prior_sl201, prior_sl202, context)? {
+        None => Ok(Vec::new()),
+        Some(record) => emit_continuation(&record),
+    }
+}
+
+/// Python: `_coverage_pointer`.
+///
+/// A [`SessionEvent`] reads `extra_fields`. A mapping reads the
+/// `extra_fields` key. `covered_through_id` is returned only when it is a
+/// string whose trim is nonempty. The original string is kept, including
+/// surrounding spaces. A non-string is [`None`], not a typed error. Does not
+/// call [`make_finding`].
+pub fn coverage_pointer(event: &EventValue) -> Result<Option<String>, CheckpointError> {
+    match event {
+        EventValue::Session(session) => coverage_from_payload(&session.extra_fields),
+        EventValue::Mapping(mapping) => Ok(coverage_from_event_mapping(mapping)),
+        EventValue::Other => Ok(None),
+    }
+}
+
+const CAUSE_COMPACTION: &str = "compaction";
+
+fn borrowed_context<'a>(
+    context: Option<&'a CheckContext>,
+    slot: &'a mut Option<CheckContext>,
+) -> &'a CheckContext {
+    match context {
+        Some(value) => value,
+        None => slot.get_or_insert_with(CheckContext::default),
+    }
+}
+
+struct DivergenceBuild<'a> {
+    source_path: &'a str,
+    context: &'a CheckContext,
+    projection: Option<&'a EventMapping>,
+}
+
+struct DivergenceSpot<'a> {
+    path: &'a str,
+    line: Option<i64>,
+    record_id: Option<&'a str>,
+    source: Option<&'static str>,
+}
+
+impl DivergenceBuild<'_> {
+    fn make(
+        &self,
+        spot: DivergenceSpot<'_>,
+        hash_a: String,
+        hash_b: String,
+        seq: i64,
+    ) -> CheckpointDivergenceRecord {
+        CheckpointDivergenceRecord {
+            code: SL202,
+            severity: Severity::Error,
+            repairability: Repairability::Manual,
+            message_template: MSG_SL202,
+            path: spot.path.to_owned(),
+            line: spot.line,
+            record_id: spot.record_id.map(str::to_owned),
+            hash_a,
+            hash_b,
+            seq,
+            source: spot.source.map(str::to_owned),
+            run_state: self.projection.cloned(),
+            adapter_id: self.context.adapter_id().to_owned(),
+            adapter_version: self.context.adapter_version().to_owned(),
+            profile_id: self.context.profile_id().to_owned(),
+            profile_version: self.context.profile_version().to_owned(),
+        }
+    }
+}
+
+fn push_run_state_divergence(
+    seen: &mut BTreeMap<i64, String>,
+    records: &mut Vec<CheckpointDivergenceRecord>,
+    build: &DivergenceBuild<'_>,
+    sorted: &[EventMapping],
+) -> Result<(), CheckpointError> {
+    for record in sorted {
+        let raw_id = normalized_id(record)?;
+        let record_id = source_record_id(raw_id.as_deref());
+        let seq = normalized_seq(record)?;
+        let state_hash = divergence_hash(record)?;
+        let (Some(seq), Some(state_hash)) = (seq, state_hash) else {
+            continue;
+        };
+        note_hash(
+            seen,
+            records,
+            build,
+            seq,
+            state_hash,
+            DivergenceSpot {
+                path: build.source_path,
+                line: Some(1),
+                record_id: record_id.as_deref(),
+                source: Some("run_state"),
+            },
+        );
+    }
+    Ok(())
+}
+
+fn push_event_divergence(
+    seen: &mut BTreeMap<i64, String>,
+    records: &mut Vec<CheckpointDivergenceRecord>,
+    build: &DivergenceBuild<'_>,
+    events: &[EventValue],
+) -> Result<(), CheckpointError> {
+    for (index, event) in events.iter().enumerate() {
+        if !raw_kind_is_checkpoint(event) {
+            continue;
+        }
+        let index = usize_to_i64(index)?;
+        let (_id, seq, state_hash) = extract_checkpoint_fields(event)?;
+        let (Some(seq), Some(state_hash)) = (seq, state_hash) else {
+            continue;
+        };
+        let ev_id = event_id_string(event, index)?;
+        let record_id = source_record_id(Some(&ev_id));
+        let (path, line) = resolve_source_coords(event, build.source_path)?;
+        note_hash(
+            seen,
+            records,
+            build,
+            seq,
+            state_hash,
+            DivergenceSpot {
+                path: &path,
+                line,
+                record_id: record_id.as_deref(),
+                source: None,
+            },
+        );
+    }
+    Ok(())
+}
+
+fn note_hash(
+    seen: &mut BTreeMap<i64, String>,
+    records: &mut Vec<CheckpointDivergenceRecord>,
+    build: &DivergenceBuild<'_>,
+    seq: i64,
+    state_hash: String,
+    spot: DivergenceSpot<'_>,
+) {
+    if let Some(previous) = seen.get(&seq) {
+        if previous != &state_hash {
+            let hash_a = hash_prefix(previous);
+            let hash_b = hash_prefix(&state_hash);
+            records.push(build.make(spot, hash_a, hash_b, seq));
+        }
+    } else {
+        seen.insert(seq, state_hash);
+    }
+}
+
+fn hash_prefix(hash: &str) -> String {
+    hash.chars().take(16).collect()
+}
+
+fn divergence_hash(record: &EventMapping) -> Result<Option<String>, CheckpointError> {
+    match record.get("hash") {
+        None | Some(EventField::Null) => Ok(None),
+        Some(EventField::Str(text)) => Ok(Some(text.clone())),
+        Some(EventField::Float(_)) => Err(CheckpointError::PythonFloatStr),
+        Some(_) => Err(CheckpointError::PythonStr),
+    }
+}
+
+fn extend_sl201(
+    triggers: &mut Vec<(i64, &'static str)>,
+    events: &[EventValue],
+    source_path: &str,
+    context: &CheckContext,
+    prior: Option<Sl201Prior<'_>>,
+) -> Result<(), CheckpointError> {
+    match prior {
+        Some(Sl201Prior::Records(records)) => {
+            for record in records {
+                triggers.push(sl201_record_trigger(record));
+            }
+            Ok(())
+        }
+        Some(Sl201Prior::Findings(findings)) => {
+            for finding in findings {
+                if let Some(trigger) = sl201_finding_trigger(finding)? {
+                    triggers.push(trigger);
+                }
+            }
+            Ok(())
+        }
+        None => {
+            let records =
+                checkpoint_gap_records(events, Some(source_path), None, Some(context), None)?;
+            for record in &records {
+                triggers.push(sl201_record_trigger(record));
+            }
+            Ok(())
+        }
+    }
+}
+
+fn extend_sl202(
+    triggers: &mut Vec<(i64, &'static str)>,
+    events: &[EventValue],
+    source_path: &str,
+    context: &CheckContext,
+    prior: Option<Sl202Prior<'_>>,
+) -> Result<(), CheckpointError> {
+    match prior {
+        Some(Sl202Prior::Records(records)) => {
+            for record in records {
+                append_sl202_record(triggers, record, events)?;
+            }
+            Ok(())
+        }
+        Some(Sl202Prior::Findings(findings)) => {
+            for finding in findings {
+                append_sl202_finding(triggers, finding, events)?;
+            }
+            Ok(())
+        }
+        None => {
+            let records =
+                checkpoint_divergence_records(events, Some(source_path), Some(context), None)?;
+            for record in &records {
+                append_sl202_record(triggers, record, events)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn sl201_record_trigger(record: &CheckpointGapRecord) -> (i64, &'static str) {
+    if record.source.as_deref() == Some("run_state") {
+        (-1, SL201)
+    } else {
+        (record.at_index, SL201)
+    }
+}
+
+fn sl201_finding_trigger(
+    finding: &Finding,
+) -> Result<Option<(i64, &'static str)>, CheckpointError> {
+    let Some(evidence) = finding.evidence() else {
+        return Ok(None);
+    };
+    if evidence_text_eq(evidence, "source", "run_state")? {
+        return Ok(Some((-1, SL201)));
+    }
+    match evidence.map_string("at_index") {
+        EvidenceLookup::Borrowed => Err(CheckpointError::BorrowedLookup),
+        EvidenceLookup::Present(value) => Ok(non_bool_int(&value).map(|index| (index, SL201))),
+        EvidenceLookup::Absent | EvidenceLookup::NotAMap => Ok(None),
+    }
+}
+
+fn append_sl202_record(
+    triggers: &mut Vec<(i64, &'static str)>,
+    record: &CheckpointDivergenceRecord,
+    events: &[EventValue],
+) -> Result<(), CheckpointError> {
+    if record.source.as_deref() == Some("run_state") {
+        triggers.push((-1, SL202));
+        return Ok(());
+    }
+    append_checkpoint_seq_matches(triggers, events, record.seq)
+}
+
+fn append_sl202_finding(
+    triggers: &mut Vec<(i64, &'static str)>,
+    finding: &Finding,
+    events: &[EventValue],
+) -> Result<(), CheckpointError> {
+    let Some(evidence) = finding.evidence() else {
+        return Ok(());
+    };
+    if evidence_text_eq(evidence, "source", "run_state")? {
+        triggers.push((-1, SL202));
+        return Ok(());
+    }
+    let seq = match evidence.map_string("seq") {
+        EvidenceLookup::Borrowed => return Err(CheckpointError::BorrowedLookup),
+        EvidenceLookup::Present(value) => non_bool_int(&value),
+        EvidenceLookup::Absent | EvidenceLookup::NotAMap => None,
+    };
+    if let Some(seq) = seq {
+        append_checkpoint_seq_matches(triggers, events, seq)?;
+    }
+    Ok(())
+}
+
+fn append_checkpoint_seq_matches(
+    triggers: &mut Vec<(i64, &'static str)>,
+    events: &[EventValue],
+    seq: i64,
+) -> Result<(), CheckpointError> {
+    for (index, event) in events.iter().enumerate() {
+        if !raw_kind_is_checkpoint(event) {
+            continue;
+        }
+        let (_id, event_seq, _hash) = extract_checkpoint_fields(event)?;
+        if event_seq == Some(seq) {
+            triggers.push((usize_to_i64(index)?, SL202));
+        }
+    }
+    Ok(())
+}
+
+fn append_compaction_triggers(
+    triggers: &mut Vec<(i64, &'static str)>,
+    events: &[EventValue],
+    context: &CheckContext,
+) -> Result<(), CheckpointError> {
+    let mut checkpoint_indices = Vec::new();
+    let mut compaction_indices = Vec::new();
+    for (index, event) in events.iter().enumerate() {
+        let index = usize_to_i64(index)?;
+        match get_event_kind(event)? {
+            Some(kind) if kind == KIND_CHECKPOINT => checkpoint_indices.push(index),
+            Some(kind) if kind == KIND_COMPACTION => compaction_indices.push(index),
+            _ => {}
+        }
+    }
+    if !context.compaction_checkpoint_capable() {
+        compaction_indices.clear();
+    }
+    for index in compaction_indices {
+        let next = checkpoint_indices
+            .iter()
+            .copied()
+            .filter(|checkpoint| *checkpoint > index)
+            .min();
+        let fire = match next {
+            None => true,
+            Some(next) => tool_between(events, index, next)?,
+        };
+        if fire {
+            triggers.push((index, CAUSE_COMPACTION));
+        }
+    }
+    Ok(())
+}
+
+fn tool_between(
+    events: &[EventValue],
+    start_after: i64,
+    next: i64,
+) -> Result<bool, CheckpointError> {
+    let start = start_after
+        .checked_add(1)
+        .ok_or(CheckpointError::PythonIntUnbounded)?;
+    if start < 0 || start >= next {
+        return Ok(false);
+    }
+    let start_index = usize::try_from(start).map_err(|_| CheckpointError::PythonIntUnbounded)?;
+    let end_index = usize::try_from(next).map_err(|_| CheckpointError::PythonIntUnbounded)?;
+    let end_index = end_index.min(events.len());
+    for event in events.iter().take(end_index).skip(start_index) {
+        let kind = get_event_kind(event)?;
+        if kind.as_deref().is_some_and(is_tool_kind) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn finish_continuation(
+    triggers: &[(i64, &'static str)],
+    events: &[EventValue],
+    source_path: &str,
+    context: &CheckContext,
+) -> Result<Option<UnsafeContinuationRecord>, CheckpointError> {
+    let Some(min_trigger) = triggers.iter().map(|(index, _)| *index).min() else {
+        return Ok(None);
+    };
+    let Some((unsafe_index, unsafe_event)) = first_unsafe_tool(events, min_trigger)? else {
+        return Ok(None);
+    };
+    let mut causes = BTreeSet::new();
+    for (index, cause) in triggers {
+        if *index < unsafe_index {
+            causes.insert(*cause);
+        }
+    }
+    let ev_id = event_id_string(unsafe_event, unsafe_index)?;
+    let (path, line) = resolve_source_coords(unsafe_event, source_path)?;
+    Ok(Some(UnsafeContinuationRecord {
+        code: SL203,
+        severity: Severity::Error,
+        repairability: Repairability::Manual,
+        message_template: MSG_SL203,
+        path,
+        line,
+        record_id: source_record_id(Some(&ev_id)),
+        caused_by: causes.into_iter().map(str::to_owned).collect(),
+        first_unsafe_index: unsafe_index,
+        adapter_id: context.adapter_id().to_owned(),
+        adapter_version: context.adapter_version().to_owned(),
+        profile_id: context.profile_id().to_owned(),
+        profile_version: context.profile_version().to_owned(),
+    }))
+}
+
+fn first_unsafe_tool(
+    events: &[EventValue],
+    min_trigger: i64,
+) -> Result<Option<(i64, &EventValue)>, CheckpointError> {
+    let start = if min_trigger < 0 {
+        0
+    } else {
+        min_trigger
+            .checked_add(1)
+            .ok_or(CheckpointError::PythonIntUnbounded)?
+    };
+    let start_index = usize::try_from(start).map_err(|_| CheckpointError::PythonIntUnbounded)?;
+    for (index, event) in events.iter().enumerate().skip(start_index) {
+        if raw_kind_in_tools(event) {
+            return Ok(Some((usize_to_i64(index)?, event)));
+        }
+    }
+    Ok(None)
+}
+
+fn raw_kind_in_tools(event: &EventValue) -> bool {
+    match event {
+        EventValue::Session(session) => is_tool_kind(&session.kind),
+        EventValue::Mapping(mapping) => match mapping.get("kind") {
+            Some(EventField::Str(text)) => is_tool_kind(text),
+            _ => false,
+        },
+        EventValue::Other => false,
+    }
+}
+
+fn is_tool_kind(kind: &str) -> bool {
+    TOOL_KINDS.contains(&kind)
+}
+
+fn evidence_text_eq(
+    evidence: &Evidence,
+    key: &str,
+    expected: &str,
+) -> Result<bool, CheckpointError> {
+    match evidence.map_string(key) {
+        EvidenceLookup::Borrowed => Err(CheckpointError::BorrowedLookup),
+        EvidenceLookup::Present(value) => Ok(value.as_str() == Some(expected)),
+        EvidenceLookup::Absent | EvidenceLookup::NotAMap => Ok(false),
+    }
+}
+
+fn non_bool_int(value: &Evidence) -> Option<i64> {
+    if value.as_bool().is_some() {
+        None
+    } else {
+        value.as_int()
+    }
+}
+
+fn coverage_from_payload(extra: &Payload) -> Result<Option<String>, CheckpointError> {
+    let Some(coverage) = payload_field(extra, "coverage")? else {
+        return Ok(None);
+    };
+    if !coverage.is_map() {
+        return Ok(None);
+    }
+    let Some(pointer) = payload_field(&coverage, "covered_through_id")? else {
+        return Ok(None);
+    };
+    Ok(pointer.as_str().and_then(pointer_text))
+}
+
+fn coverage_from_event_mapping(mapping: &EventMapping) -> Option<String> {
+    let extra = match mapping.get("extra_fields") {
+        Some(EventField::Mapping(extra)) => extra,
+        _ => return None,
+    };
+    let coverage = match extra.get("coverage") {
+        Some(EventField::Mapping(coverage)) => coverage,
+        _ => return None,
+    };
+    match coverage.get("covered_through_id") {
+        Some(EventField::Str(text)) => pointer_text(text),
+        _ => None,
+    }
+}
+
+fn payload_field(map: &Payload, key: &str) -> Result<Option<Payload>, CheckpointError> {
+    match map.map_string(key) {
+        MapLookup::Borrowed => Err(CheckpointError::BorrowedLookup),
+        MapLookup::Present(value) => Ok(Some(value)),
+        MapLookup::Absent | MapLookup::NotAMap => Ok(None),
+    }
+}
+
+fn pointer_text(text: &str) -> Option<String> {
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text.to_owned())
+    }
+}
+
+fn emit_divergence(record: &CheckpointDivergenceRecord) -> Result<Vec<Finding>, CheckpointError> {
+    let evidence = divergence_evidence(record)?;
+    let source = SourceRef::try_new(
+        &record.path,
+        record.line.map(SourceLine::Int),
+        record.record_id.as_deref(),
+    )?;
+    omitted_fingerprint(make_finding(&MakeFindingInput {
+        code: PyValue::string(record.code),
+        severity: PyValue::severity(record.severity),
+        repairability: PyValue::repairability(record.repairability),
+        message_template: PyValue::string(record.message_template),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: PyValue::None,
+        adapter_id: Some(record.adapter_id.clone()),
+        adapter_version: Some(record.adapter_version.clone()),
+        profile_id: Some(record.profile_id.clone()),
+        profile_version: Some(record.profile_version.clone()),
+        ordinal: None,
+        context: None,
+    }))
+}
+
+fn emit_continuation(record: &UnsafeContinuationRecord) -> Result<Vec<Finding>, CheckpointError> {
+    let evidence = continuation_evidence(record);
+    let source = SourceRef::try_new(
+        &record.path,
+        record.line.map(SourceLine::Int),
+        record.record_id.as_deref(),
+    )?;
+    omitted_fingerprint(make_finding(&MakeFindingInput {
+        code: PyValue::string(record.code),
+        severity: PyValue::severity(record.severity),
+        repairability: PyValue::repairability(record.repairability),
+        message_template: PyValue::string(record.message_template),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: PyValue::None,
+        adapter_id: Some(record.adapter_id.clone()),
+        adapter_version: Some(record.adapter_version.clone()),
+        profile_id: Some(record.profile_id.clone()),
+        profile_version: Some(record.profile_version.clone()),
+        ordinal: None,
+        context: None,
+    }))
+}
+
+fn omitted_fingerprint(
+    result: Result<Finding, FindingError>,
+) -> Result<Vec<Finding>, CheckpointError> {
+    match result {
+        Err(error) => Err(error.into()),
+        Ok(_finding) => Err(CheckpointError::Finding(FindingError::new(
+            FINGERPRINT_CODEC_UNAVAILABLE,
+        ))),
+    }
+}
+
+fn divergence_evidence(record: &CheckpointDivergenceRecord) -> Result<PyValue, CheckpointError> {
+    let keys = record.evidence_keys();
+    let mut entries = Vec::with_capacity(keys.len());
+    for key in keys {
+        entries.push((PyValue::string(key), divergence_value(record, key)?));
+    }
+    Ok(PyValue::map(entries))
+}
+
+fn divergence_value(
+    record: &CheckpointDivergenceRecord,
+    key: &str,
+) -> Result<PyValue, CheckpointError> {
+    match key {
+        "hash_a" => Ok(PyValue::string(record.hash_a.clone())),
+        "hash_b" => Ok(PyValue::string(record.hash_b.clone())),
+        "seq" => Ok(PyValue::int(record.seq)),
+        "source" => match &record.source {
+            Some(text) => Ok(PyValue::string(text.clone())),
+            None => Err(CheckpointError::PythonStr),
+        },
+        "run_state" => match &record.run_state {
+            Some(projection) => mapping_to_py(projection),
+            None => Err(CheckpointError::PythonStr),
+        },
+        _ => Err(CheckpointError::PythonStr),
+    }
+}
+
+fn continuation_evidence(record: &UnsafeContinuationRecord) -> PyValue {
+    let causes = record
+        .caused_by
+        .iter()
+        .cloned()
+        .map(PyValue::string)
+        .collect();
+    PyValue::map(vec![
+        (PyValue::string("caused_by"), PyValue::list(causes)),
+        (
+            PyValue::string("first_unsafe_index"),
+            PyValue::int(record.first_unsafe_index),
+        ),
+    ])
 }
 
 struct GapParts<'a> {
@@ -1629,17 +2458,19 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_checkpoint_findings, cap_finding_sort_key, check_checkpoint_gap,
-        checkpoint_gap_records, compute_checkpoint_fingerprint, extract_checkpoint_fields,
-        extract_run_state_checkpoints, extract_run_state_projection, get_event_id, get_event_kind,
-        resolve_source_coords, safe_id, source_record_id, CheckpointError, CheckpointItem,
+        cap_checkpoint_findings, cap_finding_sort_key, check_checkpoint_divergence,
+        check_checkpoint_gap, check_unsafe_continuation, checkpoint_divergence_records,
+        checkpoint_gap_records, compute_checkpoint_fingerprint, coverage_pointer,
+        extract_checkpoint_fields, extract_run_state_checkpoints, extract_run_state_projection,
+        get_event_id, get_event_kind, resolve_source_coords, safe_id, source_record_id,
+        unsafe_continuation_record, CheckpointError, CheckpointItem, Sl201Prior, Sl202Prior,
         KIND_CHECKPOINT, KIND_COMPACTION, KIND_RUN_START, MAX_CHECKPOINT_FINDINGS, MSG_OVERFLOW,
         MSG_SL201, MSG_SL202, MSG_SL203, MSG_SL205, PYTHON_INT_UNBOUNDED, TOOL_KINDS,
         VARIANT_OVERFLOW,
     };
     use crate::context::CheckContext;
     use model::canonical::{Payload, SessionEvent};
-    use model::codes::{Repairability, Severity, SL201};
+    use model::codes::{Repairability, Severity, SL201, SL202, SL203};
     use model::events::{
         EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_UNREPRESENTABLE,
@@ -2867,5 +3698,605 @@ mod tests {
         let err = check_checkpoint_gap(&events, None, None, None, None, None).unwrap_err();
         assert_eq!(err.to_string(), PYTHON_INT_UNBOUNDED);
         assert!(matches!(err, CheckpointError::PythonIntUnbounded));
+    }
+
+    fn checkpoint_id(id: EventField, seq: i64, hash: &str) -> EventValue {
+        EventValue::Mapping(EventMapping::new(vec![
+            ("kind".to_owned(), EventField::Str("checkpoint".to_owned())),
+            ("id".to_owned(), id),
+            ("seq".to_owned(), EventField::Int(seq)),
+            ("state_hash".to_owned(), EventField::Str(hash.to_owned())),
+        ]))
+    }
+
+    fn tool_mapping(id: &str, kind: &str) -> EventValue {
+        EventValue::Mapping(EventMapping::new(vec![
+            ("kind".to_owned(), EventField::Str(kind.to_owned())),
+            ("id".to_owned(), EventField::Str(id.to_owned())),
+        ]))
+    }
+
+    fn codex_rollout() -> CheckContext {
+        CheckContext::new("codex-rollout", "unknown", "unknown", "unknown", None, 2000)
+    }
+
+    fn claude_jsonl() -> CheckContext {
+        CheckContext::new(
+            "claude-code-jsonl",
+            "unknown",
+            "unknown",
+            "unknown",
+            None,
+            2000,
+        )
+    }
+
+    #[test]
+    fn divergence_of_empty_events_is_empty() {
+        let records = checkpoint_divergence_records(&[], None, None, None).unwrap();
+        assert!(records.is_empty());
+        let findings = check_checkpoint_divergence(&[], None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn divergence_of_empty_events_with_max_minus_one_is_the_codec_error() {
+        let err = check_checkpoint_divergence(&[], None, Some(-1), None, None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn same_seq_and_same_hash_emits_no_divergence() {
+        let events = [
+            checkpoint_session("evt-a-synth", 3, Some("same-hash-synth")),
+            checkpoint_session("evt-b-synth", 3, Some("same-hash-synth")),
+        ];
+        let records = checkpoint_divergence_records(&events, None, None, None).unwrap();
+        assert!(records.is_empty());
+        let findings = check_checkpoint_divergence(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn different_hashes_keep_the_first_full_hash_as_baseline() {
+        let hash_a = "0123456789abcdefEXTRA";
+        let hash_b = "fedcba9876543210EXTRA";
+        let hash_c = "abcdefabcdefabcdEXTRA";
+        let prefix_a = "0123456789abcdef";
+        let prefix_b = "fedcba9876543210";
+        let prefix_c = "abcdefabcdefabcd";
+        let pair = [
+            checkpoint_session("evt-a-synth", 9, Some(hash_a)),
+            checkpoint_session("evt-b-synth", 9, Some(hash_b)),
+        ];
+        let records = checkpoint_divergence_records(&pair, None, None, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].hash_a, prefix_a);
+        assert_eq!(records[0].hash_b, prefix_b);
+        assert_eq!(records[0].seq, 9);
+        assert!(records[0].source.is_none());
+        assert_eq!(records[0].code, SL202);
+        assert_eq!(records[0].severity, Severity::Error);
+        assert_eq!(records[0].repairability, Repairability::Manual);
+        assert_eq!(records[0].message_template, MSG_SL202);
+        assert_eq!(
+            records[0].evidence_keys(),
+            ["hash_a", "hash_b", "seq"].as_slice()
+        );
+        let err = check_checkpoint_divergence(&pair, None, None, None, None).unwrap_err();
+        assert_codec(err);
+
+        let repeated = [
+            checkpoint_session("evt-a-synth", 9, Some(hash_a)),
+            checkpoint_session("evt-b-synth", 9, Some(hash_b)),
+            checkpoint_session("evt-a2-synth", 9, Some(hash_a)),
+        ];
+        let records = checkpoint_divergence_records(&repeated, None, None, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].hash_a, prefix_a);
+        assert_eq!(records[0].hash_b, prefix_b);
+
+        let third = [
+            checkpoint_session("evt-a-synth", 9, Some(hash_a)),
+            checkpoint_session("evt-b-synth", 9, Some(hash_b)),
+            checkpoint_session("evt-c-synth", 9, Some(hash_c)),
+        ];
+        let records = checkpoint_divergence_records(&third, None, None, None).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].hash_a, prefix_a);
+        assert_eq!(records[0].hash_b, prefix_b);
+        assert_eq!(records[1].hash_a, prefix_a);
+        assert_eq!(records[1].hash_b, prefix_c);
+    }
+
+    #[test]
+    fn hash_shorter_than_16_characters_is_not_padded() {
+        let events = [
+            checkpoint_session("evt-a-synth", 5, Some("ab")),
+            checkpoint_session("evt-b-synth", 5, Some("cd")),
+        ];
+        let records = checkpoint_divergence_records(&events, None, None, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].hash_a, "ab");
+        assert_eq!(records[0].hash_b, "cd");
+    }
+
+    #[test]
+    fn null_seq_null_hash_and_bool_kind_are_skipped() {
+        let events = [
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Bool(true)),
+                (
+                    "id".to_owned(),
+                    EventField::Str("evt-bool-synth".to_owned()),
+                ),
+                ("seq".to_owned(), EventField::Int(2)),
+                ("state_hash".to_owned(), EventField::Str("cccc".to_owned())),
+            ])),
+            checkpoint_mapping("evt-null-seq-synth", None, Some("aaaa")),
+            checkpoint_mapping("evt-null-hash-synth", Some(2), None),
+            checkpoint_session("evt-one-synth", 2, Some("bbbb")),
+        ];
+        let records = checkpoint_divergence_records(&events, None, None, None).unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn event_id_bool_true_stringifies_and_missing_id_uses_the_index() {
+        let bool_id = [
+            checkpoint_session("evt-a-synth", 1, Some("aaaa")),
+            checkpoint_id(EventField::Bool(true), 1, "bbbb"),
+        ];
+        let records = checkpoint_divergence_records(&bool_id, None, None, None).unwrap();
+        assert_eq!(records[0].record_id.as_deref(), Some("True"));
+
+        let missing = [
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Str("checkpoint".to_owned())),
+                ("seq".to_owned(), EventField::Int(1)),
+                ("state_hash".to_owned(), EventField::Str("aaaa".to_owned())),
+            ])),
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Str("checkpoint".to_owned())),
+                ("seq".to_owned(), EventField::Int(1)),
+                ("state_hash".to_owned(), EventField::Str("bbbb".to_owned())),
+            ])),
+        ];
+        let records = checkpoint_divergence_records(&missing, None, None, None).unwrap();
+        assert_eq!(records[0].record_id.as_deref(), Some("<event:1>"));
+    }
+
+    #[test]
+    fn float_or_list_event_id_is_the_existing_typed_error() {
+        let float_id = [checkpoint_id(EventField::Float(1.5), 1, "ab")];
+        let err = checkpoint_divergence_records(&float_id, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonFloatStr));
+        let err = check_checkpoint_divergence(&float_id, None, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+
+        let list_id = [checkpoint_id(EventField::List(Vec::new()), 1, "ab")];
+        let err = checkpoint_divergence_records(&list_id, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonStr));
+    }
+
+    #[test]
+    fn run_state_divergence_uses_source_run_state_and_line_one() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-a-synth", "seq": 4, "hash": "aaaaaaaaaaaaaaaa1111"},
+                {"id": "rs-b-synth", "seq": 4, "hash": "bbbbbbbbbbbbbbbb2222"}
+            ]
+        }));
+        let records = checkpoint_divergence_records(&[], Some("a\\b"), Some(&ctx), None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].source.as_deref(), Some("run_state"));
+        assert_eq!(records[0].line, Some(1));
+        assert_eq!(records[0].path, "a\\b");
+        assert_eq!(records[0].record_id.as_deref(), Some("rs-b-synth"));
+        assert_eq!(records[0].hash_a, "aaaaaaaaaaaaaaaa");
+        assert_eq!(records[0].hash_b, "bbbbbbbbbbbbbbbb");
+        assert_eq!(records[0].seq, 4);
+        assert_eq!(
+            records[0].evidence_keys(),
+            ["hash_a", "hash_b", "seq", "source"].as_slice()
+        );
+        let err =
+            check_checkpoint_divergence(&[], Some("a\\b"), None, Some(&ctx), None).unwrap_err();
+        assert_codec(err);
+
+        let empty = EventMapping::new(Vec::new());
+        let events = [
+            checkpoint_session("evt-same-synth", 4, Some("aaaaaaaaaaaaaaaa1111")),
+            checkpoint_session("evt-diff-synth", 4, Some("bbbbbbbbbbbbbbbb2222")),
+        ];
+        let continued = ctx_meta(json!({
+            "checkpoints": [{"id": "rs-a-synth", "seq": 4, "hash": "aaaaaaaaaaaaaaaa1111"}]
+        }));
+        let records =
+            checkpoint_divergence_records(&events, None, Some(&continued), Some(&empty)).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].hash_a, "aaaaaaaaaaaaaaaa");
+        assert_eq!(records[0].hash_b, "bbbbbbbbbbbbbbbb");
+        assert!(records[0].source.is_none());
+        assert_eq!(records[0].record_id.as_deref(), Some("evt-diff-synth"));
+        assert_eq!(records[0].run_state.as_ref(), Some(&empty));
+        assert_eq!(
+            records[0].evidence_keys(),
+            ["hash_a", "hash_b", "seq", "run_state"].as_slice()
+        );
+    }
+
+    #[test]
+    fn codex_rollout_unsafe_continuation_is_empty_before_events() {
+        let events = [
+            EventValue::Mapping(EventMapping::new(vec![(
+                "kind".to_owned(),
+                EventField::Float(1.5),
+            )])),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let ctx = codex_rollout();
+        let record = unsafe_continuation_record(&events, None, None, None, Some(&ctx)).unwrap();
+        assert!(record.is_none());
+        let findings = check_unsafe_continuation(&events, None, None, None, Some(&ctx)).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn compaction_without_a_later_checkpoint_emits_sl203() {
+        let events = [
+            kinded("evt-compact-synth", "compaction_boundary"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.caused_by, ["compaction"]);
+        assert_eq!(record.first_unsafe_index, 1);
+        assert_eq!(record.code, SL203);
+        assert_eq!(record.severity, Severity::Error);
+        assert_eq!(record.repairability, Repairability::Manual);
+        assert_eq!(record.message_template, MSG_SL203);
+        assert_eq!(
+            record.evidence_keys(),
+            ["caused_by", "first_unsafe_index"].as_slice()
+        );
+        let err = check_unsafe_continuation(&events, None, None, None, None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn checkpoint_after_compaction_with_no_tool_between_emits_nothing() {
+        let events = [
+            kinded("evt-compact-synth", "compaction_boundary"),
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Bool(true)),
+                (
+                    "id".to_owned(),
+                    EventField::Str("evt-bool-synth".to_owned()),
+                ),
+            ])),
+            checkpoint_session("evt-chk-synth", 0, Some("ab")),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None).unwrap();
+        assert!(record.is_none());
+        let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn tool_between_compaction_and_the_next_checkpoint_emits_compaction() {
+        let events = [
+            kinded("evt-compact-synth", "compaction_boundary"),
+            tool_mapping("evt-tool-synth", "tool_use"),
+            checkpoint_session("evt-chk-synth", 0, Some("ab")),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.caused_by, ["compaction"]);
+        assert_eq!(record.first_unsafe_index, 1);
+        assert_eq!(record.record_id.as_deref(), Some("evt-tool-synth"));
+        let err = check_unsafe_continuation(&events, None, None, None, None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn claude_code_jsonl_drops_compaction_and_keeps_sl201() {
+        let compact = [
+            kinded("evt-compact-synth", "compaction_boundary"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let ctx = claude_jsonl();
+        let record = unsafe_continuation_record(&compact, None, None, None, Some(&ctx)).unwrap();
+        assert!(record.is_none());
+        let findings = check_unsafe_continuation(&compact, None, None, None, Some(&ctx)).unwrap();
+        assert!(findings.is_empty());
+
+        let kept = [
+            kinded("evt-run-synth", "run_start"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&kept, None, None, None, Some(&ctx))
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.caused_by, ["SL201"]);
+    }
+
+    #[test]
+    fn omitted_sl201_run_start_gap_emits_before_make_finding() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.caused_by, ["SL201"]);
+        assert_eq!(record.first_unsafe_index, 1);
+        assert_eq!(record.code, SL203);
+        let err = check_unsafe_continuation(&events, None, None, None, None).unwrap_err();
+        assert_codec(err);
+    }
+
+    #[test]
+    fn run_state_sl201_trigger_uses_index_minus_one() {
+        let ctx = ctx_meta(json!({
+            "checkpoints": [{"id": "rs-open-synth", "seq": 1, "hash": ""}]
+        }));
+        let events = [kinded("evt-tool-synth", "tool_call")];
+        let record = unsafe_continuation_record(&events, None, None, None, Some(&ctx))
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.first_unsafe_index, 0);
+        assert_eq!(record.caused_by, ["SL201"]);
+    }
+
+    #[test]
+    fn caused_by_orders_sl201_before_compaction() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            kinded("evt-compact-synth", "compaction_boundary"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.caused_by, ["SL201", "compaction"]);
+        assert_eq!(record.first_unsafe_index, 2);
+    }
+
+    #[test]
+    fn caused_by_orders_sl201_sl202_then_compaction() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            checkpoint_session("evt-a-synth", 1, Some("aaaa")),
+            checkpoint_session("evt-b-synth", 1, Some("bbbb")),
+            kinded("evt-compact-synth", "compaction_boundary"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.caused_by, ["SL201", "SL202", "compaction"]);
+        assert_eq!(record.first_unsafe_index, 4);
+    }
+
+    #[test]
+    fn provided_priors_are_not_recomputed() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(
+            &events,
+            None,
+            Some(Sl201Prior::Records(&[])),
+            Some(Sl202Prior::Records(&[])),
+            None,
+        )
+        .unwrap();
+        assert!(record.is_none());
+
+        let ctx = ctx_meta(json!({
+            "checkpoints": [
+                {"id": "rs-a-synth", "seq": 1, "hash": "aaaaaaaaaaaaaaaa"},
+                {"id": "rs-b-synth", "seq": 1, "hash": "bbbbbbbbbbbbbbbb"}
+            ]
+        }));
+        let priors = checkpoint_divergence_records(&[], None, Some(&ctx), None).unwrap();
+        assert_eq!(priors[0].source.as_deref(), Some("run_state"));
+        let events = [kinded("evt-tool-synth", "tool_call")];
+        let record = unsafe_continuation_record(
+            &events,
+            None,
+            Some(Sl201Prior::Records(&[])),
+            Some(Sl202Prior::Records(&priors)),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(record.first_unsafe_index, 0);
+        assert_eq!(record.caused_by, ["SL202"]);
+    }
+
+    #[test]
+    fn finding_priors_treat_run_state_as_minus_one_and_bool_as_not_an_int() {
+        let run_state = finding(
+            SL201,
+            Some("evt-prior-synth"),
+            "aaaaaaaaaaaaaaaa",
+            PyValue::map(vec![
+                (PyValue::string("source"), PyValue::string("run_state")),
+                (PyValue::string("at_index"), PyValue::int(5)),
+            ]),
+        );
+        let events = [kinded("evt-tool-synth", "tool_call")];
+        let priors = [run_state];
+        let record = unsafe_continuation_record(
+            &events,
+            None,
+            Some(Sl201Prior::Findings(&priors)),
+            Some(Sl202Prior::Records(&[])),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(record.first_unsafe_index, 0);
+        assert_eq!(record.caused_by, ["SL201"]);
+
+        let bool_index = finding(
+            SL201,
+            Some("evt-prior-synth"),
+            "aaaaaaaaaaaaaaaa",
+            PyValue::map(vec![(
+                PyValue::string("at_index"),
+                PyValue::bool_value(true),
+            )]),
+        );
+        let events = [
+            kinded("evt-other-synth", "message"),
+            kinded("evt-other-2-synth", "message"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let priors = [bool_index];
+        let record = unsafe_continuation_record(
+            &events,
+            None,
+            Some(Sl201Prior::Findings(&priors)),
+            Some(Sl202Prior::Records(&[])),
+            None,
+        )
+        .unwrap();
+        assert!(record.is_none());
+    }
+
+    #[test]
+    fn bool_true_kind_is_not_an_unsafe_tool() {
+        let events = [
+            kinded("evt-compact-synth", "compaction_boundary"),
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Bool(true)),
+                (
+                    "id".to_owned(),
+                    EventField::Str("evt-bool-synth".to_owned()),
+                ),
+            ])),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let record = unsafe_continuation_record(&events, None, None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.first_unsafe_index, 2);
+        assert_eq!(record.record_id.as_deref(), Some("evt-tool-synth"));
+        assert_eq!(record.caused_by, ["compaction"]);
+    }
+
+    #[test]
+    fn float_kind_between_compaction_and_checkpoint_is_typed() {
+        let events = [
+            kinded("evt-compact-synth", "compaction_boundary"),
+            EventValue::Mapping(EventMapping::new(vec![
+                ("kind".to_owned(), EventField::Float(1.5)),
+                (
+                    "id".to_owned(),
+                    EventField::Str("evt-float-synth".to_owned()),
+                ),
+            ])),
+            checkpoint_session("evt-chk-synth", 0, Some("ab")),
+        ];
+        let err = unsafe_continuation_record(&events, None, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonFloatStr));
+    }
+
+    #[test]
+    fn coverage_pointer_keeps_spaces_and_rejects_blank_or_non_string() {
+        let mut event = session("evt-cov-synth");
+        event.extra_fields = Payload::map(vec![(
+            Payload::string("coverage"),
+            Payload::map(vec![(
+                Payload::string("covered_through_id"),
+                Payload::string("  id-synth  "),
+            )]),
+        )]);
+        let kept = coverage_pointer(&EventValue::from_session(event)).unwrap();
+        assert_eq!(kept.as_deref(), Some("  id-synth  "));
+
+        let mut blank = session("evt-blank-synth");
+        blank.extra_fields = Payload::map(vec![(
+            Payload::string("coverage"),
+            Payload::map(vec![(
+                Payload::string("covered_through_id"),
+                Payload::string("   "),
+            )]),
+        )]);
+        assert_eq!(
+            coverage_pointer(&EventValue::from_session(blank)).unwrap(),
+            None
+        );
+
+        let mut tabbed = session("evt-tab-synth");
+        tabbed.extra_fields = Payload::map(vec![(
+            Payload::string("coverage"),
+            Payload::map(vec![(
+                Payload::string("covered_through_id"),
+                Payload::string("\t"),
+            )]),
+        )]);
+        assert_eq!(
+            coverage_pointer(&EventValue::from_session(tabbed)).unwrap(),
+            None
+        );
+
+        let mut number = session("evt-num-synth");
+        number.extra_fields = Payload::map(vec![(
+            Payload::string("coverage"),
+            Payload::map(vec![(
+                Payload::string("covered_through_id"),
+                Payload::int(7),
+            )]),
+        )]);
+        assert_eq!(
+            coverage_pointer(&EventValue::from_session(number)).unwrap(),
+            None
+        );
+
+        let mut text = session("evt-text-synth");
+        text.extra_fields = Payload::string("nope");
+        assert_eq!(
+            coverage_pointer(&EventValue::from_session(text)).unwrap(),
+            None
+        );
+
+        let mapping = EventValue::Mapping(EventMapping::new(vec![(
+            "extra_fields".to_owned(),
+            EventField::Mapping(EventMapping::new(vec![(
+                "coverage".to_owned(),
+                EventField::Mapping(EventMapping::new(vec![(
+                    "covered_through_id".to_owned(),
+                    EventField::Str("  id-synth  ".to_owned()),
+                )])),
+            )])),
+        )]));
+        assert_eq!(
+            coverage_pointer(&mapping).unwrap().as_deref(),
+            Some("  id-synth  ")
+        );
+
+        let non_string = EventValue::Mapping(EventMapping::new(vec![(
+            "extra_fields".to_owned(),
+            EventField::Mapping(EventMapping::new(vec![(
+                "coverage".to_owned(),
+                EventField::Mapping(EventMapping::new(vec![(
+                    "covered_through_id".to_owned(),
+                    EventField::Bool(true),
+                )])),
+            )])),
+        )]));
+        assert_eq!(coverage_pointer(&non_string).unwrap(), None);
     }
 }
