@@ -8,7 +8,7 @@ pub use error::ScanError;
 
 pub mod atomic {}
 pub mod cache {}
-pub mod discovery {}
+pub mod discovery;
 pub mod io {}
 pub mod state_db {}
 pub mod scan {}
