@@ -1,0 +1,19 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.identity",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_identity_rs_sha256": "9483d3285a2e5409125653814c1b81ea7c4cdf491dc62ee6b896ab11e04e8ccc",
+  "vector_count": 10,
+  "vectors_sha256": "d0acbc08f17ad758e2a3dc451404e0e2f3541d32324f6fcb415f5fcb1aff8746",
+  "generator": "rust/parity/vectors/checks.identity/generate",
+  "known_parity_gaps": [
+    "A duplicate SessionEvent calls to_canonical_dict and Rust returns NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
+    "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. Do not build the provenance dict and do not hash.",
+    "Overflow cap_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python appends an overflow finding.",
+    "diff_field_names of two events returns NORMALIZE_CANONICAL_UNAVAILABLE. Python returns field names. Do not invent names.",
+    "A float id is PYTHON_FLOAT_STR_UNREPRESENTABLE. Rust Display is not Python str.",
+    "A list or mapping id is PYTHON_STR_UNREPRESENTABLE. No Python repr.",
+    "A bool is not an int. True becomes the text True only as an id coercion.",
+    "EvidenceLookup::Borrowed is a failed borrow, not a missing key."
+  ]
+}

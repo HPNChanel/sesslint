@@ -1,0 +1,17 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.identity parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.identity/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "A duplicate SessionEvent calls to_canonical_dict and Rust returns NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
+    "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. Do not build the provenance dict and do not hash.",
+    "Overflow cap_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python appends an overflow finding.",
+    "diff_field_names of two events returns NORMALIZE_CANONICAL_UNAVAILABLE. Python returns field names. Do not invent names.",
+    "A float id is PYTHON_FLOAT_STR_UNREPRESENTABLE. Rust Display is not Python str.",
+    "A list or mapping id is PYTHON_STR_UNREPRESENTABLE. No Python repr.",
+    "A bool is not an int. True becomes the text True only as an id coercion.",
+    "EvidenceLookup::Borrowed is a failed borrow, not a missing key."
+  ]
+}
