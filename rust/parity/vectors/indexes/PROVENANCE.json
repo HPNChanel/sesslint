@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic index reader parity vectors for sesslint.indexes membership snapshots.",
+  "generator": "rust/parity/vectors/indexes/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

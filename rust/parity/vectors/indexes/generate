@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""Generate sesslint.indexes parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_indexes_module():
+    root = repo_root()
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.indexes as indexes  # noqa: WPS433
+
+    return indexes
+
+
+def indexes_py_sha256() -> str:
+    path = repo_root() / "src" / "sesslint" / "indexes.py"
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def snapshot_expected(snap: Any) -> dict[str, Any]:
+    return {
+        "format": snap.format,
+        "entry_ids": sorted(snap.entry_ids),
+        "entry_paths": sorted(snap.entry_paths),
+        "normalized_ids": sorted(snap.normalized_ids),
+        "entry_count": snap.entry_count,
+        "parse_ok": snap.parse_ok,
+        "truncated": snap.truncated,
+        "schema_note": snap.schema_note,
+        "membership_complete": snap.membership_complete,
+    }
+
+
+def claude_entry(session_id: str, **extra: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "sessionId": session_id,
+        "fullPath": f"synthetic/{session_id}.jsonl",
+        "messageCount": 1,
+        "summary": "synthetic",
+        "title": "content-must-drop",
+        "preview": "content-must-drop",
+        "prompt": "content-must-drop",
+    }
+    row.update(extra)
+    return row
+
+
+def write_claude_index(dirpath: Path, entries: list[dict[str, object]]) -> Path:
+    doc = {
+        "version": 1,
+        "originalPath": "synthetic/proj",
+        "entries": entries,
+    }
+    path = dirpath / "sessions-index.json"
+    path.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
+    return path
+
+
+def write_codex_index(dirpath: Path, lines: list[str]) -> Path:
+    path = dirpath / "session_index.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def setup_oversized_claude(root: Path) -> Path:
+    path = root / "sessions-index.json"
+    path.write_bytes(b'{"entries": [' + b" " * (17 * 1024 * 1024))
+    return path
+
+
+def setup_symlink_claude(root: Path) -> Path:
+    real_dir = root / "real"
+    real_dir.mkdir(parents=True, exist_ok=True)
+    real = write_claude_index(real_dir, [claude_entry("sym-aaa")])
+    link = root / "sessions-index.json"
+    link.symlink_to(real)
+    return link
+
+
+SetupFn = Callable[[Path], Path]
+
+SETUPS: dict[str, SetupFn] = {
+    "oversized_claude": setup_oversized_claude,
+    "symlink_claude": setup_symlink_claude,
+}
+
+
+def vector_specs(fixtures_dir: Path) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], runner: Callable[[], Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct, "_runner": runner})
+
+    def read_fixture(fixture: str, target: str) -> Any:
+        indexes = load_indexes_module()
+        path = fixtures_dir / fixture / target
+        return indexes.read_index(path)
+
+    add(
+        "claude_wellformed_membership",
+        {"type": "read_index", "fixture": "claude_wellformed", "target": "sessions-index.json"},
+        lambda: read_fixture("claude_wellformed", "sessions-index.json"),
+    )
+    add(
+        "codex_jsonl_ids_only",
+        {"type": "read_index", "fixture": "codex_wellformed", "target": "session_index.jsonl"},
+        lambda: read_fixture("codex_wellformed", "session_index.jsonl"),
+    )
+    add(
+        "claude_truncated_salvages_prefix",
+        {"type": "read_index", "fixture": "claude_truncated", "target": "sessions-index.json"},
+        lambda: read_fixture("claude_truncated", "sessions-index.json"),
+    )
+    add(
+        "codex_jsonl_malformed_mid_line",
+        {"type": "read_index", "fixture": "codex_malformed_mid", "target": "session_index.jsonl"},
+        lambda: read_fixture("codex_malformed_mid", "session_index.jsonl"),
+    )
+
+    def run_setup(name: str) -> Any:
+        indexes = load_indexes_module()
+        with tempfile.TemporaryDirectory(prefix="sesslint-indexes-par-") as tmp:
+            path = SETUPS[name](Path(tmp))
+            return indexes.read_index(path)
+
+    add(
+        "read_index_oversized_refused",
+        {"type": "read_index", "setup": "oversized_claude"},
+        lambda: run_setup("oversized_claude"),
+    )
+
+    def run_symlink() -> Any:
+        indexes = load_indexes_module()
+        with tempfile.TemporaryDirectory(prefix="sesslint-indexes-par-") as tmp:
+            root = Path(tmp)
+            try:
+                path = setup_symlink_claude(root)
+            except OSError as exc:
+                raise RuntimeError(f"symlink setup failed: {exc}") from exc
+            return indexes.read_index(path)
+
+    add(
+        "read_index_symlink_not_followed",
+        {"type": "read_index", "setup": "symlink_claude"},
+        run_symlink,
+    )
+
+    def run_all() -> list[str]:
+        indexes = load_indexes_module()
+        return list(indexes.__all__)
+
+    add(
+        "public_all_export_order",
+        {"type": "module_all"},
+        run_all,
+    )
+
+    return specs
+
+
+def write_fixtures(fixtures_dir: Path) -> None:
+    fixtures_dir.mkdir(parents=True, exist_ok=True)
+
+    claude_dir = fixtures_dir / "claude_wellformed"
+    claude_dir.mkdir(exist_ok=True)
+    write_claude_index(
+        claude_dir,
+        [
+            claude_entry("sid-aaa"),
+            claude_entry("sid-bbb"),
+            claude_entry("sid-ccc"),
+        ],
+    )
+
+    codex_dir = fixtures_dir / "codex_wellformed"
+    codex_dir.mkdir(exist_ok=True)
+    write_codex_index(
+        codex_dir,
+        [
+            '{"id": "codex-u-a", "thread_name": "secret-title", "updated_at": "t", "preview": "drop"}',
+            '{"id": "codex-u-b", "thread_name": "x", "updated_at": "t"}',
+            '{"id": "codex-u-a", "thread_name": "y", "updated_at": "t2"}',
+        ],
+    )
+
+    trunc_dir = fixtures_dir / "claude_truncated"
+    trunc_dir.mkdir(exist_ok=True)
+    (trunc_dir / "sessions-index.json").write_text(
+        '{"version": 1, "originalPath": "synthetic/proj", "entries": ['
+        '{"sessionId": "trunc-a", "fullPath": "synthetic/trunc-a.jsonl"}, '
+        '{"sessionId": "trunc-b", "fullPath": "synthetic/trunc-b.jsonl"}, '
+        '{"sessionId": "tr',
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    mid_dir = fixtures_dir / "codex_malformed_mid"
+    mid_dir.mkdir(exist_ok=True)
+    write_codex_index(
+        mid_dir,
+        [
+            '{"id": "mid-u-a"}',
+            "not-json{{{",
+            '{"id": "mid-u-b"}',
+        ],
+    )
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    fixtures_dir = out_dir / "fixtures"
+    write_fixtures(fixtures_dir)
+
+    specs = vector_specs(fixtures_dir)
+    vectors: list[dict[str, Any]] = []
+    for spec in specs:
+        runner = spec.pop("_runner")
+        result = runner()
+        if spec["construct"]["type"] == "module_all":
+            expected = {"all": result}
+        else:
+            expected = snapshot_expected(result)
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.indexes",
+        "python_commit": PYTHON_COMMIT,
+        "indexes_py_sha256": indexes_py_sha256(),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.indexes",
+        "python_commit": PYTHON_COMMIT,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/indexes/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic index reader parity vectors for sesslint.indexes membership snapshots.",
+        "generator": "rust/parity/vectors/indexes/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
