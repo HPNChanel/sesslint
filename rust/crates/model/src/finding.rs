@@ -1,8 +1,10 @@
 //! Content-free text checks, [`SourceRef`], the evidence walker, and [`Finding`].
 //!
-//! Port of `src/sesslint/finding.py` lines 1–657
+//! Port of `src/sesslint/finding.py` lines 1–939
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Lines 429–657 build the fingerprint preimage and stop before `make_finding`.
+//! Lines 429–657 build the fingerprint preimage and stop before hashing.
+//! Lines 660–939 are [`make_finding`], [`parse_finding_dict`], and the schema
+//! loaders. Schema IO is refused because `sesslint._resources` is not ported.
 //! This crate does not call `canonical_json_bytes` and does not hash.
 //!
 //! Finding envelope, severity/repairability taxonomies, fingerprinting, and
@@ -12,7 +14,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
 
-use crate::codes::{is_valid_code, Repairability, Severity, ALL_CODES};
+use crate::codes::{get_code_info, is_valid_code, Repairability, Severity, ALL_CODES};
 use crate::errors::FindingError;
 
 /// Python: `SCHEMA_VERSION` (`SchemaVersionLiteral`).
@@ -3538,6 +3540,875 @@ pub fn fingerprint_finding(
     ))
 }
 
+/// `Severity.from_str` and `Repairability.from_str` raise `ValueError`.
+///
+/// [`make_finding`] and [`parse_finding_dict`] return [`FindingError`] whose
+/// text is that `Unknown severity` / `Unknown repairability` Display. They do
+/// not panic.
+pub const MAKE_FINDING_ENUM_ERROR: &str = "Severity.from_str and Repairability.from_str raise ValueError. make_finding and parse_finding_dict return FindingError with the Unknown severity / Unknown repairability Display and do not panic";
+
+/// String line arguments accept ASCII `0-9` only.
+///
+/// Python `str.isdigit` accepts Unicode decimal digits (Nd), including U+0661.
+/// Those strings are rejected here and are not parsed as numbers.
+pub const TEMPLATE_LINE_UNICODE_DIGIT_GAP: &str = "template_args['line'] accepts ASCII digits only. Python str.isdigit accepts Unicode Nd digits such as U+0661; those are rejected and are not treated as digits";
+
+/// `sesslint._resources.schema_path` is not ported. Schema helpers return this
+/// text and do not read `schemas/`.
+pub const SCHEMA_RESOURCE_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
+/// Arguments for [`make_finding`]. Wrong Python types stay representable.
+///
+/// `severity` and `repairability` use [`PyValue::None`] for the code default.
+/// `template_args` and `fingerprint` use [`PyValue::None`] for “omitted”.
+/// `context` is a [`FingerprintContext`], passed only when the fingerprint is
+/// omitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MakeFindingInput {
+    pub code: PyValue,
+    pub severity: PyValue,
+    pub repairability: PyValue,
+    pub message_template: PyValue,
+    pub template_args: PyValue,
+    pub source: PyValue,
+    pub related_ids: PyValue,
+    pub evidence: PyValue,
+    pub fingerprint: PyValue,
+    pub adapter_id: Option<String>,
+    pub adapter_version: Option<String>,
+    pub profile_id: Option<String>,
+    pub profile_version: Option<String>,
+    pub ordinal: Option<i64>,
+    pub context: Option<FingerprintContext>,
+}
+
+struct TemplateField {
+    name: String,
+    format_spec: String,
+    conversion: Option<char>,
+}
+
+struct TemplatePiece {
+    literal: String,
+    field: Option<TemplateField>,
+}
+
+/// Construct, validate, and fingerprint a finding (Python `make_finding`).
+///
+/// An omitted fingerprint calls [`compute_finding_fingerprint`] and returns
+/// [`FINGERPRINT_CODEC_UNAVAILABLE`]. A supplied 16-hex fingerprint is stored
+/// as given. See [`MAKE_FINDING_ENUM_ERROR`] and
+/// [`TEMPLATE_LINE_UNICODE_DIGIT_GAP`].
+pub fn make_finding(input: &MakeFindingInput) -> Result<Finding, FindingError> {
+    let code = match &input.code {
+        PyValue::Str(text) if is_valid_code(text) => text.clone(),
+        other => {
+            return Err(FindingError::new(format!(
+                "Unknown finding code: {}. Must be one of {}",
+                python_repr(other),
+                registered_codes_repr()
+            )));
+        }
+    };
+    let code_info = get_code_info(&code)?;
+    let severity = resolve_severity(&input.severity, code_info.default_severity)?;
+    let repairability =
+        resolve_repairability(&input.repairability, code_info.default_repairability)?;
+
+    let source = match &input.source {
+        PyValue::Source(source) => source.clone(),
+        other => {
+            return Err(FindingError::new(format!(
+                "source must be a SourceRef instance, got {}",
+                python_type_name(other)
+            )));
+        }
+    };
+
+    let template = match &input.message_template {
+        PyValue::Str(text) if !python_strip(text).is_empty() => text.clone(),
+        _ => {
+            return Err(FindingError::new(
+                "message_template must be a non-empty string".to_owned(),
+            ));
+        }
+    };
+    enforce_content_free_text(&template, "message_template")?;
+    let pieces = parse_message_template(&template).map_err(|err| {
+        FindingError::new(format!(
+            "Malformed message template {}: {err}",
+            python_str_repr(&template)
+        ))
+    })?;
+    validate_placeholders(&pieces)?;
+    let template_args = normalize_template_args(&input.template_args)?;
+    let rendered = truncate_message(render_template(&pieces, &template_args, &source));
+    enforce_content_free_text(&rendered, "rendered_message")?;
+    let related = normalize_make_related_ids(&input.related_ids)?;
+
+    let fingerprint = match &input.fingerprint {
+        PyValue::None => {
+            let prepared = match &input.evidence {
+                PyValue::Map(_) => Some(py_to_evidence(&input.evidence)),
+                _ => None,
+            };
+            return Err(compute_finding_fingerprint(
+                &code,
+                &source,
+                input.adapter_id.as_deref(),
+                input.adapter_version.as_deref(),
+                input.profile_id.as_deref(),
+                input.profile_version.as_deref(),
+                input.ordinal,
+                prepared.as_ref(),
+                severity,
+                repairability,
+                Some(template.as_str()),
+                &related,
+                input.context.as_ref(),
+            ));
+        }
+        PyValue::Str(text) if is_lower_hex_fingerprint(text) => text.clone(),
+        other => {
+            let mut message = FINGERPRINT_ERROR_PREFIX.to_owned();
+            message.push_str(&python_repr(other));
+            return Err(FindingError::new(message));
+        }
+    };
+
+    Finding::try_new(FindingInput {
+        code: PyValue::string(code),
+        severity: PyValue::severity(severity),
+        repairability: PyValue::repairability(repairability),
+        message: PyValue::string(rendered),
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(related.into_iter().map(PyValue::string).collect()),
+        fingerprint: PyValue::string(fingerprint),
+        schema_version: PyValue::string(SCHEMA_VERSION),
+        message_template: PyValue::string(template),
+        evidence: input.evidence.clone(),
+    })
+}
+
+/// Parse a finding mapping (Python `parse_finding_dict`).
+///
+/// [`Finding::try_new`] runs afterwards and repeats the content-free checks.
+pub fn parse_finding_dict(obj: &PyValue) -> Result<Finding, FindingError> {
+    let entries = match obj {
+        PyValue::Map(entries) => entries.as_slice(),
+        other => {
+            return Err(FindingError::new(format!(
+                "Finding object must be a mapping, got {}",
+                python_type_name(other)
+            )));
+        }
+    };
+
+    match py_map_get(entries, "schema_version") {
+        Some(PyValue::Str(text)) if text == SCHEMA_VERSION => {}
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Unsupported finding schema_version {}, expected '{SCHEMA_VERSION}'",
+                python_repr(other)
+            )));
+        }
+        None => {
+            return Err(FindingError::new(format!(
+                "Unsupported finding schema_version {}, expected '{SCHEMA_VERSION}'",
+                python_repr(&PyValue::None)
+            )));
+        }
+    }
+
+    let code = match py_map_get(entries, "code") {
+        Some(PyValue::Str(text)) if is_valid_code(text) => text.clone(),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Invalid finding code in dictionary: {}",
+                python_repr(other)
+            )));
+        }
+        None => {
+            return Err(FindingError::new(format!(
+                "Invalid finding code in dictionary: {}",
+                python_repr(&PyValue::None)
+            )));
+        }
+    };
+
+    let severity = match py_map_get(entries, "severity") {
+        Some(PyValue::Str(text)) => {
+            Severity::parse(text).map_err(|err| FindingError::new(err.to_string()))?
+        }
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string severity in finding dictionary: {}",
+                python_repr(other)
+            )));
+        }
+        None => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string severity in finding dictionary: {}",
+                python_repr(&PyValue::None)
+            )));
+        }
+    };
+    let repairability = match py_map_get(entries, "repairability") {
+        Some(PyValue::Str(text)) => {
+            Repairability::parse(text).map_err(|err| FindingError::new(err.to_string()))?
+        }
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string repairability in finding dictionary: {}",
+                python_repr(other)
+            )));
+        }
+        None => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string repairability in finding dictionary: {}",
+                python_repr(&PyValue::None)
+            )));
+        }
+    };
+
+    let message = if py_map_has(entries, "message") {
+        match py_map_get(entries, "message") {
+            Some(value) => value.clone(),
+            None => PyValue::None,
+        }
+    } else if let Some(PyValue::Str(text)) = py_map_get(entries, "remediation") {
+        PyValue::string(text.clone())
+    } else {
+        return Err(FindingError::new(
+            "Missing required field 'message' in finding dictionary".to_owned(),
+        ));
+    };
+    let message = match message {
+        PyValue::Str(text) if !python_strip(&text).is_empty() => text,
+        other => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string message in finding dictionary: {}",
+                python_repr(&other)
+            )));
+        }
+    };
+    let length = message.chars().count();
+    if length > max_message_chars() {
+        return Err(FindingError::new(format!(
+            "Finding message in dictionary exceeds {MAX_MESSAGE_LENGTH} characters: {length}"
+        )));
+    }
+
+    let raw_source = match py_map_get(entries, "source") {
+        Some(PyValue::None) | None => match py_map_get(entries, "span") {
+            Some(span) => span.clone(),
+            None => PyValue::None,
+        },
+        Some(value) => value.clone(),
+    };
+    let source = match &raw_source {
+        PyValue::Map(map) => source_from_py_map(map)?,
+        other => {
+            return Err(FindingError::new(format!(
+                "Missing or invalid source in finding dictionary: {}",
+                python_repr(other)
+            )));
+        }
+    };
+
+    let related_ids = match py_map_get(entries, "related_ids") {
+        None => Vec::new(),
+        Some(PyValue::List(items) | PyValue::Tuple(items)) => {
+            let mut stripped = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    PyValue::Str(text) if !python_strip(text).is_empty() => {
+                        stripped.push(python_strip(text).to_owned());
+                    }
+                    other => {
+                        return Err(FindingError::new(format!(
+                            "related_ids elements must be non-empty strings, got {}",
+                            python_repr(other)
+                        )));
+                    }
+                }
+            }
+            stripped
+        }
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "related_ids must be a list or tuple, got {}",
+                python_type_name(other)
+            )));
+        }
+    };
+
+    let fingerprint = match py_map_get(entries, "fingerprint") {
+        Some(PyValue::Str(text)) if is_lower_hex_fingerprint(text) => text.clone(),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Missing or invalid fingerprint in finding dictionary: {}",
+                python_repr(other)
+            )));
+        }
+        None => {
+            return Err(FindingError::new(format!(
+                "Missing or invalid fingerprint in finding dictionary: {}",
+                python_repr(&PyValue::None)
+            )));
+        }
+    };
+
+    let message_template = match py_map_get(entries, "message_template") {
+        None | Some(PyValue::None) => PyValue::None,
+        Some(PyValue::Str(text)) if !python_strip(text).is_empty() => PyValue::string(text.clone()),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "message_template must be a non-empty string or None, got {}",
+                python_type_name(other)
+            )));
+        }
+    };
+
+    let evidence = match py_map_get(entries, "evidence") {
+        None | Some(PyValue::None) => PyValue::None,
+        Some(value @ PyValue::Map(_)) => value.clone(),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Finding.evidence must be a mapping or None, got {}",
+                python_type_name(other)
+            )));
+        }
+    };
+
+    Finding::try_new(FindingInput {
+        code: PyValue::string(code),
+        severity: PyValue::severity(severity),
+        repairability: PyValue::repairability(repairability),
+        message: PyValue::string(message),
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(related_ids.into_iter().map(PyValue::string).collect()),
+        fingerprint: PyValue::string(fingerprint),
+        schema_version: PyValue::string(SCHEMA_VERSION),
+        message_template,
+        evidence,
+    })
+}
+
+/// Python `get_finding_schema_path` imports `sesslint._resources.schema_path`.
+///
+/// That module is not ported. This does not read `schemas/` and does not
+/// invent a filesystem path.
+#[must_use]
+pub fn get_finding_schema_path() -> FindingError {
+    FindingError::new(SCHEMA_RESOURCE_UNAVAILABLE)
+}
+
+/// Python `load_finding_schema` reads the JSON schema from disk.
+///
+/// The resource loader is not ported, so this returns the same error as
+/// [`get_finding_schema_path`] and does not parse JSON.
+#[must_use]
+pub fn load_finding_schema() -> FindingError {
+    FindingError::new(SCHEMA_RESOURCE_UNAVAILABLE)
+}
+
+fn resolve_severity(value: &PyValue, default: Severity) -> Result<Severity, FindingError> {
+    match value {
+        PyValue::None => Ok(default),
+        PyValue::Severity(severity) => {
+            Severity::parse(severity.as_str()).map_err(|err| FindingError::new(err.to_string()))
+        }
+        PyValue::Str(text) => {
+            Severity::parse(text).map_err(|err| FindingError::new(err.to_string()))
+        }
+        other => Err(FindingError::new(format!(
+            "Unknown severity {}, expected one of {}",
+            python_repr(other),
+            enum_values_repr(&Severity::ALL.map(Severity::as_str))
+        ))),
+    }
+}
+
+fn resolve_repairability(
+    value: &PyValue,
+    default: Repairability,
+) -> Result<Repairability, FindingError> {
+    match value {
+        PyValue::None => Ok(default),
+        PyValue::Repairability(repairability) => Repairability::parse(repairability.as_str())
+            .map_err(|err| FindingError::new(err.to_string())),
+        PyValue::Str(text) => {
+            Repairability::parse(text).map_err(|err| FindingError::new(err.to_string()))
+        }
+        other => Err(FindingError::new(format!(
+            "Unknown repairability {}, expected one of {}",
+            python_repr(other),
+            enum_values_repr(&Repairability::ALL.map(Repairability::as_str))
+        ))),
+    }
+}
+
+fn enum_values_repr(values: &[&str]) -> String {
+    let mut out = String::from("[");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_str_repr(value));
+    }
+    out.push(']');
+    out
+}
+
+fn allowed_template_vars_repr() -> String {
+    enum_values_repr(&ALLOWED_TEMPLATE_VARS)
+}
+
+fn parse_message_template(template: &str) -> Result<Vec<TemplatePiece>, &'static str> {
+    let chars: Vec<char> = template.chars().collect();
+    let mut index = 0;
+    let mut pieces = Vec::new();
+    while index < chars.len() {
+        let start = index;
+        while index < chars.len() && chars[index] != '{' && chars[index] != '}' {
+            index += 1;
+        }
+        if index >= chars.len() {
+            if start < chars.len() {
+                pieces.push(TemplatePiece {
+                    literal: chars[start..].iter().collect(),
+                    field: None,
+                });
+            }
+            break;
+        }
+        let brace = chars[index];
+        if index + 1 < chars.len() && chars[index + 1] == brace {
+            pieces.push(TemplatePiece {
+                literal: chars[start..=index].iter().collect(),
+                field: None,
+            });
+            index += 2;
+            continue;
+        }
+        if brace == '}' {
+            return Err("Single '}' encountered in format string");
+        }
+        let literal: String = chars[start..index].iter().collect();
+        index += 1;
+        if index >= chars.len() {
+            return Err("Single '{' encountered in format string");
+        }
+        let field = parse_template_field(&chars, &mut index)?;
+        pieces.push(TemplatePiece {
+            literal,
+            field: Some(field),
+        });
+    }
+    Ok(pieces)
+}
+
+fn parse_template_field(chars: &[char], index: &mut usize) -> Result<TemplateField, &'static str> {
+    let mut name = String::new();
+    let mut in_brackets = false;
+    loop {
+        if *index >= chars.len() {
+            return Err("expected '}' before end of string");
+        }
+        let ch = chars[*index];
+        if ch == '[' && !in_brackets {
+            in_brackets = true;
+            name.push(ch);
+            *index += 1;
+            continue;
+        }
+        if ch == ']' && in_brackets {
+            in_brackets = false;
+            name.push(ch);
+            *index += 1;
+            continue;
+        }
+        if !in_brackets && ch == '{' {
+            return Err("unexpected '{' in field name");
+        }
+        if !in_brackets && (ch == '!' || ch == ':' || ch == '}') {
+            break;
+        }
+        name.push(ch);
+        *index += 1;
+    }
+    if *index >= chars.len() {
+        return Err("expected '}' before end of string");
+    }
+    let mut conversion = None;
+    if chars[*index] == '!' {
+        *index += 1;
+        if *index >= chars.len() {
+            return Err("end of string while looking for conversion specifier");
+        }
+        conversion = Some(chars[*index]);
+        *index += 1;
+        if *index >= chars.len() {
+            return Err("unmatched '{' in format spec");
+        }
+        if chars[*index] == '}' {
+            *index += 1;
+            return Ok(TemplateField {
+                name,
+                format_spec: String::new(),
+                conversion,
+            });
+        }
+        if chars[*index] != ':' {
+            return Err("expected ':' after conversion specifier");
+        }
+    }
+    if chars[*index] == ':' {
+        *index += 1;
+        let format_spec = parse_format_spec(chars, index)?;
+        return Ok(TemplateField {
+            name,
+            format_spec,
+            conversion,
+        });
+    }
+    if chars[*index] == '}' {
+        *index += 1;
+        return Ok(TemplateField {
+            name,
+            format_spec: String::new(),
+            conversion,
+        });
+    }
+    Err("expected '}' before end of string")
+}
+
+fn parse_format_spec(chars: &[char], index: &mut usize) -> Result<String, &'static str> {
+    let mut spec = String::new();
+    let mut depth: u32 = 0;
+    loop {
+        if *index >= chars.len() {
+            return Err("unmatched '{' in format spec");
+        }
+        let ch = chars[*index];
+        if ch == '{' {
+            depth = match depth.checked_add(1) {
+                Some(value) => value,
+                None => return Err("unmatched '{' in format spec"),
+            };
+            spec.push(ch);
+            *index += 1;
+            continue;
+        }
+        if ch == '}' {
+            if depth == 0 {
+                *index += 1;
+                return Ok(spec);
+            }
+            depth = match depth.checked_sub(1) {
+                Some(value) => value,
+                None => return Err("unmatched '{' in format spec"),
+            };
+            spec.push(ch);
+            *index += 1;
+            continue;
+        }
+        spec.push(ch);
+        *index += 1;
+    }
+}
+
+fn validate_placeholders(pieces: &[TemplatePiece]) -> Result<(), FindingError> {
+    for piece in pieces {
+        let Some(field) = &piece.field else {
+            continue;
+        };
+        if !ALLOWED_TEMPLATE_VARS.contains(&field.name.as_str()) {
+            return Err(FindingError::new(format!(
+                "Disallowed placeholder '{}' in message template. Only {} are allowed to prevent payload leaking.",
+                field.name,
+                allowed_template_vars_repr()
+            )));
+        }
+        if !field.format_spec.is_empty() || field.conversion.is_some() {
+            return Err(FindingError::new(format!(
+                "Format specifiers and conversions are disallowed in template placeholder '{}' to prevent format-string manipulation.",
+                field.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_template_args(value: &PyValue) -> Result<Vec<(String, String)>, FindingError> {
+    let entries = match value {
+        PyValue::None => return Ok(Vec::new()),
+        PyValue::Map(entries) => entries,
+        other => {
+            return Err(FindingError::new(format!(
+                "template_args must be a mapping, got {}",
+                python_type_name(other)
+            )));
+        }
+    };
+    let mut stored = Vec::new();
+    for (key, raw) in entries {
+        let key_name = match key {
+            PyValue::Str(text) if ALLOWED_TEMPLATE_VARS.contains(&text.as_str()) => text.as_str(),
+            other => {
+                return Err(FindingError::new(format!(
+                    "Disallowed template argument '{}'. Only {} are allowed.",
+                    python_str(other),
+                    allowed_template_vars_repr()
+                )));
+            }
+        };
+        if key_name == "line" {
+            if !line_arg_ok(raw) {
+                return Err(FindingError::new(format!(
+                    "template_args['line'] must be positive int or digits, got {}",
+                    python_repr(raw)
+                )));
+            }
+        } else if !matches!(raw, PyValue::Str(text) if !python_strip(text).is_empty()) {
+            return Err(FindingError::new(format!(
+                "template_args['record_id'] must be non-empty string, got {}",
+                python_repr(raw)
+            )));
+        }
+        let val_str = python_strip(&python_str(raw)).to_owned();
+        enforce_content_free_text(&val_str, &format!("template_arg[{key_name}]"))?;
+        upsert_arg(&mut stored, key_name, val_str);
+    }
+    Ok(stored)
+}
+
+fn line_arg_ok(value: &PyValue) -> bool {
+    match value {
+        PyValue::Bool(_) => false,
+        PyValue::Int(number) => *number >= 1,
+        PyValue::Str(text) => text == "<unknown>" || ascii_positive_digits(text),
+        _ => false,
+    }
+}
+
+/// ASCII `0-9` whose integer value is at least 1. See
+/// [`TEMPLATE_LINE_UNICODE_DIGIT_GAP`]. Leading zeros are kept by the caller;
+/// this only accepts or rejects.
+fn ascii_positive_digits(text: &str) -> bool {
+    let mut bytes = text.bytes();
+    match bytes.next() {
+        Some(b'1'..=b'9') => bytes.all(|byte| byte.is_ascii_digit()),
+        Some(b'0') => {
+            let mut nonzero = false;
+            for byte in bytes {
+                if !byte.is_ascii_digit() {
+                    return false;
+                }
+                if byte != b'0' {
+                    nonzero = true;
+                }
+            }
+            nonzero
+        }
+        _ => false,
+    }
+}
+
+fn upsert_arg(stored: &mut Vec<(String, String)>, key: &str, value: String) {
+    if let Some((_, slot)) = stored.iter_mut().find(|(name, _)| name == key) {
+        *slot = value;
+    } else {
+        stored.push((key.to_owned(), value));
+    }
+}
+
+fn arg_value<'a>(args: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    args.iter()
+        .rev()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value.as_str())
+}
+
+fn render_template(
+    pieces: &[TemplatePiece],
+    args: &[(String, String)],
+    source: &SourceRef,
+) -> String {
+    let line = match arg_value(args, "line") {
+        Some(value) => value.to_owned(),
+        None => match source.line() {
+            Some(number) => number.to_string(),
+            None => "<unknown>".to_owned(),
+        },
+    };
+    let record_id = match arg_value(args, "record_id") {
+        Some(value) => value.to_owned(),
+        None => match source.record_id() {
+            Some(value) => value.to_owned(),
+            None => "<none>".to_owned(),
+        },
+    };
+    let mut rendered = String::new();
+    for piece in pieces {
+        rendered.push_str(&piece.literal);
+        let Some(field) = &piece.field else {
+            continue;
+        };
+        if field.name == "line" {
+            rendered.push_str(&line);
+        } else {
+            rendered.push_str(&record_id);
+        }
+    }
+    rendered
+}
+
+fn truncate_message(rendered: String) -> String {
+    let max = max_message_chars();
+    if rendered.chars().count() <= max {
+        return rendered;
+    }
+    let cut = max.saturating_sub(TRUNCATION_MARKER.chars().count());
+    let mut prefix = String::new();
+    for (index, ch) in rendered.chars().enumerate() {
+        if index == cut {
+            break;
+        }
+        prefix.push(ch);
+    }
+    prefix.push_str(TRUNCATION_MARKER);
+    prefix
+}
+
+/// Same set-then-strip-then-sort rule as [`Finding::try_new`].
+///
+/// See [`RELATED_IDS_SET_ORDER_DEVIATION`]. Stripped values are not uniqued
+/// again before the final sort. [`Finding::try_new`] still uniques the values
+/// it receives.
+fn normalize_make_related_ids(value: &PyValue) -> Result<Vec<String>, FindingError> {
+    let items = make_related_items(value)?;
+    for item in &items {
+        if let Some(type_name) = unhashable_type_name(item) {
+            return Err(FindingError::new(format!(
+                "related_ids item is not hashable (Python raises TypeError: unhashable type: '{type_name}')"
+            )));
+        }
+    }
+    let unique = dedupe_raw(&items);
+    let mut strings = Vec::new();
+    let mut others = Vec::new();
+    for item in &unique {
+        if matches!(item, PyValue::Str(_)) {
+            strings.push(item);
+        } else {
+            others.push(item);
+        }
+    }
+    strings.sort_by(|left, right| match (left, right) {
+        (PyValue::Str(left_text), PyValue::Str(right_text)) => left_text.cmp(right_text),
+        _ => Ordering::Equal,
+    });
+    let mut cleaned = Vec::new();
+    for item in strings.into_iter().chain(others) {
+        match item {
+            PyValue::Str(text) if !python_strip(text).is_empty() => {
+                let stripped = python_strip(text).to_owned();
+                enforce_content_free_text(&stripped, "related_ids")?;
+                cleaned.push(stripped);
+            }
+            other => {
+                return Err(FindingError::new(format!(
+                    "related_ids items must be non-empty strings, got {}",
+                    python_repr(other)
+                )));
+            }
+        }
+    }
+    cleaned.sort();
+    Ok(cleaned)
+}
+
+fn make_related_items(value: &PyValue) -> Result<Vec<PyValue>, FindingError> {
+    match value {
+        PyValue::List(items)
+        | PyValue::Tuple(items)
+        | PyValue::Set(items)
+        | PyValue::FrozenSet(items) => Ok(items.clone()),
+        PyValue::Map(entries) => Ok(entries.iter().map(|(key, _)| key.clone()).collect()),
+        _ => Err(FindingError::new(
+            "related_ids must be an iterable of string identifiers".to_owned(),
+        )),
+    }
+}
+
+fn py_map_get<'a>(entries: &'a [(PyValue, PyValue)], key: &str) -> Option<&'a PyValue> {
+    entries
+        .iter()
+        .rev()
+        .find(|(entry_key, _)| matches!(entry_key, PyValue::Str(text) if text == key))
+        .map(|(_, value)| value)
+}
+
+fn py_map_has(entries: &[(PyValue, PyValue)], key: &str) -> bool {
+    py_map_get(entries, key).is_some()
+}
+
+fn source_from_py_map(entries: &[(PyValue, PyValue)]) -> Result<SourceRef, FindingError> {
+    let path = match py_map_get(entries, "path") {
+        Some(PyValue::Str(text)) if !python_strip(text).is_empty() => text.clone(),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string source.path: {}",
+                python_repr(other)
+            )));
+        }
+        None => {
+            return Err(FindingError::new(format!(
+                "Missing or non-string source.path: {}",
+                python_repr(&PyValue::None)
+            )));
+        }
+    };
+    let line = match py_map_get(entries, "line") {
+        None | Some(PyValue::None) => None,
+        Some(PyValue::Int(number)) => Some(SourceLine::Int(*number)),
+        Some(PyValue::Bool(flag)) => Some(SourceLine::Bool(*flag)),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "SourceRef.line must be a positive integer or None, got {}",
+                python_repr(other)
+            )));
+        }
+    };
+    let record_id = match py_map_get(entries, "record_id") {
+        None | Some(PyValue::None) => None,
+        Some(PyValue::Str(text)) => Some(text.clone()),
+        Some(other) => {
+            return Err(FindingError::new(format!(
+                "SourceRef.record_id must be non-empty string or None, got {}",
+                python_repr(other)
+            )));
+        }
+    };
+    SourceRef::try_new(&path, line, record_id.as_deref())
+}
+
+fn python_str(value: &PyValue) -> String {
+    match value {
+        PyValue::Str(text) => text.clone(),
+        PyValue::Int(number) => number.to_string(),
+        PyValue::Bool(true) => "True".to_owned(),
+        PyValue::Bool(false) => "False".to_owned(),
+        PyValue::None => "None".to_owned(),
+        PyValue::Bytes(bytes) => python_bytes_repr(bytes),
+        PyValue::Severity(severity) => severity.as_str().to_owned(),
+        PyValue::Repairability(repairability) => repairability.as_str().to_owned(),
+        other => python_repr(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -5196,5 +6067,401 @@ mod fingerprint_preimage {
             ]),
         })
         .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod make_and_parse {
+    use super::{
+        get_finding_schema_path, load_finding_schema, make_finding, parse_finding_dict,
+        python_str_repr, MakeFindingInput, PyValue, SourceLine, SourceRef,
+        FINGERPRINT_CODEC_UNAVAILABLE, MAKE_FINDING_ENUM_ERROR, MAX_MESSAGE_LENGTH,
+        SCHEMA_RESOURCE_UNAVAILABLE, SCHEMA_VERSION, TEMPLATE_LINE_UNICODE_DIGIT_GAP,
+        TRUNCATION_MARKER,
+    };
+    use crate::codes::{get_code_info, Repairability, Severity, ALL_CODES};
+
+    const FINGERPRINT: &str = "0123456789abcdef";
+
+    fn source_at(line: Option<i64>) -> SourceRef {
+        SourceRef::try_new("a.jsonl", line.map(SourceLine::Int), None).unwrap()
+    }
+
+    fn call(
+        template: &str,
+        fingerprint: PyValue,
+        template_args: PyValue,
+        line: Option<i64>,
+    ) -> MakeFindingInput {
+        MakeFindingInput {
+            code: PyValue::string("SL001"),
+            severity: PyValue::None,
+            repairability: PyValue::None,
+            message_template: PyValue::string(template),
+            template_args,
+            source: PyValue::source(source_at(line)),
+            related_ids: PyValue::tuple(Vec::new()),
+            evidence: PyValue::None,
+            fingerprint,
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            context: None,
+        }
+    }
+
+    fn line_arg(value: PyValue) -> PyValue {
+        PyValue::map(vec![(PyValue::string("line"), value)])
+    }
+
+    #[test]
+    fn supplied_fingerprint_renders_the_source_line() {
+        let finding = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(4),
+        ))
+        .unwrap();
+        assert_eq!(finding.message(), "line 4");
+        assert_eq!(finding.fingerprint(), FINGERPRINT);
+        assert_eq!(finding.code(), "SL001");
+        let info = get_code_info("SL001").unwrap();
+        assert_eq!(finding.severity(), info.default_severity);
+        assert_eq!(finding.repairability(), info.default_repairability);
+        assert_eq!(finding.schema_version(), SCHEMA_VERSION);
+        assert_eq!(finding.message_template(), Some("line {line}"));
+        assert!(finding.evidence().is_none());
+        let literal = make_finding(&call(
+            "see {{line}}",
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(4),
+        ))
+        .unwrap();
+        assert_eq!(literal.message(), "see {line}");
+    }
+
+    #[test]
+    fn omitted_fingerprint_returns_the_codec_error() {
+        let err =
+            make_finding(&call("line {line}", PyValue::None, PyValue::None, Some(4))).unwrap_err();
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!is_lower_hex(&err.to_string()));
+    }
+
+    #[test]
+    fn unknown_code_fails_before_the_codec_error() {
+        let mut input = call("line {line}", PyValue::None, PyValue::None, Some(1));
+        input.code = PyValue::string("NOPE");
+        let err = make_finding(&input).unwrap_err().to_string();
+        let mut codes = ALL_CODES.to_vec();
+        codes.sort_unstable();
+        let mut list = String::from("[");
+        for (index, code) in codes.iter().enumerate() {
+            if index > 0 {
+                list.push_str(", ");
+            }
+            list.push_str(&python_str_repr(code));
+        }
+        list.push(']');
+        assert_eq!(
+            err,
+            format!("Unknown finding code: 'NOPE'. Must be one of {list}")
+        );
+        assert!(!err.contains(FINGERPRINT_CODEC_UNAVAILABLE));
+    }
+
+    #[test]
+    fn placeholder_format_spec_and_bool_line_are_rejected() {
+        let placeholder = make_finding(&call(
+            "{payload}",
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(1),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            placeholder,
+            "Disallowed placeholder 'payload' in message template. Only ['line', 'record_id'] are allowed to prevent payload leaking."
+        );
+        let spec = make_finding(&call(
+            "{line:02d}",
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(1),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            spec,
+            "Format specifiers and conversions are disallowed in template placeholder 'line' to prevent format-string manipulation."
+        );
+        let flag = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            line_arg(PyValue::bool_value(true)),
+            Some(1),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            flag,
+            "template_args['line'] must be positive int or digits, got True"
+        );
+        let malformed = make_finding(&call(
+            "{",
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(1),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            malformed,
+            "Malformed message template '{': Single '{' encountered in format string"
+        );
+    }
+
+    #[test]
+    fn line_arg_accepts_ascii_digits_and_rejects_blanks_and_zero() {
+        let spaced = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            line_arg(PyValue::string(" 1 ")),
+            Some(9),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            spaced,
+            "template_args['line'] must be positive int or digits, got ' 1 '"
+        );
+        let digits = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            line_arg(PyValue::string("1")),
+            Some(9),
+        ))
+        .unwrap();
+        assert_eq!(digits.message(), "line 1");
+        let number = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            line_arg(PyValue::int(1)),
+            Some(9),
+        ))
+        .unwrap();
+        assert_eq!(number.message(), "line 1");
+        let zero = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            line_arg(PyValue::int(0)),
+            Some(9),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            zero,
+            "template_args['line'] must be positive int or digits, got 0"
+        );
+        let arabic = "\u{0661}";
+        let nd = make_finding(&call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            line_arg(PyValue::string(arabic)),
+            Some(9),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            nd,
+            format!(
+                "template_args['line'] must be positive int or digits, got {}",
+                python_str_repr(arabic)
+            )
+        );
+        assert!(TEMPLATE_LINE_UNICODE_DIGIT_GAP.contains("Nd"));
+        assert!(TEMPLATE_LINE_UNICODE_DIGIT_GAP.contains("U+0661"));
+    }
+
+    #[test]
+    fn rendered_message_truncates_above_500_scalars() {
+        let long = "\u{00e9}".repeat(501);
+        let finding = make_finding(&call(
+            &long,
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(1),
+        ))
+        .unwrap();
+        assert_eq!(finding.message().chars().count(), 500);
+        assert!(finding.message().ends_with(TRUNCATION_MARKER));
+        let cut = usize::try_from(MAX_MESSAGE_LENGTH).unwrap() - TRUNCATION_MARKER.chars().count();
+        assert_eq!(
+            finding.message(),
+            format!("{}{TRUNCATION_MARKER}", "\u{00e9}".repeat(cut))
+        );
+        let exact = "b".repeat(500);
+        let kept = make_finding(&call(
+            &exact,
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(1),
+        ))
+        .unwrap();
+        assert_eq!(kept.message(), exact);
+        assert_eq!(kept.message().chars().count(), 500);
+    }
+
+    #[test]
+    fn unknown_enum_text_matches_the_parse_display() {
+        let mut input = call(
+            "line {line}",
+            PyValue::string(FINGERPRINT),
+            PyValue::None,
+            Some(1),
+        );
+        input.severity = PyValue::string("nope");
+        assert_eq!(
+            make_finding(&input).unwrap_err().to_string(),
+            Severity::parse("nope").unwrap_err().to_string()
+        );
+        input.severity = PyValue::None;
+        input.repairability = PyValue::string("nope");
+        assert_eq!(
+            make_finding(&input).unwrap_err().to_string(),
+            Repairability::parse("nope").unwrap_err().to_string()
+        );
+        input.repairability = PyValue::bool_value(true);
+        assert_eq!(
+            make_finding(&input).unwrap_err().to_string(),
+            "Unknown repairability True, expected one of ['deterministic', 'lossy-explicit', 'manual', 'unsupported']"
+        );
+        assert!(MAKE_FINDING_ENUM_ERROR.contains("ValueError"));
+        assert!(MAKE_FINDING_ENUM_ERROR.contains("FindingError"));
+
+        let parsed = parse_finding_dict(&PyValue::map(vec![
+            (
+                PyValue::string("schema_version"),
+                PyValue::string(SCHEMA_VERSION),
+            ),
+            (PyValue::string("code"), PyValue::string("SL001")),
+            (PyValue::string("severity"), PyValue::string("nope")),
+        ]));
+        assert_eq!(
+            parsed.unwrap_err().to_string(),
+            Severity::parse("nope").unwrap_err().to_string()
+        );
+    }
+
+    #[test]
+    fn parse_accepts_remediation_and_span_and_rejects_a_set() {
+        let finding = parse_finding_dict(&PyValue::map(vec![
+            (
+                PyValue::string("schema_version"),
+                PyValue::string(SCHEMA_VERSION),
+            ),
+            (PyValue::string("code"), PyValue::string("SL001")),
+            (PyValue::string("severity"), PyValue::string("error")),
+            (PyValue::string("repairability"), PyValue::string("manual")),
+            (
+                PyValue::string("remediation"),
+                PyValue::string("use the span"),
+            ),
+            (
+                PyValue::string("span"),
+                PyValue::map(vec![
+                    (PyValue::string("path"), PyValue::string("span.jsonl")),
+                    (PyValue::string("line"), PyValue::int(2)),
+                ]),
+            ),
+            (PyValue::string("fingerprint"), PyValue::string(FINGERPRINT)),
+        ]))
+        .unwrap();
+        assert_eq!(finding.message(), "use the span");
+        assert_eq!(finding.source().path(), "span.jsonl");
+        assert_eq!(finding.source().line(), Some(2));
+        assert!(finding.related_ids().is_empty());
+
+        let set_err = parse_finding_dict(&PyValue::map(vec![
+            (
+                PyValue::string("schema_version"),
+                PyValue::string(SCHEMA_VERSION),
+            ),
+            (PyValue::string("code"), PyValue::string("SL001")),
+            (PyValue::string("severity"), PyValue::string("error")),
+            (PyValue::string("repairability"), PyValue::string("manual")),
+            (PyValue::string("message"), PyValue::string("kept")),
+            (
+                PyValue::string("source"),
+                PyValue::map(vec![(PyValue::string("path"), PyValue::string("a.jsonl"))]),
+            ),
+            (
+                PyValue::string("related_ids"),
+                PyValue::set(vec![PyValue::string("a")]),
+            ),
+            (PyValue::string("fingerprint"), PyValue::string(FINGERPRINT)),
+        ]))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(set_err, "related_ids must be a list or tuple, got set");
+
+        let source_wins = parse_finding_dict(&PyValue::map(vec![
+            (
+                PyValue::string("schema_version"),
+                PyValue::string(SCHEMA_VERSION),
+            ),
+            (PyValue::string("code"), PyValue::string("SL001")),
+            (PyValue::string("severity"), PyValue::string("error")),
+            (PyValue::string("repairability"), PyValue::string("manual")),
+            (PyValue::string("message"), PyValue::string("kept")),
+            (
+                PyValue::string("source"),
+                PyValue::map(vec![(
+                    PyValue::string("path"),
+                    PyValue::string("source.jsonl"),
+                )]),
+            ),
+            (
+                PyValue::string("span"),
+                PyValue::map(vec![(
+                    PyValue::string("path"),
+                    PyValue::string("span.jsonl"),
+                )]),
+            ),
+            (PyValue::string("fingerprint"), PyValue::string(FINGERPRINT)),
+        ]))
+        .unwrap();
+        assert_eq!(source_wins.source().path(), "source.jsonl");
+        assert_eq!(source_wins.message(), "kept");
+    }
+
+    #[test]
+    fn schema_helpers_report_the_missing_resource_and_do_not_read_disk() {
+        assert_eq!(
+            get_finding_schema_path().to_string(),
+            SCHEMA_RESOURCE_UNAVAILABLE
+        );
+        assert_eq!(
+            load_finding_schema().to_string(),
+            SCHEMA_RESOURCE_UNAVAILABLE
+        );
+        assert_eq!(
+            SCHEMA_RESOURCE_UNAVAILABLE,
+            "sesslint._resources.schema_path is not available"
+        );
+    }
+
+    fn is_lower_hex(text: &str) -> bool {
+        let bytes = text.as_bytes();
+        bytes.len() == 16
+            && bytes
+                .iter()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     }
 }
