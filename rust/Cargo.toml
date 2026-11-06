@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = []
+members = [".", "crates/codec", "crates/checks", "crates/cli", "crates/adapters", "crates/evidence", "crates/model", "crates/repair", "crates/report", "crates/scan", "crates/integrations", "crates/outcome", "crates/support"]
 
 [package]
 name = "sesslint-rust-workspace"
