@@ -25,11 +25,13 @@
 //! - Correlation IDs flagged with cardinality errors (SL103 reused or SL104 multi-result) are
 //!   skipped here (precedence belongs to TASK-014).
 //!
-//! This slice ports placement helpers and [`ToolPairing2Indexer`]. It does
-//! not port `check_reversed_order`, `check_cross_branch`,
-//! `_resolve_rule_severity`, `check_adjacency`, `check_compaction_split`,
-//! `check_tool_pairing_2`, or `__all__`. It does not import
-//! `sesslint.profiles`.
+//! This slice ports placement helpers, [`ToolPairing2Indexer`],
+//! [`extract_scope`], [`record_reversed_order`], [`check_reversed_order`],
+//! [`record_cross_branch`], [`check_cross_branch`], and
+//! [`resolve_rule_severity`]. It does not port `check_adjacency`,
+//! `check_compaction_split`, `check_tool_pairing_2`, or `__all__`. It does
+//! not import `sesslint.profiles`. [`resolve_rule_severity`] does not
+//! invent `rule_severities`.
 //!
 //! [`compute_pairing_fingerprint`] hashes locally:
 //! `sha256("{code}|{comma-join of sorted unique items}")` then the first 16
@@ -65,6 +67,11 @@
 //!   finding.
 //! * Overflow [`make_finding`] does not produce a digest
 //!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
+//! * Offender [`make_finding`] does not produce a digest
+//!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
+//! * [`resolve_rule_severity`] on a string or other profile returns
+//!   [`PROFILES_UNAVAILABLE`]. It does not catch a missing module and
+//!   does not return the default. `rule_severities` is not invented.
 //! * A float `source_location`, `kind`, `id`, `correlation_id`, or
 //!   `parent_id` is [`model::events::PYTHON_FLOAT_STR_UNREPRESENTABLE`].
 //!   Rust `Display` is not used.
@@ -76,14 +83,15 @@ use std::error::Error;
 use std::fmt;
 
 use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity};
+use model::codes::{Repairability, Severity, SL105, SL106};
 use model::errors::FindingError;
 use model::events::{
-    EventField, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_UNREPRESENTABLE,
+    EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+    PYTHON_STR_UNREPRESENTABLE,
 };
 use model::finding::{
     enforce_content_free_text, make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue,
-    SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+    SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
 };
 use sha2::{Digest, Sha256};
 
@@ -153,6 +161,12 @@ pub const BORROWED_LOOKUP: &str = "A borrowed map lookup is not a missing key";
 pub const EVIDENCE_NOT_A_MAP: &str =
     "Evidence is not a mapping; Python would call .get on a non-mapping";
 
+/// Late import. This crate does not depend on `sesslint.profiles`.
+pub const PROFILES_UNAVAILABLE: &str = "sesslint.profiles is not available";
+
+const REDACTED_ID: &str = "<redacted>";
+const UNKNOWN_COMPONENT: &str = "<unknown>";
+
 /// Failure from this slice. [`Display`] is the message only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolPairing2Error {
@@ -161,6 +175,7 @@ pub enum ToolPairing2Error {
     PythonIntUnbounded,
     PythonFloatStr,
     PythonStr,
+    ProfilesUnavailable,
     Finding(FindingError),
 }
 
@@ -172,6 +187,7 @@ impl ToolPairing2Error {
             Self::PythonIntUnbounded => PYTHON_INT_UNBOUNDED,
             Self::PythonFloatStr => PYTHON_FLOAT_STR_UNREPRESENTABLE,
             Self::PythonStr => PYTHON_STR_UNREPRESENTABLE,
+            Self::ProfilesUnavailable => PROFILES_UNAVAILABLE,
             Self::Finding(error) => error.message(),
         }
     }
@@ -191,7 +207,8 @@ impl Error for ToolPairing2Error {
             | Self::EvidenceNotAMap
             | Self::PythonIntUnbounded
             | Self::PythonFloatStr
-            | Self::PythonStr => None,
+            | Self::PythonStr
+            | Self::ProfilesUnavailable => None,
         }
     }
 }
@@ -803,15 +820,542 @@ fn hex16(digest: impl AsRef<[u8]>) -> String {
     out
 }
 
+/// Python: `_resolve_rule_severity` `profile` argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSeverityProfile<'a> {
+    /// Python `None`.
+    None,
+    /// A Python `str` profile name.
+    Name(&'a str),
+    /// Any other Python value. `rule_severities` is not invented.
+    Other,
+}
+
+/// One reversed-order pair that would emit SL105. Does not call [`make_finding`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReversedOrderRecord {
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub related_ids: Vec<String>,
+    pub correlation_id: String,
+    pub result_index: i64,
+    pub use_index: i64,
+}
+
+/// One cross-branch pair that would emit SL106. Does not call [`make_finding`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrossBranchRecord {
+    pub path: String,
+    pub line: Option<i64>,
+    pub record_id: Option<String>,
+    pub related_ids: Vec<String>,
+    pub correlation_id: String,
+    pub result_id: String,
+    pub result_index: i64,
+    pub use_id: String,
+    pub use_index: i64,
+    pub scope_mismatch: bool,
+    pub call_agent_id: Option<String>,
+    pub result_agent_id: Option<String>,
+    pub call_branch_id: Option<String>,
+    pub result_branch_id: Option<String>,
+    pub call_interaction_id: Option<String>,
+    pub result_interaction_id: Option<String>,
+}
+
+/// Python: `_extract_scope` return `(agent, branch, interaction)`.
+pub type ExtractedScope = (Option<String>, Option<String>, Option<String>);
+
+/// Python: `_extract_scope`.
+///
+/// A [`SessionEvent`] uses `agent_id`, `branch_id`, and `interaction_id`
+/// only. It does not read camelCase. `None` and whitespace-only strings
+/// become `None`. A mapping reads `agent_id`, then if that value is missing
+/// or Python-falsy it reads `agentId`. Same for branch and interaction.
+/// A whitespace string is truthy for `or`, then strip makes it `None`.
+/// Bool `true` is `"True"`. A non-zero int is decimal. A float, list, or
+/// mapping is a typed error, not a Python repr.
+pub fn extract_scope(event: &EventValue) -> Result<ExtractedScope, ToolPairing2Error> {
+    match event {
+        EventValue::Session(session) => Ok((
+            stripped_optional(session.agent_id.as_deref()),
+            stripped_optional(session.branch_id.as_deref()),
+            stripped_optional(session.interaction_id.as_deref()),
+        )),
+        EventValue::Mapping(mapping) => Ok((
+            scope_from_mapping(mapping, "agent_id", "agentId")?,
+            scope_from_mapping(mapping, "branch_id", "branchId")?,
+            scope_from_mapping(mapping, "interaction_id", "interactionId")?,
+        )),
+        EventValue::Other => Ok((None, None, None)),
+    }
+}
+
+/// Python: `check_reversed_order` record walk. Does not call [`make_finding`].
+///
+/// Only clean pairs. Walks [`ToolPairing2Indexer::clean_corrs`] in stored
+/// sorted order. Fires only when the result index is strictly less than the
+/// call index. Equal indexes are silent. A dirty pair is silent.
+pub fn record_reversed_order(
+    indexer: &ToolPairing2Indexer<'_>,
+    source_path: &str,
+) -> Result<Vec<ReversedOrderRecord>, ToolPairing2Error> {
+    let mut records = Vec::new();
+    for corr in indexer.clean_corrs() {
+        let Some(&(use_idx, use_ev)) = indexer.uses(corr).first() else {
+            continue;
+        };
+        let Some(&(res_idx, res_ev)) = indexer.results(corr).first() else {
+            continue;
+        };
+        if res_idx < use_idx {
+            let use_id_str = optional_event_id(use_ev)?;
+            let safe_corr = safe_id(Some(corr));
+            let rec_id = source_record_id(use_id_str.as_deref());
+            let (path, line) = resolve_source_coords(res_ev, source_path)?;
+            records.push(ReversedOrderRecord {
+                path,
+                line,
+                record_id: rec_id,
+                related_ids: related_ids(&safe_corr),
+                correlation_id: safe_corr,
+                result_index: usize_to_i64(res_idx)?,
+                use_index: usize_to_i64(use_idx)?,
+            });
+        }
+    }
+    Ok(records)
+}
+
+/// Python: `check_reversed_order`.
+///
+/// Context `None` is [`CheckContext::default`]. An optional indexer is used
+/// when supplied; otherwise one is built from `events`. A non-empty record
+/// list calls [`make_finding`] with the fingerprint omitted; the first
+/// record returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still
+/// calls [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
+/// `max_findings == -1` takes the overflow path because `0 <= -1` is false.
+pub fn check_reversed_order(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    context: Option<&CheckContext>,
+    indexer: Option<&ToolPairing2Indexer<'_>>,
+) -> Result<Vec<Finding>, ToolPairing2Error> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_indexer;
+    let indexer = match indexer {
+        Some(value) => value,
+        None => {
+            owned_indexer = ToolPairing2Indexer::new(events, Some(source_path))?;
+            &owned_indexer
+        }
+    };
+    let records = record_reversed_order(indexer, source_path)?;
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.push(reversed_order_finding(record, ctx)?);
+    }
+    cap_pairing_findings(findings, SL105, max_findings, Some(source_path), Some(ctx))
+}
+
+/// Python: `check_cross_branch` record walk. Does not call [`make_finding`].
+///
+/// Only clean pairs. Always calls [`ToolPairing2Indexer::component`] on both
+/// ids, even when scope is explicit. An explicit scope field on either side
+/// triggers only on a scope mismatch. No scope field triggers only when both
+/// components are not `"<unknown>"` and they differ.
+pub fn record_cross_branch(
+    indexer: &mut ToolPairing2Indexer<'_>,
+    source_path: &str,
+) -> Result<Vec<CrossBranchRecord>, ToolPairing2Error> {
+    let mut records = Vec::new();
+    for corr in indexer.clean_corrs().to_vec() {
+        let Some(&(use_idx, use_ev)) = indexer.uses(&corr).first() else {
+            continue;
+        };
+        let Some(&(res_idx, res_ev)) = indexer.results(&corr).first() else {
+            continue;
+        };
+        let use_id_str = optional_event_id(use_ev)?;
+        let res_id_str = optional_event_id(res_ev)?;
+        let (use_agent, use_branch, use_inter) = extract_scope(use_ev)?;
+        let (res_agent, res_branch, res_inter) = extract_scope(res_ev)?;
+        let has_explicit_scope = use_agent.is_some()
+            || use_branch.is_some()
+            || use_inter.is_some()
+            || res_agent.is_some()
+            || res_branch.is_some()
+            || res_inter.is_some();
+        let mut scope_mismatch = false;
+        let mut call_agent_id = None;
+        let mut result_agent_id = None;
+        let mut call_branch_id = None;
+        let mut result_branch_id = None;
+        let mut call_interaction_id = None;
+        let mut result_interaction_id = None;
+        let comp_use = indexer.component(use_id_str.as_deref())?;
+        let comp_res = indexer.component(res_id_str.as_deref())?;
+        let should_trigger = if has_explicit_scope {
+            if use_agent != res_agent {
+                scope_mismatch = true;
+                if let Some(value) = &use_agent {
+                    call_agent_id = Some(safe_id(Some(value)));
+                }
+                if let Some(value) = &res_agent {
+                    result_agent_id = Some(safe_id(Some(value)));
+                }
+            }
+            if use_branch != res_branch {
+                scope_mismatch = true;
+                if let Some(value) = &use_branch {
+                    call_branch_id = Some(safe_id(Some(value)));
+                }
+                if let Some(value) = &res_branch {
+                    result_branch_id = Some(safe_id(Some(value)));
+                }
+            }
+            if use_inter != res_inter {
+                scope_mismatch = true;
+                if let Some(value) = &use_inter {
+                    call_interaction_id = Some(safe_id(Some(value)));
+                }
+                if let Some(value) = &res_inter {
+                    result_interaction_id = Some(safe_id(Some(value)));
+                }
+            }
+            scope_mismatch
+        } else {
+            comp_use != comp_res && comp_use != UNKNOWN_COMPONENT && comp_res != UNKNOWN_COMPONENT
+        };
+        if should_trigger {
+            let safe_corr = safe_id(Some(&corr));
+            let safe_use_id = safe_id(use_id_str.as_deref());
+            let safe_res_id = safe_id(res_id_str.as_deref());
+            let rec_id = source_record_id(use_id_str.as_deref());
+            let (path, line) = resolve_source_coords(res_ev, source_path)?;
+            records.push(CrossBranchRecord {
+                path,
+                line,
+                record_id: rec_id,
+                related_ids: related_ids(&safe_res_id),
+                correlation_id: safe_corr,
+                result_id: safe_res_id,
+                result_index: usize_to_i64(res_idx)?,
+                use_id: safe_use_id,
+                use_index: usize_to_i64(use_idx)?,
+                scope_mismatch,
+                call_agent_id,
+                result_agent_id,
+                call_branch_id,
+                result_branch_id,
+                call_interaction_id,
+                result_interaction_id,
+            });
+        }
+    }
+    Ok(records)
+}
+
+/// Python: `check_cross_branch`.
+///
+/// Context `None` is [`CheckContext::default`]. An optional indexer is used
+/// when supplied; otherwise one is built from `events`. A non-empty record
+/// list calls [`make_finding`] with the fingerprint omitted; the first
+/// record returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still
+/// calls [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
+/// `max_findings == -1` takes the overflow path because `0 <= -1` is false.
+pub fn check_cross_branch(
+    events: &[EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<i64>,
+    context: Option<&CheckContext>,
+    indexer: Option<&mut ToolPairing2Indexer<'_>>,
+) -> Result<Vec<Finding>, ToolPairing2Error> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let records = match indexer {
+        Some(value) => record_cross_branch(value, source_path)?,
+        None => {
+            let mut owned_indexer = ToolPairing2Indexer::new(events, Some(source_path))?;
+            record_cross_branch(&mut owned_indexer, source_path)?
+        }
+    };
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.push(cross_branch_finding(record, ctx)?);
+    }
+    cap_pairing_findings(findings, SL106, max_findings, Some(source_path), Some(ctx))
+}
+
+/// Python: `_resolve_rule_severity`.
+///
+/// `profile` [`RuleSeverityProfile::None`] returns `default_severity`. A
+/// string or any other profile returns [`PROFILES_UNAVAILABLE`]. This does
+/// not catch a missing module and does not invent `rule_severities`.
+pub fn resolve_rule_severity(
+    _code: &str,
+    profile: RuleSeverityProfile<'_>,
+    default_severity: Severity,
+) -> Result<Severity, ToolPairing2Error> {
+    match profile {
+        RuleSeverityProfile::None => Ok(default_severity),
+        RuleSeverityProfile::Name(_) | RuleSeverityProfile::Other => {
+            Err(ToolPairing2Error::ProfilesUnavailable)
+        }
+    }
+}
+
+fn stripped_optional(text: Option<&str>) -> Option<String> {
+    let text = text?;
+    let stripped = text.trim();
+    if stripped.is_empty() {
+        None
+    } else {
+        Some(stripped.to_owned())
+    }
+}
+
+fn is_python_falsy(field: &EventField) -> bool {
+    match field {
+        EventField::Null | EventField::Bool(false) | EventField::Int(0) => true,
+        EventField::Str(text) if text.is_empty() => true,
+        EventField::Float(number) if *number == 0.0 => true,
+        EventField::List(items) if items.is_empty() => true,
+        EventField::Mapping(mapping) if mapping.entries().is_empty() => true,
+        _ => false,
+    }
+}
+
+fn scope_from_mapping(
+    mapping: &EventMapping,
+    snake: &str,
+    camel: &str,
+) -> Result<Option<String>, ToolPairing2Error> {
+    let chosen = match mapping.get(snake) {
+        Some(field) if !is_python_falsy(field) => Some(field),
+        _ => match mapping.get(camel) {
+            None | Some(EventField::Null) => None,
+            Some(field) => Some(field),
+        },
+    };
+    match chosen {
+        None => Ok(None),
+        Some(field) => {
+            let text = python_str(field)?;
+            let stripped = text.trim();
+            if stripped.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(stripped.to_owned()))
+            }
+        }
+    }
+}
+
+fn optional_event_id(event: &EventValue) -> Result<Option<String>, ToolPairing2Error> {
+    match event {
+        EventValue::Session(session) => Ok(Some(session.id.clone())),
+        EventValue::Mapping(mapping) => match mapping.get("id") {
+            None | Some(EventField::Null) => Ok(None),
+            Some(field) => Ok(Some(python_str(field)?)),
+        },
+        EventValue::Other => Ok(None),
+    }
+}
+
+fn related_ids(safe_id: &str) -> Vec<String> {
+    if safe_id == REDACTED_ID {
+        Vec::new()
+    } else {
+        vec![safe_id.to_owned()]
+    }
+}
+
+fn py_strings(items: &[String]) -> Vec<PyValue> {
+    items
+        .iter()
+        .map(|item| PyValue::string(item.clone()))
+        .collect()
+}
+
+fn pairing_source(
+    path: &str,
+    line: Option<i64>,
+    record_id: Option<&str>,
+) -> Result<SourceRef, ToolPairing2Error> {
+    Ok(SourceRef::try_new(
+        path,
+        line.map(SourceLine::Int),
+        record_id,
+    )?)
+}
+
+fn context_fields(
+    ctx: &CheckContext,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    (
+        Some(ctx.adapter_id().to_owned()),
+        Some(ctx.adapter_version().to_owned()),
+        Some(ctx.profile_id().to_owned()),
+        Some(ctx.profile_version().to_owned()),
+    )
+}
+
+fn reversed_order_evidence(record: &ReversedOrderRecord) -> PyValue {
+    PyValue::map(vec![
+        (
+            PyValue::string("correlation_id"),
+            PyValue::string(record.correlation_id.clone()),
+        ),
+        (
+            PyValue::string("result_index"),
+            PyValue::int(record.result_index),
+        ),
+        (PyValue::string("use_index"), PyValue::int(record.use_index)),
+    ])
+}
+
+fn push_scope_id(entries: &mut Vec<(PyValue, PyValue)>, key: &str, value: Option<&String>) {
+    if let Some(text) = value {
+        entries.push((PyValue::string(key), PyValue::string(text.clone())));
+    }
+}
+
+fn cross_branch_evidence(record: &CrossBranchRecord) -> PyValue {
+    let mut entries = vec![
+        (
+            PyValue::string("correlation_id"),
+            PyValue::string(record.correlation_id.clone()),
+        ),
+        (
+            PyValue::string("result_id"),
+            PyValue::string(record.result_id.clone()),
+        ),
+        (
+            PyValue::string("result_index"),
+            PyValue::int(record.result_index),
+        ),
+        (
+            PyValue::string("use_id"),
+            PyValue::string(record.use_id.clone()),
+        ),
+        (PyValue::string("use_index"), PyValue::int(record.use_index)),
+    ];
+    if record.scope_mismatch {
+        entries.push((PyValue::string("scope_mismatch"), PyValue::bool_value(true)));
+        push_scope_id(&mut entries, "call_agent_id", record.call_agent_id.as_ref());
+        push_scope_id(
+            &mut entries,
+            "result_agent_id",
+            record.result_agent_id.as_ref(),
+        );
+        push_scope_id(
+            &mut entries,
+            "call_branch_id",
+            record.call_branch_id.as_ref(),
+        );
+        push_scope_id(
+            &mut entries,
+            "result_branch_id",
+            record.result_branch_id.as_ref(),
+        );
+        push_scope_id(
+            &mut entries,
+            "call_interaction_id",
+            record.call_interaction_id.as_ref(),
+        );
+        push_scope_id(
+            &mut entries,
+            "result_interaction_id",
+            record.result_interaction_id.as_ref(),
+        );
+    }
+    PyValue::map(entries)
+}
+
+fn reversed_order_finding(
+    record: &ReversedOrderRecord,
+    ctx: &CheckContext,
+) -> Result<Finding, ToolPairing2Error> {
+    let source = pairing_source(&record.path, record.line, record.record_id.as_deref())?;
+    let (adapter_id, adapter_version, profile_id, profile_version) = context_fields(ctx);
+    Ok(make_finding(&MakeFindingInput {
+        code: PyValue::string(SL105),
+        severity: PyValue::severity(Severity::Error),
+        repairability: PyValue::repairability(Repairability::Manual),
+        message_template: PyValue::string(MSG_SL105),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(py_strings(&record.related_ids)),
+        evidence: reversed_order_evidence(record),
+        fingerprint: PyValue::None,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        ordinal: None,
+        context: None,
+    })?)
+}
+
+fn cross_branch_finding(
+    record: &CrossBranchRecord,
+    ctx: &CheckContext,
+) -> Result<Finding, ToolPairing2Error> {
+    let source = pairing_source(&record.path, record.line, record.record_id.as_deref())?;
+    let (adapter_id, adapter_version, profile_id, profile_version) = context_fields(ctx);
+    Ok(make_finding(&MakeFindingInput {
+        code: PyValue::string(SL106),
+        severity: PyValue::severity(Severity::Error),
+        repairability: PyValue::repairability(Repairability::Manual),
+        message_template: PyValue::string(MSG_SL106),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(py_strings(&record.related_ids)),
+        evidence: cross_branch_evidence(record),
+        fingerprint: PyValue::None,
+        adapter_id,
+        adapter_version,
+        profile_id,
+        profile_version,
+        ordinal: None,
+        context: None,
+    })?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_finding_sort_key, cap_pairing_findings, compute_pairing_fingerprint,
-        resolve_source_coords, safe_id, source_record_id, DisjointSet, ToolPairing2Error,
-        ToolPairing2Indexer, ADJACENCY_TRANSPARENT_KINDS, CALL_KINDS, COMPACTION_KINDS,
-        KIND_COMPACTION, KIND_TOOL_CALL, KIND_TOOL_RESULT, KIND_TOOL_USE, MAX_INDEX_SAMPLE_SIZE,
-        MAX_INTERVENING_KINDS_SAMPLE, MAX_PAIRING_FINDINGS, MSG_OVERFLOW, MSG_SL105, MSG_SL106,
-        MSG_SL107, MSG_SL108, RESULT_KINDS, TOOL_KINDS,
+        cap_finding_sort_key, cap_pairing_findings, check_cross_branch, check_reversed_order,
+        compute_pairing_fingerprint, extract_scope, record_cross_branch, record_reversed_order,
+        resolve_rule_severity, resolve_source_coords, safe_id, source_record_id, DisjointSet,
+        RuleSeverityProfile, ToolPairing2Error, ToolPairing2Indexer, ADJACENCY_TRANSPARENT_KINDS,
+        CALL_KINDS, COMPACTION_KINDS, KIND_COMPACTION, KIND_TOOL_CALL, KIND_TOOL_RESULT,
+        KIND_TOOL_USE, MAX_INDEX_SAMPLE_SIZE, MAX_INTERVENING_KINDS_SAMPLE, MAX_PAIRING_FINDINGS,
+        MSG_OVERFLOW, MSG_SL105, MSG_SL106, MSG_SL107, MSG_SL108, PROFILES_UNAVAILABLE,
+        RESULT_KINDS, TOOL_KINDS,
     };
     use crate::context::CheckContext;
     use model::canonical::SessionEvent;
@@ -1406,5 +1950,377 @@ mod tests {
         .unwrap_err();
         assert_eq!(corr_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
         assert!(matches!(corr_err, ToolPairing2Error::PythonStr));
+    }
+
+    fn session_named_parent(
+        id: &str,
+        parent: Option<&str>,
+        kind: &str,
+        corr: Option<&str>,
+        agent: Option<&str>,
+        branch: Option<&str>,
+        interaction: Option<&str>,
+    ) -> EventValue {
+        let mut event = SessionEvent::new(
+            id,
+            parent.map(str::to_owned),
+            0,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            kind,
+        );
+        event.correlation_id = corr.map(str::to_owned);
+        event.agent_id = agent.map(str::to_owned);
+        event.branch_id = branch.map(str::to_owned);
+        event.interaction_id = interaction.map(str::to_owned);
+        EventValue::from_session(event)
+    }
+
+    #[test]
+    fn extract_scope_session_strips_and_ignores_camel_case() {
+        let none = session("evt-a-synthetic", KIND_TOOL_CALL, Some("corr-synth"));
+        assert_eq!(extract_scope(&none).unwrap(), (None, None, None));
+        let spaces = session_named_parent(
+            "evt-a-synthetic",
+            None,
+            KIND_TOOL_CALL,
+            Some("corr-synth"),
+            Some("   "),
+            Some("\t"),
+            Some(""),
+        );
+        assert_eq!(extract_scope(&spaces).unwrap(), (None, None, None));
+        let kept = session_named_parent(
+            "evt-a-synthetic",
+            None,
+            KIND_TOOL_CALL,
+            Some("corr-synth"),
+            Some("  agent-a-synth  "),
+            Some("branch-a-synth"),
+            Some("inter-a-synth"),
+        );
+        assert_eq!(
+            extract_scope(&kept).unwrap(),
+            (
+                Some("agent-a-synth".to_owned()),
+                Some("branch-a-synth".to_owned()),
+                Some("inter-a-synth".to_owned())
+            )
+        );
+        assert_eq!(
+            extract_scope(&EventValue::Other).unwrap(),
+            (None, None, None)
+        );
+    }
+
+    #[test]
+    fn extract_scope_mapping_or_camel_case_and_typed_errors() {
+        let camel = mapping(&[
+            ("agentId", field_str("agent-camel-synth")),
+            ("branchId", field_str("branch-camel-synth")),
+            ("interactionId", field_str("inter-camel-synth")),
+        ]);
+        assert_eq!(
+            extract_scope(&camel).unwrap(),
+            (
+                Some("agent-camel-synth".to_owned()),
+                Some("branch-camel-synth".to_owned()),
+                Some("inter-camel-synth".to_owned())
+            )
+        );
+        let falsy_then_camel = mapping(&[
+            ("agent_id", EventField::Int(0)),
+            ("agentId", field_str("agent-fallback-synth")),
+            ("branch_id", EventField::Bool(false)),
+            ("branchId", field_str("branch-fallback-synth")),
+            ("interaction_id", field_str("")),
+            ("interactionId", field_str("inter-fallback-synth")),
+        ]);
+        assert_eq!(
+            extract_scope(&falsy_then_camel).unwrap(),
+            (
+                Some("agent-fallback-synth".to_owned()),
+                Some("branch-fallback-synth".to_owned()),
+                Some("inter-fallback-synth".to_owned())
+            )
+        );
+        let whitespace_truthy = mapping(&[
+            ("agent_id", field_str("  ")),
+            ("agentId", field_str("agent-skipped-synth")),
+        ]);
+        assert_eq!(
+            extract_scope(&whitespace_truthy).unwrap(),
+            (None, None, None)
+        );
+        let typed = mapping(&[
+            ("agent_id", EventField::Bool(true)),
+            ("branch_id", EventField::Int(7)),
+        ]);
+        assert_eq!(
+            extract_scope(&typed).unwrap(),
+            (Some("True".to_owned()), Some("7".to_owned()), None)
+        );
+        let float_err =
+            extract_scope(&mapping(&[("agent_id", EventField::Float(1.5))])).unwrap_err();
+        assert_eq!(float_err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(float_err, ToolPairing2Error::PythonFloatStr));
+        let list_err = extract_scope(&mapping(&[(
+            "agent_id",
+            EventField::List(vec![field_str("a")]),
+        )]))
+        .unwrap_err();
+        assert_eq!(list_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        let map_err = extract_scope(&mapping(&[(
+            "agent_id",
+            EventField::Mapping(EventMapping::new(vec![("a".to_owned(), field_str("b"))])),
+        )]))
+        .unwrap_err();
+        assert_eq!(map_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        let second_false = mapping(&[
+            ("agent_id", EventField::Int(0)),
+            ("agentId", EventField::Bool(false)),
+        ]);
+        assert_eq!(
+            extract_scope(&second_false).unwrap(),
+            (Some("False".to_owned()), None, None)
+        );
+    }
+
+    #[test]
+    fn reversed_order_result_before_call_record_has_indexes_and_check_is_codec_error() {
+        let events = [
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let records = record_reversed_order(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].result_index, 0);
+        assert_eq!(records[0].use_index, 1);
+        assert_eq!(records[0].correlation_id, "corr-synth");
+        assert_eq!(records[0].related_ids, vec!["corr-synth".to_owned()]);
+        assert_eq!(records[0].record_id.as_deref(), Some("evt-call-synthetic"));
+        assert_codec_unavailable(
+            check_reversed_order(&events, None, None, None, None).unwrap_err(),
+        );
+        assert_codec_unavailable(
+            check_reversed_order(&[], None, None, None, Some(&indexer)).unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn reversed_order_equal_indexes_are_empty() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert_eq!(indexer.uses("corr-synth")[0].0, 0);
+        assert_eq!(indexer.results("corr-synth")[0].0, 1);
+        assert!(record_reversed_order(&indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_reversed_order(&events, None, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn reversed_order_two_calls_and_one_result_are_empty() {
+        let events = [
+            session("evt-a-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-b-synthetic", KIND_TOOL_USE, Some("corr-synth")),
+            session("evt-r-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert!(indexer.clean_corrs().is_empty());
+        assert!(record_reversed_order(&indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_reversed_order(&events, None, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn reversed_order_empty_list_default_max_is_ok_negative_max_is_codec_error() {
+        assert!(check_reversed_order(&[], None, None, None, None)
+            .unwrap()
+            .is_empty());
+        assert_codec_unavailable(
+            check_reversed_order(&[], None, Some(-1), None, None).unwrap_err(),
+        );
+        assert!(check_cross_branch(&[], None, None, None, None)
+            .unwrap()
+            .is_empty());
+        assert_codec_unavailable(check_cross_branch(&[], None, Some(-1), None, None).unwrap_err());
+    }
+
+    #[test]
+    fn reversed_order_missing_call_id_is_none_not_a_placeholder() {
+        let events = [
+            mapping(&[
+                ("kind", field_str(KIND_TOOL_RESULT)),
+                ("id", field_str("evt-result-synthetic")),
+                ("correlation_id", field_str("corr-synth")),
+            ]),
+            mapping(&[
+                ("kind", field_str(KIND_TOOL_CALL)),
+                ("correlation_id", field_str("corr-synth")),
+            ]),
+        ];
+        let indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let records = record_reversed_order(&indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].record_id, None);
+        assert_eq!(records[0].result_index, 0);
+        assert_eq!(records[0].use_index, 1);
+    }
+
+    #[test]
+    fn cross_branch_no_scope_different_components_is_codec_error() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session("evt-result-synthetic", KIND_TOOL_RESULT, Some("corr-synth")),
+        ];
+        let mut indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let records = record_cross_branch(&mut indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].scope_mismatch);
+        assert_eq!(records[0].use_id, "evt-call-synthetic");
+        assert_eq!(records[0].result_id, "evt-result-synthetic");
+        assert_eq!(
+            records[0].related_ids,
+            vec!["evt-result-synthetic".to_owned()]
+        );
+        assert_codec_unavailable(check_cross_branch(&events, None, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn cross_branch_no_scope_same_component_is_empty() {
+        let events = [
+            session("evt-parent-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            session_with_parent(
+                "evt-child-synthetic",
+                Some("evt-parent-synthetic"),
+                KIND_TOOL_RESULT,
+                Some("corr-synth"),
+            ),
+        ];
+        let mut indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert!(record_cross_branch(&mut indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_cross_branch(&events, None, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn cross_branch_no_scope_one_missing_id_is_empty() {
+        let events = [
+            session("evt-call-synthetic", KIND_TOOL_CALL, Some("corr-synth")),
+            mapping(&[
+                ("kind", field_str(KIND_TOOL_RESULT)),
+                ("correlation_id", field_str("corr-synth")),
+            ]),
+        ];
+        let mut indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        assert!(record_cross_branch(&mut indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_cross_branch(&events, None, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn cross_branch_same_explicit_branch_different_components_is_empty() {
+        let events = [
+            session_named_parent(
+                "evt-call-synthetic",
+                None,
+                KIND_TOOL_CALL,
+                Some("corr-synth"),
+                None,
+                Some("branch-shared-synth"),
+                None,
+            ),
+            session_named_parent(
+                "evt-result-synthetic",
+                None,
+                KIND_TOOL_RESULT,
+                Some("corr-synth"),
+                None,
+                Some("branch-shared-synth"),
+                None,
+            ),
+        ];
+        let mut indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let call_comp = indexer.component(Some("evt-call-synthetic")).unwrap();
+        let result_comp = indexer.component(Some("evt-result-synthetic")).unwrap();
+        assert_ne!(call_comp, result_comp);
+        assert!(record_cross_branch(&mut indexer, "<canonical>")
+            .unwrap()
+            .is_empty());
+        assert!(check_cross_branch(&events, None, None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn cross_branch_different_explicit_branch_has_scope_mismatch_and_codec_error() {
+        let events = [
+            session_named_parent(
+                "evt-call-synthetic",
+                None,
+                KIND_TOOL_CALL,
+                Some("corr-synth"),
+                None,
+                Some("branch-a-synth"),
+                None,
+            ),
+            session_named_parent(
+                "evt-result-synthetic",
+                None,
+                KIND_TOOL_RESULT,
+                Some("corr-synth"),
+                None,
+                Some("branch-b-synth"),
+                None,
+            ),
+        ];
+        let mut indexer = ToolPairing2Indexer::new(&events, None).unwrap();
+        let records = record_cross_branch(&mut indexer, "<canonical>").unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records[0].scope_mismatch);
+        assert_eq!(records[0].call_branch_id.as_deref(), Some("branch-a-synth"));
+        assert_eq!(
+            records[0].result_branch_id.as_deref(),
+            Some("branch-b-synth")
+        );
+        assert_eq!(records[0].call_agent_id, None);
+        assert_eq!(records[0].result_agent_id, None);
+        assert_codec_unavailable(check_cross_branch(&events, None, None, None, None).unwrap_err());
+    }
+
+    #[test]
+    fn resolve_rule_severity_none_is_default_string_is_profiles_message() {
+        let default =
+            resolve_rule_severity(SL105, RuleSeverityProfile::None, Severity::Error).unwrap();
+        assert_eq!(default, Severity::Error);
+        let named = resolve_rule_severity(
+            SL105,
+            RuleSeverityProfile::Name("neutral"),
+            Severity::Warning,
+        )
+        .unwrap_err();
+        assert_eq!(named.to_string(), PROFILES_UNAVAILABLE);
+        assert_eq!(named.message(), "sesslint.profiles is not available");
+        assert!(matches!(named, ToolPairing2Error::ProfilesUnavailable));
+        let other = resolve_rule_severity(SL105, RuleSeverityProfile::Other, Severity::Warning)
+            .unwrap_err();
+        assert_eq!(other.to_string(), PROFILES_UNAVAILABLE);
+        assert!(matches!(other, ToolPairing2Error::ProfilesUnavailable));
     }
 }
