@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Generate sesslint.errors parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SYNTHETIC = "synthetic-check-ok"
+CUSTOM_CODE = "CUSTOM"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_errors_module():
+    root = repo_root()
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.errors as errors  # noqa: WPS433
+
+    return errors
+
+
+def isinstance_flags(exc: BaseException, errors: Any) -> dict[str, bool]:
+    return {
+        "is_schema": isinstance(exc, errors.SchemaError),
+        "is_value_error": isinstance(exc, ValueError) and isinstance(exc, errors.SesslintError),
+        "is_os_error": isinstance(exc, OSError) and isinstance(exc, errors.SesslintError),
+    }
+
+
+def build_exc(errors: Any, spec: dict[str, Any]) -> BaseException:
+    kind = spec["type"]
+    message = spec["message"]
+    if kind == "SesslintError":
+        code = spec.get("code")
+        if code is None:
+            return errors.SesslintError(message)
+        return errors.SesslintError(message, code=code)
+    if kind == "SchemaError":
+        return errors.SchemaError(message, code=spec.get("code", "SCHEMA"))
+    if kind == "VersionError":
+        version = spec.get("version")
+        return errors.VersionError(message, version=version)
+    if kind == "UnknownFieldError":
+        return errors.UnknownFieldError(message, field_name=spec.get("field_name"))
+    if kind == "FindingError":
+        return errors.FindingError(message, code=spec.get("code", "FINDING"))
+    if kind == "AssuranceError":
+        return errors.AssuranceError(message, code=spec.get("code", "ASSURANCE"))
+    if kind == "ContentLeakError":
+        return errors.ContentLeakError(message, code=spec.get("code", "CONTENT_LEAK"))
+    if kind == "FileTooLargeError":
+        return errors.FileTooLargeError(message, code=spec.get("code", "LIMIT_EXCEEDED"))
+    if kind == "MaxRecordsExceededError":
+        return errors.MaxRecordsExceededError(message, code=spec.get("code", "LIMIT_EXCEEDED"))
+    if kind == "HeaderMissingError":
+        return errors.HeaderMissingError(message, code=spec.get("code", "HEADER_MISSING"))
+    if kind == "SourceChangedError":
+        return errors.SourceChangedError(message, code=spec.get("code", "SOURCE_CHANGED"))
+    if kind == "AtomicWriteError":
+        return errors.AtomicWriteError(message, code=spec.get("code", "ATOMIC_WRITE_ERROR"))
+    if kind == "OperationalError":
+        return errors.OperationalError(message, code=spec.get("code", "OPERATIONAL_ERROR"))
+    if kind == "AdapterError":
+        return errors.AdapterError(message, code=spec.get("code", "ADAPTER_ERROR"))
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct})
+
+    add("sesslint_error_default", {"type": "SesslintError", "message": SYNTHETIC})
+    add(
+        "sesslint_error_with_code",
+        {"type": "SesslintError", "message": SYNTHETIC, "code": CUSTOM_CODE},
+    )
+
+    add("schema_error_default", {"type": "SchemaError", "message": SYNTHETIC})
+    add(
+        "schema_error_with_code",
+        {"type": "SchemaError", "message": SYNTHETIC, "code": CUSTOM_CODE},
+    )
+
+    add(
+        "version_error_sl301_absent",
+        {"type": "VersionError", "message": "unsupported schema version"},
+    )
+    add(
+        "version_error_sl301_present",
+        {"type": "VersionError", "message": "already cites SL301", "version": "synthetic/9.9"},
+    )
+    add("version_error_sl301_empty", {"type": "VersionError", "message": ""})
+    add(
+        "version_error_sl301_substring",
+        {"type": "VersionError", "message": "prefix-SL301-suffix"},
+    )
+    add(
+        "version_error_unicode_sl301_absent",
+        {"type": "VersionError", "message": "phi\u00ean b\u1ea3n kh\u00f4ng h\u1ed7 tr\u1ee3"},
+    )
+
+    add(
+        "unknown_field_sl302_absent",
+        {"type": "UnknownFieldError", "message": "Unknown field in session header", "field_name": "synthetic-field"},
+    )
+    add(
+        "unknown_field_sl302_present",
+        {"type": "UnknownFieldError", "message": "Unknown field (SL302)", "field_name": "synthetic-field"},
+    )
+    add(
+        "unknown_field_sl302_empty_message",
+        {"type": "UnknownFieldError", "message": ""},
+    )
+
+    for name, kind, default_code in (
+        ("finding", "FindingError", "FINDING"),
+        ("assurance", "AssuranceError", "ASSURANCE"),
+        ("content_leak", "ContentLeakError", "CONTENT_LEAK"),
+        ("file_too_large", "FileTooLargeError", "LIMIT_EXCEEDED"),
+        ("max_records", "MaxRecordsExceededError", "LIMIT_EXCEEDED"),
+        ("header_missing", "HeaderMissingError", "HEADER_MISSING"),
+        ("source_changed", "SourceChangedError", "SOURCE_CHANGED"),
+        ("atomic_write", "AtomicWriteError", "ATOMIC_WRITE_ERROR"),
+        ("operational", "OperationalError", "OPERATIONAL_ERROR"),
+        ("adapter", "AdapterError", "ADAPTER_ERROR"),
+    ):
+        add(f"{name}_default", {"type": kind, "message": SYNTHETIC})
+        add(
+            f"{name}_with_code",
+            {"type": kind, "message": SYNTHETIC, "code": CUSTOM_CODE},
+        )
+
+    return specs
+
+
+def main() -> int:
+    errors = load_errors_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        exc = build_exc(errors, row["construct"])
+        expected = {
+            "display": str(exc),
+            "code": exc.code,
+            **isinstance_flags(exc, errors),
+        }
+        if hasattr(exc, "reason_code"):
+            expected["reason_code"] = exc.reason_code
+        if hasattr(exc, "version"):
+            expected["version"] = exc.version
+        if hasattr(exc, "field_name"):
+            expected["field_name"] = exc.field_name
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.errors",
+        "python_commit": PYTHON_COMMIT,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.errors",
+        "python_commit": PYTHON_COMMIT,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/errors/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic constructor parity vectors for sesslint.errors Display/code/isinstance flags.",
+        "generator": "rust/parity/vectors/errors/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
