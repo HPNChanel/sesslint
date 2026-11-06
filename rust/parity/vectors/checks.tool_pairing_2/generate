@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.tool_pairing_2 module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+TOOL_PAIRING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+TOOL_PAIRING_RS_SHA256 = (
+    "3cf94a430e3810d77f0633e513aed1428a43c79d1c37ddea8101849e622e271f"
+)
+MODULE = "sesslint.checks.tool_pairing_2"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "Offender path calls make_finding with the fingerprint omitted. Rust returns "
+    "FINGERPRINT_CODEC_UNAVAILABLE. Python emits a normal finding with code SL105, SL106, SL107, or "
+    "SL108.",
+    "A string profile passes sesslint.profiles import in Python; the except returns the default "
+    "severity. Rust returns sesslint.profiles is not available (PROFILES_UNAVAILABLE) and does not "
+    "use the default severity.",
+    "Empty input with max_findings -1 takes the overflow path in Rust (codec error). Python emits "
+    "an overflow finding for that family.",
+    "Float and list ids or kinds are typed errors in Rust. Python uses str() on non-string values.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_tool_pairing_py_blob() -> None:
+    pin = git_show_blob(f"{TOOL_PAIRING_PY_PIN}:src/sesslint/checks/tool_pairing_2.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/tool_pairing_2.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/tool_pairing_2.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_tool_pairing_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "tool_pairing_2.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != TOOL_PAIRING_RS_SHA256:
+        raise SystemExit(
+            "checks/src/tool_pairing_2.rs sha256 mismatch: "
+            f"expected {TOOL_PAIRING_RS_SHA256}, got {digest}"
+        )
+
+
+def load_tool_pairing_module() -> types.ModuleType:
+    verify_tool_pairing_py_blob()
+    verify_tool_pairing_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{TOOL_PAIRING_PY_PIN}:src/sesslint/checks/tool_pairing_2.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_tool_pairing_2.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_tool_pairing_2_parity",
+            tmp_path,
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned tool_pairing_2.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def session_event_tool(
+    eid: str,
+    seq: int,
+    kind: str,
+    correlation_id: str | None,
+    *,
+    parent_id: str | None = None,
+    branch_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=parent_id,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,
+        payload=dict(payload) if payload else {},
+        correlation_id=correlation_id,
+        branch_id=branch_id,
+        extra_fields={},
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "parent_id": ev.parent_id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "correlation_id": ev.correlation_id,
+        "branch_id": ev.branch_id,
+        "payload": dict(ev.payload) if ev.payload else {},
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_tool_pairing_events(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [encode_event_session(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def assert_empty_checks(
+    mod: Any,
+    events: list[Any],
+    *,
+    case_id: str,
+    source_path: str = "synth.jsonl",
+    context: Any = None,
+) -> None:
+    kwargs_base: dict[str, Any] = {
+        "source_path": source_path,
+        "context": context,
+    }
+    max_f = int(mod.MAX_PAIRING_FINDINGS)
+    for fn_name in (
+        "check_reversed_order",
+        "check_cross_branch",
+    ):
+        fn = getattr(mod, fn_name)
+        out = fn(events, max_findings=max_f, **kwargs_base)
+        if out:
+            raise SystemExit(
+                f"vector {case_id!r}: expected silent {fn_name}; got {len(out)} findings"
+            )
+    for fn_name in ("check_adjacency", "check_compaction_split"):
+        fn = getattr(mod, fn_name)
+        out = fn(events, max_findings=max_f, profile=None, severity=None, **kwargs_base)
+        if out:
+            raise SystemExit(
+                f"vector {case_id!r}: expected silent {fn_name}; got {len(out)} findings"
+            )
+    agg = mod.check_tool_pairing_2(
+        events,
+        source_path=source_path,
+        max_findings_per_family=max_f,
+        profile=None,
+        context=context,
+    )
+    if agg:
+        raise SystemExit(
+            f"vector {case_id!r}: expected silent check_tool_pairing_2; got {len(agg)} findings"
+        )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    kind_call = "tool_call"
+    kind_result = "tool_result"
+    kind_msg = "message"
+    kind_comp = "compaction_boundary"
+    out: list[dict[str, Any]] = []
+
+    # 1) empty_input_silent
+    empty: list[Any] = []
+    assert_empty_checks(mod, empty, case_id="empty_input_silent")
+    out.append(
+        {
+            "id": "empty_input_silent",
+            "construct": {
+                "type": "tool_pairing_events",
+                "source_path": "synth.jsonl",
+                "events": [],
+            },
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 2) paired_call_result_parent_adjacent
+    call_id = "call-par-synth"
+    res_id = "res-par-synth"
+    corr_par = "corr-par-synth"
+    paired = [
+        session_event_tool(call_id, 0, kind_call, corr_par),
+        session_event_tool(res_id, 1, kind_result, corr_par, parent_id=call_id),
+    ]
+    assert_empty_checks(mod, paired, case_id="paired_call_result_parent_adjacent")
+    out.append(
+        {
+            "id": "paired_call_result_parent_adjacent",
+            "construct": encode_tool_pairing_events(paired),
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 3) two_tool_calls_mis_correlated_interleaved
+    c1 = "call-a-synth"
+    c2 = "call-b-synth"
+    r1 = "res-a-synth"
+    corr_a = "corr-a-synth"
+    corr_b = "corr-b-synth"
+    interleaved = [
+        session_event_tool(c1, 0, kind_call, corr_a),
+        session_event_tool(c2, 1, kind_call, corr_b),
+        session_event_tool(r1, 2, kind_result, corr_a, parent_id=c1),
+    ]
+    assert_empty_checks(mod, interleaved, case_id="two_tool_calls_mis_correlated_interleaved")
+    out.append(
+        {
+            "id": "two_tool_calls_mis_correlated_interleaved",
+            "construct": encode_tool_pairing_events(interleaved),
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 4) two_calls_one_result_shared_correlation_not_clean
+    cs = "call-s1-synth"
+    cs2 = "call-s2-synth"
+    rs = "res-s-synth"
+    corr_s = "corr-shared-synth"
+    shared = [
+        session_event_tool(cs, 0, kind_call, corr_s),
+        session_event_tool(cs2, 1, kind_call, corr_s),
+        session_event_tool(rs, 2, kind_result, corr_s, parent_id=cs),
+    ]
+    assert_empty_checks(mod, shared, case_id="two_calls_one_result_shared_correlation_not_clean")
+    out.append(
+        {
+            "id": "two_calls_one_result_shared_correlation_not_clean",
+            "construct": encode_tool_pairing_events(shared),
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 5) message_only_silent
+    msg_only = [
+        session_event_tool("msg-only-synth", 0, kind_msg, None),
+    ]
+    assert_empty_checks(mod, msg_only, case_id="message_only_silent")
+    out.append(
+        {
+            "id": "message_only_silent",
+            "construct": encode_tool_pairing_events(msg_only),
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 6) compaction_bounds_pair_adjacent_result_parent_call
+    cc = "call-comp-synth"
+    rc = "res-comp-synth"
+    corr_c = "corr-comp-synth"
+    sandwich = [
+        session_event_tool("bound-pre-synth", 0, kind_comp, None),
+        session_event_tool(cc, 1, kind_call, corr_c),
+        session_event_tool(rc, 2, kind_result, corr_c, parent_id=cc),
+        session_event_tool("bound-post-synth", 3, kind_comp, None),
+    ]
+    assert_empty_checks(mod, sandwich, case_id="compaction_bounds_pair_adjacent_result_parent_call")
+    out.append(
+        {
+            "id": "compaction_bounds_pair_adjacent_result_parent_call",
+            "construct": encode_tool_pairing_events(sandwich),
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 7) same_nonempty_branch_id_adjacent_no_parent
+    br = "branch-synth-parity-1"
+    cb = "call-br-synth"
+    rb = "res-br-synth"
+    corr_br = "corr-br-synth"
+    br_pair = [
+        session_event_tool(cb, 0, kind_call, corr_br, branch_id=br),
+        session_event_tool(rb, 1, kind_result, corr_br, branch_id=br),
+    ]
+    assert_empty_checks(mod, br_pair, case_id="same_nonempty_branch_id_adjacent_no_parent")
+    out.append(
+        {
+            "id": "same_nonempty_branch_id_adjacent_no_parent",
+            "construct": encode_tool_pairing_events(br_pair),
+            "expected": {
+                "check_reversed_order_len": 0,
+                "check_cross_branch_len": 0,
+                "check_adjacency_len": 0,
+                "check_compaction_split_len": 0,
+                "check_tool_pairing_2_len": 0,
+            },
+        }
+    )
+
+    # 8) constants_and_all
+    assert_empty_checks(mod, [], case_id="constants_and_all")
+    if int(mod.MAX_PAIRING_FINDINGS) != 500:
+        raise SystemExit("MAX_PAIRING_FINDINGS mismatch")
+    if int(mod.MAX_INDEX_SAMPLE_SIZE) != 32:
+        raise SystemExit("MAX_INDEX_SAMPLE_SIZE mismatch")
+    if int(mod.MAX_INTERVENING_KINDS_SAMPLE) != 16:
+        raise SystemExit("MAX_INTERVENING_KINDS_SAMPLE mismatch")
+    expected_all = list(mod.__all__)
+    if len(expected_all) != 18:
+        raise SystemExit(f"unexpected __all__ length: {expected_all!r}")
+    out.append(
+        {
+            "id": "constants_and_all",
+            "construct": {
+                "type": "tool_pairing_events",
+                "source_path": "synth.jsonl",
+                "events": [],
+            },
+            "expected": {
+                "MAX_PAIRING_FINDINGS": 500,
+                "MAX_INDEX_SAMPLE_SIZE": 32,
+                "MAX_INTERVENING_KINDS_SAMPLE": 16,
+                "check_reversed_order_len": 0,
+            },
+        }
+    )
+
+    # 9) fingerprint_sl105_aba
+    fp = mod.compute_pairing_fingerprint("SL105", ["b", "a", "a"])
+    if fp != "fd7f5d41cb93b80a":
+        raise SystemExit(f"fingerprint_sl105_aba mismatch: {fp!r}")
+    out.append(
+        {
+            "id": "fingerprint_sl105_aba",
+            "construct": {
+                "type": "pairing_fingerprint",
+                "code": "SL105",
+                "items": ["b", "a", "a"],
+            },
+            "expected": {"fingerprint": "fd7f5d41cb93b80a"},
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_tool_pairing_module()
+    out_dir = Path(__file__).resolve().parent
+
+    expected_all = list(mod.__all__)
+    if len(expected_all) != 18:
+        raise SystemExit(f"tool_pairing_2 __all__ length mismatch: {expected_all!r}")
+
+    vectors = vectors_from_module(mod)
+
+    len_keys = (
+        "check_reversed_order_len",
+        "check_cross_branch_len",
+        "check_adjacency_len",
+        "check_compaction_split_len",
+        "check_tool_pairing_2_len",
+    )
+    for spec in vectors:
+        cid = spec["id"]
+        ex = spec["expected"]
+        for key in len_keys:
+            if key in ex and ex[key] != 0:
+                raise SystemExit(f"vector {cid!r}: {key} must be 0 for silent vectors")
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_tool_pairing_2_rs_sha256": TOOL_PAIRING_RS_SHA256,
+        "python_all": expected_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_tool_pairing_2_rs_sha256": TOOL_PAIRING_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.tool_pairing_2/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.tool_pairing_2 parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.tool_pairing_2/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
