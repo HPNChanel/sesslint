@@ -1,18 +1,18 @@
 //! Generic parent-graph integrity helpers (SL004, SL005, SL006, SL007).
 //!
-//! Port of `src/sesslint/checks/graph.py` lines 1–512
+//! Port of `src/sesslint/checks/graph.py` lines 1–782
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! This slice stops at the end of `check_missing_parent`. It does not port
-//! `check_cycles`, `check_components`, `check_heads`, or `check_graph`.
+//! This slice stops at the end of `check_components`. It does not port
+//! `check_heads` or `check_graph`.
 //!
 //! Parent matching is exact id equality. No `startswith` and no prefix.
 //! A parent is never invented by prefix, proximity, or content. `None`
 //! branch equals `None`.
 //!
-//! [`check_missing_parent`] and overflow [`cap_graph_findings`] call
-//! [`make_finding`] with the fingerprint omitted. That returns the codec
-//! error and does not produce a digest. This module does not substitute
-//! [`compute_graph_fingerprint`].
+//! [`check_missing_parent`], [`check_cycles`], [`check_components`], and
+//! overflow [`cap_graph_findings`] call [`make_finding`] with the fingerprint
+//! omitted. That returns the codec error and does not produce a digest.
+//! This module does not substitute [`compute_graph_fingerprint`].
 //!
 //! # Recorded gaps
 //!
@@ -23,6 +23,9 @@
 //! * A float or container `parent_id` on [`OccurrenceGraph`] is the same
 //!   typed error. That parent is skipped; a Python repr is not invented,
 //!   and the id is not treated as a root.
+//! * A float or container `kind` is not a Python repr. It is not `opaque`
+//!   or `compaction_boundary`, so the SL006 non-conversational skip does
+//!   not apply.
 //! * [`same_compaction_segment`] cannot run `events.index(a)` on
 //!   [`EventValue`] ([`PYTHON_EVENT_INDEX_UNREPRESENTABLE`]). An event
 //!   endpoint with no seq returns false and does not guess a list index.
@@ -35,7 +38,7 @@ use std::error::Error;
 use std::fmt;
 
 use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity, SL004};
+use model::codes::{Repairability, Severity, SL004, SL005, SL006};
 use model::errors::FindingError;
 use model::events::{
     EventField, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_UNREPRESENTABLE,
@@ -528,6 +531,49 @@ impl<'a> OccurrenceGraph<'a> {
     pub fn primary_source_path(&self) -> &str {
         &self.primary_source_path
     }
+
+    fn compact_index(&self, id: &str) -> Option<usize> {
+        self.records.iter().position(|record| record.id == id)
+    }
+
+    fn parent_of(&self, id: &str) -> Option<&str> {
+        self.records
+            .iter()
+            .find(|record| record.id == id)
+            .and_then(|record| record.parent.as_deref())
+    }
+
+    fn event_of(&self, id: &str) -> Option<&EventValue> {
+        self.records
+            .iter()
+            .find(|record| record.id == id)
+            .map(|record| record.event)
+    }
+
+    fn uf_position(&self, id: &str, use_event_index: bool) -> Option<usize> {
+        self.records
+            .iter()
+            .enumerate()
+            .find_map(|(compact, record)| {
+                if record.id == id {
+                    Some(if use_event_index {
+                        record.index
+                    } else {
+                        compact
+                    })
+                } else {
+                    None
+                }
+            })
+    }
+}
+
+/// One extra weakly-connected component that would emit SL006.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtraComponent {
+    pub size: usize,
+    pub root_id: String,
+    pub members: Vec<String>,
 }
 
 /// Python: `cap_graph_findings`.
@@ -750,6 +796,391 @@ pub fn check_missing_parent<'a>(
     )
 }
 
+/// Observable cycle paths. Does not call [`make_finding`].
+///
+/// Iterative three-color walk. WHITE 0, GRAY 1, BLACK 2. A self-loop
+/// path is `[id, id]`. A missing parent is not a cycle. The same node
+/// set is recorded once. Paths are rotated so the lexicographically
+/// smallest id is first, then closed with that start id.
+pub fn cycle_paths(graph: &OccurrenceGraph<'_>) -> Vec<Vec<String>> {
+    const WHITE: u8 = 0;
+    const GRAY: u8 = 1;
+    const BLACK: u8 = 2;
+
+    let n = graph.records.len();
+    let mut color = vec![WHITE; n];
+    let mut cycles: Vec<Vec<String>> = Vec::new();
+    let mut seen_cycles: BTreeSet<BTreeSet<String>> = BTreeSet::new();
+
+    for start in 0..n {
+        if color[start] == BLACK {
+            continue;
+        }
+        let parent_idx = graph.records[start]
+            .parent
+            .as_deref()
+            .and_then(|parent| graph.compact_index(parent));
+        match parent_idx {
+            Some(parent) if color[parent] != BLACK => {}
+            Some(_) | None => {
+                color[start] = BLACK;
+                continue;
+            }
+        }
+
+        let mut curr = Some(start);
+        let mut path: Vec<usize> = Vec::new();
+        let mut path_pos: Vec<Option<usize>> = vec![None; n];
+
+        while let Some(node) = curr {
+            let c = color[node];
+            if c == GRAY {
+                if let Some(cycle_start_idx) = path_pos[node] {
+                    let raw_cycle: Vec<String> = path[cycle_start_idx..]
+                        .iter()
+                        .map(|&item| graph.records[item].id.clone())
+                        .collect();
+                    let f_set: BTreeSet<String> = raw_cycle.iter().cloned().collect();
+                    if seen_cycles.insert(f_set) {
+                        cycles.push(rotate_cycle_path(raw_cycle));
+                    }
+                }
+                break;
+            }
+            if c == BLACK {
+                break;
+            }
+
+            color[node] = GRAY;
+            path_pos[node] = Some(path.len());
+            path.push(node);
+
+            curr = graph.records[node]
+                .parent
+                .as_deref()
+                .and_then(|parent| graph.compact_index(parent));
+        }
+
+        for &node in &path {
+            color[node] = BLACK;
+        }
+    }
+
+    cycles
+}
+
+/// Python: `check_cycles` (SL005).
+///
+/// No cycle returns an empty list and does not call [`make_finding`].
+/// A cycle calls [`make_finding`] with the fingerprint omitted; that
+/// codec error is propagated. After a successful [`make_finding`],
+/// [`cap_graph_findings`] is called.
+pub fn check_cycles<'a>(
+    events: &'a [EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<usize>,
+    context: Option<&CheckContext>,
+    occurrence_graph: Option<&OccurrenceGraph<'a>>,
+) -> Result<Vec<Finding>, GraphError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let max_findings = max_findings.unwrap_or(MAX_GRAPH_FINDINGS);
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_graph;
+    let graph = match occurrence_graph {
+        Some(value) => value,
+        None => {
+            owned_graph = OccurrenceGraph::new(events, source_path)?;
+            &owned_graph
+        }
+    };
+
+    let cycles = cycle_paths(graph);
+    if cycles.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut findings = Vec::new();
+    for cycle_path in cycles {
+        let Some(primary_id) = cycle_path.first() else {
+            continue;
+        };
+        let Some(event) = graph.event_of(primary_id) else {
+            continue;
+        };
+        let Some(entry_index) = graph.index_of(primary_id) else {
+            continue;
+        };
+
+        let (resolved_path, line_num) = resolve_source_coords(event, source_path)?;
+        let clean_rec_id = safe_id(primary_id);
+        let safe_cycle_path: Vec<PyValue> = cycle_path
+            .iter()
+            .map(|node| PyValue::string(safe_id(node)))
+            .collect();
+        let related: Vec<PyValue> = sorted_unique_safe_ids(&cycle_path)
+            .into_iter()
+            .map(PyValue::string)
+            .collect();
+
+        let source = SourceRef::try_new(
+            &resolved_path,
+            line_num.map(SourceLine::Int),
+            Some(clean_rec_id.as_str()),
+        )?;
+
+        let evidence = PyValue::map(vec![
+            (
+                PyValue::string("cycle_path"),
+                PyValue::list(safe_cycle_path),
+            ),
+            (
+                PyValue::string("entry_index"),
+                PyValue::int(usize_to_i64(entry_index)?),
+            ),
+        ]);
+
+        findings.push(make_finding(&MakeFindingInput {
+            code: PyValue::string(SL005),
+            severity: PyValue::severity(Severity::Fatal),
+            repairability: PyValue::repairability(Repairability::Unsupported),
+            message_template: PyValue::string(MSG_SL005),
+            template_args: PyValue::None,
+            source: PyValue::source(source),
+            related_ids: PyValue::list(related),
+            evidence,
+            fingerprint: PyValue::None,
+            adapter_id: Some(ctx.adapter_id().to_owned()),
+            adapter_version: Some(ctx.adapter_version().to_owned()),
+            profile_id: Some(ctx.profile_id().to_owned()),
+            profile_version: Some(ctx.profile_version().to_owned()),
+            ordinal: None,
+            context: None,
+        })?);
+    }
+
+    cap_graph_findings(
+        findings,
+        SL005,
+        Some(max_findings),
+        Some(source_path),
+        Some(ctx),
+    )
+}
+
+/// Extra components that would emit SL006. Does not call [`make_finding`].
+///
+/// Empty id set returns empty before union-find. One component returns
+/// empty. Named-branch and non-conversational extras are omitted.
+pub fn extra_components(graph: &OccurrenceGraph<'_>, event_count: usize) -> Vec<ExtraComponent> {
+    let n = graph.records.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let use_event_index = n == event_count;
+    let mut parent_uf: Vec<usize> = (0..n).collect();
+    let mut rank_uf = vec![0usize; n];
+    let mut component_count = n;
+
+    for (compact, record) in graph.records.iter().enumerate() {
+        let index = if use_event_index {
+            record.index
+        } else {
+            compact
+        };
+        let Some(parent_id) = record.parent.as_deref() else {
+            continue;
+        };
+        let Some(parent) = graph.uf_position(parent_id, use_event_index) else {
+            continue;
+        };
+        let root_i = union_find_find(&mut parent_uf, index);
+        let root_j = union_find_find(&mut parent_uf, parent);
+        if root_i == root_j {
+            continue;
+        }
+        component_count -= 1;
+        if rank_uf[root_i] < rank_uf[root_j] {
+            parent_uf[root_i] = root_j;
+        } else if rank_uf[root_i] > rank_uf[root_j] {
+            parent_uf[root_j] = root_i;
+        } else {
+            parent_uf[root_j] = root_i;
+            rank_uf[root_i] += 1;
+        }
+    }
+
+    if component_count == 1 {
+        return Vec::new();
+    }
+
+    let mut groups: Vec<Vec<String>> = vec![Vec::new(); n];
+    for (compact, record) in graph.records.iter().enumerate() {
+        let index = if use_event_index {
+            record.index
+        } else {
+            compact
+        };
+        let root = union_find_find(&mut parent_uf, index);
+        groups[root].push(record.id.clone());
+    }
+
+    let mut component_records: Vec<ExtraComponent> = Vec::new();
+    for members in groups {
+        if members.is_empty() {
+            continue;
+        }
+        let mut candidate_roots: Vec<&str> = Vec::new();
+        for member in &members {
+            let parent = graph.parent_of(member);
+            if parent.is_none() || parent.is_some_and(|parent_id| !graph.contains_id(parent_id)) {
+                candidate_roots.push(member.as_str());
+            }
+        }
+        let root_id = if let Some(root) = candidate_roots.iter().copied().min() {
+            root.to_owned()
+        } else if let Some(root) = members.iter().min() {
+            root.clone()
+        } else {
+            continue;
+        };
+        let size = members.len();
+        component_records.push(ExtraComponent {
+            size,
+            root_id,
+            members,
+        });
+    }
+
+    component_records.sort_by(|left, right| {
+        right
+            .size
+            .cmp(&left.size)
+            .then(left.root_id.cmp(&right.root_id))
+    });
+
+    let mut emitted = Vec::new();
+    for extra in component_records.into_iter().skip(1) {
+        if named_branch_skip(graph, &extra.members) {
+            continue;
+        }
+        if non_conversational_skip(graph, &extra.members) {
+            continue;
+        }
+        emitted.push(extra);
+    }
+    emitted
+}
+
+/// Python: `check_components` (SL006).
+///
+/// No extra component returns an empty list and does not call
+/// [`make_finding`]. An emitted component calls [`make_finding`] with
+/// the fingerprint omitted; that codec error is propagated.
+pub fn check_components<'a>(
+    events: &'a [EventValue],
+    source_path: Option<&str>,
+    max_findings: Option<usize>,
+    context: Option<&CheckContext>,
+    occurrence_graph: Option<&OccurrenceGraph<'a>>,
+) -> Result<Vec<Finding>, GraphError> {
+    let source_path = source_path.unwrap_or("<canonical>");
+    let max_findings = max_findings.unwrap_or(MAX_GRAPH_FINDINGS);
+    let owned_ctx;
+    let ctx = match context {
+        Some(value) => value,
+        None => {
+            owned_ctx = CheckContext::default();
+            &owned_ctx
+        }
+    };
+    let owned_graph;
+    let graph = match occurrence_graph {
+        Some(value) => value,
+        None => {
+            owned_graph = OccurrenceGraph::new(events, source_path)?;
+            &owned_graph
+        }
+    };
+
+    let extras = extra_components(graph, events.len());
+    if extras.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut findings = Vec::new();
+    for extra in extras {
+        let Some(event) = graph.event_of(&extra.root_id) else {
+            continue;
+        };
+        let (resolved_path, line_num) = resolve_source_coords(event, source_path)?;
+        let clean_rec_id = safe_id(&extra.root_id);
+
+        let mut sorted_members = extra.members.clone();
+        sorted_members.sort();
+        let member_sample: Vec<PyValue> = sorted_members
+            .iter()
+            .take(MAX_MEMBER_SAMPLE_SIZE)
+            .map(|node| PyValue::string(safe_id(node)))
+            .collect();
+        let related: Vec<PyValue> = sorted_unique_safe_ids(&sorted_members)
+            .into_iter()
+            .map(PyValue::string)
+            .collect();
+
+        let source = SourceRef::try_new(
+            &resolved_path,
+            line_num.map(SourceLine::Int),
+            Some(clean_rec_id.as_str()),
+        )?;
+
+        let evidence = PyValue::map(vec![
+            (
+                PyValue::string("member_sample"),
+                PyValue::list(member_sample),
+            ),
+            (PyValue::string("root_id"), PyValue::string(clean_rec_id)),
+            (
+                PyValue::string("size"),
+                PyValue::int(usize_to_i64(extra.size)?),
+            ),
+        ]);
+
+        findings.push(make_finding(&MakeFindingInput {
+            code: PyValue::string(SL006),
+            severity: PyValue::severity(Severity::Warning),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message_template: PyValue::string(MSG_SL006),
+            template_args: PyValue::None,
+            source: PyValue::source(source),
+            related_ids: PyValue::list(related),
+            evidence,
+            fingerprint: PyValue::None,
+            adapter_id: Some(ctx.adapter_id().to_owned()),
+            adapter_version: Some(ctx.adapter_version().to_owned()),
+            profile_id: Some(ctx.profile_id().to_owned()),
+            profile_version: Some(ctx.profile_version().to_owned()),
+            ordinal: None,
+            context: None,
+        })?);
+    }
+
+    cap_graph_findings(
+        findings,
+        SL006,
+        Some(max_findings),
+        Some(source_path),
+        Some(ctx),
+    )
+}
+
 fn overflow_flag(finding: &Finding) -> Result<i32, GraphError> {
     let Some(evidence) = finding.evidence() else {
         return Ok(0);
@@ -900,10 +1331,79 @@ fn usize_to_i64(value: usize) -> Result<i64, GraphError> {
     i64::try_from(value).map_err(|_| GraphError::CountUnrepresentable)
 }
 
+fn rotate_cycle_path(raw_cycle: Vec<String>) -> Vec<String> {
+    if raw_cycle.is_empty() {
+        return raw_cycle;
+    }
+    let mut min_idx = 0;
+    for (idx, id) in raw_cycle.iter().enumerate().skip(1) {
+        if id < &raw_cycle[min_idx] {
+            min_idx = idx;
+        }
+    }
+    let mut rotated = Vec::with_capacity(raw_cycle.len() + 1);
+    rotated.extend_from_slice(&raw_cycle[min_idx..]);
+    rotated.extend_from_slice(&raw_cycle[..min_idx]);
+    if let Some(start) = rotated.first().cloned() {
+        rotated.push(start);
+    }
+    rotated
+}
+
+fn union_find_find(parent_uf: &mut [usize], mut i: usize) -> usize {
+    while parent_uf[i] != i {
+        let grand = parent_uf[parent_uf[i]];
+        parent_uf[i] = grand;
+        i = parent_uf[i];
+    }
+    i
+}
+
+fn named_branch_skip(graph: &OccurrenceGraph<'_>, members: &[String]) -> bool {
+    let mut first: Option<Option<String>> = None;
+    for member in members {
+        let branch = graph.event_of(member).and_then(event_branch_safe);
+        match &first {
+            None => first = Some(branch),
+            Some(seen) if *seen != branch => return false,
+            Some(_) => {}
+        }
+    }
+    matches!(first, Some(Some(_)))
+}
+
+fn non_conversational_skip(graph: &OccurrenceGraph<'_>, members: &[String]) -> bool {
+    if members.is_empty() {
+        return false;
+    }
+    for member in members {
+        let kind = graph
+            .event_of(member)
+            .and_then(|event| event_get(event, "kind"));
+        match kind {
+            Some(EventField::Str(kind)) if NON_CONVERSATIONAL_KINDS.contains(&kind.as_str()) => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn sorted_unique_safe_ids(ids: &[String]) -> Vec<String> {
+    let mut unique = BTreeSet::new();
+    for id in ids {
+        let clean = safe_id(id);
+        if !clean.trim().is_empty() {
+            unique.insert(clean);
+        }
+    }
+    unique.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_graph_findings, check_missing_parent, compute_graph_fingerprint, event_seq_safe,
+        cap_graph_findings, check_components, check_cycles, check_missing_parent,
+        compute_graph_fingerprint, cycle_paths, event_seq_safe, extra_components,
         find_qualifying_parent_candidates, is_qualifying_parent_candidate, safe_id,
         same_compaction_segment, Confinement, GraphEndpoint, GraphError, GraphScalar,
         OccurrenceGraph, CONF_SEG_KEY, MSG_SL004, PYTHON_EVENT_INDEX_UNREPRESENTABLE,
@@ -1391,5 +1891,254 @@ mod tests {
         ])];
         let container_err = OccurrenceGraph::new(&container_parent, "<canonical>").unwrap_err();
         assert_eq!(container_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+    }
+
+    fn assert_codec_unavailable(err: GraphError) {
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!is_lower_hex16(&err.to_string()));
+    }
+
+    #[test]
+    fn no_cycle_returns_no_paths_and_check_cycles_is_empty() {
+        let events = vec![
+            event("parent-synthetic", None, 0, None, "message"),
+            event(
+                "child-synthetic",
+                Some("parent-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(cycle_paths(&graph).is_empty());
+        let findings = check_cycles(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn self_loop_path_is_id_id_and_check_cycles_returns_codec_error() {
+        let events = vec![event(
+            "loop-synthetic",
+            Some("loop-synthetic"),
+            0,
+            None,
+            "message",
+        )];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert_eq!(
+            cycle_paths(&graph),
+            vec![vec![
+                "loop-synthetic".to_owned(),
+                "loop-synthetic".to_owned()
+            ]]
+        );
+        let err = check_cycles(&events, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn two_node_cycle_rotates_to_smaller_id_and_closes() {
+        let events = vec![
+            event(
+                "evt-b-synthetic",
+                Some("evt-a-synthetic"),
+                0,
+                None,
+                "message",
+            ),
+            event(
+                "evt-a-synthetic",
+                Some("evt-b-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        let paths = cycle_paths(&graph);
+        assert_eq!(
+            paths,
+            vec![vec![
+                "evt-a-synthetic".to_owned(),
+                "evt-b-synthetic".to_owned(),
+                "evt-a-synthetic".to_owned(),
+            ]]
+        );
+        let err = check_cycles(&events, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn the_same_cycle_is_recorded_once() {
+        let events = vec![
+            event(
+                "evt-b-synthetic",
+                Some("evt-a-synthetic"),
+                0,
+                None,
+                "message",
+            ),
+            event(
+                "evt-a-synthetic",
+                Some("evt-b-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+            event(
+                "tail-synthetic",
+                Some("evt-b-synthetic"),
+                2,
+                None,
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        let paths = cycle_paths(&graph);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            paths[0],
+            vec![
+                "evt-a-synthetic".to_owned(),
+                "evt-b-synthetic".to_owned(),
+                "evt-a-synthetic".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_component_returns_no_extras_and_check_components_is_empty() {
+        let events = vec![
+            event("parent-synthetic", None, 0, None, "message"),
+            event(
+                "child-synthetic",
+                Some("parent-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(extra_components(&graph, events.len()).is_empty());
+        let findings = check_components(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn two_disconnected_message_nodes_select_primary_by_size_then_root() {
+        let unequal = vec![
+            event("root-a-synthetic", None, 0, None, "message"),
+            event(
+                "child-a-synthetic",
+                Some("root-a-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+            event("root-c-synthetic", None, 2, None, "message"),
+        ];
+        let unequal_graph = OccurrenceGraph::new(&unequal, "<canonical>").unwrap();
+        let extras = extra_components(&unequal_graph, unequal.len());
+        assert_eq!(extras.len(), 1);
+        assert_eq!(extras[0].root_id, "root-c-synthetic");
+        assert_eq!(extras[0].size, 1);
+        let err = check_components(&unequal, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+
+        let equal = vec![
+            event("root-a-synthetic", None, 0, None, "message"),
+            event("root-c-synthetic", None, 1, None, "message"),
+        ];
+        let equal_graph = OccurrenceGraph::new(&equal, "<canonical>").unwrap();
+        let extras = extra_components(&equal_graph, equal.len());
+        assert_eq!(extras.len(), 1);
+        assert_eq!(extras[0].root_id, "root-c-synthetic");
+        assert_eq!(extras[0].size, 1);
+        let err = check_components(&equal, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+    }
+
+    #[test]
+    fn shared_non_null_branch_does_not_emit() {
+        let events = vec![
+            event("aaa-main-synthetic", None, 0, None, "message"),
+            event(
+                "aaa-child-synthetic",
+                Some("aaa-main-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+            event(
+                "bbb-side-synthetic",
+                None,
+                2,
+                Some("side-synthetic"),
+                "message",
+            ),
+            event(
+                "ccc-side-synthetic",
+                Some("bbb-side-synthetic"),
+                3,
+                Some("side-synthetic"),
+                "message",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(extra_components(&graph, events.len()).is_empty());
+        let findings = check_components(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn opaque_and_compaction_boundary_kinds_do_not_emit() {
+        let events = vec![
+            event("msg-root-synthetic", None, 0, None, "message"),
+            event(
+                "msg-child-synthetic",
+                Some("msg-root-synthetic"),
+                1,
+                None,
+                "message",
+            ),
+            event("opaque-synthetic", None, 2, None, "opaque"),
+            event(
+                "bound-synthetic",
+                Some("opaque-synthetic"),
+                3,
+                None,
+                "compaction_boundary",
+            ),
+        ];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert!(extra_components(&graph, events.len()).is_empty());
+        let findings = check_components(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn self_loop_is_a_cycle_and_not_an_extra_component() {
+        let events = vec![event(
+            "loop-synthetic",
+            Some("loop-synthetic"),
+            0,
+            None,
+            "message",
+        )];
+        let graph = OccurrenceGraph::new(&events, "<canonical>").unwrap();
+        assert_eq!(
+            cycle_paths(&graph),
+            vec![vec![
+                "loop-synthetic".to_owned(),
+                "loop-synthetic".to_owned()
+            ]]
+        );
+        assert!(extra_components(&graph, events.len()).is_empty());
+        let err = check_cycles(&events, None, None, None, None).unwrap_err();
+        assert_codec_unavailable(err);
+        let findings = check_components(&events, None, None, None, None).unwrap();
+        assert!(findings.is_empty());
     }
 }
