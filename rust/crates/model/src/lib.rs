@@ -7,9 +7,9 @@ mod error;
 pub use error::ModelError;
 
 pub mod resources {}
+pub mod codes;
 pub mod errors;
 pub mod version;
-pub mod codes {}
 pub mod secret_families {}
 pub mod finding {}
 pub mod canonical {}
