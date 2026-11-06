@@ -12,7 +12,7 @@ pub mod json_errors {}
 pub mod options {}
 pub mod output;
 pub mod progress;
-pub mod seal {}
+pub mod seal;
 pub mod version;
 pub mod api {}
 pub mod common {}
