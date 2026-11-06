@@ -1,0 +1,471 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.ordering module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ORDERING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ORDERING_RS_SHA256 = (
+    "6e6a911807df01701dc7ccadbbb177016c997cb106594f7b9f475fa04297e446"
+)
+MODULE = "sesslint.checks.ordering"
+NEGATIVE_SKEW_MSG = "timestamp_skew_ms must be a nonnegative integer"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "A real violation calls make_finding with the fingerprint omitted. "
+    "Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits one SL008 finding. "
+    "Do not require the two-second edge with skew 0 as a silent vector.",
+    "A second violating edge updates count and max_delta_ms on the aggregate finding; "
+    "that path is also a finding on the Python side.",
+    "Python bool is not an int: type(True) is bool is rejected for timestamp_skew_ms. "
+    "Rust uses Option<i64>, so a bool skew is not represented.",
+    "No chrono: a timestamp form the hand parser cannot read is skipped, matching "
+    "Python ValueError inside _parse_ts.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_ordering_py_blob() -> None:
+    pin = git_show_blob(f"{ORDERING_PY_PIN}:src/sesslint/checks/ordering.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/ordering.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/ordering.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_ordering_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "ordering.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != ORDERING_RS_SHA256:
+        raise SystemExit(
+            "checks/src/ordering.rs sha256 mismatch: "
+            f"expected {ORDERING_RS_SHA256}, got {digest}"
+        )
+
+
+def load_ordering_module() -> types.ModuleType:
+    verify_ordering_py_blob()
+    verify_ordering_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{ORDERING_PY_PIN}:src/sesslint/checks/ordering.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_ordering.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_ordering_parity",
+            tmp_path,
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned ordering.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def session_event(
+    eid: str,
+    parent_id: str | None,
+    seq: int,
+    ts: str,
+    kind: str,
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=parent_id,
+        seq=seq,
+        ts=ts,
+        actor="assistant",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields={},
+    )
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "parent_id": ev.parent_id,
+        "seq": ev.seq,
+        "ts": ev.ts,
+        "actor": ev.actor,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_construct_ordering_events(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "ordering_events",
+        "events": [encode_event_session(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def assert_silent(mod: Any, events: list[Any], case_id: str) -> None:
+    out = mod.check_ordering(events)
+    if out:
+        raise SystemExit(
+            f"vector {case_id!r}: expected silent Python check_ordering; got {len(out)} findings"
+        )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    # 1) No parent id: two roots, child has no parent
+    ev_no_parent = [
+        session_event("evt-par-ord-root", None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event("evt-par-ord-child", None, 1, "2024-01-01T00:00:00Z", "message"),
+    ]
+    assert_silent(mod, ev_no_parent, "no_parent_id_silent")
+    out.append(
+        {
+            "id": "no_parent_id_silent",
+            "construct": encode_construct_ordering_events(ev_no_parent),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+            },
+        }
+    )
+
+    # 2) Parent id does not exist
+    ev_ghost = [
+        session_event("evt-par-ord-root", None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event(
+            "evt-par-ord-child",
+            "evt-par-ord-ghost",
+            1,
+            "2024-01-01T00:00:00Z",
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_ghost, "missing_parent_id_silent")
+    out.append(
+        {
+            "id": "missing_parent_id_silent",
+            "construct": encode_construct_ordering_events(ev_ghost),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+            },
+        }
+    )
+
+    # 3) Duplicate id: two events share id; child points at that id (ambiguous parent)
+    dup_id = "evt-par-ord-dup"
+    ev_dup = [
+        session_event(dup_id, None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event(dup_id, None, 1, "2024-01-01T00:00:03Z", "message"),
+        session_event(
+            "evt-par-ord-child-dup",
+            dup_id,
+            2,
+            "2024-01-01T00:00:00Z",
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_dup, "duplicate_parent_id_silent")
+    out.append(
+        {
+            "id": "duplicate_parent_id_silent",
+            "construct": encode_construct_ordering_events(ev_dup),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+            },
+        }
+    )
+
+    # 4) Epoch sentinel on either side
+    sentinel = "1970-01-01T00:00:00Z"
+    ev_epoch_child = [
+        session_event("evt-par-ord-p", None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event(
+            "evt-par-ord-c-sent",
+            "evt-par-ord-p",
+            1,
+            sentinel,
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_epoch_child, "epoch_sentinel_child_silent")
+    out.append(
+        {
+            "id": "epoch_sentinel_child_silent",
+            "construct": encode_construct_ordering_events(ev_epoch_child),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+                "timestamp_skew_ms": 0,
+            },
+        }
+    )
+
+    ev_epoch_parent = [
+        session_event("evt-par-ord-p-sent", None, 0, sentinel, "message"),
+        session_event(
+            "evt-par-ord-c",
+            "evt-par-ord-p-sent",
+            1,
+            "2024-01-01T00:00:00Z",
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_epoch_parent, "epoch_sentinel_parent_silent")
+    out.append(
+        {
+            "id": "epoch_sentinel_parent_silent",
+            "construct": encode_construct_ordering_events(ev_epoch_parent),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+                "timestamp_skew_ms": 0,
+            },
+        }
+    )
+
+    # 5) Default skew 2000 ms: child 2024-01-01T00:00:00Z, parent +2s — magnitude 2000, not a violation
+    ev_default_skew = [
+        session_event("evt-par-ord-p2", None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event(
+            "evt-par-ord-c2",
+            "evt-par-ord-p2",
+            1,
+            "2024-01-01T00:00:00Z",
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_default_skew, "default_skew_two_second_edge_silent")
+    out.append(
+        {
+            "id": "default_skew_two_second_edge_silent",
+            "construct": encode_construct_ordering_events(ev_default_skew),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+            },
+        }
+    )
+
+    # 6) Unparseable timestamp on child
+    ev_bad_child = [
+        session_event("evt-par-ord-p3", None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event(
+            "evt-par-ord-c-bad",
+            "evt-par-ord-p3",
+            1,
+            "not-a-timestamp",
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_bad_child, "unparseable_ts_child_silent")
+    out.append(
+        {
+            "id": "unparseable_ts_child_silent",
+            "construct": encode_construct_ordering_events(ev_bad_child),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+                "timestamp_skew_ms": 0,
+            },
+        }
+    )
+
+    # 7) Unparseable timestamp on parent
+    ev_bad_parent = [
+        session_event("evt-par-ord-p-bad", None, 0, "not-a-timestamp", "message"),
+        session_event(
+            "evt-par-ord-c3",
+            "evt-par-ord-p-bad",
+            1,
+            "2024-01-01T00:00:00Z",
+            "message",
+        ),
+    ]
+    assert_silent(mod, ev_bad_parent, "unparseable_ts_parent_silent")
+    out.append(
+        {
+            "id": "unparseable_ts_parent_silent",
+            "construct": encode_construct_ordering_events(ev_bad_parent),
+            "expected": {
+                "check_findings_len": 0,
+                "ordering_record_none": True,
+                "timestamp_skew_ms": 0,
+            },
+        }
+    )
+
+    # 8) Negative skew: ValueError on Python
+    ev_neg_skew = [
+        session_event("evt-par-ord-p4", None, 0, "2024-01-01T00:00:02Z", "message"),
+        session_event(
+            "evt-par-ord-c4",
+            "evt-par-ord-p4",
+            1,
+            "2024-01-01T00:00:00Z",
+            "message",
+        ),
+    ]
+    try:
+        mod.check_ordering(ev_neg_skew, timestamp_skew_ms=-1)
+    except ValueError as exc:
+        if str(exc) != NEGATIVE_SKEW_MSG:
+            raise SystemExit(
+                f"negative_skew_error: unexpected ValueError: {exc!r}"
+            ) from exc
+    else:
+        raise SystemExit("negative_skew_error: expected ValueError from Python")
+
+    out.append(
+        {
+            "id": "negative_skew_error",
+            "construct": {
+                **encode_construct_ordering_events(ev_neg_skew),
+                "timestamp_skew_ms": -1,
+            },
+            "expected": {
+                "ordering_error": NEGATIVE_SKEW_MSG,
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_ordering_module()
+    out_dir = Path(__file__).resolve().parent
+
+    expected_all = ["check_ordering"]
+    if list(mod.__all__) != expected_all:
+        raise SystemExit(f"ordering __all__ mismatch: {mod.__all__!r}")
+
+    vectors = vectors_from_module(mod)
+
+    for spec in vectors:
+        ec = spec["expected"].get("check_findings_len")
+        if ec is not None and ec != 0:
+            raise SystemExit(
+                f'vector {spec["id"]!r}: expected silent; check_findings_len={ec}'
+            )
+        if "ordering_error" in spec["expected"]:
+            continue
+        on = spec["expected"].get("ordering_record_none")
+        if on is not None and not on:
+            raise SystemExit(f'vector {spec["id"]!r}: ordering_record_none must be true')
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_ordering_rs_sha256": ORDERING_RS_SHA256,
+        "python_all": expected_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_ordering_rs_sha256": ORDERING_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.ordering/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.ordering parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.ordering/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
