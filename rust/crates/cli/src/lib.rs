@@ -10,7 +10,7 @@ pub mod errors;
 pub mod context {}
 pub mod json_errors {}
 pub mod options {}
-pub mod output {}
+pub mod output;
 pub mod progress {}
 pub mod seal {}
 pub mod version {}
