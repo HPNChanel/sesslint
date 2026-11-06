@@ -1,0 +1,110 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.progress",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "progress_py_sha256": "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572",
+  "vectors": [
+    {
+      "id": "progress_event_full",
+      "construct": {
+        "type": "ProgressEvent",
+        "phase": "scan",
+        "completed": 3,
+        "total": 7,
+        "item": "a.jsonl"
+      },
+      "expected": {
+        "to_dict": {
+          "completed": 3,
+          "item": "a.jsonl",
+          "phase": "scan",
+          "total": 7
+        },
+        "json": "{\"completed\": 3, \"item\": \"a.jsonl\", \"phase\": \"scan\", \"total\": 7}"
+      }
+    },
+    {
+      "id": "progress_event_omit_none",
+      "construct": {
+        "type": "ProgressEvent",
+        "phase": "check:load",
+        "completed": 1
+      },
+      "expected": {
+        "to_dict": {
+          "completed": 1,
+          "phase": "check:load"
+        },
+        "json": "{\"completed\": 1, \"phase\": \"check:load\"}"
+      }
+    },
+    {
+      "id": "progress_event_zero_total_empty_item",
+      "construct": {
+        "type": "ProgressEvent",
+        "phase": "repair:execute",
+        "completed": -1,
+        "total": 0,
+        "item": ""
+      },
+      "expected": {
+        "to_dict": {
+          "completed": -1,
+          "item": "",
+          "phase": "repair:execute",
+          "total": 0
+        },
+        "json": "{\"completed\": -1, \"item\": \"\", \"phase\": \"repair:execute\", \"total\": 0}"
+      }
+    },
+    {
+      "id": "progress_event_non_ascii_item",
+      "construct": {
+        "type": "ProgressEvent",
+        "phase": "scan",
+        "completed": 1,
+        "item": "café.jsonl"
+      },
+      "expected": {
+        "to_dict": {
+          "completed": 1,
+          "item": "café.jsonl",
+          "phase": "scan"
+        },
+        "json": "{\"completed\": 1, \"item\": \"caf\\u00e9.jsonl\", \"phase\": \"scan\"}"
+      }
+    },
+    {
+      "id": "operation_cancelled_message",
+      "construct": {
+        "type": "OperationCancelled"
+      },
+      "expected": {
+        "message": "operation cancelled"
+      }
+    },
+    {
+      "id": "cancellation_token_throw_if_cancelled",
+      "construct": {
+        "type": "CancellationToken",
+        "action": "throw_if_cancelled",
+        "cancel_before": true
+      },
+      "expected": {
+        "raises": "OperationCancelled",
+        "message": "operation cancelled"
+      }
+    },
+    {
+      "id": "check_token_cancelled",
+      "construct": {
+        "type": "check_token",
+        "cancel_before": true
+      },
+      "expected": {
+        "raises": "OperationCancelled",
+        "message": "operation cancelled"
+      }
+    }
+  ]
+}

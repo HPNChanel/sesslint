@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic phase names and basenames for sesslint.progress parity.",
+  "generator": "rust/parity/vectors/progress/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}
