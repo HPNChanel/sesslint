@@ -10,7 +10,8 @@
 //! ID sets for internal diffing — nothing from other entry fields (titles,
 //! previews, prompts) is retained.
 //!
-//! Port of `src/sesslint/indexes.py` lines 1–330 @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Port of `src/sesslint/indexes.py` lines 1–330 and `__all__` (333–342)
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -496,12 +497,28 @@ pub fn discover_index_files(root: &Path, agent: &str) -> Vec<PathBuf> {
     out
 }
 
+/// Public export list matching Python `indexes.__all__` (lines 333–342).
+///
+/// Declaration order is part of the surface: star-import and documentation
+/// follow this sequence. `MAX_PROJECT_DIRS` stays module-visible (as in
+/// Python) but is not in this list.
+pub const ALL: &[&str] = &[
+    "INDEX_FILE_NAMES",
+    "IndexEntry",
+    "MAX_INDEX_BYTES",
+    "MAX_INDEX_ENTRIES",
+    "IndexSnapshot",
+    "discover_index_files",
+    "has_index_format",
+    "read_index",
+];
+
 #[cfg(test)]
 mod tests {
     use super::{
         discover_index_files, extract_entries, has_index_format, looks_like_index, read_index,
-        salvage_partial, IndexSnapshot, INDEX_FILE_NAMES, INDEX_FORMAT_CLAUDE, INDEX_FORMAT_CODEX,
-        INDEX_FORMAT_UNKNOWN, MAX_INDEX_ENTRIES,
+        salvage_partial, IndexEntry, IndexSnapshot, ALL, INDEX_FILE_NAMES, INDEX_FORMAT_CLAUDE,
+        INDEX_FORMAT_CODEX, INDEX_FORMAT_UNKNOWN, MAX_INDEX_BYTES, MAX_INDEX_ENTRIES,
     };
     use serde_json::{json, Value};
     use std::collections::BTreeSet;
@@ -983,6 +1000,41 @@ mod tests {
         assert!(!snap.parse_ok);
         assert_eq!(snap.schema_note.as_deref(), Some("oversized"));
         assert_eq!(snap.format, INDEX_FORMAT_CODEX);
+    }
+
+    #[test]
+    fn public_export_list_matches_python_all() {
+        assert_eq!(
+            ALL,
+            &[
+                "INDEX_FILE_NAMES",
+                "IndexEntry",
+                "MAX_INDEX_BYTES",
+                "MAX_INDEX_ENTRIES",
+                "IndexSnapshot",
+                "discover_index_files",
+                "has_index_format",
+                "read_index",
+            ]
+        );
+        // Each listed name must stay publicly reachable; rename/privatize → compile fail.
+        let _: &[&str] = INDEX_FILE_NAMES;
+        let _: usize = MAX_INDEX_BYTES;
+        let _: usize = MAX_INDEX_ENTRIES;
+        let _: fn(&Path) -> IndexSnapshot = read_index;
+        let _: fn(&str) -> bool = has_index_format;
+        let _: fn(&Path, &str) -> Vec<PathBuf> = discover_index_files;
+        let _: IndexEntry = IndexEntry {
+            session_id: None,
+            full_path: None,
+        };
+        let _: IndexSnapshot = IndexSnapshot {
+            format: String::new(),
+            entries: Vec::new(),
+            parse_ok: false,
+            truncated: false,
+            schema_note: None,
+        };
     }
 
     fn create_file_symlink(real: &Path, link: &Path) -> bool {
