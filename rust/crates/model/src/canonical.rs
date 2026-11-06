@@ -576,6 +576,17 @@ pub enum MapWalk {
     Done,
 }
 
+/// Walk of every item in a [`Payload`] list.
+///
+/// A tuple is [`ListWalk::NotAList`]. Python `isinstance(value, list)` is false
+/// for a tuple.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListWalk {
+    NotAList,
+    Borrowed,
+    Done,
+}
+
 /// JSON-like payload node.
 ///
 /// Containers are `Rc` so a cycle has one identity, matching Python `id()`.
@@ -755,6 +766,22 @@ impl Payload {
             visit(text, &borrowed[index].1);
         }
         MapWalk::Done
+    }
+
+    /// Visit list items in stored order. [`ListWalk::Borrowed`] is a failed
+    /// borrow, not an empty list. A tuple is [`ListWalk::NotAList`].
+    pub fn walk_list_items(&self, mut visit: impl FnMut(usize, &Payload)) -> ListWalk {
+        let PayloadKind::List(items) = &*self.kind else {
+            return ListWalk::NotAList;
+        };
+        let borrowed = match items.try_borrow() {
+            Ok(borrowed) => borrowed,
+            Err(_) => return ListWalk::Borrowed,
+        };
+        for (index, item) in borrowed.iter().enumerate() {
+            visit(index, item);
+        }
+        ListWalk::Done
     }
 
     fn is_container(&self) -> bool {
@@ -2837,6 +2864,30 @@ mod tests {
         assert_eq!(
             Payload::list(Vec::new()).walk_string_entries(|_, _| {}),
             MapWalk::NotAMap
+        );
+    }
+
+    #[test]
+    fn walk_list_items_keeps_order_and_rejects_a_tuple() {
+        use super::ListWalk;
+
+        let payload = Payload::list(vec![Payload::string("alpha"), Payload::int(2)]);
+        let mut seen = Vec::new();
+        let walk = payload.walk_list_items(|index, item| {
+            seen.push((index, item.as_str().map(str::to_owned), item.as_int()));
+        });
+        assert_eq!(walk, ListWalk::Done);
+        assert_eq!(
+            seen,
+            vec![(0, Some("alpha".to_owned()), None), (1, None, Some(2))]
+        );
+        assert_eq!(
+            Payload::tuple(vec![Payload::string("alpha")]).walk_list_items(|_, _| {}),
+            ListWalk::NotAList
+        );
+        assert_eq!(
+            Payload::list(Vec::new()).walk_list_items(|_, _| {}),
+            ListWalk::Done
         );
     }
 
