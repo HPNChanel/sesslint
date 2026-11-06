@@ -1,31 +1,54 @@
-//! Canonical session types and payload guards.
+//! Canonical session types, header parsing, and payload guards.
 //!
-//! Port of `src/sesslint/canonical.py` lines 1–310
+//! Port of `src/sesslint/canonical.py` lines 1–469
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before `reparse_identity_hashes`. Canonical JSON, parsers, dump, and
-//! schema loaders are not in this slice. This module has no `__all__`.
+//! Stops before `parse_session_event`. Dump and schema loaders are not in
+//! this slice. This module has no `__all__`.
 //!
 //! # Recorded gaps
 //!
 //! * Python `frozenset` iteration order is not a contract. The slices below are
 //!   the set literals in source order. Membership is a linear scan of that
 //!   slice. These names are not sorted at runtime and are not stored in a
-//!   `HashMap`.
+//!   `HashMap`. [`parse_session_header`] walks [`REQUIRED_HEADER_FIELDS`] in
+//!   that source order, so a missing `session_id` is reported before a missing
+//!   `created_at`.
 //! * `_RFC3339_UTC_REGEX` uses Python `\d`, which matches Unicode category Nd.
 //!   This port accepts ASCII digits only. A non-ASCII decimal digit fails the
 //!   format check.
 //! * [`validate_rfc3339_utc`] takes `&str`. A non-`str` timestamp is not
-//!   representable. Python would raise `SchemaError` for one; this function
-//!   does not panic.
+//!   representable there. [`parse_session_header`] reports the same RFC3339
+//!   message for a non-string `created_at`, using Python `repr`, and does not
+//!   panic.
 //! * [`validate_depth`] treats only a map, `list`, or `tuple` as a container.
 //!   Python `set` / `frozenset` are not containers there. This port has no set
 //!   variant. A set must not be encoded as a list.
 //! * Python `int` is unbounded. `seq`, `version`, `source_line`, and payload
-//!   ints are `i64`.
-//! * [`SessionEvent`] methods that need functions defined after this slice, and
-//!   [`compute_content_hash`], return [`CanonicalUnavailable`]. `model` cannot
-//!   depend on the codec crate, so the late `sesslint._canonical_codec` imports
-//!   stay unavailable. Nothing here hashes or encodes JSON.
+//!   ints are `i64`. A header `version` outside `i64` is not representable.
+//! * A header value uses [`Payload`]. A map is Python `dict`. Another mapping
+//!   class is not representable.
+//! * Payload map entries can repeat a key. Field lookup uses the last matching
+//!   string key. The unknown-field walk visits every entry in insertion order
+//!   and does not collapse duplicates the way a Python `dict` would.
+//! * A non-string header key has no `startswith`. Python raises
+//!   `AttributeError`. This port returns [`SchemaError`]
+//!   (`Session header field name must be a string`) and does not panic.
+//! * A map `RefCell` that is already borrowed yields the same cycle
+//!   [`SchemaError`] as [`validate_depth`]. Python has no `RefCell`.
+//! * Finite float `repr` follows Rust debug formatting, not Python's shortest
+//!   round-trip. Non-finite values use `nan`, `inf`, and `-inf`.
+//! * [`normalize_for_canonical_json`], [`to_canonical_json`],
+//!   [`canonical_bytes`], and [`to_canonical_dict`] name the codec seams and
+//!   return [`CanonicalUnavailable`]. `model` cannot depend on the codec crate.
+//!   They do not encode JSON. [`to_canonical_dict`] calls normalize and does
+//!   not invent a dict or a `TypeError`.
+//! * [`reparse_identity_hashes`] returns [`CanonicalUnavailable`] because
+//!   `sesslint.adapters.synthetic.is_synthetic_id` is not available
+//!   (`adapters` depends on `model`). The hash loop is not simulated: the
+//!   function does not walk events, build a dict, or hash.
+//! * [`SessionEvent::content_identity_bytes`],
+//!   [`SessionEvent::content_identity_hash`], and [`compute_content_hash`]
+//!   stay on their codec seams. Nothing here hashes.
 //! * Python `payload_hash` uses truthiness (`content_hash or ...`), so `""`
 //!   would call the codec. This slice returns every `Some` hash unchanged and
 //!   takes the unavailable path only for `None`.
@@ -35,7 +58,7 @@ use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::errors::SchemaError;
+use crate::errors::{SchemaError, UnknownFieldError, VersionError};
 
 /// Python: `SCHEMA_VERSION`.
 pub const SCHEMA_VERSION: &str = "sesslint.session/v1";
@@ -172,12 +195,17 @@ pub const KNOWN_EVENT_FIELDS: &[&str] = &[
 /// Python: `PROVENANCE_FIELDS`, source literal order.
 pub const PROVENANCE_FIELDS: &[&str] = &["source_line", "source_location", "source_record_hash"];
 
-/// `sesslint.canonical.to_canonical_dict` is defined after this slice.
-pub const TO_CANONICAL_DICT_UNAVAILABLE: &str =
-    "sesslint.canonical.to_canonical_dict is not available";
+/// Late import. `model` cannot depend on the codec crate.
+pub const NORMALIZE_CANONICAL_UNAVAILABLE: &str =
+    "sesslint._canonical_codec.normalize_canonical is not available";
 
-/// `sesslint.canonical.canonical_bytes` is defined after this slice.
-pub const CANONICAL_BYTES_UNAVAILABLE: &str = "sesslint.canonical.canonical_bytes is not available";
+/// Late import. `model` cannot depend on the codec crate.
+pub const CANONICAL_JSON_BYTES_UNAVAILABLE: &str =
+    "sesslint._canonical_codec.canonical_json_bytes is not available";
+
+/// Late import. `adapters` depends on `model`, so this crate cannot import it.
+pub const SYNTHETIC_ID_UNAVAILABLE: &str =
+    "sesslint.adapters.synthetic.is_synthetic_id is not available";
 
 /// Late import. `model` cannot depend on the codec crate.
 pub const CONTENT_IDENTITY_BYTES_UNAVAILABLE: &str =
@@ -204,12 +232,16 @@ impl CanonicalUnavailable {
         Self { message }
     }
 
-    pub const fn to_canonical_dict() -> Self {
-        Self::new(TO_CANONICAL_DICT_UNAVAILABLE)
+    pub const fn normalize_canonical() -> Self {
+        Self::new(NORMALIZE_CANONICAL_UNAVAILABLE)
     }
 
-    pub const fn canonical_bytes() -> Self {
-        Self::new(CANONICAL_BYTES_UNAVAILABLE)
+    pub const fn canonical_json_bytes() -> Self {
+        Self::new(CANONICAL_JSON_BYTES_UNAVAILABLE)
+    }
+
+    pub const fn synthetic_id() -> Self {
+        Self::new(SYNTHETIC_ID_UNAVAILABLE)
     }
 
     pub const fn content_identity_bytes() -> Self {
@@ -811,23 +843,26 @@ impl SessionEvent {
     }
 
     /// Python: `SessionEvent.to_canonical_dict`.
+    ///
+    /// Calls [`to_canonical_dict`].
     pub fn to_canonical_dict(&self) -> Result<(), CanonicalUnavailable> {
-        let _ = self;
-        Err(CanonicalUnavailable::to_canonical_dict())
+        crate::canonical::to_canonical_dict(self)
     }
 
     /// Python: `SessionEvent.to_canonical_bytes`.
+    ///
+    /// Calls [`canonical_bytes`].
     pub fn to_canonical_bytes(&self) -> Result<Vec<u8>, CanonicalUnavailable> {
-        let _ = self;
-        Err(CanonicalUnavailable::canonical_bytes())
+        canonical_bytes(self)
     }
 
     /// Python: `SessionEvent.canonical_hash`.
     ///
-    /// Calls [`Self::to_canonical_bytes`] and does not hash the bytes.
+    /// Calls [`Self::to_canonical_bytes`]. Those bytes are unavailable, so
+    /// this returns that error and does not hash.
     pub fn canonical_hash(&self) -> Result<String, CanonicalUnavailable> {
         match self.to_canonical_bytes() {
-            Ok(_bytes) => Err(CanonicalUnavailable::canonical_bytes()),
+            Ok(_bytes) => Err(CanonicalUnavailable::canonical_json_bytes()),
             Err(error) => Err(error),
         }
     }
@@ -889,14 +924,468 @@ pub fn compute_content_hash(payload: &Payload) -> Result<String, CanonicalUnavai
     Err(CanonicalUnavailable::payload_content_hash())
 }
 
+/// Python: `reparse_identity_hashes`.
+///
+/// `sesslint.adapters.synthetic.is_synthetic_id` is not available in this
+/// crate. The hash loop is not simulated: `events` is not walked, no dict is
+/// built, and nothing is hashed.
+pub fn reparse_identity_hashes(
+    _events: &[SessionEvent],
+) -> Result<Vec<String>, CanonicalUnavailable> {
+    Err(CanonicalUnavailable::synthetic_id())
+}
+
+/// Python: `_normalize_for_canonical_json`.
+///
+/// The late import `sesslint._canonical_codec.normalize_canonical` is not
+/// available. `seen` is not consulted. This does not build a normalized value.
+pub fn normalize_for_canonical_json<T>(obj: &T) -> Result<(), CanonicalUnavailable> {
+    let _ = obj;
+    Err(CanonicalUnavailable::normalize_canonical())
+}
+
+/// Python: `to_canonical_json`.
+///
+/// The late import `sesslint._canonical_codec.canonical_json_bytes` is not
+/// available. This does not encode JSON.
+pub fn to_canonical_json<T>(obj: &T) -> Result<String, CanonicalUnavailable> {
+    let _ = obj;
+    Err(CanonicalUnavailable::canonical_json_bytes())
+}
+
+/// Python: `canonical_bytes`.
+///
+/// The late import `sesslint._canonical_codec.canonical_json_bytes` is not
+/// available. This does not encode JSON.
+pub fn canonical_bytes<T>(obj: &T) -> Result<Vec<u8>, CanonicalUnavailable> {
+    let _ = obj;
+    Err(CanonicalUnavailable::canonical_json_bytes())
+}
+
+/// Python: `to_canonical_dict`.
+///
+/// Calls [`normalize_for_canonical_json`] and returns that error. It does not
+/// invent a dict and does not substitute `TypeError`.
+pub fn to_canonical_dict<T>(obj: &T) -> Result<(), CanonicalUnavailable> {
+    normalize_for_canonical_json(obj)
+}
+
+/// Python: `parse_session_header`.
+///
+/// Check order follows the pin. `metadata` and a mapping `source` are shallow
+/// entry-list copies. `extra_fields` keeps insertion order. The stored
+/// `schema_version` is [`SCHEMA_VERSION`].
+pub fn parse_session_header(obj: &Payload) -> Result<SessionHeader, SchemaError> {
+    let entries = header_mapping_entries(obj)?;
+    require_supported_schema_version(&entries)?;
+    require_remaining_header_fields(&entries)?;
+    let session_id = owned_session_id(&entries)?;
+    let created_at = owned_created_at(&entries)?;
+    let extra_fields = header_extra_fields(&entries)?;
+    let title = header_title(&entries)?;
+    let metadata = header_metadata(&entries)?;
+    let source = header_source(&entries)?;
+    let version = header_version(&entries)?;
+    Ok(SessionHeader {
+        schema_version: SCHEMA_VERSION.to_owned(),
+        session_id,
+        created_at,
+        title,
+        metadata,
+        source,
+        version,
+        extra_fields: Payload::map(extra_fields),
+    })
+}
+
+fn header_mapping_entries(obj: &Payload) -> Result<Vec<(Payload, Payload)>, SchemaError> {
+    match copied_map_entries(obj)? {
+        Some(entries) => Ok(entries),
+        None => Err(SchemaError::new(format!(
+            "Session header must be a mapping, got {}",
+            payload_type_name(obj)
+        ))),
+    }
+}
+
+fn require_supported_schema_version(entries: &[(Payload, Payload)]) -> Result<(), SchemaError> {
+    let Some(version_val) = last_string_keyed(entries, "schema_version") else {
+        return Err(SchemaError::new(
+            "Missing required field 'schema_version' in session header",
+        ));
+    };
+    let Some(version_text) = version_val.as_str() else {
+        return Err(SchemaError::new(format!(
+            "Field 'schema_version' must be a string, got {}",
+            payload_repr(version_val)
+        )));
+    };
+    if version_text == SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(VersionError::new(
+            format!("Unsupported schema version '{version_text}', expected '{SCHEMA_VERSION}'"),
+            Some(version_text.to_owned()),
+        )
+        .into())
+    }
+}
+
+fn require_remaining_header_fields(entries: &[(Payload, Payload)]) -> Result<(), SchemaError> {
+    for req_key in REQUIRED_HEADER_FIELDS {
+        if last_string_keyed(entries, req_key).is_none() {
+            return Err(SchemaError::new(format!(
+                "Missing required header field '{req_key}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn owned_session_id(entries: &[(Payload, Payload)]) -> Result<String, SchemaError> {
+    let Some(session_id) = last_string_keyed(entries, "session_id") else {
+        return Err(SchemaError::new(
+            "Missing required header field 'session_id'",
+        ));
+    };
+    match session_id.as_str() {
+        Some(text) if !python_strip_is_empty(text) => Ok(text.to_owned()),
+        _ => Err(SchemaError::new(format!(
+            "Field 'session_id' must be a non-empty string, got {}",
+            payload_repr(session_id)
+        ))),
+    }
+}
+
+fn owned_created_at(entries: &[(Payload, Payload)]) -> Result<String, SchemaError> {
+    let Some(created_at) = last_string_keyed(entries, "created_at") else {
+        return Err(SchemaError::new(
+            "Missing required header field 'created_at'",
+        ));
+    };
+    let Some(text) = created_at.as_str() else {
+        return Err(SchemaError::new(format!(
+            "Field 'created_at' must be an RFC3339 UTC timestamp string, got {}",
+            payload_repr(created_at)
+        )));
+    };
+    validate_rfc3339_utc(text, "created_at")?;
+    Ok(text.to_owned())
+}
+
+fn header_extra_fields(
+    entries: &[(Payload, Payload)],
+) -> Result<Vec<(Payload, Payload)>, SchemaError> {
+    let mut extra = Vec::new();
+    for (key, value) in entries {
+        let Some(key_text) = key.as_str() else {
+            return Err(SchemaError::new(format!(
+                "Session header field name must be a string, got {}",
+                payload_repr(key)
+            )));
+        };
+        if KNOWN_HEADER_FIELDS.contains(&key_text) {
+            continue;
+        }
+        if key_text.starts_with("experimental_") {
+            extra.push((Payload::string(key_text), value.clone()));
+        } else {
+            return Err(UnknownFieldError::new(
+                format!("Unknown field '{key_text}' in session header"),
+                Some(key_text.to_owned()),
+            )
+            .into());
+        }
+    }
+    Ok(extra)
+}
+
+fn header_title(entries: &[(Payload, Payload)]) -> Result<Option<String>, SchemaError> {
+    let Some(title) = last_string_keyed(entries, "title") else {
+        return Ok(None);
+    };
+    if title.is_null() {
+        return Ok(None);
+    }
+    match title.as_str() {
+        Some(text) => Ok(Some(text.to_owned())),
+        None => Err(SchemaError::new(format!(
+            "Field 'title' must be a string or None, got {}",
+            payload_repr(title)
+        ))),
+    }
+}
+
+fn header_metadata(entries: &[(Payload, Payload)]) -> Result<Payload, SchemaError> {
+    let Some(raw) = last_string_keyed(entries, "metadata") else {
+        let empty = Payload::map(Vec::new());
+        validate_depth(&empty)?;
+        return Ok(empty);
+    };
+    if !is_mapping(raw) {
+        return Err(SchemaError::new(format!(
+            "Field 'metadata' must be a mapping, got {}",
+            payload_type_name(raw)
+        )));
+    }
+    validate_depth(raw)?;
+    copy_known_mapping(raw, "metadata")
+}
+
+fn header_source(entries: &[(Payload, Payload)]) -> Result<Option<Payload>, SchemaError> {
+    let Some(raw) = last_string_keyed(entries, "source") else {
+        return Ok(None);
+    };
+    if raw.is_null() {
+        return Ok(None);
+    }
+    if let Some(text) = raw.as_str() {
+        return Ok(Some(Payload::string(text)));
+    }
+    if !is_mapping(raw) {
+        return Err(SchemaError::new(format!(
+            "Field 'source' must be a mapping or string, got {}",
+            payload_type_name(raw)
+        )));
+    }
+    validate_depth(raw)?;
+    match copy_mapping(raw)? {
+        Some(copied) => Ok(Some(copied)),
+        None => Err(SchemaError::new(format!(
+            "Field 'source' must be a mapping or string, got {}",
+            payload_type_name(raw)
+        ))),
+    }
+}
+
+fn header_version(entries: &[(Payload, Payload)]) -> Result<Option<i64>, SchemaError> {
+    let Some(raw) = last_string_keyed(entries, "version") else {
+        return Ok(None);
+    };
+    if raw.is_null() {
+        return Ok(None);
+    }
+    match raw.as_int() {
+        Some(number) => Ok(Some(number)),
+        None => Err(SchemaError::new(format!(
+            "Field 'version' must be an integer, got {}",
+            payload_repr(raw)
+        ))),
+    }
+}
+
+/// Last matching string key, so a repeated key follows dict overwrite.
+fn last_string_keyed<'a>(entries: &'a [(Payload, Payload)], key: &str) -> Option<&'a Payload> {
+    entries
+        .iter()
+        .rev()
+        .find(|(entry_key, _)| entry_key.as_str() == Some(key))
+        .map(|(_, value)| value)
+}
+
+fn is_mapping(value: &Payload) -> bool {
+    matches!(&*value.kind, PayloadKind::Map(_))
+}
+
+fn copied_map_entries(value: &Payload) -> Result<Option<Vec<(Payload, Payload)>>, SchemaError> {
+    match &*value.kind {
+        PayloadKind::Map(entries) => match entries.try_borrow() {
+            Ok(borrowed) => Ok(Some(borrowed.iter().cloned().collect())),
+            Err(_) => Err(cycle_detected()),
+        },
+        _ => Ok(None),
+    }
+}
+
+fn copy_mapping(value: &Payload) -> Result<Option<Payload>, SchemaError> {
+    copied_map_entries(value).map(|entries| entries.map(Payload::map))
+}
+
+fn copy_known_mapping(value: &Payload, field: &str) -> Result<Payload, SchemaError> {
+    match copy_mapping(value)? {
+        Some(copied) => Ok(copied),
+        None => Err(SchemaError::new(format!(
+            "Field '{field}' must be a mapping, got {}",
+            payload_type_name(value)
+        ))),
+    }
+}
+
+/// Python `str.strip()` emptiness. The character set is CPython
+/// `_PyUnicode_IsWhitespace`, not Rust `trim` (which keeps U+001C..=U+001F).
+fn python_strip_is_empty(text: &str) -> bool {
+    text.chars().all(python_is_whitespace)
+}
+
+fn python_is_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0009}'
+            | '\u{000A}'
+            | '\u{000B}'
+            | '\u{000C}'
+            | '\u{000D}'
+            | '\u{001C}'
+            | '\u{001D}'
+            | '\u{001E}'
+            | '\u{001F}'
+            | '\u{0020}'
+            | '\u{0085}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'
+            ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+    )
+}
+
+fn payload_type_name(value: &Payload) -> &'static str {
+    match &*value.kind {
+        PayloadKind::Null => "NoneType",
+        PayloadKind::Bool(_) => "bool",
+        PayloadKind::Int(_) => "int",
+        PayloadKind::Float(_) => "float",
+        PayloadKind::Str(_) => "str",
+        PayloadKind::List(_) => "list",
+        PayloadKind::Tuple(_) => "tuple",
+        PayloadKind::Map(_) => "dict",
+    }
+}
+
+fn payload_repr(value: &Payload) -> String {
+    let mut seen = Vec::new();
+    payload_repr_seen(value, &mut seen)
+}
+
+fn payload_repr_seen(value: &Payload, seen: &mut Vec<*const PayloadKind>) -> String {
+    if !value.is_container() {
+        return scalar_repr(value);
+    }
+    let identity = Rc::as_ptr(&value.kind);
+    if seen.contains(&identity) {
+        return "...".to_owned();
+    }
+    seen.push(identity);
+    let rendered = container_repr(value, seen);
+    remove_identity(seen, identity);
+    rendered
+}
+
+fn container_repr(value: &Payload, seen: &mut Vec<*const PayloadKind>) -> String {
+    match &*value.kind {
+        PayloadKind::List(items) => list_repr(items, seen),
+        PayloadKind::Tuple(items) => tuple_repr(items, seen),
+        PayloadKind::Map(entries) => map_repr(entries, seen),
+        PayloadKind::Null
+        | PayloadKind::Bool(_)
+        | PayloadKind::Int(_)
+        | PayloadKind::Float(_)
+        | PayloadKind::Str(_) => scalar_repr(value),
+    }
+}
+
+fn list_repr(items: &RefCell<Vec<Payload>>, seen: &mut Vec<*const PayloadKind>) -> String {
+    let borrowed = match items.try_borrow() {
+        Ok(borrowed) => borrowed,
+        Err(_) => return "[...]".to_owned(),
+    };
+    let mut out = String::from("[");
+    for (index, item) in borrowed.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&payload_repr_seen(item, seen));
+    }
+    out.push(']');
+    out
+}
+
+fn tuple_repr(items: &[Payload], seen: &mut Vec<*const PayloadKind>) -> String {
+    let mut out = String::from("(");
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&payload_repr_seen(item, seen));
+    }
+    if items.len() == 1 {
+        out.push(',');
+    }
+    out.push(')');
+    out
+}
+
+fn map_repr(
+    entries: &RefCell<Vec<(Payload, Payload)>>,
+    seen: &mut Vec<*const PayloadKind>,
+) -> String {
+    let borrowed = match entries.try_borrow() {
+        Ok(borrowed) => borrowed,
+        Err(_) => return "{...}".to_owned(),
+    };
+    if borrowed.is_empty() {
+        return "{}".to_owned();
+    }
+    let mut out = String::from("{");
+    for (index, (key, value)) in borrowed.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&payload_repr_seen(key, seen));
+        out.push_str(": ");
+        out.push_str(&payload_repr_seen(value, seen));
+    }
+    out.push('}');
+    out
+}
+
+fn scalar_repr(value: &Payload) -> String {
+    match &*value.kind {
+        PayloadKind::Null => "None".to_owned(),
+        PayloadKind::Bool(true) => "True".to_owned(),
+        PayloadKind::Bool(false) => "False".to_owned(),
+        PayloadKind::Int(number) => number.to_string(),
+        PayloadKind::Float(number) => python_float_repr(*number),
+        PayloadKind::Str(text) => python_str_repr(text),
+        PayloadKind::List(_) | PayloadKind::Tuple(_) | PayloadKind::Map(_) => "...".to_owned(),
+    }
+}
+
+fn python_float_repr(value: f64) -> String {
+    if value.is_nan() {
+        return "nan".to_owned();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_negative() {
+            "-inf".to_owned()
+        } else {
+            "inf".to_owned()
+        };
+    }
+    let bits = value.to_bits();
+    if bits == 0 {
+        return "0.0".to_owned();
+    }
+    if bits == (1_u64 << 63) {
+        return "-0.0".to_owned();
+    }
+    let text = format!("{value:?}");
+    if text.contains(['.', 'e', 'E']) {
+        text
+    } else {
+        format!("{text}.0")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_content_hash, validate_depth, validate_rfc3339_utc, CanonicalEvent,
-        CanonicalUnavailable, Payload, Session, SessionEvent, SessionHeader, KNOWN_EVENT_FIELDS,
-        KNOWN_HEADER_FIELDS, MAX_NON_STREAMING_BYTES, MAX_PAYLOAD_DEPTH, MUTATING_TOOL_NAMES,
-        PROVENANCE_FIELDS, READ_ONLY_TOOL_NAMES, REQUIRED_EVENT_FIELDS, REQUIRED_HEADER_FIELDS,
-        SCHEMA_VERSION, VALID_ACTORS, VALID_EXECUTION_STATES, VALID_KINDS, VALID_SIDE_EFFECTS,
+        canonical_bytes, compute_content_hash, copied_map_entries, parse_session_header,
+        reparse_identity_hashes, to_canonical_dict, to_canonical_json, validate_depth,
+        validate_rfc3339_utc, CanonicalEvent, CanonicalUnavailable, Payload, Session, SessionEvent,
+        SessionHeader, KNOWN_EVENT_FIELDS, KNOWN_HEADER_FIELDS, MAX_NON_STREAMING_BYTES,
+        MAX_PAYLOAD_DEPTH, MUTATING_TOOL_NAMES, PROVENANCE_FIELDS, READ_ONLY_TOOL_NAMES,
+        REQUIRED_EVENT_FIELDS, REQUIRED_HEADER_FIELDS, SCHEMA_VERSION, VALID_ACTORS,
+        VALID_EXECUTION_STATES, VALID_KINDS, VALID_SIDE_EFFECTS,
     };
     use crate::errors::SchemaError;
     use std::error::Error;
@@ -1266,18 +1755,23 @@ mod tests {
             "user",
             "message",
         );
+        let dict_err = event.to_canonical_dict().unwrap_err();
+        assert_eq!(dict_err, to_canonical_dict(&event).unwrap_err());
         assert_eq!(
-            event.to_canonical_dict().unwrap_err().to_string(),
-            "sesslint.canonical.to_canonical_dict is not available"
+            dict_err.to_string(),
+            "sesslint._canonical_codec.normalize_canonical is not available"
         );
+        let bytes_err = event.to_canonical_bytes().unwrap_err();
+        assert_eq!(bytes_err, canonical_bytes(&event).unwrap_err());
         assert_eq!(
-            event.to_canonical_bytes().unwrap_err().to_string(),
-            "sesslint.canonical.canonical_bytes is not available"
+            bytes_err.to_string(),
+            "sesslint._canonical_codec.canonical_json_bytes is not available"
         );
         let hash_err = event.canonical_hash().unwrap_err();
+        assert_eq!(hash_err, bytes_err);
         assert_eq!(
             hash_err.to_string(),
-            "sesslint.canonical.canonical_bytes is not available"
+            "sesslint._canonical_codec.canonical_json_bytes is not available"
         );
         assert!(Error::source(&hash_err).is_none());
         assert_eq!(
@@ -1331,6 +1825,524 @@ mod tests {
             missing.to_string(),
             "sesslint._canonical_codec.payload_content_hash is not available"
         );
+    }
+
+    #[test]
+    fn minimal_header_parses() {
+        let parsed = parse_session_header(&minimal_header()).unwrap();
+        assert_eq!(parsed.schema_version, SCHEMA_VERSION);
+        assert_eq!(parsed.schema_version, "sesslint.session/v1");
+        assert_eq!(parsed.session_id, "sess-synthetic");
+        assert_eq!(parsed.created_at, "2024-02-29T00:00:00Z");
+        assert!(parsed.title.is_none());
+        assert!(parsed.source.is_none());
+        assert!(parsed.version.is_none());
+        assert_empty_map(&parsed.metadata);
+        assert_empty_map(&parsed.extra_fields);
+    }
+
+    #[test]
+    fn non_mapping_header_reports_the_python_type_name() {
+        let cases = [
+            (Payload::list(Vec::new()), "list"),
+            (Payload::string("sess-synthetic"), "str"),
+            (Payload::int(1), "int"),
+            (Payload::bool_value(true), "bool"),
+            (Payload::null(), "NoneType"),
+            (Payload::tuple(Vec::new()), "tuple"),
+            (Payload::float(1.5), "float"),
+        ];
+        for (value, type_name) in cases {
+            let err = parse_session_header(&value).unwrap_err();
+            assert_eq!(err.code(), SchemaError::DEFAULT_CODE);
+            assert_eq!(
+                err.to_string(),
+                format!("Session header must be a mapping, got {type_name}")
+            );
+        }
+    }
+
+    #[test]
+    fn missing_schema_version_fails_before_missing_session_id() {
+        let obj = header(vec![(
+            "created_at",
+            Payload::string("2024-02-29T00:00:00Z"),
+        )]);
+        let err = parse_session_header(&obj).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Missing required field 'schema_version' in session header"
+        );
+        assert!(!err.to_string().contains("session_id"));
+    }
+
+    #[test]
+    fn schema_version_must_be_a_string() {
+        for (value, rendered) in [
+            (Payload::null(), "None"),
+            (Payload::bool_value(true), "True"),
+            (Payload::int(1), "1"),
+            (Payload::list(Vec::new()), "[]"),
+        ] {
+            let obj = header(vec![
+                ("schema_version", value),
+                ("session_id", Payload::string("sess-synthetic")),
+                ("created_at", Payload::string("2024-02-29T00:00:00Z")),
+            ]);
+            let err = parse_session_header(&obj).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("Field 'schema_version' must be a string, got {rendered}")
+            );
+        }
+    }
+
+    #[test]
+    fn bad_schema_version_is_version_error_with_sl301() {
+        let obj = header(vec![
+            ("schema_version", Payload::string("sesslint.session/v9")),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string("2024-02-29T00:00:00Z")),
+        ]);
+        let err = parse_session_header(&obj).unwrap_err();
+        assert!(matches!(err, SchemaError::Version(_)));
+        assert_eq!(err.code(), "VERSION");
+        assert_eq!(err.version(), Some("sesslint.session/v9"));
+        assert_eq!(
+            err.to_string(),
+            "Unsupported schema version 'sesslint.session/v9', expected 'sesslint.session/v1' (code: VERSION / SL301)"
+        );
+        assert!(err.to_string().contains("SL301"));
+    }
+
+    #[test]
+    fn missing_session_id_wins_over_missing_created_at() {
+        let obj = header(vec![("schema_version", Payload::string(SCHEMA_VERSION))]);
+        let err = parse_session_header(&obj).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Missing required header field 'session_id'"
+        );
+        assert!(!err.to_string().contains("created_at"));
+
+        let created_at_missing = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+        ]);
+        let created = parse_session_header(&created_at_missing).unwrap_err();
+        assert_eq!(
+            created.to_string(),
+            "Missing required header field 'created_at'"
+        );
+    }
+
+    #[test]
+    fn blank_session_id_fails() {
+        for (value, rendered) in [
+            (Payload::string(""), "''"),
+            (Payload::string("   "), "'   '"),
+            (Payload::string("\n"), "'\\n'"),
+            (Payload::string("\u{001C}"), "'\\x1c'"),
+            (Payload::string("\u{00A0}"), "'\u{00A0}'"),
+            (Payload::null(), "None"),
+            (Payload::bool_value(false), "False"),
+            (Payload::int(0), "0"),
+        ] {
+            let obj = header(vec![
+                ("schema_version", Payload::string(SCHEMA_VERSION)),
+                ("session_id", value),
+                ("created_at", Payload::string("2024-02-29T00:00:00Z")),
+            ]);
+            let err = parse_session_header(&obj).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("Field 'session_id' must be a non-empty string, got {rendered}")
+            );
+        }
+    }
+
+    #[test]
+    fn non_string_created_at_uses_the_rfc3339_message() {
+        for (value, rendered) in [
+            (Payload::null(), "None"),
+            (Payload::bool_value(true), "True"),
+            (Payload::int(7), "7"),
+        ] {
+            let obj = header(vec![
+                ("schema_version", Payload::string(SCHEMA_VERSION)),
+                ("session_id", Payload::string("sess-synthetic")),
+                ("created_at", value),
+            ]);
+            let err = parse_session_header(&obj).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "Field 'created_at' must be an RFC3339 UTC timestamp string, got {rendered}"
+                )
+            );
+        }
+        let invalid = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string("not-a-timestamp")),
+            ("rogue", Payload::string("later")),
+        ]);
+        assert_eq!(
+            parse_session_header(&invalid).unwrap_err().to_string(),
+            "Field 'created_at' must be an RFC3339 UTC timestamp string, got 'not-a-timestamp'"
+        );
+        let calendar = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string("2023-02-29T00:00:00Z")),
+        ]);
+        assert_eq!(
+            parse_session_header(&calendar).unwrap_err().to_string(),
+            "Field 'created_at' contains invalid calendar date/time: '2023-02-29T00:00:00Z'"
+        );
+    }
+
+    #[test]
+    fn unknown_field_fails_with_sl302_and_experimental_is_kept_only_without_one() {
+        let kept = required_header(vec![
+            ("experimental_a", Payload::string("one")),
+            ("experimental_b", Payload::int(2)),
+        ]);
+        let parsed = parse_session_header(&kept).unwrap();
+        let extra = copied_map_entries(&parsed.extra_fields).unwrap().unwrap();
+        assert_eq!(extra.len(), 2);
+        assert_eq!(extra[0].0.as_str(), Some("experimental_a"));
+        assert_eq!(extra[0].1.as_str(), Some("one"));
+        assert_eq!(extra[1].0.as_str(), Some("experimental_b"));
+        assert_eq!(extra[1].1.as_int(), Some(2));
+
+        let after = required_header(vec![
+            ("experimental_a", Payload::string("one")),
+            ("rogue", Payload::string("nope")),
+            ("experimental_b", Payload::string("two")),
+        ]);
+        let err = parse_session_header(&after).unwrap_err();
+        assert!(matches!(err, SchemaError::UnknownField(_)));
+        assert_eq!(err.field_name(), Some("rogue"));
+        assert_eq!(err.code(), "UNKNOWN_FIELD");
+        assert_eq!(
+            err.to_string(),
+            "Unknown field 'rogue' in session header (code: UNKNOWN_FIELD / SL302)"
+        );
+        assert!(err.to_string().contains("SL302"));
+
+        let before = required_header(vec![
+            ("rogue", Payload::null()),
+            ("also_rogue", Payload::string("later")),
+            ("experimental_a", Payload::string("one")),
+        ]);
+        let first = parse_session_header(&before).unwrap_err();
+        assert_eq!(first.field_name(), Some("rogue"));
+        assert!(!first.to_string().contains("also_rogue"));
+        assert!(!first.to_string().contains("experimental_a"));
+
+        let case_sensitive = required_header(vec![("Experimental_a", Payload::string("no"))]);
+        assert_eq!(
+            parse_session_header(&case_sensitive)
+                .unwrap_err()
+                .field_name(),
+            Some("Experimental_a")
+        );
+    }
+
+    #[test]
+    fn title_metadata_source_and_bool_version_fail() {
+        let title = required_header(vec![("title", Payload::int(4))]);
+        assert_eq!(
+            parse_session_header(&title).unwrap_err().to_string(),
+            "Field 'title' must be a string or None, got 4"
+        );
+        let title_bool = required_header(vec![("title", Payload::bool_value(false))]);
+        assert_eq!(
+            parse_session_header(&title_bool).unwrap_err().to_string(),
+            "Field 'title' must be a string or None, got False"
+        );
+        let title_list = required_header(vec![("title", Payload::list(Vec::new()))]);
+        assert_eq!(
+            parse_session_header(&title_list).unwrap_err().to_string(),
+            "Field 'title' must be a string or None, got []"
+        );
+
+        for (value, type_name) in [
+            (Payload::list(Vec::new()), "list"),
+            (Payload::string("meta"), "str"),
+            (Payload::bool_value(true), "bool"),
+            (Payload::int(1), "int"),
+            (Payload::null(), "NoneType"),
+            (Payload::tuple(vec![Payload::null()]), "tuple"),
+        ] {
+            let obj = required_header(vec![("metadata", value)]);
+            assert_eq!(
+                parse_session_header(&obj).unwrap_err().to_string(),
+                format!("Field 'metadata' must be a mapping, got {type_name}")
+            );
+        }
+
+        for (value, type_name) in [
+            (Payload::int(3), "int"),
+            (Payload::bool_value(false), "bool"),
+            (Payload::list(Vec::new()), "list"),
+            (Payload::float(1.0), "float"),
+        ] {
+            let obj = required_header(vec![("source", value)]);
+            assert_eq!(
+                parse_session_header(&obj).unwrap_err().to_string(),
+                format!("Field 'source' must be a mapping or string, got {type_name}")
+            );
+        }
+
+        let true_version = required_header(vec![("version", Payload::bool_value(true))]);
+        assert_eq!(
+            parse_session_header(&true_version).unwrap_err().to_string(),
+            "Field 'version' must be an integer, got True"
+        );
+        let false_version = required_header(vec![("version", Payload::bool_value(false))]);
+        assert_eq!(
+            parse_session_header(&false_version)
+                .unwrap_err()
+                .to_string(),
+            "Field 'version' must be an integer, got False"
+        );
+        let text_version = required_header(vec![("version", Payload::string("3"))]);
+        assert_eq!(
+            parse_session_header(&text_version).unwrap_err().to_string(),
+            "Field 'version' must be an integer, got '3'"
+        );
+    }
+
+    #[test]
+    fn deep_metadata_and_mapping_source_fail_with_the_depth_error() {
+        let deep_meta = required_header(vec![("metadata", nested_maps(101))]);
+        let err = parse_session_header(&deep_meta).unwrap_err();
+        assert_eq!(err.code(), "SCHEMA");
+        assert_eq!(
+            err.to_string(),
+            "Payload nesting depth 101 exceeds limit of 100"
+        );
+        let deep_source = required_header(vec![("source", nested_maps(101))]);
+        assert_eq!(
+            parse_session_header(&deep_source).unwrap_err().to_string(),
+            "Payload nesting depth 101 exceeds limit of 100"
+        );
+        let at_limit = required_header(vec![
+            ("metadata", nested_maps(100)),
+            ("source", nested_maps(100)),
+        ]);
+        assert!(parse_session_header(&at_limit).is_ok());
+    }
+
+    #[test]
+    fn optional_header_fields_are_stored_as_copies() {
+        let metadata = Payload::map(vec![(
+            Payload::string("k"),
+            Payload::string("synthetic-meta"),
+        )]);
+        let source = Payload::map(vec![(
+            Payload::string("kind"),
+            Payload::string("synthetic-source"),
+        )]);
+        let obj = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("  sess-synthetic  ")),
+            (
+                "created_at",
+                Payload::string("2024-02-29T00:00:00.1234567Z"),
+            ),
+            ("title", Payload::string("synthetic title")),
+            ("metadata", metadata.clone()),
+            ("source", source.clone()),
+            ("version", Payload::int(-2)),
+            ("experimental_flag", Payload::string("on")),
+        ]);
+        let parsed = parse_session_header(&obj).unwrap();
+        assert_eq!(parsed.schema_version, SCHEMA_VERSION);
+        assert_eq!(parsed.session_id, "  sess-synthetic  ");
+        assert_eq!(parsed.created_at, "2024-02-29T00:00:00.1234567Z");
+        assert_eq!(parsed.title.as_deref(), Some("synthetic title"));
+        assert_eq!(parsed.version, Some(-2));
+        let stored_meta = copied_map_entries(&parsed.metadata).unwrap().unwrap();
+        assert_eq!(stored_meta.len(), 1);
+        assert_eq!(stored_meta[0].1.as_str(), Some("synthetic-meta"));
+        assert!(metadata.push_map_entry(Payload::string("added"), Payload::string("later")));
+        assert_eq!(
+            copied_map_entries(&parsed.metadata).unwrap().unwrap().len(),
+            1
+        );
+        assert_eq!(copied_map_entries(&metadata).unwrap().unwrap().len(), 2);
+        let stored_source = copied_map_entries(parsed.source.as_ref().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored_source[0].1.as_str(), Some("synthetic-source"));
+        assert!(source.push_map_entry(Payload::string("added"), Payload::null()));
+        assert_eq!(
+            copied_map_entries(parsed.source.as_ref().unwrap())
+                .unwrap()
+                .unwrap()
+                .len(),
+            1
+        );
+        let extra = copied_map_entries(&parsed.extra_fields).unwrap().unwrap();
+        assert_eq!(extra[0].0.as_str(), Some("experimental_flag"));
+        assert_eq!(extra[0].1.as_str(), Some("on"));
+
+        let nulls = header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("\u{200B}")),
+            ("created_at", Payload::string("2024-02-29T00:00:00Z")),
+            ("title", Payload::null()),
+            ("source", Payload::null()),
+            ("version", Payload::null()),
+        ]);
+        let parsed_nulls = parse_session_header(&nulls).unwrap();
+        assert_eq!(parsed_nulls.session_id, "\u{200B}");
+        assert!(parsed_nulls.title.is_none());
+        assert!(parsed_nulls.source.is_none());
+        assert!(parsed_nulls.version.is_none());
+        assert_empty_map(&parsed_nulls.metadata);
+
+        let string_source = required_header(vec![
+            ("title", Payload::string("")),
+            ("source", Payload::string("synthetic-source")),
+            ("version", Payload::int(i64::MAX)),
+        ]);
+        let parsed_string = parse_session_header(&string_source).unwrap();
+        assert_eq!(parsed_string.title.as_deref(), Some(""));
+        assert_eq!(
+            parsed_string.source.as_ref().and_then(Payload::as_str),
+            Some("synthetic-source")
+        );
+        assert_eq!(parsed_string.version, Some(i64::MAX));
+    }
+
+    #[test]
+    fn non_string_header_key_does_not_panic() {
+        let obj = Payload::map(vec![
+            (
+                Payload::string("schema_version"),
+                Payload::string(SCHEMA_VERSION),
+            ),
+            (
+                Payload::string("session_id"),
+                Payload::string("sess-synthetic"),
+            ),
+            (
+                Payload::string("created_at"),
+                Payload::string("2024-02-29T00:00:00Z"),
+            ),
+            (Payload::int(1), Payload::string("synthetic")),
+        ]);
+        let err = parse_session_header(&obj).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Session header field name must be a string, got 1"
+        );
+    }
+
+    #[test]
+    fn reparse_identity_hashes_returns_the_synthetic_id_error_and_not_a_digest() {
+        let mut event = SessionEvent::new(
+            "evt-synthetic",
+            Some("parent-synthetic".to_owned()),
+            4,
+            "2024-02-29T00:00:00Z",
+            "user",
+            "message",
+        );
+        event.payload = Payload::map(vec![(
+            Payload::string("body"),
+            Payload::string("synthetic-body"),
+        )]);
+        let err = reparse_identity_hashes(std::slice::from_ref(&event)).unwrap_err();
+        assert_eq!(err, CanonicalUnavailable::synthetic_id());
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.synthetic.is_synthetic_id is not available"
+        );
+        assert!(!is_sha256_hex(&err.to_string()));
+        assert!(!err.to_string().contains("synthetic-body"));
+        assert!(!err.to_string().contains('{'));
+        let empty = reparse_identity_hashes(&[]).unwrap_err();
+        assert_eq!(empty, err);
+    }
+
+    #[test]
+    fn canonical_codec_functions_do_not_encode_json() {
+        let obj = Payload::map(vec![(
+            Payload::string("body"),
+            Payload::string("synthetic-value"),
+        )]);
+        let json_err = to_canonical_json(&obj).unwrap_err();
+        assert_eq!(
+            json_err.to_string(),
+            "sesslint._canonical_codec.canonical_json_bytes is not available"
+        );
+        assert!(!json_err.to_string().contains("synthetic-value"));
+        assert!(!json_err.to_string().contains('{'));
+        assert!(!is_sha256_hex(&json_err.to_string()));
+        let bytes_err = canonical_bytes(&obj).unwrap_err();
+        assert_eq!(bytes_err, json_err);
+        let dict_err = to_canonical_dict(&obj).unwrap_err();
+        assert_eq!(dict_err, CanonicalUnavailable::normalize_canonical());
+        assert_eq!(
+            dict_err.to_string(),
+            "sesslint._canonical_codec.normalize_canonical is not available"
+        );
+        assert!(!dict_err.to_string().contains("synthetic-value"));
+        assert!(!dict_err.to_string().contains('{'));
+        assert!(!is_sha256_hex(&dict_err.to_string()));
+    }
+
+    fn header(pairs: Vec<(&str, Payload)>) -> Payload {
+        Payload::map(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (Payload::string(key), value))
+                .collect(),
+        )
+    }
+
+    fn minimal_header() -> Payload {
+        header(vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string("2024-02-29T00:00:00Z")),
+        ])
+    }
+
+    fn required_header(extra: Vec<(&str, Payload)>) -> Payload {
+        let mut pairs = vec![
+            ("schema_version", Payload::string(SCHEMA_VERSION)),
+            ("session_id", Payload::string("sess-synthetic")),
+            ("created_at", Payload::string("2024-02-29T00:00:00Z")),
+        ];
+        pairs.extend(extra);
+        header(pairs)
+    }
+
+    fn assert_empty_map(value: &Payload) {
+        let entries = copied_map_entries(value).unwrap().expect("map");
+        assert!(entries.is_empty());
+    }
+
+    fn nested_maps(depth: u32) -> Payload {
+        let mut node = Payload::map(Vec::new());
+        for _ in 1..depth {
+            node = Payload::map(vec![(Payload::string("n"), node)]);
+        }
+        node
+    }
+
+    fn is_sha256_hex(text: &str) -> bool {
+        let bytes = text.as_bytes();
+        bytes.len() == 64
+            && bytes
+                .iter()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     }
 
     fn nested(depth: u32, make: fn(Vec<Payload>) -> Payload) -> Payload {
