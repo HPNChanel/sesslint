@@ -7,4 +7,4 @@ mod error;
 pub use error::CodecError;
 
 pub mod canonical_codec;
-pub mod determinism {}
+pub mod determinism;
