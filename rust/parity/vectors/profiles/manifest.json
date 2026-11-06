@@ -1,0 +1,13 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.profiles",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_builtin_rs_sha256": "8ac5a563c81e05189577d1177425b26dab911fb1fed4338f7c0abf0c235312fd",
+  "checks_profile_rs_sha256": "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c",
+  "vector_count": 3,
+  "vectors_sha256": "e63b4f9bb28f293aa33178c63fdb2255f4446441dc3e255d864fe3a72eac2b4a",
+  "generator": "rust/parity/vectors/profiles/generate",
+  "known_parity_gaps": [
+    "get_profile and list_profiles are re-exported but not wired to REGISTRY. Rust returns sesslint.profiles.builtin is not available. Python get_profile(\"neutral\") returns the neutral profile."
+  ]
+}
