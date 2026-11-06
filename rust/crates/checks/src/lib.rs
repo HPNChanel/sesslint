@@ -16,7 +16,7 @@ pub mod context_pressure;
 pub mod durable_prefix;
 pub mod foreign_shape;
 pub mod graph;
-pub mod identity {}
+pub mod identity;
 pub mod ordering {}
 pub mod size {}
 pub mod tool_pairing_1 {}
