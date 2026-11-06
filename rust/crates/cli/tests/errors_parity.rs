@@ -211,8 +211,8 @@ fn parse_literal<'a>(
     word: &str,
     value: JsonValue,
 ) -> Result<(JsonValue, &'a str), ParseError> {
-    if input.starts_with(word) {
-        Ok((value, &input[word.len()..]))
+    if let Some(stripped) = input.strip_prefix(word) {
+        Ok((value, stripped))
     } else {
         Err(ParseError {
             message: format!("expected {word}"),
@@ -242,15 +242,15 @@ fn parse_array(input: &str) -> Result<(JsonValue, &str), ParseError> {
     let mut rest = &input[1..];
     let mut items = Vec::new();
     rest = rest.trim_start();
-    if rest.starts_with(']') {
-        return Ok((JsonValue::Array(items), &rest[1..]));
+    if let Some(stripped) = rest.strip_prefix(']') {
+        return Ok((JsonValue::Array(items), stripped));
     }
     loop {
         let (item, tail) = parse_value(rest)?;
         items.push(item);
         rest = tail.trim_start();
-        if rest.starts_with(']') {
-            return Ok((JsonValue::Array(items), &rest[1..]));
+        if let Some(stripped) = rest.strip_prefix(']') {
+            return Ok((JsonValue::Array(items), stripped));
         }
         if !rest.starts_with(',') {
             return Err(ParseError {
@@ -265,8 +265,8 @@ fn parse_object(input: &str) -> Result<(JsonValue, &str), ParseError> {
     let mut rest = &input[1..];
     let mut items = Vec::new();
     rest = rest.trim_start();
-    if rest.starts_with('}') {
-        return Ok((JsonValue::Object(items), &rest[1..]));
+    if let Some(stripped) = rest.strip_prefix('}') {
+        return Ok((JsonValue::Object(items), stripped));
     }
     loop {
         let (key, tail) = parse_string(rest)?;
@@ -280,8 +280,8 @@ fn parse_object(input: &str) -> Result<(JsonValue, &str), ParseError> {
         let (value, tail) = parse_value(rest)?;
         items.push((key, value));
         rest = tail.trim_start();
-        if rest.starts_with('}') {
-            return Ok((JsonValue::Object(items), &rest[1..]));
+        if let Some(stripped) = rest.strip_prefix('}') {
+            return Ok((JsonValue::Object(items), stripped));
         }
         if !rest.starts_with(',') {
             return Err(ParseError {

@@ -3,7 +3,3 @@ name = "cli"
 version = "0.0.0"
 edition = "2021"
 publish = false
-
-[lints.clippy]
-# Pre-existing in tests/errors_parity.rs (not owned by this card).
-manual_strip = "allow"
