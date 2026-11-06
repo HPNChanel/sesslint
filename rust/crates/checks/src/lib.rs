@@ -29,7 +29,7 @@ pub mod abstention;
 pub use abstention::{SAFE_SIDE_EFFECT, TOOL_KINDS, Abstention, must_abstain};
 pub mod profile;
 pub mod config {}
-pub mod builtin {}
+pub mod builtin;
 pub mod assessment {}
 pub mod runner {}
 
