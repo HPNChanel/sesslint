@@ -5385,3 +5385,729 @@ mod rollout_links {
         );
     }
 }
+
+#[allow(
+    clippy::items_after_test_module,
+    reason = "RX-P2.6-scan-scan-07 appends after the existing tests"
+)]
+mod session_indexes {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::Path;
+
+    use super::{FileResult, MinimizePathUnavailable};
+
+    /// Pin literal for `FORMAT_CLAUDE_CODE`. Data, not an adapters call.
+    pub const FORMAT_CLAUDE_CODE: &str = "claude-code-jsonl";
+
+    /// Pin literal for `FORMAT_CODEX_ROLLOUT`. Data, not an adapters call.
+    pub const FORMAT_CODEX_ROLLOUT: &str = "codex-rollout";
+
+    /// Pin `index_format_by_name`, in insertion order.
+    const INDEX_FORMAT_BY_NAME: &[(&str, &str)] = &[
+        ("sessions-index.json", FORMAT_CLAUDE_CODE),
+        ("session_index.jsonl", FORMAT_CODEX_ROLLOUT),
+    ];
+
+    struct Parsed {
+        drv: String,
+        root: String,
+        tail: Vec<String>,
+    }
+
+    struct SortedIndex<'a> {
+        key: String,
+        path: &'a Path,
+    }
+
+    /// Python: `_reconcile_session_indexes`.
+    ///
+    /// Port of `src/sesslint/scan.py` lines 1674–1915
+    /// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+    /// Stops before `_reconcile_state_dbs`.
+    ///
+    /// [`FORMAT_CLAUDE_CODE`] is `claude-code-jsonl`. [`FORMAT_CODEX_ROLLOUT`]
+    /// is `codex-rollout`. Those strings are data. This crate does not call
+    /// `sesslint.adapters`. `sessions-index.json` maps to the Claude literal.
+    /// `session_index.jsonl` maps to the Codex literal.
+    ///
+    /// Results are indexed by the stored `path` and by
+    /// `PurePosixPath(path).parent.as_posix()` before the index-file loop.
+    /// `PurePosixPath` does not treat `\` as a separator. A bool is not an
+    /// int. `cache_hit` stays a bool. `warning_count` and `error_count` stay
+    /// `i64`. This function does not coerce either kind.
+    ///
+    /// An empty `index_paths` returns the input rows. `minimize_path` is not
+    /// called.
+    ///
+    /// A non-empty `index_paths` is sorted by Python `str(path)`, which is
+    /// `pathlib.Path` on this platform, not `PurePosixPath`. The first path
+    /// is where the pin calls `sesslint.report.minimize_path`, before
+    /// `sesslint.indexes.read_index`. That helper is not in this crate.
+    /// Display is `sesslint.report.minimize_path is not available`.
+    /// `read_codex_state` and `make_finding` are not called. No [`FileResult`]
+    /// list is returned. No SL402 finding is created. No
+    /// [`super::ScanReport`] is returned.
+    ///
+    /// Rust has no defaults. Pass `&[]` when `state_db_files` is omitted and
+    /// `None` when `baseline` is omitted.
+    ///
+    /// # Errors
+    ///
+    /// [`MinimizePathUnavailable`] when `index_paths` is non-empty, or when an
+    /// index path has no Python `str`. This function does not panic.
+    pub fn reconcile_session_indexes(
+        results: &[FileResult],
+        index_paths: &[&Path],
+        state_db_files: &[&Path],
+        baseline: Option<&BTreeSet<String>>,
+    ) -> Result<Vec<FileResult>, MinimizePathUnavailable> {
+        let formats = format_rows();
+        let by_path = index_by_path(results);
+        let out = results.to_vec();
+        let by_parent = index_by_parent(results);
+        let path_count = by_path.len();
+        let parent_count = by_parent.len();
+        if index_paths.is_empty() {
+            let _indexed = (formats, path_count, parent_count);
+            return Ok(out);
+        }
+        let sorted = sort_index_paths(index_paths)?;
+        let Some(first) = sorted.first() else {
+            return Err(MinimizePathUnavailable);
+        };
+        let _bound = (
+            formats,
+            path_count,
+            parent_count,
+            first.key.len(),
+            first.path.as_os_str().is_empty(),
+            state_db_files.len(),
+            baseline.map(BTreeSet::len),
+        );
+        Err(MinimizePathUnavailable)
+    }
+
+    fn format_rows() -> usize {
+        for (name, format) in INDEX_FORMAT_BY_NAME {
+            let _row = (name.len(), format.len());
+        }
+        INDEX_FORMAT_BY_NAME.len()
+    }
+
+    fn index_by_path(results: &[FileResult]) -> BTreeMap<String, usize> {
+        let mut by_path = BTreeMap::new();
+        for (index, result) in results.iter().enumerate() {
+            by_path.insert(result.path.clone(), index);
+        }
+        by_path
+    }
+
+    fn index_by_parent(results: &[FileResult]) -> BTreeMap<String, Vec<usize>> {
+        let mut by_parent: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (index, result) in results.iter().enumerate() {
+            by_parent
+                .entry(pure_posix_parent(&result.path))
+                .or_default()
+                .push(index);
+        }
+        by_parent
+    }
+
+    fn sort_index_paths<'a>(
+        index_paths: &'a [&Path],
+    ) -> Result<Vec<SortedIndex<'a>>, MinimizePathUnavailable> {
+        let mut keyed = Vec::with_capacity(index_paths.len());
+        for path in index_paths {
+            let Some(key) = python_path_str(path) else {
+                return Err(MinimizePathUnavailable);
+            };
+            keyed.push(SortedIndex { key, path });
+        }
+        keyed.sort_by(|left, right| left.key.cmp(&right.key));
+        Ok(keyed)
+    }
+
+    fn python_path_str(path: &Path) -> Option<String> {
+        path.to_str().map(python_path_text)
+    }
+
+    fn python_path_text(text: &str) -> String {
+        format_parsed(&parse_platform(text), platform_sep())
+    }
+
+    #[cfg(windows)]
+    fn parse_platform(text: &str) -> Parsed {
+        parse_windows(text)
+    }
+
+    #[cfg(not(windows))]
+    fn parse_platform(text: &str) -> Parsed {
+        parse_posix(text)
+    }
+
+    #[cfg(windows)]
+    fn platform_sep() -> &'static str {
+        "\\"
+    }
+
+    #[cfg(not(windows))]
+    fn platform_sep() -> &'static str {
+        "/"
+    }
+
+    fn pure_posix_parent(text: &str) -> String {
+        let mut parsed = parse_posix(text);
+        if parsed.tail.is_empty() && !parsed.root.is_empty() {
+            return format_parsed(&parsed, "/");
+        }
+        if !parsed.tail.is_empty() {
+            parsed.tail.pop();
+        }
+        format_parsed(&parsed, "/")
+    }
+
+    fn parse_posix(text: &str) -> Parsed {
+        let (root, rel) = if let Some(stripped) = text.strip_prefix('/') {
+            let extra = stripped.chars().take_while(|ch| *ch == '/').count();
+            let leading = extra + 1;
+            let rest = stripped.trim_start_matches('/');
+            if leading == 2 {
+                ("//", rest)
+            } else {
+                ("/", rest)
+            }
+        } else {
+            ("", text)
+        };
+        Parsed {
+            drv: String::new(),
+            root: root.to_owned(),
+            tail: split_tail(rel, '/'),
+        }
+    }
+
+    fn parse_windows(text: &str) -> Parsed {
+        let (prefix, part) = prepare_windows(text);
+        let (drv, root, rel) = splitroot_windows(&prefix, &part);
+        Parsed {
+            drv,
+            root,
+            tail: split_tail(&rel, '\\'),
+        }
+    }
+
+    fn prepare_windows(text: &str) -> (String, String) {
+        let normalized = text.replace('/', "\\");
+        if let Some(rest) = normalized.strip_prefix("\\\\?\\") {
+            if let Some(after) = rest.strip_prefix("UNC\\") {
+                return ("\\\\?\\UNC".to_owned(), format!("\\\\{after}"));
+            }
+            return ("\\\\?\\".to_owned(), rest.to_owned());
+        }
+        (String::new(), normalized)
+    }
+
+    fn splitroot_windows(prefix: &str, part: &str) -> (String, String, String) {
+        let bytes = part.as_bytes();
+        let first = bytes.first().copied();
+        let second = bytes.get(1).copied();
+        let third = bytes.get(2).copied();
+        if first == Some(b'\\') && second == Some(b'\\') && third != Some(b'\\') {
+            if let Some((drv, rel)) = assemble_unc(prefix, part) {
+                return (drv, "\\".to_owned(), rel);
+            }
+        }
+        let (drv, mut rest, root_probe) = split_drive(part);
+        let mut root = String::new();
+        if root_probe == Some(b'\\') {
+            root = "\\".to_owned();
+            rest = rest.trim_start_matches('\\');
+        }
+        (format!("{prefix}{drv}"), root, rest.to_owned())
+    }
+
+    fn split_drive(part: &str) -> (&str, &str, Option<u8>) {
+        let bytes = part.as_bytes();
+        let first = bytes.first().copied();
+        let second = bytes.get(1).copied();
+        let third = bytes.get(2).copied();
+        if second == Some(b':') && first.is_some_and(|byte| byte.is_ascii_alphabetic()) {
+            if let (Some(drv), Some(rest)) = (part.get(..2), part.get(2..)) {
+                return (drv, rest, third);
+            }
+        }
+        ("", part, first)
+    }
+
+    fn assemble_unc(prefix: &str, part: &str) -> Option<(String, String)> {
+        let index2 = unc_index2(part)?;
+        if index2 < 1 || index2 > part.len() {
+            return None;
+        }
+        let drv = if prefix.is_empty() {
+            part.get(..index2)?.to_owned()
+        } else {
+            let middle = part.get(1..index2)?;
+            format!("{prefix}{middle}")
+        };
+        let rel_at = index2.saturating_add(1);
+        let rel = if rel_at > part.len() {
+            String::new()
+        } else {
+            match part.get(rel_at..) {
+                Some(text) => text.to_owned(),
+                None => return None,
+            }
+        };
+        Some((drv, rel))
+    }
+
+    fn unc_index2(part: &str) -> Option<usize> {
+        let bytes = part.as_bytes();
+        let found = bytes.iter().skip(2).position(|byte| *byte == b'\\')?;
+        let index = found.checked_add(2)?;
+        let skip_from = index.checked_add(1)?;
+        let next = bytes
+            .iter()
+            .enumerate()
+            .skip(skip_from)
+            .find(|(_, byte)| **byte == b'\\');
+        match next {
+            Some((index2, _)) if index2 == skip_from => None,
+            Some((index2, _)) => Some(index2),
+            None => Some(bytes.len()),
+        }
+    }
+
+    fn format_parsed(parsed: &Parsed, sep: &str) -> String {
+        let body = if parsed.drv.is_empty() && parsed.root.is_empty() {
+            parsed.tail.join(sep)
+        } else {
+            let mut out = String::new();
+            out.push_str(&parsed.drv);
+            out.push_str(&parsed.root);
+            if !parsed.tail.is_empty() {
+                out.push_str(&parsed.tail.join(sep));
+            }
+            out
+        };
+        if body.is_empty() {
+            ".".to_owned()
+        } else {
+            body
+        }
+    }
+
+    fn split_tail(rel: &str, sep: char) -> Vec<String> {
+        if rel.is_empty() {
+            return Vec::new();
+        }
+        rel.split(sep)
+            .filter(|piece| !piece.is_empty() && *piece != ".")
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::any::TypeId;
+        use std::collections::BTreeSet;
+        use std::error::Error;
+        use std::path::Path;
+
+        use super::super::{
+            FileResult, MinimizePathUnavailable, ScanReport, Verdict, MINIMIZE_PATH_UNAVAILABLE,
+        };
+        use super::{
+            index_by_parent, index_by_path, pure_posix_parent, python_path_text,
+            reconcile_session_indexes, sort_index_paths, FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT,
+            INDEX_FORMAT_BY_NAME,
+        };
+
+        fn row(path: &str, verdict: Verdict) -> FileResult {
+            FileResult::new(path, verdict)
+        }
+
+        #[test]
+        fn format_literals_map_the_two_index_names() {
+            assert_eq!(FORMAT_CLAUDE_CODE, "claude-code-jsonl");
+            assert_eq!(FORMAT_CODEX_ROLLOUT, "codex-rollout");
+            assert_ne!(FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT);
+            assert_eq!(
+                INDEX_FORMAT_BY_NAME,
+                [
+                    ("sessions-index.json", FORMAT_CLAUDE_CODE),
+                    ("session_index.jsonl", FORMAT_CODEX_ROLLOUT),
+                ]
+                .as_slice()
+            );
+            assert_ne!(TypeId::of::<bool>(), TypeId::of::<i64>());
+        }
+
+        #[test]
+        fn pure_posix_parent_keeps_dotdot_and_ignores_backslashes() {
+            let cases = [
+                ("", "."),
+                (".", "."),
+                ("..", "."),
+                ("/", "/"),
+                ("//", "//"),
+                ("///", "/"),
+                ("foo", "."),
+                ("foo/", "."),
+                ("foo/bar", "foo"),
+                ("foo/bar/", "foo"),
+                ("foo/./bar", "foo"),
+                ("foo//bar", "foo"),
+                ("foo/bar/..", "foo/bar"),
+                ("foo/../bar", "foo/.."),
+                ("foo/bar/../..", "foo/bar/.."),
+                ("C:/foo", "C:"),
+                ("C:/", "."),
+                ("C:foo", "."),
+                ("C:foo/bar", "C:foo"),
+                ("/foo", "/"),
+                ("/foo/bar", "/foo"),
+                ("//server", "//"),
+                ("//server/share", "//server"),
+                ("//server/share/x", "//server/share"),
+                ("///server/share/x", "/server/share"),
+                ("///foo/bar", "/foo"),
+                ("//foo//bar", "//foo"),
+                ("//foo/bar/", "//foo"),
+                ("a/b/c.jsonl", "a/b"),
+                ("a/b/c/", "a/b"),
+                ("sessions-index.json", "."),
+                ("proj/sessions-index.json", "proj"),
+                ("a/session_index.jsonl", "a"),
+                ("../elsewhere/sess-q.jsonl", "../elsewhere"),
+                ("../..", ".."),
+                ("/..", "/"),
+                ("/../foo", "/.."),
+                ("foo/bar/.", "foo"),
+                ("./foo", "."),
+                ("foo/././bar", "foo"),
+                (" ", "."),
+                ("foo/ ", "foo"),
+                ("...", "."),
+                ("foo/.../bar", "foo/..."),
+                ("a\\b\\c.jsonl", "."),
+                ("a\\b", "."),
+                ("foo\\bar/baz", "foo\\bar"),
+                ("a\\b/c.jsonl", "a\\b"),
+                ("foo\n/bar", "foo\n"),
+                ("///a", "/"),
+            ];
+            for (path, parent) in cases {
+                assert_eq!(pure_posix_parent(path), parent, "{path:?}");
+            }
+        }
+
+        #[test]
+        fn indexes_use_raw_paths_and_posix_parents() {
+            let results = [
+                row("same.jsonl", Verdict::Healthy),
+                row("proj/b.jsonl", Verdict::Invalid),
+                row("proj/a.jsonl", Verdict::Healthy),
+                row("a\\b\\c.jsonl", Verdict::Skipped),
+                row("same.jsonl", Verdict::Unreadable),
+                row("", Verdict::Unsupported),
+                row(".", Verdict::Healthy),
+            ];
+            let by_path = index_by_path(&results);
+            assert_eq!(by_path.get("same.jsonl").copied(), Some(4));
+            assert_eq!(by_path.get("proj/b.jsonl").copied(), Some(1));
+            assert_eq!(by_path.get("").copied(), Some(5));
+            assert_eq!(by_path.get(".").copied(), Some(6));
+            assert_eq!(by_path.len(), 6);
+
+            let by_parent = index_by_parent(&results);
+            assert_eq!(
+                by_parent.get("proj").map(Vec::as_slice),
+                Some([1usize, 2].as_slice())
+            );
+            assert_eq!(
+                by_parent.get(".").map(Vec::as_slice),
+                Some([0usize, 3, 4, 5, 6].as_slice())
+            );
+            assert!(!by_parent.contains_key("a\\b"));
+        }
+
+        #[test]
+        fn empty_index_paths_return_rows_and_keep_bools_distinct_from_ints() {
+            let mut first = row("proj/a.jsonl", Verdict::Invalid);
+            first.cache_hit = true;
+            first.warning_count = 0;
+            first.error_count = 3;
+            first.max_findings_per_code = 4;
+            first.detected_format = Some(FORMAT_CLAUDE_CODE.to_owned());
+            first.session_id = Some("sess-secret".to_owned());
+            first.tip_id = Some("tip-secret".to_owned());
+            first.skipped_reason = Some("synthetic".to_owned());
+            let mut second = row("same.jsonl", Verdict::Healthy);
+            second.cache_hit = false;
+            second.warning_count = 5;
+            second.error_count = 0;
+            second.detected_format = Some(FORMAT_CODEX_ROLLOUT.to_owned());
+            let third = row("same.jsonl", Verdict::Unreadable);
+            let results = [first, second, third];
+            let baseline = BTreeSet::from(["fp-synthetic".to_owned()]);
+            let state = Path::new("C:/synthetic/missing-state.sqlite");
+            let returned = reconcile_session_indexes(&results, &[], &[state], Some(&baseline))
+                .expect("empty index list");
+            assert_eq!(returned, results);
+            assert!(returned[0].cache_hit);
+            assert_eq!(returned[0].warning_count, 0);
+            assert_eq!(returned[0].error_count, 3);
+            assert!(!returned[1].cache_hit);
+            assert_eq!(returned[1].warning_count, 5);
+            assert_eq!(returned.len(), 3);
+            let absent = reconcile_session_indexes(&[], &[], &[], None).expect("both empty");
+            assert!(absent.is_empty());
+            let none_baseline =
+                reconcile_session_indexes(&results, &[], &[], None).expect("omitted baseline");
+            assert_eq!(none_baseline, results);
+        }
+
+        #[test]
+        fn non_empty_index_paths_stop_at_minimize_path() {
+            let mut kept = row("proj/a.jsonl", Verdict::Healthy);
+            kept.cache_hit = true;
+            kept.warning_count = 0;
+            kept.session_id = Some("sess-secret".to_owned());
+            kept.detected_format = Some("claude-code-jsonl".to_owned());
+            let results = [kept];
+            let baseline = BTreeSet::from(["fp-synthetic".to_owned()]);
+            let state = Path::new("C:/synthetic/state.sqlite");
+            let hidden = [
+                "proj/a.jsonl",
+                "sess-secret",
+                "fp-synthetic",
+                "state.sqlite",
+                "sessions-index.json",
+                "session_index.jsonl",
+                "SL402",
+                "index-truncated",
+                "index-malformed",
+                "file-not-in-index",
+                "index-entry-no-file",
+                "read_index",
+                "read_codex_state",
+                "make_finding",
+                "claude-code-jsonl",
+            ];
+            let paths = [
+                Path::new("b/session_index.jsonl"),
+                Path::new("a/sessions-index.json"),
+            ];
+            assert_stopped(&results, &paths, &[state], Some(&baseline), &hidden);
+            assert_stopped(&[], &paths, &[], None, &hidden);
+            assert_stopped(
+                &results,
+                &[Path::new("sessions-index.json")],
+                &[],
+                None,
+                &hidden,
+            );
+            let missing = Path::new("C:/synthetic/does-not-exist/sessions-index.json");
+            assert_stopped(&results, &[missing], &[state], Some(&baseline), &hidden);
+        }
+
+        fn assert_stopped(
+            results: &[FileResult],
+            index_paths: &[&Path],
+            state_db_files: &[&Path],
+            baseline: Option<&BTreeSet<String>>,
+            hidden: &[&str],
+        ) {
+            assert_ne!(
+                TypeId::of::<Result<Vec<FileResult>, MinimizePathUnavailable>>(),
+                TypeId::of::<ScanReport>()
+            );
+            assert_ne!(
+                TypeId::of::<Vec<FileResult>>(),
+                TypeId::of::<Result<Vec<FileResult>, MinimizePathUnavailable>>()
+            );
+            let error = reconcile_session_indexes(results, index_paths, state_db_files, baseline)
+                .expect_err("minimize seam");
+            assert_eq!(error, MinimizePathUnavailable);
+            assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+            assert_eq!(
+                error.to_string(),
+                "sesslint.report.minimize_path is not available"
+            );
+            assert!(error.source().is_none());
+            let text = error.to_string();
+            assert!(!text.contains('/'));
+            assert!(!text.contains('\\'));
+            assert!(!text.chars().any(|ch| ch.is_ascii_digit()));
+            for secret in hidden {
+                assert!(!text.contains(secret), "{secret}");
+            }
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn python_path_str_uses_windows_pathlib() {
+            let cases = [
+                ("", "."),
+                (".", "."),
+                ("..", ".."),
+                ("/", "\\"),
+                ("//", "\\"),
+                ("///", "\\"),
+                ("foo", "foo"),
+                ("foo/", "foo"),
+                ("foo/bar", "foo\\bar"),
+                ("foo/bar/", "foo\\bar"),
+                ("foo/./bar", "foo\\bar"),
+                ("foo//bar", "foo\\bar"),
+                ("foo/bar/..", "foo\\bar\\.."),
+                ("foo/../bar", "foo\\..\\bar"),
+                ("C:/foo", "C:\\foo"),
+                ("C:/", "C:\\"),
+                ("C:", "C:"),
+                ("C:foo", "C:foo"),
+                ("C:foo/bar", "C:foo\\bar"),
+                ("/foo", "\\foo"),
+                ("/foo/bar", "\\foo\\bar"),
+                ("//server/share", "\\\\server\\share\\"),
+                ("//server/share/x", "\\\\server\\share\\x"),
+                ("///server/share/x", "\\server\\share\\x"),
+                ("\\\\server\\share", "\\\\server\\share\\"),
+                ("\\\\server\\share\\x", "\\\\server\\share\\x"),
+                ("\\\\server", "\\server"),
+                ("\\\\?\\C:\\foo", "\\\\?\\C:\\foo"),
+                ("\\\\?\\C:\\foo\\bar", "\\\\?\\C:\\foo\\bar"),
+                ("\\\\?\\UNC\\server\\share", "\\\\?\\UNC\\server\\share\\"),
+                (
+                    "\\\\?\\UNC\\server\\share\\x",
+                    "\\\\?\\UNC\\server\\share\\x",
+                ),
+                ("\\\\.\\C:\\foo", "\\\\.\\C:\\foo"),
+                ("//?/c:/a", "\\\\?\\c:\\a"),
+                ("\\\\?\\c:/a", "\\\\?\\c:\\a"),
+                ("a/b", "a\\b"),
+                ("a\\b", "a\\b"),
+                ("sessions-index.json", "sessions-index.json"),
+                ("a/session_index.jsonl", "a\\session_index.jsonl"),
+                ("../..", "..\\.."),
+                ("/..", "\\.."),
+                ("/../foo", "\\..\\foo"),
+                ("foo/bar/.", "foo\\bar"),
+                ("./foo", "foo"),
+                (" ", " "),
+                ("foo/ ", "foo\\ "),
+                ("foo\n/bar", "foo\n\\bar"),
+                ("//foo//bar", "\\foo\\bar"),
+                ("//foo/bar/", "\\\\foo\\bar\\"),
+                ("C:\\foo\\..\\bar", "C:\\foo\\..\\bar"),
+                ("a/b/c/", "a\\b\\c"),
+            ];
+            for (path, shown) in cases {
+                assert_eq!(python_path_text(path), shown, "{path:?}");
+            }
+        }
+
+        #[cfg(not(windows))]
+        #[test]
+        fn python_path_str_uses_posix_pathlib() {
+            let cases = [
+                ("", "."),
+                ("foo/bar", "foo/bar"),
+                ("foo/./bar", "foo/bar"),
+                ("foo//bar", "foo/bar"),
+                ("foo/bar/..", "foo/bar/.."),
+                ("//server/share", "//server/share"),
+                ("//server/share/x", "//server/share/x"),
+                ("///server/share/x", "/server/share/x"),
+                ("//", "//"),
+                ("///", "/"),
+                ("a\\b", "a\\b"),
+                ("C:/foo", "C:/foo"),
+                ("C:/", "C:"),
+                ("../..", "../.."),
+                ("/foo/bar", "/foo/bar"),
+                ("foo\n/bar", "foo\n/bar"),
+                ("//foo//bar", "//foo/bar"),
+                (" ", " "),
+                ("foo/ ", "foo/ "),
+                ("sessions-index.json", "sessions-index.json"),
+                ("a/session_index.jsonl", "a/session_index.jsonl"),
+                ("///foo", "/foo"),
+            ];
+            for (path, shown) in cases {
+                assert_eq!(python_path_text(path), shown, "{path:?}");
+            }
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn sort_is_windows_str_and_keeps_equal_keys_in_input_order() {
+            let tie_second = Path::new("a/b");
+            let tie_first = Path::new("a\\b");
+            let early = Path::new("a/session_index.jsonl");
+            let late = Path::new("z.jsonl");
+            let paths = [tie_second, late, tie_first, early];
+            let sorted = sort_index_paths(&paths).expect("keys");
+            assert_eq!(sorted[0].key, "a\\b");
+            assert_eq!(sorted[1].key, "a\\b");
+            assert_eq!(sorted[2].key, "a\\session_index.jsonl");
+            assert_eq!(sorted[3].key, "z.jsonl");
+            assert_eq!(sorted[0].path.to_str(), Some("a/b"));
+            assert_eq!(sorted[1].path.to_str(), Some("a\\b"));
+            let unc = Path::new("//server/share/secret");
+            let letter = Path::new("sessions-index.json");
+            let unc_paths = [letter, unc];
+            let ordered = sort_index_paths(&unc_paths).expect("unc");
+            assert_eq!(ordered[0].key, "\\\\server\\share\\secret");
+            assert_eq!(ordered[0].path.to_str(), Some("//server/share/secret"));
+        }
+
+        #[cfg(not(windows))]
+        #[test]
+        fn sort_is_posix_str() {
+            let slash = Path::new("a/b");
+            let back = Path::new("a\\b");
+            let early = Path::new("a/session_index.jsonl");
+            let late = Path::new("z.jsonl");
+            let paths = [back, late, slash, early];
+            let sorted = sort_index_paths(&paths).expect("keys");
+            assert_eq!(sorted[0].key, "a/b");
+            assert_eq!(sorted[1].key, "a/session_index.jsonl");
+            assert_eq!(sorted[2].key, "a\\b");
+            assert_eq!(sorted[3].key, "z.jsonl");
+            assert_eq!(sorted[0].path.to_str(), Some("a/b"));
+            assert_eq!(sorted[2].path.to_str(), Some("a\\b"));
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn undecodable_index_path_fails_closed() {
+            use std::ffi::OsString;
+            use std::os::windows::ffi::OsStringExt;
+
+            let path = OsString::from_wide(&[0xD800, 0x20]);
+            let index = Path::new(&path);
+            assert!(super::python_path_str(index).is_none());
+            let error =
+                reconcile_session_indexes(&[], &[index], &[], None).expect_err("undecodable");
+            assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+            assert!(!error.to_string().chars().any(|ch| ch.is_ascii_digit()));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn undecodable_index_path_fails_closed() {
+            use std::os::unix::ffi::OsStrExt;
+
+            let index = Path::new(std::ffi::OsStr::from_bytes(&[0xff]));
+            assert!(super::python_path_str(index).is_none());
+            let error =
+                reconcile_session_indexes(&[], &[index], &[], None).expect_err("undecodable");
+            assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        }
+    }
+}
+
+pub use session_indexes::{reconcile_session_indexes, FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT};
