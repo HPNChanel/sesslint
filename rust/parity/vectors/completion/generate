@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""Generate sesslint.completion parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+COMPLETION_PY_SHA256 = (
+    "bb1b7b66ecd39557e425b87c0173d6dc30d55aa0477b3153406d491a62a56c54"
+)
+COMPLETION_RS_SHA256 = (
+    "d49cb1c9ee7f146b21cf72b173fa62435349ffa542acd37e67f0ff16c31ab2bd"
+)
+MODULE = "sesslint.completion"
+
+EXPECTED_CLEAN = (
+    "alpha: beta's [gamma] "
+    + "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+)
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-completion-profile-choices: Python _profile_choices imports "
+        "sesslint.profiles.list_profiles; Rust profile_choices returns "
+        "ListProfilesUnavailable (not byte-compared here)."
+    ),
+    (
+        "GAP-completion-create-parser: Python generate_completion(parser=None) "
+        "imports sesslint.cli.create_parser; Rust returns "
+        "CreateParserUnavailable (not byte-compared here)."
+    ),
+    (
+        "GAP-completion-harvest-profile-live: Python harvest with --profile and "
+        "no fixed choices calls _profile_choices; Rust harvest_parser returns "
+        "ListProfilesUnavailable (not byte-compared here)."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_completion_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/completion.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != COMPLETION_PY_SHA256:
+        raise SystemExit(
+            f"completion.py pin sha256 mismatch: expected {COMPLETION_PY_SHA256}, got {digest}"
+        )
+
+
+def load_completion_module() -> types.ModuleType:
+    blob = pinned_completion_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "completion.py"
+    if module_path.read_bytes() == blob:
+        src = root / "src"
+        insert = str(src)
+        if insert not in sys.path:
+            sys.path.insert(0, insert)
+        import importlib
+
+        return importlib.import_module("sesslint.completion")
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_completion.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_completion_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned completion.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def command_to_json(cmd: Any) -> dict[str, Any]:
+    return {
+        "name": cmd.name,
+        "aliases": list(cmd.aliases),
+        "flags": [
+            {
+                "options": list(flag.options),
+                "choices": list(flag.choices),
+                "help": flag.help,
+            }
+            for flag in cmd.flags
+        ],
+    }
+
+
+def synthetic_main_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="sesslint")
+    sub = parser.add_subparsers(dest="command")
+    beta = sub.add_parser("beta", aliases=["bee"], help="beta command")
+    beta.add_argument("-q", "--quiet", action="store_true")
+    help_raw = "  alpha:  beta's\t[gamma]\n" + ("é" * 130)
+    alpha = sub.add_parser("alpha", aliases=["aah", "aaa-alias"], help="alpha command")
+    alpha.add_argument(
+        "--zeta",
+        "-z",
+        "--alpha",
+        choices=["mid", "aaa", "zzz"],
+        help=help_raw,
+    )
+    alpha.add_argument("-q", "--quiet", action="store_true")
+    return parser
+
+
+def harvest_fixed_choices_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="sesslint")
+    sub = parser.add_subparsers(dest="command")
+    scan = sub.add_parser("scan", aliases=["sc"], help="scan command")
+    scan.add_argument("-q", "--quiet", action="store_true", help=None)
+    check = sub.add_parser("check", aliases=["chk", "z-alias"], help="check command")
+    check.add_argument(
+        "--zeta",
+        "-z",
+        choices=["b", "a"],
+        help="  alpha   beta\tgamma ",
+    )
+    check.add_argument("--profile", choices=["y", "x"], help=argparse.SUPPRESS)
+    return parser
+
+
+def fixed_choices_surface() -> dict[str, Any]:
+    return {
+        "actions": [
+            {"kind": "not_subcommands"},
+            {
+                "kind": "subcommands",
+                "names": [
+                    {"name": "z-alias", "body_id": 2},
+                    {"name": "scan", "body_id": 1},
+                    {"name": "chk", "body_id": 2},
+                    {"name": "check", "body_id": 2},
+                    {"name": "sc", "body_id": 1},
+                ],
+                "canonical": ["scan", "check"],
+                "bodies": [
+                    {
+                        "body_id": 1,
+                        "actions": [
+                            {"kind": "help"},
+                            {
+                                "kind": "option",
+                                "option_strings": ["-q", "--quiet"],
+                                "choices": {"kind": "not_string_sequence"},
+                                "help": {"kind": "none"},
+                            },
+                        ],
+                    },
+                    {
+                        "body_id": 2,
+                        "actions": [
+                            {"kind": "help"},
+                            {
+                                "kind": "option",
+                                "option_strings": ["--zeta", "-z"],
+                                "choices": {"kind": "strings", "values": ["b", "a"]},
+                                "help": {"kind": "text", "value": "  alpha   beta\tgamma "},
+                            },
+                            {
+                                "kind": "option",
+                                "option_strings": [],
+                                "choices": {"kind": "not_string_sequence"},
+                                "help": {"kind": "text", "value": "pos help"},
+                            },
+                            {
+                                "kind": "option",
+                                "option_strings": ["--profile"],
+                                "choices": {"kind": "strings", "values": ["y", "x"]},
+                                "help": {"kind": "text", "value": "==SUPPRESS=="},
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]
+    }
+
+
+def profile_seam_surface(choices_kind: str) -> dict[str, Any]:
+    choices = (
+        {"kind": "not_string_sequence"}
+        if choices_kind == "not_string_sequence"
+        else {"kind": "strings", "values": []}
+    )
+    return {
+        "actions": [
+            {
+                "kind": "subcommands",
+                "names": [{"name": "check", "body_id": 1}],
+                "canonical": ["check"],
+                "bodies": [
+                    {
+                        "body_id": 1,
+                        "actions": [
+                            {
+                                "kind": "option",
+                                "option_strings": ["-p", "--profile"],
+                                "choices": choices,
+                                "help": {"kind": "none"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def build_vectors(comp: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_constants",
+        {"type": "module_constants"},
+        {
+            "completion_shells": list(comp.COMPLETION_SHELLS),
+            "prog": comp.PROG,
+        },
+    )
+
+    clean_specs = [
+        ("clean_help_none", None),
+        ("clean_help_argparse_suppress", argparse.SUPPRESS),
+        ("clean_help_suppress_text", "==SUPPRESS=="),
+        ("clean_help_not_str", 42),
+        (
+            "clean_help_whitespace_unicode",
+            "  alpha:  beta's\t[gamma]\n" + ("é" * 130),
+        ),
+        ("clean_help_nbsp", "a\u00a0b"),
+    ]
+    for vector_id, raw in clean_specs:
+        add(
+            vector_id,
+            {"type": "clean_help", "raw": raw_to_construct(raw)},
+            {"help": comp._clean_help(raw)},
+        )
+
+    for vector_id, value in [
+        ("ps_quote_embedded", "it's a 'quote'"),
+        ("ps_quote_empty", ""),
+    ]:
+        add(
+            vector_id,
+            {"type": "ps_quote", "value": value},
+            {"quoted": comp._ps_quote(value)},
+        )
+
+    main_commands = comp._harvest_parser(synthetic_main_parser())
+    main_json = [command_to_json(cmd) for cmd in main_commands]
+    add(
+        "harvest_synthetic_main",
+        {"type": "harvest_parser", "surface": {"kind": "synthetic_main"}},
+        {"commands": main_json},
+    )
+
+    fixed_commands = comp._harvest_parser(harvest_fixed_choices_parser())
+    add(
+        "harvest_fixed_choices",
+        {"type": "harvest_parser", "surface": fixed_choices_surface()},
+        {"commands": [command_to_json(cmd) for cmd in fixed_commands]},
+    )
+
+    words = comp._command_words(tuple(main_commands))
+    add(
+        "command_words_synthetic",
+        {"type": "command_words", "commands": main_json},
+        {"words": words},
+    )
+
+    shell_builders = [
+        ("bash_script_synthetic", "_bash_script"),
+        ("zsh_script_synthetic", "_zsh_script"),
+        ("fish_script_synthetic", "_fish_script"),
+        ("powershell_script_synthetic", "_powershell_script"),
+    ]
+    for vector_id, attr in shell_builders:
+        builder = getattr(comp, attr)
+        add(
+            vector_id,
+            {"type": vector_id.rsplit("_", 1)[0], "commands": main_json},
+            {"script": builder(tuple(main_commands))},
+        )
+
+    add(
+        "powershell_script_empty",
+        {"type": "powershell_script", "commands": []},
+        {"script": comp._powershell_script(())},
+    )
+
+    for shell in ("bash", "zsh", "fish", "powershell"):
+        add(
+            f"generate_completion_{shell}_synthetic",
+            {
+                "type": "generate_completion",
+                "shell": shell,
+                "commands": main_json,
+            },
+            {"script": comp.generate_completion(shell, parser=synthetic_main_parser())},
+        )
+
+    unsupported = [
+        ("csh", "csh"),
+        ("", ""),
+        ("it's", "it's"),
+        ('a"b', 'a"b'),
+        ("both'\"", "both'\""),
+        ("\\", "\\"),
+        ("\n", "\n"),
+        ("PowerShell", "PowerShell"),
+        ("bash ", "bash "),
+        ("é", "é"),
+        ("\u00a0", "\u00a0"),
+        ("cmd\u007f", "cmd\u007f"),
+    ]
+    for label, shell in unsupported:
+        try:
+            comp.generate_completion(shell, parser=synthetic_main_parser())
+            raise SystemExit(f"expected ValueError for shell {label!r}")
+        except ValueError as exc:
+            add(
+                f"generate_completion_unsupported_{label or 'empty'}",
+                {
+                    "type": "generate_completion_error",
+                    "shell": shell,
+                    "commands": main_json,
+                },
+                {"error_type": "ValueError", "message": str(exc)},
+            )
+
+    profiles = tuple(comp._profile_choices())
+    add(
+        "profile_choices_live",
+        {"type": "profile_choices"},
+        {"profiles": list(profiles)},
+    )
+
+    for kind in ("not_string_sequence", "empty_strings"):
+        add(
+            f"harvest_profile_seam_{kind}",
+            {
+                "type": "harvest_profile_seam",
+                "surface": profile_seam_surface(kind),
+            },
+            {"raises": "ListProfilesUnavailable"},
+        )
+
+    add(
+        "generate_completion_create_parser_seam",
+        {"type": "generate_completion_create_parser", "shell": "bash"},
+        {"raises": "CreateParserUnavailable"},
+    )
+
+    return vectors
+
+
+def raw_to_construct(raw: object) -> object:
+    if raw is None:
+        return {"kind": "none"}
+    if raw is argparse.SUPPRESS:
+        return {"kind": "suppress"}
+    if isinstance(raw, str):
+        return {"kind": "text", "value": raw}
+    return {"kind": "not_str"}
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "completion_py_sha256": COMPLETION_PY_SHA256,
+        "completion_rs_sha256": COMPLETION_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "completion_py_sha256": COMPLETION_PY_SHA256,
+        "completion_rs_sha256": COMPLETION_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/completion/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "sesslint.completion script builders and harvest helpers from pinned "
+            "src/sesslint/completion.py (synthetic argparse surfaces only)."
+        ),
+        "generator": "rust/parity/vectors/completion/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    comp = load_completion_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = build_vectors(comp)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
