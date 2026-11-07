@@ -1,0 +1,1151 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_sl002",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_sl002_py_sha256": "535f3226281b68d39c62508d88afe3d85b9231c19f247246a0a939542f7e82a8",
+  "recipes_sl002_rs_sha256": "4e2176cad2b80bbb5e798edb79f0225f167a18b7946f2213ef159e20312af6cf",
+  "known_parity_gaps": [
+    "GAP-recipes-sl002-affected-region: Python affected_region_torn_terminal_record_discard returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts Rust Display only."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "mode": "names",
+        "names": [
+          "RECIPE_TORN_TERMINAL_RECORD_DISCARD",
+          "affected_region_torn_terminal_record_discard",
+          "apply_torn_terminal_record_discard",
+          "register_all"
+        ]
+      }
+    },
+    {
+      "id": "recipe_constant_snapshot",
+      "construct": {
+        "type": "recipe_constant"
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "torn-terminal-record-discard",
+        "handles": [
+          "SL002"
+        ],
+        "preconditions": [
+          "no_sl203",
+          "torn_terminal_record"
+        ],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": true
+        },
+        "affected_region": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "register_all_idempotent",
+      "construct": {
+        "type": "register_all"
+      },
+      "expected": {
+        "mode": "registered",
+        "present": true,
+        "list_names": [
+          "torn-terminal-record-discard"
+        ]
+      }
+    },
+    {
+      "id": "apply_discards_named_last_event",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 2
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a",
+          "b"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_reader_minted_keeps_terminal",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "torn"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a",
+          "torn"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_shared_id_discards_last_only",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "same"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "same"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "same"
+        ],
+        "len": 1
+      }
+    },
+    {
+      "id": "apply_shared_id_index_zero_keeps_both",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "same"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "same"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "same",
+          "same"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_bool_cut_index_is_not_int",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "bool",
+                  "v": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a",
+          "b"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_bool_target_true_discards_index_one",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": true
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a"
+        ],
+        "len": 1
+      }
+    },
+    {
+      "id": "apply_bool_target_false_clears_singleton",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "only"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": false
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [],
+        "len": 0
+      }
+    },
+    {
+      "id": "apply_bool_true_not_cut_zero_keeps_singleton",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "only"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": true
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "only"
+        ],
+        "len": 1
+      }
+    },
+    {
+      "id": "apply_non_mapping_params_keeps_events",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "not_mapping"
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a",
+          "b"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_other_target_keeps_events",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "other",
+            "v": "synthetic-scalar"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a",
+          "b"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_ignores_region_fallback_keys",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "first_unsafe_index",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a",
+          "b"
+        ],
+        "len": 2
+      }
+    },
+    {
+      "id": "apply_duplicate_cut_index_last_wins",
+      "construct": {
+        "type": "apply",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map_entries",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [
+          "a"
+        ],
+        "len": 1
+      }
+    },
+    {
+      "id": "apply_empty_pop_index_error",
+      "construct": {
+        "type": "apply",
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": -1
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": -1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "index_error",
+        "message": "pop from empty list"
+      }
+    },
+    {
+      "id": "apply_empty_no_cut_stays_empty",
+      "construct": {
+        "type": "apply",
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "not_mapping"
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "ids": [],
+        "len": 0
+      }
+    },
+    {
+      "id": "region_gap_empty_events",
+      "construct": {
+        "type": "affected_region",
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "not_mapping"
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": true,
+          "indices": [],
+          "ids": [],
+          "ranges": []
+        }
+      }
+    },
+    {
+      "id": "region_gap_proven_cut_suffix",
+      "construct": {
+        "type": "affected_region",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 2
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": false,
+          "indices": [
+            1,
+            2
+          ],
+          "ids": [
+            "b",
+            "c"
+          ],
+          "ranges": [
+            [
+              1,
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "region_gap_out_of_range_cut",
+      "construct": {
+        "type": "affected_region",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 3
+          },
+          "params": {
+            "t": "not_mapping"
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": true,
+          "indices": [],
+          "ids": [],
+          "ranges": []
+        }
+      }
+    },
+    {
+      "id": "region_gap_bool_step_target",
+      "construct": {
+        "type": "affected_region",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": true
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": true,
+          "indices": [],
+          "ids": [],
+          "ranges": []
+        }
+      }
+    },
+    {
+      "id": "region_gap_float_event_id",
+      "construct": {
+        "type": "affected_region",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "float",
+                  "v": 1.5
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "not_mapping"
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": false,
+          "indices": [
+            0
+          ],
+          "ids": [
+            "1.5"
+          ],
+          "ranges": [
+            [
+              0,
+              0
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "region_gap_ingestion_boundary",
+      "construct": {
+        "type": "affected_region",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "bool",
+                  "v": false
+                }
+              ],
+              [
+                "first_unsafe_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": false,
+          "indices": [
+            2
+          ],
+          "ids": [
+            "c"
+          ],
+          "ranges": [
+            [
+              2,
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "region_gap_session_boundary_id",
+      "construct": {
+        "type": "affected_region",
+        "events": [
+          {
+            "t": "session",
+            "id": "evt-boundary",
+            "parent_id": null,
+            "seq": 0,
+            "ts": "2026-01-01T00:00:00Z",
+            "actor": "user",
+            "kind": "message"
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "not_mapping"
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-sl002-affected-region",
+        "region": {
+          "unproven": false,
+          "indices": [
+            0
+          ],
+          "ids": [
+            "evt-boundary"
+          ],
+          "ranges": [
+            [
+              0,
+              0
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}
