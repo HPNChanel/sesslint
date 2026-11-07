@@ -1922,3 +1922,1843 @@ mod tests {
         assert_eq!(error.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
     }
 }
+// Port of `src/sesslint/repair/recipes_salvage.py` lines 332–670
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+// Appended after the published prefix. Earlier bytes and functions stay.
+
+use std::convert::Infallible;
+
+use model::codes::{SL001, SL005, SL006, SL101, SL102, SL108};
+use model::finding::{Evidence, EvidenceLookup, Finding};
+
+use crate::preconditions::{register_precondition, PreconditionContext};
+use crate::registry::{get_recipe, register_recipe, CallableId, Recipe, RecipeSpec, RegistryError};
+
+/// `sesslint.policy.abstention.AffectedRegion` is not available in this crate.
+pub const AFFECTED_REGION_UNAVAILABLE: &str =
+    "sesslint.policy.abstention.AffectedRegion is not available";
+
+const ORPHAN_EMPTY: &str = "orphan-result-drop: cannot apply to an empty session";
+const ORPHAN_AMBIGUOUS: &str =
+    "orphan-result-drop: no unambiguous orphan result target could be resolved";
+const TORN_EMPTY: &str = "torn-record-excision: cannot apply to an empty session";
+const TORN_DEPENDENT: &str = "torn-record-excision: a parsed event parents to the torn record's id; excision would orphan a known dependent";
+
+const HANDLES_AMPUTATE: [&str; 2] = [SL005, SL006];
+const HANDLES_COMPACTION: [&str; 1] = [SL108];
+const HANDLES_TRUNCATE: [&str; 1] = [SL102];
+const HANDLES_ORPHAN: [&str; 1] = [SL101];
+const HANDLES_EXCISION: [&str; 1] = [SL001];
+
+const PRE_AMPUTATE: [&str; 2] = ["salvage_policy", "branch_has_no_checkpoint"];
+const PRE_COMPACTION: [&str; 2] = ["salvage_policy", "sl108_present"];
+const PRE_TRUNCATE: [&str; 2] = ["salvage_policy", "acknowledge_side_effects"];
+const PRE_ORPHAN: [&str; 3] = [
+    "salvage_policy",
+    "acknowledge_side_effects",
+    "sl101_orphan_present",
+];
+const PRE_EXCISION: [&str; 3] = [
+    "salvage_policy",
+    "acknowledge_side_effects",
+    "sl001_excisable",
+];
+
+/// `sesslint.policy.abstention.AffectedRegion` cannot be constructed here.
+///
+/// [`Display`](fmt::Display) is [`AFFECTED_REGION_UNAVAILABLE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AffectedRegionUnavailable;
+
+impl AffectedRegionUnavailable {
+    /// Seam sentence. This is the Display text.
+    pub const fn message(self) -> &'static str {
+        AFFECTED_REGION_UNAVAILABLE
+    }
+}
+
+impl fmt::Display for AffectedRegionUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(AFFECTED_REGION_UNAVAILABLE)
+    }
+}
+
+impl Error for AffectedRegionUnavailable {}
+
+/// Failure while registering salvage predicates or recipes.
+///
+/// [`Display`](fmt::Display) is the Python message from
+/// [`register_precondition`] or [`register_recipe`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegisterError {
+    /// [`register_precondition`] failed.
+    Precondition(PreconditionError),
+    /// Recipe construction or [`register_recipe`] failed.
+    Registry(RegistryError),
+}
+
+impl fmt::Display for RegisterError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Precondition(error) => error.fmt(formatter),
+            Self::Registry(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for RegisterError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Precondition(error) => Some(error),
+            Self::Registry(error) => Some(error),
+        }
+    }
+}
+
+impl From<PreconditionError> for RegisterError {
+    fn from(error: PreconditionError) -> Self {
+        Self::Precondition(error)
+    }
+}
+
+impl From<RegistryError> for RegisterError {
+    fn from(error: RegistryError) -> Self {
+        Self::Registry(error)
+    }
+}
+
+/// Drop one validated orphan `tool_result`.
+///
+/// Python: `apply_orphan_result_drop_with_loss`. An empty session is refused
+/// before the index is resolved. A bool, float, or other `target_index` is
+/// not an int. It resolves to no index and does not select an event. The
+/// kept events are copied with [`to_event_dict`](model::events::to_event_dict).
+/// The input slice is not mutated.
+///
+/// # Errors
+///
+/// Returns [`SalvageError::Precondition`] for an empty session, an unresolved
+/// target, or a target [`_validate_orphan_target`] refuses. Returns
+/// [`SalvageError::Event`] when resolution or a kept-event copy fails. This
+/// function does not panic, and it does not return `Ok` on those failures.
+pub fn apply_orphan_result_drop_with_loss(
+    events: &[EventValue],
+    step: &SalvageStep,
+) -> Result<(Vec<EventMapping>, LossDelta), SalvageError> {
+    if events.is_empty() {
+        return Err(failed(ORPHAN_EMPTY));
+    }
+    let Some(index) = _resolve_orphan_target_index(events, step)? else {
+        return Err(failed(ORPHAN_AMBIGUOUS));
+    };
+    _validate_orphan_target(events, index, step)?;
+    let kept = copy_without_index(events, index)?;
+    Ok((kept, LossDelta::one("orphan-result", 1)))
+}
+
+/// Drop one orphan `tool_result` and discard the loss count.
+///
+/// Python: `apply_orphan_result_drop`. The arguments are owned because
+/// [`CallableId::from_fn`] stores `fn(A, B) -> C`. A reference signature is
+/// higher-ranked and does not match that constructor. The body calls
+/// [`apply_orphan_result_drop_with_loss`].
+///
+/// # Errors
+///
+/// See [`apply_orphan_result_drop_with_loss`]. This function does not panic,
+/// and it does not return `Ok` on those failures.
+#[allow(clippy::needless_pass_by_value)]
+pub fn apply_orphan_result_drop(
+    events: Vec<EventValue>,
+    step: SalvageStep,
+) -> Result<Vec<EventMapping>, SalvageError> {
+    Ok(apply_orphan_result_drop_with_loss(&events, &step)?.0)
+}
+
+/// Declare the affected region, then refuse to construct it.
+///
+/// Python: `affected_region_orphan_result_drop`. Empty input, an unresolved
+/// index, a bool index, an out-of-range index, an event-helper error, and a
+/// proven index set all return [`AffectedRegionUnavailable`]. This is not a
+/// region value. Indices and ids are not returned.
+///
+/// Owned arguments match [`CallableId::from_fn`]. Argument order is `step`,
+/// then `events`.
+///
+/// # Errors
+///
+/// Always returns [`AffectedRegionUnavailable`]. Display is
+/// [`AFFECTED_REGION_UNAVAILABLE`]. This function does not panic.
+#[allow(clippy::needless_pass_by_value)]
+pub fn affected_region_orphan_result_drop(
+    step: SalvageStep,
+    events: Vec<EventValue>,
+) -> Result<Infallible, AffectedRegionUnavailable> {
+    Err(refuse_orphan_region(orphan_region_parts(&step, &events)))
+}
+
+/// Precondition: the finding is [`SL101`] and names one droppable orphan result.
+///
+/// Python: `sl101_orphan_present`. A bool evidence index is not an int and is
+/// not used as an index. A string index is not parsed. An event-helper error
+/// returns false. It does not return true. [`register_precondition`] stores
+/// this `fn(&PreconditionContext) -> bool`.
+pub fn sl101_orphan_present(ctx: &PreconditionContext<'_>) -> bool {
+    if finding_blocks_sl101(ctx) || !findings_include_sl101(ctx) {
+        return false;
+    }
+    let Some(finding) = ctx.finding else {
+        return true;
+    };
+    match resolve_sl101_index(ctx, finding) {
+        IndexResolved::Ready(index) => orphan_target_ok(ctx, index),
+        IndexResolved::Absent | IndexResolved::Failed => false,
+    }
+}
+
+/// True when a parsed event's parent id is `str(record_id)`.
+///
+/// Python: `_has_extractable_dependents`. A bool is stringified as `True` or
+/// `False`. It is not `1` or `0`, and it is not an index. The first matching
+/// parent returns. A later event is not read. An earlier event-helper error
+/// is returned and is not treated as a match.
+///
+/// # Errors
+///
+/// Returns [`SalvageError::Event`] when `str(record_id)` or `_event_parent_id`
+/// fails. This function does not panic, and it does not return `Ok(true)` on
+/// that failure.
+pub fn _has_extractable_dependents(
+    events: &[EventValue],
+    record_id: &EventField,
+) -> Result<bool, SalvageError> {
+    let wanted = python_str(record_id)?;
+    for event in events {
+        if event_parent_id(event)?.as_deref() == Some(wanted.as_str()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Precondition: the [`SL001`] finding is one excisable torn record.
+///
+/// Python: `sl001_excisable`. `size_limit_exceeded` is refused. `byte_offset`,
+/// `byte_end`, and `record_ordinal` must be ints. A bool is not an int. A
+/// source line below 1 is refused. A parsed child of `source.record_id`
+/// is refused. An event-helper error returns false. It does not return true.
+pub fn sl001_excisable(ctx: &PreconditionContext<'_>) -> bool {
+    let Some(finding) = sl001_finding(ctx) else {
+        return false;
+    };
+    if sl001_size_limited(finding) || !sl001_span_ok(finding) || !sl001_line_ok(finding) {
+        return false;
+    }
+    !sl001_has_dependent(ctx, finding)
+}
+
+/// Keep every parsed event and count one torn record.
+///
+/// Python: `apply_torn_record_excision_with_loss`. An empty session is refused
+/// before params are read. `line`, `record_ordinal`, `byte_offset`, and
+/// `byte_end` must be ints. A bool is not an int. A float, list, or mapping
+/// that the pin would `repr` is an event error, not a copied session. A known
+/// child of `record_id` is refused before the copy. The copy is
+/// [`copy_events_as_dicts`](model::events::copy_events_as_dicts). The input
+/// slice is not mutated.
+///
+/// # Errors
+///
+/// Returns [`SalvageError::Precondition`] for an empty session, a non-int
+/// param whose `repr` is representable, a degenerate anchor, or a known
+/// dependent. Returns [`SalvageError::Event`] when a param `repr`, `str()`,
+/// a parent read, or the copy fails. This function does not panic, and it
+/// does not return `Ok` on those failures.
+pub fn apply_torn_record_excision_with_loss(
+    events: &[EventValue],
+    step: &SalvageStep,
+) -> Result<(Vec<EventMapping>, LossDelta), SalvageError> {
+    if events.is_empty() {
+        return Err(failed(TORN_EMPTY));
+    }
+    let params = torn_params(step);
+    let Some((line, ordinal, byte_offset, byte_end)) = strict_torn_ints(&params) else {
+        return Err(failed(non_integer_message(&params)?));
+    };
+    if !torn_anchor_ok(line, ordinal, byte_offset, byte_end) {
+        return Err(anchor_message(line, ordinal, byte_offset, byte_end));
+    }
+    if torn_record_has_dependent(events, params.record_id)? {
+        return Err(failed(TORN_DEPENDENT));
+    }
+    let copied = copy_events_as_dicts(events)?;
+    Ok((copied, LossDelta::one("torn-record", 1)))
+}
+
+/// Keep every parsed event and discard the loss count.
+///
+/// Python: `apply_torn_record_excision`. Owned arguments match
+/// [`CallableId::from_fn`]. See [`apply_orphan_result_drop`].
+///
+/// # Errors
+///
+/// See [`apply_torn_record_excision_with_loss`]. This function does not panic,
+/// and it does not return `Ok` on those failures.
+#[allow(clippy::needless_pass_by_value)]
+pub fn apply_torn_record_excision(
+    events: Vec<EventValue>,
+    step: SalvageStep,
+) -> Result<Vec<EventMapping>, SalvageError> {
+    Ok(apply_torn_record_excision_with_loss(&events, &step)?.0)
+}
+
+/// Python constant `RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE`.
+///
+/// The stored `apply` is an owned adapter. The earlier function takes
+/// references, and [`CallableId::from_fn`] cannot store that signature. The
+/// adapter calls [`apply_unresolvable_branch_amputate`] and does not widen
+/// its `Ok` paths.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when the name is empty. This literal is not empty.
+pub fn recipe_unresolvable_branch_amputate() -> Result<Recipe, RegistryError> {
+    salvage_recipe(
+        "unresolvable-branch-amputate",
+        &HANDLES_AMPUTATE,
+        &PRE_AMPUTATE,
+        CallableId::from_fn(apply_unresolvable_branch_amputate_owned),
+        None,
+    )
+}
+
+/// Python constant `RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE`.
+pub use recipe_unresolvable_branch_amputate as RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE;
+
+/// Python constant `RECIPE_TORN_COMPACTION_PROJECT`.
+///
+/// See [`recipe_unresolvable_branch_amputate`] for the owned adapter.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when the name is empty. This literal is not empty.
+pub fn recipe_torn_compaction_project() -> Result<Recipe, RegistryError> {
+    salvage_recipe(
+        "torn-compaction-project",
+        &HANDLES_COMPACTION,
+        &PRE_COMPACTION,
+        CallableId::from_fn(apply_torn_compaction_project_owned),
+        None,
+    )
+}
+
+/// Python constant `RECIPE_TORN_COMPACTION_PROJECT`.
+pub use recipe_torn_compaction_project as RECIPE_TORN_COMPACTION_PROJECT;
+
+/// Python constant `RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE`.
+///
+/// See [`recipe_unresolvable_branch_amputate`] for the owned adapter.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when the name is empty. This literal is not empty.
+pub fn recipe_side_effect_unknown_truncate() -> Result<Recipe, RegistryError> {
+    salvage_recipe(
+        "side-effect-unknown-truncate",
+        &HANDLES_TRUNCATE,
+        &PRE_TRUNCATE,
+        CallableId::from_fn(apply_side_effect_unknown_truncate_owned),
+        None,
+    )
+}
+
+/// Python constant `RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE`.
+pub use recipe_side_effect_unknown_truncate as RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE;
+
+/// Python constant `RECIPE_ORPHAN_RESULT_DROP`.
+///
+/// `apply` is [`apply_orphan_result_drop`]. `affected_region` is
+/// [`affected_region_orphan_result_drop`]. Neither callable is invoked here.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when the name is empty. This literal is not empty.
+pub fn recipe_orphan_result_drop() -> Result<Recipe, RegistryError> {
+    salvage_recipe(
+        "orphan-result-drop",
+        &HANDLES_ORPHAN,
+        &PRE_ORPHAN,
+        CallableId::from_fn(apply_orphan_result_drop),
+        Some(CallableId::from_fn(affected_region_orphan_result_drop)),
+    )
+}
+
+/// Python constant `RECIPE_ORPHAN_RESULT_DROP`.
+pub use recipe_orphan_result_drop as RECIPE_ORPHAN_RESULT_DROP;
+
+/// Python constant `RECIPE_TORN_RECORD_EXCISION`.
+///
+/// `apply` is [`apply_torn_record_excision`]. `affected_region` stays absent.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when the name is empty. This literal is not empty.
+pub fn recipe_torn_record_excision() -> Result<Recipe, RegistryError> {
+    salvage_recipe(
+        "torn-record-excision",
+        &HANDLES_EXCISION,
+        &PRE_EXCISION,
+        CallableId::from_fn(apply_torn_record_excision),
+        None,
+    )
+}
+
+/// Python constant `RECIPE_TORN_RECORD_EXCISION`.
+pub use recipe_torn_record_excision as RECIPE_TORN_RECORD_EXCISION;
+
+/// Python `RECIPES`, in that order.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when one recipe name is empty. These literals
+/// are not empty.
+pub fn recipes() -> Result<[Recipe; 5], RegistryError> {
+    Ok([
+        recipe_unresolvable_branch_amputate()?,
+        recipe_torn_compaction_project()?,
+        recipe_side_effect_unknown_truncate()?,
+        recipe_orphan_result_drop()?,
+        recipe_torn_record_excision()?,
+    ])
+}
+
+/// Python constant `RECIPES`.
+pub use recipes as RECIPES;
+
+/// Python constant `SALVAGE_RECIPES`. It is `RECIPES`.
+pub use recipes as SALVAGE_RECIPES;
+
+/// Register the two salvage predicates and any missing salvage recipes.
+///
+/// Python: `register_all`. [`register_precondition`] runs for
+/// [`sl101_orphan_present`], then [`sl001_excisable`]. Each recipe from
+/// [`RECIPES`] is passed to [`get_recipe`]. A missing name is passed to
+/// [`register_recipe`]. An existing name is left in place. `apply` and
+/// `affected_region` are not called.
+///
+/// The pin also calls [`register_precondition`] at import. This crate does
+/// not run that side effect. [`register_all`] performs those registrations.
+///
+/// # Errors
+///
+/// Returns [`RegisterError`] when a name is empty, a recipe cannot be built,
+/// or registration reports a duplicate. This function does not panic, and it
+/// does not return `Ok` on those failures.
+pub fn register_all() -> Result<(), RegisterError> {
+    register_precondition("sl101_orphan_present", sl101_orphan_present)?;
+    register_precondition("sl001_excisable", sl001_excisable)?;
+    for recipe in RECIPES()? {
+        if get_recipe(recipe.name()).is_none() {
+            register_recipe(&recipe)?;
+        }
+    }
+    Ok(())
+}
+
+/// Python `__all__`, in that order. Not sorted.
+pub const ALL: [&str; 22] = [
+    "MAX_COMPONENT_SIZE",
+    "RECIPES",
+    "RECIPE_ORPHAN_RESULT_DROP",
+    "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
+    "RECIPE_TORN_COMPACTION_PROJECT",
+    "RECIPE_TORN_RECORD_EXCISION",
+    "RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE",
+    "SALVAGE_RECIPES",
+    "affected_region_orphan_result_drop",
+    "apply_orphan_result_drop",
+    "apply_orphan_result_drop_with_loss",
+    "apply_side_effect_unknown_truncate",
+    "apply_side_effect_unknown_truncate_with_loss",
+    "apply_torn_compaction_project",
+    "apply_torn_compaction_project_with_loss",
+    "apply_torn_record_excision",
+    "apply_torn_record_excision_with_loss",
+    "apply_unresolvable_branch_amputate",
+    "apply_unresolvable_branch_amputate_with_loss",
+    "register_all",
+    "sl001_excisable",
+    "sl101_orphan_present",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OrphanParts {
+    indices: BTreeSet<i64>,
+    ids: BTreeSet<String>,
+}
+
+enum IndexPick {
+    Found(i64),
+    Absent,
+    Unreadable,
+}
+
+enum IndexResolved {
+    Ready(i64),
+    Absent,
+    Failed,
+}
+
+struct TornParams<'a> {
+    line: Option<&'a EventField>,
+    ordinal: Option<&'a EventField>,
+    byte_offset: Option<&'a EventField>,
+    byte_end: Option<&'a EventField>,
+    record_id: Option<&'a EventField>,
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn apply_unresolvable_branch_amputate_owned(
+    events: Vec<EventValue>,
+    step: SalvageStep,
+) -> Result<Vec<EventMapping>, SalvageError> {
+    apply_unresolvable_branch_amputate(&events, &step)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn apply_torn_compaction_project_owned(
+    events: Vec<EventValue>,
+    step: SalvageStep,
+) -> Result<Vec<EventMapping>, SalvageError> {
+    apply_torn_compaction_project(&events, &step)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn apply_side_effect_unknown_truncate_owned(
+    events: Vec<EventValue>,
+    step: SalvageStep,
+) -> Result<Vec<EventMapping>, SalvageError> {
+    apply_side_effect_unknown_truncate(&events, &step)
+}
+
+fn salvage_recipe(
+    name: &'static str,
+    handles: &'static [&'static str],
+    preconditions: &'static [&'static str],
+    apply: CallableId,
+    affected_region: Option<CallableId>,
+) -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name,
+        handles,
+        preconditions,
+        lossy: true,
+        salvage_only: true,
+        apply: Some(apply),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region,
+        excludes_execution_dependence: false,
+    })
+}
+
+fn copy_without_index(
+    events: &[EventValue],
+    index: i64,
+) -> Result<Vec<EventMapping>, SalvageError> {
+    let mut out = Vec::new();
+    for (position, event) in events.iter().enumerate() {
+        if try_i64(position)? != index {
+            out.push(to_event_dict(event)?);
+        }
+    }
+    Ok(out)
+}
+
+fn orphan_region_parts(step: &SalvageStep, events: &[EventValue]) -> Option<OrphanParts> {
+    if events.is_empty() {
+        return None;
+    }
+    let idx = match _resolve_orphan_target_index(events, step) {
+        Ok(Some(idx)) => idx,
+        Ok(None) | Err(_) => return None,
+    };
+    let position = usize::try_from(idx).ok()?;
+    if position >= events.len() {
+        return None;
+    }
+    let target = events.get(position)?;
+    let mut indices = BTreeSet::new();
+    indices.insert(idx);
+    let mut ids = BTreeSet::new();
+    let target_id = event_id(target).ok()?;
+    if let Some(target_id) = target_id.filter(|value| !value.is_empty()) {
+        ids.insert(target_id.clone());
+        if !push_orphan_children(events, &target_id, &mut indices, &mut ids) {
+            return None;
+        }
+    }
+    Some(OrphanParts { indices, ids })
+}
+
+fn push_orphan_children(
+    events: &[EventValue],
+    target_id: &str,
+    indices: &mut BTreeSet<i64>,
+    ids: &mut BTreeSet<String>,
+) -> bool {
+    for (index, event) in events.iter().enumerate() {
+        let parent = match event_parent_id(event) {
+            Ok(parent) => parent,
+            Err(_) => return false,
+        };
+        if parent.as_deref() != Some(target_id) {
+            continue;
+        }
+        let Ok(index) = i64::try_from(index) else {
+            return false;
+        };
+        indices.insert(index);
+        match event_id(event) {
+            Ok(Some(child_id)) if !child_id.is_empty() => {
+                ids.insert(child_id);
+            }
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+    true
+}
+
+fn refuse_orphan_region(parts: Option<OrphanParts>) -> AffectedRegionUnavailable {
+    if let Some(parts) = parts {
+        let _checked = (parts.indices.len(), parts.ids.len());
+        let _ = _checked;
+    }
+    AffectedRegionUnavailable
+}
+
+fn finding_blocks_sl101(ctx: &PreconditionContext<'_>) -> bool {
+    ctx.finding.is_some_and(|finding| finding.code() != SL101)
+}
+
+fn findings_include_sl101(ctx: &PreconditionContext<'_>) -> bool {
+    ctx.findings.iter().any(|finding| finding.code() == SL101)
+}
+
+fn resolve_sl101_index(ctx: &PreconditionContext<'_>, finding: &Finding) -> IndexResolved {
+    match evidence_orphan_index(finding, ctx.events.len()) {
+        IndexPick::Found(index) => return IndexResolved::Ready(index),
+        IndexPick::Unreadable => return IndexResolved::Failed,
+        IndexPick::Absent => {}
+    }
+    if let Some(record_id) = sl101_record_id(finding) {
+        match record_index(ctx.events, record_id) {
+            Ok(Some(index)) => return IndexResolved::Ready(index),
+            Ok(None) => {}
+            Err(_) => return IndexResolved::Failed,
+        }
+    }
+    match _find_orphan_result_indices(ctx.events) {
+        Ok(orphans) => match single_orphan(&orphans) {
+            Some(index) => IndexResolved::Ready(index),
+            None => IndexResolved::Absent,
+        },
+        Err(_) => IndexResolved::Failed,
+    }
+}
+
+fn evidence_orphan_index(finding: &Finding, len: usize) -> IndexPick {
+    let Some(evidence) = finding.evidence().filter(|evidence| evidence.is_map()) else {
+        return IndexPick::Absent;
+    };
+    for key in ["index", "at_index"] {
+        match evidence.map_string(key) {
+            EvidenceLookup::Borrowed => return IndexPick::Unreadable,
+            EvidenceLookup::Present(value) => {
+                if let Some(index) = value.as_int() {
+                    if index_in_len(index, len) {
+                        return IndexPick::Found(index);
+                    }
+                }
+            }
+            EvidenceLookup::Absent | EvidenceLookup::NotAMap => {}
+        }
+    }
+    IndexPick::Absent
+}
+
+fn index_in_len(index: i64, len: usize) -> bool {
+    let Ok(position) = usize::try_from(index) else {
+        return false;
+    };
+    position < len
+}
+
+fn sl101_record_id(finding: &Finding) -> Option<&str> {
+    finding
+        .source()
+        .record_id()
+        .filter(|record_id| !record_id.is_empty())
+}
+
+fn record_index(events: &[EventValue], record_id: &str) -> Result<Option<i64>, SalvageError> {
+    for (index, event) in events.iter().enumerate() {
+        if event_id(event)?.as_deref() == Some(record_id) {
+            return Ok(Some(try_i64(index)?));
+        }
+    }
+    Ok(None)
+}
+
+fn single_orphan(orphans: &[i64]) -> Option<i64> {
+    if orphans.len() == 1 {
+        orphans.first().copied()
+    } else {
+        None
+    }
+}
+
+fn orphan_target_ok(ctx: &PreconditionContext<'_>, index: i64) -> bool {
+    _validate_orphan_target(ctx.events, index, &empty_orphan_step()).is_ok()
+}
+
+fn empty_orphan_step() -> SalvageStep {
+    SalvageStep {
+        target_index: IndexValue::None,
+        params: ParamMap::Mapping(EventMapping::new(Vec::new())),
+    }
+}
+
+fn sl001_finding<'a>(ctx: &'a PreconditionContext<'_>) -> Option<&'a Finding> {
+    let finding = ctx.finding?;
+    if finding.code() == SL001 {
+        Some(finding)
+    } else {
+        None
+    }
+}
+
+fn sl001_map(finding: &Finding) -> Option<&Evidence> {
+    finding.evidence().filter(|evidence| evidence.is_map())
+}
+
+fn sl001_size_limited(finding: &Finding) -> bool {
+    let Some(evidence) = sl001_map(finding) else {
+        return false;
+    };
+    match evidence.map_string("reason") {
+        EvidenceLookup::Present(value) => value.as_str() == Some("size_limit_exceeded"),
+        EvidenceLookup::Borrowed => true,
+        EvidenceLookup::Absent | EvidenceLookup::NotAMap => false,
+    }
+}
+
+fn sl001_span_ok(finding: &Finding) -> bool {
+    let Some(evidence) = sl001_map(finding) else {
+        return false;
+    };
+    let Some(offset) = evidence_int(evidence, "byte_offset") else {
+        return false;
+    };
+    let Some(end) = evidence_int(evidence, "byte_end") else {
+        return false;
+    };
+    let Some(ordinal) = evidence_int(evidence, "record_ordinal") else {
+        return false;
+    };
+    end > offset && ordinal >= 1
+}
+
+fn evidence_int(evidence: &Evidence, key: &str) -> Option<i64> {
+    match evidence.map_string(key) {
+        EvidenceLookup::Present(value) => value.as_int(),
+        EvidenceLookup::Absent | EvidenceLookup::NotAMap | EvidenceLookup::Borrowed => None,
+    }
+}
+
+fn sl001_line_ok(finding: &Finding) -> bool {
+    match finding.source().line() {
+        Some(line) => line >= 1,
+        None => false,
+    }
+}
+
+fn sl001_has_dependent(ctx: &PreconditionContext<'_>, finding: &Finding) -> bool {
+    let Some(record_id) = finding.source().record_id() else {
+        return false;
+    };
+    let field = EventField::Str(record_id.to_owned());
+    _has_extractable_dependents(ctx.events, &field).unwrap_or(true)
+}
+
+fn torn_params(step: &SalvageStep) -> TornParams<'_> {
+    let params = match &step.params {
+        ParamMap::Mapping(mapping) => Some(mapping),
+        ParamMap::NotMapping => None,
+    };
+    TornParams {
+        line: params.and_then(|mapping| mapping.get("line")),
+        ordinal: params.and_then(|mapping| mapping.get("record_ordinal")),
+        byte_offset: params.and_then(|mapping| mapping.get("byte_offset")),
+        byte_end: params.and_then(|mapping| mapping.get("byte_end")),
+        record_id: params.and_then(|mapping| mapping.get("record_id")),
+    }
+}
+
+fn strict_int(field: Option<&EventField>) -> Option<i64> {
+    match field {
+        Some(EventField::Int(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn strict_torn_ints(params: &TornParams<'_>) -> Option<(i64, i64, i64, i64)> {
+    Some((
+        strict_int(params.line)?,
+        strict_int(params.ordinal)?,
+        strict_int(params.byte_offset)?,
+        strict_int(params.byte_end)?,
+    ))
+}
+
+fn torn_anchor_ok(line: i64, ordinal: i64, byte_offset: i64, byte_end: i64) -> bool {
+    line >= 1 && ordinal >= 1 && byte_end > byte_offset
+}
+
+fn non_integer_message(params: &TornParams<'_>) -> Result<String, SalvageError> {
+    let line = field_repr(params.line)?;
+    let ordinal = field_repr(params.ordinal)?;
+    let byte_offset = field_repr(params.byte_offset)?;
+    let byte_end = field_repr(params.byte_end)?;
+    Ok(format!(
+        "torn-record-excision: step params 'line', 'record_ordinal', \
+         'byte_offset', 'byte_end' must be integers, got \
+         line={line} record_ordinal={ordinal} \
+         byte_offset={byte_offset} byte_end={byte_end}"
+    ))
+}
+
+fn anchor_message(line: i64, ordinal: i64, byte_offset: i64, byte_end: i64) -> SalvageError {
+    failed(format!(
+        "torn-record-excision: step params do not anchor a real torn record \
+         (line={line}, record_ordinal={ordinal}, \
+         byte_offset={byte_offset}, byte_end={byte_end})"
+    ))
+}
+
+fn torn_record_has_dependent(
+    events: &[EventValue],
+    record_id: Option<&EventField>,
+) -> Result<bool, SalvageError> {
+    match record_id {
+        None | Some(EventField::Null) => Ok(false),
+        Some(record_id) => _has_extractable_dependents(events, record_id),
+    }
+}
+
+fn field_repr(field: Option<&EventField>) -> Result<String, SalvageError> {
+    match field {
+        None | Some(EventField::Null) => Ok("None".to_owned()),
+        Some(EventField::Bool(value)) => Ok(repr_bool(*value).to_owned()),
+        Some(EventField::Int(number)) => Ok(number.to_string()),
+        Some(EventField::Str(text)) => ascii_text_repr(text),
+        Some(EventField::Float(_)) => Err(EventError::PythonFloatStr.into()),
+        Some(EventField::List(_) | EventField::Mapping(_)) => Err(EventError::PythonStr.into()),
+    }
+}
+
+fn ascii_text_repr(text: &str) -> Result<String, SalvageError> {
+    if text.chars().any(|ch| !is_repr_char(ch)) {
+        return Err(EventError::PythonStr.into());
+    }
+    let use_double = text.contains('\'') && !text.contains('"');
+    let quote = if use_double { '"' } else { '\'' };
+    let mut out = String::with_capacity(text.len().saturating_add(2));
+    out.push(quote);
+    for ch in text.chars() {
+        push_repr_char(&mut out, ch, quote);
+    }
+    out.push(quote);
+    Ok(out)
+}
+
+fn is_repr_char(ch: char) -> bool {
+    matches!(ch, ' '..='~' | '\t' | '\n' | '\r')
+}
+
+fn push_repr_char(out: &mut String, ch: char, quote: char) {
+    if ch == '\\' {
+        out.push_str("\\\\");
+    } else if ch == quote {
+        out.push('\\');
+        out.push(quote);
+    } else if ch == '\t' {
+        out.push_str("\\t");
+    } else if ch == '\n' {
+        out.push_str("\\n");
+    } else if ch == '\r' {
+        out.push_str("\\r");
+    } else {
+        out.push(ch);
+    }
+}
+
+#[cfg(test)]
+mod tests_salvage_02 {
+    use std::collections::BTreeSet;
+    use std::error::Error;
+
+    use model::canonical::SessionEvent;
+    use model::codes::{Repairability, Severity, SL001, SL101, SL102};
+    use model::events::{
+        to_event_dict, EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+    };
+    use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
+
+    use super::{
+        _has_extractable_dependents, affected_region_orphan_result_drop, apply_orphan_result_drop,
+        apply_orphan_result_drop_with_loss, apply_torn_record_excision,
+        apply_torn_record_excision_with_loss, apply_unresolvable_branch_amputate_owned,
+        orphan_region_parts, sl001_excisable, sl101_orphan_present, IndexValue, LossDelta,
+        ParamMap, SalvageError, SalvageStep, AFFECTED_REGION_UNAVAILABLE, ALL, RECIPES,
+        SALVAGE_RECIPES,
+    };
+    use crate::preconditions::PreconditionContext;
+    use crate::registry::CallableId;
+
+    fn text(value: &str) -> EventField {
+        EventField::Str(value.to_owned())
+    }
+
+    fn mapping(entries: Vec<(&str, EventField)>) -> EventMapping {
+        EventMapping::new(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
+    }
+
+    fn ev(entries: Vec<(&str, EventField)>) -> EventValue {
+        EventValue::Mapping(mapping(entries))
+    }
+
+    fn message(id: &str, parent: Option<&str>) -> EventValue {
+        let mut entries = vec![("kind", text("message")), ("id", text(id))];
+        if let Some(parent) = parent {
+            entries.push(("parent_id", text(parent)));
+        }
+        ev(entries)
+    }
+
+    fn tool(kind: &str, id: &str, corr: Option<&str>, parent: Option<&str>) -> EventValue {
+        let mut entries = vec![("kind", text(kind)), ("id", text(id))];
+        if let Some(corr) = corr {
+            entries.push(("correlation_id", text(corr)));
+        }
+        if let Some(parent) = parent {
+            entries.push(("parent_id", text(parent)));
+        }
+        ev(entries)
+    }
+
+    fn orphan(id: &str) -> EventValue {
+        tool("tool_result", id, Some("corr-orphan"), None)
+    }
+
+    fn no_params() -> ParamMap {
+        ParamMap::Mapping(EventMapping::new(Vec::new()))
+    }
+
+    fn params(entries: Vec<(&str, EventField)>) -> ParamMap {
+        ParamMap::Mapping(mapping(entries))
+    }
+
+    fn step(index: IndexValue, params: ParamMap) -> SalvageStep {
+        SalvageStep {
+            target_index: index,
+            params,
+        }
+    }
+
+    fn at(index: i64) -> SalvageStep {
+        step(IndexValue::Int(index), no_params())
+    }
+
+    fn entries_of(events: &[EventValue]) -> Vec<Vec<(String, EventField)>> {
+        events
+            .iter()
+            .map(|event| match event {
+                EventValue::Mapping(mapping) => mapping.entries().to_vec(),
+                EventValue::Session(_) | EventValue::Other => Vec::new(),
+            })
+            .collect()
+    }
+
+    fn ids(events: &[EventMapping]) -> Vec<String> {
+        events
+            .iter()
+            .map(|event| match event.get("id") {
+                Some(EventField::Str(value)) => value.clone(),
+                _ => String::new(),
+            })
+            .collect()
+    }
+
+    fn loss_pair(loss: &LossDelta) -> (String, i64) {
+        let entry = loss.entries().first().expect("one loss class");
+        assert_eq!(loss.entries().len(), 1);
+        entry.clone()
+    }
+
+    fn assert_precondition(error: SalvageError, message: &str) {
+        match error {
+            SalvageError::Precondition(error) => assert_eq!(error.to_string(), message),
+            other => panic!("expected PreconditionFailed, got {other}"),
+        }
+    }
+
+    fn finding(
+        code: &str,
+        line: Option<i64>,
+        record_id: Option<&str>,
+        evidence: PyValue,
+    ) -> Finding {
+        let source = SourceRef::try_new("<canonical>", line.map(SourceLine::Int), record_id)
+            .expect("source");
+        Finding::try_new(FindingInput {
+            code: PyValue::string(code),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::LossyExplicit),
+            message: PyValue::string("synthetic precondition marker"),
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence,
+        })
+        .expect("finding")
+    }
+
+    fn ev_map(entries: Vec<(&str, PyValue)>) -> PyValue {
+        PyValue::map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (PyValue::string(key), value))
+                .collect(),
+        )
+    }
+
+    fn ctx<'a>(
+        findings: &'a [Finding],
+        events: &'a [EventValue],
+        finding: Option<&'a Finding>,
+    ) -> PreconditionContext<'a> {
+        let mut ctx = PreconditionContext::new(findings, events, "neutral", "");
+        ctx.finding = finding;
+        ctx
+    }
+
+    fn torn_step(entries: Vec<(&str, EventField)>) -> SalvageStep {
+        step(IndexValue::None, params(entries))
+    }
+
+    fn valid_torn(extra: Vec<(&str, EventField)>) -> SalvageStep {
+        let mut entries = vec![
+            ("line", EventField::Int(2)),
+            ("record_ordinal", EventField::Int(2)),
+            ("byte_offset", EventField::Int(0)),
+            ("byte_end", EventField::Int(4)),
+        ];
+        entries.extend(extra);
+        torn_step(entries)
+    }
+
+    fn span_evidence(offset: PyValue, end: PyValue, ordinal: PyValue) -> PyValue {
+        ev_map(vec![
+            ("byte_offset", offset),
+            ("byte_end", end),
+            ("record_ordinal", ordinal),
+        ])
+    }
+
+    #[test]
+    fn orphan_drop_refuses_empty_bool_and_ambiguous_targets() {
+        let empty: Vec<EventValue> = Vec::new();
+        let error = apply_orphan_result_drop_with_loss(&empty, &at(0)).expect_err("empty");
+        assert_precondition(
+            error,
+            "orphan-result-drop: cannot apply to an empty session",
+        );
+        let error = apply_orphan_result_drop(Vec::new(), step(IndexValue::Bool(true), no_params()))
+            .expect_err("empty wins over a bool index");
+        assert_precondition(
+            error,
+            "orphan-result-drop: cannot apply to an empty session",
+        );
+
+        let events = vec![orphan("evt-only")];
+        let before = entries_of(&events);
+        let error =
+            apply_orphan_result_drop_with_loss(&events, &step(IndexValue::Bool(true), no_params()))
+                .expect_err("True is not an index and does not fall through");
+        assert_precondition(
+            error,
+            "orphan-result-drop: no unambiguous orphan result target could be resolved",
+        );
+        let error = apply_orphan_result_drop_with_loss(
+            &events,
+            &step(IndexValue::Bool(false), no_params()),
+        )
+        .expect_err("False is not index 0");
+        assert_precondition(
+            error,
+            "orphan-result-drop: no unambiguous orphan result target could be resolved",
+        );
+        assert_eq!(entries_of(&events), before);
+
+        let two = vec![orphan("evt-a"), orphan("evt-b")];
+        let error = apply_orphan_result_drop_with_loss(&two, &step(IndexValue::None, no_params()))
+            .expect_err("two orphans are ambiguous");
+        assert_precondition(
+            error,
+            "orphan-result-drop: no unambiguous orphan result target could be resolved",
+        );
+    }
+
+    #[test]
+    fn orphan_drop_copies_the_kept_events_and_counts_one() {
+        let events = vec![
+            message("evt-keep", None),
+            orphan("evt-drop"),
+            message("evt-after", None),
+        ];
+        let before = entries_of(&events);
+        let (out, loss) = apply_orphan_result_drop_with_loss(&events, &at(1)).expect("drop");
+        assert_eq!(ids(&out), ["evt-keep", "evt-after"]);
+        assert_eq!(loss_pair(&loss), ("orphan-result".to_owned(), 1));
+        assert_eq!(entries_of(&events), before);
+        let listed = apply_orphan_result_drop(events, at(1)).expect("wrapper");
+        assert_eq!(ids(&listed), ["evt-keep", "evt-after"]);
+    }
+
+    #[test]
+    fn orphan_drop_bool_id_is_not_an_index_and_failures_are_not_ok() {
+        let events = vec![
+            ev(vec![
+                ("kind", text("message")),
+                ("id", EventField::Bool(true)),
+            ]),
+            orphan("evt-keep"),
+        ];
+        let error = apply_orphan_result_drop_with_loss(
+            &events,
+            &step(
+                IndexValue::None,
+                params(vec![("result_id", EventField::Bool(true))]),
+            ),
+        )
+        .expect_err("str(True) selects the message, not index 1");
+        assert_precondition(
+            error,
+            "orphan-result-drop: event at index 0 is not a tool_result",
+        );
+
+        let selected = vec![orphan("evt-a"), orphan("evt-b")];
+        let (out, loss) = apply_orphan_result_drop_with_loss(
+            &selected,
+            &step(
+                IndexValue::Int(0),
+                params(vec![("result_id", text("evt-b"))]),
+            ),
+        )
+        .expect("result_id wins over target_index");
+        assert_eq!(ids(&out), ["evt-a"]);
+        assert_eq!(loss_pair(&loss), ("orphan-result".to_owned(), 1));
+
+        let error = apply_orphan_result_drop_with_loss(
+            &selected,
+            &step(
+                IndexValue::None,
+                params(vec![("result_id", EventField::Float(1.5))]),
+            ),
+        )
+        .expect_err("float id is not a copied session");
+        assert_eq!(error.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+
+        let kept_fails = vec![
+            orphan("evt-drop"),
+            EventValue::from_session(SessionEvent::new(
+                "evt-synthetic",
+                None,
+                1,
+                "2024-02-29T00:00:00Z",
+                "assistant",
+                "message",
+            )),
+        ];
+        let direct = to_event_dict(&kept_fails[1]).expect_err("session copy");
+        let error = apply_orphan_result_drop_with_loss(&kept_fails, &at(0))
+            .expect_err("kept session is not Ok");
+        assert_eq!(error.to_string(), direct.to_string());
+    }
+
+    #[test]
+    fn affected_region_display_is_the_checks_seam() {
+        let events = vec![
+            orphan("evt-orphan"),
+            message("evt-child", Some("evt-orphan")),
+        ];
+        let parts = orphan_region_parts(&at(0), &events).expect("parts are computed");
+        assert_eq!(parts.indices, BTreeSet::from([0, 1]));
+        assert_eq!(
+            parts.ids,
+            BTreeSet::from(["evt-orphan".to_owned(), "evt-child".to_owned()])
+        );
+        let error = affected_region_orphan_result_drop(at(0), events).expect_err("seam");
+        assert_eq!(error.to_string(), AFFECTED_REGION_UNAVAILABLE);
+        assert_eq!(
+            error.to_string(),
+            "sesslint.policy.abstention.AffectedRegion is not available"
+        );
+        assert_eq!(error.message(), error.to_string());
+        assert!(Error::source(&error).is_none());
+        assert!(!error.to_string().contains("evt-orphan"));
+        assert!(!error.to_string().contains("evt-child"));
+        assert!(!error.to_string().contains("unproven"));
+        assert_ne!(error.to_string(), "true");
+
+        let blank = vec![
+            ev(vec![
+                ("kind", text("tool_result")),
+                ("id", text("")),
+                ("correlation_id", text("corr-orphan")),
+            ]),
+            message("evt-child", Some("")),
+        ];
+        let parts = orphan_region_parts(&at(0), &blank).expect("empty id");
+        assert_eq!(parts.indices, BTreeSet::from([0]));
+        assert!(parts.ids.is_empty());
+
+        let bool_step = step(IndexValue::Bool(true), no_params());
+        assert!(orphan_region_parts(&bool_step, &blank).is_none());
+        let error = affected_region_orphan_result_drop(bool_step, Vec::new()).expect_err("empty");
+        assert_eq!(error.to_string(), AFFECTED_REGION_UNAVAILABLE);
+
+        let floated = vec![orphan("evt-orphan")];
+        let float_step = step(
+            IndexValue::None,
+            params(vec![("result_id", EventField::Float(1.5))]),
+        );
+        assert!(orphan_region_parts(&float_step, &floated).is_none());
+        let error =
+            affected_region_orphan_result_drop(float_step, floated).expect_err("float seam");
+        assert_eq!(error.to_string(), AFFECTED_REGION_UNAVAILABLE);
+        assert!(!error.to_string().contains("representable"));
+    }
+
+    #[test]
+    fn sl101_bool_evidence_is_not_an_index() {
+        let listed = finding(SL101, None, None, PyValue::None);
+        assert!(sl101_orphan_present(&ctx(
+            std::slice::from_ref(&listed),
+            &[],
+            None
+        )));
+        assert!(!sl101_orphan_present(&ctx(&[], &[], None)));
+        let other = finding(SL102, None, None, PyValue::None);
+        assert!(!sl101_orphan_present(&ctx(
+            std::slice::from_ref(&listed),
+            &[],
+            Some(&other)
+        )));
+        assert!(!sl101_orphan_present(&ctx(&[], &[], Some(&listed))));
+
+        let events = vec![
+            tool("tool_call", "evt-call", Some("corr-call"), None),
+            orphan("evt-one"),
+            orphan("evt-two"),
+        ];
+        let as_true = finding(
+            SL101,
+            None,
+            None,
+            ev_map(vec![("index", PyValue::bool_value(true))]),
+        );
+        assert!(
+            !sl101_orphan_present(&ctx(
+                std::slice::from_ref(&as_true),
+                &events,
+                Some(&as_true)
+            )),
+            "True is not index 1"
+        );
+        let as_one = finding(SL101, None, None, ev_map(vec![("index", PyValue::int(1))]));
+        assert!(sl101_orphan_present(&ctx(
+            std::slice::from_ref(&as_one),
+            &events,
+            Some(&as_one)
+        )));
+
+        let false_events = vec![
+            tool("tool_call", "evt-call", Some("corr-call"), None),
+            orphan("evt-only"),
+        ];
+        let as_false = finding(
+            SL101,
+            None,
+            None,
+            ev_map(vec![("index", PyValue::bool_value(false))]),
+        );
+        assert!(
+            sl101_orphan_present(&ctx(
+                std::slice::from_ref(&as_false),
+                &false_events,
+                Some(&as_false)
+            )),
+            "False is not index 0, so the single orphan remains"
+        );
+
+        let locked = finding(
+            SL101,
+            None,
+            None,
+            ev_map(vec![
+                ("index", PyValue::int(0)),
+                ("at_index", PyValue::int(1)),
+            ]),
+        );
+        assert!(!sl101_orphan_present(&ctx(
+            std::slice::from_ref(&locked),
+            &false_events,
+            Some(&locked)
+        )));
+
+        let continued = finding(
+            SL101,
+            None,
+            None,
+            ev_map(vec![
+                ("index", PyValue::int(99)),
+                ("at_index", PyValue::int(1)),
+            ]),
+        );
+        assert!(sl101_orphan_present(&ctx(
+            std::slice::from_ref(&continued),
+            &false_events,
+            Some(&continued)
+        )));
+
+        let text_index = finding(
+            SL101,
+            None,
+            None,
+            ev_map(vec![("index", PyValue::string("1"))]),
+        );
+        assert!(!sl101_orphan_present(&ctx(
+            std::slice::from_ref(&text_index),
+            &events,
+            Some(&text_index)
+        )));
+    }
+
+    #[test]
+    fn sl101_record_id_uses_str_and_event_errors_are_not_true() {
+        let events = vec![
+            ev(vec![
+                ("kind", text("tool_result")),
+                ("id", EventField::Bool(true)),
+                ("correlation_id", text("corr-orphan")),
+            ]),
+            orphan("evt-other"),
+        ];
+        let named = finding(SL101, None, Some("True"), PyValue::None);
+        assert!(sl101_orphan_present(&ctx(
+            std::slice::from_ref(&named),
+            &events,
+            Some(&named)
+        )));
+
+        let floated = vec![
+            ev(vec![
+                ("kind", text("message")),
+                ("id", EventField::Float(1.5)),
+            ]),
+            orphan("evt-only"),
+        ];
+        let missing = finding(SL101, None, Some("evt-missing"), PyValue::None);
+        assert!(!sl101_orphan_present(&ctx(
+            std::slice::from_ref(&missing),
+            &floated,
+            Some(&missing)
+        )));
+    }
+
+    #[test]
+    fn sl001_bool_span_is_not_an_int_and_dependents_refuse() {
+        assert!(!sl001_excisable(&ctx(&[], &[], None)));
+        let other = finding(SL102, Some(1), None, PyValue::None);
+        assert!(!sl001_excisable(&ctx(
+            std::slice::from_ref(&other),
+            &[],
+            Some(&other)
+        )));
+
+        let limited = finding(
+            SL001,
+            Some(1),
+            None,
+            ev_map(vec![
+                ("reason", PyValue::string("size_limit_exceeded")),
+                ("byte_offset", PyValue::int(0)),
+                ("byte_end", PyValue::int(2)),
+                ("record_ordinal", PyValue::int(1)),
+            ]),
+        );
+        assert!(!sl001_excisable(&ctx(
+            std::slice::from_ref(&limited),
+            &[],
+            Some(&limited)
+        )));
+
+        let bool_offset = finding(
+            SL001,
+            Some(1),
+            None,
+            span_evidence(PyValue::bool_value(true), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(
+            !sl001_excisable(&ctx(
+                std::slice::from_ref(&bool_offset),
+                &[],
+                Some(&bool_offset)
+            )),
+            "True is not byte_offset 1"
+        );
+        let bool_ordinal = finding(
+            SL001,
+            Some(1),
+            None,
+            span_evidence(PyValue::int(0), PyValue::int(1), PyValue::bool_value(true)),
+        );
+        assert!(
+            !sl001_excisable(&ctx(
+                std::slice::from_ref(&bool_ordinal),
+                &[],
+                Some(&bool_ordinal)
+            )),
+            "True is not record_ordinal 1"
+        );
+
+        let ready = finding(
+            SL001,
+            Some(1),
+            None,
+            span_evidence(PyValue::int(0), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(sl001_excisable(&ctx(
+            std::slice::from_ref(&ready),
+            &[],
+            Some(&ready)
+        )));
+        let degenerate = finding(
+            SL001,
+            Some(1),
+            None,
+            span_evidence(PyValue::int(4), PyValue::int(4), PyValue::int(1)),
+        );
+        assert!(!sl001_excisable(&ctx(
+            std::slice::from_ref(&degenerate),
+            &[],
+            Some(&degenerate)
+        )));
+        let no_line = finding(
+            SL001,
+            None,
+            None,
+            span_evidence(PyValue::int(0), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(!sl001_excisable(&ctx(
+            std::slice::from_ref(&no_line),
+            &[],
+            Some(&no_line)
+        )));
+
+        let child = vec![message("evt-child", Some("evt-torn"))];
+        let blocked = finding(
+            SL001,
+            Some(1),
+            Some("evt-torn"),
+            span_evidence(PyValue::int(0), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(!sl001_excisable(&ctx(
+            std::slice::from_ref(&blocked),
+            &child,
+            Some(&blocked)
+        )));
+        let open = finding(
+            SL001,
+            Some(1),
+            None,
+            span_evidence(PyValue::int(0), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(sl001_excisable(&ctx(
+            std::slice::from_ref(&open),
+            &child,
+            Some(&open)
+        )));
+
+        let bool_parent = vec![ev(vec![
+            ("kind", text("message")),
+            ("parent_id", EventField::Bool(true)),
+        ])];
+        let true_id = finding(
+            SL001,
+            Some(1),
+            Some("True"),
+            span_evidence(PyValue::int(0), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(!sl001_excisable(&ctx(
+            std::slice::from_ref(&true_id),
+            &bool_parent,
+            Some(&true_id)
+        )));
+        let one_id = finding(
+            SL001,
+            Some(1),
+            Some("1"),
+            span_evidence(PyValue::int(0), PyValue::int(2), PyValue::int(1)),
+        );
+        assert!(sl001_excisable(&ctx(
+            std::slice::from_ref(&one_id),
+            &bool_parent,
+            Some(&one_id)
+        )));
+    }
+
+    #[test]
+    fn torn_excision_refuses_bad_params_and_preserves_parsed_events() {
+        let kept = vec![message("evt-keep", None)];
+        let error = apply_torn_record_excision_with_loss(&[], &valid_torn(Vec::new()))
+            .expect_err("empty wins");
+        assert_precondition(
+            error,
+            "torn-record-excision: cannot apply to an empty session",
+        );
+        let error = apply_torn_record_excision(
+            Vec::new(),
+            torn_step(vec![("line", EventField::Bool(true))]),
+        )
+        .expect_err("owned empty");
+        assert_precondition(
+            error,
+            "torn-record-excision: cannot apply to an empty session",
+        );
+
+        let error = apply_torn_record_excision_with_loss(
+            &kept,
+            &torn_step(vec![("line", EventField::Bool(true))]),
+        )
+        .expect_err("bool line");
+        assert_precondition(
+            error,
+            "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line=True record_ordinal=None byte_offset=None byte_end=None",
+        );
+        let error = apply_torn_record_excision_with_loss(
+            &kept,
+            &step(IndexValue::None, ParamMap::NotMapping),
+        )
+        .expect_err("missing params");
+        assert_precondition(
+            error,
+            "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line=None record_ordinal=None byte_offset=None byte_end=None",
+        );
+        let error =
+            apply_torn_record_excision_with_loss(&kept, &torn_step(vec![("line", text("abc"))]))
+                .expect_err("string line");
+        assert_precondition(
+            error,
+            "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line='abc' record_ordinal=None byte_offset=None byte_end=None",
+        );
+        let error = apply_torn_record_excision_with_loss(
+            &kept,
+            &torn_step(vec![
+                ("line", EventField::Int(1)),
+                ("record_ordinal", EventField::Int(1)),
+                ("byte_offset", EventField::Int(4)),
+                ("byte_end", EventField::Int(4)),
+            ]),
+        )
+        .expect_err("degenerate span");
+        assert_precondition(
+            error,
+            "torn-record-excision: step params do not anchor a real torn record (line=1, record_ordinal=1, byte_offset=4, byte_end=4)",
+        );
+        let error = apply_torn_record_excision_with_loss(
+            &kept,
+            &torn_step(vec![("line", EventField::Float(1.5))]),
+        )
+        .expect_err("float repr is not Ok");
+        assert_eq!(error.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+
+        let before = entries_of(&kept);
+        let (out, loss) =
+            apply_torn_record_excision_with_loss(&kept, &valid_torn(Vec::new())).expect("copy");
+        assert_eq!(ids(&out), ["evt-keep"]);
+        assert_eq!(loss_pair(&loss), ("torn-record".to_owned(), 1));
+        assert_eq!(entries_of(&kept), before);
+        let listed = apply_torn_record_excision(kept, valid_torn(Vec::new())).expect("wrapper");
+        assert_eq!(ids(&listed), ["evt-keep"]);
+    }
+
+    #[test]
+    fn torn_record_id_bool_is_not_int_one_and_errors_are_not_ok() {
+        let parent_true = vec![ev(vec![
+            ("kind", text("message")),
+            ("id", text("evt-keep")),
+            ("parent_id", EventField::Bool(true)),
+        ])];
+        let error = apply_torn_record_excision_with_loss(
+            &parent_true,
+            &valid_torn(vec![("record_id", EventField::Bool(true))]),
+        )
+        .expect_err("str(True) matches parent True");
+        assert_precondition(
+            error,
+            "torn-record-excision: a parsed event parents to the torn record's id; excision would orphan a known dependent",
+        );
+        let (out, loss) = apply_torn_record_excision_with_loss(
+            &parent_true,
+            &valid_torn(vec![("record_id", EventField::Int(1))]),
+        )
+        .expect("str(1) is not parent True");
+        assert_eq!(ids(&out), ["evt-keep"]);
+        assert_eq!(loss_pair(&loss), ("torn-record".to_owned(), 1));
+
+        assert!(
+            _has_extractable_dependents(&parent_true, &EventField::Bool(true)).expect("bool id")
+        );
+        assert!(!_has_extractable_dependents(&parent_true, &EventField::Int(1)).expect("int id"));
+
+        let floated = vec![
+            ev(vec![("parent_id", EventField::Float(1.5))]),
+            message("evt-child", Some("evt-torn")),
+        ];
+        let error = apply_torn_record_excision_with_loss(
+            &floated,
+            &valid_torn(vec![("record_id", text("evt-torn"))]),
+        )
+        .expect_err("parent read fails closed");
+        assert_eq!(error.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+
+        let session = vec![EventValue::from_session(SessionEvent::new(
+            "evt-synthetic",
+            None,
+            1,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            "message",
+        ))];
+        let direct = to_event_dict(&session[0]).expect_err("session");
+        let error = apply_torn_record_excision_with_loss(&session, &valid_torn(Vec::new()))
+            .expect_err("copy failure is not Ok");
+        assert_eq!(error.to_string(), direct.to_string());
+    }
+
+    #[test]
+    fn recipes_match_the_pin_and_store_callables() {
+        let built = RECIPES().expect("recipes");
+        assert_eq!(SALVAGE_RECIPES().expect("alias"), built);
+        assert_eq!(
+            built
+                .iter()
+                .map(crate::registry::Recipe::name)
+                .collect::<Vec<_>>(),
+            [
+                "unresolvable-branch-amputate",
+                "torn-compaction-project",
+                "side-effect-unknown-truncate",
+                "orphan-result-drop",
+                "torn-record-excision",
+            ]
+        );
+        for recipe in &built {
+            assert!(recipe.lossy());
+            assert!(recipe.salvage_only());
+            assert_eq!(recipe.min_policy(), "salvage");
+            assert_eq!(recipe.version(), "1.0.0");
+            assert!(!recipe.excludes_execution_dependence());
+            assert!(recipe.apply().is_some());
+        }
+        assert_eq!(
+            names(built[0].handles()),
+            [model::codes::SL005, model::codes::SL006]
+        );
+        assert_eq!(names(built[3].handles()), [SL101]);
+        assert_eq!(names(built[4].handles()), [SL001]);
+        assert_eq!(
+            names(built[3].preconditions()),
+            [
+                "salvage_policy",
+                "acknowledge_side_effects",
+                "sl101_orphan_present",
+            ]
+        );
+        assert_eq!(
+            names(built[4].preconditions()),
+            [
+                "salvage_policy",
+                "acknowledge_side_effects",
+                "sl001_excisable",
+            ]
+        );
+        assert_eq!(
+            built[3].apply(),
+            Some(CallableId::from_fn(apply_orphan_result_drop))
+        );
+        assert_eq!(
+            built[3].affected_region(),
+            Some(CallableId::from_fn(affected_region_orphan_result_drop))
+        );
+        assert_eq!(
+            built[4].apply(),
+            Some(CallableId::from_fn(apply_torn_record_excision))
+        );
+        assert!(built[4].affected_region().is_none());
+        assert_eq!(
+            built[0].apply(),
+            Some(CallableId::from_fn(
+                apply_unresolvable_branch_amputate_owned
+            ))
+        );
+        assert_eq!(
+            ALL,
+            [
+                "MAX_COMPONENT_SIZE",
+                "RECIPES",
+                "RECIPE_ORPHAN_RESULT_DROP",
+                "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
+                "RECIPE_TORN_COMPACTION_PROJECT",
+                "RECIPE_TORN_RECORD_EXCISION",
+                "RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE",
+                "SALVAGE_RECIPES",
+                "affected_region_orphan_result_drop",
+                "apply_orphan_result_drop",
+                "apply_orphan_result_drop_with_loss",
+                "apply_side_effect_unknown_truncate",
+                "apply_side_effect_unknown_truncate_with_loss",
+                "apply_torn_compaction_project",
+                "apply_torn_compaction_project_with_loss",
+                "apply_torn_record_excision",
+                "apply_torn_record_excision_with_loss",
+                "apply_unresolvable_branch_amputate",
+                "apply_unresolvable_branch_amputate_with_loss",
+                "register_all",
+                "sl001_excisable",
+                "sl101_orphan_present",
+            ]
+        );
+    }
+
+    fn names(values: &[String]) -> Vec<&str> {
+        values.iter().map(String::as_str).collect()
+    }
+
+    #[test]
+    fn register_all_registers_orphan_and_excision() {
+        if std::env::var_os("SESSLINT_CARD_SALVAGE_02_REGISTER").is_some() {
+            register_defined_recipes();
+            return;
+        }
+        let exe = std::env::current_exe().expect("test executable");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "recipes_salvage::tests_salvage_02::register_all_registers_orphan_and_excision",
+                "--test-threads=1",
+            ])
+            .env("SESSLINT_CARD_SALVAGE_02_REGISTER", "1")
+            .output()
+            .expect("spawn registry child");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "register_all child failed\n{stdout}\n{stderr}"
+        );
+        assert!(
+            stdout.contains("ok. 1 passed"),
+            "register_all child did not run\n{stdout}\n{stderr}"
+        );
+    }
+
+    fn register_defined_recipes() {
+        use crate::preconditions::{check_preconditions, precondition_func_names};
+        use crate::registry::{clear_registry, get_recipe, list_recipes, register_recipe};
+
+        clear_registry();
+        super::register_all().expect("register");
+        let names: Vec<String> = list_recipes()
+            .iter()
+            .map(|recipe| recipe.name().to_owned())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "unresolvable-branch-amputate",
+                "torn-compaction-project",
+                "side-effect-unknown-truncate",
+                "orphan-result-drop",
+                "torn-record-excision",
+            ]
+        );
+        let ctx = PreconditionContext::new(&[], &[], "neutral", "");
+        assert_eq!(
+            check_preconditions(&["sl101_orphan_present"], &ctx).expect("known"),
+            (false, Some("sl101_orphan_present"))
+        );
+        assert_eq!(
+            check_preconditions(&["sl001_excisable"], &ctx).expect("known"),
+            (false, Some("sl001_excisable"))
+        );
+        let listed = precondition_func_names();
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|name| name.as_str() == "sl101_orphan_present")
+                .count(),
+            1
+        );
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|name| name.as_str() == "sl001_excisable")
+                .count(),
+            1
+        );
+        super::register_all().expect("second");
+        assert_eq!(list_recipes().len(), 5);
+
+        clear_registry();
+        register_recipe(&super::recipe_torn_record_excision().expect("seed")).expect("seed");
+        super::register_all().expect("rest");
+        let names: Vec<String> = list_recipes()
+            .iter()
+            .map(|recipe| recipe.name().to_owned())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "torn-record-excision",
+                "unresolvable-branch-amputate",
+                "torn-compaction-project",
+                "side-effect-unknown-truncate",
+                "orphan-result-drop",
+            ]
+        );
+        assert!(get_recipe("orphan-result-drop").is_some());
+        clear_registry();
+    }
+}
