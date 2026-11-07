@@ -1,4 +1,5 @@
-//! Assurance level, finding counts, coverage, and the report envelope.
+//! Assurance level, finding counts, coverage, the report envelope, repair
+//! actions, and revalidation summaries.
 //!
 //! Port of `src/sesslint/report.py`
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
@@ -17,6 +18,14 @@
 //! `sesslint.profiles.builtin.ALL_RULES`. This crate does not link that
 //! module. Display is `sesslint.profiles.builtin.ALL_RULES is not available`.
 //! Pure checks that run before a provided coverage value still run.
+//!
+//! Lines 545–688: [`RepairAction`] and [`RevalidationSummary`].
+//! [`RepairAction`] orders with [`action_sort_key`] after stripping.
+//! Content checks call [`enforce_content_free_text`]. `FindingError` becomes
+//! [`ContentLeakError`] whose message is the pin's `Intrinsic content leak`
+//! text. [`RevalidationSummary`] checks [`VALID_ASSURANCE_LEVELS`] and does
+//! not call [`enforce_content_free_text`]. The port stops before
+//! `RepairManifest`.
 //!
 //! The late import `sesslint.codes` (`SL001`, `SL002`, `Severity`) is the
 //! ported codes registry. `enforce_content_free_text` is the ported finding
@@ -709,7 +718,7 @@ pub fn skip_sort_key(skip: SkipSortFields<'_>) -> (&str, &str, &str) {
 }
 
 /// Failure from [`CoverageSkip::try_new`], [`Coverage::try_new`], [`Report::try_new`],
-/// or [`default_coverage`].
+/// [`default_coverage`], [`RepairAction::try_new`], or [`RevalidationSummary::try_new`].
 ///
 /// [`Display`](fmt::Display) is the Python exception message. [`Self::Unavailable`]
 /// displays `{module.function} is not available`.
@@ -1229,9 +1238,9 @@ impl Report {
 
 /// The four strings `_action_sort_key` reads.
 ///
-/// This is not a `RepairAction`. The constructor that strips and checks those
-/// fields is past line 542 of the pin. `None` and `Some("")` stay distinct:
-/// only `None` uses the `(0, "")` record key.
+/// [`action_sort_key`] does not validate them. [`RepairAction::try_new`] does.
+/// `None` and `Some("")` stay distinct: only `None` uses the `(0, "")` record
+/// key. A constructed [`RepairAction`] never stores an empty `record_id`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActionSortFields<'a> {
     pub kind: &'a str,
@@ -1248,6 +1257,276 @@ pub fn action_sort_key(action: ActionSortFields<'_>) -> (&str, i64, &str, &str) 
     match action.record_id {
         None => (action.kind, 0, "", action.detail),
         Some(record_id) => (action.kind, 1, record_id, action.detail),
+    }
+}
+
+/// Python: `RepairAction.to_dict` field order (`kind`, `record_id`, `detail`).
+///
+/// `record_id` is present even when it is `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairActionDict {
+    pub kind: String,
+    pub record_id: Option<String>,
+    pub detail: String,
+}
+
+/// Python: `RepairAction`.
+///
+/// `kind`, `record_id`, and `detail` are stored stripped. `record_id` stays
+/// `None` when the caller passes `None`. Ordering uses [`action_sort_key`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairAction {
+    kind: String,
+    record_id: Option<String>,
+    detail: String,
+}
+
+impl RepairAction {
+    /// Validate in the pinned `__post_init__` order.
+    ///
+    /// Python defaults, which Rust does not infer: `record_id` is `None` and
+    /// `detail` is `""`. Pass [`InputValue::None`] and an empty string for those.
+    pub fn try_new(
+        kind: &InputValue,
+        record_id: &InputValue,
+        detail: &InputValue,
+    ) -> Result<Self, EnvelopeError> {
+        let kind = match kind {
+            InputValue::Str(text) if !python_strip(text).is_empty() => {
+                python_strip(text).to_owned()
+            }
+            other => {
+                return Err(schema_env(format!(
+                    "RepairAction.kind must be a non-empty string, got {}",
+                    input_repr(other)
+                )));
+            }
+        };
+        reject_intrinsic_leak(&kind, "RepairAction.kind")?;
+
+        let record_id = if matches!(record_id, InputValue::None) {
+            None
+        } else {
+            let normalized = match record_id {
+                InputValue::Str(text) if !python_strip(text).is_empty() => {
+                    python_strip(text).to_owned()
+                }
+                other => {
+                    return Err(schema_env(format!(
+                        "RepairAction.record_id must be non-empty string or None, got {}",
+                        input_repr(other)
+                    )));
+                }
+            };
+            reject_intrinsic_leak(&normalized, "RepairAction.record_id")?;
+            Some(normalized)
+        };
+
+        let detail = match detail {
+            InputValue::Str(text) => python_strip(text).to_owned(),
+            other => {
+                return Err(schema_env(format!(
+                    "RepairAction.detail must be a string, got {}",
+                    input_type_name(other)
+                )));
+            }
+        };
+        reject_intrinsic_leak(&detail, "RepairAction.detail")?;
+
+        Ok(Self {
+            kind,
+            record_id,
+            detail,
+        })
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    #[must_use]
+    pub fn record_id(&self) -> Option<&str> {
+        self.record_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+
+    #[must_use]
+    pub fn to_dict(&self) -> RepairActionDict {
+        RepairActionDict {
+            kind: self.kind.clone(),
+            record_id: self.record_id.clone(),
+            detail: self.detail.clone(),
+        }
+    }
+
+    fn sort_key(&self) -> (&str, i64, &str, &str) {
+        action_sort_key(ActionSortFields {
+            kind: &self.kind,
+            record_id: self.record_id.as_deref(),
+            detail: &self.detail,
+        })
+    }
+}
+
+impl PartialOrd for RepairAction {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RepairAction {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.sort_key().cmp(&other.sort_key())
+    }
+}
+
+/// Python: `RevalidationSummary.to_dict` insertion order.
+///
+/// `warning_count` stays before an optional `report_fingerprint`. `None` means
+/// the Python dict omits `report_fingerprint`. The keys are not re-sorted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevalidationSummaryDict {
+    pub assurance: String,
+    pub error_count: i64,
+    pub profile_id: String,
+    pub profile_version: String,
+    pub warning_count: i64,
+    pub report_fingerprint: Option<String>,
+}
+
+/// Python: `RevalidationSummary`.
+///
+/// Assurance is an exact [`VALID_ASSURANCE_LEVELS`] member. Counts are Python
+/// `int` values in the `i64` range, and `bool` is rejected. Profile strings and
+/// `report_fingerprint` are stored unchanged when `strip()` is non-empty.
+/// This class does not call [`enforce_content_free_text`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevalidationSummary {
+    assurance: String,
+    error_count: i64,
+    warning_count: i64,
+    profile_id: String,
+    profile_version: String,
+    report_fingerprint: Option<String>,
+}
+
+impl RevalidationSummary {
+    /// Validate in the pinned `__post_init__` order.
+    ///
+    /// Python default, which Rust does not infer: `report_fingerprint` is
+    /// `None`. Pass [`InputValue::None`] for that default.
+    pub fn try_new(
+        assurance: &InputValue,
+        error_count: &InputValue,
+        warning_count: &InputValue,
+        profile_id: &InputValue,
+        profile_version: &InputValue,
+        report_fingerprint: &InputValue,
+    ) -> Result<Self, EnvelopeError> {
+        let assurance = match assurance {
+            InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => {
+                text.clone()
+            }
+            other => {
+                return Err(EnvelopeError::Assurance(AssuranceError::new(format!(
+                    "Invalid revalidation assurance {}. Must be one of {}",
+                    input_repr(other),
+                    sorted_assurance_repr()
+                ))));
+            }
+        };
+        let error_count = Self::non_negative_count(error_count, "error_count")?;
+        let warning_count = Self::non_negative_count(warning_count, "warning_count")?;
+        let profile_id = Self::kept_non_empty(profile_id, "profile_id")?;
+        let profile_version = Self::kept_non_empty(profile_version, "profile_version")?;
+        let report_fingerprint = Self::optional_fingerprint(report_fingerprint)?;
+        Ok(Self {
+            assurance,
+            error_count,
+            warning_count,
+            profile_id,
+            profile_version,
+            report_fingerprint,
+        })
+    }
+
+    #[must_use]
+    pub fn assurance(&self) -> &str {
+        &self.assurance
+    }
+
+    #[must_use]
+    pub fn error_count(&self) -> i64 {
+        self.error_count
+    }
+
+    #[must_use]
+    pub fn warning_count(&self) -> i64 {
+        self.warning_count
+    }
+
+    #[must_use]
+    pub fn profile_id(&self) -> &str {
+        &self.profile_id
+    }
+
+    #[must_use]
+    pub fn profile_version(&self) -> &str {
+        &self.profile_version
+    }
+
+    /// `None` when the caller passed `None`. The stored string is not stripped.
+    #[must_use]
+    pub fn report_fingerprint(&self) -> Option<&str> {
+        self.report_fingerprint.as_deref()
+    }
+
+    #[must_use]
+    pub fn to_dict(&self) -> RevalidationSummaryDict {
+        RevalidationSummaryDict {
+            assurance: self.assurance.clone(),
+            error_count: self.error_count,
+            profile_id: self.profile_id.clone(),
+            profile_version: self.profile_version.clone(),
+            warning_count: self.warning_count,
+            report_fingerprint: self.report_fingerprint.clone(),
+        }
+    }
+
+    fn non_negative_count(value: &InputValue, field: &str) -> Result<i64, EnvelopeError> {
+        match value {
+            InputValue::Int(number) if *number >= 0 => Ok(*number),
+            other => Err(schema_env(format!(
+                "RevalidationSummary.{field} must be non-negative integer, got {}",
+                input_repr(other)
+            ))),
+        }
+    }
+
+    fn kept_non_empty(value: &InputValue, field: &str) -> Result<String, EnvelopeError> {
+        match value {
+            InputValue::Str(text) if !python_strip(text).is_empty() => Ok(text.clone()),
+            other => Err(schema_env(format!(
+                "RevalidationSummary.{field} must be a non-empty string, got {}",
+                input_repr(other)
+            ))),
+        }
+    }
+
+    fn optional_fingerprint(value: &InputValue) -> Result<Option<String>, EnvelopeError> {
+        match value {
+            InputValue::None => Ok(None),
+            InputValue::Str(text) if !python_strip(text).is_empty() => Ok(Some(text.clone())),
+            _ => Err(schema_env(
+                "RevalidationSummary.report_fingerprint must be a non-empty string or None"
+                    .to_owned(),
+            )),
+        }
     }
 }
 
@@ -1953,14 +2232,14 @@ mod tests {
     use super::{
         action_sort_key, compute_assurance, default_coverage, skip_sort_key, ActionSortFields,
         CountKey, CountValue, Counts, CountsInput, Coverage, CoverageInput, CoverageSkip,
-        EnvelopeError, FindingElem, FindingsInput, InputKey, InputValue, Report, ReportParts,
-        SkipElem, SkipSeq, SkipSortFields, ASSURANCE_LIMITATIONS, PROFILES_BUILTIN_ALL_RULES,
-        REPORT_SCHEMA_VERSION, REQUIRED_SEVERITIES, VALID_ASSURANCE_LEVELS,
-        VALID_COVERAGE_SKIP_REASONS,
+        EnvelopeError, FindingElem, FindingsInput, InputKey, InputValue, RepairAction, Report,
+        ReportParts, RevalidationSummary, SkipElem, SkipSeq, SkipSortFields, ASSURANCE_LIMITATIONS,
+        PROFILES_BUILTIN_ALL_RULES, REPORT_SCHEMA_VERSION, REQUIRED_SEVERITIES,
+        VALID_ASSURANCE_LEVELS, VALID_COVERAGE_SKIP_REASONS,
     };
     use model::codes::{Repairability, Severity, SL001, SL002, SL003, SL101};
     use model::errors::SchemaError;
-    use model::errors::{AssuranceError, VersionError};
+    use model::errors::{AssuranceError, ContentLeakError, VersionError};
     use model::finding::enforce_content_free_text;
     use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 
@@ -3514,6 +3793,620 @@ mod tests {
                 action_sort_key(fields("alpha", Some("a"), "a")),
                 action_sort_key(fields("zeta", Some("b"), "a")),
             ]
+        );
+    }
+
+    fn must_action(kind: &str, record_id: Option<&str>, detail: &str) -> RepairAction {
+        let record = match record_id {
+            None => InputValue::None,
+            Some(value) => text(value),
+        };
+        match RepairAction::try_new(&text(kind), &record, &text(detail)) {
+            Ok(action) => action,
+            Err(err) => panic!("synthetic action rejected: {err}"),
+        }
+    }
+
+    fn action_error(
+        kind: &InputValue,
+        record_id: &InputValue,
+        detail: &InputValue,
+    ) -> EnvelopeError {
+        match RepairAction::try_new(kind, record_id, detail) {
+            Ok(_) => panic!("expected RepairAction to fail"),
+            Err(err) => err,
+        }
+    }
+
+    fn finding_leak(text: &str, context: &str) -> String {
+        match enforce_content_free_text(text, context) {
+            Ok(()) => panic!("expected content leak"),
+            Err(err) => err.to_string(),
+        }
+    }
+
+    fn assert_schema(err: EnvelopeError, message: &str) {
+        assert_eq!(err.to_string(), message);
+        match err {
+            EnvelopeError::Schema(error) => {
+                assert_eq!(error.code(), SchemaError::DEFAULT_CODE);
+            }
+            other => panic!("expected SchemaError, got {other:?}"),
+        }
+    }
+
+    fn assert_leak(err: EnvelopeError, message: &str) {
+        assert_eq!(err.to_string(), message);
+        match err {
+            EnvelopeError::ContentLeak(error) => {
+                assert_eq!(error.code(), ContentLeakError::DEFAULT_CODE);
+            }
+            other => panic!("expected ContentLeakError, got {other:?}"),
+        }
+    }
+
+    fn assert_assurance(err: EnvelopeError, message: &str) {
+        assert_eq!(err.to_string(), message);
+        match err {
+            EnvelopeError::Assurance(error) => {
+                assert_eq!(error.code(), AssuranceError::DEFAULT_CODE);
+            }
+            other => panic!("expected AssuranceError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn repair_action_strips_and_orders_by_action_sort_key() {
+        let missing = must_action("\u{001c}drop\u{001c}", None, "  \n  ");
+        assert_eq!(missing.kind(), "drop");
+        assert_eq!(missing.record_id(), None);
+        assert_eq!(missing.detail(), "");
+        assert_eq!(
+            missing.to_dict(),
+            super::RepairActionDict {
+                kind: "drop".to_owned(),
+                record_id: None,
+                detail: String::new(),
+            }
+        );
+        let same = must_action("drop", None, "");
+        assert_eq!(missing, same);
+        assert_eq!(missing.cmp(&same), std::cmp::Ordering::Equal);
+
+        let present = must_action(" keep ", Some("  rec-1  "), " note ");
+        assert_eq!(present.kind(), "keep");
+        assert_eq!(present.record_id(), Some("rec-1"));
+        assert_eq!(present.detail(), "note");
+        assert_eq!(
+            present.to_dict(),
+            super::RepairActionDict {
+                kind: "keep".to_owned(),
+                record_id: Some("rec-1".to_owned()),
+                detail: "note".to_owned(),
+            }
+        );
+        let earlier = must_action("drop", Some(" b "), "a");
+        let middle = must_action("drop", None, "z");
+        let mut actions = [
+            present.clone(),
+            earlier.clone(),
+            middle.clone(),
+            missing.clone(),
+        ];
+        actions.sort();
+        assert_eq!(
+            actions,
+            [
+                missing.clone(),
+                middle.clone(),
+                earlier.clone(),
+                present.clone()
+            ]
+        );
+        assert!(missing < middle);
+        assert!(middle < earlier);
+        assert!(earlier < present);
+        assert_ne!(missing, present);
+        assert_eq!(
+            missing.cmp(&earlier),
+            action_sort_key(ActionSortFields {
+                kind: missing.kind(),
+                record_id: missing.record_id(),
+                detail: missing.detail(),
+            })
+            .cmp(&action_sort_key(ActionSortFields {
+                kind: earlier.kind(),
+                record_id: earlier.record_id(),
+                detail: earlier.detail(),
+            }))
+        );
+    }
+
+    #[test]
+    fn repair_action_rejects_in_post_init_order() {
+        let detail = text("");
+        let record = InputValue::None;
+        assert_schema(
+            action_error(&InputValue::None, &record, &detail),
+            "RepairAction.kind must be a non-empty string, got None",
+        );
+        assert_schema(
+            action_error(&InputValue::int(1), &record, &detail),
+            "RepairAction.kind must be a non-empty string, got 1",
+        );
+        assert_schema(
+            action_error(&text(""), &InputValue::int(1), &detail),
+            "RepairAction.kind must be a non-empty string, got ''",
+        );
+        assert_schema(
+            action_error(&text("  "), &InputValue::int(1), &detail),
+            "RepairAction.kind must be a non-empty string, got '  '",
+        );
+        assert_schema(
+            action_error(&text("\n"), &InputValue::int(1), &detail),
+            "RepairAction.kind must be a non-empty string, got '\\n'",
+        );
+        assert_schema(
+            action_error(&text("\u{001c}"), &record, &detail),
+            "RepairAction.kind must be a non-empty string, got '\\x1c'",
+        );
+
+        let kind_leak = finding_leak("user@example.com", "RepairAction.kind");
+        assert_leak(
+            action_error(
+                &text("\nuser@example.com"),
+                &InputValue::int(1),
+                &InputValue::None,
+            ),
+            &format!("Intrinsic content leak in RepairAction.kind: {kind_leak}"),
+        );
+
+        assert_schema(
+            action_error(&text("drop"), &InputValue::bool_value(true), &detail),
+            "RepairAction.record_id must be non-empty string or None, got True",
+        );
+        assert_schema(
+            action_error(&text("drop"), &text(""), &InputValue::int(1)),
+            "RepairAction.record_id must be non-empty string or None, got ''",
+        );
+        assert_schema(
+            action_error(&text("drop"), &text("  "), &InputValue::int(1)),
+            "RepairAction.record_id must be non-empty string or None, got '  '",
+        );
+        assert_schema(
+            action_error(&text("drop"), &text("\n"), &InputValue::int(1)),
+            "RepairAction.record_id must be non-empty string or None, got '\\n'",
+        );
+
+        let record_leak = finding_leak("user@example.com", "RepairAction.record_id");
+        assert_leak(
+            action_error(
+                &text("drop"),
+                &text("\nuser@example.com\n"),
+                &InputValue::int(7),
+            ),
+            &format!("Intrinsic content leak in RepairAction.record_id: {record_leak}"),
+        );
+
+        assert_schema(
+            action_error(&text("drop"), &record, &InputValue::int(1)),
+            "RepairAction.detail must be a string, got int",
+        );
+        assert_schema(
+            action_error(&text("drop"), &record, &InputValue::None),
+            "RepairAction.detail must be a string, got NoneType",
+        );
+        assert_schema(
+            action_error(
+                &text("drop"),
+                &text("rec-1"),
+                &InputValue::bool_value(false),
+            ),
+            "RepairAction.detail must be a string, got bool",
+        );
+
+        let detail_leak = finding_leak("keep\nnote", "RepairAction.detail");
+        assert_leak(
+            action_error(&text("drop"), &record, &text("  keep\nnote  ")),
+            &format!("Intrinsic content leak in RepairAction.detail: {detail_leak}"),
+        );
+    }
+
+    fn must_revalidation(
+        assurance: &str,
+        error_count: i64,
+        warning_count: i64,
+        profile_id: &str,
+        profile_version: &str,
+        report_fingerprint: Option<&str>,
+    ) -> RevalidationSummary {
+        let fingerprint = match report_fingerprint {
+            None => InputValue::None,
+            Some(value) => text(value),
+        };
+        match RevalidationSummary::try_new(
+            &text(assurance),
+            &InputValue::int(error_count),
+            &InputValue::int(warning_count),
+            &text(profile_id),
+            &text(profile_version),
+            &fingerprint,
+        ) {
+            Ok(summary) => summary,
+            Err(err) => panic!("synthetic revalidation rejected: {err}"),
+        }
+    }
+
+    fn revalidation_error(
+        assurance: &InputValue,
+        error_count: &InputValue,
+        warning_count: &InputValue,
+        profile_id: &InputValue,
+        profile_version: &InputValue,
+        report_fingerprint: &InputValue,
+    ) -> EnvelopeError {
+        match RevalidationSummary::try_new(
+            assurance,
+            error_count,
+            warning_count,
+            profile_id,
+            profile_version,
+            report_fingerprint,
+        ) {
+            Ok(_) => panic!("expected RevalidationSummary to fail"),
+            Err(err) => err,
+        }
+    }
+
+    fn assurance_message(rendered: &str) -> String {
+        format!(
+            "Invalid revalidation assurance {rendered}. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']"
+        )
+    }
+
+    #[test]
+    fn revalidation_summary_keeps_labels_and_omits_missing_fingerprint() {
+        for level in VALID_ASSURANCE_LEVELS {
+            let summary = must_revalidation(level, 0, 0, "profile-a", "1", None);
+            assert_eq!(summary.assurance(), level);
+            assert_eq!(summary.to_dict().report_fingerprint, None);
+        }
+        let summary = must_revalidation("A2", 0, 3, "\nprofile-a", "  1.2.3  ", Some("\nfp-1"));
+        assert_eq!(summary.error_count(), 0);
+        assert_eq!(summary.warning_count(), 3);
+        assert_eq!(summary.profile_id(), "\nprofile-a");
+        assert_eq!(summary.profile_version(), "  1.2.3  ");
+        assert_eq!(summary.report_fingerprint(), Some("\nfp-1"));
+        assert_eq!(
+            summary.to_dict(),
+            super::RevalidationSummaryDict {
+                assurance: "A2".to_owned(),
+                error_count: 0,
+                profile_id: "\nprofile-a".to_owned(),
+                profile_version: "  1.2.3  ".to_owned(),
+                warning_count: 3,
+                report_fingerprint: Some("\nfp-1".to_owned()),
+            }
+        );
+        let omitted = must_revalidation("A0", 1, 0, "profile-a", "1", None);
+        assert_eq!(omitted.report_fingerprint(), None);
+        assert_eq!(
+            omitted.to_dict(),
+            super::RevalidationSummaryDict {
+                assurance: "A0".to_owned(),
+                error_count: 1,
+                profile_id: "profile-a".to_owned(),
+                profile_version: "1".to_owned(),
+                warning_count: 0,
+                report_fingerprint: None,
+            }
+        );
+        let again = must_revalidation("A2", 0, 3, "\nprofile-a", "  1.2.3  ", Some("\nfp-1"));
+        assert_eq!(summary, again);
+        assert_ne!(summary, omitted);
+        let wide = must_revalidation("A4", i64::MAX, 0, "profile-a", "1", None);
+        assert_eq!(wide.error_count(), i64::MAX);
+    }
+
+    #[test]
+    fn revalidation_summary_rejects_in_post_init_order() {
+        let errors = InputValue::int(0);
+        let warnings = InputValue::int(0);
+        let profile = text("profile-a");
+        let version = text("1");
+        let fingerprint = InputValue::None;
+        assert_assurance(
+            revalidation_error(
+                &text("A9"),
+                &InputValue::int(-1),
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            &assurance_message("'A9'"),
+        );
+        assert_assurance(
+            revalidation_error(
+                &InputValue::int(1),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            &assurance_message("1"),
+        );
+        assert_assurance(
+            revalidation_error(
+                &InputValue::bool_value(true),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            &assurance_message("True"),
+        );
+        assert_assurance(
+            revalidation_error(
+                &text(" A0"),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            &assurance_message("' A0'"),
+        );
+        assert_assurance(
+            revalidation_error(
+                &text("a4"),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            &assurance_message("'a4'"),
+        );
+
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &InputValue::bool_value(true),
+                &InputValue::int(-1),
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got True",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &InputValue::bool_value(false),
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got False",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &InputValue::int(-1),
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got -1",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &InputValue::int(i64::MIN),
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got -9223372036854775808",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &InputValue::None,
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got None",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &text("1"),
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got '1'",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A0"),
+                &InputValue::other("float", "1.5"),
+                &warnings,
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.error_count must be non-negative integer, got 1.5",
+        );
+
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &InputValue::bool_value(false),
+                &text("   "),
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.warning_count must be non-negative integer, got False",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &InputValue::int(-1),
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.warning_count must be non-negative integer, got -1",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &text("0"),
+                &profile,
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.warning_count must be non-negative integer, got '0'",
+        );
+
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &text("   "),
+                &text(""),
+                &fingerprint,
+            ),
+            "RevalidationSummary.profile_id must be a non-empty string, got '   '",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &InputValue::int(1),
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.profile_id must be a non-empty string, got 1",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &text("\n"),
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.profile_id must be a non-empty string, got '\\n'",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &text("\u{001c}"),
+                &version,
+                &fingerprint,
+            ),
+            "RevalidationSummary.profile_id must be a non-empty string, got '\\x1c'",
+        );
+
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &profile,
+                &text(""),
+                &text("   "),
+            ),
+            "RevalidationSummary.profile_version must be a non-empty string, got ''",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &profile,
+                &InputValue::None,
+                &fingerprint,
+            ),
+            "RevalidationSummary.profile_version must be a non-empty string, got None",
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A1"),
+                &errors,
+                &warnings,
+                &profile,
+                &text(" \n "),
+                &fingerprint,
+            ),
+            "RevalidationSummary.profile_version must be a non-empty string, got ' \\n '",
+        );
+
+        let fingerprint_message =
+            "RevalidationSummary.report_fingerprint must be a non-empty string or None";
+        assert_schema(
+            revalidation_error(
+                &text("A3"),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &text(""),
+            ),
+            fingerprint_message,
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A3"),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &text(" \n "),
+            ),
+            fingerprint_message,
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A3"),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &InputValue::int(1),
+            ),
+            fingerprint_message,
+        );
+        assert_schema(
+            revalidation_error(
+                &text("A3"),
+                &errors,
+                &warnings,
+                &profile,
+                &version,
+                &InputValue::bool_value(false),
+            ),
+            fingerprint_message,
         );
     }
 }
