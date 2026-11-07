@@ -1,0 +1,591 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.drift parity vectors (stdlib only; pinned git blobs)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DRIFT_PY_SHA256 = (
+    "6f21b713e6c30d0729c08be3452480075350b6be698a43cf5835d8b6c61c2290"
+)
+DRIFT_RS_SHA256 = (
+    "e456ecbac7b4f0ab647621a4f4ecf0cff05f7599700eb8710310c7e285b2e9f4"
+)
+MODULE = "sesslint.adapters.drift"
+
+PIN_MODULES: Final[tuple[tuple[str, str], ...]] = (
+    ("sesslint.errors", "src/sesslint/errors.py"),
+    ("sesslint._version", "src/sesslint/_version.py"),
+    ("sesslint.context", "src/sesslint/context.py"),
+    ("sesslint.codes", "src/sesslint/codes.py"),
+    ("sesslint.secret_families", "src/sesslint/secret_families.py"),
+    ("sesslint.finding", "src/sesslint/finding.py"),
+    ("sesslint.adapters.safe_value", "src/sesslint/adapters/safe_value.py"),
+    ("sesslint.adapters.drift", "src/sesslint/adapters/drift.py"),
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-drift-finding-fingerprint: into_findings on a non-empty transition "
+    "buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. "
+    "Rust stops at the missing fingerprint codec. Vectors compare tracker state and "
+    "empty or suppressed flush only, not Python Finding objects.",
+)
+
+SYN_PATH = "syn-drift-parity-path"
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def git_show_text(rev_path: str) -> str:
+    return git_show_bytes(rev_path).decode("utf-8")
+
+
+def verify_drift_py_pin() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/adapters/drift.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != DRIFT_PY_SHA256:
+        raise SystemExit(
+            f"drift.py pin sha256 mismatch: expected {DRIFT_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_drift_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "drift.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != DRIFT_RS_SHA256:
+        raise SystemExit(
+            "adapters/src/drift.rs sha256 mismatch: "
+            f"expected {DRIFT_RS_SHA256}, got {digest}"
+        )
+
+
+def load_pinned_drift() -> Any:
+    verify_drift_py_pin()
+    verify_drift_rs_sha256()
+    for pkg in ("sesslint", "sesslint.adapters"):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+    for mod_name, rel_path in PIN_MODULES:
+        source = git_show_text(f"{PYTHON_COMMIT}:{rel_path}")
+        compiled = compile(source, f"<pinned {rel_path}>", "exec")
+        mod = types.ModuleType(mod_name)
+        mod.__file__ = f"<pinned {rel_path}>"
+        sys.modules[mod_name] = mod
+        exec(compiled, mod.__dict__)  # noqa: S102
+        parent_name, _, child = mod_name.rpartition(".")
+        if parent_name:
+            parent = sys.modules[parent_name]
+            setattr(parent, child, mod)
+    return sys.modules["sesslint.adapters.drift"]
+
+
+def transition_row(transition: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "kind": transition.kind,
+        "previous": transition.previous,
+        "observed": transition.observed,
+        "field": transition.field,
+        "observed_format": transition.observed_format,
+        "line": transition.line,
+        "record_id": transition.record_id,
+        "record_ordinal": transition.record_ordinal,
+        "byte_offset": transition.byte_offset,
+        "byte_end": transition.byte_end,
+    }
+    return row
+
+
+def tracker_state(tracker: Any) -> dict[str, Any]:
+    return {
+        "version_baseline": tracker._version_baseline,
+        "sl301_seen": tracker._sl301_seen,
+        "transition_count": len(tracker._transitions),
+        "seen_count": len(tracker._seen),
+        "transitions": [transition_row(t) for t in tracker._transitions],
+    }
+
+
+def flush_mode(tracker: Any, path: str) -> dict[str, Any]:
+    if tracker._sl301_seen or not tracker._transitions:
+        findings = tracker.into_findings(path_str=path)
+        if findings:
+            raise SystemExit("unexpected Python findings on empty or suppressed flush")
+        return {"mode": "empty_ok", "path": path}
+    return {"mode": "gap_fingerprint", "path": path}
+
+
+def materialize_raw_type(spec: dict[str, Any] | None) -> Any:
+    if spec is None:
+        return None
+    kind = spec["kind"]
+    if kind == "str":
+        return spec["text"]
+    if kind == "int":
+        return int(spec["value"])
+    if kind == "float":
+        return float(spec["value"])
+    if kind == "bool":
+        return bool(spec["value"])
+    if kind == "none":
+        return None
+    if kind == "list":
+        return []
+    if kind == "dict":
+        return {}
+    if kind == "bytes":
+        return b""
+    raise SystemExit(f"unknown raw_type kind {kind!r}")
+
+
+def run_steps(tracker: Any, steps: list[dict[str, Any]]) -> None:
+    for step in steps:
+        action = step["action"]
+        if action == "observe_version":
+            tracker.observe_version(
+                step["version_norm"],
+                supported=bool(step["supported"]),
+                field=step["field"],
+                line=step.get("line"),
+                record_id=step.get("record_id"),
+                record_ordinal=step.get("record_ordinal"),
+                byte_offset=step.get("byte_offset"),
+                byte_end=step.get("byte_end"),
+            )
+        elif action == "observe_signature":
+            raw = materialize_raw_type(step.get("raw_type"))
+            tracker.observe_signature(
+                raw,
+                line=step.get("line"),
+                record_id=step.get("record_id"),
+                record_ordinal=step.get("record_ordinal"),
+                byte_offset=step.get("byte_offset"),
+                byte_end=step.get("byte_end"),
+            )
+        elif action == "note_unsupported_version":
+            tracker.note_unsupported_version()
+        else:
+            raise SystemExit(f"unknown step action {action!r}")
+
+
+def add_tracker(
+    specs: list[dict[str, Any]],
+    vector_id: str,
+    format_label: str,
+    steps: list[dict[str, Any]],
+    *,
+    flush_path: str | None = SYN_PATH,
+) -> None:
+    drift = specs_module
+    tracker = drift.DriftTracker(format_label)
+    run_steps(tracker, steps)
+    expected: dict[str, Any] = {"state": tracker_state(tracker)}
+    if flush_path is not None:
+        expected["flush"] = flush_mode(tracker, flush_path)
+    specs.append(
+        {
+            "id": vector_id,
+            "construct": {
+                "type": "tracker_run",
+                "format_label": format_label,
+                "steps": steps,
+            },
+            "expected": expected,
+        }
+    )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def vector_specs(drift: Any) -> list[dict[str, Any]]:
+    global specs_module
+    specs_module = drift
+    specs: list[dict[str, Any]] = []
+
+    foreign_items = [
+        {"type_name": name, "format_label": label}
+        for name, label in drift.FOREIGN_SIGNATURE_TYPES.items()
+    ]
+
+    specs.append(
+        {
+            "id": "module_exports",
+            "construct": {"type": "module_exports"},
+            "expected": {
+                "python_all": list(drift.__all__),
+                "max_drift_transitions": drift.MAX_DRIFT_TRANSITIONS,
+                "foreign_signature_types": foreign_items,
+            },
+        }
+    )
+
+    add_tracker(
+        specs,
+        "version_chain_first_difference",
+        "claude-code-jsonl",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "schemaVersion",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "schemaVersion",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "0.1",
+                "supported": True,
+                "field": "schemaVersion",
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "version_baseline_only_flush_empty",
+        "canonical",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+        ],
+        flush_path="",
+    )
+
+    add_tracker(
+        specs,
+        "version_unsupported_marker_sets_sl301",
+        "codex-rollout",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "9.9",
+                "supported": False,
+                "field": "version",
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "unsupported_before_baseline_suppresses",
+        "canonical",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "9.9",
+                "supported": False,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "note_unsupported_clears_flush",
+        "claude-code-jsonl",
+        [
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "turn_context"}},
+            {"action": "note_unsupported_version"},
+            {
+                "action": "observe_signature",
+                "raw_type": {"kind": "str", "text": "session_meta"},
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "unsupported_after_buffer_suppresses_flush",
+        "codex-rollout",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "2",
+                "supported": True,
+                "field": "version",
+            },
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "summary"}},
+            {
+                "action": "observe_version",
+                "version_norm": "9.9",
+                "supported": False,
+                "field": "version",
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "signature_foreign_turn_context",
+        "claude-code-jsonl",
+        [
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "turn_context"}},
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "summary"}},
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "user"}},
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "nonsense-xyz"}},
+            {"action": "observe_signature", "raw_type": {"kind": "int", "value": 123}},
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "signature_dedup_keeps_first_coordinates",
+        "canonical",
+        [
+            {
+                "action": "observe_signature",
+                "raw_type": {"kind": "str", "text": "turn_context"},
+                "line": 3,
+                "record_id": "syn-rec-03",
+                "record_ordinal": 3,
+                "byte_offset": 10,
+                "byte_end": 20,
+            },
+            {
+                "action": "observe_signature",
+                "raw_type": {"kind": "str", "text": "turn_context"},
+                "line": 9,
+                "record_id": "syn-rec-09",
+                "record_ordinal": 9,
+                "byte_offset": 90,
+                "byte_end": 99,
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "signature_dedup_and_cap",
+        "canonical",
+        [
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "turn_context"}},
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "turn_context"}},
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "turn_context"}},
+        ]
+        + [
+            {
+                "action": "observe_signature",
+                "raw_type": {"kind": "str", "text": type_name},
+            }
+            for type_name in sorted(drift.FOREIGN_SIGNATURE_TYPES)
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "cap_full_advances_baseline_drops_version_row",
+        "canonical",
+        [
+            *[
+                {
+                    "action": "observe_signature",
+                    "raw_type": {"kind": "str", "text": type_name},
+                }
+                for type_name in sorted(drift.FOREIGN_SIGNATURE_TYPES)[
+                    : drift.MAX_DRIFT_TRANSITIONS
+                ]
+            ],
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "2",
+                "supported": True,
+                "field": "version",
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "version_string_equality_not_numeric",
+        "canonical",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "1.0",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "01",
+                "supported": True,
+                "field": "version",
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "version_and_signature_key_distinct",
+        "1",
+        [
+            {
+                "action": "observe_version",
+                "version_norm": "1",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_version",
+                "version_norm": "turn_context",
+                "supported": True,
+                "field": "version",
+            },
+            {
+                "action": "observe_signature",
+                "raw_type": {"kind": "str", "text": "turn_context"},
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "native_signature_silent_for_own_format",
+        "claude-code-jsonl",
+        [
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "summary"}},
+            {"action": "observe_signature", "raw_type": {"kind": "str", "text": "tool_use"}},
+        ],
+        flush_path="",
+    )
+
+    add_tracker(
+        specs,
+        "gap_flush_single_buffered_signature",
+        "claude-code-jsonl",
+        [
+            {
+                "action": "observe_signature",
+                "raw_type": {"kind": "str", "text": "turn_context"},
+                "line": 3,
+                "record_id": "syn-rec-gap",
+                "record_ordinal": 3,
+            },
+        ],
+    )
+
+    add_tracker(
+        specs,
+        "fresh_tracker_flush_empty_without_steps",
+        "canonical",
+        [],
+        flush_path="  ",
+    )
+
+    return specs
+
+
+specs_module: Any = None
+
+
+def main() -> int:
+    drift = load_pinned_drift()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(drift)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "drift_py_sha256": DRIFT_PY_SHA256,
+        "drift_rs_sha256": DRIFT_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.drift parity "
+            "(DriftTracker state and flush modes before finding fingerprint)."
+        ),
+        "generator": "rust/parity/vectors/adapters.drift/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

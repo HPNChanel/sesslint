@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.drift parity (DriftTracker state and flush modes before finding fingerprint).",
+  "generator": "rust/parity/vectors/adapters.drift/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-drift-finding-fingerprint: into_findings on a non-empty transition buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec. Vectors compare tracker state and empty or suppressed flush only, not Python Finding objects."
+  ]
+}
