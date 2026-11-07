@@ -14,4 +14,4 @@ pub mod secret_families;
 pub mod canonical;
 pub mod events;
 pub mod finding;
-pub mod reference {}
+pub mod reference;
