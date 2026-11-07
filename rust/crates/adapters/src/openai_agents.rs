@@ -1,8 +1,8 @@
 //! OpenAI Agents SDK run-state projection, detection, payload assembly, and load gates.
 //!
 //! Port of `src/sesslint/adapters/openai_agents.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–670.
-//! Stops before `_load_openai_agents_json` (line 673).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–904.
+//! Stops before `_load_openai_agents_jsonl` (line 907).
 //!
 //! Lines 1–313 port [`safe_type_value`] (Python `_safe_type_value`),
 //! [`project_run_state`], and [`SourceMetadata`]. [`SourceMetadata`] is the
@@ -50,6 +50,14 @@
 //! [`SECRET_SCAN_TRACKER_UNAVAILABLE`]. The JSON and JSONL loaders are not
 //! called. No events, SL301, or SL302 are invented. A non-empty document does
 //! not return a successful [`EventList`].
+//!
+//! [`load_openai_agents_json`] ports `_load_openai_agents_json` (lines 673–904).
+//! Its first statement is `secret_tracker.feed_blob(data)`. Python scans the
+//! whole persisted document before any validation. `feed_blob` is not in
+//! this crate. The display is [`SECRET_SCAN_FEED_BLOB_UNAVAILABLE`]. The
+//! bytes are not checked for NUL, decoded as UTF-8, parsed as JSON, or walked
+//! as items. No [`EventList`] is returned. SL001, SL009, SL301, and SL302 are
+//! not produced. [`load_openai_agents`] does not call this function.
 //!
 //! `limits is None` uses [`DEFAULT_MAX_FILE_BYTES`] from `src/sesslint/io.py`
 //! at this pin (`100 * 1024 * 1024`). A provided integer is that cap.
@@ -117,6 +125,11 @@
 //!   [`BuildPayloadError::Unrendered`] is that refusal. It is not a payload.
 //! - [`EventList`] stores the constructor sequence. The rest of `list` is not
 //!   ported. Two default lists do not share one [`SourceMetadata`].
+//! - [`load_openai_agents_json`] does not build `SecretScanTracker` and does
+//!   not read the document, `path_str`, or `limits`.
+//!   [`SuppliedSecretScanTracker`] has no scan state.
+//!   [`crate::source::SuppliedReaderLimits`] is the `sesslint.io` limits
+//!   witness, unread here.
 
 use std::error::Error;
 use std::fmt;
@@ -131,6 +144,7 @@ use model::finding::{make_finding, Finding, MakeFindingInput, SourceLine, Source
 
 use crate::safe_value::safe_discriminator;
 use crate::safe_value::PyValue;
+use crate::source::SuppliedReaderLimits;
 
 /// Python: `MAX_PROJECTED_RUN_STATE_KEYS`.
 pub const MAX_PROJECTED_RUN_STATE_KEYS: usize = 32;
@@ -1556,6 +1570,10 @@ pub const DEFAULT_MAX_FILE_BYTES: i64 = 100 * 1024 * 1024;
 pub const SECRET_SCAN_TRACKER_UNAVAILABLE: &str =
     "sesslint.checks.hygiene.SecretScanTracker is not available";
 
+/// `sesslint.checks.hygiene.SecretScanTracker.feed_blob` is not in this crate.
+pub const SECRET_SCAN_FEED_BLOB_UNAVAILABLE: &str =
+    "sesslint.checks.hygiene.SecretScanTracker.feed_blob is not available";
+
 const SIZE_LIMIT_TEMPLATE: &str = "File size exceeds maximum limit [detail: LIMIT]";
 
 const SQLITE_REFUSAL_TEMPLATE: &str = "Refused live SQLite database; SessLint requires exported items or checkpoints [detail: refused_live_db]";
@@ -2022,19 +2040,79 @@ fn join_python_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
     }
 }
 
+/// Witness that the caller already holds a `SecretScanTracker`.
+///
+/// This is not that class. It has no hits and no buffer. This crate does not
+/// construct `SecretScanTracker`, and this witness has no `feed_blob`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuppliedSecretScanTracker;
+
+/// Failure from [`load_openai_agents_json`].
+///
+/// [`Display`](std::fmt::Display) is [`SECRET_SCAN_FEED_BLOB_UNAVAILABLE`].
+/// The document is not part of that text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadOpenAiAgentsJsonError;
+
+impl LoadOpenAiAgentsJsonError {
+    /// [`SECRET_SCAN_FEED_BLOB_UNAVAILABLE`].
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        SECRET_SCAN_FEED_BLOB_UNAVAILABLE
+    }
+}
+
+impl fmt::Display for LoadOpenAiAgentsJsonError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for LoadOpenAiAgentsJsonError {}
+
+/// Parse one JSON document export, stopping at `feed_blob`.
+///
+/// Python: `_load_openai_agents_json` lines 673–904. The first statement is
+/// `secret_tracker.feed_blob(data)`. Python scans the whole persisted
+/// document before any validation. That method is not in this crate, so this
+/// returns [`LoadOpenAiAgentsJsonError`] and does not read `data`.
+///
+/// `path_str` and `limits` are the keyword arguments. Validation that would
+/// use them is not reached. [`SuppliedSecretScanTracker`] is the supplied
+/// tracker. This function does not build one and does not call `feed_blob`
+/// on it. [`load_openai_agents`] does not call this function.
+///
+/// # Errors
+///
+/// [`SECRET_SCAN_FEED_BLOB_UNAVAILABLE`] for every document. NUL, invalid
+/// UTF-8, malformed JSON, a dict, and a list all use that display. This does
+/// not return an [`EventList`].
+#[must_use = "the feed_blob seam is the result"]
+pub fn load_openai_agents_json(
+    data: &[u8],
+    path_str: &str,
+    limits: SuppliedReaderLimits,
+    secret_tracker: SuppliedSecretScanTracker,
+) -> Result<(), LoadOpenAiAgentsJsonError> {
+    let _ = (data, path_str, limits, secret_tracker);
+    Err(LoadOpenAiAgentsJsonError)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_payload, detect_openai_agents, load_openai_agents, normalize_timestamp,
-        normalize_version, project_run_state, python_path_text, safe_type_value,
-        AgentsDocumentKind, AttrObject, BuildPayloadError, EventList, FindingGate,
-        LoadOpenAiAgentsError, MapKey, MapValue, MaxFileBytes, MetaValue, OpenAiAgentsSource,
-        ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata, TruncationTotals,
-        DEFAULT_MAX_FILE_BYTES, MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS,
+        build_payload, detect_openai_agents, load_openai_agents, load_openai_agents_json,
+        normalize_timestamp, normalize_version, project_run_state, python_path_text,
+        safe_type_value, AgentsDocumentKind, AttrObject, BuildPayloadError, EventList, FindingGate,
+        LoadOpenAiAgentsError, LoadOpenAiAgentsJsonError, MapKey, MapValue, MaxFileBytes,
+        MetaValue, OpenAiAgentsSource, ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata,
+        SuppliedSecretScanTracker, TruncationTotals, DEFAULT_MAX_FILE_BYTES,
+        MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS, SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
         SECRET_SCAN_TRACKER_UNAVAILABLE, SQLITE_MAGIC, STRICT_JSON_DECODE_UNAVAILABLE,
         STR_UNRENDERED,
     };
     use crate::safe_value::{safe_discriminator, PyValue};
+    use crate::source::SuppliedReaderLimits;
     use model::canonical::SessionEvent;
     use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
     use std::fs;
@@ -3612,5 +3690,46 @@ mod tests {
             load_openai_agents(OpenAiAgentsSource::Path(&wide), None).expect_err("default cap");
         assert_eq!(wide_err.document_kind(), Some(AgentsDocumentKind::Jsonl));
         assert_eq!(wide_err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+    }
+
+    #[test]
+    fn json_document_loader_stops_at_feed_blob() {
+        let documents: [&[u8]; 9] = [
+            b"",
+            b"\x00",
+            b"a\x00b",
+            b"\xff",
+            b"\x80\x81",
+            b"{",
+            b"not-json",
+            b"{}",
+            b"[]",
+        ];
+        for data in documents {
+            let err = load_openai_agents_json(
+                data,
+                "synthetic-export.json",
+                SuppliedReaderLimits,
+                SuppliedSecretScanTracker,
+            )
+            .expect_err("feed_blob");
+            assert_eq!(err, LoadOpenAiAgentsJsonError);
+            assert_eq!(err.message(), SECRET_SCAN_FEED_BLOB_UNAVAILABLE);
+            assert_eq!(
+                err.to_string(),
+                "sesslint.checks.hygiene.SecretScanTracker.feed_blob is not available"
+            );
+            assert!(!err.to_string().contains("synthetic-export.json"));
+            assert!(!err.to_string().contains("SL001"));
+            assert!(!err.to_string().contains("SL009"));
+            assert!(!err.to_string().contains("SL301"));
+            assert!(!err.to_string().contains("SL302"));
+        }
+
+        let gated = load_openai_agents(OpenAiAgentsSource::Bytes(b"{\"items\":[]}"), None)
+            .expect_err("gate");
+        assert_eq!(gated.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert_ne!(gated.to_string(), SECRET_SCAN_FEED_BLOB_UNAVAILABLE);
+        assert_eq!(gated.document_kind(), Some(AgentsDocumentKind::Json));
     }
 }
