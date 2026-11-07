@@ -5019,3 +5019,2037 @@ mod process_rollout_tests {
         assert!(held.findings.is_empty());
     }
 }
+
+// Port of `src/sesslint/adapters/codex_rollout.py`
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1129–1309.
+// `_process_jsonl_line` only. `load_codex_rollout` starts at line 1312
+// and is not defined here.
+//
+// Gaps vs Python (recorded, not papered over):
+// - A supplied tracker is not `SecretScanTracker`. `feed` is not called.
+//   Display is `sesslint.checks.hygiene.SecretScanTracker is not available`
+//   before the truncated, NUL, UTF-8, JSON, duplicate, nesting, or record
+//   checks. No scan result is invented.
+// - [`make_finding`] omits the fingerprint. Display is
+//   `sesslint.determinism.canonical_json_bytes is not available`. The
+//   finding is not appended. Duplicate-key findings therefore do not
+//   continue into [`_process_rollout_record`].
+// - A dict that passes those checks calls [`_process_rollout_record`].
+//   That function's content-hash Display is
+//   `sesslint._canonical_codec.payload_content_hash is not available`.
+//   This slice does not hash and does not push an event.
+// - JSON is hand-walked. There is no `regex` crate and no `serde_json`.
+//   `true` and `false` are bools. An integer outside `i64` is a decode
+//   defect, not a bool and not a float.
+// - Parser depth above 1000 is the pin's `RecursionError` arm.
+//   `limits.max_depth` is the later `check_nesting_depth` arm. A bool is
+//   not a container. Duplicate values that `dict` drops stay marked, so
+//   the truncated flag can be set without listing those dropped keys.
+
+use model::codes::{SL001, SL002, SL303};
+use model::finding::enforce_content_free_text;
+
+const JSONL_SECRET_TRACKER_UNAVAILABLE: &str =
+    "sesslint.checks.hygiene.SecretScanTracker is not available";
+
+const JSONL_RECORD_ID_MAX: usize = 200;
+
+const JSONL_RECORD_ID_CONTEXT: &str = "extracted record_id";
+
+const JSONL_NESTING_LIMIT: u32 = 1000;
+
+const JSONL_MAX_DUP_KEYS: usize = 16;
+
+const JSONL_CUT: i64 = -1;
+
+const JSONL_BAD: i64 = -2;
+
+const JSONL_LIMIT_TEMPLATE: &str =
+    "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}";
+
+const JSONL_NUL_TEMPLATE: &str = "Forbidden NUL byte on line {line} for record {record_id}";
+
+const JSONL_UTF8_TEMPLATE: &str =
+    "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}";
+
+const JSONL_NESTING_TEMPLATE: &str =
+    "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] for record {record_id}";
+
+const JSONL_MALFORMED_TEMPLATE: &str = "Malformed record on line {line} for record {record_id}";
+
+const JSONL_TORN_TEMPLATE: &str = "Torn terminal record on line {line} for record {record_id}";
+
+const JSONL_DUP_TEMPLATE: &str = "Duplicate JSON key on line {line} for record {record_id}";
+
+const JSONL_LONE_SURROGATE_WHY: &str = "line {line} contains an invalid Unicode character (lone surrogate, e.g. \\ud800), so it cannot be parsed as a session record. The file was not truncated.";
+
+/// Witness that the caller already holds a `SecretScanTracker`.
+///
+/// This is not a tracker. It has no `feed` and it stores no scan result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuppliedSecretScanTracker;
+
+/// `max_depth` from a provided `ReaderLimits`.
+///
+/// The field is an `i64`. A bool is not an int, and a bool cannot be stored
+/// here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CodexLineLimits {
+    /// Python: `ReaderLimits.max_depth`.
+    pub max_depth: i64,
+}
+
+/// One physical rollout JSONL line.
+///
+/// Python: `_RawLine`. Coordinates are `i64`. A bool is not an int, so this
+/// constructor cannot take one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexRawLine {
+    line_number: i64,
+    raw_bytes: Vec<u8>,
+    truncated_limit: bool,
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+}
+
+impl CodexRawLine {
+    /// Validate coordinates, then store the line.
+    ///
+    /// # Errors
+    ///
+    /// `byte_offset < 0`, `byte_end < byte_offset`, or `record_ordinal < 1`.
+    pub fn try_new(
+        line_number: i64,
+        raw_bytes: Vec<u8>,
+        truncated_limit: bool,
+        byte_offset: i64,
+        byte_end: i64,
+        record_ordinal: i64,
+    ) -> Result<Self, CodexRawLineError> {
+        if byte_offset < 0 {
+            return Err(CodexRawLineError::new(format!(
+                "Invalid byte_offset: {byte_offset} (must be integer >= 0)"
+            )));
+        }
+        if byte_end < byte_offset {
+            return Err(CodexRawLineError::new(format!(
+                "Invalid byte_end: {byte_end} (must be integer >= byte_offset={byte_offset})"
+            )));
+        }
+        if record_ordinal < 1 {
+            return Err(CodexRawLineError::new(format!(
+                "Invalid record_ordinal: {record_ordinal} (must be integer >= 1)"
+            )));
+        }
+        Ok(Self {
+            line_number,
+            raw_bytes,
+            truncated_limit,
+            byte_offset,
+            byte_end,
+            record_ordinal,
+        })
+    }
+
+    /// Python: `line_number`.
+    #[must_use]
+    pub const fn line_number(&self) -> i64 {
+        self.line_number
+    }
+
+    /// Python: `raw_bytes`.
+    #[must_use]
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+
+    /// Python: `truncated_limit`.
+    #[must_use]
+    pub const fn truncated_limit(&self) -> bool {
+        self.truncated_limit
+    }
+
+    /// Python: `byte_offset`.
+    #[must_use]
+    pub const fn byte_offset(&self) -> i64 {
+        self.byte_offset
+    }
+
+    /// Python: `byte_end`.
+    #[must_use]
+    pub const fn byte_end(&self) -> i64 {
+        self.byte_end
+    }
+
+    /// Python: `record_ordinal`.
+    #[must_use]
+    pub const fn record_ordinal(&self) -> i64 {
+        self.record_ordinal
+    }
+}
+
+/// `ValueError` from `_RawLine` coordinate checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexRawLineError {
+    message: String,
+}
+
+impl CodexRawLineError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The Python `ValueError` text.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for CodexRawLineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for CodexRawLineError {}
+
+/// Failure from [`_process_jsonl_line`].
+///
+/// [`Display`] is one seam. A finding is not appended on
+/// [`Self::Finding`]. An event is not appended on [`Self::Record`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessJsonlLineError {
+    /// [`JSONL_SECRET_TRACKER_UNAVAILABLE`].
+    SecretScanTracker,
+    /// [`SourceRef`] or [`make_finding`] failed. The finding was not appended.
+    Finding(FindingError),
+    /// [`_process_rollout_record`] failed. The event was not appended here.
+    Record(Box<ProcessRolloutRecordError>),
+}
+
+impl ProcessJsonlLineError {
+    /// The Python exception text, or the missing-codec seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::SecretScanTracker => JSONL_SECRET_TRACKER_UNAVAILABLE,
+            Self::Finding(error) => error.message(),
+            Self::Record(error) => error.message(),
+        }
+    }
+}
+
+impl fmt::Display for ProcessJsonlLineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for ProcessJsonlLineError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Finding(error) => Some(error),
+            Self::Record(error) => Some(error.as_ref()),
+            Self::SecretScanTracker => None,
+        }
+    }
+}
+
+/// Process one rollout JSONL line and stop at the record seam.
+///
+/// Python: `_process_jsonl_line` lines 1129–1309 at
+/// `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. `load_codex_rollout` is not
+/// defined in this slice and does not call this function.
+///
+/// When `secret_tracker` is [`Some`](Option::Some), the first action would be
+/// `secret_tracker.feed(...)`. `SecretScanTracker` is not constructed and no
+/// scan result is invented. Display is
+/// `sesslint.checks.hygiene.SecretScanTracker is not available`. Events and
+/// findings are left untouched. The line is not decoded.
+///
+/// Otherwise the line is decoded by hand. There is no `serde_json` and no
+/// `regex` crate. A bool is not an int: JSON `true` is [`MetaValue::Bool`],
+/// and `true` is not `1`.
+///
+/// Every [`make_finding`] call omits the fingerprint. That returns
+/// `sesslint.determinism.canonical_json_bytes is not available`. The finding
+/// is not appended.
+///
+/// A record that reaches [`_process_rollout_record`] returns that function's
+/// error. The content-hash arm's Display is
+/// `sesslint._canonical_codec.payload_content_hash is not available`. No
+/// digest is invented. This function does not push an event.
+///
+/// # Errors
+///
+/// The secret-tracker seam, [`SourceRef`], [`make_finding`], or
+/// [`_process_rollout_record`].
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+#[must_use = "the codec seam or the seen flag is the result"]
+pub fn _process_jsonl_line(
+    raw: &CodexRawLine,
+    is_terminal: bool,
+    path_str: &str,
+    limits: CodexLineLimits,
+    events: &mut Vec<SessionEvent>,
+    findings: &mut Vec<Finding>,
+    source_metadata: &mut SourceMetadata,
+    seen_version_sl301: bool,
+    guard: Option<&mut SyntheticIdCollisionGuard>,
+    last_event_id: Option<&str>,
+    last_envelope_ordinal: Option<i64>,
+    gap_after_drop: bool,
+    drift: Option<&mut DriftTracker>,
+    secret_tracker: Option<SuppliedSecretScanTracker>,
+    unknown_metadata: Option<&mut UnknownMetadataTracker>,
+) -> Result<(bool, bool, Option<i64>), ProcessJsonlLineError> {
+    if secret_tracker.is_some() {
+        return Err(ProcessJsonlLineError::SecretScanTracker);
+    }
+    if raw.truncated_limit() {
+        let rec_id = jsonl_record_id(Some(&jsonl_lossy(raw.raw_bytes())), None);
+        return Err(jsonl_plain(
+            SL001,
+            JSONL_LIMIT_TEMPLATE,
+            path_str,
+            raw,
+            rec_id.as_deref(),
+            jsonl_coord_map(raw),
+        ));
+    }
+    if raw.raw_bytes().contains(&0) {
+        return Err(jsonl_byte_defect(raw, is_terminal, path_str, JSONL_NUL_TEMPLATE));
+    }
+    let decoded = match jsonl_strict_text(raw) {
+        Ok(text) => text,
+        Err(()) => {
+            return Err(jsonl_byte_defect(
+                raw,
+                is_terminal,
+                path_str,
+                JSONL_UTF8_TEMPLATE,
+            ));
+        }
+    };
+    let parsed = match jsonl_parse(&decoded) {
+        Ok(value) => value,
+        Err(fail) => return Err(jsonl_decode_defect(raw, is_terminal, path_str, &decoded, fail)),
+    };
+    let (dups, dups_truncated) = jsonl_duplicates(&parsed);
+    let value = jsonl_meta(&parsed);
+    if let Some(dup) = dups.first() {
+        let rec_id = jsonl_mapped_id(&decoded, &value);
+        return Err(jsonl_dup_finding(
+            raw,
+            path_str,
+            rec_id.as_deref(),
+            dup,
+            dups_truncated,
+        ));
+    }
+    let MetaValue::Map(envelope) = value else {
+        return Err(jsonl_plain(
+            SL001,
+            JSONL_MALFORMED_TEMPLATE,
+            path_str,
+            raw,
+            None,
+            jsonl_coord_map(raw),
+        ));
+    };
+    if !jsonl_within_depth(&envelope, limits.max_depth) {
+        let rec_id = jsonl_record_id(Some(&decoded), Some(&envelope));
+        return Err(jsonl_plain(
+            SL001,
+            JSONL_NESTING_TEMPLATE,
+            path_str,
+            raw,
+            rec_id.as_deref(),
+            jsonl_coord_map(raw),
+        ));
+    }
+    let (latch, env_ord) = _process_rollout_record(
+        &envelope,
+        raw.line_number(),
+        path_str,
+        events,
+        findings,
+        source_metadata,
+        seen_version_sl301,
+        Some(raw.byte_offset()),
+        Some(raw.byte_end()),
+        Some(raw.record_ordinal()),
+        guard,
+        last_event_id,
+        last_envelope_ordinal,
+        gap_after_drop,
+        drift,
+        unknown_metadata,
+    )
+    .map_err(|error| ProcessJsonlLineError::Record(Box::new(error)))?;
+    Ok((latch, true, env_ord))
+}
+
+fn jsonl_byte_defect(
+    raw: &CodexRawLine,
+    is_terminal: bool,
+    path_str: &str,
+    template: &str,
+) -> ProcessJsonlLineError {
+    let code = jsonl_defect_code(raw, is_terminal);
+    let rec_id = jsonl_record_id(Some(&jsonl_lossy(raw.raw_bytes())), None);
+    jsonl_plain(
+        code,
+        template,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        jsonl_defect_map(code, raw),
+    )
+}
+
+fn jsonl_decode_defect(
+    raw: &CodexRawLine,
+    is_terminal: bool,
+    path_str: &str,
+    decoded: &str,
+    fail: JsonlFail,
+) -> ProcessJsonlLineError {
+    if matches!(fail, JsonlFail::Nesting) {
+        let rec_id = jsonl_record_id(Some(decoded), None);
+        return jsonl_plain(
+            SL001,
+            JSONL_NESTING_TEMPLATE,
+            path_str,
+            raw,
+            rec_id.as_deref(),
+            jsonl_coord_map(raw),
+        );
+    }
+    let code = jsonl_defect_code(raw, is_terminal);
+    let template = if matches!(fail, JsonlFail::LoneSurrogate) {
+        JSONL_LONE_SURROGATE_WHY
+    } else if code == SL002 {
+        JSONL_TORN_TEMPLATE
+    } else {
+        JSONL_MALFORMED_TEMPLATE
+    };
+    let rec_id = jsonl_record_id(Some(decoded), None);
+    jsonl_plain(
+        code,
+        template,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        jsonl_defect_map(code, raw),
+    )
+}
+
+fn jsonl_plain(
+    code: &str,
+    template: &str,
+    path_str: &str,
+    raw: &CodexRawLine,
+    record_id: Option<&str>,
+    evidence: FindingValue,
+) -> ProcessJsonlLineError {
+    jsonl_refuse(
+        code,
+        FindingValue::None,
+        FindingValue::None,
+        template,
+        path_str,
+        raw.line_number(),
+        record_id,
+        evidence,
+    )
+}
+
+fn jsonl_dup_finding(
+    raw: &CodexRawLine,
+    path_str: &str,
+    record_id: Option<&str>,
+    dup: &JsonlDup,
+    truncated: bool,
+) -> ProcessJsonlLineError {
+    let mut entries = vec![
+        (
+            FindingValue::string("key_path"),
+            FindingValue::string(dup.key_path.clone()),
+        ),
+        (
+            FindingValue::string("occurrence_count"),
+            FindingValue::int(dup.occurrence_count),
+        ),
+        (
+            FindingValue::string("critical"),
+            FindingValue::bool_value(dup.critical),
+        ),
+        (
+            FindingValue::string("record_index"),
+            FindingValue::int(raw.record_ordinal()),
+        ),
+    ];
+    if truncated {
+        entries.push((
+            FindingValue::string("truncated"),
+            FindingValue::bool_value(true),
+        ));
+    }
+    let severity = if dup.critical {
+        Severity::Error
+    } else {
+        Severity::Warning
+    };
+    jsonl_refuse(
+        SL303,
+        FindingValue::severity(severity),
+        FindingValue::repairability(Repairability::Manual),
+        JSONL_DUP_TEMPLATE,
+        path_str,
+        raw.line_number(),
+        record_id,
+        FindingValue::map(entries),
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // same finding fields as make_finding
+fn jsonl_refuse(
+    code: &str,
+    severity: FindingValue,
+    repairability: FindingValue,
+    template: &str,
+    path_str: &str,
+    line: i64,
+    record_id: Option<&str>,
+    evidence: FindingValue,
+) -> ProcessJsonlLineError {
+    let source = match SourceRef::try_new(path_str, Some(SourceLine::Int(line)), record_id) {
+        Ok(source) => source,
+        Err(error) => return ProcessJsonlLineError::Finding(error),
+    };
+    match make_finding(&MakeFindingInput {
+        code: FindingValue::string(code),
+        severity,
+        repairability,
+        message_template: FindingValue::string(template),
+        template_args: FindingValue::None,
+        source: FindingValue::source(source),
+        related_ids: FindingValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: FindingValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    }) {
+        Err(error) => ProcessJsonlLineError::Finding(error),
+        Ok(_finding) => {
+            ProcessJsonlLineError::Finding(FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE))
+        }
+    }
+}
+
+fn jsonl_coord_entries(raw: &CodexRawLine) -> Vec<(FindingValue, FindingValue)> {
+    vec![
+        (
+            FindingValue::string("byte_offset"),
+            FindingValue::int(raw.byte_offset()),
+        ),
+        (
+            FindingValue::string("byte_end"),
+            FindingValue::int(raw.byte_end()),
+        ),
+        (
+            FindingValue::string("record_ordinal"),
+            FindingValue::int(raw.record_ordinal()),
+        ),
+    ]
+}
+
+fn jsonl_coord_map(raw: &CodexRawLine) -> FindingValue {
+    FindingValue::map(jsonl_coord_entries(raw))
+}
+
+fn jsonl_defect_map(code: &str, raw: &CodexRawLine) -> FindingValue {
+    let mut entries = jsonl_coord_entries(raw);
+    if code == SL002 {
+        entries.push((
+            FindingValue::string("unterminated"),
+            FindingValue::bool_value(true),
+        ));
+    }
+    FindingValue::map(entries)
+}
+
+fn jsonl_lossy(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+fn jsonl_strict_text(raw: &CodexRawLine) -> Result<String, ()> {
+    let mut bytes = raw.raw_bytes();
+    if raw.line_number() == 1 {
+        bytes = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| ())?;
+    Ok(python_strip(text).to_owned())
+}
+
+fn jsonl_mapped_id(text: &str, value: &MetaValue) -> Option<String> {
+    match value {
+        MetaValue::Map(map) => jsonl_record_id(Some(text), Some(map)),
+        _ => jsonl_record_id(Some(text), None),
+    }
+}
+
+fn jsonl_defect_code(raw: &CodexRawLine, is_terminal: bool) -> &'static str {
+    if is_terminal && !raw.truncated_limit() && jsonl_line_is_torn(raw.raw_bytes(), raw.line_number() == 1)
+    {
+        SL002
+    } else {
+        SL001
+    }
+}
+
+enum JsonlId {
+    Found(String),
+    Rejected,
+    Miss,
+}
+
+fn jsonl_record_id(raw_text: Option<&str>, obj: Option<&MapValue>) -> Option<String> {
+    if let Some(map) = obj {
+        if let Some(MetaValue::Str(text)) = last_string_value(map, "id") {
+            match jsonl_screen_id(text) {
+                JsonlId::Found(id) => return Some(id),
+                JsonlId::Rejected => return None,
+                JsonlId::Miss => {}
+            }
+        }
+    }
+    let raw = raw_text?;
+    let capture = jsonl_search_id(raw)?;
+    match jsonl_screen_id(capture) {
+        JsonlId::Found(id) => Some(id),
+        JsonlId::Rejected | JsonlId::Miss => None,
+    }
+}
+
+fn jsonl_screen_id(text: &str) -> JsonlId {
+    let stripped = python_strip(text);
+    if stripped.is_empty() {
+        return JsonlId::Miss;
+    }
+    let candidate: String = stripped.chars().take(JSONL_RECORD_ID_MAX).collect();
+    match enforce_content_free_text(&candidate, JSONL_RECORD_ID_CONTEXT) {
+        Ok(()) => JsonlId::Found(candidate),
+        Err(_) => JsonlId::Rejected,
+    }
+}
+
+fn jsonl_search_id(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut start = 0usize;
+    while let Some(end) = start.checked_add(4) {
+        if end > bytes.len() {
+            break;
+        }
+        if bytes.get(start..end) == Some(b"\"id\"".as_slice()) {
+            if let Some(id) = text.get(start..).and_then(jsonl_capture_id) {
+                return Some(id);
+            }
+        }
+        start = start.saturating_add(1);
+    }
+    None
+}
+
+fn jsonl_capture_id(text: &str) -> Option<&str> {
+    let rest = text.get(4..)?;
+    let after_key = jsonl_trim_start(rest);
+    let after_colon = after_key.strip_prefix(':')?;
+    let content = jsonl_trim_start(after_colon).strip_prefix('"')?;
+    let mut count = 0usize;
+    let mut end = 0usize;
+    for ch in content.chars() {
+        if ch == '"' {
+            if count == 0 {
+                return None;
+            }
+            return content.get(..end);
+        }
+        if count == JSONL_RECORD_ID_MAX {
+            return None;
+        }
+        count = count.saturating_add(1);
+        end = end.checked_add(ch.len_utf8())?;
+    }
+    None
+}
+
+fn jsonl_trim_start(text: &str) -> &str {
+    let mut start = 0usize;
+    for ch in text.chars() {
+        if !is_python_space(ch) {
+            break;
+        }
+        start = match start.checked_add(ch.len_utf8()) {
+            Some(next) => next,
+            None => return "",
+        };
+    }
+    text.get(start..).unwrap_or("")
+}
+
+fn jsonl_within_depth(map: &MapValue, max_depth: i64) -> bool {
+    let mut stack = vec![(JsonlNode::Map(map), 1i64)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > max_depth {
+            return false;
+        }
+        let Some(next) = depth.checked_add(1) else {
+            return false;
+        };
+        match node {
+            JsonlNode::Map(current) => {
+                for (_, child) in &current.entries {
+                    jsonl_push_child(&mut stack, child, next);
+                }
+            }
+            JsonlNode::List(items) => {
+                for child in items {
+                    jsonl_push_child(&mut stack, child, next);
+                }
+            }
+        }
+    }
+    true
+}
+
+enum JsonlNode<'a> {
+    Map(&'a MapValue),
+    List(&'a [MetaValue]),
+}
+
+fn jsonl_push_child<'a>(stack: &mut Vec<(JsonlNode<'a>, i64)>, child: &'a MetaValue, depth: i64) {
+    match child {
+        MetaValue::Map(map) => stack.push((JsonlNode::Map(map), depth)),
+        MetaValue::List(items) | MetaValue::Tuple(items) => {
+            stack.push((JsonlNode::List(items), depth));
+        }
+        MetaValue::Null
+        | MetaValue::Bool(_)
+        | MetaValue::Int(_)
+        | MetaValue::Float(_)
+        | MetaValue::Str(_)
+        | MetaValue::Bytes(_)
+        | MetaValue::Set(_)
+        | MetaValue::Object(_) => {}
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Parsed {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(u64),
+    Str(String),
+    Arr(Vec<Parsed>),
+    Obj(Vec<(String, Parsed)>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonlFail {
+    Syntax,
+    Nesting,
+    LoneSurrogate,
+}
+
+fn jsonl_parse(text: &str) -> Result<Parsed, JsonlFail> {
+    if text.starts_with('\u{feff}') {
+        return Err(JsonlFail::Syntax);
+    }
+    let mut parser = JsonlParser::new(text);
+    let value = parser.parse_value()?;
+    parser.skip_ws();
+    if parser.index != parser.bytes.len() {
+        return Err(JsonlFail::Syntax);
+    }
+    if parser.lone && (text.contains("\\u") || text.contains("\\U")) {
+        return Err(JsonlFail::LoneSurrogate);
+    }
+    Ok(value)
+}
+
+struct JsonlParser<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    index: usize,
+    depth: u32,
+    lone: bool,
+}
+
+impl<'a> JsonlParser<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            bytes: text.as_bytes(),
+            index: 0,
+            depth: 0,
+            lone: false,
+        }
+    }
+
+    fn parse_value(&mut self) -> Result<Parsed, JsonlFail> {
+        self.skip_ws();
+        match self.peek() {
+            Some(b'{') => self.parse_object(),
+            Some(b'[') => self.parse_array(),
+            Some(b'"') => Ok(Parsed::Str(self.parse_string()?)),
+            Some(b't') => self.consume_lit(b"true", Parsed::Bool(true)),
+            Some(b'f') => self.consume_lit(b"false", Parsed::Bool(false)),
+            Some(b'n') => self.consume_lit(b"null", Parsed::Null),
+            Some(b'-' | b'0'..=b'9') => self.parse_number(),
+            _ => Err(JsonlFail::Syntax),
+        }
+    }
+
+    fn parse_object(&mut self) -> Result<Parsed, JsonlFail> {
+        self.bump().ok_or(JsonlFail::Syntax)?;
+        self.enter()?;
+        self.skip_ws();
+        let mut pairs = Vec::new();
+        if self.peek() == Some(b'}') {
+            self.bump();
+            self.leave();
+            return Ok(Parsed::Obj(pairs));
+        }
+        loop {
+            if self.peek() != Some(b'"') {
+                return Err(JsonlFail::Syntax);
+            }
+            let key = self.parse_string()?;
+            self.skip_ws();
+            if self.bump() != Some(b':') {
+                return Err(JsonlFail::Syntax);
+            }
+            let value = self.parse_value()?;
+            pairs.push((key, value));
+            self.skip_ws();
+            match self.peek() {
+                Some(b',') => {
+                    self.bump();
+                    self.skip_ws();
+                }
+                Some(b'}') => {
+                    self.bump();
+                    self.leave();
+                    return Ok(Parsed::Obj(pairs));
+                }
+                _ => return Err(JsonlFail::Syntax),
+            }
+        }
+    }
+
+    fn parse_array(&mut self) -> Result<Parsed, JsonlFail> {
+        self.bump().ok_or(JsonlFail::Syntax)?;
+        self.enter()?;
+        self.skip_ws();
+        let mut items = Vec::new();
+        if self.peek() == Some(b']') {
+            self.bump();
+            self.leave();
+            return Ok(Parsed::Arr(items));
+        }
+        loop {
+            items.push(self.parse_value()?);
+            self.skip_ws();
+            match self.peek() {
+                Some(b',') => {
+                    self.bump();
+                    self.skip_ws();
+                }
+                Some(b']') => {
+                    self.bump();
+                    self.leave();
+                    return Ok(Parsed::Arr(items));
+                }
+                _ => return Err(JsonlFail::Syntax),
+            }
+        }
+    }
+
+    fn parse_string(&mut self) -> Result<String, JsonlFail> {
+        self.bump().ok_or(JsonlFail::Syntax)?;
+        let mut out = String::new();
+        loop {
+            let start = self.index;
+            while let Some(byte) = self.peek() {
+                if byte == b'"' || byte == b'\\' || byte < 0x20 {
+                    break;
+                }
+                self.bump();
+            }
+            if self.index > start {
+                let slice = self.text.get(start..self.index).ok_or(JsonlFail::Syntax)?;
+                out.push_str(slice);
+            }
+            match self.peek() {
+                Some(b'"') => {
+                    self.bump();
+                    return Ok(out);
+                }
+                Some(b'\\') => {
+                    self.bump();
+                    self.push_escape(&mut out)?;
+                }
+                _ => return Err(JsonlFail::Syntax),
+            }
+        }
+    }
+
+    fn push_escape(&mut self, out: &mut String) -> Result<(), JsonlFail> {
+        match self.bump() {
+            Some(b'"') => out.push('"'),
+            Some(b'\\') => out.push('\\'),
+            Some(b'/') => out.push('/'),
+            Some(b'b') => out.push('\u{0008}'),
+            Some(b'f') => out.push('\u{000c}'),
+            Some(b'n') => out.push('\n'),
+            Some(b'r') => out.push('\r'),
+            Some(b't') => out.push('\t'),
+            Some(b'u') => self.push_unicode(out)?,
+            _ => return Err(JsonlFail::Syntax),
+        }
+        Ok(())
+    }
+
+    fn push_unicode(&mut self, out: &mut String) -> Result<(), JsonlFail> {
+        let unit = self.read_hex4()?;
+        if jsonl_high_surrogate(unit) {
+            if self.starts_with(b"\\u") {
+                self.bump();
+                self.bump();
+                let low = self.read_hex4()?;
+                if jsonl_low_surrogate(low) {
+                    match jsonl_surrogate_pair(unit, low) {
+                        Some(ch) => out.push(ch),
+                        None => self.lone = true,
+                    }
+                    return Ok(());
+                }
+                self.lone = true;
+                return self.push_unit(out, low);
+            }
+            self.lone = true;
+            return Ok(());
+        }
+        if jsonl_low_surrogate(unit) {
+            self.lone = true;
+            return Ok(());
+        }
+        self.push_unit(out, unit)
+    }
+
+    fn push_unit(&mut self, out: &mut String, unit: u32) -> Result<(), JsonlFail> {
+        match char::from_u32(unit) {
+            Some(ch) => {
+                out.push(ch);
+                Ok(())
+            }
+            None => Err(JsonlFail::Syntax),
+        }
+    }
+
+    fn read_hex4(&mut self) -> Result<u32, JsonlFail> {
+        let mut value = 0u32;
+        for _ in 0..4 {
+            let Some(byte) = self.bump() else {
+                return Err(JsonlFail::Syntax);
+            };
+            let Some(digit) = jsonl_hex_digit(byte) else {
+                return Err(JsonlFail::Syntax);
+            };
+            value = value
+                .checked_mul(16)
+                .and_then(|next| next.checked_add(digit))
+                .ok_or(JsonlFail::Syntax)?;
+        }
+        Ok(value)
+    }
+
+    fn parse_number(&mut self) -> Result<Parsed, JsonlFail> {
+        let start = self.index;
+        if self.peek() == Some(b'-') {
+            self.bump();
+        }
+        if !self.consume_int() {
+            return Err(JsonlFail::Syntax);
+        }
+        let mut is_float = false;
+        if self.peek() == Some(b'.') {
+            is_float = true;
+            self.bump();
+            if !self.consume_digits() {
+                return Err(JsonlFail::Syntax);
+            }
+        }
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            is_float = true;
+            self.bump();
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                self.bump();
+            }
+            if !self.consume_digits() {
+                return Err(JsonlFail::Syntax);
+            }
+        }
+        let token = self.text.get(start..self.index).ok_or(JsonlFail::Syntax)?;
+        if is_float {
+            let value: f64 = token.parse().map_err(|_| JsonlFail::Syntax)?;
+            if !value.is_finite() {
+                return Err(JsonlFail::Syntax);
+            }
+            return Ok(Parsed::Float(value.to_bits()));
+        }
+        let value: i64 = token.parse().map_err(|_| JsonlFail::Syntax)?;
+        Ok(Parsed::Int(value))
+    }
+
+    fn consume_int(&mut self) -> bool {
+        match self.peek() {
+            Some(b'0') => {
+                self.bump();
+                true
+            }
+            Some(b'1'..=b'9') => self.consume_digits(),
+            _ => false,
+        }
+    }
+
+    fn consume_digits(&mut self) -> bool {
+        if !matches!(self.peek(), Some(b'0'..=b'9')) {
+            return false;
+        }
+        while matches!(self.peek(), Some(b'0'..=b'9')) {
+            self.bump();
+        }
+        true
+    }
+
+    fn consume_lit(&mut self, literal: &[u8], value: Parsed) -> Result<Parsed, JsonlFail> {
+        if self.starts_with(literal) {
+            self.index = self.index.saturating_add(literal.len());
+            Ok(value)
+        } else {
+            Err(JsonlFail::Syntax)
+        }
+    }
+
+    fn enter(&mut self) -> Result<(), JsonlFail> {
+        self.depth = self.depth.saturating_add(1);
+        if self.depth > JSONL_NESTING_LIMIT {
+            Err(JsonlFail::Nesting)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn leave(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+    }
+
+    fn skip_ws(&mut self) {
+        while matches!(self.peek(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+            self.bump();
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.index).copied()
+    }
+
+    fn bump(&mut self) -> Option<u8> {
+        let byte = self.peek()?;
+        self.index = self.index.checked_add(1)?;
+        Some(byte)
+    }
+
+    fn starts_with(&self, prefix: &[u8]) -> bool {
+        self.bytes
+            .get(self.index..)
+            .is_some_and(|rest| rest.starts_with(prefix))
+    }
+}
+
+fn jsonl_hex_digit(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some(u32::from(byte) - u32::from(b'0')),
+        b'a'..=b'f' => Some(u32::from(byte) - u32::from(b'a') + 10),
+        b'A'..=b'F' => Some(u32::from(byte) - u32::from(b'A') + 10),
+        _ => None,
+    }
+}
+
+fn jsonl_high_surrogate(unit: u32) -> bool {
+    (0xD800..=0xDBFF).contains(&unit)
+}
+
+fn jsonl_low_surrogate(unit: u32) -> bool {
+    (0xDC00..=0xDFFF).contains(&unit)
+}
+
+fn jsonl_surrogate_pair(high: u32, low: u32) -> Option<char> {
+    let high_off = high.checked_sub(0xD800)?;
+    let low_off = low.checked_sub(0xDC00)?;
+    let merged = high_off.checked_shl(10)?.checked_add(low_off)?;
+    char::from_u32(merged.checked_add(0x1_0000)?)
+}
+
+fn jsonl_meta(parsed: &Parsed) -> MetaValue {
+    match parsed {
+        Parsed::Null => MetaValue::Null,
+        Parsed::Bool(flag) => MetaValue::Bool(*flag),
+        Parsed::Int(number) => MetaValue::Int(*number),
+        Parsed::Float(bits) => MetaValue::Float(*bits),
+        Parsed::Str(text) => MetaValue::Str(text.clone()),
+        Parsed::Arr(items) => MetaValue::List(items.iter().map(jsonl_meta).collect()),
+        Parsed::Obj(pairs) => MetaValue::Map(jsonl_collapse(pairs)),
+    }
+}
+
+fn jsonl_collapse(pairs: &[(String, Parsed)]) -> MapValue {
+    let mut entries = Vec::new();
+    for (key, value) in pairs {
+        let stored = jsonl_meta(value);
+        if let Some(slot) = entries
+            .iter_mut()
+            .find(|(name, _)| matches!(name, MapKey::Str(text) if text == key))
+        {
+            slot.1 = stored;
+        } else {
+            entries.push((MapKey::Str(key.clone()), stored));
+        }
+    }
+    MapValue::new(entries)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JsonlDup {
+    key_path: String,
+    occurrence_count: i64,
+    critical: bool,
+}
+
+struct JsonlFrame<'a> {
+    node: &'a Parsed,
+    path: String,
+}
+
+fn jsonl_duplicates(root: &Parsed) -> (Vec<JsonlDup>, bool) {
+    let marked = jsonl_count_marked(root);
+    let mut dups = Vec::new();
+    let mut visited = 0usize;
+    let mut stack = vec![JsonlFrame {
+        node: root,
+        path: String::from("$"),
+    }];
+    while let Some(frame) = stack.pop() {
+        let path = frame.path;
+        match frame.node {
+            Parsed::Obj(pairs) => {
+                let counts = jsonl_dup_counts(pairs);
+                if !counts.is_empty() {
+                    visited = visited.saturating_add(1);
+                    for (key, count) in counts {
+                        if dups.len() >= JSONL_MAX_DUP_KEYS {
+                            return (dups, true);
+                        }
+                        dups.push(JsonlDup {
+                            key_path: format!("{path}.{key}"),
+                            occurrence_count: count,
+                            critical: jsonl_critical(&key),
+                        });
+                    }
+                }
+                for (key, child) in jsonl_collapsed_refs(pairs).into_iter().rev() {
+                    stack.push(JsonlFrame {
+                        node: child,
+                        path: format!("{path}.{key}"),
+                    });
+                }
+            }
+            Parsed::Arr(items) => {
+                for (index, child) in items.iter().enumerate().rev() {
+                    stack.push(JsonlFrame {
+                        node: child,
+                        path: format!("{path}[{index}]"),
+                    });
+                }
+            }
+            Parsed::Null | Parsed::Bool(_) | Parsed::Int(_) | Parsed::Float(_) | Parsed::Str(_) => {}
+        }
+    }
+    (dups, visited < marked)
+}
+
+fn jsonl_critical(key: &str) -> bool {
+    CRITICAL_KEYS.contains(&key)
+}
+
+fn jsonl_dup_counts(pairs: &[(String, Parsed)]) -> Vec<(String, i64)> {
+    let mut counts: Vec<(String, i64)> = Vec::new();
+    for (key, _) in pairs {
+        if let Some((_, count)) = counts.iter_mut().find(|(name, _)| name == key) {
+            *count = count.saturating_add(1);
+        } else {
+            counts.push((key.clone(), 1));
+        }
+    }
+    counts.retain(|(_, count)| *count > 1);
+    counts
+}
+
+fn jsonl_collapsed_refs(pairs: &[(String, Parsed)]) -> Vec<(&str, &Parsed)> {
+    let mut collapsed: Vec<(&str, &Parsed)> = Vec::new();
+    for (key, value) in pairs {
+        if let Some((_, slot)) = collapsed.iter_mut().find(|(name, _)| *name == key) {
+            *slot = value;
+        } else {
+            collapsed.push((key, value));
+        }
+    }
+    collapsed
+}
+
+fn jsonl_count_marked(root: &Parsed) -> usize {
+    let mut total = 0usize;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node {
+            Parsed::Obj(pairs) => {
+                if pairs.len() != jsonl_collapsed_refs(pairs).len() {
+                    total = total.saturating_add(1);
+                }
+                for (_, child) in pairs {
+                    stack.push(child);
+                }
+            }
+            Parsed::Arr(items) => {
+                for child in items {
+                    stack.push(child);
+                }
+            }
+            Parsed::Null | Parsed::Bool(_) | Parsed::Int(_) | Parsed::Float(_) | Parsed::Str(_) => {}
+        }
+    }
+    total
+}
+
+fn jsonl_line_is_torn(line: &[u8], strip_bom: bool) -> bool {
+    if line.ends_with(b"\n") {
+        return false;
+    }
+    let mut body = line;
+    if strip_bom && body.starts_with(UTF8_BOM) {
+        body = &body[UTF8_BOM.len()..];
+    }
+    body = jsonl_strip_trailing_nuls(body);
+    if body.contains(&0) {
+        return false;
+    }
+    let Some(text) = jsonl_torn_text(body) else {
+        return false;
+    };
+    if text.bytes().all(jsonl_json_ws) {
+        return true;
+    }
+    jsonl_cut_object(text)
+}
+
+fn jsonl_strip_trailing_nuls(body: &[u8]) -> &[u8] {
+    let end = body
+        .iter()
+        .rposition(|byte| *byte != 0)
+        .map_or(0, |index| index.saturating_add(1));
+    body.get(..end).unwrap_or(body)
+}
+
+fn jsonl_torn_text(body: &[u8]) -> Option<&str> {
+    match std::str::from_utf8(body) {
+        Ok(text) => Some(text),
+        Err(err) if err.error_len().is_none() && err.valid_up_to() < body.len() => {
+            std::str::from_utf8(body.get(..err.valid_up_to())?).ok()
+        }
+        Err(_) => None,
+    }
+}
+
+fn jsonl_json_ws(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+#[derive(Clone, Copy)]
+enum JsonlExpect {
+    Object,
+    KeyOrClose,
+    Key,
+    Colon,
+    Value,
+    ValueOrClose,
+    After,
+}
+
+enum JsonlCut {
+    Continue { pos: usize, expect: JsonlExpect },
+    Stop(bool),
+}
+
+fn jsonl_cut_object(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut closers: Vec<u8> = Vec::new();
+    let mut expect = JsonlExpect::Object;
+    let mut pos = 0usize;
+    loop {
+        pos = jsonl_skip_json_ws(bytes, pos);
+        if pos == bytes.len() {
+            return !closers.is_empty();
+        }
+        match jsonl_cut_step(text, pos, expect, &mut closers) {
+            JsonlCut::Continue {
+                pos: next,
+                expect: next_expect,
+            } => {
+                pos = next;
+                expect = next_expect;
+            }
+            JsonlCut::Stop(torn) => return torn,
+        }
+    }
+}
+
+fn jsonl_skip_json_ws(bytes: &[u8], mut pos: usize) -> usize {
+    while pos < bytes.len() && jsonl_json_ws(bytes[pos]) {
+        pos = pos.saturating_add(1);
+    }
+    pos
+}
+
+fn jsonl_cut_step(
+    text: &str,
+    pos: usize,
+    expect: JsonlExpect,
+    closers: &mut Vec<u8>,
+) -> JsonlCut {
+    let bytes = text.as_bytes();
+    let Some(ch) = bytes.get(pos).copied() else {
+        return JsonlCut::Stop(false);
+    };
+    match expect {
+        JsonlExpect::Object => {
+            if ch != b'{' {
+                return JsonlCut::Stop(false);
+            }
+            closers.push(b'}');
+            jsonl_cut_continue(pos.saturating_add(1), JsonlExpect::KeyOrClose)
+        }
+        JsonlExpect::KeyOrClose => jsonl_cut_key(text, pos, true, closers),
+        JsonlExpect::Key => jsonl_cut_key(text, pos, false, closers),
+        JsonlExpect::Colon => {
+            if ch != b':' {
+                return JsonlCut::Stop(false);
+            }
+            jsonl_cut_continue(pos.saturating_add(1), JsonlExpect::Value)
+        }
+        JsonlExpect::Value => jsonl_cut_value(text, pos, false, closers),
+        JsonlExpect::ValueOrClose => jsonl_cut_value(text, pos, true, closers),
+        JsonlExpect::After => jsonl_cut_after(bytes, pos, closers),
+    }
+}
+
+fn jsonl_cut_continue(pos: usize, expect: JsonlExpect) -> JsonlCut {
+    JsonlCut::Continue { pos, expect }
+}
+
+fn jsonl_cut_key(text: &str, pos: usize, allow_close: bool, closers: &mut Vec<u8>) -> JsonlCut {
+    let Some(ch) = text.as_bytes().get(pos).copied() else {
+        return JsonlCut::Stop(false);
+    };
+    if allow_close && ch == b'}' {
+        if closers.pop().is_none() {
+            return JsonlCut::Stop(false);
+        }
+        return jsonl_cut_continue(pos.saturating_add(1), JsonlExpect::After);
+    }
+    if ch == b'"' {
+        return jsonl_cut_token(text, pos, JsonlExpect::Colon, true);
+    }
+    JsonlCut::Stop(false)
+}
+
+fn jsonl_cut_value(text: &str, pos: usize, allow_close: bool, closers: &mut Vec<u8>) -> JsonlCut {
+    let Some(ch) = text.as_bytes().get(pos).copied() else {
+        return JsonlCut::Stop(false);
+    };
+    if allow_close && ch == b']' {
+        if closers.pop().is_none() {
+            return JsonlCut::Stop(false);
+        }
+        return jsonl_cut_continue(pos.saturating_add(1), JsonlExpect::After);
+    }
+    if ch == b'{' || ch == b'[' {
+        closers.push(if ch == b'{' { b'}' } else { b']' });
+        let expect = if ch == b'{' {
+            JsonlExpect::KeyOrClose
+        } else {
+            JsonlExpect::ValueOrClose
+        };
+        return jsonl_cut_continue(pos.saturating_add(1), expect);
+    }
+    if ch == b'"' {
+        return jsonl_cut_token(text, pos, JsonlExpect::After, true);
+    }
+    jsonl_cut_token(text, pos, JsonlExpect::After, false)
+}
+
+fn jsonl_cut_after(bytes: &[u8], pos: usize, closers: &mut Vec<u8>) -> JsonlCut {
+    let Some(closer) = closers.last().copied() else {
+        return JsonlCut::Stop(false);
+    };
+    let Some(ch) = bytes.get(pos).copied() else {
+        return JsonlCut::Stop(false);
+    };
+    if ch == b',' {
+        let expect = if closer == b'}' {
+            JsonlExpect::Key
+        } else {
+            JsonlExpect::Value
+        };
+        return jsonl_cut_continue(pos.saturating_add(1), expect);
+    }
+    if ch == closer {
+        closers.pop();
+        return jsonl_cut_continue(pos.saturating_add(1), JsonlExpect::After);
+    }
+    JsonlCut::Stop(false)
+}
+
+fn jsonl_cut_token(text: &str, pos: usize, expect: JsonlExpect, string: bool) -> JsonlCut {
+    let Ok(index) = i64::try_from(pos) else {
+        return JsonlCut::Stop(false);
+    };
+    let next = if string {
+        jsonl_cut_skip_string(text, index)
+    } else {
+        jsonl_cut_skip_scalar(text, index)
+    };
+    if next < 0 {
+        return JsonlCut::Stop(next == JSONL_CUT);
+    }
+    match usize::try_from(next) {
+        Ok(advanced) if advanced <= text.len() => jsonl_cut_continue(advanced, expect),
+        _ => JsonlCut::Stop(false),
+    }
+}
+
+fn jsonl_cut_skip_string(text: &str, pos: i64) -> i64 {
+    if pos < 0 {
+        return JSONL_BAD;
+    }
+    let Some(start) = usize::try_from(pos).ok().and_then(|value| value.checked_add(1)) else {
+        return JSONL_BAD;
+    };
+    let bytes = text.as_bytes();
+    if start > bytes.len() {
+        return JSONL_BAD;
+    }
+    if start == bytes.len() {
+        return JSONL_CUT;
+    }
+    match jsonl_scan_string(bytes, start) {
+        JsonlString::Closed(end) => i64::try_from(end).unwrap_or(JSONL_BAD),
+        JsonlString::Cut => JSONL_CUT,
+        JsonlString::Bad => JSONL_BAD,
+    }
+}
+
+enum JsonlString {
+    Closed(usize),
+    Cut,
+    Bad,
+}
+
+fn jsonl_scan_string(bytes: &[u8], mut index: usize) -> JsonlString {
+    loop {
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if byte == b'"' || byte == b'\\' || byte <= 0x1F {
+                break;
+            }
+            index = index.saturating_add(1);
+        }
+        if index >= bytes.len() {
+            return JsonlString::Cut;
+        }
+        if bytes[index] == b'"' {
+            return JsonlString::Closed(index.saturating_add(1));
+        }
+        if bytes[index] != b'\\' {
+            return JsonlString::Bad;
+        }
+        let next = index.saturating_add(1);
+        if next >= bytes.len() {
+            return JsonlString::Cut;
+        }
+        let Some(escaped) = bytes.get(next).copied() else {
+            return JsonlString::Cut;
+        };
+        if matches!(
+            escaped,
+            b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
+        ) {
+            index = next.saturating_add(1);
+            continue;
+        }
+        if escaped == b'u' {
+            let hex_at = next.saturating_add(1);
+            let hex_end = hex_at.saturating_add(4);
+            if hex_end <= bytes.len()
+                && bytes
+                    .get(hex_at..hex_end)
+                    .is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit))
+            {
+                index = hex_end;
+                continue;
+            }
+        }
+        let rest = bytes.get(index..).unwrap_or(&[]);
+        if jsonl_partial_escape(rest) {
+            return JsonlString::Cut;
+        }
+        return JsonlString::Bad;
+    }
+}
+
+fn jsonl_partial_escape(rest: &[u8]) -> bool {
+    if rest.first() != Some(&b'\\') {
+        return false;
+    }
+    if rest.len() == 1 {
+        return true;
+    }
+    if rest.get(1) != Some(&b'u') {
+        return false;
+    }
+    let hex = rest.get(2..).unwrap_or(&[]);
+    hex.len() <= 3 && hex.iter().all(u8::is_ascii_hexdigit)
+}
+
+fn jsonl_cut_skip_scalar(text: &str, pos: i64) -> i64 {
+    if pos < 0 {
+        return JSONL_BAD;
+    }
+    let Some(start) = usize::try_from(pos).ok() else {
+        return JSONL_CUT;
+    };
+    let bytes = text.as_bytes();
+    if start >= bytes.len() {
+        return JSONL_CUT;
+    }
+    let Some(head) = bytes.get(start).copied() else {
+        return JSONL_BAD;
+    };
+    if jsonl_number_byte(head) {
+        return jsonl_skip_number_run(bytes, start);
+    }
+    jsonl_skip_literal(bytes, start)
+}
+
+fn jsonl_number_byte(byte: u8) -> bool {
+    matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+}
+
+fn jsonl_skip_number_run(bytes: &[u8], start: usize) -> i64 {
+    let mut end = start;
+    while end < bytes.len() && bytes.get(end).is_some_and(|byte| jsonl_number_byte(*byte)) {
+        end = end.saturating_add(1);
+    }
+    let Some(run) = bytes.get(start..end) else {
+        return JSONL_BAD;
+    };
+    if end == bytes.len() {
+        if jsonl_viable_number(run) {
+            JSONL_CUT
+        } else {
+            JSONL_BAD
+        }
+    } else if jsonl_complete_number(run) {
+        i64::try_from(end).unwrap_or(JSONL_BAD)
+    } else {
+        JSONL_BAD
+    }
+}
+
+fn jsonl_skip_literal(bytes: &[u8], start: usize) -> i64 {
+    let Some(rest) = bytes.get(start..) else {
+        return JSONL_BAD;
+    };
+    for literal in [b"true".as_slice(), b"false".as_slice(), b"null".as_slice()] {
+        if rest.starts_with(literal) {
+            return i64::try_from(start.saturating_add(literal.len())).unwrap_or(JSONL_BAD);
+        }
+        if rest.len() < literal.len() && literal.starts_with(rest) {
+            return JSONL_CUT;
+        }
+    }
+    JSONL_BAD
+}
+
+fn jsonl_viable_number(run: &[u8]) -> bool {
+    let mut index = 0usize;
+    if run.first() == Some(&b'-') {
+        index = 1;
+    }
+    if index == run.len() {
+        return true;
+    }
+    jsonl_cut_number_body(run, &mut index) && index == run.len()
+}
+
+fn jsonl_cut_number_body(run: &[u8], index: &mut usize) -> bool {
+    if !jsonl_cut_integer(run, index) {
+        return false;
+    }
+    if *index == run.len() {
+        return true;
+    }
+    match run.get(*index) {
+        Some(b'.') => jsonl_cut_fraction(run, index),
+        Some(b'e' | b'E') => jsonl_cut_exponent(run, index),
+        _ => false,
+    }
+}
+
+fn jsonl_cut_fraction(run: &[u8], index: &mut usize) -> bool {
+    *index = index.saturating_add(1);
+    if *index == run.len() {
+        return true;
+    }
+    if !run.get(*index).is_some_and(u8::is_ascii_digit) {
+        return false;
+    }
+    while run.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index = index.saturating_add(1);
+    }
+    if *index == run.len() {
+        return true;
+    }
+    jsonl_cut_exponent(run, index)
+}
+
+fn jsonl_cut_exponent(run: &[u8], index: &mut usize) -> bool {
+    if !matches!(run.get(*index), Some(b'e' | b'E')) {
+        return false;
+    }
+    *index = index.saturating_add(1);
+    if matches!(run.get(*index), Some(b'+' | b'-')) {
+        *index = index.saturating_add(1);
+    }
+    while run.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index = index.saturating_add(1);
+    }
+    *index == run.len()
+}
+
+fn jsonl_cut_integer(run: &[u8], index: &mut usize) -> bool {
+    let Some(digit) = run.get(*index) else {
+        return false;
+    };
+    if !digit.is_ascii_digit() {
+        return false;
+    }
+    if *digit == b'0' {
+        *index = index.saturating_add(1);
+        return true;
+    }
+    *index = index.saturating_add(1);
+    while run.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index = index.saturating_add(1);
+    }
+    true
+}
+
+fn jsonl_complete_number(run: &[u8]) -> bool {
+    let mut index = 0usize;
+    if run.first() == Some(&b'-') {
+        index = 1;
+    }
+    if !jsonl_cut_integer(run, &mut index) {
+        return false;
+    }
+    if run.get(index) == Some(&b'.') {
+        let next = index.saturating_add(1);
+        if !run.get(next).is_some_and(u8::is_ascii_digit) {
+            return false;
+        }
+        index = next.saturating_add(1);
+        while run.get(index).is_some_and(u8::is_ascii_digit) {
+            index = index.saturating_add(1);
+        }
+    }
+    if matches!(run.get(index), Some(b'e' | b'E')) {
+        index = index.saturating_add(1);
+        if matches!(run.get(index), Some(b'+' | b'-')) {
+            index = index.saturating_add(1);
+        }
+        if !run.get(index).is_some_and(u8::is_ascii_digit) {
+            return false;
+        }
+        index = index.saturating_add(1);
+        while run.get(index).is_some_and(u8::is_ascii_digit) {
+            index = index.saturating_add(1);
+        }
+    }
+    index == run.len()
+}
+
+/// Synthetic envelopes only. No session payload from a real transcript.
+#[cfg(test)]
+mod process_jsonl_line_tests {
+    use model::finding::{FindingInput, SCHEMA_VERSION};
+
+    use super::{
+        jsonl_defect_code, jsonl_duplicates, jsonl_line_is_torn, jsonl_meta, jsonl_parse,
+        jsonl_record_id, last_string_value, _process_jsonl_line, CodexLineLimits, CodexRawLine,
+        Finding, FindingValue, JsonlFail, JsonlParser, MetaValue, ProcessJsonlLineError,
+        ProcessRolloutRecordError, Repairability, SessionEvent, Severity, SourceLine, SourceMetadata,
+        SourceRef, SuppliedSecretScanTracker, SL001, SL002,
+    };
+
+    const EVENT: &str = r#"{"type":"event_msg","payload":{}}"#;
+    const FINGERPRINT: &str = "sesslint.determinism.canonical_json_bytes is not available";
+    const CONTENT_HASH: &str = "sesslint._canonical_codec.payload_content_hash is not available";
+    const SECRET: &str = "sesslint.checks.hygiene.SecretScanTracker is not available";
+
+    struct Hold {
+        meta: SourceMetadata,
+        events: Vec<SessionEvent>,
+        findings: Vec<Finding>,
+    }
+
+    fn hold() -> Hold {
+        Hold {
+            meta: SourceMetadata::new(),
+            events: vec![SessionEvent::new(
+                "seed",
+                None,
+                0,
+                "1970-01-01T00:00:00Z",
+                "system",
+                "unknown",
+            )],
+            findings: vec![marker()],
+        }
+    }
+
+    fn marker() -> Finding {
+        let source = SourceRef::try_new("a.jsonl", Some(SourceLine::Int(1)), None).expect("source");
+        Finding::try_new(FindingInput {
+            code: FindingValue::string("SL001"),
+            severity: FindingValue::severity(Severity::Error),
+            repairability: FindingValue::repairability(Repairability::Manual),
+            message: FindingValue::string("synthetic marker"),
+            source: FindingValue::source(source),
+            related_ids: FindingValue::tuple(Vec::new()),
+            fingerprint: FindingValue::string("0123456789abcdef"),
+            schema_version: FindingValue::string(SCHEMA_VERSION),
+            message_template: FindingValue::None,
+            evidence: FindingValue::None,
+        })
+        .expect("finding")
+    }
+
+    fn line_at(number: i64, bytes: &[u8], truncated: bool) -> CodexRawLine {
+        let end = i64::try_from(bytes.len()).expect("len");
+        CodexRawLine::try_new(number, bytes.to_vec(), truncated, 0, end, 1).expect("line")
+    }
+
+    fn run(
+        held: &mut Hold,
+        bytes: &[u8],
+        terminal: bool,
+        depth: i64,
+        secret: Option<SuppliedSecretScanTracker>,
+    ) -> Result<(bool, bool, Option<i64>), ProcessJsonlLineError> {
+        let raw = line_at(1, bytes, false);
+        call(held, &raw, terminal, depth, secret)
+    }
+
+    fn call(
+        held: &mut Hold,
+        raw: &CodexRawLine,
+        terminal: bool,
+        depth: i64,
+        secret: Option<SuppliedSecretScanTracker>,
+    ) -> Result<(bool, bool, Option<i64>), ProcessJsonlLineError> {
+        _process_jsonl_line(
+            raw,
+            terminal,
+            "synthetic.jsonl",
+            CodexLineLimits { max_depth: depth },
+            &mut held.events,
+            &mut held.findings,
+            &mut held.meta,
+            false,
+            None,
+            None,
+            None,
+            false,
+            None,
+            secret,
+            None,
+        )
+    }
+
+    fn unchanged(held: &Hold) {
+        assert_eq!(held.events.len(), 1);
+        assert_eq!(held.events[0].id, "seed");
+        assert_eq!(held.findings.len(), 1);
+        assert_eq!(held.meta, SourceMetadata::new());
+    }
+
+    fn field(text: &str, key: &str) -> MetaValue {
+        let parsed = jsonl_parse(text).expect("json");
+        let MetaValue::Map(map) = jsonl_meta(&parsed) else {
+            panic!("object");
+        };
+        last_string_value(&map, key).expect("field").clone()
+    }
+
+    #[test]
+    fn secret_tracker_stops_before_the_record_seam() {
+        let mut held = hold();
+        let err = run(&mut held, EVENT.as_bytes(), true, 100, Some(SuppliedSecretScanTracker))
+            .expect_err("secret");
+        assert!(matches!(err, ProcessJsonlLineError::SecretScanTracker));
+        assert_eq!(err.to_string(), SECRET);
+        assert_eq!(err.message(), SECRET);
+        unchanged(&held);
+
+        let mut truncated = hold();
+        let raw = line_at(1, EVENT.as_bytes(), true);
+        let early = call(
+            &mut truncated,
+            &raw,
+            true,
+            100,
+            Some(SuppliedSecretScanTracker),
+        )
+        .expect_err("secret first");
+        assert!(matches!(early, ProcessJsonlLineError::SecretScanTracker));
+        assert_eq!(early.to_string(), SECRET);
+        unchanged(&truncated);
+    }
+
+    #[test]
+    fn absent_tracker_reaches_the_content_hash_and_appends_nothing() {
+        let mut held = hold();
+        let err = run(&mut held, EVENT.as_bytes(), true, 100, None).expect_err("hash");
+        assert!(matches!(
+            err,
+            ProcessJsonlLineError::Record(ref error)
+                if matches!(error.as_ref(), ProcessRolloutRecordError::ContentHash(_))
+        ));
+        assert_eq!(err.to_string(), CONTENT_HASH);
+        assert_eq!(err.message(), CONTENT_HASH);
+        unchanged(&held);
+
+        let mut ordinal = hold();
+        let bool_line = br#"{"type":"event_msg","payload":{},"ordinal":true}"#;
+        let bool_err = run(&mut ordinal, bool_line, false, 2, None).expect_err("bool ordinal");
+        assert_eq!(bool_err.to_string(), CONTENT_HASH);
+        unchanged(&ordinal);
+        assert_eq!(field(r#"{"ordinal":true}"#, "ordinal"), MetaValue::Bool(true));
+        assert_eq!(field(r#"{"ordinal":1}"#, "ordinal"), MetaValue::Int(1));
+        assert_eq!(field(r#"{"ordinal":false}"#, "ordinal"), MetaValue::Bool(false));
+        assert_eq!(field(r#"{"ordinal":0}"#, "ordinal"), MetaValue::Int(0));
+        assert_ne!(
+            field(r#"{"ordinal":true}"#, "ordinal"),
+            field(r#"{"ordinal":1}"#, "ordinal")
+        );
+    }
+
+    #[test]
+    fn make_finding_stops_without_appending_a_finding() {
+        let mut nested = hold();
+        let err = run(&mut nested, EVENT.as_bytes(), true, 1, None).expect_err("depth");
+        assert!(matches!(err, ProcessJsonlLineError::Finding(_)));
+        assert_eq!(err.to_string(), FINGERPRINT);
+        unchanged(&nested);
+
+        let mut bad = hold();
+        let syntax = run(&mut bad, b"{", true, 100, None).expect_err("torn");
+        assert!(matches!(syntax, ProcessJsonlLineError::Finding(_)));
+        assert_eq!(syntax.to_string(), FINGERPRINT);
+        unchanged(&bad);
+
+        let mut duplicated = hold();
+        let dup_line = br#"{"a":1,"a":true}"#;
+        let dup = run(&mut duplicated, dup_line, true, 100, None).expect_err("dup");
+        assert!(matches!(dup, ProcessJsonlLineError::Finding(_)));
+        assert_eq!(dup.to_string(), FINGERPRINT);
+        unchanged(&duplicated);
+        assert_eq!(field(r#"{"a":1,"a":true}"#, "a"), MetaValue::Bool(true));
+
+        let mut scalar = hold();
+        let flag = run(&mut scalar, b"true", true, 100, None).expect_err("bool");
+        assert!(matches!(flag, ProcessJsonlLineError::Finding(_)));
+        assert_eq!(jsonl_meta(&jsonl_parse("true").expect("true")), MetaValue::Bool(true));
+        assert_eq!(jsonl_meta(&jsonl_parse("1").expect("one")), MetaValue::Int(1));
+        assert_eq!(jsonl_meta(&jsonl_parse("0").expect("zero")), MetaValue::Int(0));
+        assert_eq!(jsonl_meta(&jsonl_parse("false").expect("false")), MetaValue::Bool(false));
+        assert!(matches!(
+            jsonl_meta(&jsonl_parse("1.0").expect("float")),
+            MetaValue::Float(_)
+        ));
+        unchanged(&scalar);
+    }
+
+    #[test]
+    fn decode_defects_use_the_fingerprint_seam() {
+        let mut nul = hold();
+        let nul_err = run(&mut nul, b"{\x00", true, 100, None).expect_err("nul");
+        assert!(matches!(nul_err, ProcessJsonlLineError::Finding(_)));
+        assert_eq!(nul_err.to_string(), FINGERPRINT);
+        unchanged(&nul);
+
+        let mut utf8 = hold();
+        let utf8_err = run(&mut utf8, b"\xff", false, 100, None).expect_err("utf8");
+        assert_eq!(utf8_err.to_string(), FINGERPRINT);
+        unchanged(&utf8);
+
+        let mut lone = hold();
+        let lone_line = br#"{"type":"event_msg","payload":{"text":"\ud800"}}"#;
+        let lone_err = run(&mut lone, lone_line, true, 100, None).expect_err("surrogate");
+        assert!(matches!(lone_err, ProcessJsonlLineError::Finding(_)));
+        assert_eq!(lone_err.to_string(), FINGERPRINT);
+        unchanged(&lone);
+        assert!(matches!(
+            jsonl_parse(r#"{"t":"\ud800"}"#),
+            Err(JsonlFail::LoneSurrogate)
+        ));
+        assert!(jsonl_parse(r#"{"t":"\ud800\udc00"}"#).is_ok());
+
+        let mut wide = hold();
+        let big = format!("1{}", "0".repeat(40));
+        let big_err = run(&mut wide, big.as_bytes(), false, 100, None).expect_err("i64");
+        assert!(matches!(big_err, ProcessJsonlLineError::Finding(_)));
+        assert!(matches!(jsonl_parse("1e309"), Err(JsonlFail::Syntax)));
+        assert!(matches!(jsonl_parse("01"), Err(JsonlFail::Syntax)));
+        assert!(matches!(
+            jsonl_meta(&jsonl_parse("1e2").expect("float")),
+            MetaValue::Float(_)
+        ));
+        unchanged(&wide);
+    }
+
+    #[test]
+    fn torn_classification_and_duplicate_order_follow_the_pin() {
+        assert!(jsonl_line_is_torn(b"{", false));
+        assert!(!jsonl_line_is_torn(b"{}\n", false));
+        assert!(!jsonl_line_is_torn(b"{}", false));
+        assert!(jsonl_line_is_torn(b"{\"a\":", false));
+        assert!(!jsonl_line_is_torn(b"[", false));
+        assert!(!jsonl_line_is_torn(b"true", false));
+        assert!(jsonl_line_is_torn(b"   ", false));
+        assert!(!jsonl_line_is_torn(b"{\n", false));
+        assert!(jsonl_line_is_torn(b"{\x00", false));
+        assert!(!jsonl_line_is_torn(b"{\x00a", false));
+        assert!(!jsonl_line_is_torn(br#"{"a":1}"#, false));
+
+        let open = line_at(1, b"{", false);
+        assert_eq!(jsonl_defect_code(&open, true), SL002);
+        assert_eq!(jsonl_defect_code(&open, false), SL001);
+        let newline = line_at(1, b"{\n", false);
+        assert_eq!(jsonl_defect_code(&newline, true), SL001);
+        let spaces = line_at(1, b"   ", false);
+        assert_eq!(jsonl_defect_code(&spaces, true), SL002);
+        let complete = line_at(1, b"{}", false);
+        assert_eq!(jsonl_defect_code(&complete, true), SL001);
+        let bom = line_at(1, b"\xef\xbb\xbf{", false);
+        assert_eq!(jsonl_defect_code(&bom, true), SL002);
+        let later = line_at(2, b"\xef\xbb\xbf{", false);
+        assert_eq!(jsonl_defect_code(&later, true), SL001);
+        let cut = line_at(1, b"{", true);
+        assert_eq!(jsonl_defect_code(&cut, true), SL001);
+
+        let simple = jsonl_parse(r#"{"a":1,"a":2}"#).expect("dup");
+        let (dups, truncated) = jsonl_duplicates(&simple);
+        assert!(!truncated);
+        assert_eq!(dups.len(), 1);
+        assert_eq!(dups[0].key_path, "$.a");
+        assert_eq!(dups[0].occurrence_count, 2);
+        assert!(!dups[0].critical);
+
+        let typed = jsonl_parse(r#"{"type":1,"type":2}"#).expect("type");
+        let (typed_dups, typed_truncated) = jsonl_duplicates(&typed);
+        assert!(!typed_truncated);
+        assert!(typed_dups[0].critical);
+        assert_eq!(typed_dups[0].key_path, "$.type");
+
+        let dropped = jsonl_parse(r#"{"a":{"b":1,"b":2},"a":3}"#).expect("drop");
+        let (dropped_dups, dropped_truncated) = jsonl_duplicates(&dropped);
+        assert!(dropped_truncated);
+        assert_eq!(dropped_dups.len(), 1);
+        assert_eq!(dropped_dups[0].key_path, "$.a");
+        assert_eq!(dropped_dups[0].occurrence_count, 2);
+
+        let nested = jsonl_parse(r#"{"a":{"b":1,"b":2}}"#).expect("nested");
+        let (nested_dups, nested_truncated) = jsonl_duplicates(&nested);
+        assert!(!nested_truncated);
+        assert_eq!(nested_dups[0].key_path, "$.a.b");
+        assert_eq!(nested_dups[0].occurrence_count, 2);
+
+        assert_eq!(
+            jsonl_record_id(Some(r#"{"id":"evt-1"}"#), None).as_deref(),
+            Some("evt-1")
+        );
+        let parsed = jsonl_parse(r#"{"id":"evt-1"}"#).expect("id");
+        let MetaValue::Map(map) = jsonl_meta(&parsed) else {
+            panic!("map");
+        };
+        assert_eq!(jsonl_record_id(Some("nope"), Some(&map)).as_deref(), Some("evt-1"));
+
+        let mut parser = JsonlParser::new("[]");
+        for _ in 0..1000 {
+            parser.enter().expect("within");
+        }
+        assert!(matches!(parser.enter(), Err(JsonlFail::Nesting)));
+    }
+
+    #[test]
+    fn coordinates_reject_a_negative_integer() {
+        let offset = CodexRawLine::try_new(1, Vec::new(), false, -1, 0, 1).expect_err("offset");
+        assert_eq!(
+            offset.to_string(),
+            "Invalid byte_offset: -1 (must be integer >= 0)"
+        );
+        let end = CodexRawLine::try_new(1, Vec::new(), false, 2, 1, 1).expect_err("end");
+        assert_eq!(
+            end.to_string(),
+            "Invalid byte_end: 1 (must be integer >= byte_offset=2)"
+        );
+        let ordinal = CodexRawLine::try_new(1, Vec::new(), false, 0, 0, 0).expect_err("ordinal");
+        assert_eq!(
+            ordinal.to_string(),
+            "Invalid record_ordinal: 0 (must be integer >= 1)"
+        );
+    }
+}
