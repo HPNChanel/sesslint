@@ -100,7 +100,7 @@
       "expected": {
         "pin": {
           "raises": "FileNotFoundError",
-          "message": "[WinError 2] The system cannot find the file specified: 'D:\\\\FOR_WORK\\\\WORK_PROJECT\\\\sesslint-wt-assessment-par\\\\rust\\\\parity\\\\vectors\\\\assessment\\\\fixtures\\\\synthetic-missing.bin'"
+          "message": "[WinError 2] The system cannot find the file specified: 'fixtures/synthetic-missing.bin'"
         },
         "rust_assertion": {
           "mode": "io_error",

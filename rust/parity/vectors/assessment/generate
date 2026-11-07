@@ -184,11 +184,21 @@ def pin_ok(assessment: Any, path: Path, **kwargs: Any) -> dict[str, Any]:
     }
 
 
-def pin_raise(fn: Any) -> dict[str, Any]:
+def pin_raise(fn: Any, fixtures: Path) -> dict[str, Any]:
     try:
         fn()
     except Exception as exc:
-        return {"raises": type(exc).__name__, "message": str(exc)}
+        message = str(exc)
+        prefix = str(fixtures)
+        forms = [
+            prefix,
+            prefix.replace("\\", "\\\\"),
+            prefix.replace("\\", "/"),
+        ]
+        for form in forms:
+            message = message.replace(form, "fixtures")
+        message = message.replace("\\\\", "/").replace("\\", "/")
+        return {"raises": type(exc).__name__, "message": message}
     raise SystemExit("expected exception")
 
 
@@ -252,7 +262,8 @@ def vector_specs(
                 "expected": pin_raise(
                     lambda cap=cap: assessment.assess_source(
                         missing, max_file_bytes=cap
-                    )
+                    ),
+                    fixtures,
                 ),
             }
         )
@@ -272,7 +283,8 @@ def vector_specs(
                 "expected": pin_raise(
                     lambda value=value: assessment.assess_source(
                         missing, max_file_bytes=value
-                    )
+                    ),
+                    fixtures,
                 ),
             }
         )
@@ -284,7 +296,8 @@ def vector_specs(
             "expected": pin_raise(
                 lambda: assessment.assess_source(
                     fixtures, max_file_bytes=DEFAULT_MAX
-                )
+                ),
+                fixtures,
             ),
         }
     )
@@ -297,7 +310,8 @@ def vector_specs(
                 "pin": pin_raise(
                     lambda: assessment.assess_source(
                         missing, max_file_bytes=DEFAULT_MAX
-                    )
+                    ),
+                    fixtures,
                 ),
                 "rust_assertion": {"mode": "io_error", "kind": "NotFound"},
             },

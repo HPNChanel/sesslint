@@ -18,7 +18,7 @@ const FIXTURES_REL: &str = "../../parity/vectors/assessment/fixtures";
 
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_VECTORS_SHA256: &str =
-    "8edc0a87e947908577695e8f5d9958c48626aff1c0d86c255b8dafea5dfb7f96";
+    "a083ea7643f36f9c081e632a32cfaf5f61d5e422dfeb2d06bc880e72c63578dd";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.assessment";
