@@ -1,7 +1,9 @@
 //! Parity for `sesslint.adapters.drift` against pinned Python vectors.
 //!
-//! Compares module exports, [`DriftTracker`] flush modes, and tracker state via a
-//! local mirror of the pin logic cross-checked against [`DriftTracker`] flush.
+//! Compares module exports and [`DriftTracker`] flush modes. Pin snapshots of
+//! `version_baseline`, `seen`, and transition rows stay in the vector and are
+//! not asserted: those fields are private, and `into_findings` does not return
+//! them.
 
 use adapters::drift::{
     DriftTracker, ALL, FOREIGN_SIGNATURE_TYPES, MAX_DRIFT_TRANSITIONS,
@@ -9,14 +11,13 @@ use adapters::drift::{
 use adapters::safe_value::PyValue as SafeValue;
 use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use sha2::Digest;
-use std::collections::BTreeSet;
 use std::fmt;
 use std::path::PathBuf;
 
 const VECTORS_REL: &str = "../../parity/vectors/adapters.drift/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 16;
 const EXPECTED_VECTORS_SHA256: &str =
-    "b4a9999a8c1d3dddcfd6ff9314bd8ff79787a253b07edb7c68d9441135f56dee";
+    "47b5933f43317dadc57a64c097e6602b53dcfad89dd9544e122789048f72e43b";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.drift";
@@ -66,161 +67,6 @@ struct TrackerSnapshot {
     transitions: Vec<TransitionRow>,
 }
 
-/// Local mirror of the pinned `DriftTracker` transition logic for state snapshots.
-#[derive(Debug)]
-struct MirrorTracker {
-    format_label: String,
-    version_baseline: Option<String>,
-    transitions: Vec<TransitionRow>,
-    seen: BTreeSet<(String, String, String)>,
-    sl301_seen: bool,
-}
-
-impl MirrorTracker {
-    fn new(format_label: &str) -> Self {
-        Self {
-            format_label: format_label.to_owned(),
-            version_baseline: None,
-            transitions: Vec::new(),
-            seen: BTreeSet::new(),
-            sl301_seen: false,
-        }
-    }
-
-    fn note_unsupported_version(&mut self) {
-        self.sl301_seen = true;
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn observe_version(
-        &mut self,
-        version_norm: &str,
-        supported: bool,
-        field: &str,
-        line: Option<i64>,
-        record_id: Option<&str>,
-        record_ordinal: Option<i64>,
-        byte_offset: Option<i64>,
-        byte_end: Option<i64>,
-    ) {
-        if !supported {
-            self.sl301_seen = true;
-            return;
-        }
-        if self.version_baseline.as_deref() == Some(version_norm) {
-            return;
-        }
-        let Some(previous) = self.version_baseline.replace(version_norm.to_owned()) else {
-            return;
-        };
-        self.record(
-            "version",
-            &previous,
-            version_norm,
-            field,
-            None,
-            line,
-            record_id,
-            record_ordinal,
-            byte_offset,
-            byte_end,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn observe_signature(
-        &mut self,
-        raw_type: SafeValue<'_>,
-        line: Option<i64>,
-        record_id: Option<&str>,
-        record_ordinal: Option<i64>,
-        byte_offset: Option<i64>,
-        byte_end: Option<i64>,
-    ) {
-        let SafeValue::Str(raw_type) = raw_type else {
-            return;
-        };
-        let Some(observed_format) = foreign_signature_format(raw_type) else {
-            return;
-        };
-        if observed_format == self.format_label {
-            return;
-        }
-        let previous = self.format_label.clone();
-        self.record(
-            "signature",
-            &previous,
-            raw_type,
-            "type",
-            Some(observed_format.to_owned()),
-            line,
-            record_id,
-            record_ordinal,
-            byte_offset,
-            byte_end,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn record(
-        &mut self,
-        kind: &str,
-        previous: &str,
-        observed: &str,
-        field: &str,
-        observed_format: Option<String>,
-        line: Option<i64>,
-        record_id: Option<&str>,
-        record_ordinal: Option<i64>,
-        byte_offset: Option<i64>,
-        byte_end: Option<i64>,
-    ) {
-        let key = (kind.to_owned(), previous.to_owned(), observed.to_owned());
-        if !self.seen.insert(key) {
-            return;
-        }
-        if self.transitions.len() >= MAX_DRIFT_TRANSITIONS {
-            return;
-        }
-        self.transitions.push(TransitionRow {
-            kind: kind.to_owned(),
-            previous: previous.to_owned(),
-            observed: observed.to_owned(),
-            field: field.to_owned(),
-            observed_format,
-            line,
-            record_id: record_id.map(str::to_owned),
-            record_ordinal,
-            byte_offset,
-            byte_end,
-        });
-    }
-
-    fn snapshot(&self) -> TrackerSnapshot {
-        TrackerSnapshot {
-            version_baseline: self.version_baseline.clone(),
-            sl301_seen: self.sl301_seen,
-            transition_count: self.transitions.len(),
-            seen_count: self.seen.len(),
-            transitions: self.transitions.clone(),
-        }
-    }
-
-    fn predict_flush(&self) -> FlushMode {
-        if self.sl301_seen || self.transitions.is_empty() {
-            FlushMode::EmptyOk
-        } else {
-            FlushMode::GapFingerprint
-        }
-    }
-}
-
-fn foreign_signature_format(raw_type: &str) -> Option<&'static str> {
-    FOREIGN_SIGNATURE_TYPES
-        .iter()
-        .find_map(|(name, format_label)| (*name == raw_type).then_some(*format_label))
-}
-
 fn assert_case(case: &VectorCase) {
     let kind = string_field(&case.construct, "type").expect("construct type");
     match kind.as_str() {
@@ -256,36 +102,17 @@ fn assert_module_exports(case: &VectorCase) {
 fn assert_tracker_run(case: &VectorCase) {
     let format_label = string_field(&case.construct, "format_label").expect("format_label");
     let steps = array_field(&case.construct, "steps").expect("steps");
+    // The pin snapshot is well-formed. Private fields are not compared.
+    let _pin_state = parse_tracker_snapshot(&case.expected, "state").expect("state");
 
-    let mut mirror = MirrorTracker::new(&format_label);
     let mut tracker = DriftTracker::new(&format_label);
-    run_steps_on_mirror(&mut mirror, steps).expect("mirror steps");
     run_steps_on_tracker(&mut tracker, steps).expect("tracker steps");
 
-    let want_state = parse_tracker_snapshot(&case.expected, "state").expect("state");
-    let got_mirror = mirror.snapshot();
-    assert_eq!(
-        got_mirror, want_state,
-        "mirror snapshot mismatch for {}",
-        case.id
-    );
-    assert_flush_modes_agree(&case.id, &mirror, &tracker);
-
-    if let Ok(flush_obj) = object_field(&case.expected, "flush") {
-        let want_mode = parse_flush_mode(flush_obj).expect("flush mode");
-        let path = string_field(flush_obj, "path").expect("path");
-        let got = actual_flush_mode(&tracker, &path);
-        assert_eq!(got, want_mode, "flush mismatch for {}", case.id);
-    }
-}
-
-fn assert_flush_modes_agree(case_id: &str, mirror: &MirrorTracker, tracker: &DriftTracker) {
-    let predicted = mirror.predict_flush();
-    let actual = actual_flush_mode(tracker, "syn-probe-path");
-    assert_eq!(
-        predicted, actual,
-        "mirror and DriftTracker flush disagree for {case_id}"
-    );
+    let flush_obj = object_field(&case.expected, "flush").expect("flush");
+    let want_mode = parse_flush_mode(flush_obj).expect("flush mode");
+    let path = string_field(flush_obj, "path").expect("path");
+    let got = actual_flush_mode(&tracker, &path);
+    assert_eq!(got, want_mode, "flush mismatch for {}", case.id);
 }
 
 fn actual_flush_mode(tracker: &DriftTracker, path: &str) -> FlushMode {
@@ -341,53 +168,6 @@ fn parse_tracker_snapshot(
         seen_count: usize_field(state, "seen_count")?,
         transitions,
     })
-}
-
-fn run_steps_on_mirror(
-    mirror: &mut MirrorTracker,
-    steps: &[JsonValue],
-) -> Result<(), ParseError> {
-    for step in steps {
-        let parsed = parse_step(step)?;
-        match parsed {
-            ParsedStep::ObserveVersion {
-                version_norm,
-                supported,
-                field,
-                line,
-                record_id,
-                record_ordinal,
-                byte_offset,
-                byte_end,
-            } => mirror.observe_version(
-                &version_norm,
-                supported,
-                &field,
-                line,
-                record_id.as_deref(),
-                record_ordinal,
-                byte_offset,
-                byte_end,
-            ),
-            ParsedStep::ObserveSignature {
-                raw,
-                line,
-                record_id,
-                record_ordinal,
-                byte_offset,
-                byte_end,
-            } => mirror.observe_signature(
-                raw.as_safe_value(),
-                line,
-                record_id.as_deref(),
-                record_ordinal,
-                byte_offset,
-                byte_end,
-            ),
-            ParsedStep::NoteUnsupportedVersion => mirror.note_unsupported_version(),
-        }
-    }
-    Ok(())
 }
 
 fn run_steps_on_tracker(tracker: &mut DriftTracker, steps: &[JsonValue]) -> Result<(), ParseError> {

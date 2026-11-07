@@ -5,7 +5,7 @@
   "drift_py_sha256": "6f21b713e6c30d0729c08be3452480075350b6be698a43cf5835d8b6c61c2290",
   "drift_rs_sha256": "e456ecbac7b4f0ab647621a4f4ecf0cff05f7599700eb8710310c7e285b2e9f4",
   "known_parity_gaps": [
-    "GAP-drift-finding-fingerprint: into_findings on a non-empty transition buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec. Vectors compare tracker state and empty or suppressed flush only, not Python Finding objects."
+    "GAP-drift-finding-fingerprint: into_findings on a non-empty transition buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec and does not return Finding objects. The harness drives DriftTracker and checks only empty_ok versus that codec error. Pin snapshots of version_baseline, seen, and transition rows stay in the vector and are not asserted, because those fields are private."
   ],
   "vectors": [
     {
