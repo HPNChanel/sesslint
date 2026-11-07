@@ -4362,3 +4362,1635 @@ mod tests_recipes_03 {
         assert_seam(&step, &sessions, affected_region_duplicate_projection_removal);
     }
 }
+
+// Port of `src/sesslint/repair/recipes_conservative.py` lines 781-1045
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//
+// `apply_identical_duplicate_drop` and `apply_seq_renumber` return a
+// [`copy_events_as_dicts`](model::events::copy_events_as_dicts) list when the
+// pin returns one. A fingerprint error is that error. It is not a successful
+// drop. [`EventField::Bool`] is not an int.
+//
+// The two region functions run the pin's pure checks. Every return in the pin
+// constructs `sesslint.policy.abstention.AffectedRegion`. This crate cannot
+// construct that type and does not invent one. Display is
+// [`AFFECTED_REGION_UNAVAILABLE`]. This is not `true`. `sesslint.checks` is
+// not called.
+//
+// `register_all` registers the recipes already defined in this module through
+// [`get_recipe`](crate::registry::get_recipe) and
+// [`register_recipe`](crate::registry::register_recipe). The planner keeps its
+// current seam.
+
+use crate::registry::{get_recipe, register_recipe, CallableId, Recipe, RecipeSpec, RegistryError};
+use model::codes::{SL003, SL004, SL005, SL104, SL108};
+
+pub use crate::recipes_sl002::affected_region_torn_terminal_record_discard;
+
+/// Python `__all__`, in that order. Not sorted.
+pub const ALL: [&str; 29] = [
+    "CONSERVATIVE_RECIPES",
+    "PreconditionFailed",
+    "RECIPES",
+    "RECIPE_COMPACTION_PROJECTION_REUNION",
+    "RECIPE_DUPLICATE_PROJECTION_REMOVAL",
+    "RECIPE_IDENTICAL_DUPLICATE_DROP",
+    "RECIPE_SEQ_RENUMBER",
+    "RECIPE_IDENTICAL_DUPLICATE_COLLAPSE",
+    "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
+    "RECIPE_TERMINAL_SUFFIX_DISCARD",
+    "affected_region_compaction_projection_reunion",
+    "affected_region_duplicate_projection_removal",
+    "affected_region_identical_duplicate_drop",
+    "affected_region_identical_duplicate_collapse",
+    "affected_region_proven_unique_parent_restore",
+    "affected_region_torn_terminal_record_discard",
+    "apply_compaction_projection_reunion",
+    "apply_duplicate_projection_removal",
+    "apply_identical_duplicate_collapse",
+    "apply_identical_duplicate_drop",
+    "apply_seq_renumber",
+    "apply_proven_unique_parent_restore",
+    "apply_terminal_suffix_discard",
+    "compaction_projection_reunion",
+    "duplicate_projection_removal",
+    "identical_duplicate_collapse",
+    "proven_unique_parent_restore",
+    "register_all",
+    "terminal_suffix_discard",
+];
+
+const DROP_VARIANT: &str =
+    "identical-duplicate-drop: finding variant is not identical-duplicate";
+const DROP_INDEXES_MISSING: &str = "identical-duplicate-drop: record_indexes missing";
+const DROP_INDEXES_FEW: &str =
+    "identical-duplicate-drop: fewer than 2 valid occurrence indexes";
+const DROP_INDEXES_BOUNDS: &str = "identical-duplicate-drop: occurrence index out of bounds";
+
+const EMPTY_NAMES: [&str; 0] = [];
+const TERMINAL_HANDLES: [&str; 1] = [SL005];
+const TERMINAL_PRECONDITIONS: [&str; 1] = ["no_prior_safe_tool_after_cut"];
+const COLLAPSE_HANDLES: [&str; 1] = [SL003];
+const COLLAPSE_PRECONDITIONS: [&str; 2] = ["no_sl203", "adjacent_identical_duplicate"];
+const RESTORE_HANDLES: [&str; 1] = [SL004];
+const RESTORE_PRECONDITIONS: [&str; 2] = ["no_sl203", "unique_parent_candidate"];
+const REUNION_HANDLES: [&str; 1] = [SL108];
+const REUNION_PRECONDITIONS: [&str; 2] = ["no_sl203", "single_boundary_split"];
+const REMOVAL_HANDLES: [&str; 1] = [SL104];
+const REMOVAL_PRECONDITIONS: [&str; 2] = ["no_sl203", "duplicate_projection_identical"];
+const DROP_HANDLES: [&str; 1] = [SL003];
+const DROP_PRECONDITIONS: [&str; 2] = ["no_sl203", "sl003_identical_duplicate"];
+
+/// Drop later occurrences of one identical event id.
+///
+/// Python: `apply_identical_duplicate_drop`. `params` that are not a mapping
+/// are read as `{}`. `variant` must be `identical-duplicate`.
+/// `record_indexes` must be a list. A string is not that list.
+/// [`EventField::Bool`] is not an int, so it is not an occurrence index.
+/// The kept index is the earliest remaining int. Boundary kind is refused
+/// before [`event_id`](model::events::event_id) and before
+/// [`event_content_fingerprint`](model::events::event_content_fingerprint).
+/// A fingerprint error is returned and the events are not dropped.
+///
+/// The successful value is a
+/// [`copy_events_as_dicts`](model::events::copy_events_as_dicts) list with the
+/// later occurrence indexes removed. The input slice is not mutated.
+///
+/// # Errors
+///
+/// Returns [`ConservativeError::Precondition`] for a bad variant, a missing
+/// index list, fewer than two valid indexes, an out-of-range index, a
+/// boundary kind, a kind mismatch, content drift, or event-id drift. Returns
+/// [`ConservativeError::Event`] when kind, id, fingerprint, or the copy fails.
+/// This function does not panic.
+pub fn apply_identical_duplicate_drop(
+    events: &[EventValue],
+    step: &RecipeStep,
+) -> Result<Vec<EventMapping>, ConservativeError> {
+    let mapping = identical_drop_params(step)?;
+    let raw = raw_record_indexes(mapping)?;
+    let idxs = strict_indexes(raw)?;
+    let positions = require_in_bounds(&idxs, events.len())?;
+    let Some(&keep_at) = positions.first() else {
+        return Err(precondition(DROP_INDEXES_BOUNDS).into());
+    };
+    let Some(kept) = events.get(keep_at) else {
+        return Err(precondition(DROP_INDEXES_BOUNDS).into());
+    };
+    let kept_kind = event_kind(kept)?;
+    if let Some(kind) = kept_kind.as_deref() {
+        if boundary_kind(Some(kind)) {
+            return Err(precondition(format!(
+                "identical-duplicate-drop: cannot drop boundary kind '{kind}'"
+            ))
+            .into());
+        }
+    }
+    let kept_id = event_id(kept)?;
+    let kept_fp = event_content_fingerprint(kept)?;
+    let dropped_ids = reject_later_occurrences(
+        events,
+        &idxs,
+        &positions,
+        &kept_kind,
+        &kept_id,
+        &kept_fp,
+    )?;
+    let mut out = copy_events_as_dicts(events)?;
+    let mut drop_positions: Vec<usize> = positions.iter().skip(1).copied().collect();
+    drop_positions.reverse();
+    for position in drop_positions {
+        if position >= out.len() {
+            return Err(precondition(DROP_INDEXES_BOUNDS).into());
+        }
+        out.remove(position);
+    }
+    let drop_ids = relink_id_set(&dropped_ids, &kept_id);
+    if let Some(kept_text) = id_text(&kept_id).filter(|_| !drop_ids.is_empty()) {
+        relink_parents(&mut out, kept_text, &drop_ids);
+    }
+    Ok(out)
+}
+
+/// Run the identical-duplicate-drop checks, then stop.
+///
+/// Python: `affected_region_identical_duplicate_drop`. Argument order is
+/// `step`, then `events`. A non-mapping `params`, a non-list
+/// `record_indexes`, fewer than two ints, or an out-of-range int is unproven.
+/// [`EventField::Bool`] is not an int. Duplicate ints are one index. Variant,
+/// kind, and fingerprint are not read. A truthy dropped id that differs from
+/// the kept id pulls in children by
+/// [`event_parent_id`](model::events::event_parent_id). An event-helper error
+/// stops that walk.
+///
+/// Every return in the pin constructs
+/// `sesslint.policy.abstention.AffectedRegion`. This crate cannot construct
+/// that type and does not invent a region. Each of those returns is
+/// [`AffectedRegionUnavailable`]. Display is [`AFFECTED_REGION_UNAVAILABLE`].
+/// This is not `true`.
+///
+/// # Errors
+///
+/// Always returns [`AffectedRegionUnavailable`] after the checks that apply.
+/// This function does not panic.
+pub fn affected_region_identical_duplicate_drop(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<Infallible, AffectedRegionUnavailable> {
+    Err(refuse_check(identical_duplicate_drop_check(step, events)))
+}
+
+/// Renumber `seq` to `0..n-1` without reordering events.
+///
+/// Python: `apply_seq_renumber`. `step` is ignored. The result is a
+/// [`copy_events_as_dicts`](model::events::copy_events_as_dicts) list. An
+/// existing `seq` is replaced in place. A missing `seq` is appended. A copy
+/// error is returned and is not a renumbered list. The input slice is not
+/// mutated.
+///
+/// # Errors
+///
+/// Returns [`ConservativeError::Event`] when the copy fails. This function
+/// does not panic.
+pub fn apply_seq_renumber(
+    events: &[EventValue],
+    step: &RecipeStep,
+) -> Result<Vec<EventMapping>, ConservativeError> {
+    let _ignored = step;
+    let mut out = copy_events_as_dicts(events)?;
+    for (index, event) in out.iter_mut().enumerate() {
+        set_seq(event, index);
+    }
+    Ok(out)
+}
+
+/// Run the seq-renumber check, then stop.
+///
+/// Python: `affected_region_seq_renumber`. `step` and `events` are discarded.
+/// The pin returns an empty `AffectedRegion`, including when an event id
+/// cannot be read. Nothing in the events is inspected.
+///
+/// Every return in the pin constructs
+/// `sesslint.policy.abstention.AffectedRegion`. This crate cannot construct
+/// that type and does not invent a region. The return is
+/// [`AffectedRegionUnavailable`]. Display is [`AFFECTED_REGION_UNAVAILABLE`].
+/// This is not `true`.
+///
+/// # Errors
+///
+/// Always returns [`AffectedRegionUnavailable`] after the check. This function
+/// does not panic.
+pub fn affected_region_seq_renumber(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<Infallible, AffectedRegionUnavailable> {
+    Err(refuse_check(seq_renumber_check(step, events)))
+}
+
+pub fn recipe_terminal_suffix_discard() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "terminal-suffix-discard",
+        handles: &TERMINAL_HANDLES,
+        preconditions: &TERMINAL_PRECONDITIONS,
+        lossy: true,
+        salvage_only: true,
+        apply: Some(CallableId::from_fn(apply_terminal_suffix_discard)),
+        min_policy: "salvage",
+        version: "1.0.0",
+        affected_region: None,
+        excludes_execution_dependence: false,
+    })
+}
+
+/// Python constant `RECIPE_TERMINAL_SUFFIX_DISCARD`.
+pub use recipe_terminal_suffix_discard as RECIPE_TERMINAL_SUFFIX_DISCARD;
+
+pub fn recipe_identical_duplicate_collapse() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "identical-duplicate-collapse",
+        handles: &COLLAPSE_HANDLES,
+        preconditions: &COLLAPSE_PRECONDITIONS,
+        lossy: false,
+        salvage_only: false,
+        apply: Some(CallableId::from_fn(apply_identical_duplicate_collapse)),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region: Some(CallableId::from_fn(
+            affected_region_identical_duplicate_collapse,
+        )),
+        excludes_execution_dependence: false,
+    })
+}
+
+/// Python constant `RECIPE_IDENTICAL_DUPLICATE_COLLAPSE`.
+pub use recipe_identical_duplicate_collapse as RECIPE_IDENTICAL_DUPLICATE_COLLAPSE;
+
+pub fn recipe_proven_unique_parent_restore() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "proven-unique-parent-restore",
+        handles: &RESTORE_HANDLES,
+        preconditions: &RESTORE_PRECONDITIONS,
+        lossy: false,
+        salvage_only: false,
+        apply: Some(CallableId::from_fn(apply_proven_unique_parent_restore)),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region: Some(CallableId::from_fn(
+            affected_region_proven_unique_parent_restore,
+        )),
+        excludes_execution_dependence: false,
+    })
+}
+
+/// Python constant `RECIPE_PROVEN_UNIQUE_PARENT_RESTORE`.
+pub use recipe_proven_unique_parent_restore as RECIPE_PROVEN_UNIQUE_PARENT_RESTORE;
+
+pub fn recipe_compaction_projection_reunion() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "compaction-projection-reunion",
+        handles: &REUNION_HANDLES,
+        preconditions: &REUNION_PRECONDITIONS,
+        lossy: false,
+        salvage_only: false,
+        apply: Some(CallableId::from_fn(apply_compaction_projection_reunion)),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region: Some(CallableId::from_fn(
+            affected_region_compaction_projection_reunion,
+        )),
+        excludes_execution_dependence: false,
+    })
+}
+
+/// Python constant `RECIPE_COMPACTION_PROJECTION_REUNION`.
+pub use recipe_compaction_projection_reunion as RECIPE_COMPACTION_PROJECTION_REUNION;
+
+pub fn recipe_duplicate_projection_removal() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "duplicate-projection-removal",
+        handles: &REMOVAL_HANDLES,
+        preconditions: &REMOVAL_PRECONDITIONS,
+        lossy: false,
+        salvage_only: false,
+        apply: Some(CallableId::from_fn(apply_duplicate_projection_removal)),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region: Some(CallableId::from_fn(
+            affected_region_duplicate_projection_removal,
+        )),
+        excludes_execution_dependence: false,
+    })
+}
+
+/// Python constant `RECIPE_DUPLICATE_PROJECTION_REMOVAL`.
+pub use recipe_duplicate_projection_removal as RECIPE_DUPLICATE_PROJECTION_REMOVAL;
+
+pub fn recipe_identical_duplicate_drop() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "identical-duplicate-drop",
+        handles: &DROP_HANDLES,
+        preconditions: &DROP_PRECONDITIONS,
+        lossy: false,
+        salvage_only: false,
+        apply: Some(CallableId::from_fn(apply_identical_duplicate_drop)),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region: Some(CallableId::from_fn(
+            affected_region_identical_duplicate_drop,
+        )),
+        excludes_execution_dependence: false,
+    })
+}
+
+/// Python constant `RECIPE_IDENTICAL_DUPLICATE_DROP`.
+pub use recipe_identical_duplicate_drop as RECIPE_IDENTICAL_DUPLICATE_DROP;
+
+pub fn recipe_seq_renumber() -> Result<Recipe, RegistryError> {
+    Recipe::try_new(RecipeSpec {
+        name: "seq-renumber",
+        handles: &EMPTY_NAMES,
+        preconditions: &EMPTY_NAMES,
+        lossy: false,
+        salvage_only: false,
+        apply: Some(CallableId::from_fn(apply_seq_renumber)),
+        min_policy: "conservative",
+        version: "1.0.0",
+        affected_region: Some(CallableId::from_fn(affected_region_seq_renumber)),
+        excludes_execution_dependence: true,
+    })
+}
+
+/// Python constant `RECIPE_SEQ_RENUMBER`.
+pub use recipe_seq_renumber as RECIPE_SEQ_RENUMBER;
+
+pub fn conservative_recipes() -> Result<Vec<Recipe>, RegistryError> {
+    Ok(vec![
+        recipe_terminal_suffix_discard()?,
+        recipe_identical_duplicate_collapse()?,
+        recipe_proven_unique_parent_restore()?,
+        recipe_compaction_projection_reunion()?,
+        recipe_duplicate_projection_removal()?,
+        recipe_identical_duplicate_drop()?,
+        recipe_seq_renumber()?,
+    ])
+}
+
+/// Python constant `RECIPES`.
+pub use conservative_recipes as RECIPES;
+
+/// Python constant `CONSERVATIVE_RECIPES`.
+pub use conservative_recipes as CONSERVATIVE_RECIPES;
+
+/// Register recipes from this module that are not already present.
+///
+/// Python: `register_all`. [`get_recipe`](crate::registry::get_recipe) runs
+/// first for each recipe in [`RECIPES`]. An absent name is inserted through
+/// [`register_recipe`](crate::registry::register_recipe). `apply` and
+/// `affected_region` are not called. This does not build a second registry.
+/// The planner's `register_all` seam is unchanged.
+///
+/// # Errors
+///
+/// Returns [`RegistryError`] when construction or registration fails. A name
+/// that appears between the check and the insert is the duplicate-name
+/// `ValueError`. This function does not panic.
+pub fn register_all() -> Result<(), RegistryError> {
+    for recipe in conservative_recipes()? {
+        if get_recipe(recipe.name()).is_none() {
+            register_recipe(&recipe)?;
+        }
+    }
+    Ok(())
+}
+
+fn identical_drop_params(step: &RecipeStep) -> Result<&EventMapping, PreconditionFailed> {
+    let ParamMap::Mapping(mapping) = &step.params else {
+        return Err(precondition(DROP_VARIANT));
+    };
+    match mapping.get("variant") {
+        Some(EventField::Str(variant)) if variant == "identical-duplicate" => Ok(mapping),
+        _ => Err(precondition(DROP_VARIANT)),
+    }
+}
+
+fn raw_record_indexes(mapping: &EventMapping) -> Result<&[EventField], PreconditionFailed> {
+    match mapping.get("record_indexes") {
+        Some(EventField::List(items)) => Ok(items),
+        _ => Err(precondition(DROP_INDEXES_MISSING)),
+    }
+}
+
+/// [`EventField::Bool`] and [`EventField::Float`] are not ints.
+fn unique_ints(raw: &[EventField]) -> Vec<i64> {
+    let mut values = BTreeSet::new();
+    for item in raw {
+        if let EventField::Int(value) = item {
+            values.insert(*value);
+        }
+    }
+    values.into_iter().collect()
+}
+
+fn strict_indexes(raw: &[EventField]) -> Result<Vec<i64>, PreconditionFailed> {
+    let idxs = unique_ints(raw);
+    if idxs.len() < 2 || idxs.len() != raw.len() {
+        return Err(precondition(DROP_INDEXES_FEW));
+    }
+    Ok(idxs)
+}
+
+fn bounds_ok(idxs: &[i64], len: usize) -> bool {
+    match (idxs.first(), idxs.last()) {
+        (Some(&first), Some(&last)) => first >= 0 && index_below_len(last, len),
+        _ => false,
+    }
+}
+
+fn index_below_len(index: i64, len: usize) -> bool {
+    match usize::try_from(index) {
+        Ok(position) => position < len,
+        Err(_) => false,
+    }
+}
+
+fn positions_of(idxs: &[i64]) -> Option<Vec<usize>> {
+    let mut positions = Vec::with_capacity(idxs.len());
+    for index in idxs {
+        positions.push(usize::try_from(*index).ok()?);
+    }
+    Some(positions)
+}
+
+fn require_in_bounds(idxs: &[i64], len: usize) -> Result<Vec<usize>, PreconditionFailed> {
+    if !bounds_ok(idxs, len) {
+        return Err(precondition(DROP_INDEXES_BOUNDS));
+    }
+    positions_of(idxs).ok_or_else(|| precondition(DROP_INDEXES_BOUNDS))
+}
+
+fn reject_later_occurrences(
+    events: &[EventValue],
+    idxs: &[i64],
+    positions: &[usize],
+    kept_kind: &Option<String>,
+    kept_id: &Option<String>,
+    kept_fp: &str,
+) -> Result<Vec<Option<String>>, ConservativeError> {
+    let mut dropped_ids = Vec::new();
+    for (&index, &position) in idxs.iter().zip(positions.iter()).skip(1) {
+        let Some(event) = events.get(position) else {
+            return Err(precondition(DROP_INDEXES_BOUNDS).into());
+        };
+        let kind = event_kind(event)?;
+        if kind.as_deref() != kept_kind.as_deref() {
+            let found = kind_label(&kind);
+            let expected = kind_label(kept_kind);
+            return Err(precondition(format!(
+                "identical-duplicate-drop: kind mismatch at occurrence {index} ('{found}' != '{expected}')"
+            ))
+            .into());
+        }
+        let fingerprint = event_content_fingerprint(event)?;
+        if fingerprint != kept_fp {
+            return Err(precondition(format!(
+                "identical-duplicate-drop: content drift at occurrence {index}"
+            ))
+            .into());
+        }
+        let dropped_id = event_id(event)?;
+        if both_truthy_differ(kept_id, &dropped_id) {
+            return Err(precondition(format!(
+                "identical-duplicate-drop: event id drift at occurrence {index}"
+            ))
+            .into());
+        }
+        dropped_ids.push(dropped_id);
+    }
+    Ok(dropped_ids)
+}
+
+fn both_truthy_differ(left: &Option<String>, right: &Option<String>) -> bool {
+    match (id_text(left), id_text(right)) {
+        (Some(kept), Some(dropped)) => kept != dropped,
+        _ => false,
+    }
+}
+
+fn id_text(id: &Option<String>) -> Option<&str> {
+    id.as_deref().filter(|text| !text.is_empty())
+}
+
+fn relink_id_set(dropped_ids: &[Option<String>], kept_id: &Option<String>) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    for id in dropped_ids {
+        if let Some(text) = id_text(id) {
+            if Some(text) != id_text(kept_id) {
+                set.insert(text.to_owned());
+            }
+        }
+    }
+    set
+}
+
+fn relink_parents(events: &mut [EventMapping], kept_id: &str, drop_ids: &BTreeSet<String>) {
+    for event in events {
+        let parent = match event.get("parent_id") {
+            Some(EventField::Str(parent)) => parent.clone(),
+            _ => continue,
+        };
+        if drop_ids.contains(&parent) {
+            replace_parent(event, kept_id);
+        }
+    }
+}
+
+fn set_seq(event: &mut EventMapping, index: usize) {
+    let seq = EventField::Int(index as i64);
+    let mut entries = event.entries().to_vec();
+    if let Some((_, value)) = entries.iter_mut().rev().find(|(key, _)| key == "seq") {
+        *value = seq;
+    } else {
+        entries.push(("seq".to_owned(), seq));
+    }
+    *event = EventMapping::new(entries);
+}
+
+fn identical_duplicate_drop_check(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<CheckSpan, CheckFailure> {
+    let ParamMap::Mapping(mapping) = &step.params else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(EventField::List(raw)) = mapping.get("record_indexes") else {
+        return Err(CheckFailure::Unproven);
+    };
+    let idxs = unique_ints(raw);
+    if idxs.len() < 2 || !bounds_ok(&idxs, events.len()) {
+        return Err(CheckFailure::Unproven);
+    }
+    let Some(positions) = positions_of(&idxs) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(&keep_at) = positions.first() else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(&end) = positions.last() else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(kept) = events.get(keep_at) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let kept_key = nonempty_id(event_id(kept).map_err(CheckFailure::Exception)?);
+    let mut indices: BTreeSet<usize> = positions.iter().copied().collect();
+    let mut ids = BTreeSet::new();
+    if let Some(id) = kept_key.clone() {
+        ids.insert(id);
+    }
+    let mut dropped_ids = BTreeSet::new();
+    for &position in positions.iter().skip(1) {
+        let Some(event) = events.get(position) else {
+            return Err(CheckFailure::Unproven);
+        };
+        let Some(id) = nonempty_id(event_id(event).map_err(CheckFailure::Exception)?) else {
+            continue;
+        };
+        if kept_key.as_deref() != Some(id.as_str()) {
+            dropped_ids.insert(id.clone());
+        }
+        ids.insert(id);
+    }
+    if !dropped_ids.is_empty() {
+        add_relinked_children(events, &dropped_ids, &mut indices, &mut ids)
+            .map_err(CheckFailure::Exception)?;
+    }
+    Ok(CheckSpan {
+        indices,
+        ids,
+        ranges: vec![(keep_at, end)],
+    })
+}
+
+fn add_relinked_children(
+    events: &[EventValue],
+    dropped_ids: &BTreeSet<String>,
+    indices: &mut BTreeSet<usize>,
+    ids: &mut BTreeSet<String>,
+) -> Result<(), EventError> {
+    for (index, event) in events.iter().enumerate() {
+        let Some(parent) = event_parent_id(event)? else {
+            continue;
+        };
+        if !dropped_ids.contains(&parent) {
+            continue;
+        }
+        indices.insert(index);
+        if let Some(child_id) = nonempty_id(event_id(event)?) {
+            ids.insert(child_id);
+        }
+    }
+    Ok(())
+}
+
+fn seq_renumber_check(step: &RecipeStep, events: &[EventValue]) -> Result<CheckSpan, CheckFailure> {
+    let _ignored = (step, events);
+    Ok(CheckSpan {
+        indices: BTreeSet::new(),
+        ids: BTreeSet::new(),
+        ranges: Vec::new(),
+    })
+}
+
+#[cfg(test)]
+mod tests_recipes_04 {
+    use std::collections::BTreeSet;
+    use std::error::Error;
+
+    use model::canonical::{
+        SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE, PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+    };
+    use model::codes::{SL003, SL004, SL005, SL104, SL108};
+    use model::events::{
+        EventError, EventField, EventMapping, EventValue, DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
+        PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_HASH_UNREPRESENTABLE,
+    };
+
+    use super::{
+        affected_region_compaction_projection_reunion, affected_region_duplicate_projection_removal,
+        affected_region_identical_duplicate_collapse, affected_region_identical_duplicate_drop,
+        affected_region_proven_unique_parent_restore, affected_region_seq_renumber,
+        apply_compaction_projection_reunion, apply_duplicate_projection_removal,
+        apply_identical_duplicate_collapse, apply_identical_duplicate_drop,
+        apply_proven_unique_parent_restore, apply_seq_renumber, apply_terminal_suffix_discard,
+        identical_duplicate_drop_check, seq_renumber_check, AffectedRegionUnavailable, CheckFailure,
+        CheckSpan, ConservativeError, IndexValue, ParamMap, RecipeStep, ALL,
+        AFFECTED_REGION_UNAVAILABLE, CONSERVATIVE_RECIPES, RECIPES,
+    };
+    use crate::registry::CallableId;
+
+    fn bare(entries: Vec<(&str, EventField)>) -> EventMapping {
+        EventMapping::new(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
+    }
+
+    fn ev(entries: Vec<(&str, EventField)>) -> EventValue {
+        EventValue::Mapping(bare(entries))
+    }
+
+    fn text(value: &str) -> EventField {
+        EventField::Str(value.to_owned())
+    }
+
+    fn params_of(entries: Vec<(&str, EventField)>) -> ParamMap {
+        ParamMap::Mapping(bare(entries))
+    }
+
+    fn make_step(target_index: IndexValue, params: ParamMap) -> RecipeStep {
+        RecipeStep {
+            target_index,
+            params,
+        }
+    }
+
+    fn ints(values: &[i64]) -> Vec<EventField> {
+        values.iter().copied().map(EventField::Int).collect()
+    }
+
+    fn drop_step(target: IndexValue, indexes: Vec<EventField>) -> RecipeStep {
+        make_step(
+            target,
+            params_of(vec![
+                ("variant", text("identical-duplicate")),
+                ("record_indexes", EventField::List(indexes)),
+            ]),
+        )
+    }
+
+    fn hashed(kind: &str, id: EventField, hash: &str) -> EventValue {
+        ev(vec![
+            ("kind", text(kind)),
+            ("id", id),
+            ("content_hash", text(hash)),
+        ])
+    }
+
+    fn note(id: &str, hash: &str) -> EventValue {
+        hashed("note", text(id), hash)
+    }
+
+    fn with_parent(id: &str, hash: &str, parent: EventField) -> EventValue {
+        ev(vec![
+            ("kind", text("message")),
+            ("id", text(id)),
+            ("content_hash", text(hash)),
+            ("parent_id", parent),
+        ])
+    }
+
+    fn snapshot(events: &[EventValue]) -> Vec<EventMapping> {
+        events
+            .iter()
+            .map(|event| match event {
+                EventValue::Mapping(mapping) => mapping.clone(),
+                EventValue::Session(_) | EventValue::Other => EventMapping::new(Vec::new()),
+            })
+            .collect()
+    }
+
+    fn mapping_at(events: &[EventValue], index: usize) -> EventMapping {
+        match &events[index] {
+            EventValue::Mapping(mapping) => mapping.clone(),
+            EventValue::Session(_) | EventValue::Other => EventMapping::new(Vec::new()),
+        }
+    }
+
+    fn proven(
+        indices: &[usize],
+        ids: &[&str],
+        ranges: &[(usize, usize)],
+    ) -> Result<CheckSpan, CheckFailure> {
+        Ok(CheckSpan {
+            indices: indices.iter().copied().collect(),
+            ids: ids.iter().map(|id| (*id).to_owned()).collect(),
+            ranges: ranges.to_vec(),
+        })
+    }
+
+    fn unproven() -> Result<CheckSpan, CheckFailure> {
+        Err(CheckFailure::Unproven)
+    }
+
+    fn assert_seam(error: &AffectedRegionUnavailable) {
+        let text = error.to_string();
+        assert_eq!(
+            text,
+            "sesslint.policy.abstention.AffectedRegion is not available"
+        );
+        assert_eq!(text, AFFECTED_REGION_UNAVAILABLE);
+        assert_eq!(error.message(), text);
+        assert_eq!(*error, AffectedRegionUnavailable);
+        assert!(Error::source(error).is_none());
+        assert_ne!(text, "true");
+        assert!(!text.contains("true"));
+        assert!(!text.contains("unproven"));
+        assert!(!text.contains("evt-"));
+        assert!(!text.contains("representable"));
+        assert!(!text.contains("float"));
+    }
+
+    fn assert_precondition(events: &[EventValue], step: &RecipeStep, expected: &str) {
+        let before = snapshot(events);
+        let error = apply_identical_duplicate_drop(events, step).expect_err("precondition");
+        assert_eq!(error.to_string(), expected);
+        assert!(matches!(error, ConservativeError::Precondition(_)));
+        assert_ne!(error.to_string(), "true");
+        assert_eq!(snapshot(events), before);
+    }
+
+    fn assert_event_error(events: &[EventValue], step: &RecipeStep, expected: &str) {
+        let before = snapshot(events);
+        let error = apply_identical_duplicate_drop(events, step).expect_err("event");
+        assert_eq!(error.to_string(), expected);
+        assert!(matches!(error, ConservativeError::Event(_)));
+        assert!(!error.to_string().contains("content drift"));
+        assert_ne!(error.to_string(), "true");
+        assert_eq!(snapshot(events), before);
+    }
+
+    #[test]
+    fn drop_variant_and_index_shape_use_the_pin_messages() {
+        let events = vec![note("evt-a", "hash-a"), note("evt-a", "hash-a")];
+        assert_precondition(
+            &events,
+            &make_step(IndexValue::None, ParamMap::NotMapping),
+            "identical-duplicate-drop: finding variant is not identical-duplicate",
+        );
+        assert_precondition(
+            &events,
+            &make_step(
+                IndexValue::Bool(true),
+                params_of(vec![("record_indexes", EventField::List(ints(&[0, 1])))]),
+            ),
+            "identical-duplicate-drop: finding variant is not identical-duplicate",
+        );
+        assert_precondition(
+            &events,
+            &make_step(
+                IndexValue::None,
+                params_of(vec![
+                    ("variant", text("other")),
+                    ("record_indexes", EventField::List(ints(&[0, 1]))),
+                ]),
+            ),
+            "identical-duplicate-drop: finding variant is not identical-duplicate",
+        );
+        assert_precondition(
+            &events,
+            &make_step(
+                IndexValue::None,
+                params_of(vec![("variant", text("identical-duplicate"))]),
+            ),
+            "identical-duplicate-drop: record_indexes missing",
+        );
+        assert_precondition(
+            &events,
+            &make_step(
+                IndexValue::None,
+                params_of(vec![
+                    ("variant", text("identical-duplicate")),
+                    ("record_indexes", text("01")),
+                ]),
+            ),
+            "identical-duplicate-drop: record_indexes missing",
+        );
+        assert_precondition(
+            &events,
+            &drop_step(IndexValue::None, vec![EventField::Bool(false), EventField::Bool(true)]),
+            "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
+        );
+        assert_precondition(
+            &events,
+            &drop_step(
+                IndexValue::None,
+                vec![EventField::Int(0), EventField::Bool(true), EventField::Int(1)],
+            ),
+            "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
+        );
+        assert_precondition(
+            &events,
+            &drop_step(IndexValue::None, ints(&[0, 0])),
+            "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
+        );
+        assert_precondition(
+            &events,
+            &drop_step(IndexValue::None, ints(&[0, 1, 1])),
+            "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
+        );
+        assert_precondition(
+            &events,
+            &drop_step(IndexValue::None, ints(&[-1, 0])),
+            "identical-duplicate-drop: occurrence index out of bounds",
+        );
+        assert_precondition(
+            &[note("evt-only", "hash-a")],
+            &drop_step(IndexValue::None, ints(&[0, 1])),
+            "identical-duplicate-drop: occurrence index out of bounds",
+        );
+    }
+
+    #[test]
+    fn drop_boundary_and_fingerprint_errors_are_not_a_drop() {
+        let pair = drop_step(IndexValue::Bool(true), ints(&[0, 1]));
+        let checkpoints = vec![
+            hashed("checkpoint", text("evt-a"), "hash-a"),
+            ev(vec![
+                ("kind", text("checkpoint")),
+                ("id", EventField::Float(1.5)),
+            ]),
+        ];
+        assert_precondition(
+            &checkpoints,
+            &pair,
+            "identical-duplicate-drop: cannot drop boundary kind 'checkpoint'",
+        );
+        let boundaries = vec![
+            hashed("compaction_boundary", text("evt-a"), "hash-a"),
+            hashed("compaction_boundary", text("evt-a"), "hash-a"),
+        ];
+        assert_precondition(
+            &boundaries,
+            &pair,
+            "identical-duplicate-drop: cannot drop boundary kind 'compaction_boundary'",
+        );
+        let kept_checkpoint = vec![
+            hashed("checkpoint", text("evt-a"), "hash-a"),
+            note("evt-b", "hash-a"),
+        ];
+        assert_precondition(
+            &kept_checkpoint,
+            &pair,
+            "identical-duplicate-drop: cannot drop boundary kind 'checkpoint'",
+        );
+        let dropped_checkpoint = vec![
+            note("evt-a", "hash-a"),
+            hashed("checkpoint", text("evt-b"), "hash-a"),
+        ];
+        assert_precondition(
+            &dropped_checkpoint,
+            &pair,
+            "identical-duplicate-drop: kind mismatch at occurrence 1 ('checkpoint' != 'note')",
+        );
+        let hashless = vec![
+            ev(vec![("kind", text("note")), ("id", text("evt-a"))]),
+            ev(vec![("kind", text("note")), ("id", text("evt-a"))]),
+        ];
+        assert_event_error(
+            &hashless,
+            &pair,
+            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
+        );
+        let float_id = vec![
+            ev(vec![
+                ("kind", text("note")),
+                ("id", EventField::Float(1.5)),
+                ("content_hash", text("hash-a")),
+            ]),
+            note("evt-b", "hash-a"),
+        ];
+        assert_event_error(&float_id, &pair, PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        let second_hashless = vec![
+            note("evt-a", "hash-a"),
+            ev(vec![("kind", text("note")), ("id", text("evt-b"))]),
+        ];
+        assert_event_error(
+            &second_hashless,
+            &pair,
+            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
+        );
+        assert_event_error(
+            &[EventValue::Other, EventValue::Other],
+            &pair,
+            PYTHON_STR_HASH_UNREPRESENTABLE,
+        );
+        let mut first = SessionEvent::new(
+            "evt-a",
+            None,
+            4,
+            "2026-01-01T00:00:00Z",
+            "user",
+            "note",
+        );
+        let second = first.clone();
+        let sessions = vec![
+            EventValue::from_session(first.clone()),
+            EventValue::from_session(second),
+        ];
+        assert_event_error(&sessions, &pair, PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+        first.content_hash = Some("hash-a".to_owned());
+        let mut other = first.clone();
+        other.id = "evt-b".to_owned();
+        other.content_hash = Some("hash-b".to_owned());
+        let drifted = vec![
+            EventValue::from_session(first.clone()),
+            EventValue::from_session(other),
+        ];
+        assert_precondition(
+            &drifted,
+            &pair,
+            "identical-duplicate-drop: content drift at occurrence 1",
+        );
+        let mut same = first.clone();
+        same.id = "evt-a".to_owned();
+        let copied = vec![
+            EventValue::from_session(first),
+            EventValue::from_session(same),
+        ];
+        let error = apply_identical_duplicate_drop(&copied, &pair).expect_err("copy");
+        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert!(matches!(error, ConservativeError::Event(_)));
+    }
+
+    #[test]
+    fn drop_copies_kept_events_and_does_not_relink_without_a_kept_id() {
+        let events = vec![
+            note("evt-a", "hash-a"),
+            ev(vec![
+                ("kind", text("checkpoint")),
+                ("id", text("evt-mid")),
+                ("content_hash", text("hash-mid")),
+            ]),
+            note("evt-a", "hash-a"),
+            with_parent("evt-child", "hash-c", text("evt-a")),
+        ];
+        let before = snapshot(&events);
+        let step = drop_step(IndexValue::Bool(false), ints(&[2, 0]));
+        let mut output = apply_identical_duplicate_drop(&events, &step).expect("drop");
+        assert_eq!(
+            output,
+            vec![
+                mapping_at(&events, 0),
+                mapping_at(&events, 1),
+                mapping_at(&events, 3),
+            ]
+        );
+        assert_eq!(output[2].get("parent_id"), Some(&text("evt-a")));
+        output[0].push("marker", EventField::Int(1));
+        assert_eq!(snapshot(&events), before);
+        assert!(before[0].get("marker").is_none());
+
+        let mismatch = vec![note("evt-a", "hash-a"), note("evt-b", "hash-b")];
+        assert_precondition(
+            &mismatch,
+            &drop_step(IndexValue::None, ints(&[0, 1])),
+            "identical-duplicate-drop: content drift at occurrence 1",
+        );
+        let drifted_ids = vec![note("evt-a", "hash-a"), note("evt-b", "hash-a")];
+        assert_precondition(
+            &drifted_ids,
+            &drop_step(IndexValue::None, ints(&[0, 1])),
+            "identical-duplicate-drop: event id drift at occurrence 1",
+        );
+        let later = vec![
+            note("evt-a", "hash-a"),
+            note("evt-mid", "hash-m"),
+            note("evt-b", "hash-a"),
+        ];
+        assert_precondition(
+            &later,
+            &drop_step(IndexValue::None, ints(&[0, 2])),
+            "identical-duplicate-drop: event id drift at occurrence 2",
+        );
+
+        let nameless = vec![
+            hashed("note", text(""), "hash-a"),
+            hashed("note", text("evt-b"), "hash-a"),
+            with_parent("evt-child", "hash-c", text("evt-b")),
+        ];
+        let output = apply_identical_duplicate_drop(
+            &nameless,
+            &drop_step(IndexValue::None, ints(&[0, 1])),
+        )
+        .expect("empty kept id");
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0].get("id"), Some(&text("")));
+        assert_eq!(output[1].get("parent_id"), Some(&text("evt-b")));
+
+        let missing_dropped_id = vec![
+            note("evt-a", "hash-a"),
+            ev(vec![
+                ("kind", text("note")),
+                ("content_hash", text("hash-a")),
+            ]),
+        ];
+        let output = apply_identical_duplicate_drop(
+            &missing_dropped_id,
+            &drop_step(IndexValue::Int(0), ints(&[0, 1])),
+        )
+        .expect("missing dropped id");
+        assert_eq!(output, vec![mapping_at(&missing_dropped_id, 0)]);
+    }
+
+    #[test]
+    fn drop_region_runs_the_checks_and_stops_at_affected_region() {
+        let events = vec![
+            note("evt-keep", "hash-a"),
+            ev(vec![("kind", text("checkpoint")), ("id", text("evt-mid"))]),
+            note("evt-keep", "hash-b"),
+            with_parent("evt-child", "hash-c", text("evt-keep")),
+        ];
+        let before = snapshot(&events);
+        let step = drop_step(IndexValue::Bool(true), ints(&[2, 0, 0]));
+        assert_eq!(
+            identical_duplicate_drop_check(&step, &events),
+            proven(&[0, 2], &["evt-keep"], &[(0, 2)])
+        );
+        let error = affected_region_identical_duplicate_drop(&step, &events).expect_err("seam");
+        assert_seam(&error);
+        assert_eq!(snapshot(&events), before);
+
+        let wrong_variant = make_step(
+            IndexValue::Other,
+            params_of(vec![
+                ("variant", text("other")),
+                ("record_indexes", EventField::List(ints(&[0, 2]))),
+            ]),
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&wrong_variant, &events),
+            proven(&[0, 2], &["evt-keep"], &[(0, 2)])
+        );
+        assert_seam(
+            &affected_region_identical_duplicate_drop(&wrong_variant, &events).expect_err("seam"),
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&make_step(IndexValue::None, ParamMap::NotMapping), &events),
+            unproven()
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(
+                &make_step(
+                    IndexValue::None,
+                    params_of(vec![("record_indexes", text("01"))])
+                ),
+                &events
+            ),
+            unproven()
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(
+                &make_step(
+                    IndexValue::None,
+                    params_of(vec![(
+                        "record_indexes",
+                        EventField::List(vec![EventField::Bool(false), EventField::Bool(true)])
+                    )])
+                ),
+                &events
+            ),
+            unproven()
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&drop_step(IndexValue::None, ints(&[-1, 0])), &events),
+            unproven()
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&drop_step(IndexValue::None, ints(&[0, 9])), &events),
+            unproven()
+        );
+        assert_seam(
+            &affected_region_identical_duplicate_drop(
+                &drop_step(IndexValue::None, ints(&[0, 9])),
+                &events,
+            )
+            .expect_err("bounds seam"),
+        );
+    }
+
+    #[test]
+    fn drop_region_children_bool_indexes_and_errors_stay_on_the_seam() {
+        let events = vec![
+            hashed("note", EventField::Int(7), "hash-a"),
+            ev(vec![
+                ("kind", text("message")),
+                ("id", EventField::Float(1.5)),
+            ]),
+            hashed("note", EventField::Int(8), "hash-a"),
+            with_parent("evt-child", "hash-c", EventField::Int(8)),
+        ];
+        let bool_indexes = make_step(
+            IndexValue::Bool(true),
+            params_of(vec![(
+                "record_indexes",
+                EventField::List(vec![
+                    EventField::Int(2),
+                    EventField::Bool(true),
+                    EventField::Int(0),
+                ]),
+            )]),
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&bool_indexes, &events),
+            proven(&[0, 2, 3], &["7", "8", "evt-child"], &[(0, 2)])
+        );
+        let with_float_parent = vec![
+            hashed("note", EventField::Int(7), "hash-a"),
+            hashed("note", EventField::Int(8), "hash-a"),
+            ev(vec![
+                ("kind", text("message")),
+                ("id", text("evt-other")),
+                ("parent_id", EventField::Float(1.5)),
+            ]),
+        ];
+        let aimed = make_step(
+            IndexValue::None,
+            params_of(vec![(
+                "record_indexes",
+                EventField::List(vec![EventField::Int(0), EventField::Int(1)]),
+            )]),
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&aimed, &with_float_parent),
+            Err(CheckFailure::Exception(EventError::PythonFloatStr))
+        );
+        assert_eq!(
+            identical_duplicate_drop_check(&aimed, &events),
+            Err(CheckFailure::Exception(EventError::PythonFloatStr))
+        );
+        assert_seam(&affected_region_identical_duplicate_drop(&aimed, &events).expect_err("seam"));
+        assert_seam(
+            &affected_region_identical_duplicate_drop(&bool_indexes, &events).expect_err("seam"),
+        );
+
+        let same = vec![
+            note("evt-keep", "hash-a"),
+            note("evt-keep", "hash-a"),
+            ev(vec![("id", EventField::Float(1.5))]),
+        ];
+        assert_eq!(
+            identical_duplicate_drop_check(&drop_step(IndexValue::None, ints(&[0, 1])), &same),
+            proven(&[0, 1], &["evt-keep"], &[(0, 1)])
+        );
+        let empty_kept = vec![
+            hashed("note", text(""), "hash-a"),
+            note("evt-b", "hash-a"),
+            with_parent("evt-child", "hash-c", text("evt-b")),
+        ];
+        assert_eq!(
+            identical_duplicate_drop_check(
+                &drop_step(IndexValue::None, ints(&[0, 1])),
+                &empty_kept
+            ),
+            proven(&[0, 1, 2], &["evt-b", "evt-child"], &[(0, 1)])
+        );
+        let blank_dropped = vec![
+            note("evt-a", "hash-a"),
+            hashed("note", text(""), "hash-a"),
+        ];
+        assert_eq!(
+            identical_duplicate_drop_check(
+                &drop_step(IndexValue::None, ints(&[0, 1])),
+                &blank_dropped
+            ),
+            proven(&[0, 1], &["evt-a"], &[(0, 1)])
+        );
+
+        let mut call = SessionEvent::new(
+            "evt-keep",
+            None,
+            0,
+            "2026-01-01T00:00:00Z",
+            "user",
+            "note",
+        );
+        let mut child = SessionEvent::new(
+            "evt-child",
+            Some("evt-drop".to_owned()),
+            1,
+            "2026-01-01T00:00:00Z",
+            "user",
+            "message",
+        );
+        let mut dropped = SessionEvent::new(
+            "evt-drop",
+            None,
+            2,
+            "2026-01-01T00:00:00Z",
+            "user",
+            "note",
+        );
+        call.content_hash = None;
+        child.content_hash = None;
+        dropped.content_hash = None;
+        let sessions = vec![
+            EventValue::from_session(call),
+            EventValue::from_session(child),
+            EventValue::from_session(dropped),
+        ];
+        let session_step = drop_step(IndexValue::None, ints(&[0, 2]));
+        assert_eq!(
+            identical_duplicate_drop_check(&session_step, &sessions),
+            proven(&[0, 1, 2], &["evt-child", "evt-drop", "evt-keep"], &[(0, 2)])
+        );
+        assert_seam(
+            &affected_region_identical_duplicate_drop(&session_step, &sessions).expect_err("seam"),
+        );
+        assert_event_error(&sessions, &session_step, PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+    }
+
+    #[test]
+    fn seq_renumber_copies_ordinals_and_ignores_the_step() {
+        let events = vec![
+            ev(vec![
+                ("kind", text("note")),
+                ("seq", EventField::Bool(true)),
+                ("id", text("evt-a")),
+            ]),
+            ev(vec![
+                ("kind", text("note")),
+                ("id", text("evt-b")),
+                (
+                    "payload",
+                    EventField::Mapping(bare(vec![("text", text("synthetic"))])),
+                ),
+            ]),
+        ];
+        let before = snapshot(&events);
+        let step = make_step(
+            IndexValue::Bool(true),
+            params_of(vec![("record_indexes", EventField::List(ints(&[0, 1])))]),
+        );
+        let mut output = apply_seq_renumber(&events, &step).expect("renumber");
+        assert_eq!(
+            output[0],
+            bare(vec![
+                ("kind", text("note")),
+                ("seq", EventField::Int(0)),
+                ("id", text("evt-a")),
+            ])
+        );
+        assert_eq!(output[1].get("seq"), Some(&EventField::Int(1)));
+        assert_eq!(output[1].get("id"), Some(&text("evt-b")));
+        assert!(matches!(output[1].get("payload"), Some(EventField::Mapping(_))));
+        output[0].push("marker", EventField::Int(1));
+        assert_eq!(snapshot(&events), before);
+        assert_eq!(apply_seq_renumber(&[], &step).expect("empty"), Vec::new());
+
+        let session = EventValue::from_session(SessionEvent::new(
+            "evt-session",
+            None,
+            9,
+            "2026-01-01T00:00:00Z",
+            "user",
+            "note",
+        ));
+        let error = apply_seq_renumber(std::slice::from_ref(&session), &step).expect_err("copy");
+        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert!(matches!(error, ConservativeError::Event(_)));
+        match &session {
+            EventValue::Session(event) => assert_eq!(event.seq, 9),
+            EventValue::Mapping(_) | EventValue::Other => panic!("session"),
+        }
+    }
+
+    #[test]
+    fn seq_region_discards_inputs_and_stops_at_affected_region() {
+        let events = vec![ev(vec![("id", EventField::Float(1.5))])];
+        let step = make_step(IndexValue::Bool(true), ParamMap::NotMapping);
+        let before = snapshot(&events);
+        assert_eq!(
+            seq_renumber_check(&step, &events),
+            Ok(CheckSpan {
+                indices: BTreeSet::new(),
+                ids: BTreeSet::new(),
+                ranges: Vec::new(),
+            })
+        );
+        assert_eq!(
+            seq_renumber_check(&step, &[]),
+            seq_renumber_check(&make_step(IndexValue::Int(3), ParamMap::NotMapping), &events)
+        );
+        let error = affected_region_seq_renumber(&step, &events).expect_err("seam");
+        assert_seam(&error);
+        assert_ne!(error.to_string(), "true");
+        assert_eq!(snapshot(&events), before);
+    }
+
+    #[test]
+    fn recipes_match_the_pin_and_all_keeps_pin_order() {
+        let recipes = RECIPES().expect("recipes");
+        let alias = CONSERVATIVE_RECIPES().expect("alias");
+        assert_eq!(recipes, alias);
+        assert_eq!(
+            recipes
+                .iter()
+                .map(|recipe| recipe.name().to_owned())
+                .collect::<Vec<_>>(),
+            vec![
+                "terminal-suffix-discard",
+                "identical-duplicate-collapse",
+                "proven-unique-parent-restore",
+                "compaction-projection-reunion",
+                "duplicate-projection-removal",
+                "identical-duplicate-drop",
+                "seq-renumber",
+            ]
+        );
+        assert_recipe(
+            &recipes[0],
+            "terminal-suffix-discard",
+            &[SL005],
+            &["no_prior_safe_tool_after_cut"],
+            true,
+            "salvage",
+            false,
+            Some(CallableId::from_fn(apply_terminal_suffix_discard)),
+            None,
+        );
+        assert_recipe(
+            &recipes[1],
+            "identical-duplicate-collapse",
+            &[SL003],
+            &["no_sl203", "adjacent_identical_duplicate"],
+            false,
+            "conservative",
+            false,
+            Some(CallableId::from_fn(apply_identical_duplicate_collapse)),
+            Some(CallableId::from_fn(
+                affected_region_identical_duplicate_collapse,
+            )),
+        );
+        assert_recipe(
+            &recipes[2],
+            "proven-unique-parent-restore",
+            &[SL004],
+            &["no_sl203", "unique_parent_candidate"],
+            false,
+            "conservative",
+            false,
+            Some(CallableId::from_fn(apply_proven_unique_parent_restore)),
+            Some(CallableId::from_fn(
+                affected_region_proven_unique_parent_restore,
+            )),
+        );
+        assert_recipe(
+            &recipes[3],
+            "compaction-projection-reunion",
+            &[SL108],
+            &["no_sl203", "single_boundary_split"],
+            false,
+            "conservative",
+            false,
+            Some(CallableId::from_fn(apply_compaction_projection_reunion)),
+            Some(CallableId::from_fn(
+                affected_region_compaction_projection_reunion,
+            )),
+        );
+        assert_recipe(
+            &recipes[4],
+            "duplicate-projection-removal",
+            &[SL104],
+            &["no_sl203", "duplicate_projection_identical"],
+            false,
+            "conservative",
+            false,
+            Some(CallableId::from_fn(apply_duplicate_projection_removal)),
+            Some(CallableId::from_fn(
+                affected_region_duplicate_projection_removal,
+            )),
+        );
+        assert_recipe(
+            &recipes[5],
+            "identical-duplicate-drop",
+            &[SL003],
+            &["no_sl203", "sl003_identical_duplicate"],
+            false,
+            "conservative",
+            false,
+            Some(CallableId::from_fn(apply_identical_duplicate_drop)),
+            Some(CallableId::from_fn(affected_region_identical_duplicate_drop)),
+        );
+        assert_recipe(
+            &recipes[6],
+            "seq-renumber",
+            &[],
+            &[],
+            false,
+            "conservative",
+            true,
+            Some(CallableId::from_fn(apply_seq_renumber)),
+            Some(CallableId::from_fn(affected_region_seq_renumber)),
+        );
+        assert_ne!(recipes[5].apply(), recipes[5].affected_region());
+        assert_ne!(recipes[6].apply(), recipes[6].affected_region());
+        assert_eq!(
+            super::RECIPE_SEQ_RENUMBER().expect("alias"),
+            super::recipe_seq_renumber().expect("fn")
+        );
+        assert_eq!(
+            ALL,
+            [
+                "CONSERVATIVE_RECIPES",
+                "PreconditionFailed",
+                "RECIPES",
+                "RECIPE_COMPACTION_PROJECTION_REUNION",
+                "RECIPE_DUPLICATE_PROJECTION_REMOVAL",
+                "RECIPE_IDENTICAL_DUPLICATE_DROP",
+                "RECIPE_SEQ_RENUMBER",
+                "RECIPE_IDENTICAL_DUPLICATE_COLLAPSE",
+                "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
+                "RECIPE_TERMINAL_SUFFIX_DISCARD",
+                "affected_region_compaction_projection_reunion",
+                "affected_region_duplicate_projection_removal",
+                "affected_region_identical_duplicate_drop",
+                "affected_region_identical_duplicate_collapse",
+                "affected_region_proven_unique_parent_restore",
+                "affected_region_torn_terminal_record_discard",
+                "apply_compaction_projection_reunion",
+                "apply_duplicate_projection_removal",
+                "apply_identical_duplicate_collapse",
+                "apply_identical_duplicate_drop",
+                "apply_seq_renumber",
+                "apply_proven_unique_parent_restore",
+                "apply_terminal_suffix_discard",
+                "compaction_projection_reunion",
+                "duplicate_projection_removal",
+                "identical_duplicate_collapse",
+                "proven_unique_parent_restore",
+                "register_all",
+                "terminal_suffix_discard",
+            ]
+        );
+        assert!(!ALL.contains(&"affected_region_seq_renumber"));
+        assert!(!ALL.contains(&"serde_json"));
+        assert_eq!(
+            CallableId::from_fn(super::affected_region_torn_terminal_record_discard),
+            CallableId::from_fn(
+                crate::recipes_sl002::affected_region_torn_terminal_record_discard
+            )
+        );
+        assert_eq!(
+            crate::planner::RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
+            "sesslint.repair.recipes_conservative.register_all is not available"
+        );
+    }
+
+    #[test]
+    fn register_all_registers_defined_recipes_once() {
+        if std::env::var_os("SESSLINT_CARD_RECIPES_04_REGISTER").is_some() {
+            register_defined_recipes();
+            return;
+        }
+        let exe = std::env::current_exe().expect("test executable");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "recipes_conservative::tests_recipes_04::register_all_registers_defined_recipes_once",
+                "--test-threads=1",
+            ])
+            .env("SESSLINT_CARD_RECIPES_04_REGISTER", "1")
+            .output()
+            .expect("spawn registry child");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "register_all child failed\n{stdout}\n{stderr}"
+        );
+        assert!(
+            stdout.contains("ok. 1 passed"),
+            "register_all child did not run\n{stdout}\n{stderr}"
+        );
+    }
+
+    fn register_defined_recipes() {
+        use crate::registry::{clear_registry, get_recipe, list_recipes, register_recipe};
+
+        clear_registry();
+        super::register_all().expect("register");
+        let names: Vec<String> = list_recipes().iter().map(|recipe| recipe.name().to_owned()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "terminal-suffix-discard",
+                "identical-duplicate-collapse",
+                "proven-unique-parent-restore",
+                "compaction-projection-reunion",
+                "duplicate-projection-removal",
+                "identical-duplicate-drop",
+                "seq-renumber",
+            ]
+        );
+        let built = RECIPES().expect("built");
+        for recipe in &built {
+            assert_eq!(get_recipe(recipe.name()).as_ref(), Some(recipe));
+        }
+        super::register_all().expect("second");
+        assert_eq!(list_recipes().len(), built.len());
+        clear_registry();
+        register_recipe(&super::recipe_seq_renumber().expect("seq")).expect("seed");
+        super::register_all().expect("rest");
+        let names: Vec<String> = list_recipes().iter().map(|recipe| recipe.name().to_owned()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "seq-renumber",
+                "terminal-suffix-discard",
+                "identical-duplicate-collapse",
+                "proven-unique-parent-restore",
+                "compaction-projection-reunion",
+                "duplicate-projection-removal",
+                "identical-duplicate-drop",
+            ]
+        );
+        assert_eq!(
+            get_recipe("identical-duplicate-drop").expect("drop").apply(),
+            Some(CallableId::from_fn(apply_identical_duplicate_drop))
+        );
+        assert!(get_recipe("seq-renumber")
+            .expect("seq")
+            .excludes_execution_dependence());
+        clear_registry();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assert_recipe(
+        recipe: &crate::registry::Recipe,
+        name: &str,
+        handles: &[&str],
+        preconditions: &[&str],
+        lossy: bool,
+        policy: &str,
+        excludes: bool,
+        apply: Option<CallableId>,
+        region: Option<CallableId>,
+    ) {
+        assert_eq!(recipe.name(), name);
+        assert_eq!(
+            recipe
+                .handles()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            handles
+        );
+        assert_eq!(
+            recipe
+                .preconditions()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            preconditions
+        );
+        assert_eq!(recipe.lossy(), lossy);
+        assert_eq!(recipe.salvage_only(), lossy);
+        assert_eq!(recipe.min_policy(), policy);
+        assert_eq!(recipe.version(), "1.0.0");
+        assert_eq!(recipe.excludes_execution_dependence(), excludes);
+        assert_eq!(recipe.apply(), apply);
+        assert_eq!(recipe.affected_region(), region);
+    }
+}
