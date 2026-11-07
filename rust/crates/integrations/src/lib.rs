@@ -9,4 +9,4 @@ pub use error::IntegrationsError;
 pub mod hook_event;
 pub mod hooks;
 pub mod mcp_server {}
-pub mod watch {}
+pub mod watch;
