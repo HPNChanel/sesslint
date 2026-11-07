@@ -9,6 +9,15 @@
 //! That path returns [`SealError::Unsupported`] and does not invent
 //! `append_seal`, `sha256_bytes`, a ledger line, or the sealed-success info
 //! line. [`crate::context::CliContext::error`] / `info` are not called.
+//!
+//! The `seal` subcommand from `src/sesslint/cli/seal.py` lines 1–73
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`,
+//! blob `5fd9da4f9c3f079c1b454e472a8835f31aab1587`, is added below.
+//! [`configure`] does not import `sesslint.seal`. [`run`] would import
+//! `verify_ledger`, which is not available, so it returns
+//! [`VerifyLedgerUnavailable`]. It does not read a ledger, print `ok:`,
+//! emit JSON, invent a divergence, call `ctx.error`, or return `0` or `1`.
+//! [`SealError`] is unchanged.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -99,6 +108,121 @@ fn map_count(map: &BTreeMap<String, i64>, key: &str) -> i64 {
         Some(value) => *value,
         None => 0,
     }
+}
+
+/// Python: `NAME`.
+pub const NAME: &str = "seal";
+
+/// Python `configure` help.
+pub const HELP: &str = "[read-only] Verify a tamper-evident seal ledger's hash chain.";
+
+/// Python `configure` description, adjacent literals concatenated with no extra space.
+/// The dash in `verdicts — self-verifying` is U+2014, as in the pin.
+pub const DESCRIPTION: &str = "[read-only] Re-walk a seal ledger produced by check/verify/repair --seal and report the first chain divergence (edited, dropped, reordered, or truncated lines). The ledger is a tamper-evident record of SessLint verdicts — self-verifying, no keys or trusted clock.";
+
+/// Python `add_argument("--verify", ...)`.
+pub const VERIFY_FLAG: &str = "--verify";
+
+/// Python `metavar="LEDGER"`.
+pub const VERIFY_METAVAR: &str = "LEDGER";
+
+/// Python help on `--verify`.
+pub const VERIFY_HELP: &str = "Ledger JSONL file to re-walk and verify";
+
+/// Python `add_argument("--json", ...)`.
+pub const JSON_FLAG: &str = "--json";
+
+/// Python help on `--json`.
+pub const JSON_HELP: &str = "Output the verification result as JSON to stdout";
+
+/// Text of the typed error returned when `verify_ledger` cannot be called.
+pub const VERIFY_LEDGER_UNAVAILABLE: &str = "sesslint.seal.verify_ledger is not available";
+
+/// `sesslint.seal.verify_ledger` is not available in this module.
+///
+/// This is not a variant of [`SealError`]. [`SealError`]'s variants and
+/// [`Display`](fmt::Display) are unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerifyLedgerUnavailable;
+
+impl fmt::Display for VerifyLedgerUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(VERIFY_LEDGER_UNAVAILABLE)
+    }
+}
+
+impl std::error::Error for VerifyLedgerUnavailable {}
+
+/// `--verify` as Python `configure` registers it.
+///
+/// `default` is [`None`] because the pin omits `default` on this required option.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerifyArgument {
+    pub flag: &'static str,
+    pub required: bool,
+    pub metavar: &'static str,
+    pub default: Option<bool>,
+    pub help: &'static str,
+}
+
+/// `--json` as Python `configure` registers it (`store_true`, default `False`).
+///
+/// `metavar` is [`None`] because the pin omits `metavar`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JsonArgument {
+    pub flag: &'static str,
+    pub store_true: bool,
+    pub default: bool,
+    pub metavar: Option<&'static str>,
+    pub help: &'static str,
+}
+
+/// Metadata Python `configure` would attach to the `seal` subparser.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SealSubcommandSpec {
+    pub name: &'static str,
+    pub help: &'static str,
+    pub description: &'static str,
+    pub verify: VerifyArgument,
+    pub json: JsonArgument,
+}
+
+/// Python `configure(subparsers)`.
+///
+/// Argparse is not ported. This does not import `sesslint.seal`.
+pub fn configure() -> SealSubcommandSpec {
+    SealSubcommandSpec {
+        name: NAME,
+        help: HELP,
+        description: DESCRIPTION,
+        verify: VerifyArgument {
+            flag: VERIFY_FLAG,
+            required: true,
+            metavar: VERIFY_METAVAR,
+            default: None,
+            help: VERIFY_HELP,
+        },
+        json: JsonArgument {
+            flag: JSON_FLAG,
+            store_true: true,
+            default: false,
+            metavar: None,
+            help: JSON_HELP,
+        },
+    }
+}
+
+/// Python `run(ctx, args, parser)`.
+///
+/// `verify` is the ledger path Python would read from `args.verify`. `json`
+/// is `getattr(args, "json", False)`. Both are accepted and not interpreted.
+/// `verify_ledger` is not ported, so this returns [`VerifyLedgerUnavailable`].
+/// It does not read a JSONL file, print `ok:`, emit JSON, invent a divergence,
+/// call `ctx.error`, or return `0` or `1`.
+pub fn run(verify: &str, json: bool) -> Result<i32, VerifyLedgerUnavailable> {
+    let _ledger = verify;
+    let _as_json = json;
+    Err(VerifyLedgerUnavailable)
 }
 
 #[cfg(test)]
@@ -253,5 +377,74 @@ mod tests {
             "healthy"
         );
         assert_eq!(check_seal_verdict(&report("Skipped", &[], &[])), "healthy");
+    }
+}
+
+#[cfg(test)]
+mod subcommand_tests {
+    use super::{
+        configure, run, DESCRIPTION, HELP, JSON_HELP, NAME, VERIFY_HELP, VERIFY_LEDGER_UNAVAILABLE,
+        VERIFY_METAVAR,
+    };
+
+    #[test]
+    fn configure_matches_python_subcommand() {
+        let spec = configure();
+        assert_eq!(spec.name, NAME);
+        assert_eq!(spec.name, "seal");
+        assert_eq!(spec.help, HELP);
+        assert_eq!(
+            spec.help,
+            "[read-only] Verify a tamper-evident seal ledger's hash chain."
+        );
+        assert_eq!(spec.description, DESCRIPTION);
+        assert_eq!(
+            spec.description,
+            "[read-only] Re-walk a seal ledger produced by check/verify/repair --seal and report the first chain divergence (edited, dropped, reordered, or truncated lines). The ledger is a tamper-evident record of SessLint verdicts — self-verifying, no keys or trusted clock."
+        );
+        assert!(spec
+            .description
+            .contains("verdicts \u{2014} self-verifying"));
+        assert_eq!(spec.verify.flag, "--verify");
+        assert!(spec.verify.required);
+        assert_eq!(spec.verify.metavar, VERIFY_METAVAR);
+        assert_eq!(spec.verify.metavar, "LEDGER");
+        assert_eq!(spec.verify.default, None);
+        assert_eq!(spec.verify.help, VERIFY_HELP);
+        assert_eq!(spec.verify.help, "Ledger JSONL file to re-walk and verify");
+        assert_eq!(spec.json.flag, "--json");
+        assert!(spec.json.store_true);
+        assert!(!spec.json.default);
+        assert_eq!(spec.json.metavar, None);
+        assert_eq!(spec.json.help, JSON_HELP);
+        assert_eq!(
+            spec.json.help,
+            "Output the verification result as JSON to stdout"
+        );
+    }
+
+    #[test]
+    fn run_returns_seam_not_exit_zero() {
+        let inputs = [
+            ("synthetic-ledger.jsonl", false),
+            ("synthetic-ledger.jsonl", true),
+            ("", false),
+            ("", true),
+        ];
+        for (verify, json) in inputs {
+            match run(verify, json) {
+                Ok(code) => panic!("expected seam error, got exit {code}"),
+                Err(err) => assert_seam(&err),
+            }
+        }
+    }
+
+    fn assert_seam(err: &super::VerifyLedgerUnavailable) {
+        assert_eq!(
+            err.to_string(),
+            "sesslint.seal.verify_ledger is not available"
+        );
+        assert_eq!(err.to_string(), VERIFY_LEDGER_UNAVAILABLE);
+        let _typed: &dyn std::error::Error = err;
     }
 }
