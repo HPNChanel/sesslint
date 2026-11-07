@@ -1,0 +1,584 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.vetting parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+VETTING_PY_SHA256 = (
+    "401497d2da95769599ed736fbbde1e90b6cb898a623661d3f8babdae95bdc609"
+)
+VETTING_RS_SHA256 = (
+    "e64b6535612bcb2cca3e2d183e4aa5fa17d57d61987e358d6b6cf3e3c46a1938"
+)
+MODULE = "sesslint.repair.vetting"
+JSON_DUMPS_SEAM = "json.dumps is not available"
+REGISTER_ALL_SEAM = (
+    "sesslint.repair.recipes_conservative.register_all is not available"
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-vetting-json-dumps: _plan_step_identity calls json.dumps(sort_keys=True, "
+    "separators=(',', ':')). Rust returns json.dumps is not available and does not "
+    "emit canonical JSON text.",
+    "GAP-vetting-register-all: vet_plan calls planner_plan, which imports "
+    "sesslint.repair.recipes_conservative.register_all. Rust stops at that seam and "
+    "does not compare supplied steps to the derived plan.",
+    "GAP-vetting-step-comparison: after planner_plan returns, Python compares each "
+    "supplied step via _plan_step_identity and may raise RepairRefused. Rust never "
+    "reaches step comparison because register_all is unavailable.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/errors.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+    "repair/recipes_salvage.py",
+    "repair/vetting.py",
+]
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def fullname_for(path: str) -> str:
+    rel = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    return rel
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"failed to create import spec for {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def verify_vetting_digests() -> None:
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/vetting.py")
+    py_digest = hashlib.sha256(py_blob).hexdigest()
+    if py_digest != VETTING_PY_SHA256:
+        raise SystemExit(
+            f"vetting.py pin sha256 mismatch: expected {VETTING_PY_SHA256}, got {py_digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "repair" / "src" / "vetting.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != VETTING_RS_SHA256:
+        raise SystemExit(
+            f"vetting.rs sha256 mismatch: expected {VETTING_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def load_vetting_modules() -> tuple[Any, Any, Any, Any, Any]:
+    verify_vetting_digests()
+    for rel in PIN_CLOSURE:
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for i in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:i]))
+        ensure_pkg("sesslint.repair")
+        exec_blob(blob, fullname)
+    vetting = sys.modules["sesslint.repair.vetting"]
+    planner = sys.modules["sesslint.repair.planner"]
+    finding = sys.modules["sesslint.finding"]
+    codes = sys.modules["sesslint.codes"]
+    canonical = sys.modules["sesslint.canonical"]
+    return vetting, planner, finding, codes, canonical
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def marker_finding(finding: Any, codes: Any) -> Any:
+    source = finding.SourceRef("<canonical>", None, "rec-synthetic")
+    return finding.Finding(
+        code="SL203",
+        severity=codes.Severity.ERROR,
+        repairability=codes.Repairability.MANUAL,
+        message="synthetic target marker",
+        source=source,
+        related_ids=(),
+        fingerprint="0123456789abcdef",
+    )
+
+
+def step_dict(planner: Any, seq: int, *, lossy: bool = False) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "seq": seq,
+        "recipe": "synthetic-recipe",
+        "target_finding_fp": "0123456789abcdef",
+        "target_index": 0,
+        "min_policy": "conservative",
+        "recipe_version": "1.0.0",
+        "params": {},
+        "lossy": lossy,
+        "loss": {},
+    }
+    if lossy:
+        data["lossy"] = True
+        data["loss"] = {"discarded-suffix": 2}
+    return data
+
+
+def step_from_dict(planner: Any, data: dict[str, Any]) -> Any:
+    return planner.PlanStep.from_dict(data)
+
+
+def supplied_plan_direct(
+    planner: Any, plan_hash: str, profile: str, policy: str, *, lossy_step: bool = True
+) -> Any:
+    step = step_from_dict(planner, step_dict(planner, 41, lossy=lossy_step))
+    return planner.RepairPlan(
+        source_hash=plan_hash,
+        profile=profile,
+        policy=policy,
+        steps=(step,),
+        blocked=(planner.Blocked("0123456789abcdef", "SL108", "synthetic-blocked"),),
+        loss_accounting=planner.Loss(),
+        fingerprint="synthetic-fingerprint",
+        version=planner.PLAN_VERSION,
+    )
+
+
+def exc_info(callable_obj: Any) -> dict[str, Any]:
+    try:
+        callable_obj()
+    except Exception as exc:
+        return {
+            "outcome": "error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+    return {"outcome": "ok"}
+
+
+def build_events(canonical: Any, spec: list[dict[str, Any]]) -> list[Any]:
+    out: list[Any] = []
+    for item in spec:
+        kind = item["kind"]
+        if kind == "empty":
+            continue
+        if kind == "rendered":
+            out.extend(item.get("texts", []))
+        elif kind == "unrenderable":
+            out.append(object())
+        elif kind == "session":
+            out.append(
+                canonical.SessionEvent(
+                    item["id"],
+                    item.get("parent_id"),
+                    item.get("seq", 0),
+                    item.get("ts", "2024-02-29T00:00:00Z"),
+                    item.get("actor", "assistant"),
+                    item.get("message_kind", "message"),
+                )
+            )
+        elif kind == "mapping_placeholder":
+            out.append(object())
+        else:
+            raise SystemExit(f"unknown event kind {kind!r}")
+    return out
+
+
+def run_plan_step_identity(vetting: Any, planner: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    data = construct["step"]
+    step = step_from_dict(planner, data)
+    identity = vetting._plan_step_identity(step)
+    return {
+        "mode": "rust_seam",
+        "seam": JSON_DUMPS_SEAM,
+        "pin": {"mode": "identity", "identity": identity},
+    }
+
+
+def run_vet_plan(
+    vetting: Any,
+    planner: Any,
+    finding: Any,
+    codes: Any,
+    canonical: Any,
+    construct: dict[str, Any],
+) -> dict[str, Any]:
+    supplied = supplied_plan_direct(
+        planner,
+        construct["plan_hash"],
+        construct["profile"],
+        construct["policy"],
+    )
+    events = build_events(canonical, construct.get("events", [{"kind": "empty"}]))
+    findings = [marker_finding(finding, codes)]
+    info = exc_info(
+        lambda: vetting.vet_plan(
+            supplied,
+            findings=findings,
+            events=events,
+            source_hash=construct["caller_hash"],
+            acknowledge_side_effects=construct.get("acknowledge_side_effects", False),
+            input_format=construct.get("input_format", "canonical"),
+        )
+    )
+    gap = construct.get("gap")
+    if gap == "register_all":
+        return {
+            "mode": "rust_seam",
+            "seam": REGISTER_ALL_SEAM,
+            "pin": info,
+        }
+    if gap == "source_hash_rust_only":
+        return {
+            "mode": "rust_source_hash",
+            "pin": info,
+        }
+    if info["outcome"] == "error" and info["error_type"] == "PlanSourceMismatch":
+        return {
+            "mode": "comparable",
+            "error_type": info["error_type"],
+            "message": info["message"],
+        }
+    if info["outcome"] == "error" and info["error_type"] == "ValueError":
+        return {
+            "mode": "comparable",
+            "error_type": "PlanPolicy",
+            "message": info["message"],
+        }
+    return {
+        "mode": "comparable",
+        "error_type": info.get("error_type", "unknown"),
+        "message": info.get("message", ""),
+        "pin": info,
+    }
+
+
+def vector_specs(planner: Any) -> list[dict[str, Any]]:
+    empty_events = [{"kind": "empty"}]
+    specs: list[dict[str, Any]] = [
+        {
+            "id": "plan_step_identity_seq_one",
+            "construct": {
+                "type": "plan_step_identity",
+                "step": step_dict(planner, 1, lossy=False),
+            },
+        },
+        {
+            "id": "plan_step_identity_seq_other",
+            "construct": {
+                "type": "plan_step_identity",
+                "step": step_dict(planner, 99, lossy=False),
+            },
+        },
+        {
+            "id": "plan_step_identity_lossy",
+            "construct": {
+                "type": "plan_step_identity",
+                "step": step_dict(planner, 41, lossy=True),
+            },
+        },
+    ]
+    mismatch_rows = [
+        ("plan_synthetic_vs_caller", "plan-synthetic-hash", "caller-synthetic-hash"),
+        ("abc_vs_ab", "abc", "ab"),
+        ("abc_vs_zzabczz", "abc", "zzabczz"),
+        ("empty_vs_caller", "", "caller-synthetic-hash"),
+    ]
+    for suffix, plan_hash, caller in mismatch_rows:
+        specs.append(
+            {
+                "id": f"vet_plan_source_hash_mismatch_{suffix}",
+                "construct": {
+                    "type": "vet_plan",
+                    "plan_hash": plan_hash,
+                    "profile": "neutral",
+                    "policy": "Aggressive",
+                    "caller_hash": caller,
+                    "events": empty_events,
+                    "acknowledge_side_effects": True,
+                    "input_format": "not-a-format",
+                },
+            }
+        )
+    specs.extend(
+        [
+            {
+                "id": "vet_plan_matching_caller_hash",
+                "construct": {
+                    "type": "vet_plan",
+                    "plan_hash": "caller-synthetic-hash",
+                    "profile": "strict",
+                    "policy": "conservative",
+                    "caller_hash": "caller-synthetic-hash",
+                    "events": empty_events,
+                    "acknowledge_side_effects": True,
+                    "input_format": "canonical",
+                    "gap": "register_all",
+                },
+            },
+            {
+                "id": "vet_plan_matching_caller_empty_hash",
+                "construct": {
+                    "type": "vet_plan",
+                    "plan_hash": "",
+                    "profile": "neutral",
+                    "policy": "conservative",
+                    "caller_hash": "",
+                    "events": empty_events,
+                    "acknowledge_side_effects": False,
+                    "input_format": "canonical",
+                    "gap": "register_all",
+                },
+            },
+            {
+                "id": "vet_plan_matching_events_hash",
+                "construct": {
+                    "type": "vet_plan",
+                    "plan_hash": planner.EMPTY_EVENTS_HASH,
+                    "profile": "neutral",
+                    "policy": "salvage",
+                    "caller_hash": "caller-synthetic-hash",
+                    "events": empty_events,
+                    "acknowledge_side_effects": False,
+                    "input_format": "not-a-format",
+                    "gap": "register_all",
+                },
+            },
+            {
+                "id": "vet_plan_matching_events_and_caller_hash",
+                "construct": {
+                    "type": "vet_plan",
+                    "plan_hash": planner.EMPTY_EVENTS_HASH,
+                    "profile": "neutral",
+                    "policy": "conservative",
+                    "caller_hash": planner.EMPTY_EVENTS_HASH,
+                    "events": empty_events,
+                    "acknowledge_side_effects": True,
+                    "input_format": "canonical",
+                    "gap": "register_all",
+                },
+            },
+            {
+                "id": "vet_plan_invalid_policy",
+                "construct": {
+                    "type": "vet_plan",
+                    "plan_hash": "caller-synthetic-hash",
+                    "profile": "neutral",
+                    "policy": "nope",
+                    "caller_hash": "caller-synthetic-hash",
+                    "events": empty_events,
+                    "acknowledge_side_effects": False,
+                    "input_format": "canonical",
+                },
+            },
+        ]
+    )
+    for label, event_spec in [
+        (
+            "rendered",
+            [{"kind": "rendered", "texts": ["echo-me", "later-synthetic"]}],
+        ),
+        ("unrenderable", [{"kind": "unrenderable"}]),
+        ("session", [
+            {
+                "kind": "session",
+                "id": "evt-synthetic",
+                "parent_id": None,
+                "seq": 0,
+            }
+        ]),
+        ("mapping", [{"kind": "mapping_placeholder"}]),
+    ]:
+        for pair, plan_hash, caller in (
+            ("same", "same-synthetic-hash", "same-synthetic-hash"),
+            ("split", "plan-synthetic-hash", "caller-synthetic-hash"),
+        ):
+            specs.append(
+                {
+                    "id": f"vet_plan_events_hash_{label}_{pair}",
+                    "construct": {
+                        "type": "vet_plan",
+                        "plan_hash": plan_hash,
+                        "profile": "strict",
+                        "policy": "conservative",
+                        "caller_hash": caller,
+                        "events": event_spec,
+                        "acknowledge_side_effects": True,
+                        "input_format": "canonical",
+                        "gap": "source_hash_rust_only",
+                    },
+                }
+            )
+    return specs
+
+
+def discover_coverage_rows(vector_ids: set[str]) -> list[dict[str, Any]]:
+    root = repo_root()
+    rows: list[dict[str, Any]] = []
+    col0 = re.compile(r"^def (test_\w+)")
+    indented = re.compile(r"^    def (test_\w+)")
+    needle = "sesslint.repair.vetting"
+    for path in sorted(root.glob("tests/**/*.py")):
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        if needle not in text and "vet_plan" not in text:
+            continue
+        if needle not in text:
+            continue
+        lines = text.splitlines()
+        has_col0 = any(col0.match(line) for line in lines)
+        names: list[tuple[str, str]] = []
+        for line in lines:
+            match = col0.match(line)
+            if match:
+                names.append((match.group(1), "column_0"))
+            elif not has_col0 and (match := indented.match(line)):
+                names.append((match.group(1), "indented"))
+        for name, column in names:
+            key = f"{rel}::{name}"
+            rows.append(
+                {
+                    "test": key,
+                    "column": column,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "no pinned unit test targets vet_plan directly",
+                }
+            )
+    return rows
+
+
+def main() -> int:
+    vetting, planner, finding, codes, canonical = load_vetting_modules()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs(planner):
+        construct = spec["construct"]
+        kind = construct["type"]
+        if kind == "plan_step_identity":
+            expected = run_plan_step_identity(vetting, planner, construct)
+        elif kind == "vet_plan":
+            expected = run_vet_plan(vetting, planner, finding, codes, canonical, construct)
+        else:
+            raise SystemExit(f"unknown construct {kind!r}")
+        vectors.append({"id": spec["id"], "construct": construct, "expected": expected})
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "vetting_py_sha256": VETTING_PY_SHA256,
+        "vetting_rs_sha256": VETTING_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    vector_ids = {spec["id"] for spec in vector_specs(planner)}
+    coverage_rows = discover_coverage_rows(vector_ids)
+    covered = sum(1 for row in coverage_rows if row["status"] == "covered")
+    not_applicable = sum(1 for row in coverage_rows if row["status"] == "not_applicable")
+    coverage_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": coverage_rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage_doc, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.vetting parity (_plan_step_identity json.dumps "
+            "seam, source_hash checks, planner register_all seam)."
+        ),
+        "generator": "rust/parity/vectors/repair.vetting/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"coverage covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
