@@ -7,7 +7,7 @@
   "known_parity_gaps": [
     "GAP-checks-submodule-apis: accounting, checkpoint, graph, hygiene, identity, ordering, size, tool_pairing_1, and tool_pairing_2 have dedicated module parity vectors; exercising those entry points is not barrel coverage.",
     "GAP-checks-compute-finding-fingerprint: Python checks.__all__ re-exports compute_finding_fingerprint from sesslint.finding; the Rust checks crate barrel does not surface that name.",
-    "GAP-checks-tool-kinds: Python checks.__all__ lists TOOL_KINDS from tool_pairing_2; the Rust checks crate barrel omits TOOL_KINDS.",
+    "GAP-checks-tool-kinds: Python checks.__all__ lists TOOL_KINDS from tool_pairing_2. The checks re-export block does not repeat that name because the crate root already exports abstention TOOL_KINDS for the policy surface. This barrel list does not count that policy re-export as a checks __all__ row. The two constants are the same three kinds.",
     "GAP-checks-export-order: Rust lib.rs groups re-exports by submodule; Python __all__ uses a different name order (vectors record the Python order)."
   ]
 }

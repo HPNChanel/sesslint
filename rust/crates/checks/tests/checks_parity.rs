@@ -215,9 +215,14 @@ fn assert_case(case: &VectorCase, meta: &[(String, JsonValue)]) {
         );
         assert!(
             !RUST_CHECKS_BARREL.contains(name),
-            "Python-only name {name} must not be on Rust barrel yet"
+            "Python-only name {name} stays off the checks-surface list"
         );
     }
+    assert_eq!(
+        checks::TOOL_KINDS,
+        checks::tool_pairing_2::TOOL_KINDS,
+        "policy TOOL_KINDS and tool_pairing_2 TOOL_KINDS are the same three kinds"
+    );
 
     assert_ne!(want, RUST_CHECKS_BARREL, "export order differs (see GAP-checks-export-order)");
     assert_eq!(
