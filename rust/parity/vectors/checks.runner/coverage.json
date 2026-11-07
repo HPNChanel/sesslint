@@ -1,0 +1,28 @@
+{
+  "module": "sesslint.checks.runner",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 0,
+  "not_applicable_count": 5,
+  "rows": [
+    {
+      "test": "tests/checks/test_runner.py::test_executor_reexports_shared_runner",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_runner.py::test_verify_delegates_to_shared_runner",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_runner.py::test_runner_findings_byte_identical_across_entry_points",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_runner.py::test_runner_is_pure_and_deterministic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_runner.py::test_runner_profile_gating_parity",
+      "status": "not_applicable"
+    }
+  ]
+}

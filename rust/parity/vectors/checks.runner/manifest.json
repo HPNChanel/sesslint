@@ -1,0 +1,17 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.runner",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_runner_py_sha256": "7a46ab2503cb5ce50ae3ff3ca0cd029cd366b0efd42a2623204c499498fc0341",
+  "checks_runner_rs_sha256": "1a78321cd7d6144ac84821cbc1b257a266d484685644af1d033c7ebc206e0450",
+  "vector_count": 8,
+  "vectors_sha256": "64b0bfaa6c1b7db1f025dd5a2f0aba6020a602f4fcd1adbe123c3934c8f3805f",
+  "generator": "rust/parity/vectors/checks.runner/generate",
+  "known_parity_gaps": [
+    "GAP-runner-coverage: return_coverage true builds sesslint.report.Coverage in Python after detectors. Rust returns the coverage seam and does not construct Coverage on the successful path.",
+    "GAP-runner-profile-name: profile supplied as a str resolves through get_profile and sesslint.profiles.builtin in Python. Rust stops at the builtin seam for ProfileArg::Name.",
+    "GAP-runner-detector-profile-deps: non-empty streams call tool_pairing and other detectors that import sesslint.profiles in Python. Rust returns sesslint.profiles is not available instead of running the detector chain.",
+    "GAP-runner-executor-alias: repair.executor re-exports run_all_checks; parity vectors exercise sesslint.checks.runner.run_all_checks only.",
+    "GAP-runner-verify-delegate: verify._run_detector_checks delegates to the runner with adapter=canonical; that entry point is not this module's vector surface."
+  ]
+}
