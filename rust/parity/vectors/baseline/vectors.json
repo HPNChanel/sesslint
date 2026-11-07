@@ -1,0 +1,602 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.baseline",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "baseline_py_sha256": "7d641bb31d495783f7f14b0d99e8a29ef3c80f85924ed616013ba883892d0851",
+  "baseline_rs_sha256": "d76cf27b430c2cbb9385c29c32412bb781958ea1570b63ea6771bea05f1d3f5c",
+  "known_parity_gaps": [
+    "GAP-baseline-file-role-cwd: file_role absolutizes bare relative spellings against the process working directory; vectors use rooted or virtual paths only.",
+    "GAP-baseline-write-baseline: write_baseline delegates to sesslint.atomic atomic_write_text; parity does not pin host directory layout or temp rename races.",
+    "GAP-baseline-parse-json-messages: Rust load_baseline uses the hand-written JSON reader in baseline.rs; malformed-document cases that differ from json.loads error text are covered in unit tests, not vectors."
+  ],
+  "vectors": [
+    {
+      "id": "file_role_windows",
+      "construct": {
+        "type": "file_role",
+        "path": "C:\\work\\proj\\sess\\run.jsonl"
+      },
+      "expected": {
+        "file_role": "sess/run.jsonl"
+      }
+    },
+    {
+      "id": "file_role_abs",
+      "construct": {
+        "type": "file_role",
+        "path": "/abs/anywhere/sess/run.jsonl"
+      },
+      "expected": {
+        "file_role": "sess/run.jsonl"
+      }
+    },
+    {
+      "id": "file_role_stdin",
+      "construct": {
+        "type": "file_role",
+        "path": "<stdin>"
+      },
+      "expected": {
+        "file_role": "<stdin>"
+      }
+    },
+    {
+      "id": "file_role_stdin_suffix",
+      "construct": {
+        "type": "file_role",
+        "path": "<stdin>/extra"
+      },
+      "expected": {
+        "file_role": "<stdin>/extra"
+      }
+    },
+    {
+      "id": "file_role_unc",
+      "construct": {
+        "type": "file_role",
+        "path": "//server/share/run.jsonl"
+      },
+      "expected": {
+        "file_role": "share/run.jsonl"
+      }
+    },
+    {
+      "id": "file_role_root",
+      "construct": {
+        "type": "file_role",
+        "path": "/"
+      },
+      "expected": {
+        "file_role": ""
+      }
+    },
+    {
+      "id": "file_role_root_dotdot",
+      "construct": {
+        "type": "file_role",
+        "path": "/.."
+      },
+      "expected": {
+        "file_role": "/.."
+      }
+    },
+    {
+      "id": "file_role_drive_bare",
+      "construct": {
+        "type": "file_role",
+        "path": "C:/foo"
+      },
+      "expected": {
+        "file_role": "C:/foo"
+      }
+    },
+    {
+      "id": "file_role_drive_relative",
+      "construct": {
+        "type": "file_role",
+        "path": "C:run.jsonl"
+      },
+      "expected": {
+        "file_role": "C:run.jsonl"
+      }
+    },
+    {
+      "id": "v2_plain_deep",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          }
+        }
+      },
+      "expected": {
+        "key": "a035df28f53dcf3f"
+      }
+    },
+    {
+      "id": "v2_same_role_different_fp",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "fedcba9876543210",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          }
+        }
+      },
+      "expected": {
+        "key": "a035df28f53dcf3f"
+      }
+    },
+    {
+      "id": "v2_rich",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl",
+            "line": 3,
+            "record_id": "rec-1"
+          },
+          "evidence": {
+            "record_ordinal": 4,
+            "event_ids": [
+              "e-b",
+              "e-a"
+            ],
+            "count": 2,
+            "note": "skip"
+          }
+        }
+      },
+      "expected": {
+        "key": "f2010f0dc440ac90"
+      }
+    },
+    {
+      "id": "v2_unicode",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "fedcba9876543210",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence": {
+            "reason": "café",
+            "variant": "a\"b\\c"
+          }
+        }
+      },
+      "expected": {
+        "key": "cd708af3284c3635"
+      }
+    },
+    {
+      "id": "v2_nested_map",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence": {
+            "differing_fields": {
+              "z": 1,
+              "a": "q"
+            }
+          }
+        }
+      },
+      "expected": {
+        "key": "b9df0b810ca17654"
+      }
+    },
+    {
+      "id": "v2_ordinal_true",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence": {
+            "record_ordinal": true
+          }
+        }
+      },
+      "expected": {
+        "key": "5cd6c34109480bf0"
+      }
+    },
+    {
+      "id": "v2_ordinal_false",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence": {
+            "record_ordinal": false
+          }
+        }
+      },
+      "expected": {
+        "key": "3d244b1cd3251a7b"
+      }
+    },
+    {
+      "id": "v2_ordinal_negative",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence": {
+            "record_ordinal": -1
+          }
+        }
+      },
+      "expected": {
+        "key": "46df75197e1b6d4b"
+      }
+    },
+    {
+      "id": "v2_ordinal_zero",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence": {
+            "record_ordinal": 0
+          }
+        }
+      },
+      "expected": {
+        "key": "f3c8cc5dca22259a"
+      }
+    },
+    {
+      "id": "v2_ordinal_last_wins",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "C:/deep/checkout/sess/run.jsonl"
+          },
+          "evidence_pairs": [
+            [
+              "record_ordinal",
+              1
+            ],
+            [
+              "record_ordinal",
+              2
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "key": "d8ead83bc7de036b"
+      }
+    },
+    {
+      "id": "v2_dir_a",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "dirA/run.jsonl"
+          }
+        }
+      },
+      "expected": {
+        "key": "a3a390010ae88447"
+      }
+    },
+    {
+      "id": "v2_dir_b",
+      "construct": {
+        "type": "compute_v2_key",
+        "finding": {
+          "fingerprint": "0123456789abcdef",
+          "source": {
+            "path": "dirB/run.jsonl"
+          }
+        }
+      },
+      "expected": {
+        "key": "dc95ddc70e145971"
+      }
+    },
+    {
+      "id": "dump_two_entries",
+      "construct": {
+        "type": "dump_baseline",
+        "findings": [
+          {
+            "fingerprint": "0123456789abcdef",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl",
+              "line": 3,
+              "record_id": "rec-1"
+            },
+            "evidence": {
+              "record_ordinal": 4,
+              "event_ids": [
+                "e-b",
+                "e-a"
+              ],
+              "count": 2,
+              "note": "skip"
+            }
+          },
+          {
+            "fingerprint": "0011223344556677",
+            "source": {
+              "path": "dirB/run.jsonl"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"code\": \"SL001\",\n      \"created_by\": \"sesslint\",\n      \"file_role\": \"dirB/run.jsonl\",\n      \"key\": \"dc95ddc70e145971\"\n    },\n    {\n      \"code\": \"SL001\",\n      \"created_by\": \"sesslint\",\n      \"file_role\": \"sess/run.jsonl\",\n      \"key\": \"f2010f0dc440ac90\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n"
+      }
+    },
+    {
+      "id": "dump_dedupe_key",
+      "construct": {
+        "type": "dump_baseline",
+        "findings": [
+          {
+            "fingerprint": "0123456789abcdef",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          },
+          {
+            "fingerprint": "0011223344556677",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"code\": \"SL001\",\n      \"created_by\": \"sesslint\",\n      \"file_role\": \"sess/run.jsonl\",\n      \"key\": \"a035df28f53dcf3f\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n"
+      }
+    },
+    {
+      "id": "dump_created_by_unicode",
+      "construct": {
+        "type": "dump_baseline",
+        "findings": [
+          {
+            "fingerprint": "0123456789abcdef",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          }
+        ],
+        "created_by": "café"
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"code\": \"SL001\",\n      \"created_by\": \"caf\\u00e9\",\n      \"file_role\": \"sess/run.jsonl\",\n      \"key\": \"a035df28f53dcf3f\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n"
+      }
+    },
+    {
+      "id": "filter_ambiguous_shared_v2",
+      "construct": {
+        "type": "filter_findings",
+        "findings": [
+          {
+            "fingerprint": "fedcba9876543210",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          },
+          {
+            "fingerprint": "fedcba9876543210",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          }
+        ],
+        "baseline_keys": [
+          "a035df28f53dcf3f"
+        ]
+      },
+      "expected": {
+        "fingerprints": []
+      }
+    },
+    {
+      "id": "filter_v2_hit_suppresses",
+      "construct": {
+        "type": "filter_findings",
+        "findings": [
+          {
+            "fingerprint": "fedcba9876543210",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          }
+        ],
+        "baseline_keys": [
+          "a035df28f53dcf3f"
+        ]
+      },
+      "expected": {
+        "fingerprints": []
+      }
+    },
+    {
+      "id": "filter_v1_fingerprint_only",
+      "construct": {
+        "type": "filter_findings",
+        "findings": [
+          {
+            "fingerprint": "fedcba9876543210",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          },
+          {
+            "fingerprint": "0011223344556677",
+            "source": {
+              "path": "dirB/run.jsonl"
+            }
+          }
+        ],
+        "baseline_keys": [
+          "0011223344556677"
+        ]
+      },
+      "expected": {
+        "fingerprints": [
+          "fedcba9876543210"
+        ]
+      }
+    },
+    {
+      "id": "load_v1_ok",
+      "construct": {
+        "type": "load_baseline",
+        "basename": "v1-ok.json",
+        "baseline_text": "{\"schema_version\":\"sesslint.baseline/v1\",\"fingerprints\":[\"5d4465190d6abf3f\",\"aabbccddeeff0011\"]}"
+      },
+      "expected": {
+        "keys": [
+          "5d4465190d6abf3f",
+          "aabbccddeeff0011"
+        ]
+      }
+    },
+    {
+      "id": "load_v1_bad_hex",
+      "construct": {
+        "type": "load_baseline",
+        "basename": "v1-bad.json",
+        "baseline_text": "{\"schema_version\":\"sesslint.baseline/v1\",\"fingerprints\":[\"nope\"]}"
+      },
+      "expected": {
+        "raises": "BaselineError",
+        "message_contains": "fingerprints[0] must be a 16-hex string, got 'nope'"
+      }
+    },
+    {
+      "id": "load_v2_ok",
+      "construct": {
+        "type": "load_baseline",
+        "basename": "v2-ok.json",
+        "baseline_text": "{\"schema_version\":\"sesslint.baseline/v2\",\"entries\":[{\"key\":\"a035df28f53dcf3f\"}]}"
+      },
+      "expected": {
+        "keys": [
+          "a035df28f53dcf3f"
+        ]
+      }
+    },
+    {
+      "id": "load_schema_unknown",
+      "construct": {
+        "type": "load_baseline",
+        "basename": "schema.json",
+        "baseline_text": "{\"schema_version\":\"other/v9\",\"fingerprints\":[]}"
+      },
+      "expected": {
+        "raises": "BaselineError",
+        "message_contains": "must declare schema_version 'sesslint.baseline/v1' or 'sesslint.baseline/v2'"
+      }
+    },
+    {
+      "id": "load_missing",
+      "construct": {
+        "type": "load_baseline",
+        "basename": "missing/nope.json",
+        "baseline_text": "",
+        "write_file": false
+      },
+      "expected": {
+        "raises": "BaselineError",
+        "message_contains": "Baseline file not found:"
+      }
+    },
+    {
+      "id": "upgrade_none_unverified",
+      "construct": {
+        "type": "upgrade_baseline",
+        "basename": "upgrade-v1.json",
+        "baseline_text": "{\"fingerprints\":[\"aabbccddeeff0011\",\"0123456789abcdef\"],\"schema_version\":\"sesslint.baseline/v1\"}",
+        "findings": null
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"key\": \"0123456789abcdef\",\n      \"migrated\": \"unverified\"\n    },\n    {\n      \"key\": \"aabbccddeeff0011\",\n      \"migrated\": \"unverified\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "verified": 0,
+        "unverified": 2
+      }
+    },
+    {
+      "id": "upgrade_one_verified",
+      "construct": {
+        "type": "upgrade_baseline",
+        "basename": "upgrade-v1b.json",
+        "baseline_text": "{\"fingerprints\":[\"aabbccddeeff0011\",\"0123456789abcdef\"],\"schema_version\":\"sesslint.baseline/v1\"}",
+        "findings": [
+          {
+            "fingerprint": "0123456789abcdef",
+            "source": {
+              "path": "C:/deep/checkout/sess/run.jsonl"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"code\": \"SL001\",\n      \"created_by\": \"sesslint\",\n      \"file_role\": \"sess/run.jsonl\",\n      \"key\": \"a035df28f53dcf3f\",\n      \"migrated\": \"verified\"\n    },\n    {\n      \"key\": \"aabbccddeeff0011\",\n      \"migrated\": \"unverified\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "verified": 1,
+        "unverified": 1
+      }
+    },
+    {
+      "id": "upgrade_empty_v1",
+      "construct": {
+        "type": "upgrade_baseline",
+        "basename": "upgrade-empty.json",
+        "baseline_text": "{\"schema_version\":\"sesslint.baseline/v1\",\"fingerprints\":[]}",
+        "findings": null
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "verified": 0,
+        "unverified": 0
+      }
+    },
+    {
+      "id": "upgrade_rejects_v2",
+      "construct": {
+        "type": "upgrade_baseline",
+        "basename": "upgrade-v2.json",
+        "baseline_text": "{\"schema_version\":\"sesslint.baseline/v2\",\"entries\":[{\"key\":\"a035df28f53dcf3f\"}]}",
+        "findings": null
+      },
+      "expected": {
+        "raises": "BaselineError",
+        "message_contains": "--upgrade requires a 'sesslint.baseline/v1' baseline, got"
+      }
+    }
+  ]
+}

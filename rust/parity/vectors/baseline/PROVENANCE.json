@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic path spellings and finding fingerprints for sesslint.baseline parity (file_role, v2 keys, dump/filter/load/upgrade).",
+  "generator": "rust/parity/vectors/baseline/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-baseline-file-role-cwd: file_role absolutizes bare relative spellings against the process working directory; vectors use rooted or virtual paths only.",
+    "GAP-baseline-write-baseline: write_baseline delegates to sesslint.atomic atomic_write_text; parity does not pin host directory layout or temp rename races.",
+    "GAP-baseline-parse-json-messages: Rust load_baseline uses the hand-written JSON reader in baseline.rs; malformed-document cases that differ from json.loads error text are covered in unit tests, not vectors."
+  ]
+}
