@@ -7053,3 +7053,1262 @@ mod process_jsonl_line_tests {
         );
     }
 }
+
+// Port of `src/sesslint/adapters/codex_rollout.py`
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1312–1575.
+// `load_codex_rollout`, then `load_codex_rollout_session`, then `__all__`.
+//
+// Gaps vs Python (recorded, not papered over):
+// - A supplied tracker is not `SecretScanTracker`. It stops before path, size,
+//   SQLite, line, and record checks. Display is
+//   `sesslint.checks.hygiene.SecretScanTracker is not available`. The class is
+//   not constructed. No scan result is invented. An absent tracker is `None`
+//   inside [`_process_jsonl_line`], so `feed` is not called.
+// - [`make_finding`] omits the fingerprint. `Ok(_finding)` becomes
+//   `sesslint.determinism.canonical_json_bytes is not available`. The finding
+//   is not appended. That arm does not return an [`EventList`].
+// - [`_process_jsonl_line`] is called. Its error is returned. This slice does
+//   not invent a content hash.
+// - `note_produced` and `finalize` need `sesslint.io.MalformedTailTracker`,
+//   which is not in this crate. Events are not returned from either call.
+//   `assert_no_collision`, `DriftTracker::into_findings`,
+//   `SecretScanTracker.into_findings`, `UnknownMetadataTracker::findings`,
+//   and `sort_findings` are not reached.
+// - `load_codex_rollout_session` calls [`load_codex_rollout`]. On `Err`, that
+//   error is returned. On `Ok`, [`Session`] and [`SessionHeader`] are not
+//   built. The id `codex-rollout-session` is not constructed. The epoch
+//   timestamp is not a successful session. Display is
+//   `sesslint.canonical.Session is not available`.
+// - This slice does not parse JSON. There is no `regex` crate and no
+//   `serde_json`. `bool` is not an `int`. Limit fields are `i64`.
+
+#[allow(
+    clippy::items_after_test_module,
+    reason = "the rollout loader is appended after the existing line tests"
+)]
+mod rollout_loader {
+    use std::error::Error;
+    use std::fmt;
+    use std::fs::{self, File};
+    use std::io::{self, Read};
+    use std::path::{Component, Path, PrefixComponent};
+
+    use model::canonical::SessionEvent;
+    use model::codes::{Repairability, Severity, SL001};
+    use model::errors::{FindingError, MaxRecordsExceededError};
+    use model::finding::{
+        make_finding, Finding, MakeFindingInput, PyValue as FindingValue, SourceLine, SourceRef,
+        FINGERPRINT_CODEC_UNAVAILABLE,
+    };
+
+    use crate::drift::DriftTracker;
+    use crate::metadata::UnknownMetadataTracker;
+    use crate::openai_agents::{EventList, MetaValue, SourceMetadata};
+    use crate::synthetic::SyntheticIdCollisionGuard;
+
+    use super::{
+        _process_jsonl_line, CodexLineLimits, CodexRawLine, ProcessJsonlLineError, SQLITE_MAGIC,
+        SuppliedSecretScanTracker,
+    };
+
+    /// `DEFAULT_READER_LIMITS.max_line_bytes` from `src/sesslint/io.py` at the pin.
+    const DEFAULT_MAX_LINE_BYTES: i64 = 8 * 1024 * 1024;
+
+    /// `DEFAULT_READER_LIMITS.max_depth` from `src/sesslint/io.py` at the pin.
+    const DEFAULT_MAX_DEPTH: i64 = 100;
+
+    /// `DEFAULT_READER_LIMITS.max_file_bytes` from `src/sesslint/io.py` at the pin.
+    ///
+    /// `100 * 1024 * 1024`. This crate does not depend on `scan`.
+    const DEFAULT_MAX_FILE_BYTES: i64 = 100 * 1024 * 1024;
+
+    const SECRET_SCAN_TRACKER_UNAVAILABLE: &str =
+        "sesslint.checks.hygiene.SecretScanTracker is not available";
+
+    const TAIL_NOTE_PRODUCED_UNAVAILABLE: &str =
+        "sesslint.io.MalformedTailTracker.note_produced is not available";
+
+    const TAIL_FINALIZE_UNAVAILABLE: &str =
+        "sesslint.io.MalformedTailTracker.finalize is not available";
+
+    const SESSION_UNAVAILABLE: &str = "sesslint.canonical.Session is not available";
+
+    const SIZE_LIMIT_TEMPLATE: &str = "File size exceeds maximum limit [detail: LIMIT]";
+
+    const SQLITE_REFUSAL_TEMPLATE: &str = "Refused live SQLite database; SessLint requires exported items or checkpoints [detail: refused_live_db]";
+
+    const LINE_NUMBER_OVERFLOW: &str = "line_number does not fit in i64";
+
+    const RECORD_COUNT_OVERFLOW: &str = "record count does not fit in i64";
+
+    const OFFSET_OVERFLOW: &str = "byte offset does not fit in i64";
+
+    /// `max_line_bytes`, `max_depth`, `max_file_bytes`, and `max_records`.
+    ///
+    /// Python: `ReaderLimits`. Each integer field is an `i64`. A bool is not
+    /// an int, so `True` and `False` cannot be stored here. `None` for
+    /// `max_records` is the pin default.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct CodexLoadLimits {
+        /// Python: `ReaderLimits.max_line_bytes`.
+        pub max_line_bytes: i64,
+        /// Python: `ReaderLimits.max_depth`.
+        pub max_depth: i64,
+        /// Python: `ReaderLimits.max_file_bytes`.
+        pub max_file_bytes: i64,
+        /// Python: `ReaderLimits.max_records`. `None` means no cap.
+        pub max_records: Option<i64>,
+    }
+
+    impl Default for CodexLoadLimits {
+        fn default() -> Self {
+            Self {
+                max_line_bytes: DEFAULT_MAX_LINE_BYTES,
+                max_depth: DEFAULT_MAX_DEPTH,
+                max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+                max_records: None,
+            }
+        }
+    }
+
+    /// Input of [`load_codex_rollout`].
+    ///
+    /// Python: `Path | str | BinaryIO | bytes`. [`Self::Bytes`] is the first
+    /// arm. [`Self::Str`] and [`Self::Path`] are the path arm. [`Self::Stream`]
+    /// is the already-open arm and is not closed.
+    pub enum CodexLoadSource<'a> {
+        /// `bytes`. The label is `<bytes>`.
+        Bytes(&'a [u8]),
+        /// `str` or `os.fspath` text.
+        Str(&'a str),
+        /// `pathlib.Path` or another path.
+        Path(&'a Path),
+        /// `BinaryIO`. This reader is not closed.
+        Stream {
+            /// Byte source. Not an owned file.
+            reader: &'a mut dyn Read,
+            /// `getattr(stream, "name", "<stream>")` when that value is text.
+            /// `None` means the attribute is missing.
+            name: Option<&'a str>,
+        },
+    }
+
+    /// Which pure gate reached [`make_finding`].
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum CodexFindingGate {
+        /// `st_size` or the read buffer is over `max_file_bytes`.
+        Size,
+        /// Leading [`SQLITE_MAGIC`].
+        Sqlite,
+    }
+
+    /// `MalformedTailTracker` method that this crate cannot call.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum CodexTailCall {
+        /// `tail_tracker.note_produced`.
+        NoteProduced,
+        /// `tail_tracker.finalize`.
+        Finalize,
+    }
+
+    impl CodexTailCall {
+        const fn message(self) -> &'static str {
+            match self {
+                Self::NoteProduced => TAIL_NOTE_PRODUCED_UNAVAILABLE,
+                Self::Finalize => TAIL_FINALIZE_UNAVAILABLE,
+            }
+        }
+    }
+
+    /// A counter that does not fit in `i64`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum CodexCountOverflow {
+        /// `line_number`.
+        LineNumber,
+        /// `record_count`.
+        RecordCount,
+        /// `byte_offset` or `byte_end`.
+        Offset,
+    }
+
+    impl CodexCountOverflow {
+        const fn message(self) -> &'static str {
+            match self {
+                Self::LineNumber => LINE_NUMBER_OVERFLOW,
+                Self::RecordCount => RECORD_COUNT_OVERFLOW,
+                Self::Offset => OFFSET_OVERFLOW,
+            }
+        }
+    }
+
+    /// Failure from [`load_codex_rollout`].
+    ///
+    /// [`Self::SecretScanTracker`] is the supplied-tracker seam.
+    /// [`Self::Finding`] is an omitted fingerprint. [`Self::Line`] is
+    /// [`_process_jsonl_line`]. [`Self::Tail`] does not return events.
+    #[derive(Debug)]
+    pub enum LoadCodexRolloutError {
+        /// [`SECRET_SCAN_TRACKER_UNAVAILABLE`].
+        SecretScanTracker,
+        /// `FileNotFoundError`: `Session file not found: {path}`.
+        NotFound(String),
+        /// `IsADirectoryError`: `Expected session file, got directory: {path}`.
+        IsADirectory(String),
+        /// `open` or `read` failed.
+        Io(io::Error),
+        /// [`make_finding`] stopped. The finding was not appended.
+        Finding {
+            /// Size-limit gate or SQLite refusal.
+            gate: CodexFindingGate,
+            /// Slash-normalized source path. Not part of [`Display`].
+            path: String,
+            /// Codec seam, or an earlier [`make_finding`] rejection.
+            error: FindingError,
+        },
+        /// [`MaxRecordsExceededError`].
+        MaxRecords(MaxRecordsExceededError),
+        /// [`_process_jsonl_line`] failed. Events from that call are not returned.
+        Line(ProcessJsonlLineError),
+        /// [`CodexRawLine::try_new`] rejected a coordinate.
+        Coordinates(super::CodexRawLineError),
+        /// A line number, record count, or offset does not fit in `i64`.
+        Count(CodexCountOverflow),
+        /// `MalformedTailTracker` method. Events are not returned.
+        Tail(CodexTailCall),
+    }
+
+    impl LoadCodexRolloutError {
+        /// Size or SQLite gate when [`make_finding`] was called.
+        #[must_use]
+        pub const fn finding_gate(&self) -> Option<CodexFindingGate> {
+            match self {
+                Self::Finding { gate, .. } => Some(*gate),
+                _ => None,
+            }
+        }
+
+        /// Slash-normalized path passed to [`make_finding`].
+        #[must_use]
+        pub fn source_path(&self) -> Option<&str> {
+            match self {
+                Self::Finding { path, .. } => Some(path),
+                _ => None,
+            }
+        }
+    }
+
+    impl fmt::Display for LoadCodexRolloutError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::SecretScanTracker => formatter.write_str(SECRET_SCAN_TRACKER_UNAVAILABLE),
+                Self::NotFound(message) | Self::IsADirectory(message) => {
+                    formatter.write_str(message)
+                }
+                Self::Io(error) => error.fmt(formatter),
+                Self::Finding { error, .. } => error.fmt(formatter),
+                Self::MaxRecords(error) => error.fmt(formatter),
+                Self::Line(error) => error.fmt(formatter),
+                Self::Coordinates(error) => error.fmt(formatter),
+                Self::Count(overflow) => formatter.write_str(overflow.message()),
+                Self::Tail(call) => formatter.write_str(call.message()),
+            }
+        }
+    }
+
+    impl Error for LoadCodexRolloutError {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            match self {
+                Self::Io(error) => Some(error),
+                Self::Finding { error, .. } => Some(error),
+                Self::MaxRecords(error) => Some(error),
+                Self::Line(error) => Some(error),
+                Self::Coordinates(error) => Some(error),
+                Self::SecretScanTracker
+                | Self::NotFound(_)
+                | Self::IsADirectory(_)
+                | Self::Count(_)
+                | Self::Tail(_) => None,
+            }
+        }
+    }
+
+    /// Failure from [`load_codex_rollout_session`].
+    ///
+    /// [`Self::Load`] is the loader error, with that same [`Display`].
+    /// [`Self::Session`] is the success arm. Its [`Display`] is
+    /// [`SESSION_UNAVAILABLE`].
+    #[derive(Debug)]
+    pub enum LoadCodexRolloutSessionError {
+        /// [`load_codex_rollout`] failed.
+        Load(LoadCodexRolloutError),
+        /// The pin would build `Session`. That type is not returned.
+        Session,
+    }
+
+    impl fmt::Display for LoadCodexRolloutSessionError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Load(error) => error.fmt(formatter),
+                Self::Session => formatter.write_str(SESSION_UNAVAILABLE),
+            }
+        }
+    }
+
+    impl Error for LoadCodexRolloutSessionError {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            match self {
+                Self::Load(error) => Some(error),
+                Self::Session => None,
+            }
+        }
+    }
+
+    /// Ingest a Codex rollout-`*.jsonl` session through the pure gates.
+    ///
+    /// Python: `load_codex_rollout` lines 1312–1537. `limits` `None` uses the
+    /// pin defaults. A supplied [`SuppliedSecretScanTracker`] returns
+    /// [`LoadCodexRolloutError::SecretScanTracker`] before any other check.
+    ///
+    /// Path checks use `str(Path)` in `FileNotFoundError` and
+    /// `IsADirectoryError`. The finding path replaces `\` with `/`. A file
+    /// larger than `max_file_bytes` stops at [`make_finding`] before `open`.
+    /// Bytes and streams read 16 bytes, refuse [`SQLITE_MAGIC`], then read
+    /// `max(0, max_file_bytes - 16 + 1)` more bytes. A longer buffer stops at
+    /// [`make_finding`]. `Ok` from [`make_finding`] becomes
+    /// [`FINGERPRINT_CODEC_UNAVAILABLE`] and does not append a finding.
+    ///
+    /// A kept line is [`CodexRawLine`]. `max_records` is checked before
+    /// [`_process_jsonl_line`]. That error is returned. On `Ok`, the next
+    /// call is `note_produced`, which is
+    /// [`TAIL_NOTE_PRODUCED_UNAVAILABLE`]. No events are returned. A buffer
+    /// with no kept line stops at [`TAIL_FINALIZE_UNAVAILABLE`].
+    ///
+    /// # Errors
+    ///
+    /// The supplied tracker, a missing path, a directory, I/O, a rejected
+    /// finding, `MaxRecordsExceededError`, [`_process_jsonl_line`], a
+    /// coordinate, an `i64` counter, or `MalformedTailTracker`.
+    #[must_use = "the loader seam is the result"]
+    pub fn load_codex_rollout(
+        source: CodexLoadSource<'_>,
+        limits: Option<CodexLoadLimits>,
+        secret_tracker: Option<SuppliedSecretScanTracker>,
+    ) -> Result<(EventList, Vec<Finding>), LoadCodexRolloutError> {
+        if secret_tracker.is_some() {
+            return Err(LoadCodexRolloutError::SecretScanTracker);
+        }
+        let limits = limits.unwrap_or_default();
+        match source {
+            CodexLoadSource::Bytes(bytes) => {
+                let mut cursor = io::Cursor::new(bytes);
+                ingest_reader(&mut cursor, "<bytes>", &limits)
+            }
+            CodexLoadSource::Str(text) => load_path(Path::new(text), &limits),
+            CodexLoadSource::Path(path) => load_path(path, &limits),
+            CodexLoadSource::Stream { reader, name } => {
+                ingest_reader(reader, &stream_name(name), &limits)
+            }
+        }
+    }
+
+    /// Stream a Codex rollout file and stop before the `Session` envelope.
+    ///
+    /// Python: `load_codex_rollout_session` lines 1540–1560. The only call is
+    /// [`load_codex_rollout`]. On [`Err`], that error is returned. On [`Ok`],
+    /// `events[0].ts`, `session_meta`, [`model::canonical::SessionHeader`],
+    /// and [`model::canonical::Session`] are not read or built. The id
+    /// `codex-rollout-session` is not constructed. `1970-01-01T00:00:00Z` is
+    /// not returned as a session timestamp. Display of that arm is
+    /// [`SESSION_UNAVAILABLE`].
+    ///
+    /// # Errors
+    ///
+    /// The loader error, or [`LoadCodexRolloutSessionError::Session`] if the
+    /// loader returns events. Success is [`std::convert::Infallible`].
+    #[must_use = "the session seam is the result"]
+    pub fn load_codex_rollout_session(
+        source: CodexLoadSource<'_>,
+        limits: Option<CodexLoadLimits>,
+        secret_tracker: Option<SuppliedSecretScanTracker>,
+    ) -> Result<std::convert::Infallible, LoadCodexRolloutSessionError> {
+        match load_codex_rollout(source, limits, secret_tracker) {
+            Err(error) => Err(LoadCodexRolloutSessionError::Load(error)),
+            Ok(_loaded) => Err(LoadCodexRolloutSessionError::Session),
+        }
+    }
+
+    /// Python module `__all__`, lines 1563–1575, in that order.
+    ///
+    /// `CanonicalEvent` is named here and is not a type in this module.
+    pub const ALL: [&str; 11] = [
+        "CRITICAL_KEYS",
+        "CanonicalEvent",
+        "ENVELOPE_OPAQUE_TYPES",
+        "KNOWN_ENVELOPE_KEYS",
+        "KNOWN_PAYLOAD_KEYS",
+        "RESPONSE_ITEM_TYPE_MAP",
+        "SQLITE_MAGIC",
+        "SUPPORTED_CODEX_ROLLOUT_VERSIONS",
+        "detect_codex_rollout",
+        "load_codex_rollout",
+        "load_codex_rollout_session",
+    ];
+
+    struct LoadState {
+        events: Vec<SessionEvent>,
+        findings: Vec<Finding>,
+        source: SourceMetadata,
+        guard: SyntheticIdCollisionGuard,
+        drift: DriftTracker,
+        unknown: UnknownMetadataTracker,
+        seen_version_sl301: bool,
+        last_event_id: Option<String>,
+        last_envelope_ordinal: Option<i64>,
+        gap_after_drop: bool,
+    }
+
+    impl LoadState {
+        fn new() -> Self {
+            Self {
+                events: Vec::new(),
+                findings: Vec::new(),
+                source: codex_source(),
+                guard: SyntheticIdCollisionGuard::new(),
+                drift: DriftTracker::new("codex-rollout"),
+                unknown: UnknownMetadataTracker::new(),
+                seen_version_sl301: false,
+                last_event_id: None,
+                last_envelope_ordinal: None,
+                gap_after_drop: false,
+            }
+        }
+    }
+
+    fn codex_source() -> SourceMetadata {
+        let mut source = SourceMetadata::from_entries([
+            ("format", MetaValue::Str("codex-rollout".to_owned())),
+            ("checkpoints", MetaValue::List(Vec::new())),
+        ]);
+        source.insert("links", MetaValue::List(Vec::new()));
+        source.insert("record_sizes", MetaValue::List(Vec::new()));
+        source
+    }
+
+    fn stream_name(name: Option<&str>) -> String {
+        match name {
+            Some(text) => text.replace('\\', "/"),
+            None => String::from("<stream>"),
+        }
+    }
+
+    fn load_path(
+        path: &Path,
+        limits: &CodexLoadLimits,
+    ) -> Result<(EventList, Vec<Finding>), LoadCodexRolloutError> {
+        let displayed = python_path_text(path);
+        let finding_path = displayed.replace('\\', "/");
+        let meta = match fs::metadata(path) {
+            Ok(meta) => meta,
+            Err(_) => return Err(not_found(&displayed)),
+        };
+        if meta.is_dir() {
+            return Err(is_directory(&displayed));
+        }
+        if meta.is_file() && exceeds_u64(meta.len(), limits.max_file_bytes) {
+            return Err(size_gate(&finding_path, limits.max_file_bytes));
+        }
+        let mut file = File::open(path).map_err(LoadCodexRolloutError::Io)?;
+        let outcome = ingest_reader(&mut file, &finding_path, limits);
+        drop(file);
+        outcome
+    }
+
+    fn not_found(displayed: &str) -> LoadCodexRolloutError {
+        LoadCodexRolloutError::NotFound(format!("Session file not found: {displayed}"))
+    }
+
+    fn is_directory(displayed: &str) -> LoadCodexRolloutError {
+        LoadCodexRolloutError::IsADirectory(format!(
+            "Expected session file, got directory: {displayed}"
+        ))
+    }
+
+    fn ingest_reader(
+        reader: &mut dyn Read,
+        path_str: &str,
+        limits: &CodexLoadLimits,
+    ) -> Result<(EventList, Vec<Finding>), LoadCodexRolloutError> {
+        let first = read_limited(reader, 16)?;
+        if first.starts_with(SQLITE_MAGIC) {
+            return Err(sqlite_gate(path_str));
+        }
+        let extra = extra_to_read(limits.max_file_bytes, first.len());
+        let mut full = first;
+        full.extend(read_limited(reader, extra)?);
+        if exceeds_usize(full.len(), limits.max_file_bytes) {
+            return Err(size_gate(path_str, limits.max_file_bytes));
+        }
+        scan_lines(&full, path_str, limits)
+    }
+
+    fn read_limited(reader: &mut dyn Read, max: usize) -> Result<Vec<u8>, LoadCodexRolloutError> {
+        let mut out = Vec::new();
+        if max == 0 {
+            return Ok(out);
+        }
+        let mut buf = [0_u8; 8192];
+        while out.len() < max {
+            let want = (max - out.len()).min(buf.len());
+            match reader.read(&mut buf[..want]) {
+                Ok(0) => break,
+                Ok(count) => out.extend_from_slice(&buf[..count]),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(LoadCodexRolloutError::Io(error)),
+            }
+        }
+        Ok(out)
+    }
+
+    fn extra_to_read(max_bytes: i64, first_len: usize) -> usize {
+        let max = i128::from(max_bytes);
+        let first = i128::from(u64::try_from(first_len).map_or(u64::MAX, |value| value));
+        let raw = max - first + 1;
+        if raw <= 0 {
+            0
+        } else {
+            usize::try_from(raw).unwrap_or(usize::MAX)
+        }
+    }
+
+    fn exceeds_u64(len: u64, max_bytes: i64) -> bool {
+        match u64::try_from(max_bytes) {
+            Ok(max) => len > max,
+            Err(_) => true,
+        }
+    }
+
+    fn exceeds_usize(len: usize, max_bytes: i64) -> bool {
+        exceeds_u64(u64::try_from(len).map_or(u64::MAX, |value| value), max_bytes)
+    }
+
+    fn size_gate(path_str: &str, max_bytes: i64) -> LoadCodexRolloutError {
+        let evidence = FindingValue::map(vec![
+            (
+                FindingValue::string("reason"),
+                FindingValue::string("size_limit_exceeded"),
+            ),
+            (FindingValue::string("limit"), FindingValue::int(max_bytes)),
+        ]);
+        omitted_gate(
+            CodexFindingGate::Size,
+            path_str,
+            Severity::Error,
+            Repairability::Manual,
+            SIZE_LIMIT_TEMPLATE,
+            evidence,
+        )
+    }
+
+    fn sqlite_gate(path_str: &str) -> LoadCodexRolloutError {
+        let evidence = FindingValue::map(vec![(
+            FindingValue::string("reason"),
+            FindingValue::string("refused_live_db"),
+        )]);
+        omitted_gate(
+            CodexFindingGate::Sqlite,
+            path_str,
+            Severity::Fatal,
+            Repairability::Unsupported,
+            SQLITE_REFUSAL_TEMPLATE,
+            evidence,
+        )
+    }
+
+    fn omitted_gate(
+        gate: CodexFindingGate,
+        path_str: &str,
+        severity: Severity,
+        repairability: Repairability,
+        template: &str,
+        evidence: FindingValue,
+    ) -> LoadCodexRolloutError {
+        let path = path_str.to_owned();
+        let source = match SourceRef::try_new(path_str, Some(SourceLine::Int(1)), None) {
+            Ok(source) => source,
+            Err(error) => {
+                return LoadCodexRolloutError::Finding { gate, path, error };
+            }
+        };
+        let error = match make_finding(&MakeFindingInput {
+            code: FindingValue::string(SL001),
+            severity: FindingValue::severity(severity),
+            repairability: FindingValue::repairability(repairability),
+            message_template: FindingValue::string(template),
+            template_args: FindingValue::None,
+            source: FindingValue::source(source),
+            related_ids: FindingValue::tuple(Vec::new()),
+            evidence,
+            fingerprint: FindingValue::None,
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            context: None,
+        }) {
+            Err(error) => error,
+            Ok(_finding) => FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE),
+        };
+        LoadCodexRolloutError::Finding { gate, path, error }
+    }
+
+    fn scan_lines(
+        data: &[u8],
+        path_str: &str,
+        limits: &CodexLoadLimits,
+    ) -> Result<(EventList, Vec<Finding>), LoadCodexRolloutError> {
+        let mut state = LoadState::new();
+        let mut offset = 0_usize;
+        let mut line_number = 0_i64;
+        let mut record_count = 0_i64;
+        let mut pending: Option<CodexRawLine> = None;
+        while offset < data.len() {
+            line_number = line_number
+                .checked_add(1)
+                .ok_or(LoadCodexRolloutError::Count(CodexCountOverflow::LineNumber))?;
+            let line_start = offset;
+            let (line_end, chunk) = next_line(data, offset)?;
+            offset = line_end;
+            let truncated = longer_than(chunk.len(), limits.max_line_bytes);
+            if !truncated && bytes_blank(chunk) {
+                continue;
+            }
+            record_count = record_count
+                .checked_add(1)
+                .ok_or(LoadCodexRolloutError::Count(CodexCountOverflow::RecordCount))?;
+            let raw = CodexRawLine::try_new(
+                line_number,
+                record_bytes(chunk, truncated, limits.max_line_bytes),
+                truncated,
+                fit_offset(line_start)?,
+                fit_offset(line_end)?,
+                record_count,
+            )
+            .map_err(LoadCodexRolloutError::Coordinates)?;
+            if let Some(pending_raw) = pending.as_ref() {
+                enforce_max_records(pending_raw, limits.max_records)?;
+                run_line(&mut state, pending_raw, false, path_str, limits)?;
+                return Err(LoadCodexRolloutError::Tail(CodexTailCall::NoteProduced));
+            }
+            pending = Some(raw);
+        }
+        if let Some(pending_raw) = pending.as_ref() {
+            enforce_max_records(pending_raw, limits.max_records)?;
+            run_line(&mut state, pending_raw, true, path_str, limits)?;
+            return Err(LoadCodexRolloutError::Tail(CodexTailCall::NoteProduced));
+        }
+        Err(LoadCodexRolloutError::Tail(CodexTailCall::Finalize))
+    }
+
+    fn next_line(
+        data: &[u8],
+        offset: usize,
+    ) -> Result<(usize, &[u8]), LoadCodexRolloutError> {
+        match data[offset..].iter().position(|byte| *byte == b'\n') {
+            None => Ok((data.len(), &data[offset..])),
+            Some(relative) => {
+                let end = offset
+                    .checked_add(relative)
+                    .and_then(|value| value.checked_add(1))
+                    .ok_or(LoadCodexRolloutError::Count(CodexCountOverflow::Offset))?;
+                Ok((end, &data[offset..end]))
+            }
+        }
+    }
+
+    fn longer_than(len: usize, max_line_bytes: i64) -> bool {
+        match i64::try_from(len) {
+            Ok(len) => len > max_line_bytes,
+            Err(_) => true,
+        }
+    }
+
+    fn bytes_blank(chunk: &[u8]) -> bool {
+        chunk
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+    }
+
+    fn record_bytes(chunk: &[u8], truncated: bool, max_line_bytes: i64) -> Vec<u8> {
+        if !truncated {
+            return chunk.to_vec();
+        }
+        match max_line_bytes.checked_add(1) {
+            Some(end) if end > 0 => {
+                let end = usize::try_from(end).unwrap_or(usize::MAX);
+                chunk[..end.min(chunk.len())].to_vec()
+            }
+            Some(end) => bytes_slice_end(chunk, end),
+            None => chunk.to_vec(),
+        }
+    }
+
+    fn bytes_slice_end(chunk: &[u8], end: i64) -> Vec<u8> {
+        if end == 0 {
+            return Vec::new();
+        }
+        let Ok(drop) = usize::try_from(end.unsigned_abs()) else {
+            return Vec::new();
+        };
+        if drop >= chunk.len() {
+            Vec::new()
+        } else {
+            chunk[..chunk.len() - drop].to_vec()
+        }
+    }
+
+    fn fit_offset(value: usize) -> Result<i64, LoadCodexRolloutError> {
+        i64::try_from(value).map_err(|_| LoadCodexRolloutError::Count(CodexCountOverflow::Offset))
+    }
+
+    fn enforce_max_records(
+        raw: &CodexRawLine,
+        max_records: Option<i64>,
+    ) -> Result<(), LoadCodexRolloutError> {
+        let Some(max_records) = max_records else {
+            return Ok(());
+        };
+        if raw.record_ordinal() > max_records {
+            let ordinal = raw.record_ordinal();
+            return Err(LoadCodexRolloutError::MaxRecords(MaxRecordsExceededError::new(
+                format!("Record count {ordinal} exceeds limit of {max_records}"),
+            )));
+        }
+        Ok(())
+    }
+
+    fn run_line(
+        state: &mut LoadState,
+        raw: &CodexRawLine,
+        is_terminal: bool,
+        path_str: &str,
+        limits: &CodexLoadLimits,
+    ) -> Result<(), LoadCodexRolloutError> {
+        _process_jsonl_line(
+            raw,
+            is_terminal,
+            path_str,
+            CodexLineLimits {
+                max_depth: limits.max_depth,
+            },
+            &mut state.events,
+            &mut state.findings,
+            &mut state.source,
+            state.seen_version_sl301,
+            Some(&mut state.guard),
+            state.last_event_id.as_deref(),
+            state.last_envelope_ordinal,
+            state.gap_after_drop,
+            Some(&mut state.drift),
+            None,
+            Some(&mut state.unknown),
+        )
+        .map(|_| ())
+        .map_err(LoadCodexRolloutError::Line)
+    }
+
+    fn python_path_text(path: &Path) -> String {
+        let mut prefix = String::new();
+        let mut rooted = false;
+        let mut parts = Vec::new();
+        for component in path.components() {
+            match component {
+                Component::Prefix(prefix_component) => {
+                    prefix = prefix_text(&prefix_component);
+                }
+                Component::RootDir => rooted = true,
+                Component::CurDir => {}
+                Component::ParentDir => parts.push("..".to_owned()),
+                Component::Normal(text) => parts.push(text.to_string_lossy().into_owned()),
+            }
+        }
+        join_python_path(&prefix, rooted, &parts)
+    }
+
+    fn prefix_text(component: &PrefixComponent<'_>) -> String {
+        component.as_os_str().to_string_lossy().into_owned()
+    }
+
+    fn join_python_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
+        let sep = std::path::MAIN_SEPARATOR;
+        if prefix.is_empty() && !rooted && parts.is_empty() {
+            return ".".to_owned();
+        }
+        let mut out = String::new();
+        if !prefix.is_empty() {
+            out.push_str(prefix);
+        }
+        if rooted && !out.ends_with(sep) {
+            out.push(sep);
+        }
+        for (index, part) in parts.iter().enumerate() {
+            let drive_relative = index == 0 && !rooted && prefix.ends_with(':');
+            if !out.is_empty() && !out.ends_with(sep) && !drive_relative {
+                out.push(sep);
+            }
+            out.push_str(part);
+        }
+        if out.is_empty() {
+            ".".to_owned()
+        } else {
+            out
+        }
+    }
+
+    /// Synthetic envelopes only. No session payload from a real transcript.
+    #[cfg(test)]
+    mod tests {
+        use std::error::Error;
+        use std::fs;
+        use std::io::{self, Read};
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        use super::{
+            extra_to_read, load_codex_rollout, load_codex_rollout_session, python_path_text,
+            CodexCountOverflow, CodexFindingGate, CodexLoadLimits, CodexLoadSource,
+            CodexTailCall, LoadCodexRolloutError, LoadCodexRolloutSessionError, ALL,
+            DEFAULT_MAX_DEPTH, DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_LINE_BYTES,
+            SECRET_SCAN_TRACKER_UNAVAILABLE, SESSION_UNAVAILABLE, TAIL_FINALIZE_UNAVAILABLE,
+            TAIL_NOTE_PRODUCED_UNAVAILABLE,
+        };
+        use crate::codex_rollout::SQLITE_MAGIC;
+        use crate::codex_rollout::SuppliedSecretScanTracker;
+
+        const FINGERPRINT: &str = "sesslint.determinism.canonical_json_bytes is not available";
+        const CONTENT_HASH: &str = "sesslint._canonical_codec.payload_content_hash is not available";
+        const MARKER: &str = "SYNTHETIC-MARKER-CODEX-05";
+
+        fn limits(max_file_bytes: i64, max_line_bytes: i64, max_records: Option<i64>) -> CodexLoadLimits {
+            CodexLoadLimits {
+                max_file_bytes,
+                max_line_bytes,
+                max_depth: DEFAULT_MAX_DEPTH,
+                max_records,
+            }
+        }
+
+        fn depth_limits(max_depth: i64) -> CodexLoadLimits {
+            CodexLoadLimits {
+                max_depth,
+                ..CodexLoadLimits::default()
+            }
+        }
+
+        fn load_bytes(
+            bytes: &[u8],
+            limits: Option<CodexLoadLimits>,
+            secret: Option<SuppliedSecretScanTracker>,
+        ) -> LoadCodexRolloutError {
+            load_codex_rollout(CodexLoadSource::Bytes(bytes), limits, secret).expect_err("load")
+        }
+
+        fn session_bytes(
+            bytes: &[u8],
+            limits: Option<CodexLoadLimits>,
+            secret: Option<SuppliedSecretScanTracker>,
+        ) -> LoadCodexRolloutSessionError {
+            match load_codex_rollout_session(CodexLoadSource::Bytes(bytes), limits, secret) {
+                Ok(never) => match never {},
+                Err(error) => error,
+            }
+        }
+
+        fn assert_not_a_session(text: &str) {
+            assert_ne!(text, SESSION_UNAVAILABLE);
+            assert!(!text.contains("codex-rollout-session"));
+            assert!(!text.contains("1970-01-01T00:00:00Z"));
+            assert!(!text.contains("sesslint.session/v1"));
+            assert!(!text.contains(MARKER));
+        }
+
+        fn assert_same_session(
+            bytes: &[u8],
+            limits: Option<CodexLoadLimits>,
+            secret: Option<SuppliedSecretScanTracker>,
+        ) {
+            let loaded = load_bytes(bytes, limits, secret);
+            let wrapped = session_bytes(bytes, limits, secret);
+            assert_eq!(wrapped.to_string(), loaded.to_string());
+            assert_not_a_session(&wrapped.to_string());
+            assert!(!matches!(wrapped, LoadCodexRolloutSessionError::Session));
+        }
+
+        struct Scratch {
+            path: PathBuf,
+        }
+
+        impl Scratch {
+            fn new(label: &str) -> Self {
+                static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+                let n = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+                let path = std::env::temp_dir().join(format!(
+                    "sesslint-codex-05-{label}-{}-{n}",
+                    std::process::id()
+                ));
+                fs::create_dir_all(&path).expect("scratch");
+                Self { path }
+            }
+
+            fn child(&self, name: &str) -> PathBuf {
+                self.path.join(name)
+            }
+        }
+
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.path);
+            }
+        }
+
+        struct CountRead<'a> {
+            data: &'a [u8],
+            pos: usize,
+            reads: usize,
+        }
+
+        impl Read for CountRead<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                self.reads = self.reads.saturating_add(1);
+                if self.pos >= self.data.len() || buf.is_empty() {
+                    return Ok(0);
+                }
+                let count = buf.len().min(self.data.len() - self.pos);
+                buf[..count].copy_from_slice(&self.data[self.pos..self.pos + count]);
+                self.pos += count;
+                Ok(count)
+            }
+        }
+
+        #[test]
+        fn all_is_the_pin_list_and_defaults_match_io() {
+            assert_eq!(
+                ALL,
+                [
+                    "CRITICAL_KEYS",
+                    "CanonicalEvent",
+                    "ENVELOPE_OPAQUE_TYPES",
+                    "KNOWN_ENVELOPE_KEYS",
+                    "KNOWN_PAYLOAD_KEYS",
+                    "RESPONSE_ITEM_TYPE_MAP",
+                    "SQLITE_MAGIC",
+                    "SUPPORTED_CODEX_ROLLOUT_VERSIONS",
+                    "detect_codex_rollout",
+                    "load_codex_rollout",
+                    "load_codex_rollout_session",
+                ]
+            );
+            assert_eq!(DEFAULT_MAX_LINE_BYTES, 8 * 1024 * 1024);
+            assert_eq!(DEFAULT_MAX_DEPTH, 100);
+            assert_eq!(DEFAULT_MAX_FILE_BYTES, 100 * 1024 * 1024);
+            let defaults = CodexLoadLimits::default();
+            assert_eq!(defaults.max_line_bytes, DEFAULT_MAX_LINE_BYTES);
+            assert_eq!(defaults.max_depth, DEFAULT_MAX_DEPTH);
+            assert_eq!(defaults.max_file_bytes, DEFAULT_MAX_FILE_BYTES);
+            assert_eq!(defaults.max_records, None);
+            assert_eq!(extra_to_read(4, 16), 0);
+            assert_eq!(extra_to_read(20, 16), 5);
+            assert_eq!(extra_to_read(-1, 0), 0);
+        }
+
+        #[test]
+        fn python_path_text_matches_pathlib_samples() {
+            let sep = std::path::MAIN_SEPARATOR;
+            assert_eq!(python_path_text(PathBuf::from("").as_path()), ".");
+            assert_eq!(python_path_text(PathBuf::from(".").as_path()), ".");
+            assert_eq!(python_path_text(PathBuf::from("./dir").as_path()), "dir");
+            assert_eq!(python_path_text(PathBuf::from("foo/").as_path()), "foo");
+            assert_eq!(
+                python_path_text(PathBuf::from("foo/../bar").as_path()),
+                format!("foo{sep}..{sep}bar")
+            );
+            assert_eq!(
+                python_path_text(PathBuf::from("a//b").as_path()),
+                format!("a{sep}b")
+            );
+            assert_eq!(
+                python_path_text(PathBuf::from("missing/file.json").as_path()),
+                format!("missing{sep}file.json")
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn python_path_text_matches_windows_pathlib() {
+            use std::path::Path;
+            assert_eq!(python_path_text(Path::new("C:/nope/x")), r"C:\nope\x");
+            assert_eq!(python_path_text(Path::new(r"/abs/file")), r"\abs\file");
+            assert_eq!(python_path_text(Path::new("C:foo")), "C:foo");
+            assert_eq!(python_path_text(Path::new("C:/")), r"C:\");
+            assert_eq!(python_path_text(Path::new("/")), r"\");
+            assert_eq!(
+                python_path_text(Path::new(r"\\server\share\f")),
+                r"\\server\share\f"
+            );
+        }
+
+        #[test]
+        fn supplied_tracker_stops_before_path_size_and_sqlite() {
+            let scratch = Scratch::new("secret");
+            let missing = scratch.child("missing.jsonl");
+            let missing_text = missing.to_str().expect("utf8");
+            let secret = Some(SuppliedSecretScanTracker);
+            let err = load_codex_rollout(CodexLoadSource::Str(missing_text), None, secret)
+                .expect_err("secret");
+            assert!(matches!(err, LoadCodexRolloutError::SecretScanTracker));
+            assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+            assert_not_a_session(&err.to_string());
+            assert!(!err.to_string().contains("missing.jsonl"));
+
+            let marker = format!("{MARKER}\n");
+            let bytes = load_bytes(marker.as_bytes(), Some(limits(1, 1, Some(0))), secret);
+            assert!(matches!(bytes, LoadCodexRolloutError::SecretScanTracker));
+            assert_eq!(bytes.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+            assert_not_a_session(&bytes.to_string());
+
+            let mut sqlite = SQLITE_MAGIC.to_vec();
+            sqlite.extend(MARKER.as_bytes());
+            let early = load_bytes(&sqlite, Some(limits(1, 8, None)), secret);
+            assert!(matches!(early, LoadCodexRolloutError::SecretScanTracker));
+            assert_same_session(&sqlite, Some(limits(1, 8, None)), secret);
+        }
+
+        #[test]
+        fn path_guards_keep_stat_size_ahead_of_sqlite() {
+            let scratch = Scratch::new("path");
+            let missing = scratch.child("missing.jsonl");
+            let missing_text = missing.to_str().expect("utf8");
+            let not_found = load_codex_rollout(CodexLoadSource::Str(missing_text), None, None)
+                .expect_err("missing");
+            assert!(matches!(not_found, LoadCodexRolloutError::NotFound(_)));
+            assert!(not_found.to_string().starts_with("Session file not found:"));
+            assert!(not_found.to_string().contains("missing.jsonl"));
+            assert_not_a_session(&not_found.to_string());
+            let same = load_codex_rollout(CodexLoadSource::Path(missing.as_path()), None, None)
+                .expect_err("path");
+            assert_eq!(same.to_string(), not_found.to_string());
+
+            let dir_text = scratch.path.to_str().expect("utf8");
+            let directory =
+                load_codex_rollout(CodexLoadSource::Str(dir_text), None, None).expect_err("dir");
+            assert!(matches!(directory, LoadCodexRolloutError::IsADirectory(_)));
+            assert!(directory
+                .to_string()
+                .starts_with("Expected session file, got directory:"));
+            assert_not_a_session(&directory.to_string());
+
+            let over = scratch.child("over.jsonl");
+            let body = format!("{MARKER}-over");
+            fs::write(&over, body.as_bytes()).expect("write");
+            let over_text = over.to_str().expect("utf8");
+            let too_big = load_codex_rollout(
+                CodexLoadSource::Str(over_text),
+                Some(limits(4, DEFAULT_MAX_LINE_BYTES, None)),
+                None,
+            )
+            .expect_err("size");
+            assert_eq!(too_big.finding_gate(), Some(CodexFindingGate::Size));
+            assert_eq!(too_big.to_string(), FINGERPRINT);
+            assert!(too_big.source_path().is_some_and(|path| !path.contains('\\')));
+            assert!(too_big.source_path().is_some_and(|path| path.ends_with("over.jsonl")));
+            assert_not_a_session(&too_big.to_string());
+            assert_eq!(fs::read(&over).expect("still"), body.as_bytes());
+
+            let exact = scratch.child("exact.jsonl");
+            fs::write(&exact, b"abcd").expect("write");
+            let exact_text = exact.to_str().expect("utf8");
+            let kept = load_codex_rollout(
+                CodexLoadSource::Str(exact_text),
+                Some(limits(4, DEFAULT_MAX_LINE_BYTES, None)),
+                None,
+            )
+            .expect_err("line");
+            assert!(matches!(kept, LoadCodexRolloutError::Line(_)));
+            assert_eq!(kept.to_string(), FINGERPRINT);
+
+            let live = scratch.child("live.db");
+            let mut sqlite = SQLITE_MAGIC.to_vec();
+            sqlite.extend(MARKER.as_bytes());
+            fs::write(&live, &sqlite).expect("write");
+            let refused = load_codex_rollout(
+                CodexLoadSource::Path(live.as_path()),
+                Some(limits(i64::try_from(sqlite.len()).expect("len"), 64, None)),
+                None,
+            )
+            .expect_err("sqlite");
+            assert_eq!(refused.finding_gate(), Some(CodexFindingGate::Sqlite));
+            assert_eq!(refused.to_string(), FINGERPRINT);
+            assert_not_a_session(&refused.to_string());
+
+            let huge = scratch.child("huge.db");
+            fs::write(&huge, &sqlite).expect("write");
+            let huge_text = huge.to_str().expect("utf8");
+            let sized = load_codex_rollout(
+                CodexLoadSource::Str(huge_text),
+                Some(limits(4, 64, None)),
+                None,
+            )
+            .expect_err("stat");
+            assert_eq!(sized.finding_gate(), Some(CodexFindingGate::Size));
+            assert_eq!(sized.to_string(), FINGERPRINT);
+            assert_eq!(fs::read(&huge).expect("unread"), sqlite);
+        }
+
+        #[test]
+        fn bytes_and_streams_check_sqlite_before_the_rest_of_the_buffer() {
+            let mut sqlite = SQLITE_MAGIC.to_vec();
+            sqlite.extend(MARKER.as_bytes());
+            let refused = load_bytes(&sqlite, Some(limits(1, 8, None)), None);
+            assert_eq!(refused.finding_gate(), Some(CodexFindingGate::Sqlite));
+            assert_eq!(refused.source_path(), Some("<bytes>"));
+            assert_eq!(refused.to_string(), FINGERPRINT);
+            assert_not_a_session(&refused.to_string());
+
+            let marker = format!("hello {MARKER}");
+            let sized = load_bytes(marker.as_bytes(), Some(limits(4, 8, None)), None);
+            assert_eq!(sized.finding_gate(), Some(CodexFindingGate::Size));
+            assert_eq!(sized.to_string(), FINGERPRINT);
+            assert_not_a_session(&sized.to_string());
+
+            let mut reader = CountRead {
+                data: &sqlite,
+                pos: 0,
+                reads: 0,
+            };
+            let streamed = load_codex_rollout(
+                CodexLoadSource::Stream {
+                    reader: &mut reader,
+                    name: Some(r"a\b"),
+                },
+                Some(limits(1, 8, None)),
+                None,
+            )
+            .expect_err("stream");
+            assert_eq!(streamed.finding_gate(), Some(CodexFindingGate::Sqlite));
+            assert_eq!(streamed.source_path(), Some("a/b"));
+            assert_eq!(reader.reads, 1);
+            assert_eq!(reader.pos, SQLITE_MAGIC.len());
+
+            let plain = format!("{MARKER}-plain-buffer-tail");
+            let mut sized_reader = CountRead {
+                data: plain.as_bytes(),
+                pos: 0,
+                reads: 0,
+            };
+            let stopped = load_codex_rollout(
+                CodexLoadSource::Stream {
+                    reader: &mut sized_reader,
+                    name: None,
+                },
+                Some(limits(4, 8, None)),
+                None,
+            )
+            .expect_err("cap");
+            assert_eq!(stopped.finding_gate(), Some(CodexFindingGate::Size));
+            assert_eq!(stopped.source_path(), Some("<stream>"));
+            assert_eq!(sized_reader.reads, 1);
+            assert_eq!(stopped.to_string(), FINGERPRINT);
+        }
+
+        #[test]
+        fn line_errors_come_from_process_jsonl_line_without_a_hash() {
+            let object = b"{\"type\":\"event_msg\",\"payload\":{}}\n";
+            let hashed = load_bytes(object, None, None);
+            assert!(matches!(hashed, LoadCodexRolloutError::Line(_)));
+            assert_eq!(hashed.to_string(), CONTENT_HASH);
+            assert_not_a_session(&hashed.to_string());
+            assert_same_session(object, None, None);
+
+            let boolean = b"{\"type\":\"event_msg\",\"payload\":{},\"ordinal\":true}\n";
+            let flag = load_bytes(boolean, None, None);
+            assert_eq!(flag.to_string(), CONTENT_HASH);
+            assert_ne!(flag.to_string(), "1");
+            let one = b"{\"type\":\"event_msg\",\"payload\":{},\"ordinal\":1}\n";
+            let number = load_bytes(one, None, None);
+            assert_eq!(number.to_string(), CONTENT_HASH);
+
+            let torn = load_bytes(b"{\n", None, None);
+            assert!(matches!(torn, LoadCodexRolloutError::Line(_)));
+            assert_eq!(torn.to_string(), FINGERPRINT);
+
+            let nested = load_bytes(br#"{"a":{"b":true}}"#, Some(depth_limits(1)), None);
+            assert_eq!(nested.to_string(), FINGERPRINT);
+
+            let spaces = load_bytes(b" \n\t\n", None, None);
+            assert!(matches!(
+                spaces,
+                LoadCodexRolloutError::Tail(CodexTailCall::Finalize)
+            ));
+            assert_eq!(spaces.to_string(), TAIL_FINALIZE_UNAVAILABLE);
+            assert_not_a_session(&spaces.to_string());
+
+            let wide = load_bytes(b"   \n", Some(limits(100, 1, None)), None);
+            assert!(matches!(wide, LoadCodexRolloutError::Line(_)));
+            assert_eq!(wide.to_string(), FINGERPRINT);
+
+            let nbsp = load_bytes(&[0xc2, 0xa0, b'\n'], None, None);
+            assert!(matches!(nbsp, LoadCodexRolloutError::Line(_)));
+            assert_eq!(nbsp.to_string(), FINGERPRINT);
+
+            let capped = load_bytes(object, Some(limits(100, 64, Some(0))), None);
+            assert!(matches!(capped, LoadCodexRolloutError::MaxRecords(_)));
+            assert_eq!(capped.to_string(), "Record count 1 exceeds limit of 0");
+            assert_not_a_session(&capped.to_string());
+
+            let second = b"{\"type\":\"event_msg\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{}}\n";
+            let first_wins = load_bytes(second, Some(limits(100, 64, Some(1))), None);
+            assert_eq!(first_wins.to_string(), CONTENT_HASH);
+            let both_capped = load_bytes(second, Some(limits(100, 64, Some(0))), None);
+            assert_eq!(both_capped.to_string(), "Record count 1 exceeds limit of 0");
+
+            assert_eq!(
+                CodexTailCall::NoteProduced.message(),
+                TAIL_NOTE_PRODUCED_UNAVAILABLE
+            );
+        }
+
+        #[test]
+        fn empty_bytes_stop_at_finalize_and_the_session_arm_is_separate() {
+            let empty = load_bytes(b"", None, None);
+            assert!(matches!(
+                empty,
+                LoadCodexRolloutError::Tail(CodexTailCall::Finalize)
+            ));
+            assert_eq!(empty.to_string(), TAIL_FINALIZE_UNAVAILABLE);
+            assert_same_session(b"", None, None);
+            assert_eq!(
+                LoadCodexRolloutSessionError::Session.to_string(),
+                SESSION_UNAVAILABLE
+            );
+            assert!(Error::source(&LoadCodexRolloutSessionError::Session).is_none());
+            assert_eq!(
+                CodexCountOverflow::LineNumber.message(),
+                "line_number does not fit in i64"
+            );
+            assert_eq!(
+                CodexCountOverflow::RecordCount.message(),
+                "record count does not fit in i64"
+            );
+            assert_eq!(
+                CodexCountOverflow::Offset.message(),
+                "byte offset does not fit in i64"
+            );
+        }
+    }
+}
+
+pub use rollout_loader::{
+    load_codex_rollout, load_codex_rollout_session, CodexCountOverflow, CodexFindingGate,
+    CodexLoadLimits, CodexLoadSource, CodexTailCall, LoadCodexRolloutError,
+    LoadCodexRolloutSessionError, ALL,
+};
