@@ -23,9 +23,10 @@
 //! [`build_payload`] calls `sesslint.io._STRICT_JSON_DECODER.decode` only when
 //! the selected tool-call `args` / `arguments` / `input` value is a `str`.
 //! That decoder is not in this crate. The arm returns
-//! [`STRICT_JSON_DECODE_UNAVAILABLE`] and does not build a payload. The field
-//! selection before that call still runs, in pin order. Other kinds do not
-//! call it. [`detect_openai_agents`] does not call it and returns a score.
+//! [`STRICT_JSON_DECODE_UNAVAILABLE`] and does not build a payload. Name and
+//! call-id `str()` run first, in pin order, and an unrepresentable value
+//! fails before the decoder seam. Other kinds do not call it.
+//! [`detect_openai_agents`] does not call it and returns a score.
 //! This file does not invent an SL code.
 //!
 //! [`detect_openai_agents`] uses the filename, then the bytes: an empty
@@ -1268,8 +1269,9 @@ fn bump(index: &mut usize) -> Option<()> {
 
 /// Construct the content payload for one canonical kind.
 ///
-/// Python: `_build_payload`. `kind` is compared as a string. The tool-call
-/// string-input arm does not return a payload: [`STRICT_JSON_DECODE_UNAVAILABLE`].
+/// Python: `_build_payload`. `kind` is compared as a string. A tool-call
+/// string input renders the name and call id first, then stops at
+/// [`STRICT_JSON_DECODE_UNAVAILABLE`] and does not return a payload.
 ///
 /// # Errors
 ///
@@ -1307,9 +1309,6 @@ fn payload_tool_call(obj: &MapValue, rec_id: &str) -> Result<MapValue, BuildPayl
     let raw_name = first_non_null(obj, &["name", "tool_name", "function"]);
     let raw_call = first_non_null(obj, &["call_id", "tool_call_id"]);
     let raw_input = first_non_null(obj, &["args", "arguments", "input"]);
-    if matches!(raw_input, Some(MetaValue::Str(_))) {
-        return Err(BuildPayloadError::Unavailable);
-    }
     let tool_name = match raw_name {
         Some(value) => meta_text(value)?,
         None => String::new(),
@@ -1318,6 +1317,9 @@ fn payload_tool_call(obj: &MapValue, rec_id: &str) -> Result<MapValue, BuildPayl
         Some(value) => meta_text(value)?,
         None => rec_id.to_owned(),
     };
+    if matches!(raw_input, Some(MetaValue::Str(_))) {
+        return Err(BuildPayloadError::Unavailable);
+    }
     let input_payload = match raw_input {
         None => MetaValue::Map(MapValue::new(Vec::new())),
         Some(MetaValue::Map(map)) => MetaValue::Map(map.clone()),
@@ -2539,9 +2541,9 @@ mod tests {
         );
         assert_eq!(
             bytes_and_string
-                .expect_err("decode is required first")
+                .expect_err("str(name) runs before decode")
                 .to_string(),
-            STRICT_JSON_DECODE_UNAVAILABLE
+            STR_UNRENDERED
         );
 
         let bytes_name = build_payload(
