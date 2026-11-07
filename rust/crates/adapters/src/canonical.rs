@@ -1,8 +1,12 @@
 //! Canonical session adapter prefix (`sesslint.session/v1`).
 //!
 //! Port of `src/sesslint/adapters/canonical.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–928.
-//! Stops before `_canonical_source_label` (line 931).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–953.
+//! Stops before `_load_canonical` (line 956).
+//!
+//! [`canonical_source_label`] is Python `_canonical_source_label`.
+//! [`load_canonical`]'s first statement is `SecretScanTracker()`. That
+//! call is not available in this crate.
 //!
 //! This slice declares the key sets, [`SourceMetadata`], [`EventList`],
 //! [`normalize_version`], [`detect_canonical`], [`event_to_dict`],
@@ -79,9 +83,21 @@
 //!   `None`. Another type is not stored as a substitute string.
 //! - [`Payload`] walks still skip non-string keys, so a non-string key is
 //!   absent from `extra_fields` and from the SL302 scan.
+//! - [`load_canonical`] does not build a tracker, call `_load_canonical`,
+//!   `into_findings`, or `sort_findings`, and it does not return an
+//!   [`EventList`] or an SL009 finding. [`canonical_source_label`] stays
+//!   callable on its own. `load_canonical` does not call it.
+//! - [`canonical_source_label`] renders `str(Path(...))` with host
+//!   `std::path` rules, then replaces every `\` with `/`. `..` is kept.
+//!   A stream `name` is only slash-replaced. A missing `name` is
+//!   `<stream>`. A non-str `name` is not given a substitute string.
+//!   On Windows `\` is a separator, so `a\.\b` becomes `a/b`. On other
+//!   hosts that text stays one component until the replacement, so it
+//!   becomes `a/./b`.
 
 use std::error::Error;
 use std::fmt;
+use std::path::{Component, Path};
 
 use model::canonical::{
     normalize_for_canonical_json, CanonicalUnavailable, MapLookup, Payload, SessionEvent,
@@ -2736,6 +2752,139 @@ fn reject_unhashable(value: &Payload) -> Result<(), ParseCanonicalEventError> {
     Ok(())
 }
 
+/// `sesslint.checks.hygiene.SecretScanTracker` is not in this crate.
+pub const SECRET_SCAN_TRACKER_UNAVAILABLE: &str =
+    "sesslint.checks.hygiene.SecretScanTracker is not available";
+
+/// Input of [`canonical_source_label`] and [`load_canonical`].
+///
+/// Python: `Path | str | BinaryIO | bytes`. [`Self::Bytes`] is checked
+/// first. [`Self::Str`] and [`Self::PathLike`] are the `str` / `os.PathLike`
+/// / `Path` arm. [`Self::Stream`] is every other object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalSource<'a> {
+    /// `bytes`. The label is `<bytes>`. The bytes are not a path.
+    Bytes(&'a [u8]),
+    /// `str`.
+    Str(&'a str),
+    /// `os.PathLike` or `pathlib.Path`. The text is the `str` from
+    /// `os.fspath`, which for a `Path` is `str(Path)`.
+    PathLike(&'a str),
+    /// Not `bytes`, `str`, `PathLike`, or `Path`.
+    ///
+    /// `name` is `getattr(path, "name", ...)`. `None` means the attribute
+    /// is missing. This variant has no path of its own.
+    Stream { name: Option<&'a str> },
+}
+
+/// Failure from [`load_canonical`].
+///
+/// [`Display`](std::fmt::Display) is
+/// [`SECRET_SCAN_TRACKER_UNAVAILABLE`]. This is not an [`EventList`] and
+/// it is not an SL009 finding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadCanonicalError;
+
+impl LoadCanonicalError {
+    /// The seam text.
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        SECRET_SCAN_TRACKER_UNAVAILABLE
+    }
+}
+
+impl fmt::Display for LoadCanonicalError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(SECRET_SCAN_TRACKER_UNAVAILABLE)
+    }
+}
+
+impl Error for LoadCanonicalError {}
+
+/// Deterministic source label for finding coordinates.
+///
+/// Python: `_canonical_source_label`. `bytes` is `<bytes>`. `str`,
+/// `os.PathLike`, and `Path` are `str(Path(path))` with every `\` replaced
+/// by `/`. Anything else is `str(getattr(path, "name", "<stream>"))` with
+/// the same replacement. A missing `name` stays `<stream>`.
+#[must_use]
+pub fn canonical_source_label(path: CanonicalSource<'_>) -> String {
+    match path {
+        CanonicalSource::Bytes(bytes) => {
+            let _ = bytes;
+            String::from("<bytes>")
+        }
+        CanonicalSource::Str(text) | CanonicalSource::PathLike(text) => path_label(text),
+        CanonicalSource::Stream { name: Some(name) } => name.replace('\\', "/"),
+        CanonicalSource::Stream { name: None } => String::from("<stream>"),
+    }
+}
+
+/// Strictly load and validate a canonical session document.
+///
+/// Python: `load_canonical`. The first statement is `SecretScanTracker()`.
+/// `sesslint.checks.hygiene.SecretScanTracker` is not in this crate, so
+/// this returns [`SECRET_SCAN_TRACKER_UNAVAILABLE`]. `path` and `limits`
+/// are not read. [`canonical_source_label`] is not called.
+///
+/// # Errors
+///
+/// [`LoadCanonicalError`]. Success is [`std::convert::Infallible`], so
+/// this does not return an [`EventList`].
+pub fn load_canonical(
+    path: CanonicalSource<'_>,
+    limits: Option<crate::source::SuppliedReaderLimits>,
+) -> Result<std::convert::Infallible, LoadCanonicalError> {
+    Err(secret_scan_tracker(path, limits))
+}
+
+/// Python's `SecretScanTracker()` is not available.
+///
+/// The arguments are accepted so the call has the same inputs as
+/// `load_canonical`. They are not read, and no tracker value is built.
+fn secret_scan_tracker(
+    path: CanonicalSource<'_>,
+    limits: Option<crate::source::SuppliedReaderLimits>,
+) -> LoadCanonicalError {
+    let _ = (path, limits);
+    LoadCanonicalError
+}
+
+fn path_label(text: &str) -> String {
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut parts = Vec::new();
+    for component in Path::new(text).components() {
+        match component {
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            Component::ParentDir => parts.push(String::from("..")),
+            Component::Normal(part) => {
+                parts.push(part.to_string_lossy().replace('\\', "/"));
+            }
+            #[cfg(windows)]
+            Component::Prefix(value) => {
+                prefix = value.as_os_str().to_string_lossy().replace('\\', "/");
+            }
+        }
+    }
+    join_path(&prefix, rooted, &parts)
+}
+
+fn join_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
+    let body = parts.join("/");
+    match (prefix.is_empty(), rooted, body.is_empty()) {
+        (true, true, true) => String::from("/"),
+        (true, true, false) => format!("/{body}"),
+        (true, false, true) => String::from("."),
+        (true, false, false) => body,
+        (false, true, true) => format!("{prefix}/"),
+        (false, true, false) => format!("{prefix}/{body}"),
+        (false, false, true) => prefix.to_owned(),
+        (false, false, false) => format!("{prefix}{body}"),
+    }
+}
+
 fn payload_class_name(value: &Payload) -> &'static str {
     if value.is_null() {
         "NoneType"
@@ -2767,12 +2916,13 @@ mod tests {
     use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     use super::{
-        classify_session_doc, common_event, detect_canonical, dump_canonical, event_to_dict,
-        normalize_version, parse_canonical_event_record, safe_evidence_val, safe_rec_id,
-        safe_type_value, AttrSource, Attribute, DumpInput, EventList, EventObject, EventSequence,
-        MetaValue, ParseCanonicalEventError, ProvidedSource, SourceMetadata, CRITICAL_KEYS,
+        canonical_source_label, classify_session_doc, common_event, detect_canonical,
+        dump_canonical, event_to_dict, load_canonical, normalize_version,
+        parse_canonical_event_record, safe_evidence_val, safe_rec_id, safe_type_value, AttrSource,
+        Attribute, CanonicalSource, DumpInput, EventList, EventObject, EventSequence, MetaValue,
+        ParseCanonicalEventError, ProvidedSource, SourceMetadata, CRITICAL_KEYS,
         CRITICAL_TOP_KEYS, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS, KNOWN_TOP_KEYS,
-        REQUIRED_EVENT_KEYS, SUPPORTED_CANONICAL_VERSIONS,
+        REQUIRED_EVENT_KEYS, SECRET_SCAN_TRACKER_UNAVAILABLE, SUPPORTED_CANONICAL_VERSIONS,
     };
     use crate::drift::DriftTracker;
     use crate::safe_value::PyValue;
@@ -3988,5 +4138,124 @@ mod tests {
         assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
         assert!(!err.to_string().contains("unhashable"));
         assert_eq!(seen, 0);
+    }
+
+    fn label_of(text: &str) -> String {
+        canonical_source_label(CanonicalSource::Str(text))
+    }
+
+    #[test]
+    fn canonical_source_label_bytes_are_not_a_path() {
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Bytes(br"synth\leaf")),
+            "<bytes>"
+        );
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Bytes(b"C:/synth")),
+            "<bytes>"
+        );
+        assert_eq!(canonical_source_label(CanonicalSource::Bytes(b"")), "<bytes>");
+    }
+
+    #[test]
+    fn canonical_source_label_renders_str_and_pathlike() {
+        assert_eq!(label_of(""), ".");
+        assert_eq!(label_of("."), ".");
+        assert_eq!(label_of("./synth"), "synth");
+        assert_eq!(label_of("synth/./leaf"), "synth/leaf");
+        assert_eq!(label_of("synth/../leaf"), "synth/../leaf");
+        assert_eq!(label_of("synth//leaf"), "synth/leaf");
+        assert_eq!(label_of("synth/"), "synth");
+        assert_eq!(label_of("/synth/leaf"), "/synth/leaf");
+        assert_eq!(label_of(r"synth\leaf"), "synth/leaf");
+        assert_eq!(label_of(r"foo\bar/baz"), "foo/bar/baz");
+        assert_eq!(label_of("C:/synth/leaf"), "C:/synth/leaf");
+        assert_eq!(label_of("C:synth"), "C:synth");
+        assert_eq!(label_of("C:synth/leaf"), "C:synth/leaf");
+        assert_eq!(
+            canonical_source_label(CanonicalSource::PathLike(r"synth\leaf")),
+            "synth/leaf"
+        );
+        assert_eq!(
+            canonical_source_label(CanonicalSource::PathLike("synth/./leaf")),
+            label_of("synth/./leaf")
+        );
+    }
+
+    #[test]
+    fn canonical_source_label_stream_name_is_not_a_path() {
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Stream { name: None }),
+            "<stream>"
+        );
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Stream { name: Some("") }),
+            ""
+        );
+        assert_ne!(label_of(""), "");
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Stream {
+                name: Some(r"synth\leaf"),
+            }),
+            "synth/leaf"
+        );
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Stream {
+                name: Some(r"a\.\b"),
+            }),
+            "a/./b"
+        );
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Stream {
+                name: Some("synth//leaf"),
+            }),
+            "synth//leaf"
+        );
+        assert_ne!(label_of("synth//leaf"), "synth//leaf");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn canonical_source_label_follows_windows_path() {
+        assert_eq!(label_of(r"a\.\b"), "a/b");
+        assert_eq!(label_of(r".\synth"), "synth");
+        assert_eq!(label_of("C:/"), "C:/");
+        assert_eq!(label_of("//server/share"), "//server/share/");
+        assert_eq!(label_of("//server/share/synth"), "//server/share/synth");
+        assert_eq!(label_of(r"\\server\share"), "//server/share/");
+        assert_eq!(label_of(r"\\?\C:\synth"), "//?/C:/synth");
+        assert_eq!(label_of(r"\\.\NUL"), "//./NUL/");
+    }
+
+    #[test]
+    fn load_canonical_stops_before_the_label() {
+        let tracker = "sesslint.checks.hygiene.SecretScanTracker is not available";
+        let path = CanonicalSource::Str("synth/leaf");
+        let err = load_canonical(path, None).expect_err("tracker");
+        assert_eq!(err.to_string(), tracker);
+        assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert_eq!(err.message(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert!(!err.to_string().contains("synth"));
+        assert!(!err.to_string().contains("SL009"));
+        assert!(!err.to_string().contains("<bytes>"));
+        assert_ne!(err.to_string(), canonical_source_label(path));
+
+        let bytes = load_canonical(CanonicalSource::Bytes(br"synth\leaf"), None).expect_err("bytes");
+        assert_eq!(bytes.to_string(), tracker);
+        let streamed = load_canonical(CanonicalSource::Stream { name: None }, None).expect_err("stream");
+        assert_eq!(streamed.to_string(), tracker);
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Stream { name: None }),
+            "<stream>"
+        );
+        assert_ne!(streamed.to_string(), "<stream>");
+
+        let supplied = load_canonical(
+            CanonicalSource::PathLike("synth/leaf"),
+            Some(crate::source::SuppliedReaderLimits),
+        )
+        .expect_err("limits");
+        assert_eq!(supplied, err);
+        assert_eq!(supplied.to_string(), tracker);
     }
 }
