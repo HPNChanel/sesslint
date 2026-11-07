@@ -6111,3 +6111,605 @@ mod session_indexes {
 }
 
 pub use session_indexes::{reconcile_session_indexes, FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT};
+
+#[allow(
+    clippy::items_after_test_module,
+    reason = "RX-P2.6-scan-scan-08 appends after the existing tests"
+)]
+mod state_dbs {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::Path;
+
+    use super::{FileResult, MinimizePathUnavailable};
+
+    /// Copied pin literal for `FORMAT_CODEX_ROLLOUT`. Data, not an adapters call.
+    const FORMAT_CODEX_ROLLOUT: &str = "codex-rollout";
+
+    /// Python: `_reconcile_state_dbs`.
+    ///
+    /// Port of `src/sesslint/scan.py` lines 1918-2087
+    /// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+    /// Stops before `read_codex_state`.
+    ///
+    /// [`super::FORMAT_CODEX_ROLLOUT`] is copied here as `codex-rollout`. It is
+    /// data. This crate does not call `sesslint.adapters`.
+    ///
+    /// Results are indexed by the stored `path` before a state-db path is
+    /// read. An empty `state_db_files` returns those rows. `minimize_path` is
+    /// not called.
+    ///
+    /// A non-empty list sorts by `minimize_path` before `read_codex_state`.
+    /// That helper is not in this crate. Display is
+    /// `sesslint.report.minimize_path is not available`. `read_codex_state`,
+    /// `sesslint.indexes.read_index`, and `make_finding` are not called. No
+    /// [`FileResult`] list is returned. No SL402 finding is created. No
+    /// [`super::ScanReport`] is returned.
+    ///
+    /// Rust has no defaults. Pass `None` when `baseline` is omitted.
+    ///
+    /// # Errors
+    ///
+    /// [`MinimizePathUnavailable`] when `state_db_files` is non-empty. This
+    /// function does not panic.
+    pub fn reconcile_state_dbs(
+        results: &[FileResult],
+        state_db_files: &[&Path],
+        baseline: Option<&BTreeSet<String>>,
+    ) -> Result<Vec<FileResult>, MinimizePathUnavailable> {
+        let by_path = index_by_path(results);
+        let out = results.to_vec();
+        let Some(first) = state_db_files.first().copied() else {
+            let _indexed = (FORMAT_CODEX_ROLLOUT, by_path.len());
+            return Ok(out);
+        };
+        // Pin: `sorted(state_db_files, key=lambda p: minimize_path(p))`
+        // before `read_codex_state`. The helper is not in this crate.
+        let _bound = (
+            FORMAT_CODEX_ROLLOUT.len(),
+            by_path.len(),
+            first.as_os_str().len(),
+            state_db_files.len(),
+            baseline.map(BTreeSet::len),
+        );
+        Err(MinimizePathUnavailable)
+    }
+
+    fn index_by_path(results: &[FileResult]) -> BTreeMap<String, usize> {
+        let mut by_path = BTreeMap::new();
+        for (index, result) in results.iter().enumerate() {
+            by_path.insert(result.path.clone(), index);
+        }
+        by_path
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::any::TypeId;
+        use std::collections::BTreeSet;
+        use std::error::Error;
+        use std::path::Path;
+
+        use super::super::{
+            FileResult, MinimizePathUnavailable, ScanReport, SessionLink, Verdict,
+            MINIMIZE_PATH_UNAVAILABLE,
+        };
+        use super::{index_by_path, reconcile_state_dbs, FORMAT_CODEX_ROLLOUT};
+
+        fn row(path: &str, verdict: Verdict) -> FileResult {
+            FileResult::new(path, verdict)
+        }
+
+        #[test]
+        fn codex_rollout_literal_is_copied_data() {
+            assert_eq!(FORMAT_CODEX_ROLLOUT, "codex-rollout");
+            assert_eq!(FORMAT_CODEX_ROLLOUT, super::super::FORMAT_CODEX_ROLLOUT);
+            assert_ne!(TypeId::of::<bool>(), TypeId::of::<i64>());
+        }
+
+        #[test]
+        fn indexes_paths_without_minimizing_them() {
+            let results = [
+                row("same.sqlite", Verdict::Healthy),
+                row("proj/b.sqlite", Verdict::Invalid),
+                row("a\\b\\c.sqlite", Verdict::Skipped),
+                row("same.sqlite", Verdict::Unreadable),
+                row("", Verdict::Unsupported),
+                row(".", Verdict::Healthy),
+            ];
+            let by_path = index_by_path(&results);
+            assert_eq!(by_path.get("same.sqlite").copied(), Some(3));
+            assert_eq!(by_path.get("proj/b.sqlite").copied(), Some(1));
+            assert_eq!(by_path.get("a\\b\\c.sqlite").copied(), Some(2));
+            assert_eq!(by_path.get("").copied(), Some(4));
+            assert_eq!(by_path.get(".").copied(), Some(5));
+            assert_eq!(by_path.len(), 5);
+            assert!(!by_path.contains_key("proj"));
+            assert!(!by_path.contains_key("a/b/c.sqlite"));
+            assert!(!by_path.contains_key("a\\b"));
+        }
+
+        #[test]
+        fn empty_state_db_files_return_rows_and_keep_bools_distinct() {
+            let mut first = row("proj/state_5.sqlite", Verdict::Invalid);
+            first.cache_hit = true;
+            first.warning_count = 0;
+            first.error_count = 3;
+            first.max_findings_per_code = 4;
+            first.detected_format = Some(FORMAT_CODEX_ROLLOUT.to_owned());
+            first.session_id = Some("sess-secret".to_owned());
+            first.tip_id = Some("tip-secret".to_owned());
+            first.skipped_reason = Some("synthetic".to_owned());
+            first
+                .links
+                .push(SessionLink::new("session_ref", "sess-secret"));
+            let mut second = row("same.sqlite", Verdict::Healthy);
+            second.cache_hit = false;
+            second.warning_count = 5;
+            second.error_count = 0;
+            second.detected_format = Some("codex-rollout".to_owned());
+            let third = row("same.sqlite", Verdict::Unreadable);
+            let results = [first, second, third];
+            let baseline = BTreeSet::from(["fp-synthetic".to_owned()]);
+            let returned = reconcile_state_dbs(&results, &[], Some(&baseline)).expect("empty list");
+            assert_eq!(returned, results);
+            assert!(returned[0].cache_hit);
+            assert_eq!(returned[0].warning_count, 0);
+            assert_eq!(returned[0].error_count, 3);
+            assert!(returned[0].findings.is_empty());
+            assert_eq!(returned[0].links.len(), 1);
+            assert!(!returned[1].cache_hit);
+            assert_eq!(returned[1].warning_count, 5);
+            assert_eq!(returned.len(), 3);
+            assert_eq!(returned[0].path, "proj/state_5.sqlite");
+            assert_eq!(returned[2].path, "same.sqlite");
+            let absent = reconcile_state_dbs(&[], &[], None).expect("both empty");
+            assert!(absent.is_empty());
+            let none_baseline = reconcile_state_dbs(&results, &[], None).expect("omitted baseline");
+            assert_eq!(none_baseline, results);
+        }
+
+        #[test]
+        fn non_empty_state_db_files_stop_at_minimize_path() {
+            let mut kept = row("proj/a.sqlite", Verdict::Healthy);
+            kept.cache_hit = true;
+            kept.warning_count = 0;
+            kept.session_id = Some("sess-secret".to_owned());
+            kept.detected_format = Some("codex-rollout".to_owned());
+            let results = [kept];
+            let baseline = BTreeSet::from(["fp-synthetic".to_owned()]);
+            let hidden = [
+                "proj/a.sqlite",
+                "sess-secret",
+                "fp-synthetic",
+                "state.sqlite",
+                "synthetic",
+                "SL402",
+                "index-malformed",
+                "file-not-in-index",
+                "spawn-edge-orphan",
+                "migration-skip-recorded",
+                "index-entry-no-file",
+                "unrecognized-shape",
+                "state-sqlite",
+                "read_index",
+                "read_codex_state",
+                "make_finding",
+                "codex-rollout",
+            ];
+            let late = Path::new("b/state.sqlite");
+            let early = Path::new("a/state.sqlite");
+            assert_stopped(&results, &[late, early], Some(&baseline), &hidden);
+            assert_stopped(&[], &[early, late], None, &hidden);
+            assert_stopped(&results, &[Path::new("state.sqlite")], None, &hidden);
+            let missing = Path::new("C:/synthetic/does-not-exist/state_5.sqlite");
+            assert_stopped(&results, &[missing], Some(&baseline), &hidden);
+            assert_eq!(results[0].session_id.as_deref(), Some("sess-secret"));
+            assert!(results[0].findings.is_empty());
+            assert!(results[0].cache_hit);
+        }
+
+        fn assert_stopped(
+            results: &[FileResult],
+            state_db_files: &[&Path],
+            baseline: Option<&BTreeSet<String>>,
+            hidden: &[&str],
+        ) {
+            assert_ne!(
+                TypeId::of::<Result<Vec<FileResult>, MinimizePathUnavailable>>(),
+                TypeId::of::<ScanReport>()
+            );
+            assert_ne!(
+                TypeId::of::<Vec<FileResult>>(),
+                TypeId::of::<Result<Vec<FileResult>, MinimizePathUnavailable>>()
+            );
+            let error =
+                reconcile_state_dbs(results, state_db_files, baseline).expect_err("minimize seam");
+            assert_eq!(error, MinimizePathUnavailable);
+            assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+            assert_eq!(
+                error.to_string(),
+                "sesslint.report.minimize_path is not available"
+            );
+            assert!(error.source().is_none());
+            let text = error.to_string();
+            assert!(!text.contains('/'));
+            assert!(!text.contains('\\'));
+            assert!(!text.chars().any(|ch| ch.is_ascii_digit()));
+            for secret in hidden {
+                assert!(!text.contains(secret), "{secret}");
+            }
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn undecodable_state_db_path_fails_closed() {
+            use std::ffi::OsString;
+            use std::os::windows::ffi::OsStringExt;
+
+            let path = OsString::from_wide(&[0xD800, 0x20]);
+            let db = Path::new(&path);
+            let error = reconcile_state_dbs(&[], &[db], None).expect_err("undecodable");
+            assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+            assert!(!error.to_string().chars().any(|ch| ch.is_ascii_digit()));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn undecodable_state_db_path_fails_closed() {
+            use std::os::unix::ffi::OsStrExt;
+
+            let db = Path::new(std::ffi::OsStr::from_bytes(&[0xff]));
+            let error = reconcile_state_dbs(&[], &[db], None).expect_err("undecodable");
+            assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        }
+    }
+}
+
+pub use state_dbs::reconcile_state_dbs;
+
+#[allow(
+    clippy::items_after_test_module,
+    reason = "RX-P2.6-scan-scan-08 appends after the existing tests"
+)]
+mod bytes_scan {
+    use std::convert::Infallible;
+    use std::error::Error;
+    use std::fmt;
+
+    use super::ScanCount;
+
+    const VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE: &str =
+        "sesslint.adapters.detect.validate_detection_thresholds is not available";
+
+    /// Failure from [`scan_bytes`].
+    ///
+    /// The limit variants use the pin `ValueError` sentences.
+    /// [`Self::ValidateDetectionThresholds`] is the import seam. No
+    /// [`super::ScanReport`] is produced.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ScanBytesError {
+        /// `max_file_bytes must be a positive integer`.
+        MaxFileBytes,
+        /// `max_findings_per_code must be a positive integer`.
+        MaxFindingsPerCode,
+        /// `sesslint.adapters.detect.validate_detection_thresholds is not available`.
+        ValidateDetectionThresholds,
+    }
+
+    impl fmt::Display for ScanBytesError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::MaxFileBytes => {
+                    formatter.write_str("max_file_bytes must be a positive integer")
+                }
+                Self::MaxFindingsPerCode => {
+                    formatter.write_str("max_findings_per_code must be a positive integer")
+                }
+                Self::ValidateDetectionThresholds => {
+                    formatter.write_str(VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE)
+                }
+            }
+        }
+    }
+
+    impl Error for ScanBytesError {}
+
+    /// Python: `scan_bytes`.
+    ///
+    /// Port of `src/sesslint/scan.py` lines 2090-2180
+    /// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+    /// Stops at `from sesslint.adapters.detect import validate_detection_thresholds`.
+    ///
+    /// A bool is not an int. `type(x) is int` rejects bool. `True` is not `1`.
+    /// `False` is not `0`.
+    ///
+    /// When `max_input_bytes` is `Some`, `max_file_bytes` becomes
+    /// `min(max_file_bytes, max_input_bytes)` before either type check. `None`
+    /// skips that `min`. `False` is a value and still enters `min`. Equal
+    /// numbers keep the first argument, which stays a bool when that argument
+    /// is a bool.
+    ///
+    /// `max_file_bytes` is checked next: `type is int`, then `<= 0`.
+    /// `max_findings_per_code` is checked after that, with the same rule.
+    /// Both `ValueError` sentences omit the number. This then stops. Display
+    /// is `sesslint.adapters.detect.validate_detection_thresholds is not available`.
+    /// `validate_detection_thresholds`, `apply_rule_selection`,
+    /// `resolve_effective_config`, and [`super::scan_single_source`] are not
+    /// called. No [`super::ScanReport`] is returned. Success is [`Infallible`].
+    ///
+    /// The buffer is accepted and its length is retained at the seam. The
+    /// bytes are not parsed. Rust has no defaults. Pass `None` when
+    /// `max_input_bytes` is omitted, `ScanCount::Int(crate::io::DEFAULT_MAX_FILE_BYTES)`
+    /// for the file cap, and `ScanCount::Int(20)` for `max_findings_per_code`.
+    /// `virtual_path`, `format`, `profile`, `confidence_min`, `margin_min`,
+    /// `skip_undetected`, `select`, `ignore`, `baseline`, and
+    /// `timestamp_skew_ms` are not read before the import. `progress_cb` and
+    /// `cancel_token` are not parameters.
+    ///
+    /// # Errors
+    ///
+    /// A pin `ValueError`, or [`ScanBytesError::ValidateDetectionThresholds`].
+    /// This function does not panic.
+    pub fn scan_bytes(
+        data: &[u8],
+        max_input_bytes: Option<ScanCount>,
+        max_file_bytes: ScanCount,
+        max_findings_per_code: ScanCount,
+    ) -> Result<Infallible, ScanBytesError> {
+        let max_file_bytes = match max_input_bytes {
+            Some(limit) => min_count(max_file_bytes, limit),
+            None => max_file_bytes,
+        };
+        let max_file_bytes = require_positive_int(max_file_bytes, ScanBytesError::MaxFileBytes)?;
+        let max_findings_per_code =
+            require_positive_int(max_findings_per_code, ScanBytesError::MaxFindingsPerCode)?;
+        // Pin line 2125 imports `validate_detection_thresholds` and the next
+        // line calls it. That function is not in this crate.
+        let _reached = (data.len(), max_file_bytes, max_findings_per_code);
+        Err(ScanBytesError::ValidateDetectionThresholds)
+    }
+
+    /// Python `min` for an int and a bool.
+    ///
+    /// Ordering uses `0` and `1` for a bool. The returned value is the
+    /// original argument, so a bool is not rewritten into an int.
+    fn min_count(left: ScanCount, right: ScanCount) -> ScanCount {
+        if count_ord(left) <= count_ord(right) {
+            left
+        } else {
+            right
+        }
+    }
+
+    fn count_ord(value: ScanCount) -> i64 {
+        match value {
+            ScanCount::Int(number) => number,
+            ScanCount::Bool(flag) => i64::from(flag),
+        }
+    }
+
+    /// `type(value) is int`, then `value <= 0`. A bool is not that int.
+    fn require_positive_int(
+        value: ScanCount,
+        error: ScanBytesError,
+    ) -> Result<i64, ScanBytesError> {
+        let ScanCount::Int(number) = value else {
+            return Err(error);
+        };
+        if number <= 0 {
+            return Err(error);
+        }
+        Ok(number)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::any::TypeId;
+        use std::convert::Infallible;
+        use std::error::Error;
+
+        use super::super::{FileResult, ScanCount, ScanReport};
+        use super::ScanBytesError::{
+            MaxFileBytes, MaxFindingsPerCode, ValidateDetectionThresholds,
+        };
+        use super::{
+            min_count, require_positive_int, scan_bytes, ScanBytesError,
+            VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE,
+        };
+
+        const PAYLOAD: &[u8] = b"sess-secret-payload";
+
+        const fn int(number: i64) -> ScanCount {
+            ScanCount::Int(number)
+        }
+
+        const fn flag(value: bool) -> ScanCount {
+            ScanCount::Bool(value)
+        }
+
+        const CASES: &[(Option<ScanCount>, ScanCount, ScanCount, ScanBytesError)] = &[
+            (None, int(10), int(20), ValidateDetectionThresholds),
+            (None, flag(true), int(20), MaxFileBytes),
+            (None, flag(false), int(20), MaxFileBytes),
+            (None, int(0), int(20), MaxFileBytes),
+            (None, int(-1), int(20), MaxFileBytes),
+            (None, int(10), flag(true), MaxFindingsPerCode),
+            (None, int(10), flag(false), MaxFindingsPerCode),
+            (None, int(10), int(0), MaxFindingsPerCode),
+            (None, int(10), int(-2), MaxFindingsPerCode),
+            (None, flag(true), flag(true), MaxFileBytes),
+            (None, int(0), flag(true), MaxFileBytes),
+            (None, int(i64::MAX), int(1), ValidateDetectionThresholds),
+            (None, int(i64::MIN), int(1), MaxFileBytes),
+            (None, int(1), int(i64::MAX), ValidateDetectionThresholds),
+            (None, int(1), int(i64::MIN), MaxFindingsPerCode),
+            (Some(int(4)), int(10), int(20), ValidateDetectionThresholds),
+            (Some(int(9)), int(4), int(1), ValidateDetectionThresholds),
+            (Some(int(4)), int(4), int(1), ValidateDetectionThresholds),
+            (Some(int(0)), int(10), int(20), MaxFileBytes),
+            (Some(int(-5)), int(10), int(1), MaxFileBytes),
+            (
+                Some(int(i64::MAX)),
+                int(8),
+                int(1),
+                ValidateDetectionThresholds,
+            ),
+            (Some(int(i64::MIN)), int(8), int(1), MaxFileBytes),
+            (Some(flag(true)), int(10), int(20), MaxFileBytes),
+            (Some(flag(false)), int(10), int(20), MaxFileBytes),
+            (Some(int(10)), flag(true), int(20), MaxFileBytes),
+            (Some(int(0)), flag(true), int(20), MaxFileBytes),
+            (Some(int(1)), flag(true), int(3), MaxFileBytes),
+            (
+                Some(flag(true)),
+                int(1),
+                int(3),
+                ValidateDetectionThresholds,
+            ),
+            (Some(flag(true)), int(1), flag(false), MaxFindingsPerCode),
+            (Some(flag(false)), int(0), int(20), MaxFileBytes),
+            (Some(int(0)), flag(false), int(20), MaxFileBytes),
+            (Some(int(-1)), flag(false), int(20), MaxFileBytes),
+            (Some(flag(false)), int(-1), int(20), MaxFileBytes),
+            (Some(flag(true)), int(2), int(1), MaxFileBytes),
+            (Some(int(2)), flag(true), int(1), MaxFileBytes),
+            (Some(flag(true)), flag(false), int(1), MaxFileBytes),
+            (Some(flag(false)), flag(true), int(1), MaxFileBytes),
+            (Some(flag(true)), flag(true), int(1), MaxFileBytes),
+            (None, int(1), int(1), ValidateDetectionThresholds),
+            (
+                Some(int(1)),
+                int(i64::MAX),
+                int(1),
+                ValidateDetectionThresholds,
+            ),
+        ];
+
+        fn call(
+            max_input_bytes: Option<ScanCount>,
+            max_file_bytes: ScanCount,
+            max_findings_per_code: ScanCount,
+        ) -> ScanBytesError {
+            assert_ne!(TypeId::of::<Infallible>(), TypeId::of::<ScanReport>());
+            assert_ne!(TypeId::of::<Infallible>(), TypeId::of::<FileResult>());
+            assert_ne!(
+                TypeId::of::<Result<Infallible, ScanBytesError>>(),
+                TypeId::of::<ScanReport>()
+            );
+            assert_ne!(
+                TypeId::of::<Result<Infallible, ScanBytesError>>(),
+                TypeId::of::<Vec<FileResult>>()
+            );
+            let error = scan_bytes(
+                PAYLOAD,
+                max_input_bytes,
+                max_file_bytes,
+                max_findings_per_code,
+            )
+            .expect_err("closed");
+            let text = error.to_string();
+            assert_eq!(text, sentence(error));
+            assert!(error.source().is_none());
+            assert!(!text.contains("sess-secret"));
+            assert!(!text.contains("payload"));
+            assert!(!text.contains("True"));
+            assert!(!text.contains("False"));
+            assert!(!text.contains("got "));
+            assert!(!text.contains("SL001"));
+            assert!(!text.contains("<stdin>"));
+            assert!(!text.contains("unreadable"));
+            assert!(!text.chars().any(|ch| ch.is_ascii_digit()));
+            error
+        }
+
+        fn sentence(error: ScanBytesError) -> &'static str {
+            match error {
+                MaxFileBytes => "max_file_bytes must be a positive integer",
+                MaxFindingsPerCode => "max_findings_per_code must be a positive integer",
+                ValidateDetectionThresholds => VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE,
+            }
+        }
+
+        #[test]
+        fn display_sentences_are_the_pin_text() {
+            assert_eq!(
+                MaxFileBytes.to_string(),
+                "max_file_bytes must be a positive integer"
+            );
+            assert_eq!(
+                MaxFindingsPerCode.to_string(),
+                "max_findings_per_code must be a positive integer"
+            );
+            assert_eq!(
+                ValidateDetectionThresholds.to_string(),
+                VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE
+            );
+            assert_eq!(
+                ValidateDetectionThresholds.to_string(),
+                "sesslint.adapters.detect.validate_detection_thresholds is not available"
+            );
+            assert_ne!(MaxFileBytes.to_string(), MaxFindingsPerCode.to_string());
+            assert_ne!(
+                MaxFileBytes.to_string(),
+                ValidateDetectionThresholds.to_string()
+            );
+            assert!(MaxFileBytes.source().is_none());
+            assert!(ValidateDetectionThresholds.source().is_none());
+        }
+
+        #[test]
+        fn min_keeps_the_first_equal_value_and_does_not_rewrite_bools() {
+            assert_eq!(min_count(int(1), flag(true)), int(1));
+            assert_eq!(min_count(flag(true), int(1)), flag(true));
+            assert_eq!(min_count(int(5), flag(true)), flag(true));
+            assert_eq!(min_count(flag(true), int(5)), flag(true));
+            assert_eq!(min_count(flag(true), int(0)), int(0));
+            assert_eq!(min_count(int(0), flag(true)), int(0));
+            assert_eq!(min_count(flag(false), int(-1)), int(-1));
+            assert_eq!(min_count(int(-1), flag(false)), int(-1));
+            assert_eq!(min_count(int(4), int(9)), int(4));
+            assert_eq!(min_count(int(9), int(4)), int(4));
+            assert_eq!(min_count(int(4), int(4)), int(4));
+            assert_eq!(min_count(flag(false), flag(true)), flag(false));
+            assert_eq!(min_count(flag(true), flag(false)), flag(false));
+            assert_eq!(min_count(flag(false), int(0)), flag(false));
+            assert_eq!(min_count(int(0), flag(false)), int(0));
+            assert_ne!(TypeId::of::<bool>(), TypeId::of::<i64>());
+            assert_eq!(
+                require_positive_int(flag(true), MaxFileBytes),
+                Err(MaxFileBytes)
+            );
+            assert_eq!(require_positive_int(int(1), MaxFileBytes), Ok(1));
+            assert_eq!(
+                require_positive_int(int(0), MaxFindingsPerCode),
+                Err(MaxFindingsPerCode)
+            );
+        }
+
+        #[test]
+        fn checks_run_in_pin_order_before_the_import() {
+            for (index, (input, file, findings, expected)) in CASES.iter().copied().enumerate() {
+                assert_eq!(call(input, file, findings), expected, "{index}");
+            }
+        }
+
+        #[test]
+        fn empty_buffer_with_positive_ints_stops_at_the_import() {
+            let error = scan_bytes(
+                b"",
+                None,
+                int(crate::io::DEFAULT_MAX_FILE_BYTES),
+                int(super::super::DEFAULT_MAX_FINDINGS_PER_CODE),
+            )
+            .expect_err("seam");
+            assert_eq!(error, ValidateDetectionThresholds);
+            assert_eq!(
+                error.to_string(),
+                "sesslint.adapters.detect.validate_detection_thresholds is not available"
+            );
+            assert!(!error.to_string().contains("SL001"));
+        }
+    }
+}
+
+pub use bytes_scan::{scan_bytes, ScanBytesError};
