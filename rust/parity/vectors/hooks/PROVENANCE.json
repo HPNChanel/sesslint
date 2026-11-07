@@ -1,0 +1,8 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.hooks parity (init-hooks JSON/human render, recipe contracts, unknown-agent repr only).",
+  "generator": "rust/parity/vectors/hooks/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": []
+}

@@ -1,0 +1,301 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.hooks",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "hooks_py_sha256": "0af5cbea5a42ae596f73d700f18f19c784d63259b635e47614a760259233a4b8",
+  "hooks_rs_sha256": "d8d88b3a0192c82528832fc8d23ab90ee8c1ed4c2454eb8f845579f8632edcf8",
+  "known_parity_gaps": [],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "schema_version": "sesslint.init-hooks/v1",
+        "valid_agents": [
+          "claude",
+          "codex",
+          "all"
+        ],
+        "all_exports": [
+          "SCHEMA_VERSION",
+          "VALID_AGENTS",
+          "HookFile",
+          "InitHooksDoc",
+          "init_hooks_doc"
+        ]
+      }
+    },
+    {
+      "id": "init_hooks_doc_claude",
+      "construct": {
+        "type": "init_hooks_doc",
+        "agent": "claude"
+      },
+      "expected": {
+        "to_json": "{\"agent\": \"claude\", \"files\": [{\"merge_block\": {\"hooks\": {\"SessionStart\": [{\"hooks\": [{\"command\": \"sesslint hook --event SessionStart --format claude-json || true\", \"type\": \"command\"}], \"matcher\": \"resume|compact|fork\"}]}}, \"recipe\": \"SessionStart corruption warning (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"PreCompact\": [{\"hooks\": [{\"command\": \"sesslint hook --event PreCompact || true\", \"type\": \"command\"}], \"matcher\": \"auto|manual\"}]}}, \"recipe\": \"PreCompact integrity check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"PostCompact\": [{\"hooks\": [{\"command\": \"sesslint hook --event PostCompact || true\", \"timeout\": 5, \"type\": \"command\"}]}]}}, \"recipe\": \"PostCompact boundary check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"SessionEnd\": [{\"hooks\": [{\"command\": \"sesslint hook --event SessionEnd || true\", \"timeout\": 5, \"type\": \"command\"}], \"matcher\": \"clear|logout|prompt_input_exit|other\"}]}}, \"recipe\": \"SessionEnd secret check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}], \"note\": \"Merge each block into ~/.claude/settings.json (user) or .claude/settings.json (project). Every command reads the hook payload from stdin (transcript_path, session_id) - no paths to substitute. '|| true' keeps each recipe advisory; 'sesslint hook' never exits 2, so nothing can block the agent. To gate on findings, pass '--fail-on warning' (exits 1; drop '|| true' to surface it). Requires a SessLint release carrying 'sesslint hook' - check 'sesslint version'. See docs/INTEGRATIONS.md.\", \"schema\": \"sesslint.init-hooks/v1\"}",
+        "render_human": "# claude: Merge each block into ~/.claude/settings.json (user) or .claude/settings.json (project). Every command reads the hook payload from stdin (transcript_path, session_id) - no paths to substitute. '|| true' keeps each recipe advisory; 'sesslint hook' never exits 2, so nothing can block the agent. To gate on findings, pass '--fail-on warning' (exits 1; drop '|| true' to surface it). Requires a SessLint release carrying 'sesslint hook' - check 'sesslint version'. See docs/INTEGRATIONS.md.\n# SessionStart corruption warning (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event SessionStart --format claude-json || true\",\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"resume|compact|fork\"\n      }\n    ]\n  }\n}\n\n# PreCompact integrity check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"PreCompact\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event PreCompact || true\",\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"auto|manual\"\n      }\n    ]\n  }\n}\n\n# PostCompact boundary check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"PostCompact\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event PostCompact || true\",\n            \"timeout\": 5,\n            \"type\": \"command\"\n          }\n        ]\n      }\n    ]\n  }\n}\n\n# SessionEnd secret check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"SessionEnd\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event SessionEnd || true\",\n            \"timeout\": 5,\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"clear|logout|prompt_input_exit|other\"\n      }\n    ]\n  }\n}\n",
+        "file_count": 4
+      }
+    },
+    {
+      "id": "init_hooks_doc_codex",
+      "construct": {
+        "type": "init_hooks_doc",
+        "agent": "codex"
+      },
+      "expected": {
+        "to_json": "{\"agent\": \"codex\", \"files\": [], \"note\": \"Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in config.toml) whose stdin payload carries transcript_path - the same contract `sesslint hook` reads. Snippets are not emitted yet: matcher values, the 1s SessionEnd timeout, and the /hooks trust-review flow need recipe-level verification first. Interim coverage for Codex session roots: `sesslint check --agent codex`.\", \"schema\": \"sesslint.init-hooks/v1\"}",
+        "render_human": "# codex: Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in config.toml) whose stdin payload carries transcript_path - the same contract `sesslint hook` reads. Snippets are not emitted yet: matcher values, the 1s SessionEnd timeout, and the /hooks trust-review flow need recipe-level verification first. Interim coverage for Codex session roots: `sesslint check --agent codex`.\n",
+        "file_count": 0,
+        "json_contains_merge_block": false,
+        "note_contains": "not emitted yet"
+      }
+    },
+    {
+      "id": "init_hooks_doc_all",
+      "construct": {
+        "type": "init_hooks_doc",
+        "agent": "all"
+      },
+      "expected": {
+        "to_json": "{\"agent\": \"all\", \"files\": [{\"merge_block\": {\"hooks\": {\"SessionStart\": [{\"hooks\": [{\"command\": \"sesslint hook --event SessionStart --format claude-json || true\", \"type\": \"command\"}], \"matcher\": \"resume|compact|fork\"}]}}, \"recipe\": \"SessionStart corruption warning (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"PreCompact\": [{\"hooks\": [{\"command\": \"sesslint hook --event PreCompact || true\", \"type\": \"command\"}], \"matcher\": \"auto|manual\"}]}}, \"recipe\": \"PreCompact integrity check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"PostCompact\": [{\"hooks\": [{\"command\": \"sesslint hook --event PostCompact || true\", \"timeout\": 5, \"type\": \"command\"}]}]}}, \"recipe\": \"PostCompact boundary check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"SessionEnd\": [{\"hooks\": [{\"command\": \"sesslint hook --event SessionEnd || true\", \"timeout\": 5, \"type\": \"command\"}], \"matcher\": \"clear|logout|prompt_input_exit|other\"}]}}, \"recipe\": \"SessionEnd secret check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}], \"note\": \"Merge each block into ~/.claude/settings.json (user) or .claude/settings.json (project). Every command reads the hook payload from stdin (transcript_path, session_id) - no paths to substitute. '|| true' keeps each recipe advisory; 'sesslint hook' never exits 2, so nothing can block the agent. To gate on findings, pass '--fail-on warning' (exits 1; drop '|| true' to surface it). Requires a SessLint release carrying 'sesslint hook' - check 'sesslint version'. See docs/INTEGRATIONS.md. | codex: Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in config.toml) whose stdin payload carries transcript_path - the same contract `sesslint hook` reads. Snippets are not emitted yet: matcher values, the 1s SessionEnd timeout, and the /hooks trust-review flow need recipe-level verification first. Interim coverage for Codex session roots: `sesslint check --agent codex`.\", \"schema\": \"sesslint.init-hooks/v1\"}",
+        "render_human": "# all: Merge each block into ~/.claude/settings.json (user) or .claude/settings.json (project). Every command reads the hook payload from stdin (transcript_path, session_id) - no paths to substitute. '|| true' keeps each recipe advisory; 'sesslint hook' never exits 2, so nothing can block the agent. To gate on findings, pass '--fail-on warning' (exits 1; drop '|| true' to surface it). Requires a SessLint release carrying 'sesslint hook' - check 'sesslint version'. See docs/INTEGRATIONS.md. | codex: Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in config.toml) whose stdin payload carries transcript_path - the same contract `sesslint hook` reads. Snippets are not emitted yet: matcher values, the 1s SessionEnd timeout, and the /hooks trust-review flow need recipe-level verification first. Interim coverage for Codex session roots: `sesslint check --agent codex`.\n# SessionStart corruption warning (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event SessionStart --format claude-json || true\",\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"resume|compact|fork\"\n      }\n    ]\n  }\n}\n\n# PreCompact integrity check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"PreCompact\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event PreCompact || true\",\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"auto|manual\"\n      }\n    ]\n  }\n}\n\n# PostCompact boundary check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"PostCompact\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event PostCompact || true\",\n            \"timeout\": 5,\n            \"type\": \"command\"\n          }\n        ]\n      }\n    ]\n  }\n}\n\n# SessionEnd secret check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"SessionEnd\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event SessionEnd || true\",\n            \"timeout\": 5,\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"clear|logout|prompt_input_exit|other\"\n      }\n    ]\n  }\n}\n",
+        "file_count": 4,
+        "note_contains_codex": "codex"
+      }
+    },
+    {
+      "id": "init_hooks_doc_claude_deterministic",
+      "construct": {
+        "type": "init_hooks_doc_deterministic",
+        "agent": "claude"
+      },
+      "expected": {
+        "to_json_equal": true,
+        "render_human_equal": true
+      }
+    },
+    {
+      "id": "claude_recipe_contract",
+      "construct": {
+        "type": "claude_recipe_contract"
+      },
+      "expected": {
+        "session_start_matcher": "resume|compact|fork",
+        "session_start_command": "sesslint hook --event SessionStart --format claude-json || true",
+        "pre_compact_matcher": "auto|manual",
+        "pre_compact_command": "sesslint hook --event PreCompact || true",
+        "post_compact_has_matcher": false,
+        "post_compact_command": "sesslint hook --event PostCompact || true",
+        "post_compact_timeout": 5,
+        "session_end_matcher": "clear|logout|prompt_input_exit|other",
+        "session_end_command": "sesslint hook --event SessionEnd || true",
+        "session_end_timeout": 5
+      }
+    },
+    {
+      "id": "snippets_content_free",
+      "construct": {
+        "type": "snippets_content_free"
+      },
+      "expected": {
+        "forbidden_present": [],
+        "command_prefix_ok": true
+      }
+    },
+    {
+      "id": "claude_shell_safe",
+      "construct": {
+        "type": "claude_shell_safe"
+      },
+      "expected": {
+        "unsafe_commands": [],
+        "session_start_claude_json_flag": true
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_0",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "nope"
+      },
+      "expected": {
+        "error": "unknown agent: 'nope'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_1",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": ""
+      },
+      "expected": {
+        "error": "unknown agent: ''"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_2",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "it's"
+      },
+      "expected": {
+        "error": "unknown agent: \"it's\""
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_3",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "say \"hi\""
+      },
+      "expected": {
+        "error": "unknown agent: 'say \"hi\"'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_4",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "a\nb"
+      },
+      "expected": {
+        "error": "unknown agent: 'a\\nb'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_5",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "\\"
+      },
+      "expected": {
+        "error": "unknown agent: '\\\\'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_6",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "both'\""
+      },
+      "expected": {
+        "error": "unknown agent: 'both\\'\"'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_7",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "café"
+      },
+      "expected": {
+        "error": "unknown agent: 'café'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_8",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "​"
+      },
+      "expected": {
+        "error": "unknown agent: '\\u200b'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_9",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": ""
+      },
+      "expected": {
+        "error": "unknown agent: '\\x80'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_10",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "😀"
+      },
+      "expected": {
+        "error": "unknown agent: '😀'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_11",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "­"
+      },
+      "expected": {
+        "error": "unknown agent: '\\xad'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_12",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": " "
+      },
+      "expected": {
+        "error": "unknown agent: '\\xa0'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_13",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "\u0000"
+      },
+      "expected": {
+        "error": "unknown agent: '\\x00'"
+      }
+    },
+    {
+      "id": "init_hooks_doc_unknown_14",
+      "construct": {
+        "type": "init_hooks_doc_error",
+        "agent": "\t"
+      },
+      "expected": {
+        "error": "unknown agent: '\\t'"
+      }
+    },
+    {
+      "id": "hook_file_absent_merge_block",
+      "construct": {
+        "type": "hook_file_to_dict",
+        "merge_block": null
+      },
+      "expected": {
+        "file_json": "{\"recipe\": \"recipe\", \"target_path_hint\": \"hint\"}",
+        "doc_json": "{\"agent\": \"claude\", \"files\": [{\"recipe\": \"recipe\", \"target_path_hint\": \"hint\"}], \"schema\": \"sesslint.init-hooks/v1\"}",
+        "render_human": "# recipe - merge into hint\n",
+        "file_keys": [
+          "target_path_hint",
+          "recipe"
+        ],
+        "doc_keys": [
+          "schema",
+          "agent",
+          "files"
+        ]
+      }
+    },
+    {
+      "id": "init_hooks_doc_json_escape",
+      "construct": {
+        "type": "init_hooks_doc_custom",
+        "agent": "a\"b",
+        "note": "é"
+      },
+      "expected": {
+        "to_json": "{\"agent\": \"a\\\"b\", \"files\": [], \"note\": \"\\u00e9\", \"schema\": \"sesslint.init-hooks/v1\"}"
+      }
+    }
+  ]
+}
