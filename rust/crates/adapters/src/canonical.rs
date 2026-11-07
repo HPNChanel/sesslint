@@ -1,8 +1,8 @@
 //! Canonical session adapter prefix (`sesslint.session/v1`).
 //!
 //! Port of `src/sesslint/adapters/canonical.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–285.
-//! Stops before `dump_canonical` (line 288).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–514.
+//! Stops before `_parse_canonical_event_record` (line 517).
 //!
 //! This slice declares the key sets, [`SourceMetadata`], [`EventList`],
 //! [`normalize_version`], [`detect_canonical`], [`event_to_dict`],
@@ -40,8 +40,27 @@
 //!   string key. This slice does not hold a map borrow across the call.
 //! - [`EventList`] stores [`SessionEvent`] values from `model`. It does not
 //!   port the rest of `list`.
-//! - `_NON_WS_BYTES`, the finding templates, `_EMPTY_EXTRA_FIELDS`, and
-//!   `_INTERNAL_SOURCE_KEYS` are not read by the functions in this slice.
+//! - `_NON_WS_BYTES` and the finding templates are not read here.
+//!   [`dump_canonical`] drops `_INTERNAL_SOURCE_KEYS`. [`common_event`]
+//!   stores an empty `extra_fields` map. Python shares one
+//!   `MappingProxyType`.
+//! - [`Payload`] map walks expose string keys only. A non-string key is
+//!   omitted from a dump and from `str`.
+//! - Tuple items are not visible. Dump and `str` return an error and do
+//!   not emit a document.
+//! - Finite float text is Rust debug with Python's exponent sign and a
+//!   two-digit exponent. A few shortest-round-trip ties differ from
+//!   CPython, including `-245777903432188.62`.
+//! - `sys.intern` is not observable. Strings are owned.
+//! - Nesting past the model depth limit is not encoded. Python `json.dumps`
+//!   would continue. A cycle becomes `Circular reference detected` at
+//!   dump time, which is Python's `json.dumps` error.
+//! - [`dump_canonical`] calls [`event_to_dict`] for every event. A
+//!   [`SessionEvent`] has no `to_dict`, so that call's `Display` is
+//!   `sesslint._canonical_codec.normalize_canonical is not available`.
+//!   JSONL writes the header first. The `json` document calls
+//!   [`event_to_dict`] while building `events`, before `json.dumps`.
+//!   This slice does not invent event bytes or a hash.
 
 use std::error::Error;
 use std::fmt;
@@ -684,15 +703,1128 @@ fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
     }
 }
 
+use model::canonical::{
+    validate_depth, validate_rfc3339_utc, ListWalk, MapWalk, Session, VALID_ACTORS,
+};
+use model::finding::enforce_content_free_text;
+
+/// Python: `_INTERNAL_SOURCE_KEYS`. Both names are removed. Order does not
+/// change the result.
+const INTERNAL_SOURCE_KEYS: [&str; 2] = ["links", "record_sizes"];
+
+/// Python: `_COMMON_EVENT_KEYS`. Comparison is set equality.
+const COMMON_EVENT_KEYS: [&str; 7] = ["id", "parent_id", "seq", "ts", "actor", "kind", "payload"];
+
+const HEADER_SHADOW_KEYS: [&str; 6] = [
+    "session_id",
+    "created_at",
+    "schema_version",
+    "title",
+    "version",
+    "metadata",
+];
+
+const DEFAULT_SESSION_ID: &str = "canonical-session";
+const DEFAULT_CREATED_AT: &str = "2026-09-05T12:00:00Z";
+const NON_FINITE_FLOAT: &str = "Out of range float values are not JSON compliant";
+const TUPLE_ITEMS_HIDDEN: &str = "tuple items are not visible";
+const TIMESTAMP_CACHE_LIMIT: usize = 256;
+
+/// How a non-mapping source becomes a dict. The three call sites differ.
+#[derive(Clone, Copy)]
+enum NonMap {
+    /// Explicit `source` argument: `{"value": str(source)}`.
+    Value,
+    /// `Session.header.source`: `{"format": str(source)}`.
+    Format,
+    /// Sequence `.source` that is not a mapping: `{}`.
+    Empty,
+}
+
+/// Value held until `str` or `json.dumps`. A cycle stays intact until dump.
+enum Delayed {
+    Text(String),
+    Meta(MetaValue),
+    Node(Payload),
+}
+
+/// Compact JSON value. Object keys are sorted at write time.
+enum DumpVal {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    Array(Vec<DumpVal>),
+    Object(Vec<(String, DumpVal)>),
+}
+
+struct Built {
+    created_at: String,
+    schema_version: String,
+    session_id: String,
+    title: Option<Delayed>,
+    metadata: Option<Delayed>,
+    source: Vec<(String, Delayed)>,
+    version: Option<Delayed>,
+}
+
+/// Events passed to [`dump_canonical`].
+///
+/// [`Self::Session`] is `isinstance(events, Session)`. [`Self::Events`] is
+/// every other sequence. A [`SessionEvent`] has no `to_dict`.
+#[derive(Debug, Clone, Copy)]
+pub enum DumpInput<'a> {
+    /// Python `Session`.
+    Session(&'a Session),
+    /// A sequence of events, optionally with a `.source` attribute.
+    Events(EventSequence<'a>),
+}
+
+/// Sequence arm of [`DumpInput`].
+///
+/// `source` of [`None`] means the attribute is absent or its value is
+/// `None`. Both skip the attribute in Python.
+#[derive(Debug, Clone, Copy)]
+pub struct EventSequence<'a> {
+    /// Events in order.
+    pub events: &'a [SessionEvent],
+    /// Python `events.source` when it is not `None`.
+    pub source: Option<AttrSource<'a>>,
+}
+
+/// `events.source` when the attribute is present and not `None`.
+#[derive(Debug, Clone, Copy)]
+pub enum AttrSource<'a> {
+    /// `SourceMetadata`, which is a mapping.
+    Metadata(&'a SourceMetadata),
+    /// Any other object. A map is copied. Anything else becomes `{}`.
+    Payload(&'a Payload),
+}
+
+/// Explicit `source` argument of [`dump_canonical`].
+#[derive(Debug, Clone, Copy)]
+pub enum ProvidedSource<'a> {
+    /// `SourceMetadata` or any other mapping of string metadata.
+    Metadata(&'a SourceMetadata),
+    /// A [`Payload`]. A map is copied. Anything else becomes `{"value": str}`.
+    Payload(&'a Payload),
+}
+
+/// Failure from [`dump_canonical`].
+///
+/// [`Display`](std::fmt::Display) is the message only. [`Self::Unavailable`]
+/// is the missing normalizer. [`Self::Failed`] is `json.dumps` or a value
+/// this crate cannot render without inventing bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DumpCanonicalError {
+    /// `sesslint._canonical_codec.normalize_canonical is not available`.
+    Unavailable(&'static str),
+    /// A Python `ValueError` / `TypeError`, or a value that cannot be shown.
+    Failed(String),
+}
+
+impl DumpCanonicalError {
+    fn failed(message: impl Into<String>) -> Self {
+        Self::Failed(message.into())
+    }
+
+    /// The Python exception text, or the missing-call seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Unavailable(message) => message,
+            Self::Failed(message) => message,
+        }
+    }
+}
+
+impl fmt::Display for DumpCanonicalError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for DumpCanonicalError {}
+
+/// [`safe_evidence_val`] could not build Python `str` without guessing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceRenderError {
+    message: String,
+}
+
+impl EvidenceRenderError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The reason `str` was not produced.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for EvidenceRenderError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for EvidenceRenderError {}
+
+/// Serialize canonical events and source metadata.
+///
+/// Python: `dump_canonical`. `format` is `"json"` or anything else. The
+/// Python default is `"jsonl"`, which is the non-`"json"` arm.
+///
+/// Field extraction runs before either serializer. JSONL then dumps the
+/// header and only afterwards calls [`event_to_dict`]. The `"json"` arm
+/// calls [`event_to_dict`] while building `events`, and dumps only if that
+/// call returns a dict. A [`SessionEvent`] takes the missing-normalizer
+/// arm. This does not substitute an event document.
+///
+/// # Errors
+///
+/// [`DumpCanonicalError::Unavailable`] when an event needs
+/// `normalize_canonical`. [`DumpCanonicalError::Failed`] when `json.dumps`
+/// would raise, or when a tuple's items are not visible.
+pub fn dump_canonical(
+    events: DumpInput<'_>,
+    source: Option<ProvidedSource<'_>>,
+    format: &str,
+) -> Result<Vec<u8>, DumpCanonicalError> {
+    let built = match events {
+        DumpInput::Session(session) => build_session(session, source)?,
+        DumpInput::Events(sequence) => build_sequence(sequence, source)?,
+    };
+    let event_slice = match events {
+        DumpInput::Session(session) => session.events.as_slice(),
+        DumpInput::Events(sequence) => sequence.events,
+    };
+    if format == "json" {
+        emit_json(&built, event_slice)
+    } else {
+        emit_jsonl(&built, event_slice)
+    }
+}
+
+fn build_session(
+    session: &Session,
+    source: Option<ProvidedSource<'_>>,
+) -> Result<Built, DumpCanonicalError> {
+    let header = &session.header;
+    let version = header.version.unwrap_or(1);
+    let metadata = header_metadata(&header.metadata)?;
+    let mut source_entries = header_source_entries(source, header.source.as_ref())?;
+    pop_names(&mut source_entries, &HEADER_SHADOW_KEYS);
+    pop_names(&mut source_entries, &INTERNAL_SOURCE_KEYS);
+    Ok(Built {
+        created_at: header.created_at.clone(),
+        schema_version: header.schema_version.clone(),
+        session_id: header.session_id.clone(),
+        title: header.title.clone().map(Delayed::Text),
+        metadata,
+        source: source_entries,
+        version: Some(Delayed::Meta(MetaValue::Int(version))),
+    })
+}
+
+fn build_sequence(
+    sequence: EventSequence<'_>,
+    source: Option<ProvidedSource<'_>>,
+) -> Result<Built, DumpCanonicalError> {
+    let created_at = match sequence.events.first() {
+        Some(event) => event.ts.clone(),
+        None => DEFAULT_CREATED_AT.to_owned(),
+    };
+    let mut built = Built {
+        created_at,
+        schema_version: model::canonical::SCHEMA_VERSION.to_owned(),
+        session_id: DEFAULT_SESSION_ID.to_owned(),
+        title: None,
+        metadata: None,
+        source: sequence_source(sequence.source, source)?,
+        version: Some(Delayed::Meta(MetaValue::Int(1))),
+    };
+    apply_sequence_fields(&mut built)?;
+    pop_names(&mut built.source, &INTERNAL_SOURCE_KEYS);
+    Ok(built)
+}
+
+fn header_metadata(metadata: &Payload) -> Result<Option<Delayed>, DumpCanonicalError> {
+    if !py_truthy(metadata)? {
+        return Ok(None);
+    }
+    if metadata.is_map() {
+        return Ok(Some(Delayed::Node(metadata.clone())));
+    }
+    Err(DumpCanonicalError::failed(
+        "header metadata must be a mapping",
+    ))
+}
+
+fn header_source_entries(
+    source: Option<ProvidedSource<'_>>,
+    header_source: Option<&Payload>,
+) -> Result<Vec<(String, Delayed)>, DumpCanonicalError> {
+    if let Some(provided) = source {
+        return provided_entries(provided, NonMap::Value);
+    }
+    match header_source {
+        Some(value) => payload_source_entries(value, NonMap::Format),
+        None => Ok(Vec::new()),
+    }
+}
+
+fn sequence_source(
+    attr: Option<AttrSource<'_>>,
+    source: Option<ProvidedSource<'_>>,
+) -> Result<Vec<(String, Delayed)>, DumpCanonicalError> {
+    if let Some(provided) = source {
+        return provided_entries(provided, NonMap::Value);
+    }
+    match attr {
+        None => Ok(Vec::new()),
+        Some(AttrSource::Metadata(meta)) => Ok(metadata_entries(meta)),
+        Some(AttrSource::Payload(value)) => payload_source_entries(value, NonMap::Empty),
+    }
+}
+
+fn provided_entries(
+    source: ProvidedSource<'_>,
+    non_map: NonMap,
+) -> Result<Vec<(String, Delayed)>, DumpCanonicalError> {
+    match source {
+        ProvidedSource::Metadata(meta) => Ok(metadata_entries(meta)),
+        ProvidedSource::Payload(value) => payload_source_entries(value, non_map),
+    }
+}
+
+fn payload_source_entries(
+    value: &Payload,
+    non_map: NonMap,
+) -> Result<Vec<(String, Delayed)>, DumpCanonicalError> {
+    if value.is_map() {
+        return payload_map_entries(value);
+    }
+    match non_map {
+        NonMap::Empty => Ok(Vec::new()),
+        NonMap::Value => singleton_str("value", value),
+        NonMap::Format => singleton_str("format", value),
+    }
+}
+
+fn singleton_str(key: &str, value: &Payload) -> Result<Vec<(String, Delayed)>, DumpCanonicalError> {
+    let text = payload_py_str(value).map_err(DumpCanonicalError::failed)?;
+    Ok(vec![(key.to_owned(), Delayed::Text(text))])
+}
+
+fn payload_map_entries(value: &Payload) -> Result<Vec<(String, Delayed)>, DumpCanonicalError> {
+    let mut entries = Vec::new();
+    let walk = value.walk_string_entries(|key, item| {
+        entries.push((key.to_owned(), Delayed::Node(item.clone())));
+    });
+    match walk {
+        MapWalk::Done => Ok(entries),
+        MapWalk::Borrowed => Err(DumpCanonicalError::failed("map entries are borrowed")),
+        MapWalk::NotAMap => Err(DumpCanonicalError::failed("source is not a mapping")),
+    }
+}
+
+fn metadata_entries(meta: &SourceMetadata) -> Vec<(String, Delayed)> {
+    meta.entries()
+        .iter()
+        .map(|(key, value)| (key.clone(), Delayed::Meta(value.clone())))
+        .collect()
+}
+
+fn apply_sequence_fields(built: &mut Built) -> Result<(), DumpCanonicalError> {
+    if let Some(value) = take_non_null(&mut built.source, "session_id") {
+        built.session_id = delayed_to_py_str(&value)?;
+    }
+    if let Some(value) = take_non_null(&mut built.source, "created_at") {
+        built.created_at = delayed_to_py_str(&value)?;
+    }
+    if let Some(value) = take_non_null(&mut built.source, "schema_version") {
+        built.schema_version = delayed_to_py_str(&value)?;
+    }
+    if let Some(value) = pop_delayed(&mut built.source, "title") {
+        built.title = delayed_if_present(value);
+    }
+    if let Some(value) = pop_delayed(&mut built.source, "version") {
+        built.version = delayed_if_present(value);
+    }
+    if let Some(value) = take_map(&mut built.source, "metadata") {
+        built.metadata = Some(value);
+    }
+    Ok(())
+}
+
+fn delayed_if_present(value: Delayed) -> Option<Delayed> {
+    if delayed_is_null(&value) {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn pop_names(entries: &mut Vec<(String, Delayed)>, names: &[&str]) {
+    for name in names {
+        let _ = pop_delayed(entries, name);
+    }
+}
+
+fn pop_delayed(entries: &mut Vec<(String, Delayed)>, key: &str) -> Option<Delayed> {
+    let index = entries.iter().position(|(name, _)| name == key)?;
+    Some(entries.remove(index).1)
+}
+
+fn take_non_null(entries: &mut Vec<(String, Delayed)>, key: &str) -> Option<Delayed> {
+    let index = entries
+        .iter()
+        .position(|(name, value)| name == key && !delayed_is_null(value))?;
+    Some(entries.remove(index).1)
+}
+
+fn take_map(entries: &mut Vec<(String, Delayed)>, key: &str) -> Option<Delayed> {
+    let index = entries
+        .iter()
+        .position(|(name, value)| name == key && delayed_is_map(value))?;
+    Some(entries.remove(index).1)
+}
+
+fn delayed_is_null(value: &Delayed) -> bool {
+    match value {
+        Delayed::Text(_) => false,
+        Delayed::Meta(MetaValue::None) => true,
+        Delayed::Meta(_) => false,
+        Delayed::Node(node) => node.is_null(),
+    }
+}
+
+fn delayed_is_map(value: &Delayed) -> bool {
+    match value {
+        Delayed::Meta(MetaValue::Map(_)) => true,
+        Delayed::Node(node) => node.is_map(),
+        Delayed::Text(_) | Delayed::Meta(_) => false,
+    }
+}
+
+fn emit_json(built: &Built, events: &[SessionEvent]) -> Result<Vec<u8>, DumpCanonicalError> {
+    let mut event_values = Vec::with_capacity(events.len());
+    for event in events {
+        event_values.push(event_dict(event)?);
+    }
+    let version = match &built.version {
+        Some(value) => delayed_to_dump(value)?,
+        None => DumpVal::Int(1),
+    };
+    let mut fields = vec![
+        (
+            "created_at".to_owned(),
+            DumpVal::Str(built.created_at.clone()),
+        ),
+        ("events".to_owned(), DumpVal::Array(event_values)),
+        (
+            "schema_version".to_owned(),
+            DumpVal::Str(built.schema_version.clone()),
+        ),
+        (
+            "session_id".to_owned(),
+            DumpVal::Str(built.session_id.clone()),
+        ),
+        ("source".to_owned(), object_delayed(&built.source)?),
+        ("version".to_owned(), version),
+    ];
+    push_optional(&mut fields, "title", built.title.as_ref())?;
+    push_optional(&mut fields, "metadata", built.metadata.as_ref())?;
+    Ok(join_jsonl(&[dumps(&DumpVal::Object(fields))?]))
+}
+
+fn emit_jsonl(built: &Built, events: &[SessionEvent]) -> Result<Vec<u8>, DumpCanonicalError> {
+    let mut lines = vec![dumps(&header_object(built)?)?];
+    for event in events {
+        lines.push(dumps(&event_dict(event)?)?);
+    }
+    Ok(join_jsonl(&lines))
+}
+
+fn header_object(built: &Built) -> Result<DumpVal, DumpCanonicalError> {
+    let mut fields = vec![
+        (
+            "created_at".to_owned(),
+            DumpVal::Str(built.created_at.clone()),
+        ),
+        (
+            "schema_version".to_owned(),
+            DumpVal::Str(built.schema_version.clone()),
+        ),
+        (
+            "session_id".to_owned(),
+            DumpVal::Str(built.session_id.clone()),
+        ),
+    ];
+    push_optional(&mut fields, "title", built.title.as_ref())?;
+    push_optional(&mut fields, "metadata", built.metadata.as_ref())?;
+    if !built.source.is_empty() {
+        fields.push(("source".to_owned(), object_delayed(&built.source)?));
+    }
+    if let Some(version) = &built.version {
+        fields.push(("version".to_owned(), delayed_to_dump(version)?));
+    }
+    Ok(DumpVal::Object(fields))
+}
+
+fn push_optional(
+    fields: &mut Vec<(String, DumpVal)>,
+    key: &str,
+    value: Option<&Delayed>,
+) -> Result<(), DumpCanonicalError> {
+    if let Some(value) = value {
+        fields.push((key.to_owned(), delayed_to_dump(value)?));
+    }
+    Ok(())
+}
+
+fn object_delayed(entries: &[(String, Delayed)]) -> Result<DumpVal, DumpCanonicalError> {
+    let mut fields = Vec::with_capacity(entries.len());
+    for (key, value) in entries {
+        fields.push((key.clone(), delayed_to_dump(value)?));
+    }
+    Ok(DumpVal::Object(fields))
+}
+
+/// `SessionEvent` has `to_canonical_dict`, not `to_dict`, so this is the plain arm.
+fn event_dict(event: &SessionEvent) -> Result<DumpVal, DumpCanonicalError> {
+    let _ = event;
+    match event_to_dict(EventObject::Plain) {
+        Ok(value) => payload_to_dump(&value),
+        Err(error) => Err(DumpCanonicalError::Unavailable(error.message())),
+    }
+}
+
+fn delayed_to_dump(value: &Delayed) -> Result<DumpVal, DumpCanonicalError> {
+    match value {
+        Delayed::Text(text) => Ok(DumpVal::Str(text.clone())),
+        Delayed::Meta(meta) => Ok(meta_to_dump(meta)),
+        Delayed::Node(node) => payload_to_dump(node),
+    }
+}
+
+fn delayed_to_py_str(value: &Delayed) -> Result<String, DumpCanonicalError> {
+    match value {
+        Delayed::Text(text) => Ok(text.clone()),
+        Delayed::Meta(meta) => Ok(meta_py_str(meta)),
+        Delayed::Node(node) => payload_py_str(node).map_err(DumpCanonicalError::failed),
+    }
+}
+
+fn meta_to_dump(value: &MetaValue) -> DumpVal {
+    match value {
+        MetaValue::None => DumpVal::Null,
+        MetaValue::Bool(flag) => DumpVal::Bool(*flag),
+        MetaValue::Int(number) => DumpVal::Int(*number),
+        MetaValue::Str(text) => DumpVal::Str(text.clone()),
+        MetaValue::List(items) => DumpVal::Array(items.iter().map(meta_to_dump).collect()),
+        MetaValue::Map(entries) => DumpVal::Object(
+            entries
+                .iter()
+                .map(|(key, item)| (key.clone(), meta_to_dump(item)))
+                .collect(),
+        ),
+    }
+}
+
+fn meta_py_str(value: &MetaValue) -> String {
+    match value {
+        MetaValue::Str(text) => text.clone(),
+        other => meta_py_repr(other),
+    }
+}
+
+fn meta_py_repr(value: &MetaValue) -> String {
+    match value {
+        MetaValue::None => "None".to_owned(),
+        MetaValue::Bool(true) => "True".to_owned(),
+        MetaValue::Bool(false) => "False".to_owned(),
+        MetaValue::Int(number) => number.to_string(),
+        MetaValue::Str(text) => python_str_repr(text),
+        MetaValue::List(items) => join_meta_repr("[", "]", items.iter()),
+        MetaValue::Map(entries) => {
+            let mut out = String::from("{");
+            for (index, (key, item)) in entries.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&python_str_repr(key));
+                out.push_str(": ");
+                out.push_str(&meta_py_repr(item));
+            }
+            out.push('}');
+            out
+        }
+    }
+}
+
+fn join_meta_repr<'a>(
+    open: &str,
+    close: &str,
+    items: impl Iterator<Item = &'a MetaValue>,
+) -> String {
+    let mut out = String::from(open);
+    for (index, item) in items.enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&meta_py_repr(item));
+    }
+    out.push_str(close);
+    out
+}
+
+fn payload_to_dump(value: &Payload) -> Result<DumpVal, DumpCanonicalError> {
+    if value.is_tuple() {
+        return Err(DumpCanonicalError::failed(TUPLE_ITEMS_HIDDEN));
+    }
+    if value.is_list() || value.is_map() {
+        validate_depth(value).map_err(|err| depth_failure(&err))?;
+    }
+    dump_payload_tree(value)
+}
+
+fn depth_failure(err: &model::errors::SchemaError) -> DumpCanonicalError {
+    if err.message() == "Cyclic reference detected in payload" {
+        DumpCanonicalError::failed("Circular reference detected")
+    } else {
+        DumpCanonicalError::failed(err.message())
+    }
+}
+
+fn dump_payload_tree(value: &Payload) -> Result<DumpVal, DumpCanonicalError> {
+    if value.is_null() {
+        return Ok(DumpVal::Null);
+    }
+    if let Some(flag) = value.as_bool() {
+        return Ok(DumpVal::Bool(flag));
+    }
+    if let Some(number) = value.as_int() {
+        return Ok(DumpVal::Int(number));
+    }
+    if let Some(number) = value.as_float() {
+        return Ok(DumpVal::Float(number));
+    }
+    if let Some(text) = value.as_str() {
+        return Ok(DumpVal::Str(text.to_owned()));
+    }
+    if value.is_list() {
+        return dump_list(value);
+    }
+    if value.is_map() {
+        return dump_map(value);
+    }
+    Err(DumpCanonicalError::failed(TUPLE_ITEMS_HIDDEN))
+}
+
+fn dump_list(value: &Payload) -> Result<DumpVal, DumpCanonicalError> {
+    let mut items = Vec::new();
+    let walk = value.walk_list_items(|_, item| items.push(item.clone()));
+    if walk != ListWalk::Done {
+        return Err(DumpCanonicalError::failed("list items are not visible"));
+    }
+    let mut dumped = Vec::with_capacity(items.len());
+    for item in items {
+        dumped.push(dump_payload_tree(&item)?);
+    }
+    Ok(DumpVal::Array(dumped))
+}
+
+fn dump_map(value: &Payload) -> Result<DumpVal, DumpCanonicalError> {
+    let mut entries = Vec::new();
+    let walk = value.walk_string_entries(|key, item| {
+        entries.push((key.to_owned(), item.clone()));
+    });
+    if walk != MapWalk::Done {
+        return Err(DumpCanonicalError::failed("map entries are not visible"));
+    }
+    let mut fields = Vec::with_capacity(entries.len());
+    for (key, item) in entries {
+        fields.push((key, dump_payload_tree(&item)?));
+    }
+    Ok(DumpVal::Object(fields))
+}
+
+fn dumps(value: &DumpVal) -> Result<String, DumpCanonicalError> {
+    let mut out = String::new();
+    write_val(&mut out, value)?;
+    Ok(out)
+}
+
+fn write_val(out: &mut String, value: &DumpVal) -> Result<(), DumpCanonicalError> {
+    match value {
+        DumpVal::Null => out.push_str("null"),
+        DumpVal::Bool(true) => out.push_str("true"),
+        DumpVal::Bool(false) => out.push_str("false"),
+        DumpVal::Int(number) => out.push_str(&number.to_string()),
+        DumpVal::Float(number) => write_float(out, *number)?,
+        DumpVal::Str(text) => push_json_string(out, text),
+        DumpVal::Array(items) => write_array(out, items)?,
+        DumpVal::Object(fields) => write_object(out, fields)?,
+    }
+    Ok(())
+}
+
+fn write_array(out: &mut String, items: &[DumpVal]) -> Result<(), DumpCanonicalError> {
+    out.push('[');
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        write_val(out, item)?;
+    }
+    out.push(']');
+    Ok(())
+}
+
+fn write_object(out: &mut String, fields: &[(String, DumpVal)]) -> Result<(), DumpCanonicalError> {
+    let mut order: Vec<usize> = (0..fields.len()).collect();
+    order.sort_by(|&left, &right| fields[left].0.cmp(&fields[right].0));
+    out.push('{');
+    for (index, slot) in order.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        let (key, value) = &fields[*slot];
+        push_json_string(out, key);
+        out.push(':');
+        write_val(out, value)?;
+    }
+    out.push('}');
+    Ok(())
+}
+
+fn write_float(out: &mut String, value: f64) -> Result<(), DumpCanonicalError> {
+    if !value.is_finite() {
+        return Err(DumpCanonicalError::failed(NON_FINITE_FLOAT));
+    }
+    out.push_str(&python_finite_float(value));
+    Ok(())
+}
+
+/// `json.dumps(..., ensure_ascii=False)` string escapes.
+fn push_json_string(out: &mut String, value: &str) {
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other if u32::from(other) < 0x20 => push_hex(out, "\\u", u32::from(other), 4),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+}
+
+fn python_number_text(value: f64) -> String {
+    if value.is_nan() {
+        return "nan".to_owned();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_negative() {
+            "-inf".to_owned()
+        } else {
+            "inf".to_owned()
+        };
+    }
+    python_finite_float(value)
+}
+
+fn python_finite_float(value: f64) -> String {
+    let bits = value.to_bits();
+    if bits == 0 {
+        return "0.0".to_owned();
+    }
+    if bits == (1_u64 << 63) {
+        return "-0.0".to_owned();
+    }
+    let debug = format!("{value:?}");
+    let Some(index) = debug.find(['e', 'E']) else {
+        return debug;
+    };
+    let mantissa = &debug[..index];
+    let exponent = &debug[index + 1..];
+    let (sign, digits) = if let Some(rest) = exponent.strip_prefix('+') {
+        ('+', rest)
+    } else if let Some(rest) = exponent.strip_prefix('-') {
+        ('-', rest)
+    } else {
+        ('+', exponent)
+    };
+    if digits.len() >= 2 {
+        format!("{mantissa}e{sign}{digits}")
+    } else {
+        format!("{mantissa}e{sign}0{digits}")
+    }
+}
+
+fn join_jsonl(lines: &[String]) -> Vec<u8> {
+    let mut text = String::new();
+    for (index, line) in lines.iter().enumerate() {
+        if index > 0 {
+            text.push('\n');
+        }
+        text.push_str(line);
+    }
+    text.push('\n');
+    text.into_bytes()
+}
+
+fn py_truthy(value: &Payload) -> Result<bool, DumpCanonicalError> {
+    if value.is_null() {
+        return Ok(false);
+    }
+    if let Some(flag) = value.as_bool() {
+        return Ok(flag);
+    }
+    if let Some(number) = value.as_int() {
+        return Ok(number != 0);
+    }
+    if let Some(number) = value.as_float() {
+        return Ok(number != 0.0);
+    }
+    if let Some(text) = value.as_str() {
+        return Ok(!text.is_empty());
+    }
+    if value.is_list() {
+        return list_is_truthy(value);
+    }
+    if value.is_map() {
+        return map_is_truthy(value);
+    }
+    if value.is_tuple() {
+        return Err(DumpCanonicalError::failed(TUPLE_ITEMS_HIDDEN));
+    }
+    Err(DumpCanonicalError::failed(
+        "header metadata must be a mapping",
+    ))
+}
+
+fn list_is_truthy(value: &Payload) -> Result<bool, DumpCanonicalError> {
+    let mut any = false;
+    let walk = value.walk_list_items(|_, _| any = true);
+    match walk {
+        ListWalk::Done => Ok(any),
+        ListWalk::Borrowed | ListWalk::NotAList => {
+            Err(DumpCanonicalError::failed("list items are not visible"))
+        }
+    }
+}
+
+fn map_is_truthy(value: &Payload) -> Result<bool, DumpCanonicalError> {
+    let mut any = false;
+    let walk = value.walk_string_entries(|_, _| any = true);
+    match walk {
+        MapWalk::Done => Ok(any),
+        MapWalk::Borrowed => Err(DumpCanonicalError::failed("map entries are borrowed")),
+        MapWalk::NotAMap => Err(DumpCanonicalError::failed(
+            "header metadata must be a mapping",
+        )),
+    }
+}
+
+/// Python `str` for a [`Payload`]. Strings are copied. Containers use `repr`.
+fn payload_py_str(value: &Payload) -> Result<String, String> {
+    if let Some(text) = value.as_str() {
+        return Ok(text.to_owned());
+    }
+    payload_py_repr(value)
+}
+
+fn payload_py_repr(value: &Payload) -> Result<String, String> {
+    if value.is_tuple() {
+        return Err(TUPLE_ITEMS_HIDDEN.to_owned());
+    }
+    if value.is_list() || value.is_map() {
+        validate_depth(value).map_err(|err| err.message().to_owned())?;
+    }
+    if value.is_null() {
+        return Ok("None".to_owned());
+    }
+    if let Some(true) = value.as_bool() {
+        return Ok("True".to_owned());
+    }
+    if let Some(false) = value.as_bool() {
+        return Ok("False".to_owned());
+    }
+    if let Some(number) = value.as_int() {
+        return Ok(number.to_string());
+    }
+    if let Some(number) = value.as_float() {
+        return Ok(python_number_text(number));
+    }
+    if let Some(text) = value.as_str() {
+        return Ok(python_str_repr(text));
+    }
+    if value.is_list() {
+        return list_py_repr(value);
+    }
+    if value.is_map() {
+        return map_py_repr(value);
+    }
+    Err(TUPLE_ITEMS_HIDDEN.to_owned())
+}
+
+fn list_py_repr(value: &Payload) -> Result<String, String> {
+    let mut items = Vec::new();
+    let walk = value.walk_list_items(|_, item| items.push(item.clone()));
+    if walk != ListWalk::Done {
+        return Err("list items are not visible".to_owned());
+    }
+    let mut out = String::from("[");
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&payload_py_repr(item)?);
+    }
+    out.push(']');
+    Ok(out)
+}
+
+fn map_py_repr(value: &Payload) -> Result<String, String> {
+    let mut entries = Vec::new();
+    let walk = value.walk_string_entries(|key, item| {
+        entries.push((key.to_owned(), item.clone()));
+    });
+    if walk != MapWalk::Done {
+        return Err("map entries are not visible".to_owned());
+    }
+    let mut out = String::from("{");
+    for (index, (key, item)) in entries.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_str_repr(key));
+        out.push_str(": ");
+        out.push_str(&payload_py_repr(item)?);
+    }
+    out.push('}');
+    Ok(out)
+}
+
+/// Sanitized record id, or `None` when the value is not a safe string.
+///
+/// Python: `_safe_rec_id`. A UUID or numeric event id is returned before
+/// [`enforce_content_free_text`]. Any other string must already be stripped
+/// and must pass that guard. A guard error becomes `None`.
+#[must_use]
+pub fn safe_rec_id(val: &Payload) -> Option<String> {
+    let text = val.as_str()?;
+    safe_rec_id_text(text)
+}
+
+fn safe_rec_id_text(text: &str) -> Option<String> {
+    if is_plain_record_id(text) {
+        return Some(text.to_owned());
+    }
+    let stripped = python_strip(text);
+    if stripped.is_empty() || stripped != text {
+        return None;
+    }
+    match enforce_content_free_text(stripped, "record_id") {
+        Ok(()) => Some(stripped.to_owned()),
+        Err(_) => None,
+    }
+}
+
+/// Python: `_PLAIN_RECORD_ID.fullmatch` with `re.ASCII`. Walked on bytes.
+fn is_plain_record_id(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    is_uuid_text(bytes) || is_numeric_event_id(bytes)
+}
+
+fn is_uuid_text(bytes: &[u8]) -> bool {
+    if bytes.len() != 36 {
+        return false;
+    }
+    for (index, byte) in bytes.iter().copied().enumerate() {
+        let dash = index == 8 || index == 13 || index == 18 || index == 23;
+        if dash {
+            if byte != b'-' {
+                return false;
+            }
+        } else if !byte.is_ascii_hexdigit() {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_numeric_event_id(bytes: &[u8]) -> bool {
+    let rest = if let Some(rest) = bytes.strip_prefix(b"evt-") {
+        rest
+    } else if let Some(rest) = bytes.strip_prefix(b"evt_") {
+        rest
+    } else if let Some(rest) = bytes.strip_prefix(b"event-") {
+        rest
+    } else if let Some(rest) = bytes.strip_prefix(b"e") {
+        rest
+    } else {
+        return false;
+    };
+    (1..=20).contains(&rest.len()) && rest.iter().all(u8::is_ascii_digit)
+}
+
+/// Sanitized evidence text.
+///
+/// Python: `_safe_evidence_val`. `None` stays `None`. Any other value is
+/// `str(val)`, then [`enforce_content_free_text`] with context `evidence`.
+/// A guard error becomes `"<sanitized_control_chars>"`.
+///
+/// # Errors
+///
+/// A tuple, or a container this crate cannot walk, does not become a
+/// guessed string.
+pub fn safe_evidence_val(val: &Payload) -> Result<Option<String>, EvidenceRenderError> {
+    if val.is_null() {
+        return Ok(None);
+    }
+    let rendered = payload_py_str(val).map_err(EvidenceRenderError::new)?;
+    match enforce_content_free_text(&rendered, "evidence") {
+        Ok(()) => Ok(Some(rendered)),
+        Err(_) => Ok(Some("<sanitized_control_chars>".to_owned())),
+    }
+}
+
+/// Fast path for one undecorated message record.
+///
+/// Python: `_common_event`. Any unproved condition returns [`None`], which
+/// sends the record back to the diagnostic parser. `validated_timestamps`
+/// of [`None`] validates every timestamp and stores nothing. A cache remembers
+/// successes only, and stops at 256 entries.
+///
+/// `ts` is checked with [`validate_rfc3339_utc`](model::canonical::validate_rfc3339_utc).
+/// A [`SchemaError`](model::errors::SchemaError) becomes [`None`]. The id guard
+/// is [`safe_rec_id`].
+#[must_use]
+pub fn common_event(
+    raw: &Payload,
+    mut validated_timestamps: Option<&mut Vec<String>>,
+) -> Option<SessionEvent> {
+    if !is_common_message(raw) {
+        return None;
+    }
+    let rec_id_val = present(raw, "id")?;
+    let rec_id = rec_id_val.as_str()?;
+    let safe_id = safe_rec_id_text(rec_id)?;
+    if safe_id != rec_id {
+        return None;
+    }
+    let parent = parent_id(&present(raw, "parent_id")?)?;
+    let seq_val = present(raw, "seq")?;
+    let seq = seq_val.as_int()?;
+    if seq < 0 {
+        return None;
+    }
+    let ts_val = present(raw, "ts")?;
+    let ts = ts_val.as_str()?;
+    let actor_val = present(raw, "actor")?;
+    let actor = actor_val.as_str()?;
+    if !VALID_ACTORS.contains(&actor) {
+        return None;
+    }
+    let payload = present(raw, "payload")?;
+    if !payload.is_map() {
+        return None;
+    }
+    if !matches!(payload.map_string("side_effects"), MapLookup::Absent) {
+        return None;
+    }
+    if !timestamp_ok(ts, &mut validated_timestamps) {
+        return None;
+    }
+    let mut event = SessionEvent::new(rec_id, parent, seq, ts, actor, "message");
+    event.payload = payload;
+    Some(event)
+}
+
+fn is_common_message(raw: &Payload) -> bool {
+    exact_common_keys(raw)
+        && match raw.map_string("kind") {
+            MapLookup::Present(value) => value.as_str() == Some("message"),
+            MapLookup::Absent | MapLookup::Borrowed | MapLookup::NotAMap => false,
+        }
+}
+
+fn exact_common_keys(raw: &Payload) -> bool {
+    let mut seen = [false; COMMON_EVENT_KEYS.len()];
+    let mut extra = false;
+    let walk = raw.walk_string_entries(|key, _| match common_key_index(key) {
+        Some(index) => seen[index] = true,
+        None => extra = true,
+    });
+    walk == MapWalk::Done && !extra && seen == [true; COMMON_EVENT_KEYS.len()]
+}
+
+fn common_key_index(key: &str) -> Option<usize> {
+    COMMON_EVENT_KEYS.iter().position(|name| *name == key)
+}
+
+fn present(raw: &Payload, key: &str) -> Option<Payload> {
+    match raw.map_string(key) {
+        MapLookup::Present(value) => Some(value),
+        MapLookup::Absent | MapLookup::Borrowed | MapLookup::NotAMap => None,
+    }
+}
+
+fn parent_id(value: &Payload) -> Option<Option<String>> {
+    if value.is_null() {
+        return Some(None);
+    }
+    let text = value.as_str()?;
+    if python_strip(text).is_empty() {
+        return None;
+    }
+    Some(Some(text.to_owned()))
+}
+
+fn timestamp_ok(ts: &str, validated_timestamps: &mut Option<&mut Vec<String>>) -> bool {
+    let already = validated_timestamps
+        .as_ref()
+        .is_some_and(|cache| cache.iter().any(|item| item == ts));
+    if already {
+        return true;
+    }
+    if validate_rfc3339_utc(ts, "ts").is_err() {
+        return false;
+    }
+    if let Some(cache) = validated_timestamps.as_mut() {
+        if cache.len() < TIMESTAMP_CACHE_LIMIT {
+            cache.push(ts.to_owned());
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
-    use model::canonical::{MapLookup, Payload, SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE};
+    use model::canonical::{
+        MapLookup, Payload, Session, SessionEvent, SessionHeader, NORMALIZE_CANONICAL_UNAVAILABLE,
+    };
 
     use super::{
-        classify_session_doc, detect_canonical, event_to_dict, normalize_version, safe_type_value,
-        Attribute, EventList, EventObject, MetaValue, SourceMetadata, CRITICAL_KEYS,
-        CRITICAL_TOP_KEYS, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS, KNOWN_TOP_KEYS,
-        REQUIRED_EVENT_KEYS, SUPPORTED_CANONICAL_VERSIONS,
+        classify_session_doc, common_event, detect_canonical, dump_canonical, event_to_dict,
+        normalize_version, safe_evidence_val, safe_rec_id, safe_type_value, AttrSource, Attribute,
+        DumpInput, EventList, EventObject, EventSequence, MetaValue, ProvidedSource,
+        SourceMetadata, CRITICAL_KEYS, CRITICAL_TOP_KEYS, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS,
+        KNOWN_TOP_KEYS, REQUIRED_EVENT_KEYS, SUPPORTED_CANONICAL_VERSIONS,
     };
     use crate::safe_value::PyValue;
 
@@ -919,5 +2051,594 @@ mod tests {
         assert_eq!(CRITICAL_TOP_KEYS.len(), 8);
         assert!(CRITICAL_TOP_KEYS.contains(&"replay_barrier"));
         assert!(!SUPPORTED_CANONICAL_VERSIONS.contains(&"2"));
+    }
+
+    fn jsonl_line(line: &str) -> Vec<u8> {
+        let mut bytes = line.as_bytes().to_vec();
+        bytes.push(b'\n');
+        bytes
+    }
+
+    fn dump_seq(
+        events: &[SessionEvent],
+        source: Option<ProvidedSource<'_>>,
+        format: &str,
+    ) -> Result<Vec<u8>, super::DumpCanonicalError> {
+        dump_canonical(
+            DumpInput::Events(EventSequence {
+                events,
+                source: None,
+            }),
+            source,
+            format,
+        )
+    }
+
+    #[test]
+    fn dump_empty_sequence_matches_compact_json() {
+        let jsonl = dump_seq(&[], None, "jsonl").expect("jsonl");
+        let other = dump_seq(&[], None, "JSON").expect("not json");
+        assert_eq!(jsonl, other);
+        assert_eq!(
+            jsonl,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"canonical-session","version":1}"#
+            )
+        );
+        assert_eq!(dump_seq(&[], None, "jsonl").expect("again"), jsonl);
+        assert!(!jsonl.contains(&b'\r'));
+        let document = dump_seq(&[], None, "json").expect("json");
+        assert_eq!(
+            document,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","events":[],"schema_version":"sesslint.session/v1","session_id":"canonical-session","source":{},"version":1}"#
+            )
+        );
+    }
+
+    #[test]
+    fn dump_session_keeps_header_and_drops_shadow_keys() {
+        let mut header = SessionHeader::new("sesslint.session/v1", "sid", "2024-01-02T03:04:05Z");
+        header.title = Some("Hello".to_owned());
+        header.version = Some(3);
+        header.metadata = Payload::map(vec![(Payload::string("k"), Payload::string("v"))]);
+        header.source = Some(Payload::map(vec![
+            (Payload::string("format"), Payload::string("canonical")),
+            (Payload::string("session_id"), Payload::string("ignored")),
+            (Payload::string("title"), Payload::string("nope")),
+            (Payload::string("version"), Payload::int(9)),
+            (
+                Payload::string("metadata"),
+                Payload::map(vec![(Payload::string("other"), Payload::int(1))]),
+            ),
+            (Payload::string("links"), Payload::list(Vec::new())),
+            (Payload::string("record_sizes"), Payload::int(4)),
+        ]));
+        let session = Session::new(header);
+        let bytes = dump_canonical(DumpInput::Session(&session), None, "jsonl").expect("dump");
+        assert_eq!(
+            bytes,
+            jsonl_line(
+                r#"{"created_at":"2024-01-02T03:04:05Z","metadata":{"k":"v"},"schema_version":"sesslint.session/v1","session_id":"sid","source":{"format":"canonical"},"title":"Hello","version":3}"#
+            )
+        );
+
+        let empty = Session::new(SessionHeader::new(
+            "sesslint.session/v1",
+            "sid",
+            "2024-01-02T03:04:05Z",
+        ));
+        let document = dump_canonical(DumpInput::Session(&empty), None, "json").expect("json");
+        assert_eq!(
+            document,
+            jsonl_line(
+                r#"{"created_at":"2024-01-02T03:04:05Z","events":[],"schema_version":"sesslint.session/v1","session_id":"sid","source":{},"version":1}"#
+            )
+        );
+        let stream = dump_canonical(DumpInput::Session(&empty), None, "jsonl").expect("jsonl");
+        assert_eq!(
+            stream,
+            jsonl_line(
+                r#"{"created_at":"2024-01-02T03:04:05Z","schema_version":"sesslint.session/v1","session_id":"sid","version":1}"#
+            )
+        );
+    }
+
+    #[test]
+    fn dump_sequence_pops_source_fields_before_internal_keys() {
+        let source = Payload::map(vec![
+            (Payload::string("tool"), Payload::string("demo")),
+            (Payload::string("session_id"), Payload::int(7)),
+            (Payload::string("created_at"), Payload::null()),
+            (Payload::string("title"), Payload::string("T")),
+            (Payload::string("version"), Payload::null()),
+            (Payload::string("metadata"), Payload::map(Vec::new())),
+            (Payload::string("links"), Payload::int(1)),
+            (Payload::string("record_sizes"), Payload::int(2)),
+            (Payload::string("schema_version"), Payload::string("custom")),
+        ]);
+        let provided = Some(ProvidedSource::Payload(&source));
+        let stream = dump_seq(&[], provided, "jsonl").expect("jsonl");
+        assert_eq!(
+            stream,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","metadata":{},"schema_version":"custom","session_id":"7","source":{"created_at":null,"tool":"demo"},"title":"T"}"#
+            )
+        );
+        let document = dump_seq(&[], provided, "json").expect("json");
+        assert_eq!(
+            document,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","events":[],"metadata":{},"schema_version":"custom","session_id":"7","source":{"created_at":null,"tool":"demo"},"title":"T","version":1}"#
+            )
+        );
+    }
+
+    #[test]
+    fn dump_source_argument_shapes_follow_the_pin() {
+        let number = Payload::int(5);
+        let valued = dump_seq(&[], Some(ProvidedSource::Payload(&number)), "jsonl").expect("value");
+        assert_eq!(
+            valued,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"canonical-session","source":{"value":"5"},"version":1}"#
+            )
+        );
+
+        let mut meta = SourceMetadata::new();
+        meta.insert("zebra", MetaValue::Int(1));
+        meta.insert("alpha", MetaValue::Bool(true));
+        meta.insert("links", MetaValue::List(Vec::new()));
+        let from_meta = dump_canonical(
+            DumpInput::Events(EventSequence {
+                events: &[],
+                source: Some(AttrSource::Metadata(&meta)),
+            }),
+            None,
+            "jsonl",
+        )
+        .expect("meta");
+        assert_eq!(
+            from_meta,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"canonical-session","source":{"alpha":true,"zebra":1},"version":1}"#
+            )
+        );
+
+        let overridden = dump_canonical(
+            DumpInput::Events(EventSequence {
+                events: &[],
+                source: Some(AttrSource::Metadata(&meta)),
+            }),
+            Some(ProvidedSource::Payload(&number)),
+            "jsonl",
+        )
+        .expect("override");
+        assert_eq!(overridden, valued);
+
+        let ignored = dump_canonical(
+            DumpInput::Events(EventSequence {
+                events: &[],
+                source: Some(AttrSource::Payload(&number)),
+            }),
+            None,
+            "jsonl",
+        )
+        .expect("empty attr");
+        assert_eq!(ignored, dump_seq(&[], None, "jsonl").expect("plain"));
+
+        let mut header = SessionHeader::new("sesslint.session/v1", "sid", "2024-01-02T03:04:05Z");
+        header.source = Some(Payload::string("claude"));
+        let session = Session::new(header);
+        let formatted =
+            dump_canonical(DumpInput::Session(&session), None, "jsonl").expect("format");
+        assert_eq!(
+            formatted,
+            jsonl_line(
+                r#"{"created_at":"2024-01-02T03:04:05Z","schema_version":"sesslint.session/v1","session_id":"sid","source":{"format":"claude"},"version":1}"#
+            )
+        );
+        let replaced = dump_canonical(
+            DumpInput::Session(&session),
+            Some(ProvidedSource::Payload(&number)),
+            "jsonl",
+        )
+        .expect("value wins");
+        assert!(String::from_utf8(replaced)
+            .expect("utf8")
+            .contains(r#""value":"5""#));
+        assert!(!String::from_utf8(
+            dump_canonical(
+                DumpInput::Session(&session),
+                Some(ProvidedSource::Payload(&number)),
+                "jsonl",
+            )
+            .expect("again")
+        )
+        .expect("utf8")
+        .contains("claude"));
+    }
+
+    #[test]
+    fn dump_floats_use_python_exponents_and_rejects_non_finite() {
+        let source = Payload::map(vec![
+            (Payload::string("neg"), Payload::float(-0.0)),
+            (Payload::string("tiny"), Payload::float(1e-7)),
+            (Payload::string("wide"), Payload::float(1e16)),
+        ]);
+        let bytes = dump_seq(&[], Some(ProvidedSource::Payload(&source)), "jsonl").expect("floats");
+        assert_eq!(
+            bytes,
+            jsonl_line(
+                r#"{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1","session_id":"canonical-session","source":{"neg":-0.0,"tiny":1e-07,"wide":1e+16},"version":1}"#
+            )
+        );
+
+        let title = Payload::map(vec![(
+            Payload::string("title"),
+            Payload::string("a\u{0001}é\"\\"),
+        )]);
+        let escaped = dump_seq(&[], Some(ProvidedSource::Payload(&title)), "jsonl").expect("title");
+        let expected = "{\"created_at\":\"2026-09-05T12:00:00Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"canonical-session\",\"title\":\"a\\u0001é\\\"\\\\\",\"version\":1}\n";
+        assert_eq!(String::from_utf8(escaped).expect("utf8"), expected);
+
+        let nan = Payload::map(vec![(Payload::string("n"), Payload::float(f64::NAN))]);
+        let stream = dump_seq(&[], Some(ProvidedSource::Payload(&nan)), "jsonl").expect_err("nan");
+        assert_eq!(
+            stream.to_string(),
+            "Out of range float values are not JSON compliant"
+        );
+        let document =
+            dump_seq(&[], Some(ProvidedSource::Payload(&nan)), "json").expect_err("json nan");
+        assert_eq!(document.to_string(), stream.to_string());
+    }
+
+    #[test]
+    fn dump_runs_pure_checks_then_stops_at_the_normalizer() {
+        let event = SessionEvent::new("evt-1", None, 0, "2024-02-29T00:00:00Z", "user", "message");
+        let nan = Payload::map(vec![(Payload::string("n"), Payload::float(f64::NAN))]);
+        let jsonl_nan = dump_seq(
+            std::slice::from_ref(&event),
+            Some(ProvidedSource::Payload(&nan)),
+            "jsonl",
+        )
+        .expect_err("header first");
+        assert_eq!(
+            jsonl_nan.to_string(),
+            "Out of range float values are not JSON compliant"
+        );
+        let json_nan = dump_seq(
+            std::slice::from_ref(&event),
+            Some(ProvidedSource::Payload(&nan)),
+            "json",
+        )
+        .expect_err("events first");
+        assert_eq!(json_nan.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert_eq!(json_nan.message(), NORMALIZE_CANONICAL_UNAVAILABLE);
+
+        let jsonl = dump_seq(std::slice::from_ref(&event), None, "jsonl").expect_err("jsonl seam");
+        let document = dump_seq(std::slice::from_ref(&event), None, "json").expect_err("json seam");
+        assert_eq!(jsonl.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert_eq!(document.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+
+        let tuple = Payload::tuple(vec![Payload::int(1)]);
+        let hidden = dump_seq(
+            std::slice::from_ref(&event),
+            Some(ProvidedSource::Payload(&tuple)),
+            "json",
+        )
+        .expect_err("tuple");
+        assert_eq!(hidden.to_string(), "tuple items are not visible");
+    }
+
+    #[test]
+    fn safe_rec_id_accepts_plain_ids_before_the_content_guard() {
+        assert_eq!(
+            safe_rec_id(&Payload::string("evt-1")).as_deref(),
+            Some("evt-1")
+        );
+        assert_eq!(
+            safe_rec_id(&Payload::string("evt_2")).as_deref(),
+            Some("evt_2")
+        );
+        assert_eq!(
+            safe_rec_id(&Payload::string("event-3")).as_deref(),
+            Some("event-3")
+        );
+        assert_eq!(safe_rec_id(&Payload::string("e1")).as_deref(), Some("e1"));
+        let twenty = format!("e{}", "1".repeat(20));
+        assert!(super::is_plain_record_id(&twenty));
+        assert_eq!(
+            safe_rec_id(&Payload::string(&twenty)).as_deref(),
+            Some(twenty.as_str())
+        );
+        let twenty_one = format!("e{}", "1".repeat(21));
+        assert!(!super::is_plain_record_id(&twenty_one));
+        assert_eq!(
+            safe_rec_id(&Payload::string(&twenty_one)).as_deref(),
+            Some(twenty_one.as_str())
+        );
+        assert_eq!(
+            safe_rec_id(&Payload::string("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")).as_deref(),
+            Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        );
+        assert_eq!(
+            safe_rec_id(&Payload::string("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")).as_deref(),
+            Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+        );
+        assert!(!super::is_plain_record_id("E1"));
+        assert_eq!(safe_rec_id(&Payload::string("E1")).as_deref(), Some("E1"));
+        assert!(safe_rec_id(&Payload::string(" e1")).is_none());
+        assert!(!super::is_plain_record_id("evt-"));
+        assert_eq!(
+            safe_rec_id(&Payload::string("evt-")).as_deref(),
+            Some("evt-")
+        );
+        assert!(!super::is_plain_record_id("ee1"));
+        assert_eq!(safe_rec_id(&Payload::string("ee1")).as_deref(), Some("ee1"));
+        assert!(safe_rec_id(&Payload::int(1)).is_none());
+        assert!(safe_rec_id(&Payload::string("")).is_none());
+        assert!(safe_rec_id(&Payload::string("   ")).is_none());
+        assert!(safe_rec_id(&Payload::string("user@example.com")).is_none());
+        assert!(safe_rec_id(&Payload::string("bad\nid")).is_none());
+        assert_eq!(
+            safe_rec_id(&Payload::string("hello")).as_deref(),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn safe_evidence_val_stringifies_then_sanitizes() {
+        assert_eq!(safe_evidence_val(&Payload::null()).expect("none"), None);
+        assert_eq!(
+            safe_evidence_val(&Payload::string("ok"))
+                .expect("ok")
+                .as_deref(),
+            Some("ok")
+        );
+        assert_eq!(
+            safe_evidence_val(&Payload::string("a\nb"))
+                .expect("nl")
+                .as_deref(),
+            Some("<sanitized_control_chars>")
+        );
+        assert_eq!(
+            safe_evidence_val(&Payload::int(12))
+                .expect("int")
+                .as_deref(),
+            Some("12")
+        );
+        assert_eq!(
+            safe_evidence_val(&Payload::bool_value(true))
+                .expect("true")
+                .as_deref(),
+            Some("True")
+        );
+        assert_eq!(
+            safe_evidence_val(&Payload::bool_value(false))
+                .expect("false")
+                .as_deref(),
+            Some("False")
+        );
+        let list = Payload::list(vec![Payload::int(1), Payload::string("x")]);
+        assert_eq!(
+            safe_evidence_val(&list).expect("list").as_deref(),
+            Some("[1, 'x']")
+        );
+        let map = Payload::map(vec![
+            (Payload::string("b"), Payload::int(1)),
+            (Payload::string("a"), Payload::bool_value(true)),
+        ]);
+        assert_eq!(
+            safe_evidence_val(&map).expect("map").as_deref(),
+            Some("{'b': 1, 'a': True}")
+        );
+        let tuple = Payload::tuple(vec![Payload::int(1)]);
+        assert_eq!(
+            safe_evidence_val(&tuple).expect_err("tuple").to_string(),
+            "tuple items are not visible"
+        );
+    }
+
+    fn message_record(
+        id: &str,
+        parent: Payload,
+        seq: Payload,
+        ts: &str,
+        actor: &str,
+        payload: Payload,
+    ) -> Payload {
+        Payload::map(vec![
+            (Payload::string("id"), Payload::string(id)),
+            (Payload::string("parent_id"), parent),
+            (Payload::string("seq"), seq),
+            (Payload::string("ts"), Payload::string(ts)),
+            (Payload::string("actor"), Payload::string(actor)),
+            (Payload::string("kind"), Payload::string("message")),
+            (Payload::string("payload"), payload),
+        ])
+    }
+
+    #[test]
+    fn common_event_accepts_a_plain_message_and_caches_timestamps() {
+        let raw = message_record(
+            "evt-1",
+            Payload::null(),
+            Payload::int(0),
+            "2024-02-29T00:00:00Z",
+            "user",
+            Payload::map(Vec::new()),
+        );
+        let mut cache = Vec::new();
+        let event = common_event(&raw, Some(&mut cache)).expect("event");
+        assert_eq!(event.id, "evt-1");
+        assert_eq!(event.parent_id, None);
+        assert_eq!(event.seq, 0);
+        assert_eq!(event.ts, "2024-02-29T00:00:00Z");
+        assert_eq!(event.actor, "user");
+        assert_eq!(event.kind, "message");
+        assert!(event.payload.is_map());
+        assert!(matches!(
+            event.extra_fields.map_string("id"),
+            MapLookup::Absent
+        ));
+        assert_eq!(cache, vec!["2024-02-29T00:00:00Z".to_owned()]);
+        assert!(common_event(&raw, Some(&mut cache)).is_some());
+        assert_eq!(cache.len(), 1);
+        assert!(common_event(&raw, None).is_some());
+
+        let spaced = message_record(
+            "hello",
+            Payload::string(" x "),
+            Payload::int(2),
+            "2024-02-29T00:00:00Z",
+            "tool",
+            Payload::map(Vec::new()),
+        );
+        let kept = common_event(&spaced, None).expect("parent");
+        assert_eq!(kept.parent_id.as_deref(), Some(" x "));
+
+        let mut invalid = Vec::new();
+        let bad = message_record(
+            "evt-1",
+            Payload::null(),
+            Payload::int(0),
+            "nope",
+            "user",
+            Payload::map(Vec::new()),
+        );
+        assert!(common_event(&bad, Some(&mut invalid)).is_none());
+        assert!(invalid.is_empty());
+        let mut remembered = vec!["nope".to_owned()];
+        assert!(common_event(&bad, Some(&mut remembered)).is_some());
+
+        let mut full: Vec<String> = (0..256).map(|index| format!("pad-{index}")).collect();
+        assert!(common_event(&raw, Some(&mut full)).is_some());
+        assert_eq!(full.len(), 256);
+        assert!(!full.iter().any(|item| item == "2024-02-29T00:00:00Z"));
+    }
+
+    #[test]
+    fn common_event_returns_none_when_a_check_fails() {
+        let payload = Payload::map(Vec::new());
+        let ts = "2024-02-29T00:00:00Z";
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::string(" \u{00a0}"),
+                Payload::int(0),
+                ts,
+                "user",
+                payload.clone()
+            ),
+            None
+        )
+        .is_none());
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::int(1),
+                Payload::int(0),
+                ts,
+                "user",
+                payload.clone()
+            ),
+            None
+        )
+        .is_none());
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::null(),
+                Payload::int(-1),
+                ts,
+                "user",
+                payload.clone()
+            ),
+            None
+        )
+        .is_none());
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::null(),
+                Payload::bool_value(true),
+                ts,
+                "user",
+                payload.clone()
+            ),
+            None
+        )
+        .is_none());
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::null(),
+                Payload::int(0),
+                ts,
+                "System",
+                payload.clone()
+            ),
+            None
+        )
+        .is_none());
+        assert!(common_event(
+            &message_record(
+                "user@example.com",
+                Payload::null(),
+                Payload::int(0),
+                ts,
+                "user",
+                payload.clone()
+            ),
+            None
+        )
+        .is_none());
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::null(),
+                Payload::int(0),
+                ts,
+                "user",
+                Payload::list(Vec::new())
+            ),
+            None
+        )
+        .is_none());
+        let effects = Payload::map(vec![(Payload::string("side_effects"), Payload::null())]);
+        assert!(common_event(
+            &message_record(
+                "evt-1",
+                Payload::null(),
+                Payload::int(0),
+                ts,
+                "user",
+                effects
+            ),
+            None
+        )
+        .is_none());
+        let extra = message_record(
+            "evt-1",
+            Payload::null(),
+            Payload::int(0),
+            ts,
+            "user",
+            payload,
+        );
+        assert!(extra.push_map_entry(Payload::string("note"), Payload::int(1)));
+        assert!(common_event(&extra, None).is_none());
+        let kind = message_record(
+            "evt-1",
+            Payload::null(),
+            Payload::int(0),
+            ts,
+            "assistant",
+            Payload::map(Vec::new()),
+        );
+        assert!(kind.push_map_entry(Payload::string("kind"), Payload::string("tool_call")));
+        assert!(common_event(&kind, None).is_none());
+        assert!(common_event(&Payload::list(Vec::new()), None).is_none());
     }
 }
