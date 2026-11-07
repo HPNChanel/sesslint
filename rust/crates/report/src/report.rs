@@ -24,8 +24,17 @@
 //! Content checks call [`enforce_content_free_text`]. `FindingError` becomes
 //! [`ContentLeakError`] whose message is the pin's `Intrinsic content leak`
 //! text. [`RevalidationSummary`] checks [`VALID_ASSURANCE_LEVELS`] and does
-//! not call [`enforce_content_free_text`]. The port stops before
-//! `RepairManifest`.
+//! not call [`enforce_content_free_text`].
+//!
+//! Lines 691–963: [`RepairManifest`], [`build_report`], and
+//! [`compute_manifest_idempotency_key`]. [`RepairManifest`] keeps
+//! fingerprints when `strip()` is non-empty and does not call
+//! [`enforce_content_free_text`]. Omitted coverage in [`build_report`]
+//! calls [`default_coverage`] before `model::finding::sort_findings`.
+//! [`compute_manifest_idempotency_key`] calls
+//! `model::canonical::to_canonical_json` after the fingerprint and raw
+//! policy checks. That returns [`CanonicalUnavailable`]. This crate does
+//! not hash a substitute encoding.
 //!
 //! The late import `sesslint.codes` (`SL001`, `SL002`, `Severity`) is the
 //! ported codes registry. `enforce_content_free_text` is the ported finding
@@ -36,9 +45,12 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
+use model::canonical::CanonicalUnavailable;
 use model::codes::{Severity, SL001, SL002};
 use model::errors::{AssuranceError, ContentLeakError, SchemaError, VersionError};
 use model::finding::{enforce_content_free_text, DictValue, Finding};
+use model::version::MANIFEST_SCHEMA_VERSION;
+use sha2::{Digest, Sha256};
 
 /// Python: `ASSURANCE_LIMITATIONS`, insertion order A0 through A4.
 pub const ASSURANCE_LIMITATIONS: [(&str, &str); 5] = [
@@ -718,7 +730,8 @@ pub fn skip_sort_key(skip: SkipSortFields<'_>) -> (&str, &str, &str) {
 }
 
 /// Failure from [`CoverageSkip::try_new`], [`Coverage::try_new`], [`Report::try_new`],
-/// [`default_coverage`], [`RepairAction::try_new`], or [`RevalidationSummary::try_new`].
+/// [`default_coverage`], [`RepairAction::try_new`], [`RevalidationSummary::try_new`],
+/// [`RepairManifest::try_new`], or [`build_report`].
 ///
 /// [`Display`](fmt::Display) is the Python exception message. [`Self::Unavailable`]
 /// displays `{module.function} is not available`.
@@ -2227,15 +2240,752 @@ fn input_key_repr(key: &InputKey) -> String {
     }
 }
 
+/// Python: `VALID_POLICIES`. Error text sorts this set.
+const VALID_POLICIES: [&str; 2] = ["conservative", "salvage"];
+
+/// `RepairManifest.actions`. Only a tuple is accepted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionSeq {
+    Tuple(Vec<ActionElem>),
+    Wrong { type_name: String },
+}
+
+/// One actions element. The error text uses the type name only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionElem {
+    Action(RepairAction),
+    Wrong { type_name: String },
+}
+
+/// `RepairManifest.revalidation`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RevalidationInput {
+    Summary(RevalidationSummary),
+    Wrong { type_name: String },
+}
+
+/// Fields for [`RepairManifest::try_new`].
+///
+/// Python defaults, which Rust does not infer: `plan_fingerprint`, `assurance`,
+/// `profile_version`, `adapter_id`, and `adapter_version` are `None`.
+/// `recipe_versions`, `byte_counts`, and `record_counts` are empty mappings.
+/// Pass [`InputValue::None`] and [`InputValue::dict`] with no entries for those.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepairManifestParts<'a> {
+    pub schema_version: &'a InputValue,
+    pub input_fingerprint: &'a InputValue,
+    pub output_fingerprint: &'a InputValue,
+    pub policy: &'a InputValue,
+    pub actions: &'a ActionSeq,
+    pub declared_loss: &'a InputValue,
+    pub revalidate_report: &'a InputValue,
+    pub idempotency_key: &'a InputValue,
+    pub revalidation: &'a RevalidationInput,
+    pub assurance_ceiling: &'a InputValue,
+    pub plan_fingerprint: &'a InputValue,
+    pub assurance: &'a InputValue,
+    pub recipe_versions: &'a InputValue,
+    pub profile_version: &'a InputValue,
+    pub adapter_id: &'a InputValue,
+    pub adapter_version: &'a InputValue,
+    pub byte_counts: &'a InputValue,
+    pub record_counts: &'a InputValue,
+}
+
+/// Python: `RepairManifest.to_dict` field order.
+///
+/// `revalidate_report` is always emitted. `None` there is JSON null.
+/// `plan_fingerprint`, `assurance`, `profile_version`, `adapter_id`, and
+/// `adapter_version` are omitted when `None`. A mapping field is omitted
+/// when `None`; that is an empty mapping. A present mapping is sorted by key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairManifestDict {
+    pub actions: Vec<RepairActionDict>,
+    pub assurance_ceiling: String,
+    pub declared_loss: Vec<String>,
+    pub idempotency_key: String,
+    pub input_fingerprint: String,
+    pub output_fingerprint: String,
+    pub policy: String,
+    pub revalidate_report: Option<String>,
+    pub revalidation: RevalidationSummaryDict,
+    pub schema_version: String,
+    pub plan_fingerprint: Option<String>,
+    pub assurance: Option<String>,
+    pub recipe_versions: Option<Vec<(InputKey, InputValue)>>,
+    pub profile_version: Option<String>,
+    pub adapter_id: Option<String>,
+    pub adapter_version: Option<String>,
+    pub byte_counts: Option<Vec<(InputKey, InputValue)>>,
+    pub record_counts: Option<Vec<(InputKey, InputValue)>>,
+}
+
+/// Python: `RepairManifest`.
+///
+/// Checks follow `__post_init__`. The first failure wins. Fingerprints and
+/// other accepted strings are stored unchanged. This type does not call
+/// [`enforce_content_free_text`] and does not strip fingerprints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairManifest {
+    schema_version: String,
+    input_fingerprint: String,
+    output_fingerprint: String,
+    policy: String,
+    actions: Vec<RepairAction>,
+    declared_loss: Vec<String>,
+    revalidate_report: Option<String>,
+    idempotency_key: String,
+    revalidation: RevalidationSummary,
+    assurance_ceiling: String,
+    plan_fingerprint: Option<String>,
+    assurance: Option<String>,
+    recipe_versions: Vec<(InputKey, InputValue)>,
+    profile_version: Option<String>,
+    adapter_id: Option<String>,
+    adapter_version: Option<String>,
+    byte_counts: Vec<(InputKey, InputValue)>,
+    record_counts: Vec<(InputKey, InputValue)>,
+}
+
+impl RepairManifest {
+    /// Validate in the pinned `__post_init__` order.
+    pub fn try_new(parts: RepairManifestParts<'_>) -> Result<Self, EnvelopeError> {
+        let schema_version = manifest_version(parts.schema_version)?;
+        let input_fingerprint = manifest_kept_text(parts.input_fingerprint, "input_fingerprint")?;
+        let output_fingerprint =
+            manifest_kept_text(parts.output_fingerprint, "output_fingerprint")?;
+        let policy = manifest_policy(parts.policy)?;
+        let actions = manifest_actions(parts.actions)?;
+        let declared_loss = manifest_loss(parts.declared_loss)?;
+        let revalidate_report = manifest_revalidate(parts.revalidate_report)?;
+        let idempotency_key = manifest_idempotency(parts.idempotency_key)?;
+        let revalidation = manifest_revalidation(parts.revalidation)?;
+        let assurance_ceiling = manifest_ceiling(parts.assurance_ceiling)?;
+        let plan_fingerprint = manifest_optional_text(parts.plan_fingerprint, "plan_fingerprint")?;
+        let assurance = manifest_optional_text(parts.assurance, "assurance")?;
+        let recipe_versions = manifest_mapping(parts.recipe_versions, "recipe_versions")?;
+        let profile_version = manifest_optional_text(parts.profile_version, "profile_version")?;
+        let adapter_id = manifest_optional_text(parts.adapter_id, "adapter_id")?;
+        let adapter_version = manifest_optional_text(parts.adapter_version, "adapter_version")?;
+        let byte_counts = manifest_mapping(parts.byte_counts, "byte_counts")?;
+        let record_counts = manifest_mapping(parts.record_counts, "record_counts")?;
+        Ok(Self {
+            schema_version,
+            input_fingerprint,
+            output_fingerprint,
+            policy,
+            actions,
+            declared_loss,
+            revalidate_report,
+            idempotency_key,
+            revalidation,
+            assurance_ceiling,
+            plan_fingerprint,
+            assurance,
+            recipe_versions,
+            profile_version,
+            adapter_id,
+            adapter_version,
+            byte_counts,
+            record_counts,
+        })
+    }
+
+    #[must_use]
+    pub fn schema_version(&self) -> &str {
+        &self.schema_version
+    }
+
+    #[must_use]
+    pub fn input_fingerprint(&self) -> &str {
+        &self.input_fingerprint
+    }
+
+    #[must_use]
+    pub fn output_fingerprint(&self) -> &str {
+        &self.output_fingerprint
+    }
+
+    #[must_use]
+    pub fn policy(&self) -> &str {
+        &self.policy
+    }
+
+    #[must_use]
+    pub fn actions(&self) -> &[RepairAction] {
+        &self.actions
+    }
+
+    #[must_use]
+    pub fn declared_loss(&self) -> &[String] {
+        &self.declared_loss
+    }
+
+    /// `None` when the caller passed `None`. The stored string is not stripped.
+    #[must_use]
+    pub fn revalidate_report(&self) -> Option<&str> {
+        self.revalidate_report.as_deref()
+    }
+
+    #[must_use]
+    pub fn idempotency_key(&self) -> &str {
+        &self.idempotency_key
+    }
+
+    #[must_use]
+    pub fn revalidation(&self) -> &RevalidationSummary {
+        &self.revalidation
+    }
+
+    #[must_use]
+    pub fn assurance_ceiling(&self) -> &str {
+        &self.assurance_ceiling
+    }
+
+    /// `None` when the caller passed `None`. The stored string is not stripped.
+    #[must_use]
+    pub fn plan_fingerprint(&self) -> Option<&str> {
+        self.plan_fingerprint.as_deref()
+    }
+
+    /// `None` when the caller passed `None`. Not required to be an assurance level.
+    #[must_use]
+    pub fn assurance(&self) -> Option<&str> {
+        self.assurance.as_deref()
+    }
+
+    #[must_use]
+    pub fn recipe_versions(&self) -> &[(InputKey, InputValue)] {
+        &self.recipe_versions
+    }
+
+    #[must_use]
+    pub fn profile_version(&self) -> Option<&str> {
+        self.profile_version.as_deref()
+    }
+
+    #[must_use]
+    pub fn adapter_id(&self) -> Option<&str> {
+        self.adapter_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn adapter_version(&self) -> Option<&str> {
+        self.adapter_version.as_deref()
+    }
+
+    #[must_use]
+    pub fn byte_counts(&self) -> &[(InputKey, InputValue)] {
+        &self.byte_counts
+    }
+
+    #[must_use]
+    pub fn record_counts(&self) -> &[(InputKey, InputValue)] {
+        &self.record_counts
+    }
+
+    /// Convert to the pinned dictionary shape.
+    ///
+    /// Sorting a mapping can raise Python `TypeError` for mixed key types.
+    /// That string is [`EnvelopeError::TypeMismatch`].
+    pub fn to_dict(&self) -> Result<RepairManifestDict, EnvelopeError> {
+        Ok(RepairManifestDict {
+            actions: self.actions.iter().map(RepairAction::to_dict).collect(),
+            assurance_ceiling: self.assurance_ceiling.clone(),
+            declared_loss: self.declared_loss.clone(),
+            idempotency_key: self.idempotency_key.clone(),
+            input_fingerprint: self.input_fingerprint.clone(),
+            output_fingerprint: self.output_fingerprint.clone(),
+            policy: self.policy.clone(),
+            revalidate_report: self.revalidate_report.clone(),
+            revalidation: self.revalidation.to_dict(),
+            schema_version: self.schema_version.clone(),
+            plan_fingerprint: self.plan_fingerprint.clone(),
+            assurance: self.assurance.clone(),
+            recipe_versions: emitted_mapping(&self.recipe_versions)?,
+            profile_version: self.profile_version.clone(),
+            adapter_id: self.adapter_id.clone(),
+            adapter_version: self.adapter_version.clone(),
+            byte_counts: emitted_mapping(&self.byte_counts)?,
+            record_counts: emitted_mapping(&self.record_counts)?,
+        })
+    }
+}
+
+fn manifest_version(value: &InputValue) -> Result<String, EnvelopeError> {
+    if let InputValue::Str(text) = value {
+        if text == MANIFEST_SCHEMA_VERSION {
+            return Ok(text.clone());
+        }
+    }
+    let version = match value {
+        InputValue::Str(text) => Some(text.clone()),
+        _ => None,
+    };
+    let message = format!(
+        "RepairManifest.schema_version must be {}, got {}",
+        python_str_repr(MANIFEST_SCHEMA_VERSION),
+        input_repr(value)
+    );
+    Err(EnvelopeError::Version(VersionError::new(message, version)))
+}
+
+fn manifest_kept_text(value: &InputValue, label: &str) -> Result<String, EnvelopeError> {
+    match value {
+        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(text.clone()),
+        other => Err(schema_env(format!(
+            "RepairManifest.{label} must be a non-empty string, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn manifest_policy(value: &InputValue) -> Result<String, EnvelopeError> {
+    match value {
+        InputValue::Str(text) if VALID_POLICIES.contains(&text.as_str()) => Ok(text.clone()),
+        other => Err(schema_env(format!(
+            "RepairManifest.policy must be one of {}, got {}",
+            sorted_policies_repr(),
+            input_repr(other)
+        ))),
+    }
+}
+
+fn manifest_actions(value: &ActionSeq) -> Result<Vec<RepairAction>, EnvelopeError> {
+    let items = match value {
+        ActionSeq::Tuple(items) => items,
+        ActionSeq::Wrong { type_name } => {
+            return Err(schema_env(format!(
+                "RepairManifest.actions must be a tuple, got {type_name}"
+            )));
+        }
+    };
+    let mut actions = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            ActionElem::Action(action) => actions.push(action.clone()),
+            ActionElem::Wrong { type_name } => {
+                return Err(schema_env(format!(
+                    "RepairManifest.actions[{index}] must be a RepairAction, got {type_name}"
+                )));
+            }
+        }
+    }
+    Ok(actions)
+}
+
+fn manifest_loss(value: &InputValue) -> Result<Vec<String>, EnvelopeError> {
+    let InputValue::Tuple(items) = value else {
+        return Err(schema_env(format!(
+            "RepairManifest.declared_loss must be a tuple, got {}",
+            input_type_name(value)
+        )));
+    };
+    let mut loss = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            InputValue::Str(text) if !python_strip(text).is_empty() => loss.push(text.clone()),
+            other => {
+                return Err(schema_env(format!(
+                    "RepairManifest.declared_loss[{index}] must be a non-empty string, got {}",
+                    input_repr(other)
+                )));
+            }
+        }
+    }
+    Ok(loss)
+}
+
+fn manifest_revalidate(value: &InputValue) -> Result<Option<String>, EnvelopeError> {
+    match value {
+        InputValue::None => Ok(None),
+        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(Some(text.clone())),
+        other => Err(schema_env(format!(
+            "RepairManifest.revalidate_report must be a non-empty string path or None, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn manifest_idempotency(value: &InputValue) -> Result<String, EnvelopeError> {
+    match value {
+        InputValue::Str(text) if is_sha256_hex(text) => Ok(text.clone()),
+        other => Err(schema_env(format!(
+            "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn manifest_revalidation(value: &RevalidationInput) -> Result<RevalidationSummary, EnvelopeError> {
+    match value {
+        RevalidationInput::Summary(summary) => Ok(summary.clone()),
+        RevalidationInput::Wrong { type_name } => Err(schema_env(format!(
+            "RepairManifest.revalidation must be a RevalidationSummary, got {type_name}"
+        ))),
+    }
+}
+
+fn manifest_ceiling(value: &InputValue) -> Result<String, EnvelopeError> {
+    match value {
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => {
+            Ok(text.clone())
+        }
+        other => Err(EnvelopeError::Assurance(AssuranceError::new(format!(
+            "RepairManifest.assurance_ceiling must be one of {}, got {}",
+            sorted_assurance_repr(),
+            input_repr(other)
+        )))),
+    }
+}
+
+fn manifest_optional_text(
+    value: &InputValue,
+    label: &str,
+) -> Result<Option<String>, EnvelopeError> {
+    match value {
+        InputValue::None => Ok(None),
+        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(Some(text.clone())),
+        _ => Err(schema_env(format!(
+            "RepairManifest.{label} must be a non-empty string"
+        ))),
+    }
+}
+
+fn manifest_mapping(
+    value: &InputValue,
+    label: &str,
+) -> Result<Vec<(InputKey, InputValue)>, EnvelopeError> {
+    match value {
+        InputValue::Dict(entries) => Ok(entries.clone()),
+        _ => Err(schema_env(format!(
+            "RepairManifest.{label} must be a Mapping"
+        ))),
+    }
+}
+
+/// Coverage argument for [`build_report`].
+///
+/// [`BuildCoverage::Omitted`] is Python `coverage=None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildCoverage<'a> {
+    Omitted,
+    Value(&'a Coverage),
+    Wrong { type_name: &'a str },
+}
+
+/// Fields for [`build_report`]. Counts are not a field: they are derived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildReportParts<'a> {
+    pub session_id: &'a InputValue,
+    pub source_fingerprint: &'a InputValue,
+    pub tool_version: &'a InputValue,
+    pub findings: &'a [Finding],
+    pub assurance: &'a InputValue,
+    pub limitation: &'a InputValue,
+    pub coverage: BuildCoverage<'a>,
+}
+
+/// Python: `build_report`.
+///
+/// Check order is session id, source fingerprint, tool version, assurance,
+/// then limitation. Omitted coverage calls [`default_coverage`] and returns
+/// before `model::finding::sort_findings`. A [`Coverage`] value is sorted,
+/// counted, and passed to [`Report::try_new`]. The caller cannot supply counts.
+pub fn build_report(parts: BuildReportParts<'_>) -> Result<Report, EnvelopeError> {
+    let session_id = build_text(parts.session_id, "session_id")?;
+    let source_fingerprint = build_text(parts.source_fingerprint, "source_fingerprint")?;
+    let tool_version = build_text(parts.tool_version, "tool_version")?;
+    let assurance = build_assurance(parts.assurance)?;
+    let limitation = build_limitation(parts.limitation, &assurance)?;
+    let coverage = match parts.coverage {
+        BuildCoverage::Omitted => default_coverage()?,
+        BuildCoverage::Wrong { type_name } => {
+            return Err(schema_env(format!(
+                "coverage must be a Coverage instance, got {type_name}"
+            )));
+        }
+        BuildCoverage::Value(coverage) => coverage.clone(),
+    };
+    let sorted = model::finding::sort_findings(parts.findings);
+    let counts = counts_from_findings(&sorted)?;
+    let schema_version = InputValue::str_value(REPORT_SCHEMA_VERSION);
+    let session_value = InputValue::str_value(session_id);
+    let fingerprint_value = InputValue::str_value(source_fingerprint);
+    let tool_value = InputValue::str_value(tool_version);
+    let assurance_value = InputValue::str_value(assurance);
+    let limitation_value = InputValue::str_value(limitation);
+    let findings = FindingsInput::Tuple(sorted.into_iter().map(FindingElem::Finding).collect());
+    let counts_input = CountsInput::Value(counts);
+    Report::try_new(ReportParts {
+        schema_version: &schema_version,
+        session_id: &session_value,
+        source_fingerprint: &fingerprint_value,
+        tool_version: &tool_value,
+        findings: &findings,
+        counts: &counts_input,
+        assurance: &assurance_value,
+        limitation: &limitation_value,
+        coverage: CoverageInput::Value(&coverage),
+    })
+}
+
+fn build_text(value: &InputValue, label: &str) -> Result<String, EnvelopeError> {
+    if let InputValue::Str(text) = value {
+        let stripped = python_strip(text);
+        if !stripped.is_empty() {
+            return Ok(stripped.to_owned());
+        }
+    }
+    Err(schema_env(format!(
+        "{label} must be a non-empty string, got {}",
+        input_repr(value)
+    )))
+}
+
+fn build_assurance(value: &InputValue) -> Result<String, EnvelopeError> {
+    match value {
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => {
+            Ok(text.clone())
+        }
+        other => Err(EnvelopeError::Assurance(AssuranceError::new(format!(
+            "Invalid assurance level {}. Must be one of {}",
+            input_repr(other),
+            sorted_assurance_repr()
+        )))),
+    }
+}
+
+fn build_limitation(value: &InputValue, assurance: &str) -> Result<String, EnvelopeError> {
+    if let InputValue::Str(text) = value {
+        let stripped = python_strip(text);
+        if !stripped.is_empty() {
+            return Ok(stripped.to_owned());
+        }
+    }
+    Err(EnvelopeError::Assurance(AssuranceError::new(format!(
+        "limitation is required and must be non-empty for assurance level {}",
+        python_str_repr(assurance)
+    ))))
+}
+
+fn counts_from_findings(findings: &[Finding]) -> Result<Counts, EnvelopeError> {
+    let total = match i64::try_from(findings.len()) {
+        Ok(total) => total,
+        Err(_) => return Err(schema_env("Counts.total does not fit in i64".to_owned())),
+    };
+    let mut by_severity = [0_i64; REQUIRED_SEVERITIES.len()];
+    let mut by_code: Vec<(String, i64)> = Vec::new();
+    for finding in findings {
+        let severity_name = finding.severity().as_str();
+        if let Some(slot) = REQUIRED_SEVERITIES
+            .iter()
+            .position(|name| *name == severity_name)
+        {
+            by_severity[slot] = match by_severity[slot].checked_add(1) {
+                Some(count) => count,
+                None => {
+                    return Err(schema_env(
+                        "finding severity count does not fit in i64".to_owned(),
+                    ));
+                }
+            };
+        }
+        add_code_count(&mut by_code, finding.code())?;
+    }
+    by_code.sort_by(|left, right| left.0.cmp(&right.0));
+    let severity_map = CountValue::dict(
+        REQUIRED_SEVERITIES
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                (
+                    CountKey::str_key(*name),
+                    CountValue::int(by_severity[index]),
+                )
+            })
+            .collect(),
+    );
+    let code_map = CountValue::dict(
+        by_code
+            .iter()
+            .map(|(code, count)| (CountKey::str_key(code.clone()), CountValue::int(*count)))
+            .collect(),
+    );
+    Counts::try_new(&severity_map, &code_map, &CountValue::int(total))
+        .map_err(EnvelopeError::Schema)
+}
+
+fn add_code_count(pairs: &mut Vec<(String, i64)>, code: &str) -> Result<(), EnvelopeError> {
+    for pair in pairs.iter_mut() {
+        if pair.0 == code {
+            pair.1 = match pair.1.checked_add(1) {
+                Some(count) => count,
+                None => {
+                    return Err(schema_env(
+                        "finding code count does not fit in i64".to_owned(),
+                    ));
+                }
+            };
+            return Ok(());
+        }
+    }
+    pairs.push((code.to_owned(), 1));
+    Ok(())
+}
+
+/// Failure from [`compute_manifest_idempotency_key`].
+///
+/// [`Display`](fmt::Display) is the inner Python message. [`Self::Canonical`]
+/// displays `sesslint._canonical_codec.canonical_json_bytes is not available`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdempotencyError {
+    Schema(SchemaError),
+    Canonical(CanonicalUnavailable),
+}
+
+impl fmt::Display for IdempotencyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schema(error) => write!(formatter, "{error}"),
+            Self::Canonical(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for IdempotencyError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Schema(error) => Some(error),
+            Self::Canonical(error) => Some(error),
+        }
+    }
+}
+
+/// Python: `compute_manifest_idempotency_key`.
+///
+/// Checks `input_fingerprint`, then policy membership on the raw value.
+/// Actions are sorted with [`action_sort_key`]. The payload is those actions,
+/// the stripped fingerprint, and the stripped policy.
+/// `model::canonical::to_canonical_json` then returns [`CanonicalUnavailable`].
+/// sha256 runs only on that canonical string. This crate cannot produce one,
+/// so it does not hash a substitute and does not invent a digest.
+pub fn compute_manifest_idempotency_key(
+    input_fingerprint: &InputValue,
+    policy: &InputValue,
+    actions: &[RepairAction],
+) -> Result<String, IdempotencyError> {
+    let raw_input = match input_fingerprint {
+        InputValue::Str(text) if !python_strip(text).is_empty() => text.as_str(),
+        other => {
+            return Err(IdempotencyError::Schema(schema(format!(
+                "input_fingerprint must be a non-empty string, got {}",
+                input_repr(other)
+            ))));
+        }
+    };
+    let raw_policy = match policy {
+        InputValue::Str(text) if VALID_POLICIES.contains(&text.as_str()) => text.as_str(),
+        other => {
+            return Err(IdempotencyError::Schema(schema(format!(
+                "policy must be one of {}, got {}",
+                sorted_policies_repr(),
+                input_repr(other)
+            ))));
+        }
+    };
+    let sorted = sort_repair_actions(actions);
+    let action_dicts: Vec<RepairActionDict> = sorted.iter().map(RepairAction::to_dict).collect();
+    let stripped_input = python_strip(raw_input).to_owned();
+    let stripped_policy = python_strip(raw_policy).to_owned();
+    // Insertion order: actions, stripped input_fingerprint, stripped policy.
+    let payload = (action_dicts, stripped_input, stripped_policy);
+    match model::canonical::to_canonical_json(&payload) {
+        Ok(canonical) => Ok(sha256_hex(canonical.as_bytes())),
+        Err(error) => Err(IdempotencyError::Canonical(error)),
+    }
+}
+
+fn sort_repair_actions(actions: &[RepairAction]) -> Vec<RepairAction> {
+    let mut sorted = actions.to_vec();
+    sorted.sort_by(|left, right| {
+        action_sort_key(ActionSortFields {
+            kind: left.kind(),
+            record_id: left.record_id(),
+            detail: left.detail(),
+        })
+        .cmp(&action_sort_key(ActionSortFields {
+            kind: right.kind(),
+            record_id: right.record_id(),
+            detail: right.detail(),
+        }))
+    });
+    sorted
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(bytes);
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn is_sha256_hex(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() != 64 {
+        return false;
+    }
+    bytes
+        .iter()
+        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn sorted_policies_repr() -> String {
+    let mut policies = VALID_POLICIES;
+    policies.sort_unstable();
+    python_str_list(&policies)
+}
+
+fn emitted_mapping(
+    entries: &[(InputKey, InputValue)],
+) -> Result<Option<Vec<(InputKey, InputValue)>>, EnvelopeError> {
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    let mut ordered = entries.to_vec();
+    python_sort_pairs(&mut ordered).map_err(EnvelopeError::TypeMismatch)?;
+    Ok(Some(collapse_equal_keys(ordered)))
+}
+
+fn collapse_equal_keys(entries: Vec<(InputKey, InputValue)>) -> Vec<(InputKey, InputValue)> {
+    let mut collapsed = Vec::new();
+    for (key, value) in entries {
+        if let Some((last_key, last_value)) = collapsed.last_mut() {
+            if input_key_eq(last_key, &key) {
+                *last_value = value;
+                continue;
+            }
+        }
+        collapsed.push((key, value));
+    }
+    collapsed
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        action_sort_key, compute_assurance, default_coverage, skip_sort_key, ActionSortFields,
-        CountKey, CountValue, Counts, CountsInput, Coverage, CoverageInput, CoverageSkip,
-        EnvelopeError, FindingElem, FindingsInput, InputKey, InputValue, RepairAction, Report,
-        ReportParts, RevalidationSummary, SkipElem, SkipSeq, SkipSortFields, ASSURANCE_LIMITATIONS,
-        PROFILES_BUILTIN_ALL_RULES, REPORT_SCHEMA_VERSION, REQUIRED_SEVERITIES,
-        VALID_ASSURANCE_LEVELS, VALID_COVERAGE_SKIP_REASONS,
+        action_sort_key, build_report, compute_assurance, compute_manifest_idempotency_key,
+        default_coverage, skip_sort_key, ActionElem, ActionSeq, ActionSortFields, BuildCoverage,
+        BuildReportParts, CountKey, CountValue, Counts, CountsInput, Coverage, CoverageInput,
+        CoverageSkip, EnvelopeError, FindingElem, FindingsInput, IdempotencyError, InputKey,
+        InputValue, RepairAction, RepairManifest, RepairManifestParts, Report, ReportParts,
+        RevalidationInput, RevalidationSummary, SkipElem, SkipSeq, SkipSortFields,
+        ASSURANCE_LIMITATIONS, PROFILES_BUILTIN_ALL_RULES, REPORT_SCHEMA_VERSION,
+        REQUIRED_SEVERITIES, VALID_ASSURANCE_LEVELS, VALID_COVERAGE_SKIP_REASONS,
     };
     use model::codes::{Repairability, Severity, SL001, SL002, SL003, SL101};
     use model::errors::SchemaError;
@@ -4408,5 +5158,799 @@ mod tests {
             ),
             fingerprint_message,
         );
+    }
+
+    fn hex_key() -> String {
+        "0123456789abcdef".repeat(4)
+    }
+
+    fn sample_revalidation() -> RevalidationSummary {
+        match RevalidationSummary::try_new(
+            &text("A2"),
+            &InputValue::int(1),
+            &InputValue::int(0),
+            &text("neutral"),
+            &text("1.0.0"),
+            &InputValue::None,
+        ) {
+            Ok(summary) => summary,
+            Err(err) => panic!("synthetic revalidation rejected: {err}"),
+        }
+    }
+
+    struct ManifestInputs {
+        schema_version: InputValue,
+        input_fingerprint: InputValue,
+        output_fingerprint: InputValue,
+        policy: InputValue,
+        actions: ActionSeq,
+        declared_loss: InputValue,
+        revalidate_report: InputValue,
+        idempotency_key: InputValue,
+        revalidation: RevalidationInput,
+        assurance_ceiling: InputValue,
+        plan_fingerprint: InputValue,
+        assurance: InputValue,
+        recipe_versions: InputValue,
+        profile_version: InputValue,
+        adapter_id: InputValue,
+        adapter_version: InputValue,
+        byte_counts: InputValue,
+        record_counts: InputValue,
+    }
+
+    fn empty_map() -> InputValue {
+        InputValue::dict(Vec::new())
+    }
+
+    fn base_manifest() -> ManifestInputs {
+        ManifestInputs {
+            schema_version: text(model::version::MANIFEST_SCHEMA_VERSION),
+            input_fingerprint: text(" in "),
+            output_fingerprint: text(" out "),
+            policy: text("conservative"),
+            actions: ActionSeq::Tuple(vec![ActionElem::Action(must_action(
+                "drop", None, "marker",
+            ))]),
+            declared_loss: InputValue::tuple(vec![text("loss")]),
+            revalidate_report: InputValue::None,
+            idempotency_key: text(&hex_key()),
+            revalidation: RevalidationInput::Summary(sample_revalidation()),
+            assurance_ceiling: text("A1"),
+            plan_fingerprint: InputValue::None,
+            assurance: InputValue::None,
+            recipe_versions: empty_map(),
+            profile_version: InputValue::None,
+            adapter_id: InputValue::None,
+            adapter_version: InputValue::None,
+            byte_counts: empty_map(),
+            record_counts: empty_map(),
+        }
+    }
+
+    fn eval_manifest(inputs: &ManifestInputs) -> Result<RepairManifest, EnvelopeError> {
+        RepairManifest::try_new(RepairManifestParts {
+            schema_version: &inputs.schema_version,
+            input_fingerprint: &inputs.input_fingerprint,
+            output_fingerprint: &inputs.output_fingerprint,
+            policy: &inputs.policy,
+            actions: &inputs.actions,
+            declared_loss: &inputs.declared_loss,
+            revalidate_report: &inputs.revalidate_report,
+            idempotency_key: &inputs.idempotency_key,
+            revalidation: &inputs.revalidation,
+            assurance_ceiling: &inputs.assurance_ceiling,
+            plan_fingerprint: &inputs.plan_fingerprint,
+            assurance: &inputs.assurance,
+            recipe_versions: &inputs.recipe_versions,
+            profile_version: &inputs.profile_version,
+            adapter_id: &inputs.adapter_id,
+            adapter_version: &inputs.adapter_version,
+            byte_counts: &inputs.byte_counts,
+            record_counts: &inputs.record_counts,
+        })
+    }
+
+    fn manifest_err(inputs: &ManifestInputs) -> EnvelopeError {
+        match eval_manifest(inputs) {
+            Ok(_) => panic!("expected RepairManifest to fail"),
+            Err(err) => err,
+        }
+    }
+
+    fn build_result(
+        session_id: &InputValue,
+        source_fingerprint: &InputValue,
+        tool_version: &InputValue,
+        assurance: &InputValue,
+        limitation: &InputValue,
+        coverage: BuildCoverage<'_>,
+    ) -> Result<Report, EnvelopeError> {
+        build_report(BuildReportParts {
+            session_id,
+            source_fingerprint,
+            tool_version,
+            findings: &[],
+            assurance,
+            limitation,
+            coverage,
+        })
+    }
+
+    fn build_message(
+        session_id: &InputValue,
+        source_fingerprint: &InputValue,
+        tool_version: &InputValue,
+        assurance: &InputValue,
+        limitation: &InputValue,
+        coverage: BuildCoverage<'_>,
+    ) -> String {
+        match build_result(
+            session_id,
+            source_fingerprint,
+            tool_version,
+            assurance,
+            limitation,
+            coverage,
+        ) {
+            Ok(_) => panic!("expected build_report to fail"),
+            Err(err) => err.to_string(),
+        }
+    }
+
+    fn idempotency_err(
+        input_fingerprint: &InputValue,
+        policy: &InputValue,
+        actions: &[RepairAction],
+    ) -> IdempotencyError {
+        match compute_manifest_idempotency_key(input_fingerprint, policy, actions) {
+            Ok(digest) => panic!("idempotency invented a digest: {digest}"),
+            Err(err) => err,
+        }
+    }
+
+    #[test]
+    fn repair_manifest_rejects_identity_before_actions() {
+        let mut inputs = base_manifest();
+        inputs.schema_version = text("nope");
+        inputs.input_fingerprint = text("");
+        match manifest_err(&inputs) {
+            EnvelopeError::Version(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "RepairManifest.schema_version must be 'sesslint.repair-manifest/v1', got 'nope' (code: VERSION / SL301)"
+                );
+                assert_eq!(error.version(), Some("nope"));
+                assert_eq!(error.code(), VersionError::CODE);
+            }
+            other => panic!("expected VersionError, got {other:?}"),
+        }
+
+        inputs.schema_version = InputValue::int(1);
+        match manifest_err(&inputs) {
+            EnvelopeError::Version(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "RepairManifest.schema_version must be 'sesslint.repair-manifest/v1', got 1 (code: VERSION / SL301)"
+                );
+                assert_eq!(error.version(), None);
+            }
+            other => panic!("expected VersionError, got {other:?}"),
+        }
+
+        inputs.schema_version = text(model::version::MANIFEST_SCHEMA_VERSION);
+        inputs.input_fingerprint = text("");
+        inputs.output_fingerprint = text("");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.input_fingerprint must be a non-empty string, got ''",
+        );
+        inputs.input_fingerprint = text("   ");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.input_fingerprint must be a non-empty string, got '   '",
+        );
+        inputs.input_fingerprint = InputValue::None;
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.input_fingerprint must be a non-empty string, got None",
+        );
+
+        inputs.input_fingerprint = text(" in ");
+        inputs.output_fingerprint = text(" \n ");
+        inputs.policy = text("nope");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.output_fingerprint must be a non-empty string, got ' \\n '",
+        );
+        inputs.output_fingerprint = text(" out ");
+        inputs.actions = ActionSeq::Wrong {
+            type_name: "list".to_owned(),
+        };
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.policy must be one of ['conservative', 'salvage'], got 'nope'",
+        );
+        inputs.policy = text(" salvage");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.policy must be one of ['conservative', 'salvage'], got ' salvage'",
+        );
+        inputs.policy = InputValue::None;
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.policy must be one of ['conservative', 'salvage'], got None",
+        );
+
+        inputs.policy = text("conservative");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.actions must be a tuple, got list",
+        );
+        inputs.actions = ActionSeq::Tuple(vec![
+            ActionElem::Action(must_action("drop", None, "marker")),
+            ActionElem::Wrong {
+                type_name: "dict".to_owned(),
+            },
+        ]);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.actions[1] must be a RepairAction, got dict",
+        );
+    }
+
+    #[test]
+    fn repair_manifest_rejects_loss_key_and_ceiling_in_order() {
+        let mut inputs = base_manifest();
+        inputs.declared_loss = InputValue::list(vec![text("loss")]);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.declared_loss must be a tuple, got list",
+        );
+        inputs.declared_loss = InputValue::tuple(vec![text("loss"), InputValue::None]);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.declared_loss[1] must be a non-empty string, got None",
+        );
+        inputs.declared_loss = InputValue::tuple(vec![text("   ")]);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.declared_loss[0] must be a non-empty string, got '   '",
+        );
+        inputs.declared_loss = InputValue::tuple(vec![InputValue::int(1)]);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.declared_loss[0] must be a non-empty string, got 1",
+        );
+
+        inputs.declared_loss = InputValue::tuple(vec![text("loss")]);
+        inputs.revalidate_report = text("");
+        inputs.idempotency_key = text("abc");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.revalidate_report must be a non-empty string path or None, got ''",
+        );
+        inputs.revalidate_report = text("   ");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.revalidate_report must be a non-empty string path or None, got '   '",
+        );
+        inputs.revalidate_report = InputValue::None;
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got 'abc'",
+        );
+        inputs.idempotency_key = text(&"A".repeat(64));
+        assert_schema(
+            manifest_err(&inputs),
+            &format!(
+                "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got '{}'",
+                "A".repeat(64)
+            ),
+        );
+        inputs.idempotency_key = InputValue::int(1);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got 1",
+        );
+
+        inputs.idempotency_key = text(&hex_key());
+        inputs.revalidation = RevalidationInput::Wrong {
+            type_name: "dict".to_owned(),
+        };
+        inputs.assurance_ceiling = text("A9");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.revalidation must be a RevalidationSummary, got dict",
+        );
+        inputs.revalidation = RevalidationInput::Summary(sample_revalidation());
+        inputs.plan_fingerprint = text("");
+        assert_assurance(
+            manifest_err(&inputs),
+            "RepairManifest.assurance_ceiling must be one of ['A0', 'A1', 'A2', 'A3', 'A4'], got 'A9'",
+        );
+        inputs.assurance_ceiling = text("A1 ");
+        assert_assurance(
+            manifest_err(&inputs),
+            "RepairManifest.assurance_ceiling must be one of ['A0', 'A1', 'A2', 'A3', 'A4'], got 'A1 '",
+        );
+        inputs.assurance_ceiling = InputValue::None;
+        assert_assurance(
+            manifest_err(&inputs),
+            "RepairManifest.assurance_ceiling must be one of ['A0', 'A1', 'A2', 'A3', 'A4'], got None",
+        );
+    }
+
+    #[test]
+    fn repair_manifest_rejects_optional_fields_in_order() {
+        let mut inputs = base_manifest();
+        inputs.plan_fingerprint = text("   ");
+        inputs.recipe_versions = InputValue::list(Vec::new());
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.plan_fingerprint must be a non-empty string",
+        );
+        inputs.plan_fingerprint = InputValue::int(1);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.plan_fingerprint must be a non-empty string",
+        );
+
+        inputs.plan_fingerprint = InputValue::None;
+        inputs.assurance = text("");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.assurance must be a non-empty string",
+        );
+        inputs.assurance = InputValue::None;
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.recipe_versions must be a Mapping",
+        );
+        inputs.recipe_versions = InputValue::None;
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.recipe_versions must be a Mapping",
+        );
+
+        inputs.recipe_versions = empty_map();
+        inputs.profile_version = text(" \n ");
+        inputs.byte_counts = InputValue::tuple(Vec::new());
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.profile_version must be a non-empty string",
+        );
+        inputs.profile_version = text("9");
+        inputs.adapter_id = text("");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.adapter_id must be a non-empty string",
+        );
+        inputs.adapter_id = text("canon");
+        inputs.adapter_version = InputValue::bool_value(true);
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.adapter_version must be a non-empty string",
+        );
+        inputs.adapter_version = text("1");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.byte_counts must be a Mapping",
+        );
+        inputs.byte_counts = empty_map();
+        inputs.record_counts = text("nope");
+        assert_schema(
+            manifest_err(&inputs),
+            "RepairManifest.record_counts must be a Mapping",
+        );
+    }
+
+    #[test]
+    fn repair_manifest_keeps_text_and_orders_optional_maps() {
+        let mut inputs = base_manifest();
+        inputs.actions = ActionSeq::Tuple(vec![
+            ActionElem::Action(must_action("zeta", Some("b"), "z")),
+            ActionElem::Action(must_action("alpha", None, "a")),
+        ]);
+        inputs.declared_loss = InputValue::tuple(vec![text(" zeta "), text("alpha")]);
+        inputs.revalidate_report = text(" out.json ");
+        inputs.plan_fingerprint = text(" plan ");
+        inputs.assurance = text(" not-level ");
+        inputs.recipe_versions = InputValue::dict(vec![
+            (InputKey::str_key("m"), text("two")),
+            (InputKey::str_key("a"), text("one")),
+        ]);
+        inputs.profile_version = text(" 9 ");
+        inputs.adapter_id = text(" canon ");
+        inputs.adapter_version = text(" 1 ");
+        inputs.byte_counts = InputValue::dict(vec![
+            (InputKey::str_key("b"), InputValue::int(2)),
+            (InputKey::str_key("a"), InputValue::int(1)),
+        ]);
+        inputs.record_counts = InputValue::dict(vec![
+            (InputKey::str_key("z"), text("kept")),
+            (InputKey::str_key("a"), InputValue::int(3)),
+        ]);
+        let manifest = match eval_manifest(&inputs) {
+            Ok(manifest) => manifest,
+            Err(err) => panic!("synthetic manifest rejected: {err}"),
+        };
+        assert_eq!(
+            manifest.schema_version(),
+            model::version::MANIFEST_SCHEMA_VERSION
+        );
+        assert_eq!(
+            model::version::MANIFEST_SCHEMA_VERSION,
+            "sesslint.repair-manifest/v1"
+        );
+        assert_eq!(manifest.input_fingerprint(), " in ");
+        assert_eq!(manifest.output_fingerprint(), " out ");
+        assert_eq!(manifest.plan_fingerprint(), Some(" plan "));
+        assert_eq!(manifest.assurance(), Some(" not-level "));
+        assert_eq!(manifest.revalidate_report(), Some(" out.json "));
+        assert_eq!(manifest.policy(), "conservative");
+        assert_eq!(manifest.assurance_ceiling(), "A1");
+        assert_eq!(manifest.idempotency_key(), hex_key());
+        assert_eq!(manifest.actions()[0].kind(), "zeta");
+        assert_eq!(manifest.actions()[1].kind(), "alpha");
+        let dict = match manifest.to_dict() {
+            Ok(dict) => dict,
+            Err(err) => panic!("synthetic manifest dict rejected: {err}"),
+        };
+        assert_eq!(dict.actions[0].kind, "zeta");
+        assert_eq!(dict.actions[0].record_id.as_deref(), Some("b"));
+        assert_eq!(dict.actions[1].kind, "alpha");
+        assert_eq!(dict.actions[1].record_id, None);
+        assert_eq!(dict.assurance_ceiling, "A1");
+        assert_eq!(
+            dict.declared_loss,
+            vec![" zeta ".to_owned(), "alpha".to_owned()]
+        );
+        assert_eq!(dict.idempotency_key, hex_key());
+        assert_eq!(dict.input_fingerprint, " in ");
+        assert_eq!(dict.output_fingerprint, " out ");
+        assert_eq!(dict.policy, "conservative");
+        assert_eq!(dict.revalidate_report.as_deref(), Some(" out.json "));
+        assert_eq!(dict.revalidation.assurance, "A2");
+        assert_eq!(dict.revalidation.error_count, 1);
+        assert_eq!(dict.schema_version, "sesslint.repair-manifest/v1");
+        assert_eq!(dict.plan_fingerprint.as_deref(), Some(" plan "));
+        assert_eq!(dict.assurance.as_deref(), Some(" not-level "));
+        assert_eq!(
+            dict.recipe_versions,
+            Some(vec![
+                (InputKey::str_key("a"), text("one")),
+                (InputKey::str_key("m"), text("two")),
+            ])
+        );
+        assert_eq!(dict.profile_version.as_deref(), Some(" 9 "));
+        assert_eq!(dict.adapter_id.as_deref(), Some(" canon "));
+        assert_eq!(dict.adapter_version.as_deref(), Some(" 1 "));
+        assert_eq!(
+            dict.byte_counts,
+            Some(vec![
+                (InputKey::str_key("a"), InputValue::int(1)),
+                (InputKey::str_key("b"), InputValue::int(2)),
+            ])
+        );
+        assert_eq!(
+            dict.record_counts,
+            Some(vec![
+                (InputKey::str_key("a"), InputValue::int(3)),
+                (InputKey::str_key("z"), text("kept")),
+            ])
+        );
+
+        let mut minimal = base_manifest();
+        minimal.actions = ActionSeq::Tuple(Vec::new());
+        minimal.declared_loss = InputValue::tuple(Vec::new());
+        minimal.policy = text("salvage");
+        minimal.assurance_ceiling = text("A4");
+        minimal.input_fingerprint = text("in");
+        minimal.output_fingerprint = text("out");
+        let minimal = match eval_manifest(&minimal) {
+            Ok(manifest) => manifest,
+            Err(err) => panic!("minimal manifest rejected: {err}"),
+        };
+        let dict = match minimal.to_dict() {
+            Ok(dict) => dict,
+            Err(err) => panic!("minimal manifest dict rejected: {err}"),
+        };
+        assert!(dict.actions.is_empty());
+        assert!(dict.declared_loss.is_empty());
+        assert_eq!(dict.policy, "salvage");
+        assert_eq!(dict.assurance_ceiling, "A4");
+        assert_eq!(dict.revalidate_report, None);
+        assert_eq!(dict.plan_fingerprint, None);
+        assert_eq!(dict.assurance, None);
+        assert_eq!(dict.recipe_versions, None);
+        assert_eq!(dict.profile_version, None);
+        assert_eq!(dict.adapter_id, None);
+        assert_eq!(dict.adapter_version, None);
+        assert_eq!(dict.byte_counts, None);
+        assert_eq!(dict.record_counts, None);
+    }
+
+    #[test]
+    fn build_report_stops_at_omitted_coverage_after_checks() {
+        let session = text("sess");
+        let fingerprint = text("fp");
+        let tool = text("0.0.0");
+        let assurance = text("A1");
+        let limitation = text("lim");
+        assert_eq!(
+            build_message(
+                &text(""),
+                &text(""),
+                &text(""),
+                &text("A9"),
+                &text(""),
+                BuildCoverage::Omitted
+            ),
+            "session_id must be a non-empty string, got ''"
+        );
+        assert_eq!(
+            build_message(
+                &text("   "),
+                &fingerprint,
+                &tool,
+                &assurance,
+                &limitation,
+                BuildCoverage::Omitted
+            ),
+            "session_id must be a non-empty string, got '   '"
+        );
+        assert_eq!(
+            build_message(
+                &InputValue::int(1),
+                &fingerprint,
+                &tool,
+                &assurance,
+                &limitation,
+                BuildCoverage::Omitted
+            ),
+            "session_id must be a non-empty string, got 1"
+        );
+        assert_eq!(
+            build_message(
+                &session,
+                &text(""),
+                &text(""),
+                &assurance,
+                &text(""),
+                BuildCoverage::Omitted
+            ),
+            "source_fingerprint must be a non-empty string, got ''"
+        );
+        assert_eq!(
+            build_message(
+                &session,
+                &fingerprint,
+                &InputValue::None,
+                &assurance,
+                &limitation,
+                BuildCoverage::Omitted
+            ),
+            "tool_version must be a non-empty string, got None"
+        );
+        assert_eq!(
+            build_message(
+                &session,
+                &fingerprint,
+                &tool,
+                &text("A9"),
+                &text(""),
+                BuildCoverage::Omitted
+            ),
+            "Invalid assurance level 'A9'. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']"
+        );
+        assert_eq!(
+            build_message(
+                &session,
+                &fingerprint,
+                &tool,
+                &InputValue::None,
+                &limitation,
+                BuildCoverage::Omitted
+            ),
+            "Invalid assurance level None. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']"
+        );
+        assert_eq!(
+            build_message(
+                &session,
+                &fingerprint,
+                &tool,
+                &assurance,
+                &text("   "),
+                BuildCoverage::Omitted
+            ),
+            "limitation is required and must be non-empty for assurance level 'A1'"
+        );
+        match build_result(
+            &session,
+            &fingerprint,
+            &tool,
+            &assurance,
+            &limitation,
+            BuildCoverage::Omitted,
+        ) {
+            Err(err @ EnvelopeError::Unavailable(name)) => {
+                assert_eq!(name, PROFILES_BUILTIN_ALL_RULES);
+                assert_eq!(
+                    err.to_string(),
+                    "sesslint.profiles.builtin.ALL_RULES is not available"
+                );
+            }
+            other => panic!("omitted coverage must stop at the rules import, got {other:?}"),
+        }
+        assert_eq!(
+            build_message(
+                &session,
+                &fingerprint,
+                &tool,
+                &text("A3"),
+                &text("lim"),
+                BuildCoverage::Wrong { type_name: "dict" }
+            ),
+            "coverage must be a Coverage instance, got dict"
+        );
+    }
+
+    #[test]
+    fn build_report_sorts_findings_and_derives_counts() {
+        let coverage = must_coverage(
+            &InputValue::tuple(vec![text("SL001")]),
+            &empty_skips(),
+            &canonical_adapter(),
+            &neutral_profile(),
+        );
+        let info = finding(SL003, Severity::Info);
+        let error = finding(SL101, Severity::Error);
+        let findings = [info, error];
+        let report = match build_report(BuildReportParts {
+            session_id: &text("  sess  "),
+            source_fingerprint: &text("  fp  "),
+            tool_version: &text("  0.0.0  "),
+            findings: &findings,
+            assurance: &text("A1"),
+            limitation: &text("  kept  "),
+            coverage: BuildCoverage::Value(&coverage),
+        }) {
+            Ok(report) => report,
+            Err(err) => panic!("synthetic report rejected: {err}"),
+        };
+        assert_eq!(report.schema_version(), REPORT_SCHEMA_VERSION);
+        assert_eq!(report.session_id(), "sess");
+        assert_eq!(report.source_fingerprint(), "fp");
+        assert_eq!(report.tool_version(), "0.0.0");
+        assert_eq!(report.assurance(), "A1");
+        assert_eq!(report.limitation(), "kept");
+        assert_eq!(report.coverage(), &coverage);
+        assert_eq!(report.findings()[0].code(), SL101);
+        assert_eq!(report.findings()[0].severity(), Severity::Error);
+        assert_eq!(report.findings()[1].code(), SL003);
+        assert_eq!(report.findings()[1].severity(), Severity::Info);
+        assert_eq!(report.counts().total(), 2);
+        assert_eq!(report.counts().severity_count("fatal"), Some(0));
+        assert_eq!(report.counts().severity_count("error"), Some(1));
+        assert_eq!(report.counts().severity_count("warning"), Some(0));
+        assert_eq!(report.counts().severity_count("info"), Some(1));
+        assert_eq!(
+            report.counts().code_items(),
+            &[("SL003".to_owned(), 1), ("SL101".to_owned(), 1)][..]
+        );
+
+        let repeated = [
+            finding(SL101, Severity::Error),
+            finding(SL101, Severity::Error),
+        ];
+        let counted = match build_report(BuildReportParts {
+            session_id: &text("s"),
+            source_fingerprint: &text("fp"),
+            tool_version: &text("0"),
+            findings: &repeated,
+            assurance: &text("A1"),
+            limitation: &text("lim"),
+            coverage: BuildCoverage::Value(&coverage),
+        }) {
+            Ok(report) => report,
+            Err(err) => panic!("repeated findings rejected: {err}"),
+        };
+        assert_eq!(counted.counts().total(), 2);
+        assert_eq!(counted.counts().severity_count("error"), Some(2));
+        assert_eq!(
+            counted.counts().code_items(),
+            &[("SL101".to_owned(), 2)][..]
+        );
+
+        let empty = match build_report(BuildReportParts {
+            session_id: &text("s"),
+            source_fingerprint: &text("fp"),
+            tool_version: &text("0"),
+            findings: &[],
+            assurance: &text("A0"),
+            limitation: &text("none"),
+            coverage: BuildCoverage::Value(&coverage),
+        }) {
+            Ok(report) => report,
+            Err(err) => panic!("empty findings rejected: {err}"),
+        };
+        assert!(empty.findings().is_empty());
+        assert_eq!(empty.counts().total(), 0);
+        assert_eq!(empty.counts().severity_count("fatal"), Some(0));
+        assert_eq!(empty.counts().severity_count("error"), Some(0));
+        assert_eq!(empty.counts().severity_count("warning"), Some(0));
+        assert_eq!(empty.counts().severity_count("info"), Some(0));
+        assert_eq!(empty.counts().code_items(), &[][..]);
+    }
+
+    #[test]
+    fn idempotency_key_reaches_canonical_codec_after_two_checks() {
+        let actions = [
+            must_action("zeta", Some("b"), "z"),
+            must_action("alpha", None, "a"),
+        ];
+        match idempotency_err(&text("   "), &text("nope"), &actions) {
+            IdempotencyError::Schema(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "input_fingerprint must be a non-empty string, got '   '"
+                );
+                assert_eq!(error.code(), SchemaError::DEFAULT_CODE);
+            }
+            IdempotencyError::Canonical(error) => {
+                panic!("fingerprint check must win before the codec, got {error}");
+            }
+        }
+        match idempotency_err(&InputValue::int(7), &text("conservative"), &actions) {
+            IdempotencyError::Schema(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "input_fingerprint must be a non-empty string, got 7"
+                );
+            }
+            IdempotencyError::Canonical(error) => {
+                panic!("non-string fingerprint must not reach the codec, got {error}");
+            }
+        }
+        match idempotency_err(&text(" fp "), &text(" conservative"), &actions) {
+            IdempotencyError::Schema(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "policy must be one of ['conservative', 'salvage'], got ' conservative'"
+                );
+            }
+            IdempotencyError::Canonical(error) => {
+                panic!("raw policy check must win before the codec, got {error}");
+            }
+        }
+        match idempotency_err(&text("fp"), &InputValue::None, &actions) {
+            IdempotencyError::Schema(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "policy must be one of ['conservative', 'salvage'], got None"
+                );
+            }
+            IdempotencyError::Canonical(error) => {
+                panic!("non-string policy must not reach the codec, got {error}");
+            }
+        }
+        for policy in ["conservative", "salvage"] {
+            match idempotency_err(&text(" fp "), &text(policy), &actions) {
+                IdempotencyError::Canonical(error) => {
+                    assert_eq!(
+                        error.to_string(),
+                        "sesslint._canonical_codec.canonical_json_bytes is not available"
+                    );
+                    assert_eq!(
+                        IdempotencyError::Canonical(error).to_string(),
+                        "sesslint._canonical_codec.canonical_json_bytes is not available"
+                    );
+                }
+                IdempotencyError::Schema(error) => {
+                    panic!("valid inputs must reach the codec, got {error}");
+                }
+            }
+        }
     }
 }
