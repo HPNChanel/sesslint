@@ -15,6 +15,6 @@ pub mod canonical;
 pub mod claude_code;
 pub mod openai_agents;
 pub mod codex_rollout;
-pub mod detect {}
+pub mod detect;
 pub mod load {}
 pub mod source;
