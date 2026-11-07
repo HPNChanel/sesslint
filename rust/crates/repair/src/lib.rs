@@ -8,7 +8,7 @@ pub use error::RepairError;
 
 pub mod assurance;
 pub mod fingerprint;
-pub mod preconditions {}
+pub mod preconditions;
 pub mod refusals;
 pub mod registry {}
 pub mod recipes_sl002 {}
