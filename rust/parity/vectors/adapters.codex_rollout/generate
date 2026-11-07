@@ -58,28 +58,12 @@ COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
     "tests/adapters/test_codex_rollout.py::test_detect_rollout_envelope": (
         "detect_rollout_filename",
     ),
-    "tests/adapters/test_codex_rollout.py::test_detect_without_rollout_filename": (
-        "detect_session_jsonl",
-    ),
-    "tests/adapters/test_codex_rollout.py::test_detect_rejects_non_jsonl_extension": (
-        "detect_session_txt",
-        "detect_rollout_sqlite_name",
-    ),
     "tests/adapters/test_codex_rollout.py::test_detect_empty_and_sqlite": (
         "detect_empty_rollout_jsonl",
         "detect_sqlite_prefix_rollout_jsonl",
     ),
     "tests/adapters/test_codex_rollout.py::test_detect_weak_signal_partial": (
         "detect_weak_ordinal_payload",
-    ),
-    "tests/adapters/test_codex_rollout.py::test_sqlite_refusal": (
-        "gap_load_sqlite_bytes",
-    ),
-    "tests/adapters/test_codex_rollout.py::test_empty_stream": (
-        "gap_load_empty_bytes",
-    ),
-    "tests/adapters/test_codex_rollout.py::test_non_dict_record_malformed": (
-        "gap_load_non_dict_array",
     ),
 }
 

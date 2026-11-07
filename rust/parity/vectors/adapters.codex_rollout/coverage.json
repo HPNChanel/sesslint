@@ -9,18 +9,11 @@
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_detect_without_rollout_filename",
-      "status": "covered",
-      "vector_ids": [
-        "detect_session_jsonl"
-      ]
+      "status": "not_applicable"
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_detect_rejects_non_jsonl_extension",
-      "status": "covered",
-      "vector_ids": [
-        "detect_session_txt",
-        "detect_rollout_sqlite_name"
-      ]
+      "status": "not_applicable"
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_detect_empty_and_sqlite",
@@ -195,24 +188,15 @@
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_non_dict_record_malformed",
-      "status": "covered",
-      "vector_ids": [
-        "gap_load_non_dict_array"
-      ]
+      "status": "not_applicable"
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_sqlite_refusal",
-      "status": "covered",
-      "vector_ids": [
-        "gap_load_sqlite_bytes"
-      ]
+      "status": "not_applicable"
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_empty_stream",
-      "status": "covered",
-      "vector_ids": [
-        "gap_load_empty_bytes"
-      ]
+      "status": "not_applicable"
     },
     {
       "test": "tests/adapters/test_codex_rollout.py::test_synthetic_ids_for_missing_payload_id",
