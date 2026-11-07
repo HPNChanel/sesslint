@@ -48,6 +48,16 @@
 //! `model::canonical::to_canonical_json` on [`Report::to_dict`] and returns
 //! the same unavailable error. It does not emit JSON.
 //!
+//! Lines 1131–1346: [`parse_report`] and [`dump_manifest`]. A string is the
+//! `json.loads` branch. This crate has no JSON parser, so that branch
+//! returns [`JsonLoadsUnavailable`] and does not invent a mapping. A mapping
+//! checks unknown fields, required fields, and schema version before the
+//! remaining fields. Findings go through [`parse_finding_dict`] and
+//! [`sort_findings`]. Counts, coverage, and the envelope go through the
+//! existing constructors. The first failure wins. [`dump_manifest`] calls
+//! `model::canonical::to_canonical_json` on [`RepairManifest::to_dict`] and
+//! returns [`CanonicalUnavailable`]. It does not emit JSON.
+//!
 //! The late import `sesslint.codes` (`SL001`, `SL002`, `Severity`) is the
 //! ported codes registry. `enforce_content_free_text` is the ported finding
 //! helper. No wall clock, randomness, or `HashMap` is used.
@@ -59,8 +69,14 @@ use std::fmt;
 
 use model::canonical::CanonicalUnavailable;
 use model::codes::{Severity, SL001, SL002};
-use model::errors::{AssuranceError, ContentLeakError, SchemaError, VersionError};
-use model::finding::{enforce_content_free_text, DictValue, Finding};
+use model::errors::{
+    AssuranceError, ContentLeakError, FindingError, SchemaError, UnknownFieldError, VersionError,
+};
+use model::finding::{
+    enforce_content_free_evidence_recursive, enforce_content_free_text, parse_finding_dict,
+    sort_findings, DictValue, Evidence, EvidenceKey, Finding, PyValue,
+    SCHEMA_VERSION as FINDING_SCHEMA_VERSION,
+};
 use model::version::MANIFEST_SCHEMA_VERSION;
 use sha2::{Digest, Sha256};
 
@@ -3479,6 +3495,1172 @@ fn metadata_leak(text: &str, context: &str) -> Result<(), BuildManifestError> {
         Err(error) => Err(BuildManifestError::ContentLeak(ContentLeakError::new(
             format!("Content leak in manifest metadata: {error}"),
         ))),
+    }
+}
+
+/// `REQUIRED_REPORT_FIELDS` is a frozenset. Missing-field checks follow the
+/// literal order. CPython frozenset order follows the process hash seed and
+/// is not reproduced.
+pub const REQUIRED_REPORT_FIELD_ORDER_DEVIATION: &str = "REQUIRED_REPORT_FIELDS is a frozenset. Missing-field checks follow the literal order. CPython frozenset order follows the process hash seed and is not reproduced";
+
+/// A custom object nested in finding evidence cannot be passed to
+/// [`parse_finding_dict`]. [`PyValue`] has no custom-object variant. No
+/// substitute evidence value is parsed.
+pub const FINDING_EVIDENCE_OBJECT: &str = "A custom object nested in finding evidence is not representable. PyValue has no custom object. parse_finding_dict is not called on a substitute value";
+
+const KNOWN_REPORT_FIELDS: [&str; 12] = [
+    "schema_version",
+    "session_id",
+    "source_fingerprint",
+    "tool_version",
+    "findings",
+    "counts",
+    "assurance",
+    "limitation",
+    "coverage",
+    "repro",
+    "content_warning",
+    "included_content",
+];
+
+const REQUIRED_REPORT_FIELDS: [&str; 9] = [
+    "schema_version",
+    "session_id",
+    "source_fingerprint",
+    "tool_version",
+    "findings",
+    "counts",
+    "assurance",
+    "limitation",
+    "coverage",
+];
+
+const COUNT_FIELDS: [&str; 3] = ["by_severity", "by_code", "total"];
+
+const COVERAGE_FIELDS: [&str; 4] = ["performed", "skipped", "adapter", "profile"];
+
+const SKIP_FIELDS: [&str; 3] = ["check", "reason", "detail"];
+
+const BINDING_FIELDS: [&str; 3] = ["id", "name", "version"];
+
+const FINDING_SLOTS: [&str; 10] = [
+    "schema_version",
+    "code",
+    "severity",
+    "repairability",
+    "message",
+    "source",
+    "related_ids",
+    "fingerprint",
+    "message_template",
+    "evidence",
+];
+
+const READ_FINDING_KEYS: [&str; 12] = [
+    "schema_version",
+    "code",
+    "severity",
+    "repairability",
+    "message",
+    "remediation",
+    "source",
+    "span",
+    "related_ids",
+    "fingerprint",
+    "message_template",
+    "evidence",
+];
+
+/// `json.loads` is not available in this crate.
+///
+/// [`Display`](fmt::Display) is exactly `json.loads is not available`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsonLoadsUnavailable;
+
+impl JsonLoadsUnavailable {
+    pub const MESSAGE: &'static str = "json.loads is not available";
+}
+
+impl fmt::Display for JsonLoadsUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(Self::MESSAGE)
+    }
+}
+
+impl Error for JsonLoadsUnavailable {}
+
+/// Failure from [`parse_report`].
+///
+/// [`Display`](fmt::Display) is the Python exception message.
+/// [`Self::Json`] displays [`JsonLoadsUnavailable::MESSAGE`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseReportError {
+    Schema(SchemaError),
+    Version(VersionError),
+    UnknownField(UnknownFieldError),
+    Assurance(AssuranceError),
+    ContentLeak(ContentLeakError),
+    Finding(FindingError),
+    /// Python `TypeError`. The string is `str(exc)`.
+    Type(String),
+    /// Late import named by the string, without the ` is not available` suffix.
+    Unavailable(&'static str),
+    Json(JsonLoadsUnavailable),
+}
+
+impl fmt::Display for ParseReportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schema(error) => write!(formatter, "{error}"),
+            Self::Version(error) => write!(formatter, "{error}"),
+            Self::UnknownField(error) => write!(formatter, "{error}"),
+            Self::Assurance(error) => write!(formatter, "{error}"),
+            Self::ContentLeak(error) => write!(formatter, "{error}"),
+            Self::Finding(error) => write!(formatter, "{error}"),
+            Self::Type(message) => formatter.write_str(message),
+            Self::Unavailable(name) => write!(formatter, "{name} is not available"),
+            Self::Json(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for ParseReportError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Schema(error) => Some(error),
+            Self::Version(error) => Some(error),
+            Self::UnknownField(error) => Some(error),
+            Self::Assurance(error) => Some(error),
+            Self::ContentLeak(error) => Some(error),
+            Self::Finding(error) => Some(error),
+            Self::Json(error) => Some(error),
+            Self::Type(_) | Self::Unavailable(_) => None,
+        }
+    }
+}
+
+/// Argument for [`dump_manifest`].
+///
+/// [`Self::Wrong`] carries `type(value).__name__`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DumpManifestInput<'a> {
+    Manifest(&'a RepairManifest),
+    Wrong { type_name: &'a str },
+}
+
+/// Failure from [`dump_manifest`].
+///
+/// [`Self::Type`] is Python `TypeError`. [`Self::Canonical`] displays
+/// `sesslint._canonical_codec.canonical_json_bytes is not available`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DumpManifestError {
+    Type(String),
+    Canonical(CanonicalUnavailable),
+}
+
+impl fmt::Display for DumpManifestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type(message) => formatter.write_str(message),
+            Self::Canonical(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for DumpManifestError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Canonical(error) => Some(error),
+            Self::Type(_) => None,
+        }
+    }
+}
+
+/// Python: `parse_report`.
+///
+/// A string is the `json.loads` branch. This crate has no JSON parser, so
+/// every string returns [`JsonLoadsUnavailable`] and is not inspected.
+/// A non-string, non-mapping returns
+/// `Report must be a Mapping or JSON string, got {type}`.
+///
+/// A mapping checks unknown top-level fields, then missing required fields
+/// in literal order ([`REQUIRED_REPORT_FIELD_ORDER_DEVIATION`]), then
+/// `schema_version`, then the remaining fields. Findings call
+/// [`parse_finding_dict`] and [`sort_findings`]. `Counts`, `CoverageSkip`,
+/// `Coverage`, and [`Report::try_new`] run at the same points as the pin.
+/// The first failure wins.
+pub fn parse_report(obj: &InputValue) -> Result<Report, ParseReportError> {
+    match obj {
+        InputValue::Str(_) => Err(ParseReportError::Json(JsonLoadsUnavailable)),
+        InputValue::Dict(entries) => parse_report_mapping(entries),
+        other => Err(schema_parse(format!(
+            "Report must be a Mapping or JSON string, got {}",
+            input_type_name(other)
+        ))),
+    }
+}
+
+/// Python: `dump_manifest`.
+///
+/// A value that is not a [`RepairManifest`] returns `TypeError` text
+/// `Expected RepairManifest instance, got {type}`. A [`RepairManifest`]
+/// calls [`RepairManifest::to_dict`] and then
+/// `model::canonical::to_canonical_json`. That returns
+/// [`CanonicalUnavailable`]. This function does not emit JSON and does not
+/// hash a substitute.
+pub fn dump_manifest(manifest: DumpManifestInput<'_>) -> Result<String, DumpManifestError> {
+    let manifest = match manifest {
+        DumpManifestInput::Manifest(manifest) => manifest,
+        DumpManifestInput::Wrong { type_name } => {
+            return Err(DumpManifestError::Type(format!(
+                "Expected RepairManifest instance, got {type_name}"
+            )));
+        }
+    };
+    let rendered = match manifest.to_dict() {
+        Ok(rendered) => rendered,
+        Err(error) => return Err(DumpManifestError::Type(error.to_string())),
+    };
+    match model::canonical::to_canonical_json(&rendered) {
+        Err(error) => Err(DumpManifestError::Canonical(error)),
+        Ok(_json) => Err(DumpManifestError::Canonical(
+            CanonicalUnavailable::canonical_json_bytes(),
+        )),
+    }
+}
+
+fn parse_report_mapping(entries: &[(InputKey, InputValue)]) -> Result<Report, ParseReportError> {
+    reject_unknown(
+        entries,
+        &KNOWN_REPORT_FIELDS,
+        "Unknown top-level field in report:",
+    )?;
+    require_present(entries, &REQUIRED_REPORT_FIELDS, |name| {
+        format!("Missing required field in report: '{name}'")
+    })?;
+    let schema_version = required_value(entries, "schema_version")?;
+    if !matches!(schema_version, InputValue::Str(text) if text == REPORT_SCHEMA_VERSION) {
+        return Err(ParseReportError::Version(VersionError::new(
+            format!(
+                "Unsupported report schema version: {}",
+                input_repr(schema_version)
+            ),
+            Some(python_str_value(schema_version)),
+        )));
+    }
+    let session_id =
+        require_report_text(required_value(entries, "session_id")?, "Report.session_id")?;
+    let source_fingerprint = require_report_text(
+        required_value(entries, "source_fingerprint")?,
+        "Report.source_fingerprint",
+    )?;
+    let tool_version = require_report_text(
+        required_value(entries, "tool_version")?,
+        "Report.tool_version",
+    )?;
+    let findings = parse_findings(required_value(entries, "findings")?)?;
+    let counts = parse_counts(required_value(entries, "counts")?)?;
+    let assurance = require_parse_assurance(required_value(entries, "assurance")?)?;
+    let limitation = require_parse_limitation(required_value(entries, "limitation")?)?;
+    let coverage = parse_coverage(required_value(entries, "coverage")?)?;
+    finish_report(ParsedReport {
+        session_id: &session_id,
+        source_fingerprint: &source_fingerprint,
+        tool_version: &tool_version,
+        findings: &findings,
+        counts: &counts,
+        assurance: &assurance,
+        limitation: &limitation,
+        coverage: &coverage,
+    })
+}
+
+struct ParsedReport<'a> {
+    session_id: &'a str,
+    source_fingerprint: &'a str,
+    tool_version: &'a str,
+    findings: &'a [Finding],
+    counts: &'a Counts,
+    assurance: &'a str,
+    limitation: &'a str,
+    coverage: &'a Coverage,
+}
+
+fn finish_report(parsed: ParsedReport<'_>) -> Result<Report, ParseReportError> {
+    let schema_version = InputValue::str_value(REPORT_SCHEMA_VERSION);
+    let session_id = InputValue::str_value(parsed.session_id);
+    let source_fingerprint = InputValue::str_value(parsed.source_fingerprint);
+    let tool_version = InputValue::str_value(parsed.tool_version);
+    let assurance = InputValue::str_value(parsed.assurance);
+    let limitation = InputValue::str_value(parsed.limitation);
+    let findings_input = FindingsInput::Tuple(
+        parsed
+            .findings
+            .iter()
+            .cloned()
+            .map(FindingElem::Finding)
+            .collect(),
+    );
+    let counts_input = CountsInput::Value(parsed.counts.clone());
+    Report::try_new(ReportParts {
+        schema_version: &schema_version,
+        session_id: &session_id,
+        source_fingerprint: &source_fingerprint,
+        tool_version: &tool_version,
+        findings: &findings_input,
+        counts: &counts_input,
+        assurance: &assurance,
+        limitation: &limitation,
+        coverage: CoverageInput::Value(parsed.coverage),
+    })
+    .map_err(lift_envelope)
+}
+
+fn parse_findings(value: &InputValue) -> Result<Vec<Finding>, ParseReportError> {
+    let items = list_or_tuple(value, "findings")?;
+    let mut parsed = Vec::with_capacity(items.len());
+    for item in items {
+        parsed.push(parse_one_finding(item)?);
+    }
+    Ok(sort_findings(&parsed))
+}
+
+fn parse_one_finding(value: &InputValue) -> Result<Finding, ParseReportError> {
+    match value {
+        InputValue::Dict(entries) => parse_finding_entries(entries),
+        other => parse_non_mapping_finding(other),
+    }
+}
+
+fn parse_non_mapping_finding(value: &InputValue) -> Result<Finding, ParseReportError> {
+    if !contains_other(value) {
+        if let Ok(py) = to_py(value) {
+            return parse_finding_dict(&py).map_err(ParseReportError::Finding);
+        }
+    }
+    Err(ParseReportError::Finding(FindingError::new(format!(
+        "Finding object must be a mapping, got {}",
+        input_type_name(value)
+    ))))
+}
+
+fn parse_finding_entries(entries: &[(InputKey, InputValue)]) -> Result<Finding, ParseReportError> {
+    if let Some((slot, value)) = first_custom_slot(entries) {
+        probe_before(entries, slot)?;
+        return Err(ParseReportError::Finding(custom_error(
+            entries, slot, &value,
+        )));
+    }
+    parse_finding_dict(&build_finding_py(entries)).map_err(ParseReportError::Finding)
+}
+
+fn first_custom_slot(entries: &[(InputKey, InputValue)]) -> Option<(&'static str, InputValue)> {
+    for slot in FINDING_SLOTS {
+        if let Some(value) = resolved_slot(entries, slot) {
+            if slot_blocks(slot, value) {
+                return Some((slot, value.clone()));
+            }
+        }
+    }
+    None
+}
+
+fn resolved_slot<'a>(entries: &'a [(InputKey, InputValue)], slot: &str) -> Option<&'a InputValue> {
+    match slot {
+        "message" => mapped_ref(entries, "message").or_else(|| mapped_ref(entries, "remediation")),
+        "source" => match mapped_ref(entries, "source") {
+            Some(InputValue::None) | None => mapped_ref(entries, "span"),
+            Some(value) => Some(value),
+        },
+        other => mapped_ref(entries, other),
+    }
+}
+
+fn slot_blocks(slot: &str, value: &InputValue) -> bool {
+    if slot == "source" {
+        source_blocks(value)
+    } else {
+        contains_other(value)
+    }
+}
+
+fn source_blocks(value: &InputValue) -> bool {
+    match value {
+        InputValue::Dict(entries) => ["path", "line", "record_id"]
+            .iter()
+            .any(|name| mapped_ref(entries, name).is_some_and(contains_other)),
+        other => contains_other(other),
+    }
+}
+
+fn probe_before(entries: &[(InputKey, InputValue)], slot: &str) -> Result<(), ParseReportError> {
+    let stop = slot_index(slot);
+    let mut pairs = Vec::new();
+    for (key, value) in entries {
+        if let InputKey::Str(name) = key {
+            if key_slot(name).is_some_and(|index| index >= stop) {
+                continue;
+            }
+        }
+        if let Some(py) = convertible_probe(key, value) {
+            pairs.push((to_py_key(key), py));
+        }
+    }
+    pairs.extend(placeholder_from(stop));
+    parse_finding_dict(&PyValue::map(pairs))
+        .map(|_| ())
+        .map_err(ParseReportError::Finding)
+}
+
+fn convertible_probe(key: &InputKey, value: &InputValue) -> Option<PyValue> {
+    let converted = match key {
+        InputKey::Str(name) if name == "source" || name == "span" => to_py_source(value),
+        _ => to_py(value),
+    };
+    converted.ok()
+}
+
+fn placeholder_from(stop: usize) -> Vec<(PyValue, PyValue)> {
+    let mut pairs = Vec::new();
+    if stop == 0 {
+        pairs.push(py_pair(
+            "schema_version",
+            PyValue::string(FINDING_SCHEMA_VERSION),
+        ));
+    }
+    if stop <= 1 {
+        pairs.push(py_pair("code", PyValue::string("SL001")));
+    }
+    if stop <= 2 {
+        pairs.push(py_pair("severity", PyValue::string("error")));
+    }
+    if stop <= 3 {
+        pairs.push(py_pair("repairability", PyValue::string("manual")));
+    }
+    if stop <= 4 {
+        pairs.push(py_pair("message", PyValue::string("synthetic marker")));
+    }
+    if stop <= 5 {
+        pairs.push(py_pair("source", source_placeholder()));
+    }
+    if stop <= 6 {
+        pairs.push(py_pair("related_ids", PyValue::list(Vec::new())));
+    }
+    if stop <= 7 {
+        pairs.push(py_pair("fingerprint", PyValue::string("0123456789abcdef")));
+    }
+    pairs
+}
+
+fn source_placeholder() -> PyValue {
+    PyValue::map(vec![
+        py_pair("path", PyValue::string("probe.jsonl")),
+        py_pair("line", PyValue::int(1)),
+    ])
+}
+
+fn py_pair(name: &str, value: PyValue) -> (PyValue, PyValue) {
+    (PyValue::string(name), value)
+}
+
+fn build_finding_py(entries: &[(InputKey, InputValue)]) -> PyValue {
+    let mut pairs = Vec::new();
+    for name in READ_FINDING_KEYS {
+        let Some(value) = mapped_ref(entries, name) else {
+            continue;
+        };
+        let converted = if name == "source" || name == "span" {
+            to_py_source(value)
+        } else {
+            to_py(value)
+        };
+        if let Ok(py) = converted {
+            pairs.push((PyValue::string(name), py));
+        }
+    }
+    PyValue::map(pairs)
+}
+
+fn custom_error(
+    entries: &[(InputKey, InputValue)],
+    slot: &str,
+    value: &InputValue,
+) -> FindingError {
+    match slot {
+        "schema_version" => FindingError::new(format!(
+            "Unsupported finding schema_version {}, expected '{FINDING_SCHEMA_VERSION}'",
+            input_repr(value)
+        )),
+        "code" => FindingError::new(format!(
+            "Invalid finding code in dictionary: {}",
+            input_repr(value)
+        )),
+        "severity" => FindingError::new(format!(
+            "Missing or non-string severity in finding dictionary: {}",
+            input_repr(value)
+        )),
+        "repairability" => FindingError::new(format!(
+            "Missing or non-string repairability in finding dictionary: {}",
+            input_repr(value)
+        )),
+        "message" => message_slot_error(entries, value),
+        "source" => source_slot_error(value),
+        "related_ids" => related_slot_error(value),
+        "fingerprint" => FindingError::new(format!(
+            "Missing or invalid fingerprint in finding dictionary: {}",
+            input_repr(value)
+        )),
+        "message_template" => FindingError::new(format!(
+            "message_template must be a non-empty string or None, got {}",
+            input_type_name(value)
+        )),
+        _ => evidence_slot_error(value),
+    }
+}
+
+fn message_slot_error(entries: &[(InputKey, InputValue)], value: &InputValue) -> FindingError {
+    if mapped_ref(entries, "message").is_some() {
+        FindingError::new(format!(
+            "Missing or non-string message in finding dictionary: {}",
+            input_repr(value)
+        ))
+    } else {
+        FindingError::new("Missing required field 'message' in finding dictionary".to_owned())
+    }
+}
+
+fn source_slot_error(value: &InputValue) -> FindingError {
+    let InputValue::Dict(entries) = value else {
+        return FindingError::new(format!(
+            "Missing or invalid source in finding dictionary: {}",
+            input_repr(value)
+        ));
+    };
+    match mapped_ref(entries, "path") {
+        Some(InputValue::Str(text)) if !python_strip(text).is_empty() => {}
+        Some(other) => {
+            return FindingError::new(format!(
+                "Missing or non-string source.path: {}",
+                input_repr(other)
+            ));
+        }
+        None => {
+            return FindingError::new(format!(
+                "Missing or non-string source.path: {}",
+                input_repr(&InputValue::None)
+            ));
+        }
+    }
+    match mapped_ref(entries, "line") {
+        None | Some(InputValue::None) | Some(InputValue::Int(_)) | Some(InputValue::Bool(_)) => {}
+        Some(other) => {
+            return FindingError::new(format!(
+                "SourceRef.line must be a positive integer or None, got {}",
+                input_repr(other)
+            ));
+        }
+    }
+    match mapped_ref(entries, "record_id") {
+        None | Some(InputValue::None) | Some(InputValue::Str(_)) => {}
+        Some(other) => {
+            return FindingError::new(format!(
+                "SourceRef.record_id must be non-empty string or None, got {}",
+                input_repr(other)
+            ));
+        }
+    }
+    FindingError::new(format!(
+        "Missing or invalid source in finding dictionary: {}",
+        input_repr(value)
+    ))
+}
+
+fn related_slot_error(value: &InputValue) -> FindingError {
+    let items = match value {
+        InputValue::List(items) | InputValue::Tuple(items) => items.as_slice(),
+        other => {
+            return FindingError::new(format!(
+                "related_ids must be a list or tuple, got {}",
+                input_type_name(other)
+            ));
+        }
+    };
+    for item in items {
+        if let InputValue::Str(text) = item {
+            if !python_strip(text).is_empty() {
+                continue;
+            }
+        }
+        return FindingError::new(format!(
+            "related_ids elements must be non-empty strings, got {}",
+            input_repr(item)
+        ));
+    }
+    FindingError::new(format!(
+        "related_ids must be a list or tuple, got {}",
+        input_type_name(value)
+    ))
+}
+
+fn evidence_slot_error(value: &InputValue) -> FindingError {
+    let InputValue::Dict(entries) = value else {
+        return FindingError::new(format!(
+            "Finding.evidence must be a mapping or None, got {}",
+            input_type_name(value)
+        ));
+    };
+    match evidence_map_failure(entries) {
+        Ok(()) => FindingError::new(FINDING_EVIDENCE_OBJECT),
+        Err(error) => error,
+    }
+}
+
+fn evidence_map_failure(entries: &[(InputKey, InputValue)]) -> Result<(), FindingError> {
+    for (key, child) in entries {
+        let InputKey::Str(text) = key else {
+            return Err(FindingError::new(
+                "Finding.evidence keys must be non-empty strings".to_owned(),
+            ));
+        };
+        if python_strip(text).is_empty() {
+            return Err(FindingError::new(
+                "Finding.evidence keys must be non-empty strings".to_owned(),
+            ));
+        }
+        let key_repr = python_str_repr(text);
+        enforce_content_free_text(text, &format!("Finding.evidence key {key_repr}"))?;
+        check_evidence_tree(child, &format!("Finding.evidence value for {key_repr}"))?;
+    }
+    Ok(())
+}
+
+fn check_evidence_tree(value: &InputValue, context: &str) -> Result<(), FindingError> {
+    if matches!(value, InputValue::Other { .. }) {
+        return Err(FindingError::new(FINDING_EVIDENCE_OBJECT));
+    }
+    if !contains_other(value) {
+        return enforce_content_free_evidence_recursive(&evidence_from_input(value), context);
+    }
+    match value {
+        InputValue::List(items)
+        | InputValue::Tuple(items)
+        | InputValue::Set(items)
+        | InputValue::FrozenSet(items) => {
+            for item in items {
+                check_evidence_tree(item, context)?;
+            }
+            Ok(())
+        }
+        InputValue::Dict(entries) => {
+            for (key, child) in entries {
+                let InputKey::Str(text) = key else {
+                    return Err(FindingError::new(format!(
+                        "{context} keys must be non-empty strings"
+                    )));
+                };
+                if python_strip(text).is_empty() {
+                    return Err(FindingError::new(format!(
+                        "{context} keys must be non-empty strings"
+                    )));
+                }
+                let key_repr = python_str_repr(text);
+                enforce_content_free_text(text, &format!("{context} key {key_repr}"))?;
+                check_evidence_tree(child, &format!("{context}[{key_repr}]"))?;
+            }
+            Ok(())
+        }
+        InputValue::None
+        | InputValue::Bool(_)
+        | InputValue::Int(_)
+        | InputValue::Str(_)
+        | InputValue::Other { .. } => Err(FindingError::new(FINDING_EVIDENCE_OBJECT)),
+    }
+}
+
+fn evidence_from_input(value: &InputValue) -> Evidence {
+    match value {
+        InputValue::None => Evidence::none_value(),
+        InputValue::Bool(flag) => Evidence::bool_value(*flag),
+        InputValue::Int(number) => Evidence::int(*number),
+        InputValue::Str(text) => Evidence::string(text.clone()),
+        InputValue::List(items) => Evidence::list(items.iter().map(evidence_from_input).collect()),
+        InputValue::Tuple(items) => {
+            Evidence::tuple(items.iter().map(evidence_from_input).collect())
+        }
+        InputValue::Set(items) => Evidence::set(items.iter().map(evidence_from_input).collect()),
+        InputValue::FrozenSet(items) => {
+            Evidence::frozenset(items.iter().map(evidence_from_input).collect())
+        }
+        InputValue::Dict(entries) => {
+            let mapped = entries
+                .iter()
+                .map(|(key, child)| {
+                    let evidence_key = match key {
+                        InputKey::Str(text) => EvidenceKey::text(text.clone()),
+                        InputKey::None | InputKey::Bool(_) | InputKey::Int(_) => {
+                            EvidenceKey::NonString
+                        }
+                    };
+                    (evidence_key, evidence_from_input(child))
+                })
+                .collect();
+            Evidence::map(mapped)
+        }
+        InputValue::Other { .. } => Evidence::ignored(),
+    }
+}
+
+fn to_py(value: &InputValue) -> Result<PyValue, ()> {
+    match value {
+        InputValue::None => Ok(PyValue::None),
+        InputValue::Bool(flag) => Ok(PyValue::bool_value(*flag)),
+        InputValue::Int(number) => Ok(PyValue::int(*number)),
+        InputValue::Str(text) => Ok(PyValue::string(text.clone())),
+        InputValue::List(items) => Ok(PyValue::list(map_py(items)?)),
+        InputValue::Tuple(items) => Ok(PyValue::tuple(map_py(items)?)),
+        InputValue::Set(items) => Ok(PyValue::set(map_py(items)?)),
+        InputValue::FrozenSet(items) => Ok(PyValue::FrozenSet(map_py(items)?)),
+        InputValue::Dict(entries) => {
+            let mut pairs = Vec::with_capacity(entries.len());
+            for (key, child) in entries {
+                pairs.push((to_py_key(key), to_py(child)?));
+            }
+            Ok(PyValue::map(pairs))
+        }
+        InputValue::Other { .. } => Err(()),
+    }
+}
+
+fn map_py(items: &[InputValue]) -> Result<Vec<PyValue>, ()> {
+    items.iter().map(to_py).collect()
+}
+
+fn to_py_source(value: &InputValue) -> Result<PyValue, ()> {
+    match value {
+        InputValue::Dict(entries) => {
+            let mut pairs = Vec::new();
+            for name in ["path", "line", "record_id"] {
+                if let Some(child) = mapped_ref(entries, name) {
+                    pairs.push((PyValue::string(name), to_py(child)?));
+                }
+            }
+            Ok(PyValue::map(pairs))
+        }
+        other => to_py(other),
+    }
+}
+
+fn to_py_key(key: &InputKey) -> PyValue {
+    match key {
+        InputKey::None => PyValue::None,
+        InputKey::Bool(flag) => PyValue::bool_value(*flag),
+        InputKey::Int(number) => PyValue::int(*number),
+        InputKey::Str(text) => PyValue::string(text.clone()),
+    }
+}
+
+fn contains_other(value: &InputValue) -> bool {
+    match value {
+        InputValue::Other { .. } => true,
+        InputValue::List(items)
+        | InputValue::Tuple(items)
+        | InputValue::Set(items)
+        | InputValue::FrozenSet(items) => items.iter().any(contains_other),
+        InputValue::Dict(entries) => entries.iter().any(|(_, child)| contains_other(child)),
+        InputValue::None | InputValue::Bool(_) | InputValue::Int(_) | InputValue::Str(_) => false,
+    }
+}
+
+fn slot_index(slot: &str) -> usize {
+    FINDING_SLOTS
+        .iter()
+        .position(|name| *name == slot)
+        .unwrap_or(FINDING_SLOTS.len())
+}
+
+fn key_slot(name: &str) -> Option<usize> {
+    match name {
+        "remediation" => FINDING_SLOTS.iter().position(|slot| *slot == "message"),
+        "span" => FINDING_SLOTS.iter().position(|slot| *slot == "source"),
+        other => FINDING_SLOTS.iter().position(|slot| *slot == other),
+    }
+}
+
+fn parse_counts(value: &InputValue) -> Result<Counts, ParseReportError> {
+    let entries = as_dict(value, "counts")?;
+    reject_unknown(entries, &COUNT_FIELDS, "Unknown field in counts:")?;
+    require_present(entries, &COUNT_FIELDS, |name| {
+        format!("Missing required field in counts: '{name}'")
+    })?;
+    let raw_sev = required_value(entries, "by_severity")?;
+    let sev_entries = as_dict(raw_sev, "counts.by_severity")?;
+    reject_unknown(
+        sev_entries,
+        &REQUIRED_SEVERITIES,
+        "Unknown severity in counts.by_severity:",
+    )?;
+    require_present(sev_entries, &REQUIRED_SEVERITIES, |name| {
+        format!("Missing required severity in counts.by_severity: '{name}'")
+    })?;
+    let raw_by_code = required_value(entries, "by_code")?;
+    let _code_entries = as_dict(raw_by_code, "counts.by_code")?;
+    let raw_total = required_value(entries, "total")?;
+    require_count_total(raw_total)?;
+    Counts::try_new(
+        &to_count(raw_sev),
+        &to_count(raw_by_code),
+        &to_count(raw_total),
+    )
+    .map_err(ParseReportError::Schema)
+}
+
+fn require_count_total(value: &InputValue) -> Result<(), ParseReportError> {
+    match value {
+        InputValue::Int(number) if *number >= 0 => Ok(()),
+        other => Err(schema_parse(format!(
+            "counts.total must be a non-negative integer, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn to_count(value: &InputValue) -> CountValue {
+    match value {
+        InputValue::None => CountValue::none(),
+        InputValue::Bool(flag) => CountValue::bool_value(*flag),
+        InputValue::Int(number) => CountValue::int(*number),
+        InputValue::Str(text) => CountValue::str_value(text.clone()),
+        InputValue::List(items) => CountValue::list(items.iter().map(to_count).collect()),
+        InputValue::Tuple(items) => CountValue::tuple(items.iter().map(to_count).collect()),
+        InputValue::Dict(entries) => CountValue::dict(
+            entries
+                .iter()
+                .map(|(key, child)| (to_count_key(key), to_count(child)))
+                .collect(),
+        ),
+        InputValue::Set(_) => CountValue::other("set", input_repr(value)),
+        InputValue::FrozenSet(_) => CountValue::other("frozenset", input_repr(value)),
+        InputValue::Other {
+            type_name,
+            rendered,
+        } => CountValue::other(type_name.clone(), rendered.clone()),
+    }
+}
+
+fn to_count_key(key: &InputKey) -> CountKey {
+    match key {
+        InputKey::None => CountKey::None,
+        InputKey::Bool(flag) => CountKey::bool_value(*flag),
+        InputKey::Int(number) => CountKey::int(*number),
+        InputKey::Str(text) => CountKey::str_key(text.clone()),
+    }
+}
+
+fn require_parse_assurance(value: &InputValue) -> Result<String, ParseReportError> {
+    if let InputValue::Str(text) = value {
+        if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) {
+            return Ok(text.clone());
+        }
+    }
+    Err(ParseReportError::Assurance(AssuranceError::new(format!(
+        "Invalid assurance level {}. Must be one of {}",
+        input_repr(value),
+        sorted_assurance_repr()
+    ))))
+}
+
+fn require_parse_limitation(value: &InputValue) -> Result<String, ParseReportError> {
+    if let InputValue::Str(text) = value {
+        let stripped = python_strip(text);
+        if !stripped.is_empty() {
+            return Ok(stripped.to_owned());
+        }
+    }
+    Err(ParseReportError::Assurance(AssuranceError::new(format!(
+        "Report limitation must be a non-empty string, got {}",
+        input_repr(value)
+    ))))
+}
+
+fn parse_coverage(value: &InputValue) -> Result<Coverage, ParseReportError> {
+    let entries = as_dict(value, "Report.coverage")?;
+    reject_unknown(entries, &COVERAGE_FIELDS, "Unknown field in coverage:")?;
+    require_present(entries, &COVERAGE_FIELDS, |name| {
+        format!("Missing required field in coverage: '{name}'")
+    })?;
+    let performed = parse_performed(required_value(entries, "performed")?)?;
+    let skipped = parse_skipped(required_value(entries, "skipped")?)?;
+    let adapter = parse_binding(required_value(entries, "adapter")?, "coverage.adapter")?;
+    let profile = parse_binding(required_value(entries, "profile")?, "coverage.profile")?;
+    let performed_value = InputValue::list(
+        performed
+            .iter()
+            .map(|item| InputValue::str_value(item.clone()))
+            .collect(),
+    );
+    let skipped_value = SkipSeq::List(skipped.into_iter().map(SkipElem::Skip).collect());
+    Coverage::try_new(&performed_value, &skipped_value, &adapter, &profile).map_err(lift_envelope)
+}
+
+fn parse_performed(value: &InputValue) -> Result<Vec<String>, ParseReportError> {
+    let items = list_or_tuple(value, "coverage.performed")?;
+    let mut parsed = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            InputValue::Str(text) if !python_strip(text).is_empty() => {
+                parsed.push(python_strip(text).to_owned());
+            }
+            other => {
+                return Err(schema_parse(format!(
+                    "coverage.performed[{index}] must be a non-empty string, got {}",
+                    input_repr(other)
+                )));
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_skipped(value: &InputValue) -> Result<Vec<CoverageSkip>, ParseReportError> {
+    let items = list_or_tuple(value, "coverage.skipped")?;
+    let mut parsed = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        parsed.push(parse_skip(index, item)?);
+    }
+    Ok(parsed)
+}
+
+fn parse_skip(index: usize, item: &InputValue) -> Result<CoverageSkip, ParseReportError> {
+    let entries = as_dict(item, &format!("coverage.skipped[{index}]"))?;
+    reject_unknown(
+        entries,
+        &SKIP_FIELDS,
+        &format!("Unknown field in coverage.skipped[{index}]:"),
+    )?;
+    if mapped_ref(entries, "check").is_none() {
+        return Err(schema_parse(format!(
+            "coverage.skipped[{index}] missing required field 'check'"
+        )));
+    }
+    if mapped_ref(entries, "reason").is_none() {
+        return Err(schema_parse(format!(
+            "coverage.skipped[{index}] missing required field 'reason'"
+        )));
+    }
+    let check = match required_value(entries, "check")? {
+        InputValue::Str(text) if !python_strip(text).is_empty() => python_strip(text).to_owned(),
+        other => {
+            return Err(schema_parse(format!(
+                "coverage.skipped[{index}].check must be a non-empty string, got {}",
+                input_repr(other)
+            )));
+        }
+    };
+    let reason = match required_value(entries, "reason")? {
+        InputValue::Str(text) if VALID_COVERAGE_SKIP_REASONS.contains(&text.as_str()) => {
+            text.clone()
+        }
+        other => {
+            return Err(schema_parse(format!(
+                "Invalid coverage skip reason '{}' in skipped[{index}]. Must be one of {}",
+                python_str_value(other),
+                sorted_reasons_repr()
+            )));
+        }
+    };
+    let detail = match mapped_ref(entries, "detail") {
+        None => String::new(),
+        Some(InputValue::Str(text)) => python_strip(text).to_owned(),
+        Some(other) => {
+            return Err(schema_parse(format!(
+                "coverage.skipped[{index}].detail must be a string, got {}",
+                input_type_name(other)
+            )));
+        }
+    };
+    let check_value = InputValue::str_value(check);
+    let reason_value = InputValue::str_value(reason);
+    let detail_value = InputValue::str_value(detail);
+    CoverageSkip::try_new(&check_value, &reason_value, &detail_value).map_err(lift_envelope)
+}
+
+fn parse_binding(value: &InputValue, label: &str) -> Result<InputValue, ParseReportError> {
+    let entries = as_dict(value, label)?;
+    reject_unknown(
+        entries,
+        &BINDING_FIELDS,
+        &format!("Unknown field in {label}:"),
+    )?;
+    let id = match id_or_name(entries) {
+        Some(InputValue::Str(text)) if !python_strip(&text).is_empty() => {
+            python_strip(&text).to_owned()
+        }
+        _ => {
+            return Err(schema_parse(format!("{label} must contain non-empty 'id'")));
+        }
+    };
+    let version = match mapped_ref(entries, "version") {
+        Some(InputValue::Str(text)) if !python_strip(text).is_empty() => {
+            python_strip(text).to_owned()
+        }
+        _ => {
+            return Err(schema_parse(format!(
+                "{label} must contain non-empty 'version'"
+            )));
+        }
+    };
+    let mut pairs = vec![
+        (InputKey::str_key("id"), InputValue::str_value(id)),
+        (InputKey::str_key("version"), InputValue::str_value(version)),
+    ];
+    if let Some(InputValue::Str(text)) = mapped_ref(entries, "name") {
+        pairs.push((
+            InputKey::str_key("name"),
+            InputValue::str_value(python_strip(text).to_owned()),
+        ));
+    }
+    Ok(InputValue::dict(pairs))
+}
+
+fn id_or_name(entries: &[(InputKey, InputValue)]) -> Option<InputValue> {
+    match mapped_value(entries, "id") {
+        Some(value) if !is_falsy(&value) => Some(value),
+        _ => mapped_value(entries, "name"),
+    }
+}
+
+fn is_falsy(value: &InputValue) -> bool {
+    match value {
+        InputValue::None | InputValue::Bool(false) | InputValue::Int(0) => true,
+        InputValue::Str(text) => text.is_empty(),
+        InputValue::List(items)
+        | InputValue::Tuple(items)
+        | InputValue::Set(items)
+        | InputValue::FrozenSet(items) => items.is_empty(),
+        InputValue::Dict(entries) => entries.is_empty(),
+        InputValue::Bool(true) | InputValue::Int(_) | InputValue::Other { .. } => false,
+    }
+}
+
+fn require_report_text(value: &InputValue, label: &str) -> Result<String, ParseReportError> {
+    match value {
+        InputValue::Str(text) if !python_strip(text).is_empty() => {
+            Ok(python_strip(text).to_owned())
+        }
+        other => Err(schema_parse(format!(
+            "{label} must be a non-empty string, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn list_or_tuple<'a>(
+    value: &'a InputValue,
+    label: &str,
+) -> Result<&'a [InputValue], ParseReportError> {
+    match value {
+        InputValue::List(items) | InputValue::Tuple(items) => Ok(items.as_slice()),
+        other => Err(schema_parse(format!(
+            "{label} must be a list or tuple, got {}",
+            input_type_name(other)
+        ))),
+    }
+}
+
+fn as_dict<'a>(
+    value: &'a InputValue,
+    what: &str,
+) -> Result<&'a [(InputKey, InputValue)], ParseReportError> {
+    match value {
+        InputValue::Dict(entries) => Ok(entries.as_slice()),
+        other => Err(schema_parse(format!(
+            "{what} must be a mapping, got {}",
+            input_type_name(other)
+        ))),
+    }
+}
+
+fn reject_unknown(
+    entries: &[(InputKey, InputValue)],
+    allowed: &[&str],
+    describe: &str,
+) -> Result<(), ParseReportError> {
+    for (key, _) in entries {
+        if string_allowed(key, allowed) {
+            continue;
+        }
+        let name = key_text(key);
+        return Err(ParseReportError::UnknownField(UnknownFieldError::new(
+            format!("{describe} '{name}'"),
+            Some(name),
+        )));
+    }
+    Ok(())
+}
+
+fn require_present(
+    entries: &[(InputKey, InputValue)],
+    names: &[&str],
+    missing: impl Fn(&str) -> String,
+) -> Result<(), ParseReportError> {
+    for name in names {
+        if mapped_ref(entries, name).is_none() {
+            return Err(schema_parse(missing(name)));
+        }
+    }
+    Ok(())
+}
+
+fn required_value<'a>(
+    entries: &'a [(InputKey, InputValue)],
+    name: &str,
+) -> Result<&'a InputValue, ParseReportError> {
+    match mapped_ref(entries, name) {
+        Some(value) => Ok(value),
+        None => Err(schema_parse(format!(
+            "Missing required field in report: '{name}'"
+        ))),
+    }
+}
+
+fn string_allowed(key: &InputKey, allowed: &[&str]) -> bool {
+    matches!(key, InputKey::Str(text) if allowed.contains(&text.as_str()))
+}
+
+fn key_text(key: &InputKey) -> String {
+    match key {
+        InputKey::Str(text) => text.clone(),
+        InputKey::None => "None".to_owned(),
+        InputKey::Bool(true) => "True".to_owned(),
+        InputKey::Bool(false) => "False".to_owned(),
+        InputKey::Int(number) => number.to_string(),
+    }
+}
+
+fn mapped_ref<'a>(entries: &'a [(InputKey, InputValue)], name: &str) -> Option<&'a InputValue> {
+    entries
+        .iter()
+        .rev()
+        .find(|(key, _)| matches!(key, InputKey::Str(text) if text == name))
+        .map(|(_, value)| value)
+}
+
+fn mapped_value(entries: &[(InputKey, InputValue)], name: &str) -> Option<InputValue> {
+    mapped_ref(entries, name).cloned()
+}
+
+fn schema_parse(message: String) -> ParseReportError {
+    ParseReportError::Schema(schema(message))
+}
+
+fn lift_envelope(error: EnvelopeError) -> ParseReportError {
+    match error {
+        EnvelopeError::Schema(error) => ParseReportError::Schema(error),
+        EnvelopeError::Version(error) => ParseReportError::Version(error),
+        EnvelopeError::Assurance(error) => ParseReportError::Assurance(error),
+        EnvelopeError::ContentLeak(error) => ParseReportError::ContentLeak(error),
+        EnvelopeError::TypeMismatch(message) => ParseReportError::Type(message),
+        EnvelopeError::Unavailable(name) => ParseReportError::Unavailable(name),
     }
 }
 
@@ -7034,6 +8216,990 @@ mod tests {
                     None => panic!("dump_report must expose the codec error"),
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod parse_report_port {
+    use std::error::Error;
+
+    use super::{
+        dump_manifest, parse_report, ActionSeq, Coverage, DumpManifestError, DumpManifestInput,
+        Finding, InputKey, InputValue, JsonLoadsUnavailable, ParseReportError, RepairManifest,
+        RepairManifestParts, Report, RevalidationInput, RevalidationSummary,
+        FINDING_EVIDENCE_OBJECT, REPORT_SCHEMA_VERSION, REQUIRED_REPORT_FIELD_ORDER_DEVIATION,
+    };
+    use model::finding::SCHEMA_VERSION as FINDING_SCHEMA_VERSION;
+
+    const REASONS: &str = "['adapter-not-applicable', 'cap-exceeded', 'deselected', 'empty-input', 'profile-gated', 'single-doc-fallback', 'version-gated']";
+    const LEVELS: &str = "['A0', 'A1', 'A2', 'A3', 'A4']";
+    const CANONICAL_SEAM: &str = "sesslint._canonical_codec.canonical_json_bytes is not available";
+
+    fn text(value: &str) -> InputValue {
+        InputValue::str_value(value)
+    }
+
+    fn entry(name: &str, value: InputValue) -> (InputKey, InputValue) {
+        (InputKey::str_key(name), value)
+    }
+
+    fn dict(entries: Vec<(InputKey, InputValue)>) -> InputValue {
+        InputValue::dict(entries)
+    }
+
+    fn finding_dict(code: &str) -> InputValue {
+        dict(vec![
+            entry("schema_version", text(FINDING_SCHEMA_VERSION)),
+            entry("code", text(code)),
+            entry("severity", text("error")),
+            entry("repairability", text("manual")),
+            entry("message", text("synthetic marker")),
+            entry(
+                "source",
+                dict(vec![
+                    entry("path", text("probe.jsonl")),
+                    entry("line", InputValue::int(1)),
+                ]),
+            ),
+            entry("fingerprint", text("0123456789abcdef")),
+        ])
+    }
+
+    fn severities(fatal: i64, error: i64, warning: i64, info: i64) -> InputValue {
+        dict(vec![
+            entry("fatal", InputValue::int(fatal)),
+            entry("error", InputValue::int(error)),
+            entry("warning", InputValue::int(warning)),
+            entry("info", InputValue::int(info)),
+        ])
+    }
+
+    fn counts(by_severity: InputValue, by_code: InputValue, total: InputValue) -> InputValue {
+        dict(vec![
+            entry("by_severity", by_severity),
+            entry("by_code", by_code),
+            entry("total", total),
+        ])
+    }
+
+    fn binding(pairs: Vec<(&str, InputValue)>) -> InputValue {
+        dict(
+            pairs
+                .into_iter()
+                .map(|(name, value)| entry(name, value))
+                .collect(),
+        )
+    }
+
+    fn id_version(id: &str, version: &str) -> InputValue {
+        binding(vec![("id", text(id)), ("version", text(version))])
+    }
+
+    fn coverage(
+        performed: InputValue,
+        skipped: InputValue,
+        adapter: InputValue,
+        profile: InputValue,
+    ) -> InputValue {
+        dict(vec![
+            entry("performed", performed),
+            entry("skipped", skipped),
+            entry("adapter", adapter),
+            entry("profile", profile),
+        ])
+    }
+
+    fn bare_coverage() -> InputValue {
+        coverage(
+            InputValue::list(Vec::new()),
+            InputValue::list(Vec::new()),
+            id_version("canonical", "1.0.0"),
+            id_version("neutral", "1.0.0"),
+        )
+    }
+
+    fn report_with(
+        findings: InputValue,
+        counts_value: InputValue,
+        coverage_value: InputValue,
+    ) -> InputValue {
+        dict(vec![
+            entry("schema_version", text(REPORT_SCHEMA_VERSION)),
+            entry("session_id", text("sess")),
+            entry("source_fingerprint", text("fp")),
+            entry("tool_version", text("0.1.0")),
+            entry("findings", findings),
+            entry("counts", counts_value),
+            entry("assurance", text("A1")),
+            entry("limitation", text("lim")),
+            entry("coverage", coverage_value),
+            entry("repro", InputValue::int(1)),
+        ])
+    }
+
+    fn zero_report() -> InputValue {
+        report_with(
+            InputValue::list(Vec::new()),
+            counts(severities(0, 0, 0, 0), dict(Vec::new()), InputValue::int(0)),
+            bare_coverage(),
+        )
+    }
+
+    fn replace(report: &InputValue, name: &str, value: InputValue) -> InputValue {
+        let InputValue::Dict(entries) = report else {
+            panic!("report mapping");
+        };
+        let mut entries = entries.clone();
+        let mut found = false;
+        for (key, slot) in &mut entries {
+            if matches!(key, InputKey::Str(text) if text == name) {
+                *slot = value.clone();
+                found = true;
+            }
+        }
+        if !found {
+            entries.push(entry(name, value));
+        }
+        dict(entries)
+    }
+
+    fn remove(report: &InputValue, name: &str) -> InputValue {
+        let InputValue::Dict(entries) = report else {
+            panic!("report mapping");
+        };
+        dict(
+            entries
+                .iter()
+                .filter(|(key, _)| !matches!(key, InputKey::Str(text) if text == name))
+                .cloned()
+                .collect(),
+        )
+    }
+
+    fn parse_ok(value: &InputValue) -> Report {
+        match parse_report(value) {
+            Ok(report) => report,
+            Err(error) => panic!("parse_report rejected a valid report: {error}"),
+        }
+    }
+
+    fn parse_err(value: &InputValue) -> ParseReportError {
+        match parse_report(value) {
+            Err(error) => error,
+            Ok(_) => panic!("parse_report accepted an invalid report"),
+        }
+    }
+
+    fn message(value: &InputValue) -> String {
+        parse_err(value).to_string()
+    }
+
+    fn binding_pairs(items: &[(InputKey, InputValue)]) -> Vec<(String, String)> {
+        items
+            .iter()
+            .map(|(key, value)| {
+                let InputKey::Str(name) = key else {
+                    panic!("binding key {key:?}");
+                };
+                let InputValue::Str(text) = value else {
+                    panic!("binding value {value:?}");
+                };
+                (name.clone(), text.clone())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn string_input_stops_at_json_loads() {
+        for sample in ["{}", "[]", "not valid json {", ""] {
+            let error = parse_err(&text(sample));
+            assert_eq!(error.to_string(), "json.loads is not available");
+            assert_eq!(error.to_string(), JsonLoadsUnavailable::MESSAGE);
+            match &error {
+                ParseReportError::Json(inner) => {
+                    assert_eq!(inner.to_string(), JsonLoadsUnavailable::MESSAGE);
+                }
+                other => panic!("expected json.loads, got {other:?}"),
+            }
+            let source = Error::source(&error).map(ToString::to_string);
+            assert_eq!(source.as_deref(), Some(JsonLoadsUnavailable::MESSAGE));
+        }
+    }
+
+    #[test]
+    fn non_mapping_uses_the_pin_type_message() {
+        assert_eq!(
+            message(&InputValue::int(123)),
+            "Report must be a Mapping or JSON string, got int"
+        );
+        assert_eq!(
+            message(&InputValue::list(Vec::new())),
+            "Report must be a Mapping or JSON string, got list"
+        );
+        assert_eq!(
+            message(&InputValue::None),
+            "Report must be a Mapping or JSON string, got NoneType"
+        );
+        assert!(!message(&InputValue::list(Vec::new())).contains("Report root must be a mapping"));
+        assert!(!message(&text("{")).contains("Malformed JSON"));
+    }
+
+    #[test]
+    fn top_level_checks_run_before_later_fields() {
+        assert!(REQUIRED_REPORT_FIELD_ORDER_DEVIATION.contains("frozenset"));
+        let base = zero_report();
+        let rogue = replace(
+            &remove(
+                &replace(&base, "schema_version", text("sesslint.report/v99")),
+                "session_id",
+            ),
+            "rogue",
+            text("x"),
+        );
+        match parse_err(&rogue) {
+            ParseReportError::UnknownField(error) => {
+                assert_eq!(error.reason_code(), "SL302");
+                assert_eq!(error.field_name(), Some("rogue"));
+                assert_eq!(
+                    error.to_string(),
+                    "Unknown top-level field in report: 'rogue' (code: UNKNOWN_FIELD / SL302)"
+                );
+            }
+            other => panic!("unknown field must win, got {other}"),
+        }
+        let missing_session = remove(
+            &replace(&base, "schema_version", text("sesslint.report/v99")),
+            "session_id",
+        );
+        assert_eq!(
+            message(&missing_session),
+            "Missing required field in report: 'session_id'"
+        );
+        assert!(!message(&missing_session).contains("SL302"));
+        let missing_both = remove(&remove(&base, "schema_version"), "coverage");
+        assert_eq!(
+            message(&missing_both),
+            "Missing required field in report: 'schema_version'"
+        );
+        match parse_err(&replace(
+            &base,
+            "schema_version",
+            text("sesslint.report/v99"),
+        )) {
+            ParseReportError::Version(error) => {
+                assert_eq!(error.reason_code(), "SL301");
+                assert_eq!(error.version(), Some("sesslint.report/v99"));
+                assert_eq!(
+                    error.to_string(),
+                    "Unsupported report schema version: 'sesslint.report/v99' (code: VERSION / SL301)"
+                );
+            }
+            other => panic!("version error, got {other}"),
+        }
+        match parse_err(&replace(&base, "schema_version", InputValue::int(4))) {
+            ParseReportError::Version(error) => {
+                assert_eq!(error.version(), Some("4"));
+                assert_eq!(
+                    error.to_string(),
+                    "Unsupported report schema version: 4 (code: VERSION / SL301)"
+                );
+            }
+            other => panic!("non-string version, got {other}"),
+        }
+        let bad_session = replace(
+            &replace(&base, "session_id", InputValue::int(12345)),
+            "findings",
+            text("no"),
+        );
+        assert_eq!(
+            message(&bad_session),
+            "Report.session_id must be a non-empty string, got 12345"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "source_fingerprint",
+                InputValue::list(vec![text("invalid"), text("type")])
+            )),
+            "Report.source_fingerprint must be a non-empty string, got ['invalid', 'type']"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "tool_version",
+                InputValue::other("float", "1.0")
+            )),
+            "Report.tool_version must be a non-empty string, got 1.0"
+        );
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "findings", text("no")),
+                "counts",
+                text("no")
+            )),
+            "findings must be a list or tuple, got str"
+        );
+    }
+
+    #[test]
+    fn findings_use_parse_finding_dict_before_counts() {
+        let base = zero_report();
+        assert_eq!(
+            message(&replace(
+                &base,
+                "findings",
+                InputValue::list(vec![InputValue::int(1)])
+            )),
+            "Finding object must be a mapping, got int"
+        );
+        let mut coded = finding_dict("SL001");
+        coded = replace(&coded, "code", InputValue::other("float", "1.5"));
+        assert_eq!(
+            message(&replace(&base, "findings", InputValue::list(vec![coded]))),
+            "Invalid finding code in dictionary: 1.5"
+        );
+        let mut schema_bad = finding_dict("SL001");
+        schema_bad = replace(&schema_bad, "schema_version", text("nope"));
+        schema_bad = replace(&schema_bad, "code", InputValue::other("float", "1.5"));
+        assert_eq!(
+            message(&replace(
+                &base,
+                "findings",
+                InputValue::list(vec![schema_bad])
+            )),
+            format!(
+                "Unsupported finding schema_version 'nope', expected '{FINDING_SCHEMA_VERSION}'"
+            )
+        );
+        let mut evidence = finding_dict("SL001");
+        evidence = replace(
+            &evidence,
+            "evidence",
+            dict(vec![entry("note", InputValue::other("object", "<object>"))]),
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "findings",
+                InputValue::list(vec![evidence])
+            )),
+            FINDING_EVIDENCE_OBJECT
+        );
+    }
+
+    #[test]
+    fn counts_checks_run_before_assurance_and_the_report_constructor() {
+        let base = zero_report();
+        let extra = dict(vec![
+            entry("by_severity", severities(0, 0, 0, 0)),
+            entry("by_code", dict(Vec::new())),
+            entry("rogue_counts_field", InputValue::int(99)),
+        ]);
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "counts", extra),
+                "assurance",
+                text("INVALID")
+            )),
+            "Unknown field in counts: 'rogue_counts_field' (code: UNKNOWN_FIELD / SL302)"
+        );
+        let critical = dict(vec![
+            entry("critical", InputValue::int(5)),
+            entry("error", InputValue::int(0)),
+            entry("warning", InputValue::int(0)),
+            entry("info", InputValue::int(0)),
+        ]);
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(critical, dict(Vec::new()), InputValue::int(0))
+            )),
+            "Unknown severity in counts.by_severity: 'critical' (code: UNKNOWN_FIELD / SL302)"
+        );
+        let missing_fatal = dict(vec![
+            entry("error", InputValue::int(-1)),
+            entry("warning", InputValue::int(0)),
+            entry("info", InputValue::int(0)),
+        ]);
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(missing_fatal, dict(Vec::new()), InputValue::int(0))
+            )),
+            "Missing required severity in counts.by_severity: 'fatal'"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(
+                    text("not-a-mapping"),
+                    text("not-a-mapping"),
+                    InputValue::int(0)
+                )
+            )),
+            "counts.by_severity must be a mapping, got str"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(
+                    severities(0, 0, 0, 0),
+                    text("not-a-mapping"),
+                    InputValue::int(0)
+                )
+            )),
+            "counts.by_code must be a mapping, got str"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(
+                    severities(0, 0, 0, 0),
+                    dict(Vec::new()),
+                    InputValue::bool_value(true)
+                )
+            )),
+            "counts.total must be a non-negative integer, got True"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(
+                    severities(0, 0, 0, 0),
+                    dict(Vec::new()),
+                    InputValue::int(-1)
+                )
+            )),
+            "counts.total must be a non-negative integer, got -1"
+        );
+        assert_eq!(
+            message(&replace(
+                &replace(
+                    &base,
+                    "counts",
+                    counts(
+                        severities(-1, 0, 0, 0),
+                        dict(Vec::new()),
+                        InputValue::int(0)
+                    )
+                ),
+                "assurance",
+                text("INVALID")
+            )),
+            "Counts.by_severity['fatal'] must be non-negative int, got -1"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(
+                    severities(0, 0, 0, 0),
+                    dict(vec![(InputKey::int(1), InputValue::int(0))]),
+                    InputValue::int(0)
+                )
+            )),
+            "Counts.by_code key must be str, got 1"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(severities(0, 0, 0, 0), dict(Vec::new()), InputValue::int(2))
+            )),
+            "Counts.total (2) does not match findings count (0)"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(severities(1, 0, 0, 0), dict(Vec::new()), InputValue::int(0))
+            )),
+            "Counts.by_severity ({'fatal': 1, 'error': 0, 'warning': 0, 'info': 0}) does not match findings severity distribution ({'fatal': 0, 'error': 0, 'warning': 0, 'info': 0})"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "counts",
+                counts(
+                    severities(0, 0, 0, 0),
+                    dict(vec![entry("SL001", InputValue::int(1))]),
+                    InputValue::int(0)
+                )
+            )),
+            "Counts.by_code ({'SL001': 1}) does not match findings code distribution ({})"
+        );
+    }
+
+    #[test]
+    fn assurance_and_limitation_use_parse_report_text() {
+        let base = zero_report();
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "assurance", text("INVALID")),
+                "limitation",
+                text("")
+            )),
+            format!("Invalid assurance level 'INVALID'. Must be one of {LEVELS}")
+        );
+        assert_eq!(
+            message(&replace(&base, "limitation", text(""))),
+            "Report limitation must be a non-empty string, got ''"
+        );
+        assert_eq!(
+            message(&replace(&base, "limitation", InputValue::int(123))),
+            "Report limitation must be a non-empty string, got 123"
+        );
+        assert!(!message(&replace(&base, "limitation", text(""))).contains("assurance level"));
+    }
+
+    #[test]
+    fn coverage_checks_run_before_the_coverage_constructor() {
+        let base = zero_report();
+        let unknown = dict(vec![
+            entry("extra", InputValue::int(1)),
+            entry("skipped", InputValue::int(1)),
+            entry("adapter", InputValue::int(1)),
+            entry("profile", InputValue::int(1)),
+        ]);
+        assert_eq!(
+            message(&replace(&base, "coverage", unknown)),
+            "Unknown field in coverage: 'extra' (code: UNKNOWN_FIELD / SL302)"
+        );
+        let missing_performed = dict(vec![
+            entry("skipped", InputValue::int(1)),
+            entry("adapter", id_version("canonical", "1")),
+            entry("profile", id_version("neutral", "1")),
+        ]);
+        assert_eq!(
+            message(&replace(&base, "coverage", missing_performed)),
+            "Missing required field in coverage: 'performed'"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::set(Vec::new()),
+                    InputValue::list(Vec::new()),
+                    id_version("canonical", "1"),
+                    id_version("neutral", "1")
+                )
+            )),
+            "coverage.performed must be a list or tuple, got set"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(vec![InputValue::int(1)]),
+                    InputValue::list(Vec::new()),
+                    id_version("canonical", "1"),
+                    id_version("neutral", "1")
+                )
+            )),
+            "coverage.performed[0] must be a non-empty string, got 1"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::int(1),
+                    InputValue::int(1),
+                    InputValue::int(1)
+                )
+            )),
+            "coverage.skipped must be a list or tuple, got int"
+        );
+        let unknown_skip = dict(vec![
+            entry("extra", InputValue::int(1)),
+            entry("reason", text("profile-gated")),
+        ]);
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::list(vec![unknown_skip]),
+                    id_version("canonical", "1"),
+                    id_version("neutral", "1")
+                )
+            )),
+            "Unknown field in coverage.skipped[0]: 'extra' (code: UNKNOWN_FIELD / SL302)"
+        );
+        assert_eq!(
+            message(&skip_report(
+                &base,
+                dict(vec![entry("reason", text("profile-gated"))])
+            )),
+            "coverage.skipped[0] missing required field 'check'"
+        );
+        assert_eq!(
+            message(&skip_report(
+                &base,
+                dict(vec![entry("check", text("SL201"))])
+            )),
+            "coverage.skipped[0] missing required field 'reason'"
+        );
+        assert_eq!(
+            message(&skip_report(
+                &base,
+                dict(vec![
+                    entry("check", text("  ")),
+                    entry("reason", text("profile-gated")),
+                ])
+            )),
+            "coverage.skipped[0].check must be a non-empty string, got '  '"
+        );
+        let reason = message(&skip_report(
+            &base,
+            dict(vec![
+                entry("check", text("has\nnewline")),
+                entry("reason", text("nope")),
+                entry("detail", InputValue::int(1)),
+            ]),
+        ));
+        assert_eq!(
+            reason,
+            format!("Invalid coverage skip reason 'nope' in skipped[0]. Must be one of {REASONS}")
+        );
+        assert_eq!(
+            message(&skip_report(
+                &base,
+                dict(vec![
+                    entry("check", text("has\nnewline")),
+                    entry("reason", text("profile-gated")),
+                    entry("detail", InputValue::int(1)),
+                ])
+            )),
+            "coverage.skipped[0].detail must be a string, got int"
+        );
+        let leak = message(&skip_report(
+            &base,
+            dict(vec![
+                entry("check", text("has\nnewline")),
+                entry("reason", text("profile-gated")),
+            ]),
+        ));
+        assert!(
+            leak.contains("Intrinsic content leak in CoverageSkip.check"),
+            "{leak}"
+        );
+        assert!(
+            leak.contains("Forbidden control or newline characters"),
+            "{leak}"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::list(Vec::new()),
+                    dict(vec![entry("extra", InputValue::int(1))]),
+                    InputValue::int(1)
+                )
+            )),
+            "Unknown field in coverage.adapter: 'extra' (code: UNKNOWN_FIELD / SL302)"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::list(Vec::new()),
+                    binding(vec![
+                        ("id", text("  ")),
+                        ("name", text("Nom")),
+                        ("version", text("")),
+                    ]),
+                    id_version("neutral", "1")
+                )
+            )),
+            "coverage.adapter must contain non-empty 'id'"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::list(Vec::new()),
+                    binding(vec![("id", text("canonical")), ("version", text("  "))]),
+                    InputValue::int(1)
+                )
+            )),
+            "coverage.adapter must contain non-empty 'version'"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::list(Vec::new()),
+                    InputValue::int(1),
+                    InputValue::int(1)
+                )
+            )),
+            "coverage.adapter must be a mapping, got int"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "coverage",
+                coverage(
+                    InputValue::list(Vec::new()),
+                    InputValue::list(Vec::new()),
+                    id_version("canonical", "1"),
+                    dict(Vec::new())
+                )
+            )),
+            "coverage.profile must contain non-empty 'id'"
+        );
+    }
+
+    fn skip_report(base: &InputValue, skip: InputValue) -> InputValue {
+        replace(
+            base,
+            "coverage",
+            coverage(
+                InputValue::list(Vec::new()),
+                InputValue::list(vec![skip]),
+                id_version("canonical", "1"),
+                id_version("neutral", "1"),
+            ),
+        )
+    }
+
+    #[test]
+    fn valid_mapping_uses_the_report_and_finding_constructors() {
+        let spaced = replace(
+            &replace(
+                &replace(&zero_report(), "session_id", text("  sess  ")),
+                "source_fingerprint",
+                text(" fp "),
+            ),
+            "tool_version",
+            text(" 0.1.0 "),
+        );
+        let spaced = replace(&spaced, "limitation", text("  lim  "));
+        let report = parse_ok(&spaced);
+        assert_eq!(report.schema_version(), REPORT_SCHEMA_VERSION);
+        assert_eq!(report.session_id(), "sess");
+        assert_eq!(report.source_fingerprint(), "fp");
+        assert_eq!(report.tool_version(), "0.1.0");
+        assert_eq!(report.assurance(), "A1");
+        assert_eq!(report.limitation(), "lim");
+        assert!(report.findings().is_empty());
+        assert_eq!(report.counts().total(), 0);
+
+        let findings = InputValue::tuple(vec![finding_dict("SL101"), finding_dict("SL001")]);
+        let counts_value = counts(
+            severities(0, 2, 0, 0),
+            dict(vec![
+                entry("SL101", InputValue::int(1)),
+                entry("SL001", InputValue::int(1)),
+            ]),
+            InputValue::int(2),
+        );
+        let performed = InputValue::list(vec![text("b"), text(" a ")]);
+        let skips = InputValue::list(vec![
+            dict(vec![
+                entry("check", text(" b ")),
+                entry("reason", text("profile-gated")),
+                entry("detail", text(" d ")),
+            ]),
+            dict(vec![
+                entry("check", text(" SL201 ")),
+                entry("reason", text("profile-gated")),
+            ]),
+        ]);
+        let adapter = binding(vec![("name", text(" Widget ")), ("version", text(" 1 "))]);
+        let profile = binding(vec![
+            ("id", text("neutral")),
+            ("name", InputValue::int(3)),
+            ("version", text("1.0.0")),
+        ]);
+        let report = parse_ok(&report_with(
+            findings,
+            counts_value,
+            coverage(performed, skips, adapter, profile),
+        ));
+        let codes: Vec<&str> = report.findings().iter().map(Finding::code).collect();
+        assert_eq!(codes, ["SL001", "SL101"]);
+        assert_eq!(
+            report.coverage().performed(),
+            &["a".to_owned(), "b".to_owned()]
+        );
+        assert_eq!(report.coverage().skipped().len(), 2);
+        assert_eq!(report.coverage().skipped()[0].check(), "SL201");
+        assert_eq!(report.coverage().skipped()[0].detail(), "");
+        assert_eq!(report.coverage().skipped()[1].check(), "b");
+        assert_eq!(report.coverage().skipped()[1].detail(), "d");
+        assert_eq!(
+            binding_pairs(report.coverage().adapter_items()),
+            vec![
+                ("id".to_owned(), "Widget".to_owned()),
+                ("version".to_owned(), "1".to_owned()),
+                ("name".to_owned(), "Widget".to_owned()),
+            ]
+        );
+        assert_eq!(
+            binding_pairs(report.coverage().profile_items()),
+            vec![
+                ("id".to_owned(), "neutral".to_owned()),
+                ("version".to_owned(), "1.0.0".to_owned()),
+            ]
+        );
+
+        let copied = parse_ok(&replace(
+            &zero_report(),
+            "coverage",
+            coverage(
+                InputValue::list(Vec::new()),
+                InputValue::list(Vec::new()),
+                binding(vec![
+                    ("id", text("")),
+                    ("name", text("Nom")),
+                    ("version", text("1")),
+                ]),
+                id_version("neutral", "1"),
+            ),
+        ));
+        assert_eq!(
+            binding_pairs(copied.coverage().adapter_items()),
+            vec![
+                ("id".to_owned(), "Nom".to_owned()),
+                ("version".to_owned(), "1".to_owned()),
+                ("name".to_owned(), "Nom".to_owned()),
+            ]
+        );
+        let _kept: &Coverage = copied.coverage();
+    }
+
+    #[test]
+    fn dump_manifest_refuses_substitutes_and_non_manifests() {
+        match dump_manifest(DumpManifestInput::Wrong { type_name: "dict" }) {
+            Err(DumpManifestError::Type(text)) => {
+                assert_eq!(text, "Expected RepairManifest instance, got dict");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+        match dump_manifest(DumpManifestInput::Wrong {
+            type_name: "NoneType",
+        }) {
+            Err(DumpManifestError::Type(text)) => {
+                assert_eq!(text, "Expected RepairManifest instance, got NoneType");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+        let manifest = sample_manifest(&dict(Vec::new()));
+        match dump_manifest(DumpManifestInput::Manifest(&manifest)) {
+            Ok(json) => panic!("dump_manifest emitted JSON: {json}"),
+            Err(error) => {
+                assert_eq!(error.to_string(), CANONICAL_SEAM);
+                match Error::source(&error) {
+                    Some(source) => assert_eq!(source.to_string(), CANONICAL_SEAM),
+                    None => panic!("dump_manifest must expose the codec error"),
+                }
+            }
+        }
+        let mixed = sample_manifest(&dict(vec![
+            (InputKey::str_key("a"), text("1")),
+            (InputKey::int(1), InputValue::int(2)),
+        ]));
+        match dump_manifest(DumpManifestInput::Manifest(&mixed)) {
+            Err(DumpManifestError::Type(text)) => {
+                assert_eq!(
+                    text,
+                    "'<' not supported between instances of 'int' and 'str'"
+                );
+                assert_ne!(text, CANONICAL_SEAM);
+            }
+            other => panic!("to_dict TypeError must win, got {other:?}"),
+        }
+    }
+
+    fn sample_manifest(recipe: &InputValue) -> RepairManifest {
+        let schema = text(model::version::MANIFEST_SCHEMA_VERSION);
+        let input_fingerprint = text("in");
+        let output_fingerprint = text("out");
+        let policy = text("conservative");
+        let actions = ActionSeq::Tuple(Vec::new());
+        let declared_loss = InputValue::tuple(Vec::new());
+        let none = InputValue::None;
+        let empty = dict(Vec::new());
+        let idempotency_key = text(&"0".repeat(64));
+        let ceiling = text("A1");
+        let assurance = text("A1");
+        let zero = InputValue::int(0);
+        let profile = text("neutral");
+        let profile_version = text("1.0.0");
+        let summary = match RevalidationSummary::try_new(
+            &assurance,
+            &zero,
+            &zero,
+            &profile,
+            &profile_version,
+            &none,
+        ) {
+            Ok(summary) => summary,
+            Err(error) => panic!("synthetic revalidation rejected: {error}"),
+        };
+        let revalidation = RevalidationInput::Summary(summary);
+        match RepairManifest::try_new(RepairManifestParts {
+            schema_version: &schema,
+            input_fingerprint: &input_fingerprint,
+            output_fingerprint: &output_fingerprint,
+            policy: &policy,
+            actions: &actions,
+            declared_loss: &declared_loss,
+            revalidate_report: &none,
+            idempotency_key: &idempotency_key,
+            revalidation: &revalidation,
+            assurance_ceiling: &ceiling,
+            plan_fingerprint: &none,
+            assurance: &none,
+            recipe_versions: recipe,
+            profile_version: &none,
+            adapter_id: &none,
+            adapter_version: &none,
+            byte_counts: &empty,
+            record_counts: &empty,
+        }) {
+            Ok(manifest) => manifest,
+            Err(error) => panic!("synthetic manifest rejected: {error}"),
+        }
+    }
+
+    #[test]
+    fn non_string_top_level_key_is_unknown() {
+        let mut entries = match zero_report() {
+            InputValue::Dict(entries) => entries,
+            other => panic!("dict, got {other:?}"),
+        };
+        entries.insert(0, (InputKey::int(1), text("x")));
+        match parse_err(&dict(entries)) {
+            ParseReportError::UnknownField(error) => {
+                assert_eq!(error.field_name(), Some("1"));
+                assert_eq!(
+                    error.to_string(),
+                    "Unknown top-level field in report: '1' (code: UNKNOWN_FIELD / SL302)"
+                );
+            }
+            other => panic!("non-string key, got {other}"),
         }
     }
 }
