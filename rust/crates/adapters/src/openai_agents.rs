@@ -1,30 +1,49 @@
-//! OpenAI Agents SDK run-state projection and source metadata.
+//! OpenAI Agents SDK run-state projection, detection, and payload assembly.
 //!
 //! Port of `src/sesslint/adapters/openai_agents.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–313.
-//! Stops before `EventList` (line 316). The next function is
-//! `normalize_version` (line 331).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–525.
+//! Stops before `load_openai_agents` (line 528).
 //!
-//! This slice ports [`safe_type_value`] (Python `_safe_type_value`),
+//! Lines 1–313 port [`safe_type_value`] (Python `_safe_type_value`),
 //! [`project_run_state`], and [`SourceMetadata`]. [`SourceMetadata`] is the
 //! class at line 303. It is not [`crate::canonical::SourceMetadata`].
 //!
+//! Lines 316–525 port [`EventList`], [`normalize_version`],
+//! [`detect_openai_agents`], [`normalize_timestamp`] (Python
+//! `_normalize_timestamp`), and [`build_payload`] (Python `_build_payload`).
+//! [`EventList`] is the class at line 316. It is not
+//! [`crate::canonical::EventList`]. It stores [`SessionEvent`] values from
+//! `model` and this module's [`SourceMetadata`].
+//!
 //! [`safe_type_value`] calls [`crate::safe_value::safe_type_value`]. It does
 //! not shape values itself. [`project_run_state`] calls that wrapper and
-//! [`crate::safe_value::safe_discriminator`]. Both are in this crate. This
-//! slice has no late import, so it does not return a
-//! `{module.function} is not available` error and it does not invent an SL
-//! code.
+//! [`crate::safe_value::safe_discriminator`]. [`build_payload`] calls
+//! [`crate::safe_value::safe_discriminator`] for a handoff `reason`.
+//!
+//! [`build_payload`] calls `sesslint.io._STRICT_JSON_DECODER.decode` only when
+//! the selected tool-call `args` / `arguments` / `input` value is a `str`.
+//! That decoder is not in this crate. The arm returns
+//! [`STRICT_JSON_DECODE_UNAVAILABLE`] and does not build a payload. The field
+//! selection before that call still runs, in pin order. Other kinds do not
+//! call it. [`detect_openai_agents`] does not call it and returns a score.
+//! This file does not invent an SL code.
+//!
+//! [`detect_openai_agents`] uses the filename, then the bytes: an empty
+//! buffer, [`SQLITE_MAGIC`], a leading UTF-8 BOM, the rollout envelope on the
+//! first 4096 decoded bytes, then the signal substrings.
+//!
+//! [`normalize_timestamp`] walks `_TIMESTAMP_ISO_REGEX` by hand. There is no
+//! `regex` dependency.
 //!
 //! [`project_run_state`] keeps the pin order: read `run_state` and
 //! `checkpoints`, take `items()` (an exception yields no keys), sort by
 //! `str(key)`, project at most 32 keys, then project at most 8 checkpoints.
 //!
 //! Gaps vs Python (recorded, not papered over):
-//! - `SQLITE_MAGIC`, `SUPPORTED_OPENAI_AGENTS_VERSIONS`, `CRITICAL_KEYS`,
-//!   `KNOWN_RECORD_KEYS`, `ITEM_TYPE_MAP`, `CanonicalEvent`, and
-//!   `_TIMESTAMP_ISO_REGEX` sit in this line range and are not read by the
-//!   functions above. They are not ported. The regex is not walked.
+//! - `SUPPORTED_OPENAI_AGENTS_VERSIONS`, `CRITICAL_KEYS`, `KNOWN_RECORD_KEYS`,
+//!   `ITEM_TYPE_MAP`, and `CanonicalEvent` are not read by the functions in
+//!   this file. They are not ported. [`build_payload`] does not apply
+//!   `ITEM_TYPE_MAP`; `kind` is already classified.
 //! - `str.isdigit` accepts Unicode decimal digits (`١`, U+0661) and then
 //!   `int` keeps them. A seq string is ASCII `0-9` only here, so U+0661 stays
 //!   `None`. Superscripts such as `²` fail `int` in Python and also stay
@@ -48,9 +67,28 @@
 //!   are not ported. Missing `checkpoints` is an attribute error. This class
 //!   does not invent an empty list.
 //! - A Rust `&str` cannot contain a lone surrogate.
+//! - `str.lower` follows Rust Unicode lowercase. A few special cases such as
+//!   U+0130 differ from CPython. ASCII filenames and versions match.
+//! - `str.isdigit` and default `re` `\d` accept Unicode decimal digits
+//!   (category Nd). [`normalize_version`] and [`normalize_timestamp`] accept
+//!   ASCII `0-9` only. The timestamp walk does not check the calendar.
+//! - Python `re` `$` also matches before one trailing newline.
+//!   [`normalize_timestamp`] strips first, and that strip already removes the
+//!   newline.
+//! - A string tool-call input does not fall through when decode would raise.
+//!   The decoder call is required, so [`build_payload`] returns
+//!   [`BuildPayloadError::Unavailable`] and not `{"value": <original str>}`.
+//! - `str()` of [`MetaValue::Bytes`], [`MetaValue::Set`], or
+//!   [`MetaValue::Object`] is not built. Bytes content and set items are not
+//!   stored, and a custom `__str__` is not representable.
+//!   [`BuildPayloadError::Unrendered`] is that refusal. It is not a payload.
+//! - [`EventList`] stores the constructor sequence. The rest of `list` is not
+//!   ported. Two default lists do not share one [`SourceMetadata`].
 
 use std::error::Error;
 use std::fmt;
+
+use model::canonical::SessionEvent;
 
 use crate::safe_value::safe_discriminator;
 use crate::safe_value::PyValue;
@@ -921,14 +959,565 @@ fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
     }
 }
 
+/// Magic bytes identifying SQLite database files.
+///
+/// Python: `SQLITE_MAGIC`.
+pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";
+
+/// `sesslint.io._STRICT_JSON_DECODER.decode` is not in this crate.
+pub const STRICT_JSON_DECODE_UNAVAILABLE: &str =
+    "sesslint.io._STRICT_JSON_DECODER.decode is not available";
+
+/// `str()` cannot be built for a bytes, set, or custom object value.
+pub const STR_UNRENDERED: &str = "str() is not available for this value";
+
+const DETECT_PREFIX_BYTES: usize = 4096;
+
+const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
+
+const EPOCH_TIMESTAMP: &str = "1970-01-01T00:00:00Z";
+
+const ROLLOUT_ENVELOPES: [&str; 6] = [
+    "\"type\":\"session_meta\"",
+    "\"type\": \"session_meta\"",
+    "\"type\":\"response_item\"",
+    "\"type\": \"response_item\"",
+    "\"type\":\"turn_context\"",
+    "\"type\": \"turn_context\"",
+];
+
+/// Failure from [`build_payload`].
+///
+/// [`Display`](std::fmt::Display) is the message only.
+/// [`Self::Unavailable`] is the missing decoder.
+/// [`Self::Unrendered`] is a `str()` this module cannot build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildPayloadError {
+    /// [`STRICT_JSON_DECODE_UNAVAILABLE`].
+    Unavailable,
+    /// [`STR_UNRENDERED`].
+    Unrendered,
+}
+
+impl BuildPayloadError {
+    /// The Python seam, or the refusal to invent `str()`.
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::Unavailable => STRICT_JSON_DECODE_UNAVAILABLE,
+            Self::Unrendered => STR_UNRENDERED,
+        }
+    }
+}
+
+impl fmt::Display for BuildPayloadError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for BuildPayloadError {}
+
+/// Extended event list carrying preserved source metadata.
+///
+/// Python: `EventList` at line 316. `source` is keyword-only. `None` builds a
+/// new [`SourceMetadata`]. This is not [`crate::canonical::EventList`].
+#[derive(Debug, Clone)]
+pub struct EventList {
+    events: Vec<SessionEvent>,
+    /// Python attribute `source`.
+    pub source: SourceMetadata,
+}
+
+impl EventList {
+    /// Python: `EventList(iterable=(), *, source=None)`.
+    #[must_use]
+    pub fn new(events: Vec<SessionEvent>, source: Option<SourceMetadata>) -> Self {
+        Self {
+            events,
+            source: match source {
+                Some(source) => source,
+                None => SourceMetadata::new(),
+            },
+        }
+    }
+
+    /// Events in constructor order.
+    #[must_use]
+    pub fn events(&self) -> &[SessionEvent] {
+        &self.events
+    }
+
+    /// Python `len(events)`.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Python `not events`.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+}
+
+/// Normalize a raw version string.
+///
+/// Python: `normalize_version`. Strip Python whitespace, lowercase, then drop
+/// one leading `v` when the next character is an ASCII digit.
+#[must_use]
+pub fn normalize_version(version: &str) -> String {
+    let cleaned = python_strip(version).to_lowercase();
+    strip_ascii_version_mark(&cleaned)
+}
+
+fn strip_ascii_version_mark(cleaned: &str) -> String {
+    let mut chars = cleaned.chars();
+    if chars.next() != Some('v') {
+        return cleaned.to_owned();
+    }
+    match chars.next() {
+        Some(second) if second.is_ascii_digit() => match cleaned.get('v'.len_utf8()..) {
+            Some(rest) => rest.to_owned(),
+            None => cleaned.to_owned(),
+        },
+        _ => cleaned.to_owned(),
+    }
+}
+
+/// Heuristic confidence that `first_bytes` is an OpenAI Agents SDK export.
+///
+/// Python: `detect_openai_agents`. Returns `0.0`, `0.2`, `0.3`, `0.5`, `0.8`,
+/// or `1.0`. `filename` is lowercased and its suffix is read.
+#[must_use]
+pub fn detect_openai_agents(first_bytes: &[u8], filename: &str) -> f64 {
+    let fn_lower = filename.to_lowercase();
+    if !openai_filename(&fn_lower) {
+        return 0.0;
+    }
+    if first_bytes.is_empty() {
+        return 0.0;
+    }
+    if first_bytes.starts_with(SQLITE_MAGIC) {
+        if fn_lower.ends_with(".sqlite") || fn_lower.ends_with(".db") {
+            return 1.0;
+        }
+        return 0.5;
+    }
+    let data = match first_bytes.strip_prefix(UTF8_BOM) {
+        Some(rest) => rest,
+        None => first_bytes,
+    };
+    let prefix = match data.get(..DETECT_PREFIX_BYTES) {
+        Some(head) => head,
+        None => data,
+    };
+    let decoded = String::from_utf8_lossy(prefix);
+    if rollout_envelope(&decoded) {
+        return 0.3;
+    }
+    let signals = signal_count(&decoded);
+    if signals >= 3 {
+        return 1.0;
+    }
+    if signals >= 1 {
+        return 0.8;
+    }
+    if fn_lower.ends_with(".json") || fn_lower.ends_with(".jsonl") {
+        return 0.2;
+    }
+    0.0
+}
+
+fn openai_filename(fn_lower: &str) -> bool {
+    fn_lower.ends_with(".json")
+        || fn_lower.ends_with(".jsonl")
+        || fn_lower.ends_with(".sqlite")
+        || fn_lower.ends_with(".db")
+}
+
+fn rollout_envelope(decoded: &str) -> bool {
+    ROLLOUT_ENVELOPES
+        .iter()
+        .any(|needle| decoded.contains(needle))
+}
+
+fn signal_count(decoded: &str) -> u32 {
+    let mut signals = 0u32;
+    if decoded.contains("\"items\"") {
+        signals += 2;
+    }
+    if decoded.contains("\"run_state\"") {
+        signals += 3;
+    }
+    if decoded.contains("\"checkpoints\"") {
+        signals += 3;
+    }
+    if decoded.contains("\"call_id\"") {
+        signals += 2;
+    }
+    if decoded.contains("\"tool_call\"") || decoded.contains("\"tool_result\"") {
+        signals += 2;
+    }
+    if decoded.contains("\"function_call\"") || decoded.contains("\"function_call_output\"") {
+        signals += 2;
+    }
+    if decoded.contains("\"handoff\"") {
+        signals += 2;
+    }
+    if decoded.contains("\"agent_sdk_version\"") || decoded.contains("\"export_version\"") {
+        signals += 2;
+    }
+    signals
+}
+
+/// Ensure a timestamp is the pin's ISO shape, or the epoch sentinel.
+///
+/// Python: `_normalize_timestamp`. A non-`str`, or a string that is empty
+/// after stripping, is `1970-01-01T00:00:00Z`. A matching string is returned
+/// without the surrounding whitespace. Naive timestamps match and stay.
+#[must_use]
+pub fn normalize_timestamp(raw_ts: &MetaValue) -> String {
+    let MetaValue::Str(text) = raw_ts else {
+        return EPOCH_TIMESTAMP.to_owned();
+    };
+    let val = python_strip(text);
+    if val.is_empty() || !timestamp_shape(val) {
+        return EPOCH_TIMESTAMP.to_owned();
+    }
+    val.to_owned()
+}
+
+fn timestamp_shape(val: &str) -> bool {
+    walk_timestamp(val.as_bytes()).is_some()
+}
+
+/// `_TIMESTAMP_ISO_REGEX` with ASCII digits.
+///
+/// `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$`
+fn walk_timestamp(bytes: &[u8]) -> Option<()> {
+    let mut index = 0usize;
+    eat_digits(bytes, &mut index, 4)?;
+    eat_byte(bytes, &mut index, b'-')?;
+    eat_digits(bytes, &mut index, 2)?;
+    eat_byte(bytes, &mut index, b'-')?;
+    eat_digits(bytes, &mut index, 2)?;
+    eat_byte(bytes, &mut index, b'T')?;
+    eat_digits(bytes, &mut index, 2)?;
+    eat_byte(bytes, &mut index, b':')?;
+    eat_digits(bytes, &mut index, 2)?;
+    eat_byte(bytes, &mut index, b':')?;
+    eat_digits(bytes, &mut index, 2)?;
+    if bytes.get(index).copied() == Some(b'.') {
+        bump(&mut index)?;
+        let start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            bump(&mut index)?;
+        }
+        if index == start {
+            return None;
+        }
+    }
+    match bytes.get(index).copied() {
+        None => Some(()),
+        Some(b'Z') => {
+            bump(&mut index)?;
+            end_of(bytes, index)
+        }
+        Some(b'+' | b'-') => {
+            bump(&mut index)?;
+            eat_digits(bytes, &mut index, 2)?;
+            eat_byte(bytes, &mut index, b':')?;
+            eat_digits(bytes, &mut index, 2)?;
+            end_of(bytes, index)
+        }
+        Some(_) => None,
+    }
+}
+
+fn end_of(bytes: &[u8], index: usize) -> Option<()> {
+    if index == bytes.len() {
+        Some(())
+    } else {
+        None
+    }
+}
+
+fn eat_digits(bytes: &[u8], index: &mut usize, count: usize) -> Option<()> {
+    for _ in 0..count {
+        let byte = bytes.get(*index).copied()?;
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        bump(index)?;
+    }
+    Some(())
+}
+
+fn eat_byte(bytes: &[u8], index: &mut usize, expected: u8) -> Option<()> {
+    if bytes.get(*index).copied() != Some(expected) {
+        return None;
+    }
+    bump(index)
+}
+
+fn bump(index: &mut usize) -> Option<()> {
+    *index = index.checked_add(1)?;
+    Some(())
+}
+
+/// Construct the content payload for one canonical kind.
+///
+/// Python: `_build_payload`. `kind` is compared as a string. The tool-call
+/// string-input arm does not return a payload: [`STRICT_JSON_DECODE_UNAVAILABLE`].
+///
+/// # Errors
+///
+/// [`BuildPayloadError::Unavailable`] when a tool-call input is a `str`.
+/// [`BuildPayloadError::Unrendered`] when `str()` cannot be built.
+pub fn build_payload(
+    obj: &MapValue,
+    actor: &str,
+    kind: &str,
+    rec_id: &str,
+    raw_type: &MetaValue,
+) -> Result<MapValue, BuildPayloadError> {
+    if kind == "tool_call" {
+        return payload_tool_call(obj, rec_id);
+    }
+    if kind == "tool_result" {
+        return payload_tool_result(obj);
+    }
+    if kind == "handoff" {
+        return payload_handoff(obj);
+    }
+    if kind == "checkpoint" {
+        return payload_checkpoint(obj, rec_id);
+    }
+    if kind == "compaction_boundary" {
+        return payload_compaction(obj);
+    }
+    if kind == "unknown" {
+        return payload_unknown(raw_type);
+    }
+    payload_message(obj, actor)
+}
+
+fn payload_tool_call(obj: &MapValue, rec_id: &str) -> Result<MapValue, BuildPayloadError> {
+    let raw_name = first_non_null(obj, &["name", "tool_name", "function"]);
+    let raw_call = first_non_null(obj, &["call_id", "tool_call_id"]);
+    let raw_input = first_non_null(obj, &["args", "arguments", "input"]);
+    if matches!(raw_input, Some(MetaValue::Str(_))) {
+        return Err(BuildPayloadError::Unavailable);
+    }
+    let tool_name = match raw_name {
+        Some(value) => meta_text(value)?,
+        None => String::new(),
+    };
+    let call_id = match raw_call {
+        Some(value) => meta_text(value)?,
+        None => rec_id.to_owned(),
+    };
+    let input_payload = match raw_input {
+        None => MetaValue::Map(MapValue::new(Vec::new())),
+        Some(MetaValue::Map(map)) => MetaValue::Map(map.clone()),
+        Some(other) => wrapped_value(other),
+    };
+    Ok(field_map(vec![
+        ("call_id", MetaValue::Str(call_id.clone())),
+        ("input", input_payload),
+        ("name", MetaValue::Str(tool_name.clone())),
+        ("tool_name", MetaValue::Str(tool_name)),
+        ("tool_use_id", MetaValue::Str(call_id)),
+    ]))
+}
+
+fn payload_tool_result(obj: &MapValue) -> Result<MapValue, BuildPayloadError> {
+    let raw_call = first_non_null(obj, &["call_id", "tool_call_id"]);
+    let call_id = match raw_call {
+        Some(value) => meta_text(value)?,
+        None => String::new(),
+    };
+    let content = match first_non_null(obj, &["content", "output", "result"]) {
+        Some(value) => value.clone(),
+        None => MetaValue::Str(String::new()),
+    };
+    let is_err = match first_non_null(obj, &["is_error", "error"]) {
+        Some(value) => is_truthy(value),
+        None => false,
+    };
+    Ok(field_map(vec![
+        ("call_id", MetaValue::Str(call_id.clone())),
+        ("content", content),
+        ("is_error", MetaValue::Bool(is_err)),
+        ("tool_use_id", MetaValue::Str(call_id)),
+    ]))
+}
+
+fn payload_handoff(obj: &MapValue) -> Result<MapValue, BuildPayloadError> {
+    let target = match first_non_null(obj, &["target", "handoff_to", "agent"]) {
+        Some(value) => MetaValue::Str(meta_text(value)?),
+        None => MetaValue::Null,
+    };
+    let mut fields = vec![("target", target)];
+    if let Some(reason) = map_get(obj, "reason") {
+        let (safe_reason, _) = safe_discriminator(py_of(reason));
+        fields.push(("reason", MetaValue::Str(safe_reason)));
+    }
+    Ok(field_map(fields))
+}
+
+fn payload_checkpoint(obj: &MapValue, rec_id: &str) -> Result<MapValue, BuildPayloadError> {
+    let chk_id = match first_non_null(obj, &["checkpoint_id", "id"]) {
+        Some(value) => meta_text(value)?,
+        None => rec_id.to_owned(),
+    };
+    let mut fields = vec![("checkpoint_id", MetaValue::Str(chk_id))];
+    if let Some(seq) = map_get(obj, "seq") {
+        fields.push(("seq", seq.clone()));
+    }
+    if let Some(hash) = map_get(obj, "hash") {
+        fields.push(("hash", MetaValue::Str(meta_text(hash)?)));
+    }
+    if let Some(state) = map_get(obj, "state") {
+        fields.push(("state", state.clone()));
+    }
+    Ok(field_map(fields))
+}
+
+fn payload_compaction(obj: &MapValue) -> Result<MapValue, BuildPayloadError> {
+    let summary = match first_non_null(obj, &["summary", "content"]) {
+        Some(value) => meta_text(value)?,
+        None => String::new(),
+    };
+    Ok(field_map(vec![("summary", MetaValue::Str(summary))]))
+}
+
+fn payload_unknown(raw_type: &MetaValue) -> Result<MapValue, BuildPayloadError> {
+    let type_text = if raw_type.is_null() {
+        "<missing>".to_owned()
+    } else {
+        meta_text(raw_type)?
+    };
+    Ok(field_map(vec![("type", MetaValue::Str(type_text))]))
+}
+
+fn payload_message(obj: &MapValue, actor: &str) -> Result<MapValue, BuildPayloadError> {
+    let content = match first_non_null(obj, &["content", "message", "text"]) {
+        Some(value) => value.clone(),
+        None => MetaValue::Str(String::new()),
+    };
+    Ok(field_map(vec![
+        ("content", content),
+        ("role", MetaValue::Str(actor.to_owned())),
+    ]))
+}
+
+fn first_non_null<'a>(map: &'a MapValue, keys: &[&str]) -> Option<&'a MetaValue> {
+    for key in keys {
+        if let Some(value) = map_get(map, key) {
+            if !value.is_null() {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+fn field_map(fields: Vec<(&str, MetaValue)>) -> MapValue {
+    MapValue::new(
+        fields
+            .into_iter()
+            .map(|(key, value)| (MapKey::Str(key.to_owned()), value))
+            .collect(),
+    )
+}
+
+fn wrapped_value(value: &MetaValue) -> MetaValue {
+    MetaValue::Map(field_map(vec![("value", value.clone())]))
+}
+
+fn meta_text(value: &MetaValue) -> Result<String, BuildPayloadError> {
+    match python_meta_str(value) {
+        Some(text) => Ok(text),
+        None => Err(BuildPayloadError::Unrendered),
+    }
+}
+
+fn python_meta_str(value: &MetaValue) -> Option<String> {
+    match value {
+        MetaValue::Str(text) => Some(text.clone()),
+        other => python_meta_repr(other),
+    }
+}
+
+fn python_meta_repr(value: &MetaValue) -> Option<String> {
+    match value {
+        MetaValue::Null => Some("None".to_owned()),
+        MetaValue::Bool(true) => Some("True".to_owned()),
+        MetaValue::Bool(false) => Some("False".to_owned()),
+        MetaValue::Int(number) => Some(number.to_string()),
+        MetaValue::Float(bits) => Some(python_float_str(f64::from_bits(*bits))),
+        MetaValue::Str(text) => Some(python_str_repr(text)),
+        MetaValue::List(items) => join_repr("[", "]", false, items),
+        MetaValue::Tuple(items) => join_repr("(", ")", true, items),
+        MetaValue::Map(map) => map_repr(map),
+        MetaValue::Bytes(_) | MetaValue::Set(_) | MetaValue::Object(_) => None,
+    }
+}
+
+fn join_repr(open: &str, close: &str, tuple: bool, items: &[MetaValue]) -> Option<String> {
+    let mut out = String::from(open);
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_meta_repr(item)?);
+    }
+    if tuple && items.len() == 1 {
+        out.push(',');
+    }
+    out.push_str(close);
+    Some(out)
+}
+
+fn map_repr(map: &MapValue) -> Option<String> {
+    let mut out = String::from("{");
+    for (index, (key, value)) in map.entries.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&key_repr(key)?);
+        out.push_str(": ");
+        out.push_str(&python_meta_repr(value)?);
+    }
+    out.push('}');
+    Some(out)
+}
+
+fn key_repr(key: &MapKey) -> Option<String> {
+    match key {
+        MapKey::Str(text) => Some(python_str_repr(text)),
+        MapKey::Int(number) => Some(number.to_string()),
+        MapKey::Bool(true) => Some("True".to_owned()),
+        MapKey::Bool(false) => Some("False".to_owned()),
+        MapKey::Null => Some("None".to_owned()),
+        MapKey::Float(bits) => Some(python_float_str(f64::from_bits(*bits))),
+        MapKey::Rendered(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        project_run_state, safe_type_value, AttrObject, MapKey, MapValue, MetaValue,
-        ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata, TruncationTotals,
-        MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS,
+        build_payload, detect_openai_agents, normalize_timestamp, normalize_version,
+        project_run_state, safe_type_value, AttrObject, BuildPayloadError, EventList, MapKey,
+        MapValue, MetaValue, ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata,
+        TruncationTotals, MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS, SQLITE_MAGIC,
+        STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
     };
-    use crate::safe_value::PyValue;
+    use crate::safe_value::{safe_discriminator, PyValue};
+    use model::canonical::SessionEvent;
 
     fn ix(index: usize) -> i64 {
         i64::try_from(index).expect("index fits")
@@ -1647,5 +2236,511 @@ mod tests {
         assert_eq!(item.seq, Some(SeqNumber::Small(8)));
         assert_eq!(item.hash, "<str:len=3>");
         assert!(item.ts);
+    }
+
+    fn record(fields: Vec<(&str, MetaValue)>) -> MapValue {
+        MapValue::new(
+            fields
+                .into_iter()
+                .map(|(key, value)| (MapKey::Str(key.to_owned()), value))
+                .collect(),
+        )
+    }
+
+    fn payload_of(obj: &MapValue, actor: &str, kind: &str, rec_id: &str) -> MapValue {
+        build_payload(obj, actor, kind, rec_id, &MetaValue::Null).expect("payload")
+    }
+
+    fn field<'a>(payload: &'a MapValue, key: &str) -> Option<&'a MetaValue> {
+        payload
+            .entries
+            .iter()
+            .rev()
+            .find(|(entry, _)| matches!(entry, MapKey::Str(text) if text == key))
+            .map(|(_, value)| value)
+    }
+
+    fn keys_of(payload: &MapValue) -> Vec<&str> {
+        payload
+            .entries
+            .iter()
+            .map(|(key, _)| match key {
+                MapKey::Str(text) => text.as_str(),
+                _ => "",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn event_list_keeps_its_own_source_metadata() {
+        let event = SessionEvent::new("e1", None, 0, "1970-01-01T00:00:00Z", "user", "message");
+        let listed = EventList::new(vec![event], None);
+        assert_eq!(listed.len(), 1);
+        assert!(!listed.is_empty());
+        assert!(listed.source.entries().is_empty());
+        assert_eq!(
+            listed.events().first().map(|item| item.id.as_str()),
+            Some("e1")
+        );
+        assert_eq!(
+            listed.events().first().map(|item| item.actor.as_str()),
+            Some("user")
+        );
+
+        let mut source = SourceMetadata::new();
+        source.insert("format", MetaValue::Str("openai-agents".to_owned()));
+        let kept = EventList::new(Vec::new(), Some(source));
+        assert!(kept.is_empty());
+        assert_eq!(kept.len(), 0);
+        assert_eq!(
+            kept.source.get("format"),
+            Some(&MetaValue::Str("openai-agents".to_owned()))
+        );
+        assert!(listed.source.entries().is_empty());
+    }
+
+    #[test]
+    fn normalize_version_strips_one_ascii_mark() {
+        assert_eq!(normalize_version("  V1.2.3 "), "1.2.3");
+        assert_eq!(normalize_version("V1.2-RC1"), "1.2-rc1");
+        assert_eq!(normalize_version("v"), "v");
+        assert_eq!(normalize_version("V"), "v");
+        assert_eq!(normalize_version("vv1"), "vv1");
+        assert_eq!(normalize_version("version"), "version");
+        assert_eq!(
+            normalize_version("  openai-agents-v1  "),
+            "openai-agents-v1"
+        );
+        assert_eq!(normalize_version("\u{00a0}v2"), "2");
+        assert_eq!(normalize_version("v\u{0662}"), "v\u{0662}");
+    }
+
+    #[test]
+    fn detect_openai_agents_uses_filename_magic_and_substrings() {
+        assert_eq!(SQLITE_MAGIC, b"SQLite format 3\x00");
+        assert_eq!(detect_openai_agents(br#"{"items":[]}"#, "notes.txt"), 0.0);
+        assert_eq!(detect_openai_agents(b"", "session.json"), 0.0);
+        assert_eq!(detect_openai_agents(SQLITE_MAGIC, "live.DB"), 1.0);
+        assert_eq!(detect_openai_agents(SQLITE_MAGIC, "live.sqlite"), 1.0);
+        assert_eq!(detect_openai_agents(SQLITE_MAGIC, "export.JSON"), 0.5);
+        assert_eq!(detect_openai_agents(br#"{"call_id":"c"}"#, "a.json"), 0.8);
+        assert_eq!(detect_openai_agents(br#"{"run_state":{}}"#, "a.jsonl"), 1.0);
+        assert_eq!(
+            detect_openai_agents(br#"{"items":[],"call_id":"c"}"#, "a.json"),
+            1.0
+        );
+        assert_eq!(
+            detect_openai_agents(br#"{"tool_call":1,"tool_result":2}"#, "a.json"),
+            0.8
+        );
+        assert_eq!(detect_openai_agents(b"hello", "session.json"), 0.2);
+        assert_eq!(detect_openai_agents(b"hello", "session.db"), 0.0);
+        let rollout = br#"{"type": "session_meta","items":[]}"#;
+        assert_eq!(detect_openai_agents(rollout, "rollout.jsonl"), 0.3);
+        assert_eq!(
+            detect_openai_agents(br#"{"type":"turn_context"}"#, "t.json"),
+            0.3
+        );
+        assert_eq!(detect_openai_agents(b"session_meta", "plain.json"), 0.2);
+        let mut late = vec![b'x'; 4096];
+        late.extend_from_slice(br#"{"items":[]}"#);
+        assert_eq!(detect_openai_agents(&late, "late.json"), 0.2);
+        let mut bom = vec![0xef, 0xbb, 0xbf];
+        bom.extend_from_slice(br#"{"items":1}"#);
+        assert_eq!(detect_openai_agents(&bom, "bom.JSON"), 0.8);
+    }
+
+    #[test]
+    fn normalize_timestamp_walks_the_iso_shape() {
+        let stamped = MetaValue::Str("  2020-01-01T00:00:00Z  ".to_owned());
+        assert_eq!(normalize_timestamp(&stamped), "2020-01-01T00:00:00Z");
+        let naive = MetaValue::Str("2020-13-40T99:99:99".to_owned());
+        assert_eq!(normalize_timestamp(&naive), "2020-13-40T99:99:99");
+        let fraction = MetaValue::Str("2020-01-01T00:00:00.123456789+05:30".to_owned());
+        assert_eq!(
+            normalize_timestamp(&fraction),
+            "2020-01-01T00:00:00.123456789+05:30"
+        );
+        let offset = MetaValue::Str("\u{00a0}2020-01-01T00:00:00-00:00".to_owned());
+        assert_eq!(normalize_timestamp(&offset), "2020-01-01T00:00:00-00:00");
+        let bare_fraction = MetaValue::Str("2020-01-01T00:00:00.0".to_owned());
+        assert_eq!(normalize_timestamp(&bare_fraction), "2020-01-01T00:00:00.0");
+        for raw in [
+            "nope",
+            "2020-01-01T00:00:00z",
+            "2020-01-01T00:00:00.Z",
+            "2020-01-01T00:00:00+0000",
+            "2020-01-01 00:00:00Z",
+            "",
+            "   ",
+            "2024-\u{0660}1-01T00:00:00Z",
+        ] {
+            assert_eq!(
+                normalize_timestamp(&MetaValue::Str(raw.to_owned())),
+                "1970-01-01T00:00:00Z",
+                "{raw}"
+            );
+        }
+        assert_eq!(
+            normalize_timestamp(&MetaValue::Null),
+            "1970-01-01T00:00:00Z"
+        );
+        assert_eq!(
+            normalize_timestamp(&MetaValue::Int(1)),
+            "1970-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn build_payload_follows_kind_and_stops_on_a_string_tool_input() {
+        let message = payload_of(
+            &record(vec![
+                ("content", MetaValue::Null),
+                ("message", MetaValue::Int(7)),
+            ]),
+            "user",
+            "message",
+            "r0",
+        );
+        assert_eq!(keys_of(&message), vec!["content", "role"]);
+        assert_eq!(field(&message, "content"), Some(&MetaValue::Int(7)));
+        assert_eq!(
+            field(&message, "role"),
+            Some(&MetaValue::Str("user".to_owned()))
+        );
+
+        let empty_name = payload_of(
+            &record(vec![
+                ("name", MetaValue::Str(String::new())),
+                ("tool_name", MetaValue::Str("real".to_owned())),
+                ("call_id", MetaValue::Str(String::new())),
+                ("tool_call_id", MetaValue::Str("other".to_owned())),
+                (
+                    "arguments",
+                    MetaValue::Map(record(vec![("q", MetaValue::Int(1))])),
+                ),
+            ]),
+            "assistant",
+            "tool_call",
+            "rec",
+        );
+        assert_eq!(
+            keys_of(&empty_name),
+            vec!["call_id", "input", "name", "tool_name", "tool_use_id"]
+        );
+        assert_eq!(
+            field(&empty_name, "name"),
+            Some(&MetaValue::Str(String::new()))
+        );
+        assert_eq!(
+            field(&empty_name, "call_id"),
+            Some(&MetaValue::Str(String::new()))
+        );
+        assert_eq!(
+            field(&empty_name, "input"),
+            Some(&MetaValue::Map(record(vec![("q", MetaValue::Int(1))])))
+        );
+
+        let named = payload_of(
+            &record(vec![
+                ("tool_name", MetaValue::Bool(false)),
+                ("args", MetaValue::Null),
+                (
+                    "input",
+                    MetaValue::List(vec![MetaValue::Int(1), MetaValue::Int(2)]),
+                ),
+            ]),
+            "assistant",
+            "tool_call",
+            "rec-9",
+        );
+        assert_eq!(
+            field(&named, "name"),
+            Some(&MetaValue::Str("False".to_owned()))
+        );
+        assert_eq!(
+            field(&named, "tool_use_id"),
+            Some(&MetaValue::Str("rec-9".to_owned()))
+        );
+        assert_eq!(
+            field(&named, "input"),
+            Some(&MetaValue::Map(record(vec![(
+                "value",
+                MetaValue::List(vec![MetaValue::Int(1), MetaValue::Int(2)])
+            )])))
+        );
+
+        let tuple_name = payload_of(
+            &record(vec![(
+                "function",
+                MetaValue::Tuple(vec![MetaValue::Int(1)]),
+            )]),
+            "assistant",
+            "tool_call",
+            "rec",
+        );
+        assert_eq!(
+            field(&tuple_name, "name"),
+            Some(&MetaValue::Str("(1,)".to_owned()))
+        );
+        assert_eq!(
+            field(&tuple_name, "input"),
+            Some(&MetaValue::Map(MapValue::new(Vec::new())))
+        );
+
+        let seam = build_payload(
+            &record(vec![
+                ("name", MetaValue::Str("search".to_owned())),
+                ("args", MetaValue::Str("{\"q\":1}".to_owned())),
+                (
+                    "arguments",
+                    MetaValue::Map(record(vec![("q", MetaValue::Int(1))])),
+                ),
+            ]),
+            "assistant",
+            "tool_call",
+            "rec",
+            &MetaValue::Null,
+        );
+        let err = seam.expect_err("string input requires the decoder");
+        assert_eq!(err, BuildPayloadError::Unavailable);
+        assert_eq!(err.to_string(), STRICT_JSON_DECODE_UNAVAILABLE);
+        assert_eq!(
+            err.to_string(),
+            "sesslint.io._STRICT_JSON_DECODER.decode is not available"
+        );
+
+        let empty_string = build_payload(
+            &record(vec![
+                ("args", MetaValue::Null),
+                ("arguments", MetaValue::Str(String::new())),
+            ]),
+            "assistant",
+            "tool_call",
+            "rec",
+            &MetaValue::Str("ignored".to_owned()),
+        );
+        assert_eq!(
+            empty_string
+                .expect_err("empty string still calls decode")
+                .to_string(),
+            STRICT_JSON_DECODE_UNAVAILABLE
+        );
+
+        let bytes_and_string = build_payload(
+            &record(vec![
+                ("name", MetaValue::Bytes(4)),
+                ("args", MetaValue::Str("{}".to_owned())),
+            ]),
+            "assistant",
+            "tool_call",
+            "rec",
+            &MetaValue::Null,
+        );
+        assert_eq!(
+            bytes_and_string
+                .expect_err("decode is required first")
+                .to_string(),
+            STRICT_JSON_DECODE_UNAVAILABLE
+        );
+
+        let bytes_name = build_payload(
+            &record(vec![("name", MetaValue::Bytes(4))]),
+            "assistant",
+            "tool_call",
+            "rec",
+            &MetaValue::Null,
+        );
+        let unrendered = bytes_name.expect_err("bytes have no str()");
+        assert_eq!(unrendered, BuildPayloadError::Unrendered);
+        assert_eq!(unrendered.to_string(), STR_UNRENDERED);
+        assert_ne!(unrendered.to_string(), STRICT_JSON_DECODE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn build_payload_covers_the_other_kinds() {
+        let result = payload_of(
+            &record(vec![
+                ("content", MetaValue::Null),
+                ("output", MetaValue::Str("out".to_owned())),
+                ("is_error", MetaValue::Bool(false)),
+                ("error", MetaValue::Bool(true)),
+                ("tool_call_id", MetaValue::Int(3)),
+            ]),
+            "tool",
+            "tool_result",
+            "rec",
+        );
+        assert_eq!(
+            keys_of(&result),
+            vec!["call_id", "content", "is_error", "tool_use_id"]
+        );
+        assert_eq!(
+            field(&result, "call_id"),
+            Some(&MetaValue::Str("3".to_owned()))
+        );
+        assert_eq!(
+            field(&result, "content"),
+            Some(&MetaValue::Str("out".to_owned()))
+        );
+        assert_eq!(field(&result, "is_error"), Some(&MetaValue::Bool(false)));
+
+        let flagged = payload_of(
+            &record(vec![("error", MetaValue::Str("x".to_owned()))]),
+            "tool",
+            "tool_result",
+            "rec",
+        );
+        assert_eq!(
+            field(&flagged, "call_id"),
+            Some(&MetaValue::Str(String::new()))
+        );
+        assert_eq!(field(&flagged, "is_error"), Some(&MetaValue::Bool(true)));
+        assert_eq!(
+            field(&flagged, "content"),
+            Some(&MetaValue::Str(String::new()))
+        );
+
+        let reason = MetaValue::Str("user_ok".to_owned());
+        let handoff = payload_of(
+            &record(vec![
+                ("target", MetaValue::Null),
+                ("agent", MetaValue::Int(1)),
+                ("reason", reason),
+            ]),
+            "assistant",
+            "handoff",
+            "rec",
+        );
+        let (expected, truncated) = safe_discriminator(PyValue::Str("user_ok"));
+        assert!(!truncated);
+        assert_eq!(keys_of(&handoff), vec!["target", "reason"]);
+        assert_eq!(
+            field(&handoff, "target"),
+            Some(&MetaValue::Str("1".to_owned()))
+        );
+        assert_eq!(field(&handoff, "reason"), Some(&MetaValue::Str(expected)));
+
+        let shaped = payload_of(
+            &record(vec![
+                ("handoff_to", MetaValue::Str("agent".to_owned())),
+                ("reason", MetaValue::Null),
+            ]),
+            "assistant",
+            "handoff",
+            "rec",
+        );
+        let (none_shape, none_truncated) = safe_discriminator(PyValue::None);
+        assert!(none_truncated);
+        assert_eq!(
+            field(&shaped, "target"),
+            Some(&MetaValue::Str("agent".to_owned()))
+        );
+        assert_eq!(field(&shaped, "reason"), Some(&MetaValue::Str(none_shape)));
+
+        let bare = payload_of(&MapValue::new(Vec::new()), "assistant", "handoff", "rec");
+        assert_eq!(keys_of(&bare), vec!["target"]);
+        assert_eq!(field(&bare, "target"), Some(&MetaValue::Null));
+
+        let checkpoint = payload_of(
+            &record(vec![
+                ("id", MetaValue::Str("cp".to_owned())),
+                ("seq", MetaValue::Null),
+                ("hash", MetaValue::Null),
+                (
+                    "state",
+                    MetaValue::Map(record(vec![("k", MetaValue::Int(1))])),
+                ),
+            ]),
+            "system",
+            "checkpoint",
+            "fallback",
+        );
+        assert_eq!(
+            keys_of(&checkpoint),
+            vec!["checkpoint_id", "seq", "hash", "state"]
+        );
+        assert_eq!(
+            field(&checkpoint, "checkpoint_id"),
+            Some(&MetaValue::Str("cp".to_owned()))
+        );
+        assert_eq!(field(&checkpoint, "seq"), Some(&MetaValue::Null));
+        assert_eq!(
+            field(&checkpoint, "hash"),
+            Some(&MetaValue::Str("None".to_owned()))
+        );
+
+        let fallback_id = payload_of(&MapValue::new(Vec::new()), "system", "checkpoint", "rec-id");
+        assert_eq!(
+            field(&fallback_id, "checkpoint_id"),
+            Some(&MetaValue::Str("rec-id".to_owned()))
+        );
+        assert_eq!(keys_of(&fallback_id), vec!["checkpoint_id"]);
+
+        let summary = payload_of(
+            &record(vec![
+                ("summary", MetaValue::Null),
+                ("content", MetaValue::Int(3)),
+            ]),
+            "system",
+            "compaction_boundary",
+            "rec",
+        );
+        assert_eq!(
+            field(&summary, "summary"),
+            Some(&MetaValue::Str("3".to_owned()))
+        );
+
+        let blank = payload_of(
+            &MapValue::new(Vec::new()),
+            "system",
+            "compaction_boundary",
+            "rec",
+        );
+        assert_eq!(
+            field(&blank, "summary"),
+            Some(&MetaValue::Str(String::new()))
+        );
+
+        let unknown = build_payload(
+            &MapValue::new(Vec::new()),
+            "system",
+            "unknown",
+            "rec",
+            &MetaValue::Null,
+        )
+        .expect("unknown");
+        assert_eq!(
+            field(&unknown, "type"),
+            Some(&MetaValue::Str("<missing>".to_owned()))
+        );
+        let typed = build_payload(
+            &MapValue::new(Vec::new()),
+            "system",
+            "unknown",
+            "rec",
+            &MetaValue::Str("widget".to_owned()),
+        )
+        .expect("typed");
+        assert_eq!(
+            field(&typed, "type"),
+            Some(&MetaValue::Str("widget".to_owned()))
+        );
+
+        let passed = payload_of(
+            &record(vec![("content", MetaValue::Str("hi".to_owned()))]),
+            "assistant",
+            "function_call",
+            "rec",
+        );
+        assert_eq!(keys_of(&passed), vec!["content", "role"]);
+        assert_eq!(
+            field(&passed, "content"),
+            Some(&MetaValue::Str("hi".to_owned()))
+        );
+        assert_eq!(
+            field(&passed, "role"),
+            Some(&MetaValue::Str("assistant".to_owned()))
+        );
     }
 }
