@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.vetting parity (_plan_step_identity json.dumps seam, source_hash checks, planner register_all seam).",
+  "generator": "rust/parity/vectors/repair.vetting/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-vetting-json-dumps: _plan_step_identity calls json.dumps(sort_keys=True, separators=(',', ':')). Rust returns json.dumps is not available and does not emit canonical JSON text.",
+    "GAP-vetting-register-all: vet_plan calls planner_plan, which imports sesslint.repair.recipes_conservative.register_all. Rust stops at that seam and does not compare supplied steps to the derived plan.",
+    "GAP-vetting-step-comparison: after planner_plan returns, Python compares each supplied step via _plan_step_identity and may raise RepairRefused. Rust never reaches step comparison because register_all is unavailable."
+  ]
+}

@@ -1,0 +1,167 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._seal",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "seal_py_sha256": "bf42016fea0eece1a96633ce6877a785d03da0f62a870fd87a88a06637eefc1c",
+  "vectors": [
+    {
+      "id": "unsupported_prefix_wins_over_sl301_and_errors",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "Unsupported: synthetic-adapter",
+        "by_code": {
+          "SL301": 1
+        },
+        "by_severity": {
+          "error": 3,
+          "fatal": 1
+        }
+      },
+      "expected": {
+        "verdict": "unsupported"
+      }
+    },
+    {
+      "id": "skipped_prefix_wins_over_sl301_and_errors",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "Skipped: synthetic-skip",
+        "by_code": {
+          "SL301": 1
+        },
+        "by_severity": {
+          "error": 2
+        }
+      },
+      "expected": {
+        "verdict": "skipped"
+      }
+    },
+    {
+      "id": "limitation_without_colon_unsupported_not_prefix",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "Unsupported",
+        "by_code": {},
+        "by_severity": {}
+      },
+      "expected": {
+        "verdict": "healthy"
+      }
+    },
+    {
+      "id": "limitation_without_colon_skipped_not_prefix",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "Skipped",
+        "by_code": {},
+        "by_severity": {}
+      },
+      "expected": {
+        "verdict": "healthy"
+      }
+    },
+    {
+      "id": "sl301_nonzero_is_unsupported",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "",
+        "by_code": {
+          "SL301": 1
+        },
+        "by_severity": {
+          "error": 9
+        }
+      },
+      "expected": {
+        "verdict": "unsupported"
+      }
+    },
+    {
+      "id": "sl301_zero_does_not_force_unsupported",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "",
+        "by_code": {
+          "SL301": 0
+        },
+        "by_severity": {
+          "error": 1
+        }
+      },
+      "expected": {
+        "verdict": "invalid"
+      }
+    },
+    {
+      "id": "sl301_missing_does_not_force_unsupported",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "",
+        "by_code": {
+          "SL001": 2
+        },
+        "by_severity": {}
+      },
+      "expected": {
+        "verdict": "healthy"
+      }
+    },
+    {
+      "id": "error_or_fatal_greater_than_zero_is_invalid",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "",
+        "by_code": {},
+        "by_severity": {
+          "error": 1,
+          "fatal": 1
+        }
+      },
+      "expected": {
+        "verdict": "invalid"
+      }
+    },
+    {
+      "id": "warning_only_counts_stay_healthy",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "synthetic-ok",
+        "by_code": {
+          "SL001": 2
+        },
+        "by_severity": {
+          "warning": 4,
+          "info": 4,
+          "error": 0,
+          "fatal": 0
+        }
+      },
+      "expected": {
+        "verdict": "healthy"
+      }
+    },
+    {
+      "id": "healthy_empty_report",
+      "construct": {
+        "type": "check_seal_verdict",
+        "limitation": "",
+        "by_code": {},
+        "by_severity": {}
+      },
+      "expected": {
+        "verdict": "healthy"
+      }
+    },
+    {
+      "id": "maybe_append_seal_absent_returns_none",
+      "construct": {
+        "type": "maybe_append_seal_absent"
+      },
+      "expected": {
+        "result": "none",
+        "ledger_unchanged": true
+      }
+    }
+  ]
+}

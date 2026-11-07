@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.refusals",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "refusals_rs_sha256": "0b534e8290a41b4f8363d535f693eb9845f2b9b50da1ce2a1962ff1091b5ee03",
+  "vector_count": 15,
+  "vectors_sha256": "1ebc8a665b33c6b9766d89e2c5bc9929eaa86458844c9bd9a7a3233dc6a39470",
+  "generator": "rust/parity/vectors/repair.refusals/generate",
+  "known_parity_gaps": [
+    "Citation digit runs: Python re \\d matches Unicode category Nd (e.g. U+0661); Rust accepts ASCII digits only \u2014 parity not required for those citations.",
+    "RefusalRationale with a non-str rationale: Python __post_init__ raises ValueError; Rust RefusalRationale::try_new takes &str \u2014 parity not required for that branch.",
+    "REFUSAL_CODES: Python frozenset iteration order is not a contract; vectors record sorted membership only \u2014 parity not required on iteration order.",
+    "refusal_rationale_for: Python returns Optional; invalid rows fail at import. Rust returns Result because a bad registered row must not become None \u2014 parity on that API shape is not required here."
+  ]
+}

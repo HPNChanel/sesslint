@@ -1,0 +1,170 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.reference",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "reference_py_sha256": "b2ade3002b062600b5653e85d707c6b1ea4836ce182066da73dc82f7037ffeb5",
+  "reference_rs_sha256": "81a1f10ce7f76b64273facd56c985c6ca281fd6b42ce5da7a6f02c9677dc2d03",
+  "known_parity_gaps": [
+    "GAP-reference-dump-canonical: reference_equivalent and reference_equivalent_if_clean on non-empty inputs at or below MAX_REFERENCE_EVENTS call sesslint.adapters.canonical.dump_canonical. Rust returns DumpCanonicalUnavailable and does not call dump_canonical or load_canonical. The harness asserts that seam and does not treat pin success as equal to the seam."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "MAX_REFERENCE_EVENTS",
+          "reference_equivalent",
+          "reference_equivalent_if_clean"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "max_reference_events": 50000
+      }
+    },
+    {
+      "id": "ref_equiv_none",
+      "construct": {
+        "type": "reference_equivalent",
+        "events_kind": "none"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_equiv_empty",
+      "construct": {
+        "type": "reference_equivalent",
+        "events_kind": "empty"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_equiv_over_cap",
+      "construct": {
+        "type": "reference_equivalent",
+        "events_kind": "over_cap"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_equiv_foreign",
+      "construct": {
+        "type": "reference_equivalent",
+        "events_kind": "foreign"
+      },
+      "expected": {
+        "pin": {
+          "value": false
+        },
+        "rust_assertion": {
+          "mode": "gap_dump_canonical"
+        }
+      }
+    },
+    {
+      "id": "ref_if_clean_empty_list",
+      "construct": {
+        "type": "reference_equivalent_if_clean",
+        "events_kind": "empty",
+        "findings": []
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_if_clean_over_cap",
+      "construct": {
+        "type": "reference_equivalent_if_clean",
+        "events_kind": "over_cap",
+        "findings": []
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_if_clean_blocking_warning",
+      "construct": {
+        "type": "reference_equivalent_if_clean",
+        "events_kind": "fixture_healthy",
+        "findings": [
+          {
+            "code": "SL003",
+            "severity": "warning",
+            "repairability": "manual",
+            "message_template": "Matrix probe [detail: X]",
+            "source_path": "probe.json"
+          }
+        ]
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_if_clean_blocking_error",
+      "construct": {
+        "type": "reference_equivalent_if_clean",
+        "events_kind": "fixture_healthy",
+        "findings": [
+          {
+            "code": "SL001",
+            "severity": "error",
+            "repairability": "manual",
+            "message_template": "Matrix probe [detail: X]",
+            "source_path": "probe.json"
+          }
+        ]
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "ref_equiv_healthy_gap",
+      "construct": {
+        "type": "reference_equivalent",
+        "events_kind": "fixture_healthy"
+      },
+      "expected": {
+        "pin": {
+          "value": true
+        },
+        "rust_assertion": {
+          "mode": "gap_dump_canonical"
+        }
+      }
+    },
+    {
+      "id": "ref_if_clean_healthy_gap",
+      "construct": {
+        "type": "reference_equivalent_if_clean",
+        "events_kind": "fixture_healthy",
+        "findings": []
+      },
+      "expected": {
+        "pin": {
+          "value": true
+        },
+        "rust_assertion": {
+          "mode": "gap_dump_canonical"
+        }
+      }
+    }
+  ]
+}

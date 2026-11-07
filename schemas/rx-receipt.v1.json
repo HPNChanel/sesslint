@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/rx-receipt/v1",
+  "title": "Rust convergence gate receipt v1",
+  "description": "Machine-readable receipt for rx_gates and related harness runs (CURSOR_PLAN appendix B).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "task",
+    "lane",
+    "verdict",
+    "diagnostic_only",
+    "host",
+    "toolchain",
+    "revision",
+    "sources",
+    "commands",
+    "measurements",
+    "notes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "rx-receipt/v1"
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lane": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "INCONCLUSIVE"]
+    },
+    "diagnostic_only": {
+      "type": "boolean"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "cpu", "vcpu", "os"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["docker-cloud", "windows-host", "ubuntu-host"]
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vcpu": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "os": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kernel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mem_gib": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rustc", "python"],
+      "properties": {
+        "rustc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string"
+        }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "commit", "dirty"],
+      "properties": {
+        "repo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "dirty": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cmd", "exit", "pass", "fail", "skip", "log"],
+        "properties": {
+          "cmd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exit": {
+            "type": "integer"
+          },
+          "pass": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "fail": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "skip": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "log": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "values", "budget"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "budget": {
+            "type": ["number", "null"]
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

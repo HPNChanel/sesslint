@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.completion",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "completion_py_sha256": "bb1b7b66ecd39557e425b87c0173d6dc30d55aa0477b3153406d491a62a56c54",
+  "completion_rs_sha256": "d49cb1c9ee7f146b21cf72b173fa62435349ffa542acd37e67f0ff16c31ab2bd",
+  "vector_count": 37,
+  "vectors_sha256": "f6084d4c4124457e1f01de0ed358ce58e9b57b539a4f1d3302b307fefdc86fe2",
+  "generator": "rust/parity/vectors/completion/generate",
+  "known_parity_gaps": [
+    "GAP-completion-profile-choices: Python _profile_choices imports sesslint.profiles.list_profiles; Rust profile_choices returns ListProfilesUnavailable (not byte-compared here).",
+    "GAP-completion-create-parser: Python generate_completion(parser=None) imports sesslint.cli.create_parser; Rust returns CreateParserUnavailable (not byte-compared here).",
+    "GAP-completion-harvest-profile-live: Python harvest with --profile and no fixed choices calls _profile_choices; Rust harvest_parser returns ListProfilesUnavailable (not byte-compared here)."
+  ]
+}

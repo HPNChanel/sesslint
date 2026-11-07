@@ -1,0 +1,841 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.hygiene module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+HYGIENE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+HYGIENE_RS_SHA256 = (
+    "e353fd94ef34279648afa57ba9b699a74d47053b9d699064528ee58a6257387c"
+)
+MODULE = "sesslint.checks.hygiene"
+GATE_WINDOW_BYTES = 65_536
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "When SecretScanTracker has hits, into_findings calls make_finding with the "
+    "fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Vectors "
+    "compare evidence_rows (or empty into_findings) only — not Python Finding objects.",
+    "Empty tracker into_findings returns an empty list on both sides without calling "
+    "make_finding on the Rust hit path.",
+)
+
+_BANNED_LIVE_TEST = re.compile(rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_hygiene_py_blob() -> None:
+    pin = git_show_blob(f"{HYGIENE_PY_PIN}:src/sesslint/checks/hygiene.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/hygiene.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/hygiene.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_hygiene_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "hygiene.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != HYGIENE_RS_SHA256:
+        raise SystemExit(
+            "checks/src/hygiene.rs sha256 mismatch: "
+            f"expected {HYGIENE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_hygiene_module() -> types.ModuleType:
+    verify_hygiene_py_blob()
+    verify_hygiene_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{HYGIENE_PY_PIN}:src/sesslint/checks/hygiene.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_hygiene.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location("_sesslint_checks_hygiene_parity", tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned hygiene.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def bytes_hex(data: bytes) -> dict[str, Any]:
+    return {"kind": "bytes_hex", "hex": data.hex()}
+
+
+def decode_bytes_hex(obj: dict[str, Any]) -> bytes:
+    if obj.get("kind") != "bytes_hex":
+        raise SystemExit("expected bytes_hex")
+    hx = str(obj.get("hex", ""))
+    if len(hx) % 2:
+        raise SystemExit("odd hex")
+    return bytes.fromhex(hx) if hx else b""
+
+
+def assemble_recipe(recipe: dict[str, Any]) -> bytes:
+    out = bytearray()
+    if "lead" in recipe:
+        out.extend(decode_bytes_hex(recipe["lead"]))
+    pad = recipe.get("padding_length")
+    if pad is not None:
+        fill = int(recipe["fill_byte"])
+        out.extend(bytes([fill]) * int(pad))
+    if "gate_literal_hex" in recipe:
+        out.extend(bytes.fromhex(str(recipe["gate_literal_hex"])))
+    if recipe.get("body_length") is not None:
+        fill = int(recipe["fill_byte"])
+        out.extend(bytes([fill]) * int(recipe["body_length"]))
+    if "tail" in recipe:
+        out.extend(decode_bytes_hex(recipe["tail"]))
+    return bytes(out)
+
+
+def scan_committed_text(text: str) -> None:
+    if _BANNED_LIVE_TEST.search(text.encode("utf-8")):
+        raise SystemExit("committed output matches banned live/test secret shape")
+
+
+def tracker_feed(
+    tracker: Any,
+    raw: bytes,
+    line: int | None,
+    ordinal: int | None,
+    byte_offset: int | None,
+    byte_end: int | None,
+) -> None:
+    tracker.feed(
+        raw,
+        line_number=line,
+        byte_offset=byte_offset,
+        byte_end=byte_end,
+        record_ordinal=ordinal,
+    )
+
+
+def evidence_rows_from_tracker(mod: Any, tracker: Any) -> list[dict[str, Any]]:
+    tracker._flush_pending()
+    if not tracker._hits:
+        return []
+    ordered = sorted(
+        tracker._hits.items(),
+        key=lambda kv: (
+            kv[0][1] if kv[0][1] is not None else -1,
+            kv[0][0] if kv[0][0] is not None else -1,
+            kv[0][4],
+        ),
+    )
+    suppressed = max(0, len(ordered) - mod.MAX_SECRET_FINDINGS_PER_FILE)
+    emitted = ordered[: mod.MAX_SECRET_FINDINGS_PER_FILE]
+    rows: list[dict[str, Any]] = []
+    for idx, ((ordinal, line, byte_off, byte_end, family), agg) in enumerate(emitted):
+        digests = sorted(agg.digests)[: mod.MAX_DIGESTS_PER_FINDING]
+        truncated = len(agg.digests) > mod.MAX_DIGESTS_PER_FINDING or (
+            suppressed and idx == len(emitted) - 1
+        )
+        overflow = suppressed if (suppressed and idx == len(emitted) - 1) else None
+        rows.append(
+            {
+                "family": family,
+                "occurrence_count": agg.count,
+                "match_sha256": digests,
+                "match_len": agg.max_len,
+                "line": line,
+                "ordinal": ordinal,
+                "byte_offset": byte_off,
+                "byte_end": byte_end,
+                "truncated": bool(truncated),
+                "overflow": overflow,
+            }
+        )
+    return rows
+
+
+def openai_recipe(fill: int, body: int) -> dict[str, Any]:
+    return {
+        "lead": bytes_hex(b""),
+        "gate_literal_hex": "736b2d",
+        "body_length": body,
+        "fill_byte": fill,
+        "tail": bytes_hex(b""),
+    }
+
+
+def bearer_recipe() -> dict[str, Any]:
+    return {
+        "lead": bytes_hex(b"Bearer "),
+        "body_length": 16,
+        "fill_byte": ord("d"),
+        "tail": bytes_hex(b""),
+    }
+
+
+def telegram_recipe() -> dict[str, Any]:
+    return {
+        "lead": bytes_hex(b"12345678:"),
+        "body_length": 35,
+        "fill_byte": ord("a"),
+        "tail": bytes_hex(b""),
+    }
+
+
+def pem_recipe() -> dict[str, Any]:
+    return {
+        "lead": bytes_hex(b"-----BEGIN PRIVATE KEY-----"),
+        "tail": bytes_hex(b""),
+    }
+
+
+def assignment_tail(value_hex: str) -> dict[str, Any]:
+    return {
+        "lead": bytes_hex(b"token: "),
+        "tail": bytes_hex(bytes.fromhex(value_hex)),
+    }
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    expected_all = list(mod.__all__)
+    out.append(
+        {
+            "id": "module_exports_and_constants",
+            "construct": {"type": "hygiene_module_exports"},
+            "expected": {
+                "python_all": expected_all,
+                "SECRET_FAMILY_SET_VERSION": mod.SECRET_FAMILY_SET_VERSION,
+                "MAX_SECRET_FINDINGS_PER_FILE": mod.MAX_SECRET_FINDINGS_PER_FILE,
+                "MAX_DIGESTS_PER_FINDING": mod.MAX_DIGESTS_PER_FINDING,
+                "GATE_WINDOW_BYTES": GATE_WINDOW_BYTES,
+                "SECRET_FAMILY_IDS_len": len(mod.SECRET_FAMILY_IDS),
+            },
+        }
+    )
+
+    short_cases: list[tuple[bytes, bool]] = [
+        (b"npm_", True),
+        (b"anpm_", False),
+        (b" npm_", True),
+        (b"1hf_", False),
+        (b".hf_", True),
+        (b"hf_", True),
+        (b"NPM_", False),
+        (b"Hf_", False),
+        (b"xoxb-", True),
+        (b"xoxB-", False),
+        (b"xoxb", False),
+        (b"XOXB-", False),
+        (b"zxoxb-", False),
+        (b" xoxb-", True),
+        (b"\\nnpm_", True),
+        (b"\\xnpm_", False),
+        (b"\\npm_", True),
+        (b"\\nxoxb-", True),
+        (b"\nnpm_", True),
+        (b"_npm_", False),
+        (b"-npm_", False),
+        (b"xox!xoxb-", True),
+        (b"xoxoxb-", False),
+        (b"", False),
+        (b"hf_hf_", True),
+        (b"anpm_ hf_", True),
+    ]
+    for idx, (raw, _) in enumerate(short_cases):
+        got = mod._short_prefix_present(raw)
+        out.append(
+            {
+                "id": f"short_prefix_{idx:02d}",
+                "construct": {
+                    "type": "hygiene_bool_fn",
+                    "fn": "short_prefix_present",
+                    "input": bytes_hex(raw),
+                },
+                "expected": {"value": got},
+            }
+        )
+
+    for letter in b"nrtbf":
+        raw = bytes([92, letter]) + b"hf_"
+        got = mod._short_prefix_present(raw)
+        out.append(
+            {
+                "id": f"short_prefix_escape_{chr(letter)}",
+                "construct": {
+                    "type": "hygiene_bool_fn",
+                    "fn": "short_prefix_present",
+                    "input": bytes_hex(raw),
+                },
+                "expected": {"value": got},
+            }
+        )
+
+    kw_cases: list[tuple[bytes, bool]] = [
+        (b"password:", True),
+        (b"passwd=", True),
+        (b"key:", True),
+        (b"secret=", True),
+        (b"token:", True),
+        (b"KEY:", False),
+        (b"Token:", False),
+        (b"key", False),
+        (b"key   :", True),
+        (b"key\t=", True),
+        (b"key\r\n:", True),
+        (b"key\"':", True),
+        (b"key.-:", True),
+        (b"key\\:", True),
+        (b"keyboard:", False),
+        (b"mykey:", True),
+        (b"keyx:", False),
+        (b"xxkey=", True),
+        (b"passwordx token:", True),
+        (b"secret\n=", True),
+        (b"", False),
+        (b"key : =", True),
+    ]
+    for idx, (raw, _) in enumerate(kw_cases):
+        got = mod._kw_assignment_present(raw)
+        out.append(
+            {
+                "id": f"kw_assignment_{idx:02d}",
+                "construct": {
+                    "type": "hygiene_bool_fn",
+                    "fn": "kw_assignment_present",
+                    "input": bytes_hex(raw),
+                },
+                "expected": {"value": got},
+            }
+        )
+
+    gate_cases: list[tuple[bytes, bool]] = [
+        (b"sk-", True),
+        (b"k_live_", True),
+        (b"k_test_", True),
+        (b"AKIA", True),
+        (b"eyJ", True),
+        (b"-----BEGIN", True),
+        (b"\xffsk-\xff", True),
+        (b"SK-", False),
+        (b"eyj", False),
+        (b"k_live", False),
+        (b"", False),
+        (b":" + b"a" * 35, True),
+        (b":" + b"a" * 34, False),
+        (b"bearer", True),
+        (b"BEARER", True),
+        (b"bear", False),
+    ]
+    for idx, (raw, _) in enumerate(gate_cases):
+        gate = mod._gate_maybe_contains_secret(raw)
+        line = mod._line_gate_maybe_contains_secret(raw)
+        if gate != line:
+            raise SystemExit(f"gate/line mismatch on {raw!r}")
+        out.append(
+            {
+                "id": f"gate_{idx:02d}",
+                "construct": {
+                    "type": "hygiene_gate",
+                    "input": bytes_hex(raw),
+                },
+                "expected": {"gate": gate, "line_gate": line},
+            }
+        )
+
+    shadow_cases: list[tuple[bytes, bytes, bool]] = [
+        (b"abc", b"abc", True),
+        (b"", b"", True),
+        (b"\\n", b"  ", False),
+        (b"a\\nb", b"a  b", False),
+        (b"\\\\\\n", b"\\\\  ", False),
+    ]
+    for idx, (raw, _exp, borrowed) in enumerate(shadow_cases):
+        sh = mod._json_escape_boundary_shadow(raw)
+        same = sh is raw
+        if same != borrowed:
+            raise SystemExit(f"shadow borrow mismatch {raw!r}")
+        out.append(
+            {
+                "id": f"json_escape_shadow_{idx:02d}",
+                "construct": {
+                    "type": "hygiene_json_shadow",
+                    "input": bytes_hex(raw),
+                },
+                "expected": {
+                    "shadow": bytes_hex(bytes(sh)),
+                    "borrowed": same,
+                },
+            }
+        )
+
+    ph_cases: list[tuple[bytes, bool]] = [
+        (b"", True),
+        (b"secret", True),
+        (b"short", True),
+        (b"12345678", False),
+        (b"abababab", True),
+        (b"abcabcab", False),
+        (b"<REDACTED>", True),
+        (b"changeme", True),
+        (b"credential-value", False),
+    ]
+    for idx, (raw, _) in enumerate(ph_cases):
+        got = mod._looks_like_placeholder(raw)
+        out.append(
+            {
+                "id": f"placeholder_{idx:02d}",
+                "construct": {
+                    "type": "hygiene_bool_fn",
+                    "fn": "looks_like_placeholder",
+                    "input": bytes_hex(raw),
+                },
+                "expected": {"value": got},
+            }
+        )
+
+    # --- tracker scenarios (synthetic recipes only) ---
+    quiet = mod.SecretScanTracker()
+    tracker_feed(quiet, b"", 1, 0, 0, 0)
+    tracker_feed(quiet, b"nothing here", 1, None, None, None)
+    empty_rows = evidence_rows_from_tracker(mod, quiet)
+    if empty_rows:
+        raise SystemExit("quiet tracker expected no rows")
+    if quiet.into_findings(path_str="synth.jsonl"):
+        raise SystemExit("quiet into_findings should be empty")
+    out.append(
+        {
+            "id": "tracker_empty_and_quiet",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "raw": bytes_hex(b""),
+                        "line": 1,
+                        "ordinal": 0,
+                        "byte_offset": 0,
+                        "byte_end": 0,
+                    },
+                    {
+                        "raw": bytes_hex(b"nothing here"),
+                        "line": 1,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    },
+                ],
+            },
+            "expected": {
+                "rows_len": 0,
+                "into_findings_len": 0,
+            },
+        }
+    )
+
+    token = assemble_recipe(openai_recipe(ord("q"), 20))
+    pad = GATE_WINDOW_BYTES - len(token) - 1
+    big_recipe = {
+        "lead": bytes_hex(b""),
+        "padding_length": pad,
+        "fill_byte": ord("z"),
+        "tail": bytes_hex(b" " + token),
+    }
+    tracker = mod.SecretScanTracker()
+    big = assemble_recipe(big_recipe)
+    tracker_feed(tracker, big, 4, 7, 0, len(big))
+    tracker_feed(tracker, b"later", 5, None, None, None)
+    rows = evidence_rows_from_tracker(mod, tracker)
+    out.append(
+        {
+            "id": "tracker_window_flush_then_hit",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "recipe": big_recipe,
+                        "line": 4,
+                        "ordinal": 7,
+                        "byte_offset": 0,
+                        "byte_end": len(big),
+                    },
+                    {
+                        "raw": bytes_hex(b"later"),
+                        "line": 5,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    },
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    tok = assemble_recipe(openai_recipe(ord("m"), 20))
+    tr = mod.SecretScanTracker()
+    tracker_feed(tr, b"clean line", 1, 0, 0, 10)
+    tracker_feed(tr, tok, 2, 1, 11, 40)
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_line_gate_skips_clean_record",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "raw": bytes_hex(b"clean line"),
+                        "line": 1,
+                        "ordinal": 0,
+                        "byte_offset": 0,
+                        "byte_end": 10,
+                    },
+                    {
+                        "recipe": openai_recipe(ord("m"), 20),
+                        "line": 2,
+                        "ordinal": 1,
+                        "byte_offset": 11,
+                        "byte_end": 40,
+                    },
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    esc_raw = assemble_recipe(
+        {
+            "lead": bytes_hex(b"x\\n"),
+            **{k: v for k, v in openai_recipe(ord("a"), 20).items() if k != "lead"},
+        }
+    )
+    tr = mod.SecretScanTracker()
+    tracker_feed(tr, esc_raw, 1, None, None, None)
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_json_escape_enables_match",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "recipe": {
+                            "lead": bytes_hex(b"x\\n"),
+                            "gate_literal_hex": "736b2d",
+                            "body_length": 20,
+                            "fill_byte": ord("a"),
+                            "tail": bytes_hex(b""),
+                        },
+                        "line": 1,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    }
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    skip = mod.SecretScanTracker()
+    tracker_feed(skip, assemble_recipe(assignment_tail("70617373776f7264")), 1, None, None, None)
+    tracker_feed(skip, assemble_recipe(assignment_tail("7878787878787878")), 2, None, None, None)
+    tracker_feed(skip, b"token: your-secret-value", 3, None, None, None)
+    if evidence_rows_from_tracker(mod, skip):
+        raise SystemExit("placeholder feed should be silent")
+    out.append(
+        {
+            "id": "tracker_placeholder_assignments_silent",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "recipe": assignment_tail("70617373776f7264"),
+                        "line": 1,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    },
+                    {
+                        "recipe": assignment_tail("7878787878787878"),
+                        "line": 2,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    },
+                    {
+                        "raw": bytes_hex(b"token: your-secret-value"),
+                        "line": 3,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    },
+                ],
+            },
+            "expected": {"rows_len": 0, "into_findings_len": 0},
+        }
+    )
+
+    case_val = b"AbcdEfgh"
+    case_raw = b"TOKEN: " + case_val
+    tr = mod.SecretScanTracker()
+    tracker_feed(tr, case_raw, 8, None, None, None)
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_generic_preserves_case_digest",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "raw": bytes_hex(case_raw),
+                        "line": 8,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    }
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    short = assemble_recipe(openai_recipe(ord("a"), 20))
+    long = assemble_recipe(openai_recipe(ord("b"), 25))
+    agg_raw = short + b" " + long + b" token: real-value token: other-value"
+    tr = mod.SecretScanTracker()
+    tracker_feed(tr, agg_raw, 3, 4, 1, 2)
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_aggregates_per_family",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "raw": bytes_hex(agg_raw),
+                        "line": 3,
+                        "ordinal": 4,
+                        "byte_offset": 1,
+                        "byte_end": 2,
+                    }
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    tr = mod.SecretScanTracker()
+    tracker_feed(tr, assemble_recipe(openai_recipe(ord("c"), 20)), 2, None, 9, 10)
+    tracker_feed(tr, assemble_recipe(bearer_recipe()), None, 9, 1, 2)
+    tracker_feed(tr, b"token: real-value", 1, None, None, None)
+    tracker_feed(tr, assemble_recipe(telegram_recipe()), 1, 2, 3, 4)
+    tracker_feed(tr, assemble_recipe(pem_recipe()), 1, 0, 5, 6)
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_sort_line_ordinal_family",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "recipe": openai_recipe(ord("c"), 20),
+                        "line": 2,
+                        "ordinal": None,
+                        "byte_offset": 9,
+                        "byte_end": 10,
+                    },
+                    {
+                        "recipe": bearer_recipe(),
+                        "line": None,
+                        "ordinal": 9,
+                        "byte_offset": 1,
+                        "byte_end": 2,
+                    },
+                    {
+                        "raw": bytes_hex(b"token: real-value"),
+                        "line": 1,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    },
+                    {
+                        "recipe": telegram_recipe(),
+                        "line": 1,
+                        "ordinal": 2,
+                        "byte_offset": 3,
+                        "byte_end": 4,
+                    },
+                    {
+                        "recipe": pem_recipe(),
+                        "line": 1,
+                        "ordinal": 0,
+                        "byte_offset": 5,
+                        "byte_end": 6,
+                    },
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    tr = mod.SecretScanTracker()
+    for line in range(1, 66):
+        tracker_feed(
+            tr, assemble_recipe(openai_recipe(ord("z"), 20)), line, None, None, None
+        )
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_finding_cap_overflow",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "recipe": openai_recipe(ord("z"), 20),
+                        "line": line,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    }
+                    for line in range(1, 66)
+                ],
+            },
+            "expected": {"rows": rows},
+        }
+    )
+
+    blob_recipe = {
+        "segments": [
+            {"raw": bytes_hex(b"head\n")},
+            {"recipe": openai_recipe(ord("c"), 20)},
+            {"raw": bytes_hex(b"\n")},
+            {"raw": bytes_hex(b"tail")},
+        ]
+    }
+    blob = b"head\n" + assemble_recipe(openai_recipe(ord("c"), 20)) + b"\n" + b"tail"
+    tr = mod.SecretScanTracker()
+    tr.feed_blob(blob)
+    rows = evidence_rows_from_tracker(mod, tr)
+    out.append(
+        {
+            "id": "tracker_feed_blob_line_offsets",
+            "construct": {"type": "hygiene_tracker_blob", "blob_recipe": blob_recipe},
+            "expected": {"rows": rows},
+        }
+    )
+
+    colon_tail = b":" + b"a" * 35
+    tr = mod.SecretScanTracker()
+    tracker_feed(tr, colon_tail, 1, None, None, None)
+    if evidence_rows_from_tracker(mod, tr):
+        raise SystemExit("colon tail without telegram body should be silent")
+    if tr.into_findings(path_str="synth.jsonl"):
+        raise SystemExit("colon tail into_findings should be empty")
+    out.append(
+        {
+            "id": "tracker_colon_tail_no_telegram_body",
+            "construct": {
+                "type": "hygiene_tracker",
+                "feeds": [
+                    {
+                        "raw": bytes_hex(colon_tail),
+                        "line": 1,
+                        "ordinal": None,
+                        "byte_offset": None,
+                        "byte_end": None,
+                    }
+                ],
+            },
+            "expected": {"rows_len": 0, "into_findings_len": 0},
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_hygiene_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vectors_from_module(mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_hygiene_rs_sha256": HYGIENE_RS_SHA256,
+        "python_all": list(mod.__all__),
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_hygiene_rs_sha256": HYGIENE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.hygiene/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    manifest_text = json.dumps(manifest, indent=2) + "\n"
+    scan_committed_text(manifest_text)
+    (out_dir / "manifest.json").write_text(manifest_text, encoding="utf-8", newline="\n")
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.hygiene parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.hygiene/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

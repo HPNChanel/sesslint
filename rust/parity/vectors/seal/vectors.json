@@ -1,0 +1,464 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.seal",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "seal_py_sha256": "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28",
+  "canonical_codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",
+  "seal_rs_sha256": "d8c3987425e6d579f7cc2f42b2bd9e12e84bb23eb2077ded908db769261d7c5a",
+  "known_parity_gaps": [
+    "GAP-seal-ledger-lock: append_seal and _ledger_lock use msvcrt.locking or fcntl.flock; Rust ledger_lock closes the sidecar and returns LockingUnavailable before append (not byte-compared here).",
+    "GAP-seal-resources: get_seal_schema_path and load_seal_schema import sesslint._resources.schema_path; Rust returns ResourcesUnavailable (not byte-compared here).",
+    "GAP-seal-verify-wide-json-integer: verify_lines on entries with integers outside the Rust codec range returns a canonical error in Rust; Python may still report chain divergence (not byte-compared here)."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "DIVERGENCE_KINDS",
+          "GENESIS",
+          "SEAL_SCHEMA_ID",
+          "SEAL_TOOLS",
+          "SealError",
+          "append_seal",
+          "build_entry",
+          "get_seal_schema_path",
+          "load_seal_schema",
+          "sha256_bytes",
+          "sha256_file",
+          "verify_ledger",
+          "verify_lines"
+        ]
+      }
+    },
+    {
+      "id": "constants_closed_vocabulary",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "SEAL_SCHEMA_ID": "sesslint.seal-ledger/v1",
+        "GENESIS": "GENESIS",
+        "SEAL_TOOLS": [
+          "check",
+          "repair",
+          "verify"
+        ],
+        "DIVERGENCE_KINDS": [
+          "bad-schema",
+          "chain-break",
+          "hash-mismatch",
+          "malformed-line",
+          "seq-gap"
+        ]
+      }
+    },
+    {
+      "id": "sha256_bytes_empty",
+      "construct": {
+        "type": "sha256_bytes",
+        "data_hex": ""
+      },
+      "expected": {
+        "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "sha256_bytes_abc",
+      "construct": {
+        "type": "sha256_bytes",
+        "data_hex": "616263"
+      },
+      "expected": {
+        "digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    },
+    {
+      "id": "build_entry_golden_with_path",
+      "construct": {
+        "type": "build_entry",
+        "seq": 1,
+        "prev_sha256": "GENESIS",
+        "file_sha256": {
+          "prefix": "a",
+          "count": 64
+        },
+        "path": "sess.jsonl",
+        "tool": "check",
+        "verdict": "healthy",
+        "codes": [
+          [
+            "SL101",
+            2
+          ]
+        ],
+        "report_sha256": {
+          "prefix": "b",
+          "count": 64
+        },
+        "genesis_of": null
+      },
+      "expected": {
+        "entry": {
+          "schema": "sesslint.seal-ledger/v1",
+          "seq": 1,
+          "prev_sha256": "GENESIS",
+          "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tool": "check",
+          "verdict": "healthy",
+          "codes": {
+            "SL101": 2
+          },
+          "report_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "sealed_at": "2026-01-01T00:00:00Z",
+          "entry_sha256": "8deebdaa4d34b446334a5f9802448e67271a9aa2d3dba8579f73063d5b97f15e",
+          "path": "sess.jsonl"
+        }
+      }
+    },
+    {
+      "id": "build_entry_genesis_of_on_seq_one",
+      "construct": {
+        "type": "build_entry",
+        "seq": 1,
+        "prev_sha256": "GENESIS",
+        "file_sha256": {
+          "prefix": "a",
+          "count": 64
+        },
+        "path": null,
+        "tool": "verify",
+        "verdict": "healthy",
+        "codes": [],
+        "report_sha256": {
+          "prefix": "b",
+          "count": 64
+        },
+        "genesis_of": {
+          "prefix": "c",
+          "count": 64
+        }
+      },
+      "expected": {
+        "entry": {
+          "schema": "sesslint.seal-ledger/v1",
+          "seq": 1,
+          "prev_sha256": "GENESIS",
+          "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tool": "verify",
+          "verdict": "healthy",
+          "codes": {},
+          "report_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "sealed_at": "2026-01-01T00:00:00Z",
+          "entry_sha256": "00d2d7360a58d177f2bd224233a2b9041bb90d44aba50620d550b36d9b135609",
+          "genesis_of": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "build_entry_rejects_seq_zero",
+      "construct": {
+        "type": "build_entry_error",
+        "seq": 0,
+        "prev_sha256": "GENESIS",
+        "file_sha256": {
+          "prefix": "a",
+          "count": 64
+        },
+        "tool": "check",
+        "verdict": "healthy",
+        "codes": [],
+        "report_sha256": {
+          "prefix": "b",
+          "count": 64
+        }
+      },
+      "expected": {
+        "raises": "SealError",
+        "message": "seq must be a positive integer, got 0"
+      }
+    },
+    {
+      "id": "build_entry_rejects_seq_negative",
+      "construct": {
+        "type": "build_entry_error",
+        "seq": -1,
+        "prev_sha256": "GENESIS",
+        "file_sha256": {
+          "prefix": "a",
+          "count": 64
+        },
+        "tool": "check",
+        "verdict": "healthy",
+        "codes": [],
+        "report_sha256": {
+          "prefix": "b",
+          "count": 64
+        }
+      },
+      "expected": {
+        "raises": "SealError",
+        "message": "seq must be a positive integer, got -1"
+      }
+    },
+    {
+      "id": "build_entry_rejects_unknown_tool",
+      "construct": {
+        "type": "build_entry_error",
+        "seq": 1,
+        "prev_sha256": "GENESIS",
+        "file_sha256": {
+          "prefix": "a",
+          "count": 64
+        },
+        "tool": "scan",
+        "verdict": "healthy",
+        "codes": [],
+        "report_sha256": {
+          "prefix": "b",
+          "count": 64
+        }
+      },
+      "expected": {
+        "raises": "SealError",
+        "message": "tool must be one of ['check', 'repair', 'verify'], got 'scan'"
+      }
+    },
+    {
+      "id": "build_entry_rejects_negative_code_count",
+      "construct": {
+        "type": "build_entry_error",
+        "seq": 1,
+        "prev_sha256": "GENESIS",
+        "file_sha256": {
+          "prefix": "a",
+          "count": 64
+        },
+        "tool": "check",
+        "verdict": "healthy",
+        "codes": [
+          [
+            "SL001",
+            -1
+          ]
+        ],
+        "report_sha256": {
+          "prefix": "b",
+          "count": 64
+        }
+      },
+      "expected": {
+        "raises": "SealError",
+        "message": "codes must map code strings to non-negative ints: 'SL001'"
+      }
+    },
+    {
+      "id": "verify_lines_intact_three_entry_chain",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 1,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"0f089514fe32eb8d49d3bdd3492f8f20b2b3bea2dfa2f5dc6878c395b392274d\",\"file_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          },
+          {
+            "line": 2,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"aba785eaed7ccf4a6014a0c33cd6c45951728db12e4430eb28e809b1deeaf16b\",\"file_sha256\":\"0101010101010101010101010101010101010101010101010101010101010101\",\"prev_sha256\":\"0f089514fe32eb8d49d3bdd3492f8f20b2b3bea2dfa2f5dc6878c395b392274d\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":2,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          },
+          {
+            "line": 3,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"b8bb0d1e4add63c5605e94798eda01de0325be7b0d68b332ec9d3353e0ebde3c\",\"file_sha256\":\"0202020202020202020202020202020202020202020202020202020202020202\",\"prev_sha256\":\"aba785eaed7ccf4a6014a0c33cd6c45951728db12e4430eb28e809b1deeaf16b\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":3,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "divergence": null
+      }
+    },
+    {
+      "id": "verify_lines_hash_mismatch_on_middle_line",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 1,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"0f089514fe32eb8d49d3bdd3492f8f20b2b3bea2dfa2f5dc6878c395b392274d\",\"file_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          },
+          {
+            "line": 2,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"aba785eaed7ccf4a6014a0c33cd6c45951728db12e4430eb28e809b1deeaf16b\",\"file_sha256\":\"0101010101010101010101010101010101010101010101010101010101010101\",\"prev_sha256\":\"0f089514fe32eb8d49d3bdd3492f8f20b2b3bea2dfa2f5dc6878c395b392274d\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":2,\"tool\":\"check\",\"verdict\":\"invalid\"}"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "divergence": {
+          "kind": "hash-mismatch",
+          "line": 2,
+          "detail": "entry_sha256 does not match the entry contents (line edited)",
+          "seq": 2
+        }
+      }
+    },
+    {
+      "id": "verify_lines_seq_gap_when_seq_three_follows_one",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 1,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"0f089514fe32eb8d49d3bdd3492f8f20b2b3bea2dfa2f5dc6878c395b392274d\",\"file_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          },
+          {
+            "line": 2,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"b8bb0d1e4add63c5605e94798eda01de0325be7b0d68b332ec9d3353e0ebde3c\",\"file_sha256\":\"0202020202020202020202020202020202020202020202020202020202020202\",\"prev_sha256\":\"aba785eaed7ccf4a6014a0c33cd6c45951728db12e4430eb28e809b1deeaf16b\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":3,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "divergence": {
+          "kind": "seq-gap",
+          "line": 2,
+          "detail": "expected seq 2, found 3 (line drop or reorder)",
+          "seq": 3
+        }
+      }
+    },
+    {
+      "id": "verify_lines_chain_break_on_prev_hash",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 1,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"0f089514fe32eb8d49d3bdd3492f8f20b2b3bea2dfa2f5dc6878c395b392274d\",\"file_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          },
+          {
+            "line": 2,
+            "raw": "{\"codes\":{},\"entry_sha256\":\"aba785eaed7ccf4a6014a0c33cd6c45951728db12e4430eb28e809b1deeaf16b\",\"file_sha256\":\"0101010101010101010101010101010101010101010101010101010101010101\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":2,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "divergence": {
+          "kind": "chain-break",
+          "line": 2,
+          "detail": "prev_sha256 does not bind to the previous entry hash",
+          "seq": 2
+        }
+      }
+    },
+    {
+      "id": "verify_lines_bad_schema_empty_object",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 2,
+            "raw": "{}"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "divergence": {
+          "kind": "bad-schema",
+          "line": 2,
+          "detail": "document is not a sesslint.seal-ledger/v1 entry"
+        }
+      }
+    },
+    {
+      "id": "verify_lines_malformed_json_truncated_object",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 1,
+            "raw": "{"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "divergence": {
+          "kind": "malformed-line",
+          "line": 1,
+          "detail": "line is not valid JSON (edit or truncation)"
+        }
+      }
+    },
+    {
+      "id": "verify_lines_accepts_json_bool_code_count",
+      "construct": {
+        "type": "verify_lines",
+        "lines": [
+          {
+            "line": 1,
+            "raw": "{\"codes\":{\"SL101\":true},\"entry_sha256\":\"9862fd74d2d5255990dd174c5e4737bf5eaf6330257ca4f14dbf6698b5d409f4\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "divergence": null
+      }
+    },
+    {
+      "id": "verify_ledger_intact_fixture",
+      "construct": {
+        "type": "verify_ledger",
+        "ledger_path": "fixtures/synthetic_intact.jsonl"
+      },
+      "expected": {
+        "ok": true,
+        "divergence": null,
+        "entries_verified": 3
+      }
+    },
+    {
+      "id": "verify_ledger_missing_fixture",
+      "construct": {
+        "type": "verify_ledger_error",
+        "ledger_path": "fixtures/synthetic_missing.jsonl"
+      },
+      "expected": {
+        "raises": "SealError",
+        "message": "ledger not found: fixtures\\synthetic_missing.jsonl"
+      }
+    },
+    {
+      "id": "verify_ledger_divergent_fixture",
+      "construct": {
+        "type": "verify_ledger",
+        "ledger_path": "fixtures/synthetic_divergent.jsonl"
+      },
+      "expected": {
+        "ok": false,
+        "divergence": {
+          "kind": "hash-mismatch",
+          "line": 2,
+          "detail": "entry_sha256 does not match the entry contents (line edited)",
+          "seq": 2
+        },
+        "entries_verified": 1
+      }
+    },
+    {
+      "id": "sha256_file_fixture_bytes",
+      "construct": {
+        "type": "sha256_file",
+        "path": "fixtures/synthetic_bytes.bin"
+      },
+      "expected": {
+        "digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    }
+  ]
+}

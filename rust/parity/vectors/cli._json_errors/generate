@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._json_errors parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import sys
+from argparse import Namespace
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+JSON_ERRORS_SHA256 = "af5502d6bc92b7d4d7967edee7edb3012afbeebcacde052e7a7576aad55d5e1b"
+
+KNOWN_GAPS = [
+    "A lone UTF-16 surrogate cannot be stored in Rust str; no \\ud800 error_document vector.",
+    "Rust 1.91 makes std::env::set_var unsafe; parity vectors do not set SESSLINT_FORMAT (env fallback covered by cli unit tests in json_errors.rs).",
+]
+
+SYNTHETIC_ASCII = "Command failed"
+SYNTHETIC_CAFE = "caf\u00e9"
+SYNTHETIC_DEL = "\u007f"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_json_errors_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "_json_errors.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != JSON_ERRORS_SHA256:
+        raise SystemExit(
+            f"_json_errors.py sha256 mismatch: expected {JSON_ERRORS_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.cli._json_errors import (  # noqa: WPS433
+        TrackedStream,
+        error_document,
+        wants_json,
+    )
+
+    return TrackedStream, error_document, wants_json
+
+
+class NonIntegerWriteStream(io.StringIO):
+    def write(self, s: str) -> object:
+        super().write(s)
+        return None  # type: ignore[return-value]
+
+
+class FailingWriteStream(io.StringIO):
+    def write(self, s: str) -> int:
+        raise OSError("synthetic-write-fail")
+
+
+def args_from_spec(spec: dict[str, Any] | None) -> Namespace | None:
+    if spec is None:
+        return None
+    if spec.get("json_surface") is False:
+        return Namespace(policy="conservative")
+    ns = Namespace()
+    if "json" in spec:
+        ns.json = spec["json"]
+    if "output_format" in spec:
+        ns.output_format = spec["output_format"]
+    return ns
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "error_document_ascii_message",
+            "construct": {"type": "error_document", "message": SYNTHETIC_ASCII},
+        },
+        {
+            "id": "error_document_cafe_unicode_escape",
+            "construct": {"type": "error_document", "message": SYNTHETIC_CAFE},
+        },
+        {
+            "id": "error_document_u007f_escape",
+            "construct": {"type": "error_document", "message": SYNTHETIC_DEL},
+        },
+        {
+            "id": "wants_json_args_json_true_wins",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format", "text"],
+                "args": {"json": True, "output_format": "human"},
+            },
+        },
+        {
+            "id": "wants_json_args_output_format_json",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format", "text"],
+                "args": {"json": False, "output_format": "json"},
+            },
+        },
+        {
+            "id": "wants_json_args_output_format_not_json",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--json"],
+                "args": {"json": False, "output_format": "human"},
+            },
+        },
+        {
+            "id": "wants_json_args_no_json_surface",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--json", "--format", "json"],
+                "args": {"json_surface": False},
+            },
+        },
+        {
+            "id": "wants_json_args_json_false_argv_json",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--json"],
+                "args": {"json": False},
+            },
+        },
+        {
+            "id": "wants_json_argv_flag_json",
+            "construct": {"type": "wants_json", "argv": ["--json"], "args": None},
+        },
+        {
+            "id": "wants_json_argv_format_pair",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format", "json"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_argv_format_equals",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format=json"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_argv_f_merged",
+            "construct": {"type": "wants_json", "argv": ["-fjson"], "args": None},
+        },
+        {
+            "id": "wants_json_argv_f_space",
+            "construct": {"type": "wants_json", "argv": ["-f", "json"], "args": None},
+        },
+        {
+            "id": "wants_json_last_format_token_wins_json",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format", "text", "--format", "json"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_last_format_token_wins_text",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format", "json", "--format", "text"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_argv_json_after_format",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--format", "text", "--json"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_double_dash_stops_scan",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--", "--json"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_double_dash_ignores_format",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--", "--format", "json"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_json_before_double_dash",
+            "construct": {
+                "type": "wants_json",
+                "argv": ["--json", "--"],
+                "args": None,
+            },
+        },
+        {
+            "id": "wants_json_plain_scan_false",
+            "construct": {"type": "wants_json", "argv": ["scan"], "args": None},
+        },
+        {
+            "id": "tracked_nonempty_non_whitespace",
+            "construct": {
+                "type": "tracked_stream",
+                "diagnostic_limit": 0,
+                "writes": ["x"],
+            },
+        },
+        {
+            "id": "tracked_nonempty_whitespace_only",
+            "construct": {
+                "type": "tracked_stream",
+                "diagnostic_limit": 16,
+                "writes": [" \n\t ", "", " \n"],
+            },
+        },
+        {
+            "id": "tracked_diagnostic_limit_and_strip",
+            "construct": {
+                "type": "tracked_stream",
+                "diagnostic_limit": 10,
+                "writes": ["  hi\n"],
+            },
+        },
+        {
+            "id": "tracked_write_non_integer_returns_len",
+            "construct": {
+                "type": "tracked_stream",
+                "diagnostic_limit": 8,
+                "writes": ["caf\u00e9"],
+                "raw_mode": "non_integer",
+            },
+        },
+        {
+            "id": "tracked_write_inner_error",
+            "construct": {
+                "type": "tracked_stream",
+                "diagnostic_limit": 8,
+                "writes": ["x"],
+                "raw_mode": "fail",
+            },
+        },
+    ]
+
+
+def build_expected(
+    TrackedStream: type,
+    error_document: Any,
+    wants_json: Any,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "error_document":
+        message = str(spec["message"])
+        document = error_document(message)
+        payload = document.encode("utf-8")
+        return {
+            "document": document,
+            "bytes_sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes_len": len(payload),
+        }
+    if kind == "wants_json":
+        argv = list(spec.get("argv") or [])
+        args = args_from_spec(spec.get("args"))
+        return {"value": wants_json(argv, args)}
+    if kind == "tracked_stream":
+        limit = int(spec.get("diagnostic_limit", 0))
+        raw_mode = spec.get("raw_mode", "integer")
+        if raw_mode == "non_integer":
+            raw: io.StringIO | NonIntegerWriteStream | FailingWriteStream = (
+                NonIntegerWriteStream()
+            )
+        elif raw_mode == "fail":
+            raw = FailingWriteStream()
+        else:
+            raw = io.StringIO()
+        stream = TrackedStream(raw, diagnostic_limit=limit)
+        write_results: list[dict[str, Any]] = []
+        for chunk in spec.get("writes") or []:
+            text = str(chunk)
+            try:
+                count = stream.write(text)
+                write_results.append({"ok": True, "count": count})
+            except OSError as exc:
+                write_results.append({"ok": False, "error": type(exc).__name__})
+        return {
+            "nonempty": stream.nonempty,
+            "diagnostic": stream.diagnostic(),
+            "write_results": write_results,
+        }
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    TrackedStream, error_document, wants_json = load_json_errors_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(
+            TrackedStream,
+            error_document,
+            wants_json,
+            row["construct"],
+        )
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._json_errors",
+        "python_commit": PYTHON_COMMIT,
+        "json_errors_py_sha256": JSON_ERRORS_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._json_errors",
+        "python_commit": PYTHON_COMMIT,
+        "json_errors_py_sha256": JSON_ERRORS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._json_errors/generate",
+        "known_gaps": KNOWN_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic cli._json_errors error_document, wants_json, and TrackedStream parity.",
+        "generator": "rust/parity/vectors/cli._json_errors/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

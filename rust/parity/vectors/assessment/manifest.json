@@ -1,0 +1,16 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.assessment",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "assessment_py_sha256": "fa64f1ea4b7b7bd1340cdd4ea5ed0c76580086f58a6ce44647a9762d20b8c064",
+  "assessment_rs_sha256": "d4da13ae39098db38b0be046c381339df095c127b5aa92f09ef836e381c2fa5f",
+  "vector_count": 17,
+  "vectors_sha256": "a083ea7643f36f9c081e632a32cfaf5f61d5e422dfeb2d06bc880e72c63578dd",
+  "generator": "rust/parity/vectors/assessment/generate",
+  "known_parity_gaps": [
+    "GAP-assessment-check-impl: assess_source on a regular file runs sesslint.api._check_impl in Python and returns SourceAssessment. Rust stops at CheckImpl and does not build Report or events.",
+    "GAP-assessment-missing-path-message: a missing path raises OSError text from CPython; Rust returns std::io::Error display.",
+    "GAP-assessment-identity-dev-ino: st_dev and st_ino are 0 on non-Unix Rust ports without unstable metadata APIs.",
+    "GAP-assessment-io-default: DEFAULT_MAX_FILE_BYTES is duplicated in Rust from the pin io.py blob; this crate does not depend on an io crate."
+  ]
+}

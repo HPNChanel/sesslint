@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.canonical parity (prefix helpers, detection, labels, and documented load seams).",
+  "generator": "rust/parity/vectors/adapters.canonical/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-canonical-secret-scan-tracker: load_canonical and load_canonical_session call SecretScanTracker first. Rust returns the hygiene seam and does not read path, limits, or bytes. The harness asserts that gap and does not treat pin success as equal to the seam.",
+    "GAP-canonical-decode-json: load_canonical_body stops at sesslint.io.decode_json_dupaware after size, NUL, and empty gates that need the fingerprint codec. When the pin reaches JSON decoding, expected records pin outcomes but rust_assertion is gap_decode_json.",
+    "GAP-canonical-event-to-dict: event_to_dict on values without to_dict needs sesslint._canonical_codec.normalize_canonical — not asserted in this card.",
+    "GAP-canonical-dump-events: dump_canonical for SessionEvent values without to_dict hits the same normalize seam before bytes are returned.",
+    "unicode_version_digits: Python str.isdigit accepts Unicode decimal digits; Rust normalize_version keeps a leading v before non-ASCII digits — documented, no required vector."
+  ]
+}

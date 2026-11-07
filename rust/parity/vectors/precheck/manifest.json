@@ -1,0 +1,10 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.precheck",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "precheck_py_sha256": "ed5bd62b563701c3e3921201fe15c114c505a92e98fa915933f5848d60f0188e",
+  "precheck_rs_sha256": "ec350a5b57f90b9aed0793a8e30cba688ce343ff09acd69baaefee3740b6f764",
+  "vector_count": 3,
+  "vectors_sha256": "f77a1c6f92531f0b9e4b05c2212ee37aac6929405e922fc4c41f2dc3751d5ab2",
+  "generator": "rust/parity/vectors/precheck/generate"
+}

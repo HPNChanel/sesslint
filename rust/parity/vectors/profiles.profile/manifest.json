@@ -1,0 +1,19 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.profiles.profile",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_profile_rs_sha256": "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c",
+  "vector_count": 17,
+  "vectors_sha256": "48225fddf6b8bbd5dcd2b392930ac3e4edfc732626a6baa4c0e37760aa7ddbec",
+  "generator": "rust/parity/vectors/profiles.profile/generate",
+  "known_parity_gaps": [
+    "get_profile and list_profiles need sesslint.profiles.builtin. Rust returns sesslint.profiles.builtin is not available. Python returns a registered profile or a KeyError. Do not copy REGISTRY into the vector expected value.",
+    "apply_rule_selection and deselected_rules with only one of select or ignore need ALL_RULES. Rust returns the builtin error. Python filters the rules.",
+    "Rust trim does not drop U+001C through U+001F. Python str.strip does.",
+    "A float or list schema has no honest Python repr. Rust returns a typed error.",
+    "There is no bytes input. Python reports got bytes.",
+    "EventValue::Other has no Python type name. Rust returns PYTHON_TYPE_NAME_UNREPRESENTABLE.",
+    "A bool is not an f64. true is not coerced to 1.0.",
+    "Some finite-float messages use Rust debug text and can differ from Python str at other magnitudes. The locked 0.0, 1.0, 0.2, and 0.3 cases are the ones that match."
+  ]
+}

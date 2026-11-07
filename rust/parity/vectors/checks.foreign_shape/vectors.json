@@ -1,0 +1,389 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.foreign_shape",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_foreign_shape_rs_sha256": "8df1c3b0df23935677777332c903405c96168aa0511af4f977fb0e9afc9612eb",
+  "known_parity_gaps": [
+    "shape array or other calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",
+    "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int. first_ordinal is omitted when the ordinal is absent or < 0.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key.",
+    "The 8-hex provider hash is evidence on a firing record only. sha256 of the stripped string openai is 7d3194f7. Do not put a firing case in the required vectors."
+  ],
+  "vectors": [
+    {
+      "id": "no_codex_marker_empty_findings",
+      "construct": {
+        "type": "foreign_shape_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-fs-nc-a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-fs-nc-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "record_is_none": true
+      }
+    },
+    {
+      "id": "reasoning_reasoning_content_shape_string_null_silent",
+      "construct": {
+        "type": "foreign_shape_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-fs-snull"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "reasoning"
+                            }
+                          ],
+                          [
+                            "reasoning_content_shape",
+                            {
+                              "t": "str",
+                              "v": "null"
+                            }
+                          ],
+                          [
+                            "ordinal",
+                            {
+                              "t": "int",
+                              "v": 0
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "record_is_none": true
+      }
+    },
+    {
+      "id": "unknown_item_type_message_shape_array_silent",
+      "construct": {
+        "type": "foreign_shape_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-fs-msg-arr"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "message"
+                            }
+                          ],
+                          [
+                            "reasoning_content_shape",
+                            {
+                              "t": "list",
+                              "items": [
+                                {
+                                  "t": "int",
+                                  "v": 1
+                                },
+                                {
+                                  "t": "int",
+                                  "v": 2
+                                }
+                              ]
+                            }
+                          ],
+                          [
+                            "ordinal",
+                            {
+                              "t": "int",
+                              "v": 0
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "record_is_none": true
+      }
+    },
+    {
+      "id": "reasoning_reasoning_content_shape_absent_silent",
+      "construct": {
+        "type": "foreign_shape_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-fs-no-shape"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "reasoning"
+                            }
+                          ],
+                          [
+                            "ordinal",
+                            {
+                              "t": "int",
+                              "v": 1
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "record_is_none": true
+      }
+    },
+    {
+      "id": "reasoning_reasoning_content_shape_not_string_silent",
+      "construct": {
+        "type": "foreign_shape_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-fs-shape-int"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "item_type",
+                            {
+                              "t": "str",
+                              "v": "reasoning"
+                            }
+                          ],
+                          [
+                            "reasoning_content_shape",
+                            {
+                              "t": "int",
+                              "v": 42
+                            }
+                          ],
+                          [
+                            "ordinal",
+                            {
+                              "t": "int",
+                              "v": 0
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "record_is_none": true
+      }
+    }
+  ]
+}

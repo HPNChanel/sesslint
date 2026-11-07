@@ -1,0 +1,361 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.planner",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "planner_py_sha256": "5021c0148210c8d0311d5c9d8feb62d275c948e8e30a85ce1b9922bf5e8564da",
+  "planner_rs_sha256": "a41959e3332afab236e95b4866fb57ae5447264963d751bbad2a1e6d9a4b42e1",
+  "known_parity_gaps": [
+    "GAP-planner-schema-path: get_plan_schema_path and load_plan_schema import sesslint._resources.schema_path. Rust displays sesslint._resources.schema_path is not available and does not read schemas/sesslint.plan.v1.json.",
+    "GAP-planner-register-all: plan after policy, source_hash, and profile checks imports sesslint.repair.recipes_conservative.register_all. Rust displays sesslint.repair.recipes_conservative.register_all is not available and does not return a RepairPlan on the pin success path."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "ALLOWED_LOSS_CLASSES",
+          "EMPTY_EVENTS_HASH",
+          "MAX_STEPS",
+          "PLAN_VERSION",
+          "Blocked",
+          "Loss",
+          "PlanStep",
+          "RepairPlan",
+          "compute_events_source_hash",
+          "get_plan_schema_path",
+          "load_plan_schema",
+          "plan"
+        ]
+      }
+    },
+    {
+      "id": "module_constants_snapshot",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "max_steps": 256,
+        "plan_version": "sesslint.plan/v1",
+        "empty_events_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "synthetic_step_fp": "-",
+        "allowed_loss_classes": [
+          "amputated-branch",
+          "discarded-suffix",
+          "none",
+          "orphan-result",
+          "projected-orphans",
+          "torn-record",
+          "truncated-projection",
+          "truncated-side-effects"
+        ],
+        "non_event_loss_classes": [
+          "torn-record"
+        ],
+        "event_drop_recipes": [
+          "duplicate-projection-removal",
+          "identical-duplicate-collapse",
+          "identical-duplicate-drop",
+          "orphan-result-drop",
+          "side-effect-unknown-truncate",
+          "terminal-suffix-discard",
+          "torn-compaction-project",
+          "torn-terminal-record-discard",
+          "unresolvable-branch-amputate"
+        ]
+      }
+    },
+    {
+      "id": "compute_events_source_hash_empty",
+      "construct": {
+        "type": "compute_events_source_hash"
+      },
+      "expected": {
+        "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "plan_step_from_dict_not_object",
+      "construct": {
+        "type": "plan_step_from_dict",
+        "data": []
+      },
+      "expected": {
+        "message": "Plan step must be an object"
+      }
+    },
+    {
+      "id": "plan_step_invalid_loss_class",
+      "construct": {
+        "type": "plan_step_from_dict",
+        "data": {
+          "seq": 0,
+          "recipe": "recipe-alpha",
+          "target_finding_fp": "fp",
+          "target_index": 0,
+          "min_policy": "conservative",
+          "recipe_version": "1.0.0",
+          "params": {},
+          "lossy": true,
+          "loss": {
+            "not-a-class": 1
+          }
+        }
+      },
+      "expected": {
+        "message": "Invalid loss class: 'not-a-class'. Must be one of ['amputated-branch', 'discarded-suffix', 'none', 'orphan-result', 'projected-orphans', 'torn-record', 'truncated-projection', 'truncated-side-effects']"
+      }
+    },
+    {
+      "id": "plan_policy_aggressive",
+      "construct": {
+        "type": "plan_call",
+        "policy": "Aggressive"
+      },
+      "expected": {
+        "message": "Invalid repair policy: 'Aggressive'. Must be 'conservative' or 'salvage'"
+      }
+    },
+    {
+      "id": "plan_policy_empty_string",
+      "construct": {
+        "type": "plan_call",
+        "policy": ""
+      },
+      "expected": {
+        "message": "Invalid repair policy: ''. Must be 'conservative' or 'salvage'"
+      }
+    },
+    {
+      "id": "plan_policy_true_bool",
+      "construct": {
+        "type": "plan_call",
+        "policy": true
+      },
+      "expected": {
+        "message": "Invalid repair policy: True. Must be 'conservative' or 'salvage'"
+      }
+    },
+    {
+      "id": "plan_policy_none",
+      "construct": {
+        "type": "plan_call",
+        "policy": null
+      },
+      "expected": {
+        "message": "Invalid repair policy: None. Must be 'conservative' or 'salvage'"
+      }
+    },
+    {
+      "id": "plan_policy_int_one",
+      "construct": {
+        "type": "plan_call",
+        "policy": 1
+      },
+      "expected": {
+        "message": "Invalid repair policy: 1. Must be 'conservative' or 'salvage'"
+      }
+    },
+    {
+      "id": "plan_empty_conservative_success_gap",
+      "construct": {
+        "type": "plan_call",
+        "policy": "conservative",
+        "profile": "neutral",
+        "gap": "register_all"
+      },
+      "expected": {
+        "mode": "repair_plan",
+        "version": "sesslint.plan/v1",
+        "step_count": 0,
+        "blocked_count": 0,
+        "fingerprint_len": 64,
+        "profile": "neutral",
+        "policy": null
+      }
+    },
+    {
+      "id": "get_plan_schema_path_gap",
+      "construct": {
+        "type": "get_plan_schema_path"
+      },
+      "expected": {
+        "is_file": true,
+        "suffix": "sesslint.plan.v1.json"
+      }
+    },
+    {
+      "id": "load_plan_schema_gap",
+      "construct": {
+        "type": "load_plan_schema"
+      },
+      "expected": {
+        "schema_key": "https://json-schema.org/draft/2020-12/schema",
+        "schema_id": "https://sesslint.dev/schemas/sesslint.plan/v1",
+        "version_const": "sesslint.plan/v1"
+      }
+    },
+    {
+      "id": "repair_plan_from_dict_missing_seq",
+      "construct": {
+        "type": "repair_plan_from_dict",
+        "data": {
+          "blocked": [],
+          "fingerprint": "0e69c071ffe361444dbd0a7aaa4a3e08a21ceede09f63b2ccb802b93c860449e",
+          "loss_accounting": {
+            "preview": {
+              "discarded-suffix": 0,
+              "none": 0,
+              "truncated-projection": 0
+            }
+          },
+          "profile": "neutral",
+          "source_hash": "37dd688ea237150ff3c0e7adf775b9c52bf9b1a93370d0842f86626ec6ae1b3b",
+          "steps": [
+            {
+              "min_policy": "conservative",
+              "params": {
+                "first_index": 1,
+                "record_indexes": [
+                  1,
+                  2
+                ],
+                "variant": "identical-duplicate"
+              },
+              "recipe": "identical-duplicate-collapse",
+              "recipe_version": "1.0.0",
+              "target_finding_fp": "b323969e9dfca06a",
+              "target_index": 1
+            }
+          ],
+          "version": "sesslint.plan/v1"
+        }
+      },
+      "expected": {
+        "message": "Plan step missing required field 'seq'"
+      }
+    },
+    {
+      "id": "repair_plan_from_dict_missing_recipe",
+      "construct": {
+        "type": "repair_plan_from_dict",
+        "data": {
+          "blocked": [],
+          "fingerprint": "0e69c071ffe361444dbd0a7aaa4a3e08a21ceede09f63b2ccb802b93c860449e",
+          "loss_accounting": {
+            "preview": {
+              "discarded-suffix": 0,
+              "none": 0,
+              "truncated-projection": 0
+            }
+          },
+          "profile": "neutral",
+          "source_hash": "37dd688ea237150ff3c0e7adf775b9c52bf9b1a93370d0842f86626ec6ae1b3b",
+          "steps": [
+            {
+              "min_policy": "conservative",
+              "params": {
+                "first_index": 1,
+                "record_indexes": [
+                  1,
+                  2
+                ],
+                "variant": "identical-duplicate"
+              },
+              "recipe_version": "1.0.0",
+              "seq": 0,
+              "target_finding_fp": "b323969e9dfca06a",
+              "target_index": 1
+            }
+          ],
+          "version": "sesslint.plan/v1"
+        }
+      },
+      "expected": {
+        "message": "Plan step missing required field 'recipe'"
+      }
+    },
+    {
+      "id": "repair_plan_from_dict_missing_min_policy",
+      "construct": {
+        "type": "repair_plan_from_dict",
+        "data": {
+          "blocked": [],
+          "fingerprint": "0e69c071ffe361444dbd0a7aaa4a3e08a21ceede09f63b2ccb802b93c860449e",
+          "loss_accounting": {
+            "preview": {
+              "discarded-suffix": 0,
+              "none": 0,
+              "truncated-projection": 0
+            }
+          },
+          "profile": "neutral",
+          "source_hash": "37dd688ea237150ff3c0e7adf775b9c52bf9b1a93370d0842f86626ec6ae1b3b",
+          "steps": [
+            {
+              "params": {
+                "first_index": 1,
+                "record_indexes": [
+                  1,
+                  2
+                ],
+                "variant": "identical-duplicate"
+              },
+              "recipe": "identical-duplicate-collapse",
+              "recipe_version": "1.0.0",
+              "seq": 0,
+              "target_finding_fp": "b323969e9dfca06a",
+              "target_index": 1
+            }
+          ],
+          "version": "sesslint.plan/v1"
+        }
+      },
+      "expected": {
+        "message": "Plan step missing required field 'min_policy'"
+      }
+    },
+    {
+      "id": "repair_plan_from_dict_missing_recipe_version",
+      "construct": {
+        "type": "repair_plan_from_dict",
+        "data": {
+          "blocked": [],
+          "fingerprint": "0e69c071ffe361444dbd0a7aaa4a3e08a21ceede09f63b2ccb802b93c860449e",
+          "loss_accounting": {
+            "preview": {
+              "discarded-suffix": 0,
+              "none": 0,
+              "truncated-projection": 0
+            }
+          },
+          "profile": "neutral",
+          "source_hash": "37dd688ea237150ff3c0e7adf775b9c52bf9b1a93370d0842f86626ec6ae1b3b",
+          "steps": [
+            {
+              "min_policy": "conservative",
+              "params": {
+                "first_index": 1,
+                "record_indexes": [
+                  1,
+                  2
+                ],
+                "variant": "identical-duplicate"
+              },
+              "recipe": "identical-duplicate-collapse",
+              "seq": 0,
+              "target_finding_fp": "b323969e9dfca06a",
+              "target_index": 1
+            }
+          ],
+          "version": "sesslint.plan/v1"
+        }
+      },
+      "expected": {
+        "message": "Plan step missing required field 'recipe_version'"
+      }
+    }
+  ]
+}

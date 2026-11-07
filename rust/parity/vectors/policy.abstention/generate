@@ -1,0 +1,848 @@
+#!/usr/bin/env python3
+"""Generate sesslint.policy.abstention parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+
+# rust/crates/checks/src/abstention.rs — must match manifest (card invariant).
+ABSTENTION_RS_SHA256 = (
+    "46b681a6b615bd59d73730b402e73b76fc5b007d41766a3517500ee683c5f824"
+)
+
+ABSTENTION_PY_BLOB_SHA1 = "45b240fc059adaa0ee928ac02b4bb2785129c044"
+
+KNOWN_PARITY_GAPS = [
+    "a missing or empty content_hash, because Python hashes and Rust returns a typed unavailable error",
+    "a bool used as an evidence index or a range endpoint",
+    "Python str(float), str(list), and str(dict)",
+    "reason order when more than one correlation id is present, because Python iterates a set",
+    "the order of the in-region tool walk, because Python iterates a set",
+    "an inclusive span wider than 1048576, and a range that ends at i64::MAX",
+    "side-effect-None; extract_side_effects already returns the string unknown",
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def verify_abstention_py_blob() -> None:
+    root = repo_root()
+    abstention_py = root / "src" / "sesslint" / "policy" / "abstention.py"
+    raw = abstention_py.read_bytes()
+    header = b"blob " + str(len(raw)).encode() + b"\0"
+    blob = hashlib.sha1(header + raw).hexdigest()
+    if blob != ABSTENTION_PY_BLOB_SHA1:
+        raise SystemExit(
+            f"src/sesslint/policy/abstention.py git blob mismatch: expected {ABSTENTION_PY_BLOB_SHA1}, got {blob}"
+        )
+
+
+def verify_abstention_rs_sha256() -> None:
+    root = repo_root()
+    rs_path = root / "rust" / "crates" / "checks" / "src" / "abstention.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != ABSTENTION_RS_SHA256:
+        raise SystemExit(
+            f"abstention.rs sha256 mismatch: expected {ABSTENTION_RS_SHA256}, got {digest}"
+        )
+
+
+def load_abstention_module() -> Any:
+    verify_abstention_py_blob()
+    verify_abstention_rs_sha256()
+    root = repo_root()
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.policy import abstention  # noqa: WPS433
+
+    return abstention
+
+
+def encode_value(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, dict):
+        return {"t": "map", "entries": encode_mapping(value)}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_mapping(d: dict[str, Any]) -> list[list[Any]]:
+    return [[key, encode_value(val)] for key, val in d.items()]
+
+
+def decode_field(obj: dict[str, Any]) -> Any:
+    t = obj["t"]
+    if t == "null":
+        return None
+    if t == "str":
+        return str(obj["v"])
+    if t == "bool":
+        return bool(obj["v"])
+    if t == "int":
+        return int(obj["v"])
+    if t == "map":
+        return decode_mapping(obj["entries"])
+    raise ValueError(f"unknown field tag {t}")
+
+
+def decode_mapping(entries: list[list[Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for pair in entries:
+        key, field = pair[0], pair[1]
+        out[str(key)] = decode_field(field)
+    return out
+
+
+def encode_abstention(a: Any) -> dict[str, Any]:
+    d = a.to_dict()
+    return {
+        "abstain": bool(d["abstain"]),
+        "reasons": list(d["reasons"]),
+    }
+
+
+def encode_ambiguous(am: Any) -> dict[str, Any]:
+    return {
+        "indices": sorted(am.indices),
+        "ids": sorted(am.ids),
+        "reasons": list(am.reasons),
+    }
+
+
+def encode_indices(s: frozenset) -> list[int]:
+    return sorted(s)
+
+
+def finding_sl203() -> Any:
+    from sesslint.codes import Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import Finding, SourceRef  # noqa: WPS433
+
+    source = SourceRef(path="a.jsonl", line=1, record_id="rec-sl203")
+    return Finding(
+        code="SL203",
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message="synthetic marker",
+        source=source,
+        related_ids=(),
+        fingerprint="0123456789abcdef",
+        evidence=None,
+    )
+
+
+def finding_sl203_json() -> dict[str, Any]:
+    """JSON-serializable finding spec (rebuilt in ``run_vector``)."""
+    return {
+        "code": "SL203",
+        "severity": "ERROR",
+        "repairability": "MANUAL",
+        "message": "synthetic marker",
+        "source": {"path": "a.jsonl", "line": 1, "record_id": "rec-sl203"},
+        "related_ids": [],
+        "fingerprint": "0123456789abcdef",
+        "schema_version": "sesslint.finding/v1",
+        "message_template": None,
+        "evidence": None,
+    }
+
+
+def decode_finding(data: dict[str, Any]) -> Any:
+    from sesslint.codes import Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import Finding, SourceRef  # noqa: WPS433
+
+    sev = getattr(Severity, str(data["severity"]))
+    rep = getattr(Repairability, str(data["repairability"]))
+    src = data["source"]
+    line = src.get("line")
+    source = SourceRef(
+        path=str(src["path"]),
+        line=int(line) if line is not None else None,
+        record_id=str(src["record_id"]) if src.get("record_id") is not None else None,
+    )
+    rel = tuple(str(x) for x in data.get("related_ids", []))
+    return Finding(
+        code=str(data["code"]),
+        severity=sev,
+        repairability=rep,
+        message=str(data["message"]),
+        source=source,
+        related_ids=rel,
+        fingerprint=str(data["fingerprint"]),
+        schema_version=str(data.get("schema_version", "sesslint.finding/v1")),
+        message_template=data.get("message_template"),
+        evidence=data.get("evidence"),
+    )
+
+
+def wrap_event_plain(ev: dict[str, Any]) -> dict[str, Any]:
+    """JSON-vector wrapper: plain nested dicts -> tagged entries."""
+    return {"entries": encode_mapping(ev)}
+
+
+def run_vector(mod: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "extract_side_effects":
+        m = decode_mapping(construct["mapping"])
+        raw_kind = construct.get("raw_kind")
+        if raw_kind is None:
+            se = mod._extract_side_effects(m)
+        else:
+            se = mod._extract_side_effects(m, str(raw_kind))
+        return {"value": se}
+    if kind == "affected_region_all_indices":
+        indices = frozenset(int(x) for x in construct.get("indices", []))
+        ids = frozenset(str(x) for x in construct.get("ids", []))
+        ranges = tuple(tuple(int(x) for x in pair) for pair in construct["ranges"])
+        total = construct.get("total_len")
+        region = mod.AffectedRegion(indices=indices, ids=ids, ranges=ranges, unproven=False)
+        out = region.all_indices(total)
+        return {"indices": encode_indices(out)}
+    if kind == "should_abstain_from_repair":
+        findings_in = construct["findings"]
+        findings = [decode_finding(f) for f in findings_in]
+        events_in = construct["events"]
+        events = [decode_mapping(e["entries"]) for e in events_in]
+        policy = str(construct["policy"])
+        acknowledge = bool(construct["acknowledge_side_effects"])
+        step = construct.get("step")
+        excludes = bool(construct["excludes_execution_dependence"])
+        recipe_region_fn: Callable[..., Any] | None = None
+        if construct.get("has_recipe_region_fn"):
+            region_payload = construct["region"]
+
+            def recipe_region_fn(_step: Any, _evs: Any) -> Any:  # noqa: ARG001
+                idx = frozenset(int(x) for x in region_payload.get("indices", []))
+                ids = frozenset(str(x) for x in region_payload.get("ids", []))
+                ranges = tuple(
+                    tuple(int(x) for x in pair) for pair in region_payload["ranges"]
+                )
+                return mod.AffectedRegion(
+                    indices=idx,
+                    ids=ids,
+                    ranges=ranges,
+                    unproven=bool(region_payload.get("unproven", False)),
+                )
+
+        a = mod.should_abstain_from_repair(
+            findings,
+            events,
+            policy=policy,
+            acknowledge_side_effects=acknowledge,
+            step=step,
+            recipe_region_fn=recipe_region_fn,
+            excludes_execution_dependence=excludes,
+        )
+        return {"abstention": encode_abstention(a)}
+    if kind == "must_abstain":
+        findings = [decode_finding(f) for f in construct["findings"]]
+        events_in = construct["events"]
+        events = [decode_mapping(e["entries"]) for e in events_in]
+        allow = bool(construct["allow_unknown_side_effects"])
+        a = mod.must_abstain(findings, events, allow_unknown_side_effects=allow)
+        return {"abstention": encode_abstention(a)}
+    if kind == "find_ambiguous_events":
+        findings_arg = None
+        if construct.get("findings") is not None:
+            findings_arg = [decode_finding(f) for f in construct["findings"]]
+        events_in = construct["events"]
+        events = [decode_mapping(e["entries"]) for e in events_in]
+        am = mod.find_ambiguous_events(events, findings=findings_arg)
+        return {"ambiguous": encode_ambiguous(am)}
+    if kind == "check_step_scope":
+        step = construct.get("step", 0)
+        events_in = construct["events"]
+        events = [decode_mapping(e["entries"]) for e in events_in]
+        findings_arg = None
+        if construct.get("findings") is not None:
+            findings_arg = [decode_finding(f) for f in construct["findings"]]
+        excludes = bool(construct["excludes_execution_dependence"])
+        region_payload = construct["region"]
+
+        def region_fn(_s: Any, _evs: Any) -> Any:  # noqa: ARG001
+            idx = frozenset(int(x) for x in region_payload.get("indices", []))
+            ids = frozenset(str(x) for x in region_payload.get("ids", []))
+            ranges = tuple(tuple(int(x) for x in pair) for pair in region_payload["ranges"])
+            return mod.AffectedRegion(
+                indices=idx,
+                ids=ids,
+                ranges=ranges,
+                unproven=bool(region_payload.get("unproven", False)),
+            )
+
+        if not construct.get("has_recipe_region_fn"):
+            ok, reason = mod.check_step_scope(
+                step,
+                events,
+                recipe_region_fn=None,
+                findings=findings_arg,
+                excludes_execution_dependence=excludes,
+            )
+        else:
+            ok, reason = mod.check_step_scope(
+                step,
+                events,
+                recipe_region_fn=region_fn,
+                findings=findings_arg,
+                excludes_execution_dependence=excludes,
+            )
+        return {"ok": ok, "reason": reason}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def wrap_event(entries: dict[str, Any]) -> dict[str, Any]:
+    return wrap_event_plain(entries)
+
+
+def event_mapping_for_pairing(
+    kind: str,
+    name: str,
+    corr: str,
+    event_id: str,
+    *,
+    content_hash: str | None = None,
+    side_effects: str | None = None,
+) -> dict[str, Any]:
+    ev: dict[str, Any] = {
+        "kind": kind,
+        "id": event_id,
+        "correlation_id": corr,
+        "payload": {"name": name},
+    }
+    if side_effects is not None:
+        ev["side_effects"] = side_effects
+    if content_hash is not None:
+        ev["content_hash"] = content_hash
+    return ev
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    sl203_f = finding_sl203_json()
+
+    specs: list[dict[str, Any]] = []
+
+    # --- extract_side_effects ---
+    specs.append(
+        {
+            "id": "extract_explicit_empty_string_with_read_payload",
+            "construct": {
+                "type": "extract_side_effects",
+                "mapping": encode_mapping(
+                    {
+                        "kind": "tool_call",
+                        "side_effects": "",
+                        "payload": {"name": "read"},
+                    }
+                ),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "extract_tool_result_default_none",
+            "construct": {
+                "type": "extract_side_effects",
+                "mapping": encode_mapping({"kind": "tool_result"}),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "extract_tool_call_read_none",
+            "construct": {
+                "type": "extract_side_effects",
+                "mapping": encode_mapping(
+                    {
+                        "kind": "tool_call",
+                        "payload": {"name": "read"},
+                    }
+                ),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "extract_tool_call_bash_unknown",
+            "construct": {
+                "type": "extract_side_effects",
+                "mapping": encode_mapping(
+                    {
+                        "kind": "tool_call",
+                        "payload": {"name": "bash"},
+                    }
+                ),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "extract_payload_only_when_top_missing",
+            "construct": {
+                "type": "extract_side_effects",
+                "mapping": encode_mapping(
+                    {
+                        "kind": "tool_call",
+                        "payload": {"side_effects": "possible"},
+                    }
+                ),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "extract_top_wins_over_payload",
+            "construct": {
+                "type": "extract_side_effects",
+                "mapping": encode_mapping(
+                    {
+                        "kind": "tool_call",
+                        "side_effects": "unknown",
+                        "payload": {"side_effects": "possible"},
+                    }
+                ),
+            },
+        }
+    )
+
+    # --- AffectedRegion.all_indices ---
+    specs.append(
+        {
+            "id": "region_pair_1_3_unclamped",
+            "construct": {
+                "type": "affected_region_all_indices",
+                "indices": [],
+                "ids": [],
+                "ranges": [[1, 3]],
+                "total_len": None,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "region_clamp_total_len_4",
+            "construct": {
+                "type": "affected_region_all_indices",
+                "indices": [9],
+                "ids": [],
+                "ranges": [[-2, 10]],
+                "total_len": 4,
+            },
+        }
+    )
+
+    # --- should_abstain_from_repair ---
+    tool_possible = wrap_event(
+        {
+            "kind": "tool_call",
+            "id": "evt-synthetic",
+            "payload": {"name": "bash", "side_effects": "possible"},
+        }
+    )
+
+    specs.append(
+        {
+            "id": "should_sl203_only_reason_despite_side_effects",
+            "construct": {
+                "type": "should_abstain_from_repair",
+                "findings": [sl203_f],
+                "events": [tool_possible],
+                "policy": "conservative",
+                "acknowledge_side_effects": False,
+                "step": None,
+                "has_recipe_region_fn": False,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "should_conservative_step_none_ignores_possible",
+            "construct": {
+                "type": "should_abstain_from_repair",
+                "findings": [],
+                "events": [tool_possible],
+                "policy": "conservative",
+                "acknowledge_side_effects": False,
+                "step": None,
+                "has_recipe_region_fn": False,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "should_salvage_no_ack_lists_possible",
+            "construct": {
+                "type": "should_abstain_from_repair",
+                "findings": [],
+                "events": [tool_possible],
+                "policy": "salvage",
+                "acknowledge_side_effects": False,
+                "step": None,
+                "has_recipe_region_fn": False,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "should_salvage_ack_no_abstain",
+            "construct": {
+                "type": "should_abstain_from_repair",
+                "findings": [],
+                "events": [tool_possible],
+                "policy": "salvage",
+                "acknowledge_side_effects": True,
+                "step": None,
+                "has_recipe_region_fn": False,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "should_custom_policy_no_sl203_no_abstain",
+            "construct": {
+                "type": "should_abstain_from_repair",
+                "findings": [],
+                "events": [tool_possible],
+                "policy": "unknown",
+                "acknowledge_side_effects": False,
+                "step": None,
+                "has_recipe_region_fn": False,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+
+    # --- must_abstain ---
+    specs.append(
+        {
+            "id": "must_sl203_only_reason",
+            "construct": {
+                "type": "must_abstain",
+                "findings": [sl203_f],
+                "events": [tool_possible],
+                "allow_unknown_side_effects": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "must_default_abstain_unknown_bash",
+            "construct": {
+                "type": "must_abstain",
+                "findings": [],
+                "events": [
+                    wrap_event(
+                        {
+                            "kind": "tool_call",
+                            "id": "evt-synthetic",
+                            "payload": {"name": "bash"},
+                        }
+                    )
+                ],
+                "allow_unknown_side_effects": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "must_allow_unknown_no_walk",
+            "construct": {
+                "type": "must_abstain",
+                "findings": [],
+                "events": [tool_possible],
+                "allow_unknown_side_effects": True,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "must_message_event_no_abstain",
+            "construct": {
+                "type": "must_abstain",
+                "findings": [],
+                "events": [
+                    wrap_event({"kind": "message", "id": "evt-synthetic"}),
+                ],
+                "allow_unknown_side_effects": False,
+            },
+        }
+    )
+
+    # --- find_ambiguous_events (single correlation each) ---
+    specs.append(
+        {
+            "id": "ambiguous_dangling_call",
+            "construct": {
+                "type": "find_ambiguous_events",
+                "findings": None,
+                "events": [
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_call", "bash", "corr-a", "call-a"
+                        )
+                    ),
+                ],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "ambiguous_orphan_result",
+            "construct": {
+                "type": "find_ambiguous_events",
+                "findings": None,
+                "events": [
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_result", "bash", "corr-b", "res-b"
+                        )
+                    ),
+                ],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "ambiguous_reused_correlation",
+            "construct": {
+                "type": "find_ambiguous_events",
+                "findings": None,
+                "events": [
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_call", "bash", "corr-c", "call-c1"
+                        )
+                    ),
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_call", "read", "corr-c", "call-c2"
+                        )
+                    ),
+                ],
+            },
+        }
+    )
+
+    # --- duplicate tool_result fingerprints ---
+    specs.append(
+        {
+            "id": "ambiguous_duplicate_results_same_hash_not_conflicting",
+            "construct": {
+                "type": "find_ambiguous_events",
+                "findings": None,
+                "events": [
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_call", "bash", "corr-d", "call-d", side_effects="none"
+                        )
+                    ),
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_result",
+                            "bash",
+                            "corr-d",
+                            "res-d1",
+                            content_hash="abc",
+                        )
+                    ),
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_result",
+                            "bash",
+                            "corr-d",
+                            "res-d2",
+                            content_hash="abc",
+                        )
+                    ),
+                ],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "ambiguous_conflicting_result_hashes",
+            "construct": {
+                "type": "find_ambiguous_events",
+                "findings": None,
+                "events": [
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_call", "bash", "corr-e", "call-e", side_effects="none"
+                        )
+                    ),
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_result",
+                            "bash",
+                            "corr-e",
+                            "res-e1",
+                            content_hash="abc",
+                        )
+                    ),
+                    wrap_event(
+                        event_mapping_for_pairing(
+                            "tool_result",
+                            "bash",
+                            "corr-e",
+                            "res-e2",
+                            content_hash="unknown",
+                        )
+                    ),
+                ],
+            },
+        }
+    )
+
+    # --- check_step_scope ---
+    read_disjoint = wrap_event(
+        {
+            "kind": "tool_call",
+            "id": "read-tool",
+            "payload": {"name": "read"},
+        }
+    )
+    bash_ambiguous = wrap_event(
+        {
+            "kind": "tool_call",
+            "id": "bash-tool",
+            "payload": {"name": "bash"},
+        }
+    )
+
+    region_disjoint = {
+        "indices": [0],
+        "ids": [],
+        "ranges": [],
+        "unproven": False,
+    }
+    region_empty = {
+        "indices": [],
+        "ids": [],
+        "ranges": [],
+        "unproven": False,
+    }
+
+    specs.append(
+        {
+            "id": "scope_missing_region_fn",
+            "construct": {
+                "type": "check_step_scope",
+                "step": 0,
+                "events": [read_disjoint, bash_ambiguous],
+                "findings": None,
+                "has_recipe_region_fn": False,
+                "region": region_disjoint,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "scope_disjoint_read_allowed",
+            "construct": {
+                "type": "check_step_scope",
+                "step": 0,
+                "events": [read_disjoint, bash_ambiguous],
+                "findings": None,
+                "has_recipe_region_fn": True,
+                "region": region_disjoint,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "scope_sl203_abstains_disjoint_region",
+            "construct": {
+                "type": "check_step_scope",
+                "step": 0,
+                "events": [read_disjoint, bash_ambiguous],
+                "findings": [sl203_f],
+                "has_recipe_region_fn": True,
+                "region": region_empty,
+                "excludes_execution_dependence": False,
+            },
+        }
+    )
+
+    return specs
+
+
+def main() -> int:
+    mod = load_abstention_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs()
+    vectors: list[dict[str, Any]] = []
+    for spec in specs:
+        construct = spec["construct"]
+        expected = run_vector(mod, construct)
+        vectors.append({"id": spec["id"], "construct": construct, "expected": expected})
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.policy.abstention",
+        "python_commit": PYTHON_COMMIT,
+        "abstention_rs_sha256": ABSTENTION_RS_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.policy.abstention",
+        "python_commit": PYTHON_COMMIT,
+        "abstention_rs_sha256": ABSTENTION_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/policy.abstention/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.policy.abstention parity (_extract_side_effects, AffectedRegion.all_indices, "
+            "should_abstain_from_repair, must_abstain, find_ambiguous_events, check_step_scope)."
+        ),
+        "generator": "rust/parity/vectors/policy.abstention/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

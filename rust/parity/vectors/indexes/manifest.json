@@ -1,0 +1,8 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.indexes",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "vector_count": 7,
+  "vectors_sha256": "bdec9e1292c117e81f43e4b4bda08f436663ca71f9ec4f9b4a06b4c11a74164c",
+  "generator": "rust/parity/vectors/indexes/generate"
+}

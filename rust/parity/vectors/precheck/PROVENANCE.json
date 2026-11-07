@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Directory-path precheck outcomes from pinned sesslint.precheck (synthetic fixtures only).",
+  "generator": "rust/parity/vectors/precheck/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-precheck-check-file: non-directory paths invoke sesslint.api.check_file in Python; Rust returns CheckFileUnavailable (missing paths are io-error in Python, not byte-compared here).",
+    "GAP-precheck-decide-precheck: decide_precheck is not exported from Python; report classification runs inside precheck after check_file."
+  ]
+}

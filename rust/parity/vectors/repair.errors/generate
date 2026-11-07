@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.errors parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ERRORS_PY_SHA256 = "740b1c44ab27b7eb9c0220a8a172630acae61b3220037f5af770b15f42f8fa6b"
+ERRORS_RS_SHA256 = "79a30b309327cda120e14365d85339bbb6df21e851bb297f13037681a152ce16"
+CUSTOM_CODE = "CUSTOM"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "Scaffold repair::error::RepairError (Unsupported) is not part of this hierarchy; "
+        "parity vectors use repair::errors types only."
+    ),
+    (
+        "Python isinstance(exc, SesslintError) on the repair hierarchy; Rust uses an explicit "
+        "is_sesslint_error probe tied to model::errors::SesslintError — parity is on the boolean, "
+        "not on converting into SesslintError::Generic."
+    ),
+    (
+        "VendorProjectionRefused: Python always sets instance code VENDOR_PROJECTION_REFUSED via "
+        "__init__; there is no code= override vector — parity not required on a non-existent path."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def pinned_errors_py_bytes() -> bytes:
+    root = repo_root()
+    blob = subprocess.check_output(
+        [
+            "git",
+            "show",
+            f"{PYTHON_COMMIT}:src/sesslint/repair/errors.py",
+        ],
+        cwd=root,
+    )
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != ERRORS_PY_SHA256:
+        raise SystemExit(
+            "pinned errors.py sha256 mismatch: "
+            f"expected {ERRORS_PY_SHA256}, got {digest}"
+        )
+    return blob
+
+
+def load_repair_errors_module() -> Any:
+    pinned_errors_py_bytes()
+    root = repo_root()
+    rs_path = root / "rust" / "crates" / "repair" / "src" / "errors.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != ERRORS_RS_SHA256:
+        raise SystemExit(
+            "repair errors.rs sha256 mismatch: "
+            f"expected {ERRORS_RS_SHA256}, got {rs_digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.repair import errors  # noqa: WPS433
+    import sesslint.errors as sesslint_errors  # noqa: WPS433
+
+    return errors, sesslint_errors
+
+
+def build_exc(errors: Any, spec: dict[str, Any]) -> Any:
+    kind = spec["type"]
+    message = spec["message"]
+    code = spec.get("code")
+    reason = spec.get("reason")
+    if kind == "RepairError":
+        if code is None:
+            return errors.RepairError(message)
+        return errors.RepairError(message, code=code)
+    if kind == "PlanTampered":
+        if code is None:
+            return errors.PlanTampered(message)
+        return errors.PlanTampered(message, code=code)
+    if kind == "Abstained":
+        if code is None:
+            return errors.Abstained(message)
+        return errors.Abstained(message, code=code)
+    if kind == "PolicyMismatch":
+        if code is None:
+            return errors.PolicyMismatch(message)
+        return errors.PolicyMismatch(message, code=code)
+    if kind == "OutputInvalid":
+        if code is None:
+            return errors.OutputInvalid(message)
+        return errors.OutputInvalid(message, code=code)
+    if kind == "RepairRefused":
+        if code is None:
+            return errors.RepairRefused(message)
+        return errors.RepairRefused(message, code=code)
+    if kind == "VendorRepairRefused":
+        if code is None:
+            return errors.VendorRepairRefused(message)
+        return errors.VendorRepairRefused(message, code=code)
+    if kind == "ManifestCollision":
+        if code is None:
+            return errors.ManifestCollision(message)
+        return errors.ManifestCollision(message, code=code)
+    if kind == "VendorProjectionRefused":
+        if reason is None:
+            return errors.VendorProjectionRefused(message)
+        return errors.VendorProjectionRefused(message, reason=reason)
+    if kind == "PlanSourceMismatch":
+        if code is None:
+            return errors.PlanSourceMismatch(message)
+        return errors.PlanSourceMismatch(message, code=code)
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def isinstance_flags(exc: Any, errors: Any, sesslint: Any) -> dict[str, bool]:
+    return {
+        "is_value_error": isinstance(exc, ValueError),
+        "is_sesslint_error": isinstance(exc, sesslint.SesslintError),
+        "is_repair_error": isinstance(exc, errors.RepairError),
+        "is_repair_refused": isinstance(exc, errors.RepairRefused),
+        "is_plan_tampered": isinstance(exc, errors.PlanTampered),
+        "is_abstained": isinstance(exc, errors.Abstained),
+        "is_policy_mismatch": isinstance(exc, errors.PolicyMismatch),
+        "is_output_invalid": isinstance(exc, errors.OutputInvalid),
+        "is_plan_source_mismatch": isinstance(exc, errors.PlanSourceMismatch),
+        "is_vendor_repair_refused": isinstance(exc, errors.VendorRepairRefused),
+        "is_manifest_collision": isinstance(exc, errors.ManifestCollision),
+        "is_vendor_projection_refused": isinstance(exc, errors.VendorProjectionRefused),
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct})
+
+    add("module_all_export_order", {"type": "module_all"})
+
+    defaults = [
+        ("repair_error", "RepairError", "synthetic-repair-error"),
+        ("plan_tampered", "PlanTampered", "synthetic-plan-tampered"),
+        ("abstained", "Abstained", "synthetic-abstained"),
+        ("policy_mismatch", "PolicyMismatch", "synthetic-policy-mismatch"),
+        ("output_invalid", "OutputInvalid", "synthetic-output-invalid"),
+        ("repair_refused", "RepairRefused", "synthetic-repair-refused"),
+        ("vendor_repair_refused", "VendorRepairRefused", "synthetic-vendor-repair-refused"),
+        ("manifest_collision", "ManifestCollision", "synthetic-manifest-collision"),
+        (
+            "vendor_projection_refused",
+            "VendorProjectionRefused",
+            "synthetic-vendor-projection-refused",
+        ),
+        ("plan_source_mismatch", "PlanSourceMismatch", "synthetic-plan-source-mismatch"),
+    ]
+    for vector_id, kind, message in defaults:
+        add(f"{vector_id}_default", {"type": kind, "message": message})
+
+    add(
+        "abstained_sl203_message",
+        {"type": "Abstained", "message": "synthetic abstain SL203"},
+    )
+    add("repair_error_empty_message", {"type": "RepairError", "message": ""})
+    add("abstained_empty_message", {"type": "Abstained", "message": ""})
+
+    add(
+        "vendor_projection_refused_reason_r1",
+        {
+            "type": "VendorProjectionRefused",
+            "message": "synthetic-vendor-projection-refused",
+            "reason": "R1",
+        },
+    )
+    add(
+        "vendor_projection_refused_explicit_empty_reason",
+        {
+            "type": "VendorProjectionRefused",
+            "message": "synthetic-vendor-projection-refused",
+            "reason": "",
+        },
+    )
+
+    for vector_id, kind, message in defaults:
+        if kind == "VendorProjectionRefused":
+            continue
+        add(
+            f"{vector_id}_custom_code",
+            {"type": kind, "message": message, "code": CUSTOM_CODE},
+        )
+
+    return specs
+
+
+def main() -> int:
+    errors, sesslint = load_repair_errors_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+
+    for row in vector_specs():
+        construct = row["construct"]
+        kind = construct["type"]
+        if kind == "module_all":
+            vectors.append(
+                {
+                    "id": row["id"],
+                    "construct": construct,
+                    "expected": {"names": list(errors.__all__)},
+                }
+            )
+            continue
+        exc = build_exc(errors, construct)
+        expected: dict[str, Any] = {
+            "display": str(exc),
+            "code": exc.code,
+            **isinstance_flags(exc, errors, sesslint),
+        }
+        if hasattr(exc, "reason"):
+            expected["reason"] = exc.reason
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document: dict[str, Any] = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.errors",
+        "python_commit": PYTHON_COMMIT,
+        "errors_rs_sha256": ERRORS_RS_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.errors",
+        "python_commit": PYTHON_COMMIT,
+        "errors_rs_sha256": ERRORS_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.errors/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.errors parity (__all__, Display, code, "
+            "isinstance flags, VendorProjectionRefused.reason)."
+        ),
+        "generator": "rust/parity/vectors/repair.errors/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

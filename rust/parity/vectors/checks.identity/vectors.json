@@ -1,0 +1,506 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.identity",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_identity_rs_sha256": "9483d3285a2e5409125653814c1b81ea7c4cdf491dc62ee6b896ab11e04e8ccc",
+  "python_all": [
+    "MAX_IDENTITY_FINDINGS",
+    "MAX_RECORD_INDEXES_IN_EVIDENCE",
+    "cap_findings",
+    "check_identities",
+    "compute_identity_fingerprint",
+    "diff_field_names"
+  ],
+  "known_parity_gaps": [
+    "A duplicate SessionEvent calls to_canonical_dict and Rust returns NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
+    "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. Do not build the provenance dict and do not hash.",
+    "Overflow cap_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python appends an overflow finding.",
+    "diff_field_names of two events returns NORMALIZE_CANONICAL_UNAVAILABLE. Python returns field names. Do not invent names.",
+    "A float id is PYTHON_FLOAT_STR_UNREPRESENTABLE. Rust Display is not Python str.",
+    "A list or mapping id is PYTHON_STR_UNREPRESENTABLE. No Python repr.",
+    "A bool is not an int. True becomes the text True only as an id coercion.",
+    "EvidenceLookup::Borrowed is a failed borrow, not a missing key."
+  ],
+  "vectors": [
+    {
+      "id": "empty_list_silent",
+      "construct": {
+        "type": "identity_events",
+        "events": []
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "identity_groups_len": 0,
+        "cap_findings_len": 0
+      }
+    },
+    {
+      "id": "two_distinct_string_ids_silent",
+      "construct": {
+        "type": "identity_events",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-id-a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-id-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "identity_groups_len": 0
+      }
+    },
+    {
+      "id": "empty_and_whitespace_ids_ignored",
+      "construct": {
+        "type": "identity_events",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": ""
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "   "
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "\t"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "mapping",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": ""
+                }
+              ]
+            ]
+          },
+          {
+            "format": "mapping",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": " \n "
+                }
+              ]
+            ]
+          },
+          {
+            "format": "mapping",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "null"
+                }
+              ]
+            ]
+          },
+          {
+            "format": "mapping",
+            "entries": []
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-id-only"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "identity_groups_len": 0
+      }
+    },
+    {
+      "id": "spaced_and_trimmed_distinct_silent",
+      "construct": {
+        "type": "identity_events",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": " a "
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "identity_groups_len": 0
+      }
+    },
+    {
+      "id": "mapping_bool_true_single_silent",
+      "construct": {
+        "type": "identity_events",
+        "events": [
+          {
+            "format": "mapping",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "bool",
+                  "v": true
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "identity_groups_len": 0
+      }
+    },
+    {
+      "id": "mapping_int_neg7_single_silent",
+      "construct": {
+        "type": "identity_events",
+        "events": [
+          {
+            "format": "mapping",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "int",
+                  "v": -7
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "identity_groups_len": 0
+      }
+    },
+    {
+      "id": "fingerprint_evt_sorted_hashes_ba",
+      "construct": {
+        "type": "identity_fingerprint",
+        "id": "evt",
+        "payload_hashes": [
+          "b",
+          "a"
+        ]
+      },
+      "expected": {
+        "fingerprint": "74556ae4dabbb1fa"
+      }
+    },
+    {
+      "id": "fingerprint_evt_no_payload_hashes",
+      "construct": {
+        "type": "identity_fingerprint",
+        "id": "evt",
+        "payload_hashes": []
+      },
+      "expected": {
+        "fingerprint": "d4fa9909a0dcc505"
+      }
+    },
+    {
+      "id": "diff_field_names_zero_session_events",
+      "construct": {
+        "type": "identity_diff_field_names",
+        "events": []
+      },
+      "expected": {
+        "field_names_len": 0
+      }
+    },
+    {
+      "id": "diff_field_names_one_session_event",
+      "construct": {
+        "type": "identity_events",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-diff-one"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "field_names_len": 0,
+        "check_findings_len": 0,
+        "identity_groups_len": 0
+      }
+    }
+  ]
+}

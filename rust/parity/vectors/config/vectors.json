@@ -1,0 +1,386 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.config",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_config_rs_sha256": "1db412bba3bd026326ba15d3407c06bec9770b1be23f1beb9749536f9a9eafa0",
+  "known_parity_gaps": [
+    "A readable config file calls tomllib. Rust returns tomllib is not available and does not invent keys. Python returns the parsed table or Invalid TOML. Do not rewrite the Python table into the Rust error.",
+    "A pyproject.toml that contains [tool.sesslint and parses is a successful discovery in Python. Rust returns tomllib is not available and does not continue to a parent file.",
+    "No [tool.sesslint] section is not produced, because the file is not parsed.",
+    "A non-empty profile string calls list_profiles. Rust returns sesslint.profiles.builtin is not available. Python returns the registered names.",
+    "Rust trim does not drop U+001C through U+001F.",
+    "OS error text is Rust std::io::Error, not CPython OSError.",
+    "An int that does not fit i64 is a typed error. An int stored as f64 is not exact past 2^53."
+  ],
+  "vectors": [
+    {
+      "id": "format_renamed",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "format",
+              {
+                "t": "str",
+                "v": "canonical"
+              }
+            ],
+            [
+              "bogus",
+              {
+                "t": "bool",
+                "v": true
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Config key 'format' was renamed to 'adapter' in 0.5.0; rename the key in config.toml"
+      }
+    },
+    {
+      "id": "unknown_key",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "bogus",
+              {
+                "t": "bool",
+                "v": true
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Unknown sesslint config key(s) ['bogus'] in config.toml. Allowed keys: ['adapter', 'confidence_min', 'exclude', 'ext', 'fail_on', 'fail_on_unsupported', 'ignore', 'margin_min', 'max_bytes', 'max_file_bytes', 'max_files', 'max_findings_per_code', 'policy', 'profile', 'select', 'skip_undetected', 'timestamp_skew_ms']"
+      }
+    },
+    {
+      "id": "select_and_ignore",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "select",
+              {
+                "t": "list",
+                "items": []
+              }
+            ],
+            [
+              "ignore",
+              {
+                "t": "list",
+                "items": []
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Config keys 'select' and 'ignore' are mutually exclusive in config.toml"
+      }
+    },
+    {
+      "id": "empty_profile",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "profile",
+              {
+                "t": "str",
+                "v": ""
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Config key 'profile' must be a non-empty string in config.toml"
+      }
+    },
+    {
+      "id": "fail_on_stripped",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "fail_on",
+              {
+                "t": "str",
+                "v": "  error  "
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "config": {
+          "t": "map",
+          "entries": [
+            [
+              "fail_on",
+              {
+                "t": "str",
+                "v": "error"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "adapter_claude",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "adapter",
+              {
+                "t": "str",
+                "v": "claude"
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "config": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter",
+              {
+                "t": "str",
+                "v": "claude"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "bad_adapter",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "adapter",
+              {
+                "t": "str",
+                "v": "nope"
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Config key 'adapter' must be one of ['auto', 'canonical', 'claude', 'claude-code-jsonl', 'codex', 'codex-rollout', 'openai', 'openai-agents'] in config.toml, got 'nope'"
+      }
+    },
+    {
+      "id": "bool_is_not_a_number",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "confidence_min",
+              {
+                "t": "bool",
+                "v": true
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Config key 'confidence_min' must be a number in config.toml"
+      }
+    },
+    {
+      "id": "timestamp_zero",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 0
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "config": {
+          "t": "map",
+          "entries": [
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "timestamp_negative",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": -1
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Config key 'timestamp_skew_ms' must be a positive integer in config.toml"
+      }
+    },
+    {
+      "id": "list_strip",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "exclude",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "  a  "
+                  },
+                  {
+                    "t": "str",
+                    "v": "b"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "config": {
+          "t": "map",
+          "entries": [
+            [
+              "exclude",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "a"
+                  },
+                  {
+                    "t": "str",
+                    "v": "b"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "key_order",
+      "construct": {
+        "type": "validate_keys",
+        "cfg": {
+          "entries": [
+            [
+              "adapter",
+              {
+                "t": "str",
+                "v": "auto"
+              }
+            ],
+            [
+              "fail_on",
+              {
+                "t": "str",
+                "v": "warning"
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "config": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter",
+              {
+                "t": "str",
+                "v": "auto"
+              }
+            ],
+            [
+              "fail_on",
+              {
+                "t": "str",
+                "v": "warning"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "nothing_found",
+      "construct": {
+        "type": "load_config",
+        "start": {
+          "kind": "empty_directory"
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "config": {
+          "t": "map",
+          "entries": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,703 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._common parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import importlib.util
+import io
+import json
+import os
+import secrets
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+COMMON_PY_SHA256 = (
+    "6a4a70e39c95c69817642fe322de72a52c49783be57e47d318d7e6e0097eae2a"
+)
+ERRORS_PY_SHA256 = (
+    "224dfa54c2259ed53c51adb261faf404ed5d8b9790a671e9b80e40a863fc8c1b"
+)
+MODULE = "sesslint.cli._common"
+
+SYNTHETIC_FAULT = "synthetic-engine-fault"
+SYNTHETIC_USAGE = "synthetic-usage"
+HEX_ID = "0123abcd"
+OTHER_HEX_ID = "deadbeef"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-common-load-baseline-set: _load_baseline_arg imports sesslint.baseline.load_baseline "
+        "when --baseline is set; Rust returns LOAD_BASELINE_UNAVAILABLE (not Python baseline I/O)."
+    ),
+    (
+        "GAP-common-write-baseline-set: _write_baseline_arg imports sesslint.baseline.write_baseline "
+        "and uses CliContext.info when --write-baseline is set; Rust returns WRITE_BASELINE_UNAVAILABLE."
+    ),
+    (
+        "GAP-common-internal-error-json: _handle_internal_error json mode prints "
+        "build_internal_error_envelope to stdout; Rust returns BUILD_INTERNAL_ERROR_ENVELOPE_UNAVAILABLE."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def exec_module_from_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__version__ = "0.0.0+synthetic-parity"
+    sys.modules["sesslint"] = pkg
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+    errors_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_errors.py")
+    verify_digest(errors_blob, ERRORS_PY_SHA256, "_errors.py")
+    errors = exec_module_from_blob(errors_blob, "sesslint.cli._errors")
+    cli_pkg._errors = errors
+
+    api = types.ModuleType("sesslint.api")
+
+    def build_internal_error_envelope(
+        err: BaseException,
+        error_id: str | None = None,
+    ) -> dict[str, str]:
+        eid = error_id if error_id is not None else "ERR-00000000"
+        return {
+            "code": "INTERNAL_ERROR",
+            "error_id": eid,
+            "message": str(err),
+            "verdict": "error",
+        }
+
+    api.build_internal_error_envelope = build_internal_error_envelope
+    sys.modules["sesslint.api"] = api
+    pkg.api = api
+
+    finding = types.ModuleType("sesslint.finding")
+
+    class Finding:  # noqa: D101
+        pass
+
+    finding.Finding = Finding
+    sys.modules["sesslint.finding"] = finding
+    pkg.finding = finding
+
+    io_mod = types.ModuleType("sesslint.io")
+    io_mod.DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+
+def load_common_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_common.py")
+    verify_digest(blob, COMMON_PY_SHA256, "_common.py")
+    common = exec_module_from_blob(blob, "sesslint.cli._common")
+    sys.modules["sesslint.cli"]._common = common
+    return common
+
+
+def namespace_from_spec(spec: dict[str, Any] | None) -> argparse.Namespace | None:
+    if spec is None:
+        return None
+    return argparse.Namespace(**spec)
+
+
+class MaybeIsatty:
+    def __init__(self, value: bool | None) -> None:
+        self._value = value
+
+    def isatty(self) -> bool:
+        assert self._value is not None
+        return self._value
+
+
+def stream_from_spec(value: bool | None) -> Any:
+    if value is None:
+        return object()
+    return MaybeIsatty(value)
+
+
+def apply_environ(pairs: list[list[str]]) -> dict[str, str]:
+    saved = dict(os.environ)
+    os.environ.clear()
+    for key, val in pairs:
+        os.environ[key] = val
+    return saved
+
+
+def restore_environ(saved: dict[str, str]) -> None:
+    os.environ.clear()
+    os.environ.update(saved)
+
+
+def bytes_hex(data: bytes) -> str:
+    return data.hex()
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    ws_u001c = "SL001\u001c, SL002"
+    return [
+        {
+            "id": "format_display_names_constant",
+            "construct": {"type": "format_display_names"},
+        },
+        {
+            "id": "handle_internal_error_usage_reraises",
+            "construct": {
+                "type": "handle_internal_error",
+                "err": {
+                    "kind": "CliError",
+                    "exit_code": 2,
+                    "message": SYNTHETIC_USAGE,
+                },
+                "args": {"json": True},
+                "error_id_hex": HEX_ID,
+            },
+        },
+        {
+            "id": "handle_internal_error_human_no_args",
+            "construct": {
+                "type": "handle_internal_error",
+                "err": {"kind": "fault", "message": SYNTHETIC_FAULT},
+                "args": None,
+                "error_id_hex": HEX_ID,
+            },
+        },
+        {
+            "id": "handle_internal_error_human_other_hex",
+            "construct": {
+                "type": "handle_internal_error",
+                "err": {"kind": "fault", "message": SYNTHETIC_FAULT},
+                "args": None,
+                "error_id_hex": OTHER_HEX_ID,
+            },
+        },
+        {
+            "id": "handle_internal_error_human_json_false",
+            "construct": {
+                "type": "handle_internal_error",
+                "err": {"kind": "fault", "message": SYNTHETIC_FAULT},
+                "args": {"json": False},
+                "error_id_hex": HEX_ID,
+            },
+        },
+        {
+            "id": "should_color_no_color_wins",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always", "no_color": True},
+                "stream_isatty": True,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_json_wins",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always", "json": True},
+                "stream_isatty": True,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_no_color_env_truthy",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always"},
+                "stream_isatty": True,
+                "environ": [["NO_COLOR", "1"]],
+            },
+        },
+        {
+            "id": "should_color_no_color_zero_still_truthy",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always"},
+                "stream_isatty": True,
+                "environ": [["NO_COLOR", "0"]],
+            },
+        },
+        {
+            "id": "should_color_no_color_empty_unsets",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always"},
+                "stream_isatty": False,
+                "environ": [["NO_COLOR", ""]],
+            },
+        },
+        {
+            "id": "should_color_no_color_last_empty_wins",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always"},
+                "stream_isatty": False,
+                "environ": [["NO_COLOR", "1"], ["NO_COLOR", ""]],
+            },
+        },
+        {
+            "id": "should_color_no_color_last_nonempty_wins",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always"},
+                "stream_isatty": True,
+                "environ": [["NO_COLOR", ""], ["NO_COLOR", "1"]],
+            },
+        },
+        {
+            "id": "should_color_never",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "never"},
+                "stream_isatty": True,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_always_non_tty",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "always"},
+                "stream_isatty": False,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_auto_tty",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "auto"},
+                "stream_isatty": True,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_auto_not_tty",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "auto"},
+                "stream_isatty": False,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_auto_no_isatty",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "auto"},
+                "stream_isatty": None,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_default_auto_tty",
+            "construct": {
+                "type": "should_color",
+                "args": {},
+                "stream_isatty": True,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_case_sensitive_never",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "Always"},
+                "stream_isatty": False,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_case_sensitive_always",
+            "construct": {
+                "type": "should_color",
+                "args": {"color": "Always"},
+                "stream_isatty": True,
+                "environ": [],
+            },
+        },
+        {
+            "id": "should_color_output_format_json_not_json_flag",
+            "construct": {
+                "type": "should_color",
+                "args": {"output_format": "json", "color": "always"},
+                "stream_isatty": False,
+                "environ": [],
+            },
+        },
+        {
+            "id": "rule_codes_missing",
+            "construct": {"type": "rule_codes_arg", "name": "select", "args": {}},
+        },
+        {
+            "id": "rule_codes_empty_string",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "select",
+                "args": {"select": ""},
+            },
+        },
+        {
+            "id": "rule_codes_whitespace_only",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "select",
+                "args": {"select": " , , "},
+            },
+        },
+        {
+            "id": "rule_codes_split_strip",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "select",
+                "args": {"select": "SL001, SL002"},
+            },
+        },
+        {
+            "id": "rule_codes_empty_segments_kept",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "ignore",
+                "args": {"ignore": "SL001,, SL001 ,"},
+            },
+        },
+        {
+            "id": "rule_codes_u001c_whitespace",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "select",
+                "args": {"select": ws_u001c},
+            },
+        },
+        {
+            "id": "rule_codes_false_bool",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "select",
+                "args": {"select": False},
+            },
+        },
+        {
+            "id": "rule_codes_wrong_name",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "Select",
+                "args": {"select": "SL001"},
+            },
+        },
+        {
+            "id": "rule_codes_last_write_wins",
+            "construct": {
+                "type": "rule_codes_arg",
+                "name": "select",
+                "args_steps": [{"select": "SL009"}, {"select": "SL001"}],
+            },
+        },
+        {
+            "id": "output_format_json_flag_wins",
+            "construct": {
+                "type": "output_format",
+                "args": {"output_format": "sarif", "json": True},
+            },
+        },
+        {
+            "id": "output_format_default_human",
+            "construct": {"type": "output_format", "args": {}},
+        },
+        {
+            "id": "output_format_empty_string",
+            "construct": {"type": "output_format", "args": {"output_format": ""}},
+        },
+        {
+            "id": "output_format_sarif",
+            "construct": {
+                "type": "output_format",
+                "args": {"output_format": "sarif"},
+            },
+        },
+        {
+            "id": "output_format_html",
+            "construct": {
+                "type": "output_format",
+                "args": {"output_format": "html"},
+            },
+        },
+        {
+            "id": "output_format_named_json",
+            "construct": {
+                "type": "output_format",
+                "args": {"output_format": "json"},
+            },
+        },
+        {
+            "id": "output_format_empty_json_str_false",
+            "construct": {
+                "type": "output_format",
+                "args": {"json": ""},
+            },
+        },
+        {
+            "id": "output_format_int_one",
+            "construct": {
+                "type": "output_format",
+                "args": {"output_format": 1},
+            },
+        },
+        {
+            "id": "load_baseline_unset",
+            "construct": {"type": "load_baseline_arg", "args": {}},
+        },
+        {
+            "id": "write_baseline_unset",
+            "construct": {"type": "write_baseline_arg", "args": {}},
+        },
+        {
+            "id": "read_stdin_preserves_crlf_and_nul",
+            "construct": {
+                "type": "read_stdin_bytes",
+                "stdin_hex": "61300d0a620063",
+                "max_file_bytes": 10,
+            },
+        },
+        {
+            "id": "read_stdin_limit_plus_one",
+            "construct": {
+                "type": "read_stdin_bytes",
+                "stdin_hex": "30313233343536373839",
+                "max_file_bytes": 4,
+            },
+        },
+        {
+            "id": "read_stdin_max_zero",
+            "construct": {
+                "type": "read_stdin_bytes",
+                "stdin_hex": "30313233343536373839",
+                "max_file_bytes": 0,
+            },
+        },
+        {
+            "id": "read_stdin_max_negative",
+            "construct": {
+                "type": "read_stdin_bytes",
+                "stdin_hex": "30313233343536373839",
+                "max_file_bytes": -1,
+            },
+        },
+        {
+            "id": "read_stdin_default_limit_empty",
+            "construct": {
+                "type": "read_stdin_bytes",
+                "stdin_hex": "",
+                "max_file_bytes": None,
+            },
+        },
+        {
+            "id": "default_max_file_bytes_literal",
+            "construct": {"type": "default_max_file_bytes"},
+        },
+    ]
+
+
+@contextlib.contextmanager
+def fixed_error_id(hex_id: str):
+    original = secrets.token_hex
+
+    def _token_hex(nbytes: int) -> str:
+        if nbytes == 4:
+            return hex_id
+        return original(nbytes)
+
+    secrets.token_hex = _token_hex  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        secrets.token_hex = original  # type: ignore[assignment]
+
+
+def build_expected(common: types.ModuleType, spec: dict[str, Any]) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "format_display_names":
+        items = [
+            {"key": key, "display": val}
+            for key, val in common.FORMAT_DISPLAY_NAMES.items()
+        ]
+        return {"entries": items}
+    if kind == "handle_internal_error":
+        err_spec = spec["err"]
+        if err_spec["kind"] == "CliError":
+            error = common.CliError(err_spec["exit_code"], err_spec["message"])
+        else:
+            error = RuntimeError(err_spec["message"])
+        args = namespace_from_spec(spec.get("args"))
+        hex_id = spec.get("error_id_hex", HEX_ID)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with fixed_error_id(hex_id):
+            try:
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = common._handle_internal_error(error, args)
+            except common.CliError as raised:
+                return {
+                    "raises": "CliError",
+                    "exit_code": raised.exit_code,
+                    "message": raised.message,
+                }
+        return {
+            "exit_code": code,
+            "stdout": stdout.getvalue(),
+            "stderr": stderr.getvalue(),
+            "raises": None,
+        }
+    if kind == "should_color":
+        saved = apply_environ(spec.get("environ") or [])
+        try:
+            args = namespace_from_spec(spec.get("args"))
+            stream = stream_from_spec(spec.get("stream_isatty"))
+            value = common.should_color(args, stream)
+        finally:
+            restore_environ(saved)
+        return {"value": value}
+    if kind == "rule_codes_arg":
+        if steps := spec.get("args_steps"):
+            args = argparse.Namespace()
+            for step in steps:
+                for key, val in step.items():
+                    setattr(args, key, val)
+        else:
+            args = namespace_from_spec(spec.get("args"))
+        codes = common._rule_codes_arg(args, spec["name"])
+        return {"codes": codes}
+    if kind == "output_format":
+        args = namespace_from_spec(spec.get("args"))
+        return {"format": common._output_format(args)}
+    if kind == "load_baseline_arg":
+        args = namespace_from_spec(spec.get("args"))
+        return {"baseline": common._load_baseline_arg(args)}
+    if kind == "write_baseline_arg":
+        args = namespace_from_spec(spec.get("args"))
+
+        class _Ctx:
+            def info(self, _msg: str) -> None:
+                return None
+
+        common._write_baseline_arg(_Ctx(), args, [])
+        return {"ok": True}
+    if kind == "read_stdin_bytes":
+        data = bytes.fromhex(spec["stdin_hex"]) if spec.get("stdin_hex") else b""
+        limit = spec.get("max_file_bytes")
+
+        class _Stdin:
+            buffer = io.BytesIO(data)
+
+        old = sys.stdin
+        try:
+            sys.stdin = _Stdin()  # type: ignore[assignment]
+            if limit is None:
+                out = common._read_stdin_bytes()
+            else:
+                out = common._read_stdin_bytes(max_file_bytes=limit)
+        except ValueError as err:
+            return {"raises": "ValueError", "message": str(err)}
+        finally:
+            sys.stdin = old
+        return {"bytes_hex": bytes_hex(out), "raises": None}
+    if kind == "default_max_file_bytes":
+        from sesslint.io import DEFAULT_MAX_FILE_BYTES
+
+        return {"value": DEFAULT_MAX_FILE_BYTES}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    common = load_common_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(common, construct)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "common_py_sha256": COMMON_PY_SHA256,
+        "errors_py_sha256": ERRORS_PY_SHA256,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic argparse and stdin fixtures for sesslint.cli._common helper parity."
+        ),
+        "generator": "rust/parity/vectors/cli._common/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

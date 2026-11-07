@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic cli._output guard, preflight, emit_text, and boundaries parity vectors.",
+  "generator": "rust/parity/vectors/cli._output/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

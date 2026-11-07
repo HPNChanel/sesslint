@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Generate sesslint.precheck parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PRECHECK_PY_SHA256 = (
+    "ed5bd62b563701c3e3921201fe15c114c505a92e98fa915933f5848d60f0188e"
+)
+PRECHECK_RS_SHA256 = (
+    "ec350a5b57f90b9aed0793a8e30cba688ce343ff09acd69baaefee3740b6f764"
+)
+MODULE = "sesslint.precheck"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-precheck-check-file: non-directory paths invoke sesslint.api.check_file "
+        "in Python; Rust returns CheckFileUnavailable (missing paths are io-error in "
+        "Python, not byte-compared here)."
+    ),
+    (
+        "GAP-precheck-decide-precheck: decide_precheck is not exported from Python; "
+        "report classification runs inside precheck after check_file."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_precheck_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/precheck.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != PRECHECK_PY_SHA256:
+        raise SystemExit(
+            f"precheck.py pin sha256 mismatch: expected {PRECHECK_PY_SHA256}, got {digest}"
+        )
+
+
+def load_precheck_module() -> types.ModuleType:
+    blob = pinned_precheck_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "precheck.py"
+    if module_path.read_bytes() == blob:
+        src = root / "src"
+        insert = str(src)
+        if insert not in sys.path:
+            sys.path.insert(0, insert)
+        import importlib
+
+        return importlib.import_module("sesslint.precheck")
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_precheck.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_precheck_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned precheck.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.relative_to(base).as_posix()
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    root = fixtures / "synthetic_dir"
+    nested = root / "nested"
+    nested.mkdir(parents=True, exist_ok=True)
+    for directory in (fixtures, root, nested):
+        keep = directory / ".keep"
+        if directory == fixtures:
+            continue
+        if not keep.exists():
+            keep.write_text("", encoding="utf-8", newline="\n")
+    session = fixtures / "synthetic_file.jsonl"
+    if not session.exists():
+        session.write_text(
+            '{"v":1,"kind":"synthetic-parity-fixture"}\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+
+
+def vector_specs(out_dir: Path) -> list[dict[str, Any]]:
+    fixtures = out_dir / "fixtures"
+    return [
+        {
+            "id": "development_directory_path",
+            "development_path": fixtures / "synthetic_dir",
+            "profile": None,
+            "format": None,
+        },
+        {
+            "id": "nested_directory_path",
+            "development_path": fixtures / "synthetic_dir" / "nested",
+            "profile": None,
+            "format": None,
+        },
+        {
+            "id": "directory_with_profile_format",
+            "development_path": fixtures / "synthetic_dir",
+            "profile": "claude-strict",
+            "format": "override",
+        },
+    ]
+
+
+def result_expected(result: Any) -> dict[str, Any]:
+    if result.report is not None:
+        raise SystemExit("directory precheck must not attach a report")
+    return {
+        "ok": result.ok,
+        "reason": result.reason,
+        "report": None,
+        "exit_code": result.exit_code,
+    }
+
+
+def build_vectors(precheck: Any, out_dir: Path) -> list[dict[str, Any]]:
+    ensure_fixtures(out_dir)
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs(out_dir):
+        dev_abs = row["development_path"].resolve()
+        if not dev_abs.is_dir():
+            raise SystemExit(f"{row['id']}: fixture path is not a directory")
+        profile = row["profile"]
+        format_override = row["format"]
+        kwargs: dict[str, Any] = {}
+        if profile is not None:
+            kwargs["profile"] = profile
+        if format_override is not None:
+            kwargs["format"] = format_override
+        got = precheck.precheck(dev_abs, **kwargs)
+        if got.reason != "io-error" or got.exit_code != 2 or got.ok is not False:
+            raise SystemExit(f"{row['id']}: expected directory io-error, got {got!r}")
+        dev_rel = rel_posix(out_dir, dev_abs)
+        construct: dict[str, Any] = {
+            "type": "precheck",
+            "development_path": dev_rel,
+        }
+        if profile is not None:
+            construct["profile"] = profile
+        if format_override is not None:
+            construct["format"] = format_override
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": result_expected(got),
+            }
+        )
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "precheck_py_sha256": PRECHECK_PY_SHA256,
+        "precheck_rs_sha256": PRECHECK_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "precheck_py_sha256": PRECHECK_PY_SHA256,
+        "precheck_rs_sha256": PRECHECK_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/precheck/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Directory-path precheck outcomes from pinned sesslint.precheck "
+            "(synthetic fixtures only)."
+        ),
+        "generator": "rust/parity/vectors/precheck/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    precheck = load_precheck_module()
+    vectors = build_vectors(precheck, out_dir)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

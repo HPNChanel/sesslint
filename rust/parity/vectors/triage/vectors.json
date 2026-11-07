@@ -1,0 +1,360 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.triage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "triage_py_sha256": "a1b695b89ac9fc3142f098d51c9ffba01d2f1a20e9cebe202f6a41e26669029d",
+  "triage_rs_sha256": "2f452ff34e6ddad32957000629ff9512fe783b20e515b7ca25e822916b9ce9a0",
+  "known_parity_gaps": [
+    "GAP-triage-get-profile: triage() calls sesslint.profiles.get_profile before any ledger work. Rust stops with sesslint.profiles.get_profile is not available and does not return TriageReport.",
+    "GAP-triage-preview: _preview reads sesslint.assessment.SourceAssessment and calls plan. Rust preview() stops with sesslint.assessment.SourceAssessment is not available.",
+    "GAP-triage-read-codex-state: _native_state after copy guards calls sesslint.state_db.read_codex_state and may return membership-matches or membership-mismatch. Rust native_state() stops with sesslint.state_db.read_codex_state is not available."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "schema_version": "sesslint.triage/v1",
+        "limitation": "Structural evidence only. Application resume, semantic correctness and external side effects are unverified. No repair or agent command was executed.",
+        "max_findings": 100,
+        "max_impact_lines": 100,
+        "max_state_db_bytes": 268435456
+      }
+    },
+    {
+      "id": "exit_code_checked",
+      "construct": {
+        "type": "exit_code",
+        "status": "checked"
+      },
+      "expected": {
+        "exit_code": 0,
+        "pin_exit_code": 0
+      }
+    },
+    {
+      "id": "exit_code_unreadable",
+      "construct": {
+        "type": "exit_code",
+        "status": "unreadable"
+      },
+      "expected": {
+        "exit_code": 2,
+        "pin_exit_code": 2
+      }
+    },
+    {
+      "id": "exit_code_needs_attention",
+      "construct": {
+        "type": "exit_code",
+        "status": "needs-attention"
+      },
+      "expected": {
+        "exit_code": 1,
+        "pin_exit_code": 1
+      }
+    },
+    {
+      "id": "exit_code_blocked",
+      "construct": {
+        "type": "exit_code",
+        "status": "blocked"
+      },
+      "expected": {
+        "exit_code": 1,
+        "pin_exit_code": 1
+      }
+    },
+    {
+      "id": "triage_report_to_json",
+      "construct": {
+        "type": "to_json",
+        "parts": {
+          "status": "checked",
+          "source_sha256": null,
+          "adapter": "unknown",
+          "profile": "neutral",
+          "assurance": "A0",
+          "coverage": {
+            "performed": [],
+            "skipped": []
+          },
+          "findings": [
+            {
+              "title": "x",
+              "source_line": null,
+              "code": "SL004",
+              "severity": "error",
+              "repairability": "deterministic"
+            }
+          ],
+          "finding_count": 1,
+          "by_code": {
+            "SL004": 1,
+            "SL001": 2
+          },
+          "previews": [],
+          "impact": {
+            "status": "unverified"
+          },
+          "native_state": {
+            "detail": "Native registry was not inspected.",
+            "status": "not-provided"
+          },
+          "missing_evidence": [
+            {
+              "code": "native-resume",
+              "detail": "Validate continuation in the originating application."
+            }
+          ],
+          "next_actions": [
+            {
+              "command": "sesslint triage <source>",
+              "detail": "Provide a stable copy.",
+              "id": "inspect-source"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "json": "{\n  \"adapter\": \"unknown\",\n  \"assurance\": \"A0\",\n  \"by_code\": {\n    \"SL001\": 2,\n    \"SL004\": 1\n  },\n  \"coverage\": {\n    \"performed\": [],\n    \"skipped\": []\n  },\n  \"finding_count\": 1,\n  \"findings\": [\n    {\n      \"code\": \"SL004\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"source_line\": null,\n      \"title\": \"x\"\n    }\n  ],\n  \"findings_truncated\": false,\n  \"impact\": {\n    \"status\": \"unverified\"\n  },\n  \"limitation\": \"Structural evidence only. Application resume, semantic correctness and external side effects are unverified. No repair or agent command was executed.\",\n  \"missing_evidence\": [\n    {\n      \"code\": \"native-resume\",\n      \"detail\": \"Validate continuation in the originating application.\"\n    }\n  ],\n  \"native_state\": {\n    \"detail\": \"Native registry was not inspected.\",\n    \"status\": \"not-provided\"\n  },\n  \"next_actions\": [\n    {\n      \"command\": \"sesslint triage <source>\",\n      \"detail\": \"Provide a stable copy.\",\n      \"id\": \"inspect-source\"\n    }\n  ],\n  \"previews\": [],\n  \"profile\": \"neutral\",\n  \"schema_version\": \"sesslint.triage/v1\",\n  \"source_sha256\": null,\n  \"status\": \"checked\",\n  \"tool_version\": \"0.5.0\"\n}"
+      }
+    },
+    {
+      "id": "triage_report_render_human",
+      "construct": {
+        "type": "render_human",
+        "parts": {
+          "status": "needs-attention",
+          "source_sha256": "",
+          "adapter": "codex-rollout",
+          "profile": "neutral",
+          "assurance": "A2",
+          "coverage": {},
+          "findings": [],
+          "finding_count": 0,
+          "by_code": {
+            "SL004": 1,
+            "SL001": 2
+          },
+          "previews": [
+            {
+              "policy": "conservative",
+              "step_count": 1,
+              "kept_events": 2,
+              "lost_records": 3,
+              "blocked_count": 4
+            }
+          ],
+          "impact": {
+            "status": "mapped",
+            "affected_events": 5,
+            "parsed_events": 9
+          },
+          "native_state": {
+            "status": "unverified"
+          },
+          "missing_evidence": [
+            {
+              "code": "SL203",
+              "detail": "Refusal text."
+            }
+          ],
+          "next_actions": [
+            {
+              "id": "review",
+              "detail": "Review codes.",
+              "command": "sesslint check <source>"
+            },
+            {
+              "id": "quiet",
+              "detail": "No command here.",
+              "command": ""
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "SessLint triage: needs-attention\n  adapter: codex-rollout; structural assurance: A2\n  source: not inspected\n  findings: SL004 x1, SL001 x2\n  native state: unverified\n  conservative preview: 1 steps; 2 kept events; 3 lost records; 4 blocked findings (not applied)\n  structural impact: 5 / 9 parsed events; unmapped findings are listed separately\nEvidence still needed:\n  [SL203] Refusal text.\nNext steps (substitute your paths in command templates):\n  1. Review codes.\n     sesslint check <source>\n  2. No command here.\nStructural evidence only. Application resume, semantic correctness and external side effects are unverified. No repair or agent command was executed."
+      }
+    },
+    {
+      "id": "findings_truncated_true",
+      "construct": {
+        "type": "findings_truncated",
+        "finding_count": 2,
+        "findings_len": 1
+      },
+      "expected": {
+        "findings_truncated": true
+      }
+    },
+    {
+      "id": "impact_descendants_unmapped",
+      "construct": {
+        "type": "impact",
+        "events": [
+          {
+            "id": "a",
+            "parent_id": null,
+            "source_line": 1
+          },
+          {
+            "id": "b",
+            "parent_id": "a",
+            "source_line": 2
+          },
+          {
+            "id": "c",
+            "parent_id": "b",
+            "source_line": 3
+          },
+          {
+            "id": "d",
+            "parent_id": "nope",
+            "source_line": 4
+          }
+        ],
+        "findings": [
+          {
+            "severity": "warning",
+            "code": "SL001"
+          },
+          {
+            "severity": "error",
+            "code": "SL004",
+            "record_id": "b"
+          },
+          {
+            "severity": "fatal",
+            "code": "SL010",
+            "record_id": "missing"
+          }
+        ]
+      },
+      "expected": {
+        "pin": {
+          "status": "mapped",
+          "parsed_events": 4,
+          "affected_events": 2,
+          "outside_mapped_impact": 2,
+          "source_lines": [
+            2,
+            3
+          ],
+          "source_lines_truncated": false,
+          "unmapped_by_code": {
+            "SL010": 1
+          },
+          "limitation": "Outside mapped impact does not mean recoverable or safe to replay."
+        }
+      }
+    },
+    {
+      "id": "file_digest_empty",
+      "construct": {
+        "type": "file_digest",
+        "fixture": "empty.bin",
+        "limit": 0
+      },
+      "expected": {
+        "mode": "ok",
+        "pin": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "file_digest_abc",
+      "construct": {
+        "type": "file_digest",
+        "fixture": "abc.bin",
+        "limit": 3
+      },
+      "expected": {
+        "mode": "ok",
+        "pin": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    },
+    {
+      "id": "file_digest_over_limit",
+      "construct": {
+        "type": "file_digest",
+        "fixture": "abc.bin",
+        "limit": 2
+      },
+      "expected": {
+        "mode": "raises",
+        "pin": "Snapshot limit exceeded"
+      }
+    },
+    {
+      "id": "native_state_not_provided",
+      "construct": {
+        "type": "native_state",
+        "setup": "not_provided",
+        "adapter": "codex-rollout"
+      },
+      "expected": {
+        "pin": {
+          "status": "not-provided",
+          "detail": "Native registry was not inspected."
+        }
+      }
+    },
+    {
+      "id": "native_state_wrong_adapter",
+      "construct": {
+        "type": "native_state",
+        "setup": "regular_copy",
+        "adapter": "canonical"
+      },
+      "expected": {
+        "pin": {
+          "status": "unverified",
+          "detail": "Registry comparison requires a Codex ledger."
+        }
+      }
+    },
+    {
+      "id": "native_state_membership_gap",
+      "construct": {
+        "type": "native_state",
+        "setup": "membership_db",
+        "adapter": "codex-rollout"
+      },
+      "expected": {
+        "pin": {
+          "status": "unverified",
+          "detail": "No supported rollout identity for comparison."
+        },
+        "rust_assertion": {
+          "mode": "gap_read_codex_state"
+        }
+      }
+    },
+    {
+      "id": "preview_assessment_gap",
+      "construct": {
+        "type": "preview"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "gap_source_assessment"
+        }
+      }
+    },
+    {
+      "id": "triage_get_profile_gap",
+      "construct": {
+        "type": "triage",
+        "fixture": "abc.bin"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "gap_get_profile"
+        }
+      }
+    }
+  ]
+}

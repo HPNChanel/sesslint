@@ -1,0 +1,557 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.size",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_size_rs_sha256": "a20813bedab53701d557a78e88e6786a7300e02f63aac3c7fb61cd1b217b08fb",
+  "python_all": [
+    "SIZE_FLOOR_BYTES",
+    "SIZE_MIN_RECORDS",
+    "SIZE_RATIO_K",
+    "check_size_anomaly",
+    "check_sl011"
+  ],
+  "known_parity_gaps": [
+    "Seven 1s and one 262145: Python emits one SL011 finding, ratio round(262145/1, 3) = 262145.0, record_index 7. Rust check_size_anomaly returns FINGERPRINT_CODEC_UNAVAILABLE because the fingerprint codec is not ported. Evidence uses PyValue with ratio None because PyValue has no float.",
+    "Integers that do not fit i64, and median * 20 overflow, are PYTHON_INT_UNBOUNDED in Rust. Python keeps the unbounded int.",
+    "i64 as f64 is inexact above 2^53. Do not add vectors in that range."
+  ],
+  "vectors": [
+    {
+      "id": "no_context_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl"
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "missing_record_sizes_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "synth-adapter-01"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "9.9.9-synth"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "synth-profile-01"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "2026.01-synth"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": []
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "record_sizes_not_a_list_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "synth-adapter-01"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "9.9.9-synth"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "synth-profile-01"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "2026.01-synth"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "record_sizes",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "seven_sizes_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "synth-adapter-01"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "9.9.9-synth"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "synth-profile-01"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "2026.01-synth"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "record_sizes",
+                    {
+                      "t": "list",
+                      "items": [
+                        {
+                          "t": "int",
+                          "v": 262145
+                        },
+                        {
+                          "t": "int",
+                          "v": 262145
+                        },
+                        {
+                          "t": "int",
+                          "v": 262145
+                        },
+                        {
+                          "t": "int",
+                          "v": 262145
+                        },
+                        {
+                          "t": "int",
+                          "v": 262145
+                        },
+                        {
+                          "t": "int",
+                          "v": 262145
+                        },
+                        {
+                          "t": "int",
+                          "v": 262145
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "eight_small_sizes_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "synth-adapter-01"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "9.9.9-synth"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "synth-profile-01"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "2026.01-synth"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "record_sizes",
+                    {
+                      "t": "list",
+                      "items": [
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        },
+                        {
+                          "t": "int",
+                          "v": 100
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "floor_equal_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "synth-adapter-01"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "9.9.9-synth"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "synth-profile-01"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "2026.01-synth"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "record_sizes",
+                    {
+                      "t": "list",
+                      "items": [
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 262144
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "bool_and_negative_dropped_below_min_silent",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "synth-adapter-01"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "9.9.9-synth"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "synth-profile-01"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "2026.01-synth"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "record_sizes",
+                    {
+                      "t": "list",
+                      "items": [
+                        {
+                          "t": "bool",
+                          "v": true
+                        },
+                        {
+                          "t": "int",
+                          "v": -1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "check_findings_len": 0
+      }
+    },
+    {
+      "id": "constants_and_all",
+      "construct": {
+        "type": "size_check",
+        "source_path": "synth.jsonl"
+      },
+      "expected": {
+        "check_findings_len": 0,
+        "SIZE_FLOOR_BYTES": 262144,
+        "SIZE_MIN_RECORDS": 8,
+        "SIZE_RATIO_K": 20
+      }
+    }
+  ]
+}

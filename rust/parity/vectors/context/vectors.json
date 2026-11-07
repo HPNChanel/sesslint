@@ -1,0 +1,391 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.context",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "context_py_sha256": "c2a1ad5574aea073dd45b55653c647c67855e9fdaf89fd4fdefde0f6f80a866f",
+  "vectors": [
+    {
+      "id": "context_default_unknown_and_skew_2000",
+      "construct": {
+        "type": "default"
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "unknown",
+          "adapter_version": "unknown",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_new_blank_whitespace_become_unknown",
+      "construct": {
+        "type": "new",
+        "adapter_id": "",
+        "adapter_version": "  ",
+        "profile_id": "\n",
+        "profile_version": "\t",
+        "timestamp_skew_ms": 2000,
+        "assert_non_empty": true
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "unknown",
+          "adapter_version": "unknown",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        },
+        "assert_non_empty_coords": true
+      }
+    },
+    {
+      "id": "context_new_preserves_inner_whitespace",
+      "construct": {
+        "type": "new",
+        "adapter_id": " synth-adapter-01 ",
+        "adapter_version": " 9.9.9 ",
+        "profile_id": " synth-profile-01 ",
+        "profile_version": " 2026.01 "
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": " synth-adapter-01 ",
+          "adapter_version": " 9.9.9 ",
+          "profile_id": " synth-profile-01 ",
+          "profile_version": " 2026.01 ",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_create_lookup_when_version_omitted",
+      "construct": {
+        "type": "create",
+        "adapter_id": "canonical",
+        "profile_id": "neutral"
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "canonical",
+          "adapter_version": "1.0.0",
+          "profile_id": "neutral",
+          "profile_version": "1.0.0",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_create_keeps_explicit_version",
+      "construct": {
+        "type": "create",
+        "adapter_id": "canonical",
+        "adapter_version": "9.9.9-synth",
+        "profile_id": "neutral",
+        "profile_version": "2026.01-synth"
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "canonical",
+          "adapter_version": "9.9.9-synth",
+          "profile_id": "neutral",
+          "profile_version": "2026.01-synth",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_create_whitespace_version_triggers_lookup",
+      "construct": {
+        "type": "create",
+        "adapter_id": "canonical",
+        "adapter_version": "  \t  ",
+        "profile_id": "neutral",
+        "profile_version": "\n"
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "canonical",
+          "adapter_version": "1.0.0",
+          "profile_id": "neutral",
+          "profile_version": "1.0.0",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_create_unregistered_id_version_unknown",
+      "construct": {
+        "type": "create",
+        "adapter_id": "synth-adapter-01",
+        "profile_id": "synth-profile-01"
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "unknown",
+          "profile_id": "synth-profile-01",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_create_strips_ids_blank_profile",
+      "construct": {
+        "type": "create",
+        "adapter_id": " canonical ",
+        "profile_id": "   ",
+        "profile_version": "  "
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "canonical",
+          "adapter_version": "1.0.0",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_compaction_checkpoint_capable_matrix",
+      "construct": {
+        "type": "compaction_matrix",
+        "adapters": [
+          {
+            "adapter_id": "claude-code-jsonl"
+          },
+          {
+            "adapter_id": "codex-rollout"
+          },
+          {
+            "adapter_id": "canonical"
+          },
+          {
+            "adapter_id": "openai-agents"
+          },
+          {
+            "adapter_id": "synth-adapter-01"
+          }
+        ]
+      },
+      "expected": {
+        "compaction": [
+          {
+            "adapter_id": "claude-code-jsonl",
+            "compaction_checkpoint_capable": false
+          },
+          {
+            "adapter_id": "codex-rollout",
+            "compaction_checkpoint_capable": false
+          },
+          {
+            "adapter_id": "canonical",
+            "compaction_checkpoint_capable": true
+          },
+          {
+            "adapter_id": "openai-agents",
+            "compaction_checkpoint_capable": true
+          },
+          {
+            "adapter_id": "synth-adapter-01",
+            "compaction_checkpoint_capable": true
+          },
+          {
+            "adapter_id": "default",
+            "compaction_checkpoint_capable": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "context_to_dict_four_keys_sorted_json",
+      "construct": {
+        "type": "to_dict",
+        "base": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "9.9.9-synth",
+          "profile_id": "synth-profile-01",
+          "profile_version": "2026.01-synth",
+          "source_metadata": {
+            "k": 1
+          },
+          "timestamp_skew_ms": 4321
+        }
+      },
+      "expected": {
+        "to_dict": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "9.9.9-synth",
+          "profile_id": "synth-profile-01",
+          "profile_version": "2026.01-synth"
+        },
+        "json": "{\"adapter_id\": \"synth-adapter-01\", \"adapter_version\": \"9.9.9-synth\", \"profile_id\": \"synth-profile-01\", \"profile_version\": \"2026.01-synth\"}",
+        "to_dict_key_count": 4
+      }
+    },
+    {
+      "id": "context_with_overrides_preserves_skew_unset_metadata",
+      "construct": {
+        "type": "with_overrides",
+        "base": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "9.9.9-synth",
+          "profile_id": "synth-profile-01",
+          "profile_version": "2026.01-synth",
+          "source_metadata": {
+            "k": 1
+          },
+          "timestamp_skew_ms": 4321
+        },
+        "overrides": {
+          "adapter_id": "synth-adapter-02",
+          "profile_id": "synth-profile-02",
+          "source_metadata_override": "unset"
+        }
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "synth-adapter-02",
+          "adapter_version": "9.9.9-synth",
+          "profile_id": "synth-profile-02",
+          "profile_version": "2026.01-synth",
+          "timestamp_skew_ms": 4321,
+          "source_metadata": {
+            "k": 1
+          },
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_with_overrides_unset_keeps_metadata",
+      "construct": {
+        "type": "with_overrides",
+        "base": {
+          "adapter_id": "synth-adapter-01",
+          "source_metadata": {
+            "k": 1
+          }
+        },
+        "overrides": {
+          "source_metadata_override": "unset"
+        }
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "unknown",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": {
+            "k": 1
+          },
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_with_overrides_explicit_none_clears_metadata",
+      "construct": {
+        "type": "with_overrides",
+        "base": {
+          "adapter_id": "synth-adapter-01",
+          "source_metadata": {
+            "k": 1
+          }
+        },
+        "overrides": {
+          "source_metadata_override": "none"
+        }
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "unknown",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_with_overrides_non_mapping_clears_metadata",
+      "construct": {
+        "type": "with_overrides",
+        "base": {
+          "adapter_id": "synth-adapter-01",
+          "source_metadata": {
+            "k": 1
+          }
+        },
+        "overrides": {
+          "source_metadata_override": "non_mapping"
+        }
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "unknown",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    },
+    {
+      "id": "context_with_overrides_blank_coords_unknown",
+      "construct": {
+        "type": "with_overrides",
+        "base": {
+          "adapter_id": "synth-adapter-01",
+          "adapter_version": "9.9.9-synth",
+          "profile_id": "synth-profile-01",
+          "profile_version": "2026.01-synth"
+        },
+        "overrides": {
+          "adapter_id": "",
+          "adapter_version": "  ",
+          "profile_id": "\t",
+          "profile_version": "\n",
+          "source_metadata_override": "unset"
+        }
+      },
+      "expected": {
+        "fields": {
+          "adapter_id": "unknown",
+          "adapter_version": "unknown",
+          "profile_id": "unknown",
+          "profile_version": "unknown",
+          "timestamp_skew_ms": 2000,
+          "source_metadata": null,
+          "compaction_checkpoint_capable": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Generate sesslint._resources schema_path parity vectors (stdlib only; pinned Python)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+RESOURCES_PY_SHA256 = (
+    "bf5ba2eb993aa99447a4ab5c1643b8c7ef20a66513afe79b5fbeb244531e0234"
+)
+MODULE = "sesslint._resources"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_resources_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/_resources.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != RESOURCES_PY_SHA256:
+        raise SystemExit(
+            f"_resources.py pin sha256 mismatch: expected {RESOURCES_PY_SHA256}, got {digest}"
+        )
+
+
+def load_resources_module() -> types.ModuleType:
+    blob = pinned_resources_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "_resources.py"
+    if module_path.read_bytes() == blob:
+        src = root / "src"
+        insert = str(src)
+        if insert not in sys.path:
+            sys.path.insert(0, insert)
+        import sesslint._resources as resources  # noqa: WPS433
+
+        return resources
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_resources.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_resources_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned _resources.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.relative_to(base).as_posix()
+
+
+def assert_returns_development_path(
+    schema_path: Callable[..., Path], name: str, development_path: Path
+) -> Path:
+    got = schema_path(name, development_path)
+    if got != development_path:
+        raise SystemExit(
+            f"schema_path({name!r}, {development_path}) returned {got!r}; "
+            "expected development_path (no prefix/frozen branch)"
+        )
+    return got
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    regular = fixtures / "regular_schema.json"
+    regular.write_bytes(b"synthetic-schema-bytes-for-parity\n")
+    dir_dev = fixtures / "dir_as_dev"
+    dir_dev.mkdir(exist_ok=True)
+    keep = dir_dev / ".keep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8", newline="\n")
+
+
+def vector_specs(out_dir: Path) -> list[dict[str, Any]]:
+    fixtures = out_dir / "fixtures"
+    return [
+        {
+            "id": "development_file_returns_path",
+            "name": "session.schema.json",
+            "development_path": fixtures / "regular_schema.json",
+        },
+        {
+            "id": "schema_name_ignored_other",
+            "name": "other-name.json",
+            "development_path": fixtures / "regular_schema.json",
+        },
+        {
+            "id": "schema_name_ignored_share_style",
+            "name": "../share/sesslint/schemas/x.json",
+            "development_path": fixtures / "regular_schema.json",
+        },
+        {
+            "id": "missing_development_path",
+            "name": "sesslint-parity-missing.schema.json",
+            "development_path": fixtures / "missing_schema.json",
+        },
+        {
+            "id": "directory_development_path",
+            "name": "session.schema.json",
+            "development_path": fixtures / "dir_as_dev",
+        },
+        {
+            "id": "metadata_error_under_file",
+            "name": "session.schema.json",
+            "development_path": fixtures / "regular_schema.json" / "nested_under_file.json",
+        },
+    ]
+
+
+def build_vectors(resources: Any, out_dir: Path) -> list[dict[str, Any]]:
+    ensure_fixtures(out_dir)
+    schema_path = resources.schema_path
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs(out_dir):
+        dev_abs = row["development_path"].resolve()
+        name = row["name"]
+        assert_returns_development_path(schema_path, name, dev_abs)
+        dev_rel = rel_posix(out_dir, dev_abs)
+        got = schema_path(name, dev_abs)
+        path_rel = rel_posix(out_dir, got)
+        if path_rel != dev_rel:
+            raise SystemExit(f"{row['id']}: expected path {dev_rel}, got {path_rel}")
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": {
+                    "type": "schema_path",
+                    "name": name,
+                    "development_path": dev_rel,
+                },
+                "expected": {"path": path_rel},
+            }
+        )
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "_resources_py_sha256": RESOURCES_PY_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "_resources_py_sha256": RESOURCES_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/_resources/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "schema_path resolution for pinned sesslint._resources (synthetic fixtures only).",
+        "generator": "rust/parity/vectors/_resources/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    resources = load_resources_module()
+    vectors = build_vectors(resources, out_dir)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

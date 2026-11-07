@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.config parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/config/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "A readable config file calls tomllib. Rust returns tomllib is not available and does not invent keys. Python returns the parsed table or Invalid TOML. Do not rewrite the Python table into the Rust error.",
+    "A pyproject.toml that contains [tool.sesslint and parses is a successful discovery in Python. Rust returns tomllib is not available and does not continue to a parent file.",
+    "No [tool.sesslint] section is not produced, because the file is not parsed.",
+    "A non-empty profile string calls list_profiles. Rust returns sesslint.profiles.builtin is not available. Python returns the registered names.",
+    "Rust trim does not drop U+001C through U+001F.",
+    "OS error text is Rust std::io::Error, not CPython OSError.",
+    "An int that does not fit i64 is a typed error. An int stored as f64 is not exact past 2^53."
+  ]
+}

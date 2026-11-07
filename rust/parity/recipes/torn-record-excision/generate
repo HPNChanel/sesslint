@@ -1,0 +1,922 @@
+#!/usr/bin/env python3
+"""Generate torn-record-excision parity vectors from the pinned blob (stdlib only).
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. Each blob is executed
+from a temporary file. This script does not import the checkout package.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "torn-record-excision"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PY_SHA = "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166"
+RS_SHA = "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a"
+MODULE = "sesslint.repair.recipes_salvage"
+RECIPE = "torn-record-excision"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_sl001_excision.py"
+PINNED_TEST_COUNT = 7
+COVERED_TEST = "test_sl001_excisable_precondition"
+COVERED_VECTOR = "sl001_excisable_precondition"
+SEAM_REGION = "sesslint.policy.abstention.AffectedRegion is not available"
+SEAM_DETERMINISM = "sesslint.determinism.canonical_json_bytes is not available"
+
+GAP_REGION = "GAP-torn-record-excision-affected-region"
+GAP_PLANNER = "GAP-torn-record-excision-planner"
+GAP_COPY = "GAP-torn-record-excision-session-copy"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    f"{GAP_REGION}: RECIPE_TORN_RECORD_EXCISION.affected_region is absent. "
+    "This set does not construct sesslint.policy.abstention.AffectedRegion "
+    "and does not cover a region row.",
+    f"{GAP_PLANNER}: planner.plan and api.repair are not executed. A missing "
+    "canonical codec call is not a successful plan. No fingerprint is hashed "
+    "and no fixture diff is stored.",
+    f"{GAP_COPY}: the apply validation test copies SessionEvent records inside "
+    "a multi-assert sweep. That success is not replayed as Ok. One refusal "
+    "inside the sweep is not the whole test.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+    "repair/recipes_salvage.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"spec failed {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    rs = ROOT / "rust" / "crates" / "repair" / "src" / "recipes_salvage.rs"
+    if hashlib.sha256(rs.read_bytes()).hexdigest() != RS_SHA:
+        raise SystemExit("rs sha mismatch")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_salvage.py")
+    if hashlib.sha256(py_blob).hexdigest() != PY_SHA:
+        raise SystemExit("py pin sha mismatch")
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_salvage.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_torn_record_excision.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    if mod.sl001_excisable.__module__ != MODULE:
+        raise SystemExit("precondition function is not the pin blob")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        return {"t": "bool", "v": value}
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        raise SystemExit("float is not a pinned scalar in this set")
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": [[key, tagged(inner)] for key, inner in value.items()],
+        }
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def session_tagged(event: Any) -> dict[str, Any]:
+    payload = event.payload
+    if not isinstance(payload, dict):
+        payload = dict(payload)
+    return {
+        "t": "session",
+        "id": event.id,
+        "parent_id": tagged(event.parent_id),
+        "seq": tagged(event.seq),
+        "ts": event.ts,
+        "actor": event.actor,
+        "kind": event.kind,
+        "payload": tagged(payload),
+    }
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def helper_source(text: str) -> str:
+    tree = ast.parse(text)
+    wanted = {"_TORN_EVIDENCE", "_ev", "_sl001_finding", "_ctx"}
+    parts = ["from __future__ import annotations"]
+    for node in tree.body:
+        name = ""
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name):
+                name = target.id
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            name = node.target.id
+        elif isinstance(node, ast.FunctionDef):
+            name = node.name
+        if name not in wanted:
+            continue
+        segment = ast.get_source_segment(text, node)
+        if segment is None:
+            raise SystemExit(f"missing source for {name}")
+        parts.append(segment)
+        wanted.remove(name)
+    if wanted:
+        raise SystemExit(f"pin helpers missing {sorted(wanted)}")
+    return "\n\n".join(parts) + "\n"
+
+
+def load_helpers(text: str) -> dict[str, Any]:
+    canonical = sys.modules["sesslint.canonical"]
+    finding = sys.modules["sesslint.finding"]
+    codes = sys.modules["sesslint.codes"]
+    pre = sys.modules["sesslint.repair.preconditions"]
+    namespace: dict[str, Any] = {
+        "Any": Any,
+        "SessionEvent": canonical.SessionEvent,
+        "make_finding": finding.make_finding,
+        "Severity": finding.Severity,
+        "Repairability": finding.Repairability,
+        "SourceRef": finding.SourceRef,
+        "SL001": codes.SL001,
+        "PreconditionContext": pre.PreconditionContext,
+    }
+    exec(helper_source(text), namespace)  # noqa: S102 - pin helper text only
+    return namespace
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def assert_bool(stmt: ast.Assert) -> bool:
+    test = stmt.test
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1:
+        raise SystemExit("precondition assert is not a comparison")
+    if not isinstance(test.ops[0], ast.Is):
+        raise SystemExit("precondition assert is not `is`")
+    left = test.left
+    if not isinstance(left, ast.Call) or not isinstance(left.func, ast.Name):
+        raise SystemExit("precondition assert does not call sl001_excisable")
+    if left.func.id != "sl001_excisable":
+        raise SystemExit("precondition assert calls a different function")
+    comparator = test.comparators[0]
+    if not isinstance(comparator, ast.Constant) or type(comparator.value) is not bool:
+        raise SystemExit("precondition comparator is not a bool")
+    return bool(comparator.value)
+
+
+def function_named(tree: ast.AST, name: str) -> ast.FunctionDef:
+    for node in getattr(tree, "body", []):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise SystemExit(f"missing {name}")
+
+
+def precondition_shape(fn: ast.FunctionDef) -> tuple[list[bool], list[dict[str, Any]], dict[str, Any]]:
+    if "plan" in call_names(fn) or "repair" in call_names(fn):
+        raise SystemExit("precondition test calls plan or repair")
+    if any(name.startswith("apply_torn_record_excision") for name in call_names(fn)):
+        raise SystemExit("precondition test calls apply")
+    bools: list[bool] = []
+    bad_rows: list[dict[str, Any]] | None = None
+    size_evidence: dict[str, Any] | None = None
+    for stmt in fn.body:
+        if isinstance(stmt, ast.Assert):
+            bools.append(assert_bool(stmt))
+        elif isinstance(stmt, ast.For):
+            if not isinstance(stmt.iter, ast.Tuple):
+                raise SystemExit("precondition loop is not a tuple")
+            raw = ast.literal_eval(stmt.iter)
+            if not isinstance(raw, tuple) or not raw:
+                raise SystemExit("precondition loop is empty")
+            bad_rows = []
+            for item in raw:
+                if not isinstance(item, dict):
+                    raise SystemExit("precondition loop item is not a dict")
+                bad_rows.append(item)
+            inner = [node for node in stmt.body if isinstance(node, ast.Assert)]
+            if len(inner) != 1:
+                raise SystemExit("precondition loop is not one assert")
+            flag = assert_bool(inner[0])
+            bools.extend([flag] * len(bad_rows))
+        elif isinstance(stmt, ast.Assign):
+            value = stmt.value
+            if not isinstance(value, ast.Call):
+                continue
+            for keyword in value.keywords:
+                if keyword.arg == "evidence" and isinstance(keyword.value, ast.Dict):
+                    evidence = ast.literal_eval(keyword.value)
+                    if not isinstance(evidence, dict):
+                        raise SystemExit("size evidence is not a dict")
+                    size_evidence = evidence
+    if bad_rows is None or size_evidence is None:
+        raise SystemExit("precondition sweep literals missing")
+    if len(bools) < 2 or bools == [bools[0]] * len(bools):
+        raise SystemExit("precondition sweep is one example")
+    return bools, bad_rows, size_evidence
+
+
+def keyword_map(call: ast.Call) -> dict[str, Any]:
+    found: dict[str, Any] = {}
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise SystemExit("keyword must be explicit")
+        if isinstance(keyword.value, ast.Name):
+            continue
+        found[keyword.arg] = ast.literal_eval(keyword.value)
+    return found
+
+
+def plan_step_calls(fn: ast.FunctionDef) -> list[ast.Call]:
+    found: list[ast.Call] = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "PlanStep":
+                found.append(node)
+    return found
+
+
+def apply_shape(fn: ast.FunctionDef) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    names = call_names(fn)
+    if names.count("apply_torn_record_excision_with_loss") != 1:
+        raise SystemExit("apply sweep lost the success call")
+    if "apply_torn_record_excision" not in names:
+        raise SystemExit("apply sweep lost the refusal function")
+    if "plan" in names or "repair" in names:
+        raise SystemExit("apply sweep calls plan or repair")
+    asserts = [node for node in ast.walk(fn) if isinstance(node, ast.Assert)]
+    if len(asserts) < 2:
+        raise SystemExit("apply sweep has no success asserts")
+    steps = plan_step_calls(fn)
+    if len(steps) != 2:
+        raise SystemExit("apply sweep PlanStep count")
+    template = keyword_map(steps[0])
+    params = template.get("params")
+    if not isinstance(params, dict):
+        raise SystemExit("apply template params missing")
+    order: list[str] = []
+    for stmt in fn.body:
+        if isinstance(stmt, ast.With):
+            order.append("with")
+        elif isinstance(stmt, ast.For):
+            order.append("for")
+            if not isinstance(stmt.iter, ast.Tuple):
+                raise SystemExit("apply loop is not a tuple")
+            raw = ast.literal_eval(stmt.iter)
+            if not isinstance(raw, tuple) or len(raw) < 2:
+                raise SystemExit("apply loop is one example")
+            bad_rows = []
+            for item in raw:
+                if not isinstance(item, dict):
+                    raise SystemExit("apply loop item is not a dict")
+                bad_rows.append(item)
+    if order != ["with", "for", "with"]:
+        raise SystemExit("apply refusal order is not empty, sweep, dependent")
+    return params, bad_rows
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def recipe_expected(recipe: Any) -> dict[str, Any]:
+    if recipe.affected_region is not None:
+        raise SystemExit("pin recipe builds an affected region")
+    return {
+        "mode": "recipe",
+        "name": recipe.name,
+        "handles": list(recipe.handles),
+        "preconditions": list(recipe.preconditions),
+        "lossy": require_bool("lossy", recipe.lossy),
+        "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+        "min_policy": recipe.min_policy,
+        "version": recipe.version,
+        "excludes_execution_dependence": require_bool(
+            "excludes_execution_dependence",
+            recipe.excludes_execution_dependence,
+        ),
+        "apply_present": require_bool("apply_present", recipe.apply is not None),
+        "affected_region_present": False,
+    }
+
+
+def step_spec(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "target_index": tagged(None),
+        "params": tagged(params),
+    }
+
+
+def events_spec(events: list[Any]) -> list[dict[str, Any]]:
+    encoded: list[dict[str, Any]] = []
+    for event in events:
+        if isinstance(event, dict):
+            encoded.append(tagged(event))
+        else:
+            encoded.append(session_tagged(event))
+    return encoded
+
+
+def refusal_call(
+    events: list[Any],
+    params: dict[str, Any],
+    message: str,
+) -> dict[str, Any]:
+    return {
+        "events": events_spec(events),
+        "step": step_spec(params),
+        "error_type": "PreconditionFailed",
+        "message": message,
+    }
+
+
+def run_apply(mod: Any, events: list[Any], params: dict[str, Any]) -> Any:
+    step = mod.PlanStep(
+        seq=0,
+        recipe=RECIPE,
+        target_finding_fp="fp",
+        target_index=None,
+        params=params,
+        lossy=True,
+        loss={"torn-record": 1},
+        min_policy="salvage",
+    )
+    try:
+        return mod.apply_torn_record_excision(events, step)
+    except mod.PreconditionFailed as exc:
+        return exc
+
+
+def require_refusal(mod: Any, events: list[Any], params: dict[str, Any]) -> str:
+    got = run_apply(mod, events, params)
+    if not isinstance(got, mod.PreconditionFailed):
+        raise SystemExit("pin apply returned Ok for a refusal proof")
+    return str(got)
+
+
+def run_precondition(helpers: dict[str, Any], mod: Any, test_fn: ast.FunctionDef) -> list[bool]:
+    expected, bad_rows, size_evidence = precondition_shape(test_fn)
+    ev = helpers["_ev"]
+    make = helpers["_sl001_finding"]
+    ctx = helpers["_ctx"]
+    predicate = mod.sl001_excisable
+    finding = sys.modules["sesslint.finding"]
+    codes = sys.modules["sesslint.codes"]
+    events = [ev(0), ev(2)]
+    base = make()
+    got = [
+        predicate(ctx(base, events)),
+        predicate(ctx(make(evidence=size_evidence), events)),
+        predicate(ctx(make(line=None), events)),
+    ]
+    for row in bad_rows:
+        got.append(predicate(ctx(make(evidence=row), events)))
+    dependent = ev(3, parent="msg-torn")
+    got.append(predicate(ctx(base, events + [dependent])))
+    other = finding.make_finding(
+        code=codes.SL006,
+        severity=finding.Severity.WARNING,
+        repairability=finding.Repairability.MANUAL,
+        message_template="Disconnected branch at line {line}",
+        source=finding.SourceRef(path="sess.jsonl", line=3),
+        evidence=dict(helpers["_TORN_EVIDENCE"]),
+    )
+    got.append(predicate(ctx(other, events)))
+    if got != expected:
+        raise SystemExit("pin precondition results differ from the whole test")
+    if len(got) != len(expected):
+        raise SystemExit("precondition sweep length drifted")
+    return got
+
+
+def precondition_checks(
+    helpers: dict[str, Any],
+    test_fn: ast.FunctionDef,
+) -> list[dict[str, Any]]:
+    _expected, bad_rows, size_evidence = precondition_shape(test_fn)
+    ev = helpers["_ev"]
+    evidence = dict(helpers["_TORN_EVIDENCE"])
+    pair = [ev(0), ev(2)]
+    dependent = ev(3, parent="msg-torn")
+    rows: list[tuple[Any, Any, Any, list[Any]]] = [
+        (3, "msg-torn", evidence, pair),
+        (3, "msg-torn", size_evidence, pair),
+        (None, "msg-torn", evidence, pair),
+    ]
+    for bad in bad_rows:
+        rows.append((3, "msg-torn", bad, pair))
+    rows.append((3, "msg-torn", evidence, pair + [dependent]))
+    rows.append((3, None, evidence, pair))
+    checks: list[dict[str, Any]] = []
+    for line, record_id, ev_map, events in rows[:-1]:
+        checks.append(check_spec("SL001", line, record_id, ev_map, events))
+    checks.append(check_spec("SL006", 3, None, evidence, pair))
+    return checks
+
+
+def check_spec(
+    code: str,
+    line: int | None,
+    record_id: str | None,
+    evidence: dict[str, Any],
+    events: list[Any],
+) -> dict[str, Any]:
+    return {
+        "code": code,
+        "line": tagged(line),
+        "record_id": tagged(record_id),
+        "evidence": tagged(evidence),
+        "events": events_spec(events),
+        "policy": "salvage",
+        "acknowledge_side_effects": True,
+        "profile": "neutral",
+        "source_hash": "0" * 64,
+        "path": "sess.jsonl",
+    }
+
+
+def discard_session_success(mod: Any, helpers: dict[str, Any], params: dict[str, Any]) -> None:
+    events = [helpers["_ev"](0), helpers["_ev"](2)]
+    step = mod.PlanStep(
+        seq=0,
+        recipe=RECIPE,
+        target_finding_fp="fp",
+        target_index=None,
+        params=params,
+        lossy=True,
+        loss={"torn-record": 1},
+        min_policy="salvage",
+    )
+    out, loss = mod.apply_torn_record_excision_with_loss(events, step)
+    if loss != {"torn-record": 1}:
+        raise SystemExit("pin success loss drifted")
+    if [row["id"] for row in out] != ["msg-0", "msg-2"]:
+        raise SystemExit("pin success ids drifted")
+    if mod.apply_torn_record_excision(events, step) != out:
+        raise SystemExit("pin apply diverged from with_loss")
+    del out
+
+
+def apply_refusals(
+    mod: Any,
+    helpers: dict[str, Any],
+    params: dict[str, Any],
+    bad_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    events = [helpers["_ev"](0), helpers["_ev"](2)]
+    dependent = helpers["_ev"](3, parent="msg-torn")
+    calls = [
+        refusal_call([], params, require_refusal(mod, [], params)),
+    ]
+    for bad in bad_rows:
+        calls.append(refusal_call(events, bad, require_refusal(mod, events, bad)))
+    calls.append(
+        refusal_call(
+            events + [dependent],
+            params,
+            require_refusal(mod, events + [dependent], params),
+        )
+    )
+    return calls
+
+
+def bool_apply_calls(mod: Any, helpers: dict[str, Any]) -> list[dict[str, Any]]:
+    events = [helpers["_ev"](0), helpers["_ev"](2)]
+    line_only = {"line": True}
+    span = {
+        "line": 1,
+        "record_ordinal": 1,
+        "byte_offset": True,
+        "byte_end": 2,
+    }
+    return [
+        refusal_call(events, line_only, require_refusal(mod, events, line_only)),
+        refusal_call(events, span, require_refusal(mod, events, span)),
+    ]
+
+
+def record_id_cases(mod: Any) -> dict[str, Any]:
+    event = {"id": "evt-keep", "kind": "message", "parent_id": True}
+    base = {
+        "line": 1,
+        "record_ordinal": 1,
+        "byte_offset": 0,
+        "byte_end": 2,
+    }
+    refused_params = dict(base)
+    refused_params["record_id"] = True
+    kept_params = dict(base)
+    kept_params["record_id"] = 1
+    refused = require_refusal(mod, [event], refused_params)
+    kept_step = mod.PlanStep(
+        seq=0,
+        recipe=RECIPE,
+        target_finding_fp="fp",
+        target_index=None,
+        params=kept_params,
+        lossy=True,
+        loss={"torn-record": 1},
+        min_policy="salvage",
+    )
+    copied, loss = mod.apply_torn_record_excision_with_loss([dict(event)], kept_step)
+    plain = mod.apply_torn_record_excision([dict(event)], kept_step)
+    if plain != copied:
+        raise SystemExit("int record id apply diverged")
+    if not isinstance(loss, dict):
+        raise SystemExit("loss is not a dict")
+    return {
+        "calls": [
+            refusal_call([event], refused_params, refused),
+            {
+                "events": events_spec([event]),
+                "step": step_spec(kept_params),
+                "mode": "ok",
+                "events_out": [tagged(row) for row in copied],
+                "loss": tagged(loss),
+            },
+        ]
+    }
+
+
+def span_checks(mod: Any, helpers: dict[str, Any]) -> tuple[list[dict[str, Any]], list[bool]]:
+    ctx = helpers["_ctx"]
+    make = helpers["_sl001_finding"]
+    predicate = mod.sl001_excisable
+    specs = [
+        {"byte_offset": True, "byte_end": 2, "record_ordinal": 1},
+        {"byte_offset": 0, "byte_end": True, "record_ordinal": 1},
+        {"byte_offset": 0, "byte_end": 2, "record_ordinal": True},
+        {"byte_offset": 0, "byte_end": 2, "record_ordinal": 1},
+    ]
+    checks: list[dict[str, Any]] = []
+    values: list[bool] = []
+    for evidence in specs:
+        finding = make(line=1, record_id=None, evidence=evidence)
+        values.append(require_bool("span", predicate(ctx(finding, []))))
+        checks.append(check_spec("SL001", 1, None, evidence, []))
+    if values != [False, False, False, True]:
+        raise SystemExit("bool span was accepted as an int")
+    return checks, values
+
+
+def coverage_note(name: str, fn: ast.FunctionDef) -> str:
+    names = set(call_names(fn))
+    asserts = sum(isinstance(node, ast.Assert) for node in ast.walk(fn))
+    if "repair" in names:
+        return (
+            f"{GAP_PLANNER} blocks api.repair. The test is a multi-assert sweep. "
+            "No fingerprint is hashed and no fixture diff is stored."
+        )
+    if "plan" in names:
+        sweep = ""
+        if asserts > 1:
+            sweep = " One example inside a sweep is not the whole test."
+        return (
+            f"{GAP_PLANNER} blocks planner.plan. It is not a successful plan."
+            f"{sweep} No fingerprint is hashed and no fixture diff is stored."
+        )
+    if "apply_torn_record_excision" in names or "apply_torn_record_excision_with_loss" in names:
+        return (
+            f"{GAP_COPY}. apply_torn_record_excision refusals are a different "
+            "outcome from the SessionEvent success in the same test. One refusal "
+            "inside the sweep is not the whole test."
+        )
+    return "different function from sl001_excisable"
+
+
+def discover_coverage(text: str, vector_ids: set[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    functions = test_functions(text)
+    if len(functions) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    for fn in functions:
+        covered = fn.name == COVERED_TEST
+        if covered and COVERED_VECTOR not in vector_ids:
+            raise SystemExit("missing covered vector")
+        status = "covered" if covered else "not_applicable"
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": status,
+                "vector_id": COVERED_VECTOR if covered else None,
+                "note": "" if covered else coverage_note(fn.name, fn),
+            }
+        )
+    if sum(row["status"] == "covered" for row in rows) != 1:
+        raise SystemExit("expected exactly one covered row")
+    return rows
+
+
+def build_vectors(mod: Any, text: str) -> list[dict[str, Any]]:
+    tree = ast.parse(text)
+    helpers = load_helpers(text)
+    pre_fn = function_named(tree, COVERED_TEST)
+    apply_fn = function_named(tree, "test_apply_torn_record_excision_validation")
+    values = run_precondition(helpers, mod, pre_fn)
+    checks = precondition_checks(helpers, pre_fn)
+    if len(checks) != len(values):
+        raise SystemExit("precondition vector is not the whole test")
+    params, bad_rows = apply_shape(apply_fn)
+    discard_session_success(mod, helpers, params)
+    recipe = mod.RECIPE_TORN_RECORD_EXCISION
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    span_checks_doc, span_values = span_checks(mod, helpers)
+    record_cases = record_id_cases(mod)
+    return [
+        {
+            "id": "recipe_torn_record_excision",
+            "construct": {"type": "recipe_constant"},
+            "expected": recipe_expected(recipe),
+        },
+        {
+            "id": COVERED_VECTOR,
+            "construct": {
+                "type": "sl001_excisable",
+                "fn": "sl001_excisable",
+                "entire_test": True,
+                "assert_count": len(values),
+                "checks": checks,
+            },
+            "expected": {
+                "mode": "bools",
+                "values": values,
+            },
+        },
+        {
+            "id": "apply_torn_record_excision_refusals",
+            "construct": {
+                "type": "apply_refusals",
+                "fn": "apply_torn_record_excision",
+                "entire_test": False,
+                "calls": apply_refusals(mod, helpers, params, bad_rows),
+            },
+            "expected": {"mode": "refusals"},
+        },
+        {
+            "id": "apply_bool_span_and_line",
+            "construct": {
+                "type": "apply_refusals",
+                "fn": "apply_torn_record_excision",
+                "entire_test": False,
+                "calls": bool_apply_calls(mod, helpers),
+            },
+            "expected": {"mode": "refusals"},
+        },
+        {
+            "id": "apply_record_id_bool_is_not_int",
+            "construct": {
+                "type": "apply_mixed",
+                "fn": "apply_torn_record_excision",
+                "entire_test": False,
+                "calls": record_cases["calls"],
+            },
+            "expected": {"mode": "mixed"},
+        },
+        {
+            "id": "sl001_bool_span_is_not_an_int",
+            "construct": {
+                "type": "sl001_excisable",
+                "fn": "sl001_excisable",
+                "entire_test": False,
+                "assert_count": len(span_values),
+                "checks": span_checks_doc,
+            },
+            "expected": {"mode": "bools", "values": span_values},
+        },
+    ]
+
+
+def dump(doc: Any) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if "02694d5" in text or SEAM_REGION in text or SEAM_DETERMINISM in text:
+        raise SystemExit("refusing banned sentence in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit(f"refusing path fragment in JSON: {banned}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    mod = load_mod()
+    vectors = build_vectors(mod, test_text)
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_py_sha256": PY_SHA,
+        "recipes_salvage_rs_sha256": RS_SHA,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage(test_text, {item["id"] for item in vectors})
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "test_file": TEST_FILE,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    write_text(OUT / "coverage.json", dump(coverage))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic torn-record-excision parity. Preconditions and refusals "
+            "come from the pinned blob. Session copy success and planner output "
+            "stay uncovered. No fixture diff is stored."
+        ),
+        "generator": "rust/parity/recipes/torn-record-excision/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_rs_sha256": RS_SHA,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/recipes/torn-record-excision/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest))
+    covered = coverage["covered_count"]
+    skipped = coverage["not_applicable_count"]
+    print(f"{len(vectors)} {digest} covered={covered} not_applicable={skipped}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

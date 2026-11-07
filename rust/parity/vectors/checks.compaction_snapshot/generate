@@ -1,0 +1,433 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.compaction_snapshot module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+COMPACTION_SNAPSHOT_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+COMPACTION_SNAPSHOT_RS_SHA256 = (
+    "ae86c60f5a595e8f955a4f109f2d7e4438a85b9603dd6cb54c1baacb6ba3db88"
+)
+MODULE = "sesslint.checks.compaction_snapshot"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "check_compaction_snapshot uses make_finding with the fingerprint omitted; Rust returns "
+    "FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python int is unbounded; Rust uses checked i64 for indexes and occurrence counts "
+    "(PYTHON_INT_UNBOUNDED).",
+    "A bool is not an int. A float or other non-string kind is not a boundary.",
+    "MapWalk::Borrowed and ListWalk::Borrowed are failed borrows, not empty collections.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_compaction_snapshot_py_blob() -> None:
+    pin = git_show_blob(
+        f"{COMPACTION_SNAPSHOT_PY_PIN}:src/sesslint/checks/compaction_snapshot.py"
+    )
+    head = git_show_blob("HEAD:src/sesslint/checks/compaction_snapshot.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/compaction_snapshot.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_compaction_snapshot_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "compaction_snapshot.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != COMPACTION_SNAPSHOT_RS_SHA256:
+        raise SystemExit(
+            "checks/src/compaction_snapshot.rs sha256 mismatch: "
+            f"expected {COMPACTION_SNAPSHOT_RS_SHA256}, got {digest}"
+        )
+
+
+def load_compaction_snapshot_module() -> types.ModuleType:
+    verify_compaction_snapshot_py_blob()
+    verify_compaction_snapshot_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(
+        f"{COMPACTION_SNAPSHOT_PY_PIN}:src/sesslint/checks/compaction_snapshot.py"
+    )
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_compaction_snapshot.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_compaction_snapshot_parity", tmp_path
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned compaction_snapshot.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    extra_fields: dict[str, Any],
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields=extra_fields,
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_construct_compaction_snapshot_check(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "compaction_snapshot_check",
+        "events": [encode_event(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    out.append(
+        {
+            "id": "module_dunder_all",
+            "construct": {"type": "module_dunder_all"},
+            "expected": {"names": list(mod.__all__)},
+        }
+    )
+
+    # No codex marker on either event: no durable stream entries, no boundaries -> [].
+    ev_nc = [
+        session_event("evt-par-csnap-nc-a", 0, "message", {}),
+        session_event("evt-par-csnap-nc-b", 1, "compaction_boundary", {}),
+    ]
+    out.append(
+        {
+            "id": "no_codex_marker_empty_findings",
+            "construct": encode_construct_compaction_snapshot_check(ev_nc),
+            "expected": {
+                "findings_count": len(mod.check_compaction_snapshot(ev_nc)),
+                "divergences_count": 0,
+            },
+        }
+    )
+
+    # Shared item: matching type and correlator.
+    ev_match = [
+        session_event(
+            "evt-par-csnap-match-d",
+            0,
+            "message",
+            {"codex": {"item_type": "function_call", "call_id": "corr-par-csnap-a"}},
+        ),
+        session_event(
+            "evt-par-csnap-match-b",
+            1,
+            "compaction_boundary",
+            {
+                "codex": {
+                    "guardian_items": [
+                        {
+                            "id": "evt-par-csnap-match-d",
+                            "type": "function_call",
+                            "call_id": "corr-par-csnap-a",
+                        }
+                    ]
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "same_type_same_call_id_empty_findings",
+            "construct": encode_construct_compaction_snapshot_check(ev_match),
+            "expected": {
+                "findings_count": len(mod.check_compaction_snapshot(ev_match)),
+                "divergences_count": 0,
+            },
+        }
+    )
+
+    # Snapshot-only id: second guardian id not in stream -> skipped; first matches.
+    ev_snap_only = [
+        session_event(
+            "evt-par-csnap-so-d",
+            0,
+            "message",
+            {"codex": {"item_type": "message"}},
+        ),
+        session_event(
+            "evt-par-csnap-so-b",
+            1,
+            "compaction_boundary",
+            {
+                "codex": {
+                    "guardian_items": [
+                        {"id": "evt-par-csnap-so-d", "type": "message"},
+                        {"id": "evt-par-csnap-so-inherited", "type": "reasoning"},
+                    ]
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "snapshot_only_id_empty_findings",
+            "construct": encode_construct_compaction_snapshot_check(ev_snap_only),
+            "expected": {
+                "findings_count": len(mod.check_compaction_snapshot(ev_snap_only)),
+                "divergences_count": 0,
+            },
+        }
+    )
+
+    # Durable b not cited in snapshot; durable a matches.
+    ev_absent = [
+        session_event(
+            "evt-par-csnap-abs-a",
+            0,
+            "message",
+            {"codex": {"item_type": "message"}},
+        ),
+        session_event(
+            "evt-par-csnap-abs-b",
+            1,
+            "message",
+            {"codex": {"item_type": "message"}},
+        ),
+        session_event(
+            "evt-par-csnap-abs-bound",
+            2,
+            "compaction_boundary",
+            {
+                "codex": {
+                    "guardian_items": [
+                        {"id": "evt-par-csnap-abs-a", "type": "message"},
+                    ]
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "durable_absent_from_snapshot_empty_findings",
+            "construct": encode_construct_compaction_snapshot_check(ev_absent),
+            "expected": {
+                "findings_count": len(mod.check_compaction_snapshot(ev_absent)),
+                "divergences_count": 0,
+            },
+        }
+    )
+
+    # Python only treats list guardian_items as a boundary; tuple -> no boundary.
+    ev_tuple = [
+        session_event(
+            "evt-par-csnap-tuple-d",
+            0,
+            "message",
+            {"codex": {"item_type": "message", "call_id": "corr-par-csnap-tuple"}},
+        ),
+        session_event(
+            "evt-par-csnap-tuple-b",
+            1,
+            "compaction_boundary",
+            {
+                "codex": {
+                    "item_type": "message",
+                    "call_id": "corr-par-csnap-tuple",
+                    "guardian_items": (
+                        {
+                            "id": "evt-par-csnap-tuple-d",
+                            "type": "reasoning",
+                            "call_id": "corr-par-csnap-tuple",
+                        },
+                    ),
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "guardian_items_tuple_not_list_empty_findings",
+            "construct": encode_construct_compaction_snapshot_check(ev_tuple),
+            "expected": {
+                "findings_count": len(mod.check_compaction_snapshot(ev_tuple)),
+                "divergences_count": 0,
+            },
+        }
+    )
+
+    # Non-string kind on the boundary event: not treated as compaction_boundary -> no boundaries.
+    ev_boundary = session_event(
+        "evt-par-csnap-kind-b",
+        1,
+        "compaction_boundary",
+        {
+            "codex": {
+                "guardian_items": [{"id": "evt-par-csnap-kind-d", "type": "message"}],
+            }
+        },
+    )
+    object.__setattr__(ev_boundary, "kind", 1.25)
+    ev_nonstr_kind = [
+        session_event(
+            "evt-par-csnap-kind-d",
+            0,
+            "message",
+            {"codex": {"item_type": "message"}},
+        ),
+        ev_boundary,
+    ]
+    out.append(
+        {
+            "id": "non_string_kind_not_boundary_empty_findings",
+            "construct": encode_construct_compaction_snapshot_check(ev_nonstr_kind),
+            "expected": {
+                "findings_count": len(mod.check_compaction_snapshot(ev_nonstr_kind)),
+                "divergences_count": 0,
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_compaction_snapshot_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_module(mod)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": spec["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_compaction_snapshot_rs_sha256": COMPACTION_SNAPSHOT_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_compaction_snapshot_rs_sha256": COMPACTION_SNAPSHOT_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.compaction_snapshot/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.compaction_snapshot parity "
+            "(stdlib-only vectors; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.compaction_snapshot/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

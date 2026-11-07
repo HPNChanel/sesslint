@@ -1,0 +1,453 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.context_pressure",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_context_pressure_rs_sha256": "ebbbb259b2b972e4266d5817e19560e9b5f46f5800cd99f80884c52df53df507",
+  "known_parity_gaps": [
+    "A real under-15% marker calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (known gap).",
+    "Python int is unbounded. Rust checked i64 overflow on window - occupancy, headroom * 20, and window * 3 is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key."
+  ],
+  "vectors": [
+    {
+      "id": "no_context_pressure_marker_empty_findings",
+      "construct": {
+        "type": "context_pressure_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-no-a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-no-b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "last_pressure_marker_none": true
+      }
+    },
+    {
+      "id": "headroom_exactly_on_15pct_boundary_empty_findings",
+      "construct": {
+        "type": "context_pressure_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-boundary"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "context_pressure",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "occupancy",
+                                  {
+                                    "t": "int",
+                                    "v": 8500
+                                  }
+                                ],
+                                [
+                                  "window",
+                                  {
+                                    "t": "int",
+                                    "v": 10000
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "last_pressure_marker_none": true
+      }
+    },
+    {
+      "id": "earlier_tight_then_later_comfortable_empty_findings",
+      "construct": {
+        "type": "context_pressure_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-tight"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "context_pressure",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "occupancy",
+                                  {
+                                    "t": "int",
+                                    "v": 8501
+                                  }
+                                ],
+                                [
+                                  "window",
+                                  {
+                                    "t": "int",
+                                    "v": 10000
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-comfortable"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "context_pressure",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "occupancy",
+                                  {
+                                    "t": "int",
+                                    "v": 8500
+                                  }
+                                ],
+                                [
+                                  "window",
+                                  {
+                                    "t": "int",
+                                    "v": 10000
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "last_pressure_marker_none": true
+      }
+    },
+    {
+      "id": "bool_occupancy_ignored_empty_findings",
+      "construct": {
+        "type": "context_pressure_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-bool-occ"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "context_pressure",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "occupancy",
+                                  {
+                                    "t": "bool",
+                                    "v": true
+                                  }
+                                ],
+                                [
+                                  "window",
+                                  {
+                                    "t": "int",
+                                    "v": 10000
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "last_pressure_marker_none": true
+      }
+    },
+    {
+      "id": "window_zero_ignored_empty_findings",
+      "construct": {
+        "type": "context_pressure_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-cp-zero-win"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "codex",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "context_pressure",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "occupancy",
+                                  {
+                                    "t": "int",
+                                    "v": 1
+                                  }
+                                ],
+                                [
+                                  "window",
+                                  {
+                                    "t": "int",
+                                    "v": 0
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0,
+        "last_pressure_marker_none": true
+      }
+    }
+  ]
+}

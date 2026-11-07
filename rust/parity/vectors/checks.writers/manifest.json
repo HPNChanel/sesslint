@@ -1,0 +1,12 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.writers",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_writers_rs_sha256": "b5250a9a6fc864986ddb43bc57a3ee2f7d304041cb8e7d9989c3bd2c1c4eecf5",
+  "vector_count": 7,
+  "vectors_sha256": "571f9942e4ac6febd93dab48314f0d8c3f19ad72b0d5504d29ff150681766da7",
+  "generator": "rust/parity/vectors/checks.writers/generate",
+  "known_parity_gaps": [
+    "An interleave calls make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE; Python emits one SL010 finding."
+  ]
+}

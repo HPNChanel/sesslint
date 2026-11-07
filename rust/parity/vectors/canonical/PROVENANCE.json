@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.canonical parity (parse_session_header, parse_session_event, parse_session, parse_session_lines, load_session_file, validate_rfc3339_utc).",
+  "generator": "rust/parity/vectors/canonical/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error because model cannot depend on codec or adapters; Python performs the real call \u2014 parity not required here.",
+    "get_session_schema_path and load_session_schema: Rust does not read schemas/ \u2014 parity not required here.",
+    "The text after the colon in a JSON syntax error and in a UTF-8 decode error: parity on detail tail is not required.",
+    "FileNotFoundError versus SchemaError for a missing file: parity on exception type is not required; a missing-file vector may compare message text only.",
+    "Unicode Nd timestamp digits, a non-str timestamp, an int outside i64, a non-string object key, frozenset iteration order, and a set used as a payload container: parity not required here."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.ordering parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.ordering/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "A real violation calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits one SL008 finding. Do not require the two-second edge with skew 0 as a silent vector.",
+    "A second violating edge updates count and max_delta_ms on the aggregate finding; that path is also a finding on the Python side.",
+    "Python bool is not an int: type(True) is bool is rejected for timestamp_skew_ms. Rust uses Option<i64>, so a bool skew is not represented.",
+    "No chrono: a timestamp form the hand parser cannot read is skipped, matching Python ValueError inside _parse_ts."
+  ]
+}

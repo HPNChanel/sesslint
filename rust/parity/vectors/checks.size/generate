@@ -1,0 +1,443 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.size module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SIZE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SIZE_RS_SHA256 = (
+    "a20813bedab53701d557a78e88e6786a7300e02f63aac3c7fb61cd1b217b08fb"
+)
+MODULE = "sesslint.checks.size"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "Seven 1s and one 262145: Python emits one SL011 finding, ratio round(262145/1, 3) = 262145.0, "
+    "record_index 7. Rust check_size_anomaly returns FINGERPRINT_CODEC_UNAVAILABLE because the "
+    "fingerprint codec is not ported. Evidence uses PyValue with ratio None because PyValue has no float.",
+    "Integers that do not fit i64, and median * 20 overflow, are PYTHON_INT_UNBOUNDED in Rust. "
+    "Python keeps the unbounded int.",
+    "i64 as f64 is inexact above 2^53. Do not add vectors in that range.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_size_py_blob() -> None:
+    pin = git_show_blob(f"{SIZE_PY_PIN}:src/sesslint/checks/size.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/size.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/size.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_size_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "size.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != SIZE_RS_SHA256:
+        raise SystemExit(
+            "checks/src/size.rs sha256 mismatch: "
+            f"expected {SIZE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_size_module() -> types.ModuleType:
+    verify_size_py_blob()
+    verify_size_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{SIZE_PY_PIN}:src/sesslint/checks/size.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_size.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_size_parity",
+            tmp_path,
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned size.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def assert_silent(
+    mod: Any,
+    *,
+    context: Any,
+    case_id: str,
+    events: tuple[Any, ...] = (),
+) -> None:
+    out = mod.check_size_anomaly(
+        events,
+        source_path="synth.jsonl",
+        context=context,
+    )
+    if out:
+        raise SystemExit(
+            f"vector {case_id!r}: expected silent Python check_size_anomaly; "
+            f"got {len(out)} findings"
+        )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    from sesslint.context import CheckContext
+
+    out: list[dict[str, Any]] = []
+
+    # 1) No context
+    assert_silent(mod, context=None, case_id="no_context_silent")
+    out.append(
+        {
+            "id": "no_context_silent",
+            "construct": {"type": "size_check", "source_path": "synth.jsonl"},
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 2) Empty mapping — missing record_sizes key
+    ctx_missing = CheckContext(
+        adapter_id="synth-adapter-01",
+        adapter_version="9.9.9-synth",
+        profile_id="synth-profile-01",
+        profile_version="2026.01-synth",
+        source_metadata={},
+    )
+    assert_silent(mod, context=ctx_missing, case_id="missing_record_sizes_silent")
+    out.append(
+        {
+            "id": "missing_record_sizes_silent",
+            "construct": {
+                "type": "size_check",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_missing.adapter_id,
+                        "adapter_version": ctx_missing.adapter_version,
+                        "profile_id": ctx_missing.profile_id,
+                        "profile_version": ctx_missing.profile_version,
+                        "source_metadata": {},
+                        "timestamp_skew_ms": ctx_missing.timestamp_skew_ms,
+                    }
+                ),
+            },
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 3) record_sizes present but not a list
+    ctx_not_list = CheckContext(
+        adapter_id="synth-adapter-01",
+        adapter_version="9.9.9-synth",
+        profile_id="synth-profile-01",
+        profile_version="2026.01-synth",
+        source_metadata={"record_sizes": 1},
+    )
+    assert_silent(mod, context=ctx_not_list, case_id="record_sizes_not_a_list_silent")
+    out.append(
+        {
+            "id": "record_sizes_not_a_list_silent",
+            "construct": {
+                "type": "size_check",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_not_list.adapter_id,
+                        "adapter_version": ctx_not_list.adapter_version,
+                        "profile_id": ctx_not_list.profile_id,
+                        "profile_version": ctx_not_list.profile_version,
+                        "source_metadata": {"record_sizes": 1},
+                        "timestamp_skew_ms": ctx_not_list.timestamp_skew_ms,
+                    }
+                ),
+            },
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 4) Seven sizes (fewer than 8 kept)
+    ctx_seven = CheckContext(
+        adapter_id="synth-adapter-01",
+        adapter_version="9.9.9-synth",
+        profile_id="synth-profile-01",
+        profile_version="2026.01-synth",
+        source_metadata={"record_sizes": [262145] * 7},
+    )
+    assert_silent(mod, context=ctx_seven, case_id="seven_sizes_silent")
+    out.append(
+        {
+            "id": "seven_sizes_silent",
+            "construct": {
+                "type": "size_check",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_seven.adapter_id,
+                        "adapter_version": ctx_seven.adapter_version,
+                        "profile_id": ctx_seven.profile_id,
+                        "profile_version": ctx_seven.profile_version,
+                        "source_metadata": {"record_sizes": [262145] * 7},
+                        "timestamp_skew_ms": ctx_seven.timestamp_skew_ms,
+                    }
+                ),
+            },
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 5) Eight 100s — largest at floor threshold via median*20
+    ctx_eight_100 = CheckContext(
+        adapter_id="synth-adapter-01",
+        adapter_version="9.9.9-synth",
+        profile_id="synth-profile-01",
+        profile_version="2026.01-synth",
+        source_metadata={"record_sizes": [100] * 8},
+    )
+    assert_silent(mod, context=ctx_eight_100, case_id="eight_small_sizes_silent")
+    out.append(
+        {
+            "id": "eight_small_sizes_silent",
+            "construct": {
+                "type": "size_check",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_eight_100.adapter_id,
+                        "adapter_version": ctx_eight_100.adapter_version,
+                        "profile_id": ctx_eight_100.profile_id,
+                        "profile_version": ctx_eight_100.profile_version,
+                        "source_metadata": {"record_sizes": [100] * 8},
+                        "timestamp_skew_ms": ctx_eight_100.timestamp_skew_ms,
+                    }
+                ),
+            },
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 6) Seven 1s and one 262144 — largest == floor, silent
+    floor_vals = [1] * 7 + [256 * 1024]
+    ctx_floor = CheckContext(
+        adapter_id="synth-adapter-01",
+        adapter_version="9.9.9-synth",
+        profile_id="synth-profile-01",
+        profile_version="2026.01-synth",
+        source_metadata={"record_sizes": floor_vals},
+    )
+    assert_silent(mod, context=ctx_floor, case_id="floor_equal_silent")
+    out.append(
+        {
+            "id": "floor_equal_silent",
+            "construct": {
+                "type": "size_check",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_floor.adapter_id,
+                        "adapter_version": ctx_floor.adapter_version,
+                        "profile_id": ctx_floor.profile_id,
+                        "profile_version": ctx_floor.profile_version,
+                        "source_metadata": {"record_sizes": floor_vals},
+                        "timestamp_skew_ms": ctx_floor.timestamp_skew_ms,
+                    }
+                ),
+            },
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 7) Bool and negatives dropped → only seven ints kept
+    mixed = [True, -1, 1, 1, 1, 1, 1, 1, 1]
+    ctx_mixed = CheckContext(
+        adapter_id="synth-adapter-01",
+        adapter_version="9.9.9-synth",
+        profile_id="synth-profile-01",
+        profile_version="2026.01-synth",
+        source_metadata={"record_sizes": mixed},
+    )
+    assert_silent(
+        mod,
+        context=ctx_mixed,
+        case_id="bool_and_negative_dropped_below_min_silent",
+    )
+    out.append(
+        {
+            "id": "bool_and_negative_dropped_below_min_silent",
+            "construct": {
+                "type": "size_check",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_mixed.adapter_id,
+                        "adapter_version": ctx_mixed.adapter_version,
+                        "profile_id": ctx_mixed.profile_id,
+                        "profile_version": ctx_mixed.profile_version,
+                        "source_metadata": {"record_sizes": mixed},
+                        "timestamp_skew_ms": ctx_mixed.timestamp_skew_ms,
+                    }
+                ),
+            },
+            "expected": {"check_findings_len": 0},
+        }
+    )
+
+    # 8) Constants + __all__ (still silent with no context)
+    assert_silent(mod, context=None, case_id="constants_and_all")
+    if int(mod.SIZE_MIN_RECORDS) != 8 or int(mod.SIZE_RATIO_K) != 20 or int(mod.SIZE_FLOOR_BYTES) != 262144:
+        raise SystemExit("Python size constants mismatch")
+    expected_all = [
+        "SIZE_FLOOR_BYTES",
+        "SIZE_MIN_RECORDS",
+        "SIZE_RATIO_K",
+        "check_size_anomaly",
+        "check_sl011",
+    ]
+    if list(mod.__all__) != expected_all:
+        raise SystemExit(f"size __all__ mismatch: {mod.__all__!r}")
+
+    out.append(
+        {
+            "id": "constants_and_all",
+            "construct": {"type": "size_check", "source_path": "synth.jsonl"},
+            "expected": {
+                "check_findings_len": 0,
+                "SIZE_FLOOR_BYTES": 262144,
+                "SIZE_MIN_RECORDS": 8,
+                "SIZE_RATIO_K": 20,
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_size_module()
+    out_dir = Path(__file__).resolve().parent
+
+    expected_all = [
+        "SIZE_FLOOR_BYTES",
+        "SIZE_MIN_RECORDS",
+        "SIZE_RATIO_K",
+        "check_size_anomaly",
+        "check_sl011",
+    ]
+    if list(mod.__all__) != expected_all:
+        raise SystemExit(f"size __all__ mismatch at load: {mod.__all__!r}")
+
+    vectors = vectors_from_module(mod)
+
+    for spec in vectors:
+        ec = spec["expected"].get("check_findings_len")
+        if ec is not None and ec != 0:
+            raise SystemExit(
+                f'vector {spec["id"]!r}: expected silent; check_findings_len={ec}'
+            )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_size_rs_sha256": SIZE_RS_SHA256,
+        "python_all": expected_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_size_rs_sha256": SIZE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.size/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.size parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.size/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

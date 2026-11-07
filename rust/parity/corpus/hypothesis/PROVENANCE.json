@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Frozen extra parity corpus. Stdlib replay of tests/fuzz strategy shapes at the pinned commit. Synthetic placeholders only.",
+  "generator": "rust/parity/corpus/hypothesis/generate",
+  "origin": "synthetic",
+  "pin": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "seed": 42,
+  "strategies": [
+    "tests/fuzz/test_fuzz_adapter_shapes.py",
+    "tests/fuzz/test_fuzz_canonical.py",
+    "tests/fuzz/test_fuzz_graph.py",
+    "tests/fuzz/test_fuzz_jsonl.py",
+    "tests/fuzz/test_repair_invariants.py",
+    "tests/fuzz/test_stateful_sessions.py"
+  ]
+}

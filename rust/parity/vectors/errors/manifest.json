@@ -1,0 +1,8 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "vector_count": 32,
+  "vectors_sha256": "0c4cc60d86907d717be4321a53295c1618541e353d97273ede6d2f28b474a7f6",
+  "generator": "rust/parity/vectors/errors/generate"
+}

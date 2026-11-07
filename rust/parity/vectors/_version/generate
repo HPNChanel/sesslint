@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Generate sesslint._version parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+VERSION_SHA256 = "ae2c3cf49b52002187f1770b6c34b70afd9da4fd4c4f3434371aa0e9b4571d16"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_version_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "_version.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != VERSION_SHA256:
+        raise SystemExit(
+            f"_version.py sha256 mismatch: expected {VERSION_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint._version as version  # noqa: WPS433
+
+    return version
+
+
+def version_info_json(version: Any) -> str:
+    return json.dumps(version.get_version_info(), sort_keys=True)
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "get_version_info_sorted_json",
+            "construct": {"type": "get_version_info"},
+        },
+    ]
+
+
+def build_expected(version: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "get_version_info":
+        return {"json": version_info_json(version)}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    version = load_version_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(version, row["construct"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint._version",
+        "python_commit": PYTHON_COMMIT,
+        "_version_py_sha256": VERSION_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint._version",
+        "python_commit": PYTHON_COMMIT,
+        "_version_py_sha256": VERSION_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/_version/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Literal version table from pinned sesslint._version (synthetic constants only).",
+        "generator": "rust/parity/vectors/_version/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,2495 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.assurance",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "assurance_py_sha256": "8c0a182503418d404b26816b7d1db03274577c8cbc4af9532cdcd681a69fc529",
+  "known_parity_gaps": [
+    "cap_assurance: when plan has attribute 'steps' whose value is not iterable, Python raises TypeError; Rust Plan::AttributeSteps only accepts a slice."
+  ],
+  "vectors": [
+    {
+      "id": "unknown_base_0",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "invalid-level",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'invalid-level'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_1",
+      "construct": {
+        "type": "cap_assurance",
+        "base": " clean ",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: ' clean '. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_2",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "Clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'Clean'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_3",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "a\\b",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'a\\\\b'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_4",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "a\nb",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'a\\nb'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_5",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "x\u0000y",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'x\\x00y'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_6",
+      "construct": {
+        "type": "cap_assurance",
+        "base": " ",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: '\\xa0'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_7",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "​",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: '\\u200b'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_8",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "é",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'é'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_9",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "nope'quote",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: \"nope'quote\". Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_10",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "a\"b",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'a\"b'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "unknown_base_11",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "a'\"b",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "error": "Unknown base assurance: 'a\\'\"b'. Must be one of ['clean', 'repaired-lossless', 'salvaged', 'unrepairable']"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_mapping_not_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "mapping_not_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_str",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "str"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_bytes",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "bytes"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_unrepairable_other",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "other"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_mapping_not_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "mapping_not_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_str",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "str"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_bytes",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "bytes"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_salvaged_other",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "other"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_mapping_not_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "mapping_not_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_str",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "str"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_bytes",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "bytes"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_repaired-lossless_other",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "other"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "no_steps_clean_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "no_steps_clean_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "no_steps_clean_mapping_not_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_not_iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "no_steps_clean_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "no_steps_clean_str",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "str"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "no_steps_clean_bytes",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "bytes"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "no_steps_clean_other",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "other"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "clean"
+      }
+    },
+    {
+      "id": "lossy_truth_none_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_none_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_none_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_none_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_zero_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_zero_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_zero_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_zero_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_empty_str_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": ""
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_empty_str_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": ""
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_empty_str_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": ""
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_empty_str_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": ""
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_one_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 1
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_one_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 1
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_one_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 1
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_one_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": 1
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_map_missing_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_map_missing_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_map_missing_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_map_missing_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_map_none_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_map_none_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_map_none_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_map_none_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_map_zero_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_map_zero_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "lossy_truth_map_zero_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_map_zero_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": 0
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_map_true_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_map_true_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_map_true_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_map_true_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_map_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_map_repaired-lossless",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_map_salvaged",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "lossy_truth_str_zero_map_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "mapping",
+            "lossy": "0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "any_lossy_clean_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_clean_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_clean_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_repaired-lossless_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_repaired-lossless_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_repaired-lossless_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_salvaged_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_salvaged_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_salvaged_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "any_lossy_unrepairable_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "any_lossy_unrepairable_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "any_lossy_unrepairable_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "all_lossless_clean_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "all_lossless_clean_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "all_lossless_clean_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "all_lossless_repaired-lossless_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "all_lossless_repaired-lossless_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "all_lossless_repaired-lossless_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "repaired-lossless",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "all_lossless_salvaged_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "all_lossless_salvaged_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "all_lossless_salvaged_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "salvaged",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "all_lossless_unrepairable_attribute_steps",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "all_lossless_unrepairable_mapping_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "all_lossless_unrepairable_iterable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "mixed_lossy_then_lossless_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": true
+          },
+          {
+            "view": "attribute",
+            "lossy": false
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "salvaged"
+      }
+    },
+    {
+      "id": "mixed_lossless_then_lossy_unrepairable",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "unrepairable",
+        "plan": {
+          "kind": "attribute_steps"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          },
+          {
+            "view": "attribute",
+            "lossy": true
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "unrepairable"
+      }
+    },
+    {
+      "id": "all_lossless_multi_step_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_iterable"
+        },
+        "steps": [
+          {
+            "view": "attribute",
+            "lossy": false
+          },
+          {
+            "view": "other"
+          },
+          {
+            "view": "mapping"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "mapping_string_steps_caps_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_string_steps"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "mapping_keys_only_caps_clean",
+      "construct": {
+        "type": "cap_assurance",
+        "base": "clean",
+        "plan": {
+          "kind": "mapping_keys_only"
+        },
+        "steps": []
+      },
+      "expected": {
+        "ok": true,
+        "value": "repaired-lossless"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A0_conservative",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A0",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A0"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A0_repaired-lossless",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A0",
+        "policy": "repaired-lossless"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A0"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A0_clean",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A0",
+        "policy": "clean"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A0"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A1_conservative",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A1",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A1"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A1_repaired-lossless",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A1",
+        "policy": "repaired-lossless"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A1"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A1_clean",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A1",
+        "policy": "clean"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A1"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A2_conservative",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A2_repaired-lossless",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "repaired-lossless"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A2_clean",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "clean"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A3_conservative",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A3"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A3_repaired-lossless",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": "repaired-lossless"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A3"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A3_clean",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": "clean"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A3"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A4_conservative",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A4",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A4"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A4_repaired-lossless",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A4",
+        "policy": "repaired-lossless"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A4"
+      }
+    },
+    {
+      "id": "ceiling_preserve_A4_clean",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A4",
+        "policy": "clean"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A4"
+      }
+    },
+    {
+      "id": "ceiling_salvage_A0",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A0",
+        "policy": "salvage"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A0"
+      }
+    },
+    {
+      "id": "ceiling_salvaged_A0",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A0",
+        "policy": "salvaged"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A0"
+      }
+    },
+    {
+      "id": "ceiling_salvage_A1",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A1",
+        "policy": "salvage"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A1"
+      }
+    },
+    {
+      "id": "ceiling_salvaged_A1",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A1",
+        "policy": "salvaged"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A1"
+      }
+    },
+    {
+      "id": "ceiling_salvage_A2",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "salvage"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_salvaged_A2",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "salvaged"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_salvage_A3",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": "salvage"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_salvaged_A3",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": "salvaged"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_salvage_A4",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A4",
+        "policy": "salvage"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_salvaged_A4",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A4",
+        "policy": "salvaged"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_whitespace_salvage",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A4",
+        "policy": "  SaLvAgE "
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_whitespace_unicode",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "\u001cA3",
+        "policy": "\tSalvaged\n"
+      },
+      "expected": {
+        "ok": true,
+        "value": "A2"
+      }
+    },
+    {
+      "id": "ceiling_whitespace_repaired",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": " a4 ",
+        "policy": " RePaired-Lossless "
+      },
+      "expected": {
+        "ok": true,
+        "value": "A4"
+      }
+    },
+    {
+      "id": "ceiling_whitespace_clean",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": " a1 ",
+        "policy": " Clean "
+      },
+      "expected": {
+        "ok": true,
+        "value": "A1"
+      }
+    },
+    {
+      "id": "ceiling_error_invalid_level",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "INVALID",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid revalidation assurance: 'INVALID'. Must be one of ('A0', 'A1', 'A2', 'A3', 'A4')"
+      }
+    },
+    {
+      "id": "ceiling_error_spaced_level",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": " A9 ",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid revalidation assurance: ' A9 '. Must be one of ('A0', 'A1', 'A2', 'A3', 'A4')"
+      }
+    },
+    {
+      "id": "ceiling_error_empty_level",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "",
+        "policy": "conservative"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid revalidation assurance: ''. Must be one of ('A0', 'A1', 'A2', 'A3', 'A4')"
+      }
+    },
+    {
+      "id": "ceiling_error_unknown_policy",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": "unknown_policy"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid policy or pedigree: 'unknown_policy'. Must be one of ('conservative', 'salvage', 'repaired-lossless', 'salvaged', 'clean')"
+      }
+    },
+    {
+      "id": "ceiling_error_spaced_policy",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A3",
+        "policy": " unknown "
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid policy or pedigree: ' unknown '. Must be one of ('conservative', 'salvage', 'repaired-lossless', 'salvaged', 'clean')"
+      }
+    },
+    {
+      "id": "ceiling_error_lossy_alias",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "lossy"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid policy or pedigree: 'lossy'. Must be one of ('conservative', 'salvage', 'repaired-lossless', 'salvaged', 'clean')"
+      }
+    },
+    {
+      "id": "ceiling_error_unrepairable_policy",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "A2",
+        "policy": "unrepairable"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid policy or pedigree: 'unrepairable'. Must be one of ('conservative', 'salvage', 'repaired-lossless', 'salvaged', 'clean')"
+      }
+    },
+    {
+      "id": "ceiling_error_both_invalid",
+      "construct": {
+        "type": "compute_assurance_ceiling",
+        "revalidation": "nope",
+        "policy": "bad"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Invalid revalidation assurance: 'nope'. Must be one of ('A0', 'A1', 'A2', 'A3', 'A4')"
+      }
+    }
+  ]
+}

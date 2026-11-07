@@ -1,0 +1,435 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._output parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import os
+import sys
+import tempfile
+from contextlib import redirect_stdout
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+OUTPUT_SHA256 = "6dfd52796f3f70018e749905cbf3ac81daffafea113b1646ee08e170b1bc4697"
+EMIT_UNICODE = "synthetic câu tiếng Việt"
+MSG_INPUT_PATH = "Error: --output/--write-baseline must not be an input path"
+MSG_INSIDE_INPUT_DIR = (
+    "Error: --output must not replace an artifact inside an input directory"
+)
+MSG_LINK_ALIAS = "Error: --output/--write-baseline must not be a link alias"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_output_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "_output.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != OUTPUT_SHA256:
+        raise SystemExit(
+            f"_output.py sha256 mismatch: expected {OUTPUT_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.cli._output as output  # noqa: WPS433
+    from sesslint.cli._context import CliContext  # noqa: WPS433
+    from sesslint.cli._errors import CliError  # noqa: WPS433
+
+    return output, CliContext, CliError
+
+
+def fill_namespace(args: argparse.Namespace) -> None:
+    for name in (
+        "write_baseline",
+        "a",
+        "b",
+        "source",
+        "source_flag",
+        "repaired",
+        "repaired_flag",
+        "manifest",
+        "plan",
+        "state_copy",
+        "baseline",
+        "seal",
+        "contract",
+        "target",
+        "session",
+        "agent",
+    ):
+        if not hasattr(args, name):
+            setattr(args, name, None)
+    if not hasattr(args, "include_archived"):
+        setattr(args, "include_archived", False)
+
+
+def ctx_default(CliContext: type) -> Any:
+    return CliContext(quiet=False, verbose=False, config_path=None, settings={})
+
+
+def apply_setup(name: str, root: Path) -> None:
+    if name == "minimal_source":
+        (root / "source.jsonl").write_bytes(b"synthetic-source\n")
+        return
+    if name == "sessions_artifact":
+        sessions = root / "sessions"
+        sessions.mkdir(parents=True, exist_ok=True)
+        (sessions / "artifact.json").write_bytes(b"synthetic-artifact\n")
+        return
+    if name == "sessions_source":
+        sessions = root / "sessions"
+        sessions.mkdir(parents=True, exist_ok=True)
+        (sessions / "source.jsonl").write_bytes(b"synthetic-source\n")
+        return
+    if name == "source_and_hardlink":
+        source = root / "source.jsonl"
+        source.write_bytes(b"synthetic-source\n")
+        alias = root / "alias.jsonl"
+        os.link(source, alias)
+        return
+    raise SystemExit(f"unknown setup: {name}")
+
+
+def rel_paths(root: Path, names: list[str]) -> list[Path]:
+    return [root / name for name in names]
+
+
+Runner = Callable[[], dict[str, Any]]
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], runner: Runner) -> None:
+        specs.append({"id": vector_id, "construct": construct, "_runner": runner})
+
+    def with_setup(setup: str, fn: Callable[[Path], dict[str, Any]]) -> Runner:
+        def run() -> dict[str, Any]:
+            with tempfile.TemporaryDirectory(prefix="sesslint-cli-output-par-") as tmp:
+                root = Path(tmp)
+                apply_setup(setup, root)
+                return fn(root)
+
+        return run
+
+    output_mod: Any = None
+    CliContext: Any = None
+    CliError: Any = None
+
+    def load() -> tuple[Any, Any, Any]:
+        nonlocal output_mod, CliContext, CliError
+        if output_mod is None:
+            output_mod, CliContext, CliError = load_output_module()
+        return output_mod, CliContext, CliError
+
+    add(
+        "guard_rejects_output_same_as_input",
+        {
+            "type": "guard_destination",
+            "setup": "minimal_source",
+            "destination": "source.jsonl",
+            "files": ["source.jsonl"],
+            "roots": [],
+        },
+        with_setup(
+            "minimal_source",
+            lambda root: {
+                "result": "error",
+                "display": _run_guard(root, "source.jsonl", ["source.jsonl"], []),
+            },
+        ),
+    )
+
+    add(
+        "guard_rejects_existing_file_inside_input_directory",
+        {
+            "type": "guard_destination",
+            "setup": "sessions_artifact",
+            "destination": "sessions/artifact.json",
+            "files": ["sessions"],
+            "roots": ["sessions"],
+        },
+        with_setup(
+            "sessions_artifact",
+            lambda root: {
+                "result": "error",
+                "display": _run_guard(
+                    root,
+                    "sessions/artifact.json",
+                    ["sessions"],
+                    ["sessions"],
+                ),
+            },
+        ),
+    )
+
+    add(
+        "guard_error_order_input_path_before_inside_directory",
+        {
+            "type": "guard_destination",
+            "setup": "sessions_source",
+            "destination": "sessions/source.jsonl",
+            "files": ["sessions", "sessions/source.jsonl"],
+            "roots": ["sessions"],
+        },
+        with_setup(
+            "sessions_source",
+            lambda root: {
+                "result": "error",
+                "display": _run_guard(
+                    root,
+                    "sessions/source.jsonl",
+                    ["sessions", "sessions/source.jsonl"],
+                    ["sessions"],
+                ),
+            },
+        ),
+    )
+
+    add(
+        "guard_error_order_alias_before_input_path",
+        {
+            "type": "guard_destination",
+            "setup": "source_and_hardlink",
+            "destination": "alias.jsonl",
+            "files": ["source.jsonl"],
+            "roots": [],
+        },
+        with_setup(
+            "source_and_hardlink",
+            lambda root: {
+                "result": "error",
+                "display": _run_guard(root, "alias.jsonl", ["source.jsonl"], []),
+            },
+        ),
+    )
+
+    add(
+        "emit_text_without_output_returns_print_payload",
+        {
+            "type": "emit_text",
+            "text": EMIT_UNICODE,
+            "summary": "unused",
+            "command": "check",
+        },
+        lambda: {
+            "result": "stdout",
+            "text": _run_emit_stdout(EMIT_UNICODE),
+        },
+    )
+
+    add(
+        "preflight_skips_non_report_command",
+        {
+            "type": "preflight_report_outputs",
+            "setup": "minimal_source",
+            "command": "repair",
+            "path": "source.jsonl",
+            "output": "source.jsonl",
+        },
+        with_setup(
+            "minimal_source",
+            lambda root: {
+                "result": "ok",
+                **_run_preflight(
+                    root,
+                    command="repair",
+                    path="source.jsonl",
+                    output="source.jsonl",
+                ),
+            },
+        ),
+    )
+
+    add(
+        "preflight_skips_report_command_without_destinations",
+        {
+            "type": "preflight_report_outputs",
+            "setup": "minimal_source",
+            "command": "check",
+            "path": "source.jsonl",
+        },
+        with_setup(
+            "minimal_source",
+            lambda root: {
+                "result": "ok",
+                **_run_preflight(root, command="check", path="source.jsonl"),
+            },
+        ),
+    )
+
+    add(
+        "boundaries_skips_dash_scalar",
+        {
+            "type": "boundaries",
+            "command": "diff",
+            "a": "-",
+            "b": "right.jsonl",
+        },
+        lambda: {
+            "result": "boundaries",
+            **_run_boundaries(),
+        },
+    )
+
+    return specs
+
+
+def _run_guard(
+    root: Path, destination: str, files: list[str], roots: list[str]
+) -> str:
+    output, _, CliError = load_output_module()
+    dest = root / destination
+    try:
+        output._guard_destination(
+            dest,
+            rel_paths(root, files),
+            rel_paths(root, roots),
+        )
+    except CliError as err:
+        return str(err)
+    raise SystemExit(f"guard_destination expected CliError for {destination}")
+
+
+def _run_emit_stdout(text: str) -> str:
+    output, CliContext, _ = load_output_module()
+    ctx = ctx_default(CliContext)
+    args = argparse.Namespace(command="check", output=None)
+    fill_namespace(args)
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        output.emit_text(ctx, args, text, inputs=[], summary="unused")
+    return buffer.getvalue()
+
+
+def _run_preflight(
+    root: Path,
+    *,
+    command: str,
+    path: str | None = None,
+    output: str | None = None,
+) -> dict[str, Any]:
+    output_mod, CliContext, CliError = load_output_module()
+    ctx = ctx_default(CliContext)
+    args = argparse.Namespace(
+        command=command,
+        path=str(root / path) if path is not None else None,
+        output=str(root / output) if output is not None else None,
+        write_baseline=None,
+    )
+    fill_namespace(args)
+    try:
+        output_mod.preflight_report_outputs(ctx, args)
+    except CliError as err:
+        return {"display": str(err), "exit_code": err.exit_code}
+    return {}
+
+
+def _run_boundaries() -> dict[str, Any]:
+    output, CliContext, _ = load_output_module()
+    ctx = ctx_default(CliContext)
+    args = argparse.Namespace(command="diff", a="-", b="right.jsonl", path=None)
+    fill_namespace(args)
+    files, roots = output._boundaries(ctx, args, [])
+    return {
+        "files": [path.name if path.name else str(path) for path in files],
+        "roots": [str(path) for path in roots],
+    }
+
+
+def main() -> int:
+    # Validate messages once at generation time.
+    assert _expected_guard_messages()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs()
+    vectors: list[dict[str, Any]] = []
+    for spec in specs:
+        runner = spec.pop("_runner")
+        expected = runner()
+        if expected.get("result") == "error":
+            expected.setdefault("exit_code", 2)
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._output",
+        "python_commit": PYTHON_COMMIT,
+        "output_py_sha256": OUTPUT_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._output",
+        "python_commit": PYTHON_COMMIT,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._output/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic cli._output guard, preflight, emit_text, and boundaries parity vectors.",
+        "generator": "rust/parity/vectors/cli._output/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+def _expected_guard_messages() -> bool:
+    output, _, CliError = load_output_module()
+    with tempfile.TemporaryDirectory(prefix="sesslint-cli-output-par-") as tmp:
+        root = Path(tmp)
+        apply_setup("minimal_source", root)
+        src = root / "source.jsonl"
+        try:
+            output._guard_destination(src, [src], [])
+        except CliError as err:
+            assert str(err) == MSG_INPUT_PATH
+        apply_setup("sessions_artifact", root)
+        art = root / "sessions" / "artifact.json"
+        try:
+            output._guard_destination(art, [root / "sessions"], [root / "sessions"])
+        except CliError as err:
+            assert str(err) == MSG_INSIDE_INPUT_DIR
+        apply_setup("source_and_hardlink", root)
+        alias = root / "alias.jsonl"
+        try:
+            output._guard_destination(alias, [root / "source.jsonl"], [])
+        except CliError as err:
+            assert str(err) == MSG_LINK_ALIAS
+    return True
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

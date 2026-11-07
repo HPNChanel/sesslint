@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Generate sesslint.progress parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROGRESS_SHA256 = "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_progress_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "progress.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != PROGRESS_SHA256:
+        raise SystemExit(
+            f"progress.py sha256 mismatch: expected {PROGRESS_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.progress as progress  # noqa: WPS433
+
+    return progress
+
+
+def progress_json(event: Any) -> str:
+    return json.dumps(event.to_dict(), sort_keys=True)
+
+
+def sorted_dict(d: dict[str, Any]) -> dict[str, Any]:
+    return dict(sorted(d.items()))
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "progress_event_full",
+            "construct": {
+                "type": "ProgressEvent",
+                "phase": "scan",
+                "completed": 3,
+                "total": 7,
+                "item": "a.jsonl",
+            },
+        },
+        {
+            "id": "progress_event_omit_none",
+            "construct": {
+                "type": "ProgressEvent",
+                "phase": "check:load",
+                "completed": 1,
+            },
+        },
+        {
+            "id": "progress_event_zero_total_empty_item",
+            "construct": {
+                "type": "ProgressEvent",
+                "phase": "repair:execute",
+                "completed": -1,
+                "total": 0,
+                "item": "",
+            },
+        },
+        {
+            "id": "progress_event_non_ascii_item",
+            "construct": {
+                "type": "ProgressEvent",
+                "phase": "scan",
+                "completed": 1,
+                "item": "caf\u00e9.jsonl",
+            },
+        },
+        {
+            "id": "operation_cancelled_message",
+            "construct": {"type": "OperationCancelled"},
+        },
+        {
+            "id": "cancellation_token_throw_if_cancelled",
+            "construct": {
+                "type": "CancellationToken",
+                "action": "throw_if_cancelled",
+                "cancel_before": True,
+            },
+        },
+        {
+            "id": "check_token_cancelled",
+            "construct": {
+                "type": "check_token",
+                "cancel_before": True,
+            },
+        },
+    ]
+
+
+def build_expected(progress: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "ProgressEvent":
+        total = spec.get("total")
+        item = spec.get("item")
+        event = progress.ProgressEvent(
+            phase=spec["phase"],
+            completed=spec["completed"],
+            total=total if "total" in spec else None,
+            item=item if "item" in spec else None,
+        )
+        to_dict = sorted_dict(event.to_dict())
+        return {
+            "to_dict": to_dict,
+            "json": progress_json(event),
+        }
+    if kind == "OperationCancelled":
+        exc = progress.OperationCancelled("operation cancelled")
+        return {"message": str(exc)}
+    if kind == "CancellationToken":
+        token = progress.CancellationToken()
+        if spec.get("cancel_before"):
+            token.cancel()
+        try:
+            token.throw_if_cancelled()
+        except progress.OperationCancelled as exc:
+            return {"raises": "OperationCancelled", "message": str(exc)}
+        raise RuntimeError("expected OperationCancelled")
+    if kind == "check_token":
+        token = progress.CancellationToken()
+        if spec.get("cancel_before"):
+            token.cancel()
+        try:
+            progress.check_token(token)
+        except progress.OperationCancelled as exc:
+            return {"raises": "OperationCancelled", "message": str(exc)}
+        raise RuntimeError("expected OperationCancelled")
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    progress = load_progress_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(progress, row["construct"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.progress",
+        "python_commit": PYTHON_COMMIT,
+        "progress_py_sha256": PROGRESS_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.progress",
+        "python_commit": PYTHON_COMMIT,
+        "progress_py_sha256": PROGRESS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/progress/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic phase names and basenames for sesslint.progress parity.",
+        "generator": "rust/parity/vectors/progress/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,253 @@
+{
+  "module": "sesslint.repair.recipes_conservative",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 10,
+  "not_applicable_count": 25,
+  "rows": [
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_conservative_recipes_registration_and_handles",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "registration_handles_matrix",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_register_all_idempotent",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "register_all_idempotent",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_fixture",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_identical_duplicate_collapse_fixture",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_proven_unique_parent_restore_fixture",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_compaction_projection_reunion_fixture",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_fixture",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_empty_session",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "suffix_discard_refusal_empty_session",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_out_of_bounds",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "suffix_discard_refusal_out_of_bounds",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_checkpoint_in_suffix",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "suffix_discard_refusal_checkpoint_in_suffix",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_zero_candidates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_self_candidate",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_branch",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_segment",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_reunion_refusal_zero_boundaries",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "reunion_refusal_zero_boundaries",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_reunion_refusal_multiple_boundaries",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "reunion_refusal_multiple_boundaries",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_reunion_refusal_boundary_at_endpoint",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "reunion_refusal_boundary_at_endpoint",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_differing_fingerprints",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_checkpoint_or_boundary",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "duplicate_collapse_refusal_checkpoint_or_boundary",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_mixed_kinds",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "duplicate_collapse_refusal_mixed_kinds",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_sl203_refusal_blocks_other_conservative_recipes",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_sl203_refusal_when_side_effects_unknown",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_no_synthetic_success_multiset_proof",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_no_synthetic_success_static_grep",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_purity_and_immutability",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_idempotence_where_defined",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_adversarial_1k_identical_duplicates_cap",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_second_index_resolves_and_collapses",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_rewrites_child_parent_pointers",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_rewrites_child_parent_pointers",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_excludes_successor_candidates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_plan_and_apply_compaction_reunion_full_flow",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_plan_and_apply_duplicate_projection_full_flow",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_plan_and_apply_parent_restore_full_flow",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_sl005_entry_index",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.compaction_snapshot",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_compaction_snapshot_rs_sha256": "ae86c60f5a595e8f955a4f109f2d7e4438a85b9603dd6cb54c1baacb6ba3db88",
+  "vector_count": 7,
+  "vectors_sha256": "e67bf174c46b8e57fb268ddd88fb91cea8c34e9382998c799d0c9458a21e3ce1",
+  "generator": "rust/parity/vectors/checks.compaction_snapshot/generate",
+  "known_parity_gaps": [
+    "check_compaction_snapshot uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python int is unbounded; Rust uses checked i64 for indexes and occurrence counts (PYTHON_INT_UNBOUNDED).",
+    "A bool is not an int. A float or other non-string kind is not a boundary.",
+    "MapWalk::Borrowed and ListWalk::Borrowed are failed borrows, not empty collections."
+  ]
+}

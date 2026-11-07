@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.tool_pairing_1 module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+TOOL_PAIRING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+TOOL_PAIRING_RS_SHA256 = (
+    "220c027221d3dcf8a6e932fb536359726e49e0940337651ebc21617950f4c5fe"
+)
+MODULE = "sesslint.checks.tool_pairing_1"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. "
+    "Python emits a finding (orphan, dangling, reused id, or multi-result).",
+    "A mapping tool_result payload calls compute_content_hash. Rust returns "
+    "sesslint._canonical_codec.payload_content_hash is not available and does not hash. "
+    "Python hashes the payload.",
+    "Empty input with max_findings -1 takes the overflow path. Rust returns the codec error. "
+    "Python emits an overflow finding.",
+    "Float and list ids or payloads are typed errors in Rust. Python uses str().",
+    "Null tool_call correlation is still dangling on codex-rollout (SL102 finding). "
+    "That case belongs in known_parity_gaps, not silent vectors.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_tool_pairing_py_blob() -> None:
+    pin = git_show_blob(f"{TOOL_PAIRING_PY_PIN}:src/sesslint/checks/tool_pairing_1.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/tool_pairing_1.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/tool_pairing_1.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_tool_pairing_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "tool_pairing_1.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != TOOL_PAIRING_RS_SHA256:
+        raise SystemExit(
+            "checks/src/tool_pairing_1.rs sha256 mismatch: "
+            f"expected {TOOL_PAIRING_RS_SHA256}, got {digest}"
+        )
+
+
+def load_tool_pairing_module() -> types.ModuleType:
+    verify_tool_pairing_py_blob()
+    verify_tool_pairing_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{TOOL_PAIRING_PY_PIN}:src/sesslint/checks/tool_pairing_1.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_tool_pairing_1.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_tool_pairing_1_parity",
+            tmp_path,
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned tool_pairing_1.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def session_event_tool(
+    eid: str,
+    seq: int,
+    kind: str,
+    correlation_id: str | None,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,
+        payload=dict(payload) if payload else {},
+        correlation_id=correlation_id,
+        extra_fields={},
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "correlation_id": ev.correlation_id,
+        "payload": dict(ev.payload) if ev.payload else {},
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_tool_pairing_events(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [encode_event_session(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def assert_empty_checks(
+    mod: Any,
+    events: list[Any],
+    *,
+    case_id: str,
+    source_path: str = "synth.jsonl",
+    context: Any = None,
+    max_family: int | None = None,
+) -> None:
+    kwargs: dict[str, Any] = {"source_path": source_path, "context": context}
+    if max_family is not None:
+        kwargs["max_findings"] = max_family
+        kwargs["max_findings_per_family"] = max_family
+    for fn_name in (
+        "check_orphans",
+        "check_dangling",
+        "check_reused",
+        "check_multi_results",
+    ):
+        fn = getattr(mod, fn_name)
+        out = fn(events, **kwargs)
+        if out:
+            raise SystemExit(
+                f"vector {case_id!r}: expected silent {fn_name}; got {len(out)} findings"
+            )
+    agg = mod.check_tool_pairing_1(
+        events,
+        source_path=source_path,
+        max_findings_per_family=max_family
+        if max_family is not None
+        else mod.MAX_PAIRING_FINDINGS,
+        context=context,
+    )
+    if agg:
+        raise SystemExit(
+            f"vector {case_id!r}: expected silent check_tool_pairing_1; got {len(agg)} findings"
+        )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    from sesslint.context import CheckContext
+
+    kind_call = "tool_call"
+    kind_result = "tool_result"
+    out: list[dict[str, Any]] = []
+
+    # 1) empty_input_silent
+    empty: list[Any] = []
+    assert_empty_checks(mod, empty, case_id="empty_input_silent")
+    out.append(
+        {
+            "id": "empty_input_silent",
+            "construct": {
+                "type": "tool_pairing_events",
+                "source_path": "synth.jsonl",
+                "events": [],
+            },
+            "expected": {
+                "check_orphans_len": 0,
+                "check_dangling_len": 0,
+                "check_reused_len": 0,
+                "check_multi_results_len": 0,
+                "check_tool_pairing_1_len": 0,
+            },
+        }
+    )
+
+    # 2) paired_call_and_result_silent
+    paired = [
+        session_event_tool("call-a-synth", 0, kind_call, "corr-pair-synth"),
+        session_event_tool("res-a-synth", 1, kind_result, "corr-pair-synth"),
+    ]
+    assert_empty_checks(mod, paired, case_id="paired_call_and_result_silent")
+    out.append(
+        {
+            "id": "paired_call_and_result_silent",
+            "construct": encode_tool_pairing_events(paired),
+            "expected": {
+                "check_orphans_len": 0,
+                "check_dangling_len": 0,
+                "check_reused_len": 0,
+                "check_multi_results_len": 0,
+                "check_sl104_len": 0,
+                "check_tool_pairing_1_len": 0,
+            },
+        }
+    )
+
+    # 3) one_result_multi_silent — exactly one tool_result in the stream
+    one_res = [
+        session_event_tool("call-a-synth", 0, kind_call, "corr-one-synth"),
+        session_event_tool("res-a-synth", 1, kind_result, "corr-one-synth"),
+    ]
+    assert_empty_checks(mod, one_res, case_id="one_result_multi_silent")
+    sl104 = mod.check_sl104
+    if sl104(one_res, source_path="synth.jsonl", context=None):
+        raise SystemExit("one_result_multi_silent: expected empty check_sl104")
+    out.append(
+        {
+            "id": "one_result_multi_silent",
+            "construct": encode_tool_pairing_events(one_res),
+            "expected": {
+                "check_multi_results_len": 0,
+                "check_sl104_len": 0,
+            },
+        }
+    )
+
+    # 4) message_ignored_silent
+    msg_pair = [
+        session_event_tool("msg-synth", 0, "message", None),
+        session_event_tool("call-a-synth", 1, kind_call, "corr-msg-synth"),
+        session_event_tool("res-a-synth", 2, kind_result, "corr-msg-synth"),
+    ]
+    assert_empty_checks(mod, msg_pair, case_id="message_ignored_silent")
+    out.append(
+        {
+            "id": "message_ignored_silent",
+            "construct": encode_tool_pairing_events(msg_pair),
+            "expected": {
+                "check_orphans_len": 0,
+                "check_dangling_len": 0,
+                "check_reused_len": 0,
+                "check_multi_results_len": 0,
+                "check_tool_pairing_1_len": 0,
+            },
+        }
+    )
+
+    # 5) null_result_on_codex_rollout_orphans_silent
+    ctx_codex = CheckContext(adapter_id="codex-rollout")
+    null_res = [
+        session_event_tool("res-null-synth", 0, kind_result, None),
+    ]
+    assert_empty_checks(
+        mod,
+        null_res,
+        case_id="null_result_on_codex_rollout_orphans_silent",
+        context=ctx_codex,
+    )
+    o = mod.check_orphans(
+        null_res,
+        source_path="synth.jsonl",
+        context=ctx_codex,
+    )
+    if o:
+        raise SystemExit(
+            "null_result_on_codex_rollout_orphans_silent: expected empty check_orphans"
+        )
+    out.append(
+        {
+            "id": "null_result_on_codex_rollout_orphans_silent",
+            "construct": {
+                "type": "tool_pairing_events",
+                "source_path": "synth.jsonl",
+                "context": tagged(
+                    {
+                        "adapter_id": ctx_codex.adapter_id,
+                        "adapter_version": ctx_codex.adapter_version,
+                        "profile_id": ctx_codex.profile_id,
+                        "profile_version": ctx_codex.profile_version,
+                        "source_metadata": {}
+                        if ctx_codex.source_metadata is None
+                        else dict(ctx_codex.source_metadata),
+                        "timestamp_skew_ms": ctx_codex.timestamp_skew_ms,
+                    }
+                ),
+                "events": [encode_event_session(event_to_construct_dict(null_res[0]))],
+            },
+            "expected": {"check_orphans_len": 0},
+        }
+    )
+
+    # 6) constants_and_all
+    assert_empty_checks(mod, [], case_id="constants_and_all")
+    if int(mod.MAX_PAIRING_FINDINGS) != 500:
+        raise SystemExit("MAX_PAIRING_FINDINGS mismatch")
+    if int(mod.MAX_INDEX_SAMPLE_SIZE) != 32:
+        raise SystemExit("MAX_INDEX_SAMPLE_SIZE mismatch")
+    if int(mod.MAX_PAIRING_SAMPLE_SIZE) != 32:
+        raise SystemExit("MAX_PAIRING_SAMPLE_SIZE mismatch")
+    expected_all = list(mod.__all__)
+    if len(expected_all) != 20 or expected_all[-1] != "compute_pairing_fingerprint":
+        raise SystemExit(f"unexpected __all__: {expected_all!r}")
+    out.append(
+        {
+            "id": "constants_and_all",
+            "construct": {
+                "type": "tool_pairing_events",
+                "source_path": "synth.jsonl",
+                "events": [],
+            },
+            "expected": {
+                "MAX_PAIRING_FINDINGS": 500,
+                "MAX_INDEX_SAMPLE_SIZE": 32,
+                "MAX_PAIRING_SAMPLE_SIZE": 32,
+                "call_kinds": sorted(mod.CALL_KINDS),
+                "result_kinds": sorted(mod.RESULT_KINDS),
+                "check_orphans_len": 0,
+            },
+        }
+    )
+
+    # 7) fingerprint_sl103_ab
+    fp = mod.compute_pairing_fingerprint("SL103", ["b", "a", "a"])
+    if fp != "ca1fec8c15a52b35":
+        raise SystemExit(f"fingerprint_sl103_ab mismatch: {fp!r}")
+    out.append(
+        {
+            "id": "fingerprint_sl103_ab",
+            "construct": {
+                "type": "pairing_fingerprint",
+                "code": "SL103",
+                "items": ["b", "a", "a"],
+            },
+            "expected": {"fingerprint": "ca1fec8c15a52b35"},
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_tool_pairing_module()
+    out_dir = Path(__file__).resolve().parent
+
+    expected_all = list(mod.__all__)
+    if len(expected_all) != 20:
+        raise SystemExit(f"tool_pairing_1 __all__ length mismatch: {expected_all!r}")
+
+    vectors = vectors_from_module(mod)
+
+    for spec in vectors:
+        cid = spec["id"]
+        ex = spec["expected"]
+        for key in (
+            "check_orphans_len",
+            "check_dangling_len",
+            "check_reused_len",
+            "check_multi_results_len",
+            "check_sl104_len",
+            "check_tool_pairing_1_len",
+        ):
+            if key in ex and ex[key] != 0:
+                raise SystemExit(f"vector {cid!r}: {key} must be 0 for silent vectors")
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_tool_pairing_1_rs_sha256": TOOL_PAIRING_RS_SHA256,
+        "python_all": expected_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_tool_pairing_1_rs_sha256": TOOL_PAIRING_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.tool_pairing_1 parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,32 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.completion",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "completion_py_sha256": "13d8a4f2022107c0af23dbae937d5dbf524ff02b90a4769d93da470def1f7a54",
+  "completion_rs_sha256": "30264a5643e6510498d778e05648031b4535fabc11333fcba7f999758bf60a8a",
+  "known_parity_gaps": [
+    "GAP-cli-completion-run: Python run() calls sesslint.completion.generate_completion and prints a script; Rust run() is a seam (generate_completion unavailable) and does not print script bytes (not byte-compared here)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_metadata",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "completion",
+        "help": "[read-only] Print shell completion script.",
+        "description": "[read-only] Print a shell completion script generated from the live parser.",
+        "shell_name": "shell",
+        "shell_positional": true,
+        "shell_choices": [
+          "bash",
+          "zsh",
+          "fish",
+          "powershell"
+        ],
+        "shell_help": "Shell dialect (bash, zsh, fish, powershell)"
+      }
+    }
+  ]
+}

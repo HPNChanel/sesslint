@@ -1,0 +1,485 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.runner",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_runner_py_sha256": "7a46ab2503cb5ce50ae3ff3ca0cd029cd366b0efd42a2623204c499498fc0341",
+  "checks_runner_rs_sha256": "1a78321cd7d6144ac84821cbc1b257a266d484685644af1d033c7ebc206e0450",
+  "python_all": [
+    "run_all_checks"
+  ],
+  "python_import_paths": [
+    "sesslint.canonical.SessionEvent",
+    "sesslint.checks.accounting.check_accounting",
+    "sesslint.checks.checkpoint.check_checkpoint",
+    "sesslint.checks.compaction_snapshot.check_compaction_snapshot",
+    "sesslint.checks.context_pressure.check_context_pressure",
+    "sesslint.checks.durable_prefix.check_durable_prefix",
+    "sesslint.checks.foreign_shape.check_foreign_shape",
+    "sesslint.checks.graph.check_graph",
+    "sesslint.checks.identity.check_identities",
+    "sesslint.checks.ordering.check_ordering",
+    "sesslint.checks.size.SIZE_MIN_RECORDS",
+    "sesslint.checks.size.check_size_anomaly",
+    "sesslint.checks.tool_pairing_1.check_tool_pairing_1",
+    "sesslint.checks.tool_pairing_2.check_tool_pairing_2",
+    "sesslint.checks.writers.check_writers",
+    "sesslint.context.CheckContext",
+    "sesslint.finding.Finding",
+    "sesslint.profiles.builtin.NEUTRAL_PROFILE",
+    "sesslint.profiles.profile.Profile",
+    "sesslint.profiles.profile.get_profile",
+    "sesslint.report.Coverage",
+    "sesslint.report.CoverageSkip"
+  ],
+  "known_parity_gaps": [
+    "GAP-runner-coverage: return_coverage true builds sesslint.report.Coverage in Python after detectors. Rust returns the coverage seam and does not construct Coverage on the successful path.",
+    "GAP-runner-profile-name: profile supplied as a str resolves through get_profile and sesslint.profiles.builtin in Python. Rust stops at the builtin seam for ProfileArg::Name.",
+    "GAP-runner-detector-profile-deps: non-empty streams call tool_pairing and other detectors that import sesslint.profiles in Python. Rust returns sesslint.profiles is not available instead of running the detector chain.",
+    "GAP-runner-executor-alias: repair.executor re-exports run_all_checks; parity vectors exercise sesslint.checks.runner.run_all_checks only.",
+    "GAP-runner-verify-delegate: verify._run_detector_checks delegates to the runner with adapter=canonical; that entry point is not this module's vector surface."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "run_all_checks"
+        ]
+      }
+    },
+    {
+      "id": "import_paths_pin_order",
+      "construct": {
+        "type": "import_paths"
+      },
+      "expected": {
+        "paths": [
+          "sesslint.canonical.SessionEvent",
+          "sesslint.checks.accounting.check_accounting",
+          "sesslint.checks.checkpoint.check_checkpoint",
+          "sesslint.checks.compaction_snapshot.check_compaction_snapshot",
+          "sesslint.checks.context_pressure.check_context_pressure",
+          "sesslint.checks.durable_prefix.check_durable_prefix",
+          "sesslint.checks.foreign_shape.check_foreign_shape",
+          "sesslint.checks.graph.check_graph",
+          "sesslint.checks.identity.check_identities",
+          "sesslint.checks.ordering.check_ordering",
+          "sesslint.checks.size.SIZE_MIN_RECORDS",
+          "sesslint.checks.size.check_size_anomaly",
+          "sesslint.checks.tool_pairing_1.check_tool_pairing_1",
+          "sesslint.checks.tool_pairing_2.check_tool_pairing_2",
+          "sesslint.checks.writers.check_writers",
+          "sesslint.context.CheckContext",
+          "sesslint.finding.Finding",
+          "sesslint.profiles.builtin.NEUTRAL_PROFILE",
+          "sesslint.profiles.profile.Profile",
+          "sesslint.profiles.profile.get_profile",
+          "sesslint.report.Coverage",
+          "sesslint.report.CoverageSkip"
+        ]
+      }
+    },
+    {
+      "id": "empty_neutral_no_findings",
+      "construct": {
+        "type": "run_all_checks",
+        "events": []
+      },
+      "expected": {
+        "outcome": "ok",
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "return_coverage_empty_stop",
+      "construct": {
+        "type": "run_all_checks",
+        "events": [],
+        "return_coverage": true
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "findings_count": 0,
+          "coverage_keys": [
+            "adapter",
+            "performed",
+            "profile",
+            "skipped"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "coverage_unavailable",
+          "message": "sesslint.report.Coverage is not available"
+        }
+      }
+    },
+    {
+      "id": "version_gated_skips_detectors",
+      "construct": {
+        "type": "run_all_checks",
+        "events": [],
+        "adapter_skips": [
+          {
+            "check": "SL301",
+            "reason": "version-gated",
+            "detail": "synthetic gate"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "ok",
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "cap_exceeded_skips_detectors",
+      "construct": {
+        "type": "run_all_checks",
+        "events": [],
+        "adapter_skips": [
+          {
+            "check": "SL301",
+            "reason": "cap-exceeded",
+            "detail": "synthetic gate"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "ok",
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "graph_healthy_fixture_silent",
+      "construct": {
+        "type": "run_all_checks",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "Initial user prompt"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "Assistant response"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "Follow-up question"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-4"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "Final answer"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "synth-graph-healthy.jsonl"
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "findings_count": 0
+        },
+        "rust_assertion": {
+          "mode": "profiles_unavailable",
+          "message": "sesslint.profiles is not available"
+        }
+      }
+    },
+    {
+      "id": "profile_name_neutral_builtin",
+      "construct": {
+        "type": "run_all_checks",
+        "events": [],
+        "profile": "neutral"
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "findings_count": 0
+        },
+        "rust_assertion": {
+          "mode": "builtin_unavailable",
+          "message": "sesslint.profiles.builtin is not available"
+        }
+      }
+    }
+  ]
+}

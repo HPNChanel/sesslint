@@ -1,0 +1,691 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.metadata parity vectors (stdlib only; pinned git blobs)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+METADATA_PY_SHA256 = (
+    "0476945fab0e06501492c2e773aac50c57484b0e7bfc22c1fb98575177bdeac0"
+)
+METADATA_RS_SHA256 = (
+    "8256a693817a3af850588b5887cc390fd5dd6660b6d69f0be8a26ba9ec984f69"
+)
+MODULE = "sesslint.adapters.metadata"
+
+PIN_MODULES: Final[tuple[tuple[str, str], ...]] = (
+    ("sesslint.errors", "src/sesslint/errors.py"),
+    ("sesslint._version", "src/sesslint/_version.py"),
+    ("sesslint.context", "src/sesslint/context.py"),
+    ("sesslint.codes", "src/sesslint/codes.py"),
+    ("sesslint.secret_families", "src/sesslint/secret_families.py"),
+    ("sesslint.finding", "src/sesslint/finding.py"),
+    ("sesslint.adapters.safe_value", "src/sesslint/adapters/safe_value.py"),
+    ("sesslint.adapters.metadata", "src/sesslint/adapters/metadata.py"),
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-metadata-finding-fingerprint: UnknownMetadataTracker.findings on a "
+    "non-empty group buffer calls make_finding, which needs "
+    "sesslint.determinism.canonical_json_bytes. Rust stops at the missing "
+    "fingerprint codec and does not return Finding objects. The harness drives "
+    "the tracker and checks empty_ok, finding_error before the codec, or "
+    "gap_fingerprint. Pin snapshots of _groups stay in the vector and are not "
+    "asserted, because those fields are private.",
+)
+
+SYN_PATH = "syn-metadata-parity.jsonl"
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_text(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_metadata_py_pin() -> None:
+    blob = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/adapters/metadata.py"],
+        cwd=repo_root(),
+    )
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != METADATA_PY_SHA256:
+        raise SystemExit(
+            f"metadata.py pin sha256 mismatch: expected {METADATA_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_metadata_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "metadata.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != METADATA_RS_SHA256:
+        raise SystemExit(
+            "adapters/src/metadata.rs sha256 mismatch: "
+            f"expected {METADATA_RS_SHA256}, got {digest}"
+        )
+
+
+def load_pinned_metadata() -> Any:
+    verify_metadata_py_pin()
+    verify_metadata_rs_sha256()
+    for pkg in ("sesslint", "sesslint.adapters"):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+    for mod_name, rel_path in PIN_MODULES:
+        source = git_show_text(f"{PYTHON_COMMIT}:{rel_path}")
+        compiled = compile(source, f"<pinned {rel_path}>", "exec")
+        mod = types.ModuleType(mod_name)
+        mod.__file__ = f"<pinned {rel_path}>"
+        sys.modules[mod_name] = mod
+        exec(compiled, mod.__dict__)  # noqa: S102
+        parent_name, _, child = mod_name.rpartition(".")
+        if parent_name:
+            parent = sys.modules[parent_name]
+            setattr(parent, child, mod)
+    return sys.modules["sesslint.adapters.metadata"]
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def materialize_value(spec: dict[str, Any]) -> Any:
+    kind = spec["kind"]
+    if kind == "none":
+        return None
+    if kind == "scalar":
+        return 0
+    if kind == "map":
+        out: dict[Any, Any] = {}
+        for entry in spec["entries"]:
+            key_spec = entry["key"]
+            if key_spec["kind"] == "str":
+                key: Any = key_spec["text"]
+            else:
+                key = ("non_str",)
+            out[key] = materialize_value(entry["value"])
+        return out
+    if kind == "list":
+        return [materialize_value(item) for item in spec["items"]]
+    raise SystemExit(f"unknown value kind {kind!r}")
+
+
+def encode_key(name: str) -> dict[str, Any]:
+    return {"kind": "str", "text": name}
+
+
+def encode_non_str_key() -> dict[str, Any]:
+    return {"kind": "non_str"}
+
+
+def named_map(name: str, value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "map",
+        "entries": [{"key": encode_key(name), "value": value}],
+    }
+
+
+def encode_none() -> dict[str, Any]:
+    return {"kind": "none"}
+
+
+def encode_scalar() -> dict[str, Any]:
+    return {"kind": "scalar"}
+
+
+def encode_map(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"kind": "map", "entries": entries}
+
+
+def encode_list(items: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"kind": "list", "items": items}
+
+
+def run_has_semantic(meta: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    value = materialize_value(spec)
+    return {"has_semantic": bool(meta.has_semantic_fields(value))}
+
+
+def groups_snapshot(tracker: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "discriminator": key,
+            "count": count,
+            "first_line": first,
+            "redacted": redacted,
+        }
+        for key, (count, first, redacted) in sorted(tracker._groups.items())
+    ]
+
+
+def flush_mode(tracker: Any, path: str) -> dict[str, Any]:
+    from sesslint.finding import FindingError
+
+    if not tracker._groups:
+        findings = tracker.findings(path)
+        if findings:
+            raise SystemExit("unexpected findings on empty tracker")
+        return {"mode": "empty_ok", "path": path}
+    try:
+        tracker.findings(path)
+    except FindingError as err:
+        message = str(err)
+        if "SourceRef" in message or "positive integer" in message:
+            return {
+                "mode": "finding_error",
+                "path": path,
+                "error_contains": message,
+            }
+    except ModuleNotFoundError:
+        return {"mode": "gap_fingerprint", "path": path}
+    return {"mode": "gap_fingerprint", "path": path}
+
+
+def run_steps(tracker: Any, steps: list[dict[str, Any]]) -> None:
+    for step in steps:
+        action = step["action"]
+        if action != "note":
+            raise SystemExit(f"unknown step action {action!r}")
+        tracker.note(step["raw_type"], line=int(step["line"]))
+
+
+def add_has_semantic(
+    specs: list[dict[str, Any]],
+    vector_id: str,
+    value: dict[str, Any],
+    meta: Any,
+) -> None:
+    specs.append(
+        {
+            "id": vector_id,
+            "construct": {"type": "has_semantic_fields", "value": value},
+            "expected": run_has_semantic(meta, value),
+        }
+    )
+
+
+def add_tracker(
+    specs: list[dict[str, Any]],
+    vector_id: str,
+    steps: list[dict[str, Any]],
+    *,
+    flush_path: str | None = SYN_PATH,
+) -> None:
+    meta = specs_module
+    tracker = meta.UnknownMetadataTracker()
+    run_steps(tracker, steps)
+    expected: dict[str, Any] = {"groups": groups_snapshot(tracker)}
+    if flush_path is not None:
+        expected["flush"] = flush_mode(tracker, flush_path)
+    specs.append(
+        {
+            "id": vector_id,
+            "construct": {"type": "tracker_run", "steps": steps},
+            "expected": expected,
+        }
+    )
+
+
+def vector_specs(meta: Any) -> list[dict[str, Any]]:
+    global specs_module
+    specs_module = meta
+    specs: list[dict[str, Any]] = []
+
+    specs.append(
+        {
+            "id": "module_semantic_keys",
+            "construct": {"type": "module_semantic_keys"},
+            "expected": {
+                "semantic_keys": sorted(meta.SEMANTIC_KEYS),
+                "semantic_key_count": len(meta.SEMANTIC_KEYS),
+            },
+        }
+    )
+
+    for name in sorted(meta.SEMANTIC_KEYS):
+        add_has_semantic(
+            specs,
+            f"semantic_key_{name}_scalar",
+            named_map(name, encode_scalar()),
+            meta,
+        )
+        add_has_semantic(
+            specs,
+            f"semantic_key_{name}_none",
+            named_map(name, encode_none()),
+            meta,
+        )
+
+    add_has_semantic(
+        specs,
+        "semantic_items_empty_list",
+        named_map("items", encode_list([])),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "semantic_items_none",
+        named_map("items", encode_none()),
+        meta,
+    )
+
+    for name in (
+        "critical_",
+        "critical_state",
+        "unknown_critical",
+        "unknown_critical_state",
+        "unknown_criticality",
+        "critical_unknown_critical",
+    ):
+        add_has_semantic(
+            specs,
+            f"prefix_or_exact_{name}",
+            named_map(name, encode_scalar()),
+            meta,
+        )
+    for name in ("critical_state", "unknown_critical", "unknown_criticality"):
+        add_has_semantic(
+            specs,
+            f"prefix_none_{name}",
+            named_map(name, encode_none()),
+            meta,
+        )
+
+    for name in (
+        "type",
+        "sessionId",
+        "session_id",
+        "timestamp",
+        "cwd",
+        "subtype",
+        "name",
+        "uuid_extra",
+        "parent",
+        "critical",
+        "unknown",
+        "Critical_state",
+        "Unknown_critical",
+    ):
+        add_has_semantic(
+            specs,
+            f"bookkeeping_{name}",
+            named_map(name, encode_scalar()),
+            meta,
+        )
+
+    add_has_semantic(
+        specs,
+        "nested_id_none_role_scalar",
+        encode_map(
+            [
+                {"key": encode_key("id"), "value": encode_none()},
+                {"key": encode_key("role"), "value": encode_scalar()},
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "nested_payload_without_semantic",
+        encode_map(
+            [
+                {"key": encode_key("id"), "value": encode_none()},
+                {
+                    "key": encode_key("payload"),
+                    "value": encode_map(
+                        [{"key": encode_key("note"), "value": encode_scalar()}]
+                    ),
+                },
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "sibling_left_role",
+        encode_map(
+            [
+                {
+                    "key": encode_key("left"),
+                    "value": encode_map(
+                        [{"key": encode_key("role"), "value": encode_scalar()}]
+                    ),
+                },
+                {
+                    "key": encode_key("right"),
+                    "value": encode_map(
+                        [{"key": encode_key("note"), "value": encode_scalar()}]
+                    ),
+                },
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "sibling_right_role",
+        encode_map(
+            [
+                {
+                    "key": encode_key("left"),
+                    "value": encode_map(
+                        [{"key": encode_key("note"), "value": encode_scalar()}]
+                    ),
+                },
+                {
+                    "key": encode_key("right"),
+                    "value": encode_map(
+                        [{"key": encode_key("role"), "value": encode_scalar()}]
+                    ),
+                },
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "list_wrap_snapshot",
+        encode_map(
+            [
+                {
+                    "key": encode_key("wrap"),
+                    "value": encode_list(
+                        [
+                            encode_scalar(),
+                            encode_none(),
+                            encode_list(
+                                [
+                                    encode_map(
+                                        [
+                                            {
+                                                "key": encode_key("note"),
+                                                "value": encode_scalar(),
+                                            }
+                                        ]
+                                    )
+                                ]
+                            ),
+                            encode_map(
+                                [
+                                    {
+                                        "key": encode_key("snapshot"),
+                                        "value": encode_scalar(),
+                                    }
+                                ]
+                            ),
+                        ]
+                    ),
+                }
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "list_wrap_without_snapshot",
+        encode_map(
+            [
+                {
+                    "key": encode_key("wrap"),
+                    "value": encode_list(
+                        [
+                            encode_scalar(),
+                            encode_none(),
+                            encode_list(
+                                [
+                                    encode_map(
+                                        [
+                                            {
+                                                "key": encode_key("note"),
+                                                "value": encode_scalar(),
+                                            }
+                                        ]
+                                    )
+                                ]
+                            ),
+                        ]
+                    ),
+                }
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "non_str_key_nested_role",
+        encode_map(
+            [
+                {
+                    "key": encode_non_str_key(),
+                    "value": encode_map(
+                        [{"key": encode_key("role"), "value": encode_scalar()}]
+                    ),
+                }
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "non_str_key_scalar",
+        encode_map([{"key": encode_non_str_key(), "value": encode_scalar()}]),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "critical_prefix_nested_map",
+        encode_map(
+            [
+                {
+                    "key": encode_key("critical_"),
+                    "value": encode_map(
+                        [{"key": encode_key("note"), "value": encode_scalar()}]
+                    ),
+                }
+            ]
+        ),
+        meta,
+    )
+    add_has_semantic(specs, "root_none", encode_none(), meta)
+    add_has_semantic(specs, "root_scalar", encode_scalar(), meta)
+    add_has_semantic(specs, "root_empty_map", encode_map([]), meta)
+    add_has_semantic(
+        specs,
+        "root_list_nested_id",
+        encode_list(
+            [encode_map([{"key": encode_key("id"), "value": encode_scalar()}])]
+        ),
+        meta,
+    )
+    add_has_semantic(
+        specs,
+        "root_list_scalar_only",
+        encode_list([encode_scalar()]),
+        meta,
+    )
+
+    add_tracker(
+        specs,
+        "tracker_empty_flush",
+        [],
+        flush_path=SYN_PATH,
+    )
+    add_tracker(
+        specs,
+        "tracker_empty_whitespace_path",
+        [],
+        flush_path="   ",
+    )
+    add_tracker(
+        specs,
+        "tracker_repeated_notes_keep_first_line",
+        [
+            {"action": "note", "raw_type": "future_status", "line": 3},
+            {"action": "note", "raw_type": "future_status", "line": 9},
+        ],
+    )
+    add_tracker(
+        specs,
+        "tracker_empty_string_discriminator",
+        [{"action": "note", "raw_type": "", "line": 4}],
+    )
+    echoed = "a" * 64
+    truncated = "a" * 65
+    add_tracker(
+        specs,
+        "tracker_truncated_discriminator",
+        [
+            {"action": "note", "raw_type": echoed, "line": 1},
+            {"action": "note", "raw_type": truncated, "line": 2},
+        ],
+    )
+    add_tracker(
+        specs,
+        "tracker_truncated_whitespace_types_share_group",
+        [
+            {"action": "note", "raw_type": "foo bar", "line": 2},
+            {"action": "note", "raw_type": "baz qux", "line": 5},
+        ],
+    )
+    add_tracker(
+        specs,
+        "tracker_accented_len_discriminator",
+        [{"action": "note", "raw_type": "\u00e9\u00e9", "line": 6}],
+    )
+    steps_32 = [
+        {"action": "note", "raw_type": f"kind{index}", "line": 1}
+        for index in range(32)
+    ]
+    add_tracker(specs, "tracker_exactly_thirty_two_groups", steps_32)
+    steps_200 = [
+        {"action": "note", "raw_type": f"future_{index}", "line": index + 1}
+        for index in range(200)
+    ]
+    add_tracker(specs, "tracker_overflow_third_bucket", steps_200)
+    add_tracker(
+        specs,
+        "tracker_overflow_then_repeat_distinct",
+        steps_200
+        + [
+            {"action": "note", "raw_type": "future_0", "line": 500},
+            {"action": "note", "raw_type": "future_32", "line": 501},
+        ],
+    )
+    add_tracker(
+        specs,
+        "tracker_line_zero_finding_error",
+        [{"action": "note", "raw_type": "future_status", "line": 0}],
+    )
+    add_tracker(
+        specs,
+        "tracker_negative_line_finding_error",
+        [{"action": "note", "raw_type": "future_status", "line": -1}],
+    )
+    add_tracker(
+        specs,
+        "tracker_empty_path_finding_error",
+        [{"action": "note", "raw_type": "future_status", "line": 1}],
+        flush_path="",
+    )
+    add_tracker(
+        specs,
+        "tracker_whitespace_path_finding_error",
+        [{"action": "note", "raw_type": "future_status", "line": 1}],
+        flush_path="   ",
+    )
+    add_tracker(
+        specs,
+        "tracker_newline_path_finding_error",
+        [{"action": "note", "raw_type": "future_status", "line": 1}],
+        flush_path="a\nb",
+    )
+    add_tracker(
+        specs,
+        "tracker_valid_single_group_gap",
+        [{"action": "note", "raw_type": "future_status", "line": 3}],
+    )
+    add_tracker(
+        specs,
+        "tracker_valid_padded_path_gap",
+        [{"action": "note", "raw_type": "future_status", "line": 3}],
+        flush_path=f"  {SYN_PATH}  ",
+    )
+    add_tracker(
+        specs,
+        "tracker_many_groups_gap",
+        steps_32 + [{"action": "note", "raw_type": "kind32", "line": 2}],
+    )
+    return specs
+
+
+specs_module: Any = None
+
+
+def main() -> int:
+    meta = load_pinned_metadata()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(meta)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "metadata_py_sha256": METADATA_PY_SHA256,
+        "metadata_rs_sha256": METADATA_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.metadata parity "
+            "(has_semantic_fields and UnknownMetadataTracker flush modes)."
+        ),
+        "generator": "rust/parity/vectors/adapters.metadata/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

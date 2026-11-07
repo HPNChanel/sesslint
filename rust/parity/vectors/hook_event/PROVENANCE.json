@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "hook_event outcomes from pinned sesslint.hook_event (synthetic fixtures only; skip paths and pure logic).",
+  "generator": "rust/parity/vectors/hook_event/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-hook-event-short-hash: non-empty session_id invokes sesslint.report.short_hash in Python; Rust returns ShortHashUnavailable before later checks (not byte-compared here).",
+    "GAP-hook-event-check-file: transcript paths that reach sesslint.api.check_file in Python hit CheckFileUnavailable in Rust; findings and ok paths are not byte-compared here."
+  ]
+}

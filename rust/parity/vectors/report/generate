@@ -1,0 +1,610 @@
+#!/usr/bin/env python3
+"""Generate sesslint.report parity vectors from pinned git blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+REPORT_PY_SHA256 = (
+    "ac5cfc7f9d3f177faf3d9bc0f0cdc6c988b5d3c9fa5b354c81bf36469b97bac0"
+)
+REPORT_RS_SHA256 = (
+    "56d9593175f4d0a4932fa2364d882fd52aff23ba13648491f5e2cd84333c503a"
+)
+MODULE = "sesslint.report"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-report-refusal-rationale: render_human with findings calls "
+    "sesslint.repair.refusals.refusal_rationale_for in Python; Rust returns "
+    "sesslint.repair.refusals.refusal_rationale_for is not available before "
+    "emitting finding detail lines.",
+    "GAP-report-json-dumps: dump_report and render_json call json.dumps in "
+    "Python; Rust returns json.dumps is not available and does not emit JSON.",
+    "GAP-report-json-loads: parse_report and parse_manifest on JSON strings "
+    "call json.loads in Python; Rust returns json.loads is not available.",
+    "GAP-report-hashlib-sha1: minimize_path outside home hashes the parent "
+    "with hashlib.sha1 in Python; Rust returns hashlib.sha1 is not available.",
+    "GAP-report-default-coverage: build_report with omitted coverage calls "
+    "sesslint.profiles.builtin.ALL_RULES in Python; Rust returns "
+    "sesslint.profiles.builtin.ALL_RULES is not available.",
+)
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/report/test_summary.py",
+    "tests/report/test_paths.py",
+    "tests/test_report.py",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/report/test_paths.py::test_minimize_path_already_minimized": (
+        "minimize_path_passthrough_tilde",
+        "minimize_path_passthrough_dotdot",
+        "minimize_path_passthrough_home",
+    ),
+}
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/report.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != REPORT_PY_SHA256:
+        raise SystemExit(
+            f"report.py pin sha256 mismatch: expected {REPORT_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "report" / "src" / "report.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != REPORT_RS_SHA256:
+        raise SystemExit(
+            f"report.rs sha256 mismatch: expected {REPORT_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.adapters",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_pinned_report() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    deps = [m for m in closure("sesslint.report") if m != "sesslint.report"]
+    pending = list(deps)
+    for _ in range(48):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod)
+                progress = True
+            except Exception:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:8]}")
+    load_module("sesslint.report")
+    return sys.modules["sesslint.report"]
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def sample_finding(rep: Any, code: str, severity: Any, path: str = "synthetic/session.jsonl") -> Any:
+    from sesslint.codes import Repairability  # noqa: WPS433
+    from sesslint.finding import SourceRef, make_finding  # noqa: WPS433
+
+    return make_finding(
+        code=code,
+        severity=severity,
+        repairability=Repairability.MANUAL,
+        message_template="Synthetic marker at line {line}",
+        template_args={"line": "1"},
+        source=SourceRef(path=path, line=1),
+    )
+
+
+def empty_clean_report(rep: Any) -> Any:
+    return rep.build_report(
+        session_id="sess_healthy",
+        source_fingerprint="fp_clean_123",
+        tool_version="0.1.0",
+        findings=[],
+        assurance="A2",
+        limitation="Graph invariants validated.",
+    )
+
+
+def vector_specs(rep: Any) -> list[dict[str, Any]]:
+    from sesslint.codes import SL001, SL003, Severity  # noqa: WPS433
+
+    specs: list[dict[str, Any]] = []
+
+    def add(row: dict[str, Any]) -> None:
+        specs.append(row)
+
+    add(
+        {
+            "id": "module_exports",
+            "construct": {"type": "module_exports"},
+            "expected": {"python_all": list(rep.__all__)},
+        }
+    )
+    add(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "report_schema_version": rep.REPORT_SCHEMA_VERSION,
+                "required_severities": list(rep.REQUIRED_SEVERITIES),
+                "assurance_levels": sorted(rep.VALID_ASSURANCE_LEVELS),
+            },
+        }
+    )
+
+    level, lim = rep.compute_assurance(None, [])
+    add(
+        {
+            "id": "compute_assurance_none_empty",
+            "construct": {
+                "type": "compute_assurance",
+                "events": None,
+                "findings": [],
+            },
+            "expected": {"level": level, "limitation": lim},
+        }
+    )
+
+    mock_events = [{"id": "evt-synthetic"}]
+    level, lim = rep.compute_assurance(mock_events, [], has_profile_replay=True)
+    add(
+        {
+            "id": "compute_assurance_nonempty_a3",
+            "construct": {
+                "type": "compute_assurance",
+                "events": "nonempty",
+                "findings": [],
+                "has_profile_replay": True,
+            },
+            "expected": {"level": level, "limitation": lim},
+        }
+    )
+
+    clean = empty_clean_report(rep)
+    dumped = rep.dump_report(clean)
+    add(
+        {
+            "id": "dump_report_gap",
+            "construct": {
+                "type": "dump_report",
+                "report_kind": "empty_clean",
+                "session_id": clean.session_id,
+                "source_fingerprint": clean.source_fingerprint,
+                "tool_version": clean.tool_version,
+                "assurance": clean.assurance,
+                "limitation": clean.limitation,
+                "performed": sorted(clean.coverage.performed),
+            },
+            "expected": {
+                "pin": {"json_prefix": dumped[:48]},
+                "rust_assertion": {"mode": "gap_json_dumps"},
+            },
+        }
+    )
+
+    pin_parse = rep.parse_report(dumped)
+    add(
+        {
+            "id": "parse_report_json_string_gap",
+            "construct": {
+                "type": "parse_report",
+                "input_kind": "json_string",
+                "json": dumped,
+            },
+            "expected": {
+                "pin": {
+                    "session_id": pin_parse.session_id,
+                    "counts_total": pin_parse.counts.total,
+                },
+                "rust_assertion": {"mode": "gap_json_loads"},
+            },
+        }
+    )
+
+    f = sample_finding(rep, SL001, Severity.ERROR)
+    built = rep.build_report(
+        session_id="sess-parse",
+        source_fingerprint="fp-parse",
+        tool_version="0.1.0",
+        findings=[f],
+        assurance="A1",
+        limitation="Valid limitation",
+    )
+    bad = built.to_dict()
+    bad["counts"]["total"] = True
+    from sesslint.errors import SchemaError  # noqa: WPS433
+
+    try:
+        rep.parse_report(bad)
+    except SchemaError as exc:
+        bool_msg = str(exc)
+    else:
+        raise RuntimeError("expected SchemaError for bool total")
+    add(
+        {
+            "id": "parse_report_bool_total",
+            "construct": {
+                "type": "parse_report",
+                "input_kind": "mapping_bool_total",
+            },
+            "expected": {"display": bool_msg},
+        }
+    )
+
+    add(
+        {
+            "id": "build_report_empty_gap",
+            "construct": {"type": "build_report", "findings_count": 0},
+            "expected": {
+                "pin": {"session_id": clean.session_id, "counts_total": clean.counts.total},
+                "rust_assertion": {"mode": "gap_all_rules"},
+            },
+        }
+    )
+
+    rendered = rep.render_human(
+        clean,
+        color=False,
+        adapter="canonical",
+        profile="neutral",
+    )
+    add(
+        {
+            "id": "render_human_healthy_header",
+            "construct": {
+                "type": "render_human",
+                "report_kind": "empty_clean",
+                "color": False,
+                "adapter": "canonical",
+                "profile": "neutral",
+                "session_id": clean.session_id,
+                "source_fingerprint": clean.source_fingerprint,
+                "tool_version": clean.tool_version,
+                "assurance": clean.assurance,
+                "limitation": clean.limitation,
+                "performed": sorted(clean.coverage.performed),
+            },
+            "expected": {"text": rendered},
+        }
+    )
+
+    err_finding = sample_finding(rep, SL001, Severity.ERROR, path="synthetic/bad.jsonl")
+    err_rep = rep.build_report(
+        session_id="sess_bad",
+        source_fingerprint="fp_bad_123",
+        tool_version="0.1.0",
+        findings=[err_finding],
+        assurance="A0",
+        limitation="No conclusion.",
+    )
+    pin_human = rep.render_human(
+        err_rep,
+        color=False,
+        adapter="claude-code-jsonl",
+        profile="claude-strict",
+    )
+    add(
+        {
+            "id": "render_human_with_finding_gap",
+            "construct": {
+                "type": "render_human",
+                "report_kind": "one_error",
+                "color": False,
+                "adapter": "claude-code-jsonl",
+                "profile": "claude-strict",
+                "session_id": err_rep.session_id,
+                "source_fingerprint": err_rep.source_fingerprint,
+                "tool_version": err_rep.tool_version,
+                "assurance": err_rep.assurance,
+                "limitation": err_rep.limitation,
+                "performed": sorted(err_rep.coverage.performed),
+                "finding_path": "synthetic/bad.jsonl",
+            },
+            "expected": {
+                "pin": {"text_prefix": pin_human.splitlines()[0]},
+                "rust_assertion": {"mode": "gap_refusal_rationale"},
+            },
+        }
+    )
+
+    fake_home = Path("C:/SyntheticHomeParity").resolve()
+    under = fake_home / "work" / "sessions" / "agent.jsonl"
+    got_home = rep.minimize_path(under, home=fake_home)
+    add(
+        {
+            "id": "minimize_path_under_home",
+            "construct": {
+                "type": "minimize_path",
+                "path": str(under).replace("\\", "/"),
+                "home": str(fake_home).replace("\\", "/"),
+            },
+            "expected": {"path": got_home},
+        }
+    )
+
+    got_self = rep.minimize_path(fake_home, home=fake_home)
+    add(
+        {
+            "id": "minimize_path_home_self",
+            "construct": {
+                "type": "minimize_path",
+                "path": str(fake_home).replace("\\", "/"),
+                "home": str(fake_home).replace("\\", "/"),
+            },
+            "expected": {"path": got_self},
+        }
+    )
+
+    for vid, raw in (
+        ("minimize_path_passthrough_tilde", "~/work/file.jsonl"),
+        ("minimize_path_passthrough_dotdot", ".._12345678/file.jsonl"),
+        ("minimize_path_passthrough_home", "~"),
+    ):
+        add(
+            {
+                "id": vid,
+                "construct": {"type": "minimize_path", "path": raw, "home": None},
+                "expected": {"path": rep.minimize_path(raw)},
+            }
+        )
+
+    outside_home = Path("C:/SyntheticOutside/agent.jsonl")
+    outside_parent = Path("C:/SyntheticOutside")
+    pin_out = rep.minimize_path(outside_home, home=fake_home)
+    parent_key = str(outside_parent).replace("\\", "/")
+    expected_hash = hashlib.sha1(parent_key.encode("utf-8")).hexdigest()[:8]
+    add(
+        {
+            "id": "minimize_path_outside_gap",
+            "construct": {
+                "type": "minimize_path",
+                "path": str(outside_home).replace("\\", "/"),
+                "home": str(fake_home).replace("\\", "/"),
+            },
+            "expected": {
+                "pin": {"path": pin_out, "parent_hash_prefix": expected_hash},
+                "rust_assertion": {"mode": "gap_hashlib_sha1"},
+            },
+        }
+    )
+
+    warn = sample_finding(rep, SL003, Severity.WARNING)
+    level, lim = rep.compute_assurance(mock_events, [warn], has_profile_replay=True)
+    add(
+        {
+            "id": "compute_assurance_warning_a2",
+            "construct": {
+                "type": "compute_assurance",
+                "events": "nonempty",
+                "findings": [{"code": "SL003", "severity": "warning"}],
+                "has_profile_replay": True,
+            },
+            "expected": {"level": level, "limitation": lim},
+        }
+    )
+
+    return specs
+
+
+def list_tests_in_file(rel: str) -> list[tuple[str, bool]]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[tuple[str, bool]] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            name = line.split("(")[0].replace("def ", "")
+            out.append((name, True))
+        elif not has_column0 and line.startswith("    def test_"):
+            name = line.split("(")[0].replace("def ", "").strip()
+            out.append((name, False))
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        try:
+            tests = list_tests_in_file(rel)
+        except subprocess.CalledProcessError:
+            continue
+        for name, _ in tests:
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                status = "covered"
+                covered += 1
+                row["vector_ids"] = list(needed)
+            else:
+                status = "not_applicable"
+                not_applicable += 1
+            row["status"] = status
+            rows.append(row)
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def main() -> int:
+    rep = load_pinned_report()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(rep)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "report_py_sha256": REPORT_PY_SHA256,
+        "report_rs_sha256": REPORT_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.report parity: early gates, path minimization, "
+            "and documented json/refusal/sha1/all_rules seams."
+        ),
+        "generator": "rust/parity/vectors/report/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

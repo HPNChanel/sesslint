@@ -1,0 +1,499 @@
+#!/usr/bin/env python3
+"""Generate sesslint.profiles.profile module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import dataclasses
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROFILE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROFILE_RS_SHA256 = (
+    "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c"
+)
+MODULE = "sesslint.profiles.profile"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "get_profile and list_profiles need sesslint.profiles.builtin. Rust returns "
+    "sesslint.profiles.builtin is not available. Python returns a registered profile or a KeyError. "
+    "Do not copy REGISTRY into the vector expected value.",
+    "apply_rule_selection and deselected_rules with only one of select or ignore need ALL_RULES. "
+    "Rust returns the builtin error. Python filters the rules.",
+    "Rust trim does not drop U+001C through U+001F. Python str.strip does.",
+    "A float or list schema has no honest Python repr. Rust returns a typed error.",
+    "There is no bytes input. Python reports got bytes.",
+    "EventValue::Other has no Python type name. Rust returns PYTHON_TYPE_NAME_UNREPRESENTABLE.",
+    "A bool is not an f64. true is not coerced to 1.0.",
+    "Some finite-float messages use Rust debug text and can differ from Python str at other magnitudes. "
+    "The locked 0.0, 1.0, 0.2, and 0.3 cases are the ones that match.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_profile_py_blob() -> None:
+    pin = git_show_blob(f"{PROFILE_PY_PIN}:src/sesslint/profiles/profile.py")
+    head = git_show_blob("HEAD:src/sesslint/profiles/profile.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/profiles/profile.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_profile_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "profile.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != PROFILE_RS_SHA256:
+        raise SystemExit(
+            "checks/src/profile.rs sha256 mismatch: "
+            f"expected {PROFILE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_profile_module() -> types.ModuleType:
+    verify_profile_py_blob()
+    verify_profile_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{PROFILE_PY_PIN}:src/sesslint/profiles/profile.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_profile.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_profiles_profile_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned profile.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def encode_dict_value(value: Any) -> Any:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"t": "int", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, list):
+        return {"t": "list", "items": [encode_dict_value(item) for item in value]}
+    if isinstance(value, dict):
+        pairs: list[list[Any]] = []
+        for key, val in value.items():
+            pairs.append([key, encode_dict_value(val)])
+        return {"t": "map", "entries": pairs}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def profile_to_ordered_dict(profile: Any) -> dict[str, Any]:
+    return profile.to_dict()
+
+
+def sample_profile(mod: Any) -> Any:
+    thresholds: dict[str, float] = {}
+    return mod.Profile(
+        name="replay",
+        description="synthetic profile",
+        allowed_adapters=("codex", "claude"),
+        enabled_rules=("SL002", "SL001"),
+        thresholds=thresholds,
+        checkpoint_sensitivity="strict",
+    )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    expected_all = [
+        "EffectiveConfig",
+        "Profile",
+        "VALID_FORMATS",
+        "apply_rule_selection",
+        "get_profile",
+        "list_profiles",
+        "require_canonical",
+        "resolve_effective_config",
+        "stamp_source_profile",
+    ]
+    py_all = list(mod.__all__)
+    if py_all != expected_all:
+        raise SystemExit(f"unexpected __all__: {py_all!r}")
+
+    out: list[dict[str, Any]] = []
+
+    # profile_to_dict_defaults
+    thresholds: dict[str, float] = {}
+    thresholds["margin_min"] = 0.2
+    thresholds["confidence_min"] = 0.5
+    prof = mod.Profile(
+        name="synth-profile",
+        description="synth-description",
+        allowed_adapters=("adapter-b", "adapter-a"),
+        enabled_rules=("RULE-B", "RULE-A"),
+        thresholds=thresholds,
+        checkpoint_sensitivity="synth-sensitivity",
+    )
+    dct = profile_to_ordered_dict(prof)
+    out.append(
+        {
+            "id": "profile_to_dict_defaults",
+            "construct": {"type": "profile_to_dict", "profile": encode_dict_value(dct)},
+            "expected": {
+                "dict": encode_dict_value(dct),
+                "rule_severities_absent": True,
+            },
+        }
+    )
+
+    # rule_severities_sorted
+    from sesslint.codes import Severity
+
+    prof2 = sample_profile(mod)
+    prof2 = dataclasses.replace(
+        prof2,
+        rule_severities={
+            "SL010": Severity.INFO,
+            "SL001": Severity.FATAL,
+            "SL002": Severity.WARNING,
+            "SL003": Severity.ERROR,
+        },
+    )
+    d2 = profile_to_ordered_dict(prof2)
+    out.append(
+        {
+            "id": "rule_severities_sorted",
+            "construct": {"type": "profile_to_dict", "profile": encode_dict_value(d2)},
+            "expected": {"dict": encode_dict_value(d2)},
+        }
+    )
+
+    # threshold_update_keeps_position
+    th: dict[str, float] = {}
+    th["margin_min"] = 0.2
+    th["confidence_min"] = 0.5
+    th["other"] = 0.3
+    th["margin_min"] = 0.11
+    prof3 = mod.Profile(
+        name="replay",
+        description="synthetic profile",
+        allowed_adapters=("codex", "claude"),
+        enabled_rules=("SL002", "SL001"),
+        thresholds=th,
+        checkpoint_sensitivity="strict",
+    )
+    d3 = profile_to_ordered_dict(prof3)
+    out.append(
+        {
+            "id": "threshold_update_keeps_position",
+            "construct": {"type": "profile_to_dict", "profile": encode_dict_value(d3)},
+            "expected": {"dict": encode_dict_value(d3)},
+        }
+    )
+
+    # effective_rounding
+    prof4 = sample_profile(mod)
+    prof4 = dataclasses.replace(prof4, version="9.9.9")
+    ec_def = mod.resolve_effective_config(prof4)
+    ec_half = mod.resolve_effective_config(
+        prof4,
+        confidence_min=None,
+        margin_min=0.03125,
+    )
+    out.append(
+        {
+            "id": "effective_rounding",
+            "construct": {"type": "noop"},
+            "expected": {
+                "defaults_thresholds_source": ec_def.thresholds_source,
+                "defaults_version": ec_def.version,
+                "half_thresholds_source": ec_half.thresholds_source,
+                "effective_to_dict": encode_dict_value(ec_def.to_dict()),
+                "half_to_dict": encode_dict_value(ec_half.to_dict()),
+                "half_resolution": encode_dict_value(ec_half.to_source_resolution()),
+            },
+        }
+    )
+
+    prof5 = sample_profile(mod)
+    ec_fmt = mod.resolve_effective_config(prof5, format="  Claude ")
+    out.append(
+        {
+            "id": "format_cleaned",
+            "construct": {"type": "noop"},
+            "expected": {"format_override": ec_fmt.format_override},
+        }
+    )
+
+    try:
+        mod.resolve_effective_config(prof5, format="nope")
+    except ValueError as exc:
+        inv_msg = str(exc)
+    else:
+        raise SystemExit("format_cleaned: expected ValueError for nope")
+    out.append(
+        {
+            "id": "invalid_format",
+            "construct": {"type": "noop"},
+            "expected": {"error": inv_msg},
+        }
+    )
+
+    try:
+        mod.resolve_effective_config(prof5, confidence_min=0.0, margin_min=None)
+    except ValueError as exc:
+        m0 = str(exc)
+    else:
+        raise SystemExit("bounds: expected ValueError for confidence 0.0")
+    try:
+        mod.resolve_effective_config(prof5, confidence_min=1.0, margin_min=None)
+    except ValueError as exc:
+        m1 = str(exc)
+    else:
+        raise SystemExit("bounds: expected ValueError for confidence 1.0")
+    try:
+        mod.resolve_effective_config(prof5, confidence_min=0.2, margin_min=0.3)
+    except ValueError as exc:
+        m_gt = str(exc)
+    else:
+        raise SystemExit("bounds: expected ValueError for margin > confidence")
+    out.append(
+        {
+            "id": "bounds_zero_and_one",
+            "construct": {"type": "noop"},
+            "expected": {
+                "confidence_zero": m0,
+                "confidence_one": m1,
+                "margin_exceeds": m_gt,
+            },
+        }
+    )
+
+    try:
+        mod.resolve_effective_config(prof5, confidence_min=float("nan"), margin_min=None)
+    except ValueError as exc:
+        nan_msg = str(exc)
+    else:
+        raise SystemExit("non_finite: expected ValueError")
+    out.append(
+        {
+            "id": "non_finite",
+            "construct": {"type": "noop"},
+            "expected": {"error": nan_msg},
+        }
+    )
+
+    try:
+        mod.apply_rule_selection(prof5, select=["SL001"], ignore=["SL002"])
+    except ValueError as exc:
+        mut_msg = str(exc)
+    else:
+        raise SystemExit("mutual_exclusion: expected ValueError")
+    out.append(
+        {
+            "id": "mutual_exclusion",
+            "construct": {"type": "noop"},
+            "expected": {"error": mut_msg},
+        }
+    )
+
+    empty = mod.apply_rule_selection(prof5, select=[], ignore=[])
+    out.append(
+        {
+            "id": "empty_selection_returns_profile",
+            "construct": {"type": "noop"},
+            "expected": {"enabled_rules": list(empty.enabled_rules)},
+        }
+    )
+
+    try:
+        mod.require_canonical(None)
+    except TypeError as exc:
+        none_msg = str(exc)
+    else:
+        raise SystemExit("require_canonical_none: expected TypeError")
+    out.append(
+        {
+            "id": "require_canonical_none",
+            "construct": {"type": "noop"},
+            "expected": {"error": none_msg},
+        }
+    )
+
+    try:
+        mod.require_canonical({"schema": "other", "events": None})
+    except TypeError as exc:
+        bad_schema_msg = str(exc)
+    else:
+        raise SystemExit("require_canonical_bad_schema: expected TypeError")
+    out.append(
+        {
+            "id": "require_canonical_bad_schema",
+            "construct": {"type": "noop"},
+            "expected": {"error": bad_schema_msg},
+        }
+    )
+
+    try:
+        mod.require_canonical({"schema": mod.SCHEMA_VERSION})
+    except TypeError as exc:
+        miss_msg = str(exc)
+    else:
+        raise SystemExit("require_canonical_missing_keys: expected TypeError")
+    out.append(
+        {
+            "id": "require_canonical_missing_keys",
+            "construct": {"type": "noop"},
+            "expected": {"error": miss_msg},
+        }
+    )
+
+    mod.require_canonical([])
+    out.append(
+        {
+            "id": "require_canonical_empty_sequence",
+            "construct": {"type": "noop"},
+            "expected": {"ok": True},
+        }
+    )
+
+    try:
+        mod.require_canonical("not-a-session")
+    except TypeError as exc:
+        text_msg = str(exc)
+    else:
+        raise SystemExit("require_canonical_text: expected TypeError")
+    out.append(
+        {
+            "id": "require_canonical_text",
+            "construct": {"type": "noop"},
+            "expected": {"error": text_msg},
+        }
+    )
+
+    ec_stamp = mod.resolve_effective_config(prof5, format="  auto  ")
+    block1: dict[str, Any] = {}
+    block1["adapter"] = "codex"
+    block1["profile"] = "old-name"
+    block1["tail"] = 1
+    stamped1 = mod.stamp_source_profile(block1, ec_stamp)
+    block2: dict[str, Any] = {}
+    block2["resolution"] = None
+    block2["profile"] = "old-name"
+    stamped2 = mod.stamp_source_profile(block2, ec_stamp)
+    out.append(
+        {
+            "id": "stamp_updates_profile_in_place",
+            "construct": {"type": "noop"},
+            "expected": {
+                "stamped1": encode_dict_value(stamped1),
+                "stamped1_keys": list(stamped1.keys()),
+                "stamped2": encode_dict_value(stamped2),
+                "stamped2_keys": list(stamped2.keys()),
+            },
+        }
+    )
+
+    out.append(
+        {
+            "id": "all_names",
+            "construct": {"type": "noop"},
+            "expected": {"names": py_all},
+        }
+    )
+
+    if len(out) != 17:
+        raise SystemExit(f"expected 17 vectors, got {len(out)}")
+    return out
+
+
+def main() -> int:
+    mod = load_profile_module()
+    out_dir = Path(__file__).resolve().parent
+
+    vectors = vectors_from_module(mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_profile_rs_sha256": PROFILE_RS_SHA256,
+        "python_all": list(mod.__all__),
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_profile_rs_sha256": PROFILE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/profiles.profile/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.profiles.profile parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/profiles.profile/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

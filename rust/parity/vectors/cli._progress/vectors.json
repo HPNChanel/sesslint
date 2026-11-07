@@ -1,0 +1,255 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._progress",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "progress_py_sha256": "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572",
+  "cli_progress_py_sha256": "59a2ce2f34ec951d9404867a333a990eb646ba61dd9d5baa7defc0e6a2a7f1c3",
+  "progress_rs_sha256": "c897bc8314c7eb4ccda6834399ba4f101bac2816b2aecf1191f64a2855db04ec",
+  "known_parity_gaps": [
+    "GAP-cli-progress-tty-default-clock: Python TtyProgress() binds time.monotonic at construction; Rust MonotonicClock injects a floor so the first incomplete event always renders without wall-clock delay (not byte-compared here)."
+  ],
+  "vectors": [
+    {
+      "id": "ndjson_full_event",
+      "construct": {
+        "type": "ndjson_emit",
+        "events": [
+          {
+            "phase": "scan",
+            "completed": 3,
+            "total": 7,
+            "item": "synthetic-item.jsonl"
+          }
+        ]
+      },
+      "expected": {
+        "stderr": "{\"completed\": 3, \"item\": \"synthetic-item.jsonl\", \"phase\": \"scan\", \"total\": 7}\n"
+      }
+    },
+    {
+      "id": "ndjson_omit_none_and_zero_total",
+      "construct": {
+        "type": "ndjson_emit",
+        "events": [
+          {
+            "phase": "scan",
+            "completed": 1
+          },
+          {
+            "phase": "scan",
+            "completed": -1,
+            "total": 0,
+            "item": ""
+          }
+        ]
+      },
+      "expected": {
+        "stderr": "{\"completed\": 1, \"phase\": \"scan\"}\n{\"completed\": -1, \"item\": \"\", \"phase\": \"scan\", \"total\": 0}\n"
+      }
+    },
+    {
+      "id": "ndjson_non_ascii_item",
+      "construct": {
+        "type": "ndjson_emit",
+        "events": [
+          {
+            "phase": "scan",
+            "completed": 1,
+            "item": "café"
+          }
+        ]
+      },
+      "expected": {
+        "stderr": "{\"completed\": 1, \"item\": \"caf\\u00e9\", \"phase\": \"scan\"}\n"
+      }
+    },
+    {
+      "id": "tty_renders_phase_counts_never_item",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.1
+        ],
+        "steps": [
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 3,
+              "total": 7,
+              "item": "synthetic-item.jsonl"
+            }
+          }
+        ],
+        "finish": false
+      },
+      "expected": {
+        "stderr": "\rscan 3/7"
+      }
+    },
+    {
+      "id": "tty_completed_only_when_total_absent",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.1
+        ],
+        "steps": [
+          {
+            "event": {
+              "phase": "check:load",
+              "completed": 4,
+              "item": "synthetic-item.jsonl"
+            }
+          }
+        ],
+        "finish": false
+      },
+      "expected": {
+        "stderr": "\rcheck:load 4"
+      }
+    },
+    {
+      "id": "tty_pads_then_finish_clears",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.1,
+          0.3,
+          0.3
+        ],
+        "steps": [
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 10,
+              "total": 10
+            }
+          },
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 1,
+              "total": 10
+            }
+          }
+        ],
+        "finish": true
+      },
+      "expected": {
+        "stderr": "\rscan 10/10\rscan 1/10 \r         \r"
+      }
+    },
+    {
+      "id": "tty_throttles_but_completing_renders",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.1,
+          0.15,
+          0.15
+        ],
+        "steps": [
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 1,
+              "total": 3
+            }
+          },
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 2,
+              "total": 3
+            }
+          },
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 3,
+              "total": 3
+            }
+          }
+        ],
+        "finish": false
+      },
+      "expected": {
+        "stderr": "\rscan 1/3\rscan 3/3"
+      }
+    },
+    {
+      "id": "tty_zero_monotonic_skips_until_interval",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.0,
+          0.1,
+          0.2
+        ],
+        "steps": [
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 1,
+              "total": 2
+            }
+          },
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 1,
+              "total": 2
+            }
+          },
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 2,
+              "total": 2
+            }
+          }
+        ],
+        "finish": false
+      },
+      "expected": {
+        "stderr": "\rscan 1/2\rscan 2/2"
+      }
+    },
+    {
+      "id": "tty_complete_when_completed_exceeds_total",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.0
+        ],
+        "steps": [
+          {
+            "event": {
+              "phase": "scan",
+              "completed": 5,
+              "total": 3
+            }
+          }
+        ],
+        "finish": false
+      },
+      "expected": {
+        "stderr": "\rscan 5/3"
+      }
+    },
+    {
+      "id": "tty_finish_noop_when_nothing_rendered",
+      "construct": {
+        "type": "tty_emit",
+        "clock_times": [
+          0.0
+        ],
+        "steps": [],
+        "finish": true
+      },
+      "expected": {
+        "stderr": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.discovery",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "discovery_py_sha256": "1ddc7064f153315b414537c9880fd4567c047950a78c7c6bed507ffd88e53e5a",
+  "vectors": [
+    {
+      "id": "claude_two_part_jsonl_accepted",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/sess.jsonl",
+        "root": "synthetic-store",
+        "agent": "claude",
+        "subagents": true
+      },
+      "expected": {
+        "result": true
+      }
+    },
+    {
+      "id": "claude_two_part_non_jsonl_rejected",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/sess.json",
+        "root": "synthetic-store",
+        "agent": "claude",
+        "subagents": true
+      },
+      "expected": {
+        "result": false
+      }
+    },
+    {
+      "id": "claude_subagent_accepted_when_enabled",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/proj/subagents/agent-child.jsonl",
+        "root": "synthetic-store",
+        "agent": "claude",
+        "subagents": true
+      },
+      "expected": {
+        "result": true
+      }
+    },
+    {
+      "id": "claude_subagent_rejected_when_disabled",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/proj/subagents/agent-child.jsonl",
+        "root": "synthetic-store",
+        "agent": "claude",
+        "subagents": false
+      },
+      "expected": {
+        "result": false
+      }
+    },
+    {
+      "id": "claude_four_part_requires_subagents_dir",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/proj/other/agent-child.jsonl",
+        "root": "synthetic-store",
+        "agent": "claude",
+        "subagents": true
+      },
+      "expected": {
+        "result": false
+      }
+    },
+    {
+      "id": "claude_four_part_requires_agent_prefix",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/proj/subagents/child.jsonl",
+        "root": "synthetic-store",
+        "agent": "claude",
+        "subagents": true
+      },
+      "expected": {
+        "result": false
+      }
+    },
+    {
+      "id": "codex_rollout_shallow_accepted",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/rollout-a.jsonl",
+        "root": "synthetic-store",
+        "agent": "codex",
+        "subagents": true
+      },
+      "expected": {
+        "result": true
+      }
+    },
+    {
+      "id": "codex_rollout_nested_accepted",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/sessions/2026/10/rollout-b.jsonl",
+        "root": "synthetic-store",
+        "agent": "codex",
+        "subagents": false
+      },
+      "expected": {
+        "result": true
+      }
+    },
+    {
+      "id": "codex_non_rollout_name_rejected",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/session-a.jsonl",
+        "root": "synthetic-store",
+        "agent": "codex",
+        "subagents": true
+      },
+      "expected": {
+        "result": false
+      }
+    },
+    {
+      "id": "codex_rollout_non_jsonl_rejected",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/rollout-a.json",
+        "root": "synthetic-store",
+        "agent": "codex",
+        "subagents": true
+      },
+      "expected": {
+        "result": false
+      }
+    },
+    {
+      "id": "unknown_agent_value_error",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "synthetic-store/projects/sess.jsonl",
+        "root": "synthetic-store",
+        "agent": "gemini",
+        "subagents": true
+      },
+      "expected": {
+        "raises": "ValueError",
+        "discovery_error": "InvalidAgent",
+        "message": "agent must be claude or codex"
+      }
+    },
+    {
+      "id": "not_under_root_before_agent_check",
+      "construct": {
+        "type": "candidate_in_layout",
+        "path": "other-store/projects/sess.jsonl",
+        "root": "synthetic-store",
+        "agent": "gemini",
+        "subagents": true
+      },
+      "expected": {
+        "raises": "ValueError",
+        "discovery_error": "NotUnderRoot",
+        "display": "path is not in the subpath of root OR one path is relative and the other is absolute."
+      }
+    }
+  ]
+}

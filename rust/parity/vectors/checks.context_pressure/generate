@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.context_pressure module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CONTEXT_PRESSURE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CONTEXT_PRESSURE_RS_SHA256 = (
+    "ebbbb259b2b972e4266d5817e19560e9b5f46f5800cd99f80884c52df53df507"
+)
+MODULE = "sesslint.checks.context_pressure"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "A real under-15% marker calls make_finding with the fingerprint omitted. "
+    "Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (known gap).",
+    "Python int is unbounded. Rust checked i64 overflow on window - occupancy, "
+    "headroom * 20, and window * 3 is PYTHON_INT_UNBOUNDED.",
+    "A bool is not an int.",
+    "MapLookup::Borrowed is a failed borrow, not a missing key.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_context_pressure_py_blob() -> None:
+    pin = git_show_blob(f"{CONTEXT_PRESSURE_PY_PIN}:src/sesslint/checks/context_pressure.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/context_pressure.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/context_pressure.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_context_pressure_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "context_pressure.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != CONTEXT_PRESSURE_RS_SHA256:
+        raise SystemExit(
+            "checks/src/context_pressure.rs sha256 mismatch: "
+            f"expected {CONTEXT_PRESSURE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_context_pressure_module() -> types.ModuleType:
+    verify_context_pressure_py_blob()
+    verify_context_pressure_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{CONTEXT_PRESSURE_PY_PIN}:src/sesslint/checks/context_pressure.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_context_pressure.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_context_pressure_parity", tmp_path
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned context_pressure.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    extra_fields: dict[str, Any],
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields=extra_fields,
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_construct_context_pressure_check(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "context_pressure_check",
+        "events": [encode_event(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    # No context_pressure marker: empty extra_fields on both events.
+    ev_no_cp = [
+        session_event("evt-par-cp-no-a", 0, "message", {}),
+        session_event("evt-par-cp-no-b", 1, "message", {}),
+    ]
+    out.append(
+        {
+            "id": "no_context_pressure_marker_empty_findings",
+            "construct": encode_construct_context_pressure_check(ev_no_cp),
+            "expected": {
+                "findings_count": len(mod.check_context_pressure(ev_no_cp)),
+                "last_pressure_marker_none": True,
+            },
+        }
+    )
+
+    # occupancy 8500, window 10000: headroom * 20 == window * 3; silent.
+    ev_boundary = [
+        session_event(
+            "evt-par-cp-boundary",
+            0,
+            "message",
+            {
+                "codex": {
+                    "context_pressure": {
+                        "occupancy": 8500,
+                        "window": 10000,
+                    }
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "headroom_exactly_on_15pct_boundary_empty_findings",
+            "construct": encode_construct_context_pressure_check(ev_boundary),
+            "expected": {
+                "findings_count": len(mod.check_context_pressure(ev_boundary)),
+                "last_pressure_marker_none": True,
+            },
+        }
+    )
+
+    # Earlier tight (8501/10000) then later comfortable (8500/10000): last wins, silent.
+    ev_last_wins = [
+        session_event(
+            "evt-par-cp-tight",
+            0,
+            "message",
+            {
+                "codex": {
+                    "context_pressure": {
+                        "occupancy": 8501,
+                        "window": 10000,
+                    }
+                }
+            },
+        ),
+        session_event(
+            "evt-par-cp-comfortable",
+            1,
+            "message",
+            {
+                "codex": {
+                    "context_pressure": {
+                        "occupancy": 8500,
+                        "window": 10000,
+                    }
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "earlier_tight_then_later_comfortable_empty_findings",
+            "construct": encode_construct_context_pressure_check(ev_last_wins),
+            "expected": {
+                "findings_count": len(mod.check_context_pressure(ev_last_wins)),
+                "last_pressure_marker_none": True,
+            },
+        }
+    )
+
+    # Bool occupancy is not an int: ignored.
+    ev_bool_occ = [
+        session_event(
+            "evt-par-cp-bool-occ",
+            0,
+            "message",
+            {
+                "codex": {
+                    "context_pressure": {
+                        "occupancy": True,
+                        "window": 10000,
+                    }
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "bool_occupancy_ignored_empty_findings",
+            "construct": encode_construct_context_pressure_check(ev_bool_occ),
+            "expected": {
+                "findings_count": len(mod.check_context_pressure(ev_bool_occ)),
+                "last_pressure_marker_none": True,
+            },
+        }
+    )
+
+    # window 0 does not qualify.
+    ev_win_zero = [
+        session_event(
+            "evt-par-cp-zero-win",
+            0,
+            "message",
+            {
+                "codex": {
+                    "context_pressure": {
+                        "occupancy": 1,
+                        "window": 0,
+                    }
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "window_zero_ignored_empty_findings",
+            "construct": encode_construct_context_pressure_check(ev_win_zero),
+            "expected": {
+                "findings_count": len(mod.check_context_pressure(ev_win_zero)),
+                "last_pressure_marker_none": True,
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_context_pressure_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_module(mod)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        fc = spec["expected"]["findings_count"]
+        if fc != 0:
+            raise SystemExit(f'vector {spec["id"]!r} expected silent Python side; got findings_count={fc}')
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": spec["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_context_pressure_rs_sha256": CONTEXT_PRESSURE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_context_pressure_rs_sha256": CONTEXT_PRESSURE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.context_pressure/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.context_pressure parity "
+            "(stdlib-only vectors; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.context_pressure/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

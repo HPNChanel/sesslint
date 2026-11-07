@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.policy package parity (__all__, SAFE_SIDE_EFFECT, TOOL_KINDS membership, must_abstain via package import).",
+  "generator": "rust/parity/vectors/policy/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "TOOL_KINDS is a frozenset in Python; iteration order is not a contract; vectors record sorted membership for comparison"
+  ]
+}

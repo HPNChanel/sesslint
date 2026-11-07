@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.determinism",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "determinism_py_sha256": "29738711c24991243a7bd38de59665f9e1bb85b5aa38c4dbb1c62901ae153a08",
+  "vector_count": 8,
+  "vectors_sha256": "bc81a2de5f17e9442c086dc2383cef3ba0dc2242fe8e44e67afe5280788df9ff",
+  "generator": "rust/parity/vectors/determinism/generate",
+  "known_parity_gaps": [
+    "NaN, Infinity: canonical_json_bytes rejects non-finite floats; Rust codec error text may differ from Python json module errors - do not assert message parity for these cases.",
+    "Lone surrogate in a JSON string: Python json may accept invalid Unicode; Rust canonical codec behavior may differ - not asserted here.",
+    "stable_sort_findings with a non-Finding item: Python raises TypeError; Rust only accepts Finding and does not model mixed lists.",
+    "JSON integers outside i64: Rust Value uses i64; very large integers are not represented in the Rust parity harness."
+  ]
+}

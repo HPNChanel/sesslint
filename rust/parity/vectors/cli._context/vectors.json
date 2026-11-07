@@ -1,0 +1,518 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._context",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "context_py_sha256": "333e2b5cc857a22387ed5f67e22806491ebdfdabaef970f006d97aff32253667",
+  "vectors": [
+    {
+      "id": "resolve_output_format_json_beats_flag_and_env",
+      "construct": {
+        "type": "resolve_output_format",
+        "args": {
+          "json": true,
+          "output_format": "human"
+        },
+        "env": {
+          "SESSLINT_FORMAT": "json"
+        },
+        "subparser": "format_human_json_ndjson"
+      },
+      "expected": {
+        "result": "ok",
+        "setting": {
+          "value": "json",
+          "source": "cli"
+        }
+      }
+    },
+    {
+      "id": "resolve_output_format_flag_beats_env",
+      "construct": {
+        "type": "resolve_output_format",
+        "args": {
+          "output_format": "human"
+        },
+        "env": {
+          "SESSLINT_FORMAT": "json"
+        },
+        "subparser": "format_human_json_ndjson"
+      },
+      "expected": {
+        "result": "ok",
+        "setting": {
+          "value": "human",
+          "source": "cli"
+        }
+      }
+    },
+    {
+      "id": "resolve_output_format_valid_env",
+      "construct": {
+        "type": "resolve_output_format",
+        "args": {},
+        "env": {
+          "SESSLINT_FORMAT": "json"
+        },
+        "subparser": "format_human_json_ndjson"
+      },
+      "expected": {
+        "result": "ok",
+        "setting": {
+          "value": "json",
+          "source": "env:SESSLINT_FORMAT"
+        }
+      }
+    },
+    {
+      "id": "resolve_output_format_default_human",
+      "construct": {
+        "type": "resolve_output_format",
+        "args": {},
+        "env": {},
+        "subparser": "format_human_json_ndjson"
+      },
+      "expected": {
+        "result": "ok",
+        "setting": {
+          "value": "human",
+          "source": "default"
+        }
+      }
+    },
+    {
+      "id": "resolve_output_format_invalid_env_message",
+      "construct": {
+        "type": "resolve_output_format",
+        "args": {},
+        "env": {
+          "SESSLINT_FORMAT": "synthetic-bad-format"
+        },
+        "subparser": "format_human_json"
+      },
+      "expected": {
+        "result": "error",
+        "exit_code": 2,
+        "message": "Invalid SESSLINT_FORMAT='synthetic-bad-format': choose from human, json"
+      }
+    },
+    {
+      "id": "resolve_output_format_env_ignored_without_choices",
+      "construct": {
+        "type": "resolve_output_format",
+        "args": {},
+        "env": {
+          "SESSLINT_FORMAT": "synthetic-bad-format"
+        },
+        "subparser": "no_format"
+      },
+      "expected": {
+        "result": "ok",
+        "setting": {
+          "value": "human",
+          "source": "default"
+        }
+      }
+    },
+    {
+      "id": "cli_supplied_missing_is_unset",
+      "construct": {
+        "type": "cli_supplied",
+        "name": "skip_undetected",
+        "args": {}
+      },
+      "expected": {
+        "supplied": false,
+        "value": null
+      }
+    },
+    {
+      "id": "cli_supplied_false_is_unset",
+      "construct": {
+        "type": "cli_supplied",
+        "name": "skip_undetected",
+        "args": {
+          "skip_undetected": false
+        }
+      },
+      "expected": {
+        "supplied": false,
+        "value": null
+      }
+    },
+    {
+      "id": "cli_supplied_true_and_zero_supplied",
+      "construct": {
+        "type": "cli_supplied",
+        "name": "max_files",
+        "args": {
+          "max_files": 0
+        }
+      },
+      "expected": {
+        "supplied": true,
+        "value": 0
+      }
+    },
+    {
+      "id": "cli_supplied_true_bool",
+      "construct": {
+        "type": "cli_supplied",
+        "name": "skip_undetected",
+        "args": {
+          "skip_undetected": true
+        }
+      },
+      "expected": {
+        "supplied": true,
+        "value": true
+      }
+    },
+    {
+      "id": "cli_supplied_str_value",
+      "construct": {
+        "type": "cli_supplied",
+        "name": "select",
+        "args": {
+          "select": "synthetic-select"
+        }
+      },
+      "expected": {
+        "supplied": true,
+        "value": "synthetic-select"
+      }
+    },
+    {
+      "id": "cli_context_error_always_prints",
+      "construct": {
+        "type": "cli_context_channel",
+        "quiet": true,
+        "verbose": false,
+        "channel": "error",
+        "message": "synthetic-err"
+      },
+      "expected": {
+        "stderr": "synthetic-err\n"
+      }
+    },
+    {
+      "id": "cli_context_warn_info_hidden_when_quiet",
+      "construct": {
+        "type": "cli_context_channel",
+        "quiet": true,
+        "verbose": false,
+        "channel": "warn_then_info",
+        "message": "synthetic-warn"
+      },
+      "expected": {
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cli_context_warn_info_visible_when_loud",
+      "construct": {
+        "type": "cli_context_channel",
+        "quiet": false,
+        "verbose": false,
+        "channel": "warn_then_info",
+        "message": "synthetic-warn"
+      },
+      "expected": {
+        "stderr": "synthetic-warn\nsynthetic-info\n"
+      }
+    },
+    {
+      "id": "cli_context_debug_only_when_verbose",
+      "construct": {
+        "type": "cli_context_channel",
+        "quiet": true,
+        "verbose": true,
+        "channel": "debug",
+        "message": "synthetic-debug"
+      },
+      "expected": {
+        "stderr": "debug: synthetic-debug\n"
+      }
+    },
+    {
+      "id": "cli_context_debug_silent_without_verbose",
+      "construct": {
+        "type": "cli_context_channel",
+        "quiet": false,
+        "verbose": false,
+        "channel": "debug",
+        "message": "synthetic-debug"
+      },
+      "expected": {
+        "stderr": ""
+      }
+    },
+    {
+      "id": "setting_specs_declaration_order",
+      "construct": {
+        "type": "setting_specs"
+      },
+      "expected": {
+        "rows": [
+          {
+            "name": "config",
+            "env_var": "SESSLINT_CONFIG",
+            "config_key": null,
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "profile",
+            "env_var": "SESSLINT_PROFILE",
+            "config_key": "profile",
+            "default": {
+              "kind": "str",
+              "value": "neutral"
+            }
+          },
+          {
+            "name": "adapter",
+            "env_var": "SESSLINT_ADAPTER",
+            "config_key": "adapter",
+            "default": {
+              "kind": "str",
+              "value": "auto"
+            }
+          },
+          {
+            "name": "output_format",
+            "env_var": "SESSLINT_FORMAT",
+            "config_key": null,
+            "default": {
+              "kind": "str",
+              "value": "human"
+            }
+          },
+          {
+            "name": "fail_on",
+            "env_var": null,
+            "config_key": "fail_on",
+            "default": {
+              "kind": "str",
+              "value": "error"
+            }
+          },
+          {
+            "name": "policy",
+            "env_var": null,
+            "config_key": "policy",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "select",
+            "env_var": null,
+            "config_key": "select",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "ignore",
+            "env_var": null,
+            "config_key": "ignore",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "exclude",
+            "env_var": null,
+            "config_key": "exclude",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "ext",
+            "env_var": null,
+            "config_key": "ext",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "skip_undetected",
+            "env_var": null,
+            "config_key": "skip_undetected",
+            "default": {
+              "kind": "bool",
+              "value": false
+            }
+          },
+          {
+            "name": "fail_on_unsupported",
+            "env_var": null,
+            "config_key": "fail_on_unsupported",
+            "default": {
+              "kind": "bool",
+              "value": false
+            }
+          },
+          {
+            "name": "confidence_min",
+            "env_var": null,
+            "config_key": "confidence_min",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "margin_min",
+            "env_var": null,
+            "config_key": "margin_min",
+            "default": {
+              "kind": "none"
+            }
+          },
+          {
+            "name": "max_files",
+            "env_var": null,
+            "config_key": "max_files",
+            "default": {
+              "kind": "int",
+              "value": 10000
+            }
+          },
+          {
+            "name": "max_bytes",
+            "env_var": null,
+            "config_key": "max_bytes",
+            "default": {
+              "kind": "int",
+              "value": 1073741824
+            }
+          },
+          {
+            "name": "max_file_bytes",
+            "env_var": null,
+            "config_key": "max_file_bytes",
+            "default": {
+              "kind": "int",
+              "value": 104857600
+            }
+          },
+          {
+            "name": "max_findings_per_code",
+            "env_var": null,
+            "config_key": "max_findings_per_code",
+            "default": {
+              "kind": "int",
+              "value": 20
+            }
+          },
+          {
+            "name": "timestamp_skew_ms",
+            "env_var": null,
+            "config_key": "timestamp_skew_ms",
+            "default": {
+              "kind": "int",
+              "value": 2000
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "scoped_commands_policy_and_fail_on",
+      "construct": {
+        "type": "scoped_commands"
+      },
+      "expected": {
+        "commands": {
+          "policy": [
+            "repair",
+            "triage"
+          ],
+          "fail_on": [
+            "check",
+            "scan"
+          ]
+        }
+      }
+    },
+    {
+      "id": "format_choices_explicit",
+      "construct": {
+        "type": "format_choices",
+        "subparser": "format_human_json"
+      },
+      "expected": {
+        "choices": [
+          "human",
+          "json"
+        ]
+      }
+    },
+    {
+      "id": "format_choices_implicit_json_only",
+      "construct": {
+        "type": "format_choices",
+        "subparser": "json_only"
+      },
+      "expected": {
+        "choices": [
+          "human",
+          "json"
+        ]
+      }
+    },
+    {
+      "id": "format_choices_absent",
+      "construct": {
+        "type": "format_choices",
+        "subparser": "no_format"
+      },
+      "expected": {
+        "choices": null
+      }
+    },
+    {
+      "id": "progress_callback_ndjson",
+      "construct": {
+        "type": "progress_callback",
+        "quiet": false,
+        "verbose": false,
+        "isatty": true,
+        "args": {
+          "progress_json": true
+        }
+      },
+      "expected": {
+        "kind": "ndjson"
+      }
+    },
+    {
+      "id": "progress_callback_none_when_quiet",
+      "construct": {
+        "type": "progress_callback",
+        "quiet": true,
+        "verbose": false,
+        "isatty": true,
+        "args": {}
+      },
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "id": "progress_callback_tty_when_isatty",
+      "construct": {
+        "type": "progress_callback",
+        "quiet": false,
+        "verbose": false,
+        "isatty": true,
+        "args": {}
+      },
+      "expected": {
+        "kind": "tty"
+      }
+    }
+  ]
+}

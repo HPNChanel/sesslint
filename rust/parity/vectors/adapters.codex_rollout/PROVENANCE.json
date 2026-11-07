@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.codex_rollout parity (detection, constants, loader seams, and documented session/hash gaps).",
+  "generator": "rust/parity/vectors/adapters.codex_rollout/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-codex-secret-scan-tracker: load_codex_rollout with a supplied SecretScanTracker stops at sesslint.checks.hygiene.SecretScanTracker. Rust returns that seam before path, size, or SQLite handling.",
+    "GAP-codex-session-envelope: load_codex_rollout_session on success would build sesslint.canonical.Session. Rust stops at Session and does not read events into an envelope.",
+    "GAP-codex-content-hash: _process_jsonl_line and successful envelope classification stop at sesslint._canonical_codec.payload_content_hash before appending events the pin would emit.",
+    "GAP-codex-finding-fingerprint: loader gates that call make_finding in the pin stop at sesslint.determinism.canonical_json_bytes when the fingerprint is omitted. Findings are not appended."
+  ]
+}

@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Generate sesslint.codes parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CODES_SHA256 = "e0e1dbbba213bb0f9311eb2b8f7a7f08047292737ad3157855a70df103804b7a"
+UNKNOWN_INPUT = "nope"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_codes_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "codes.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != CODES_SHA256:
+        raise SystemExit(
+            f"codes.py sha256 mismatch: expected {CODES_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.codes as codes  # noqa: WPS433
+
+    return codes
+
+
+def code_info_expected(info: Any) -> dict[str, str]:
+    return {
+        "code": info.code,
+        "name": info.name,
+        "summary": info.summary,
+        "default_severity": info.default_severity.value,
+        "default_repairability": info.default_repairability.value,
+        "category": info.category,
+        "override_policy": info.override_policy,
+    }
+
+
+def severity_input(codes: Any, spec: dict[str, Any]) -> Any:
+    kind = spec["kind"]
+    if kind == "string":
+        return spec["value"]
+    if kind == "enum":
+        return codes.Severity(spec["value"])
+    raise ValueError(f"unknown severity input kind: {kind}")
+
+
+def repairability_input(codes: Any, spec: dict[str, Any]) -> Any:
+    kind = spec["kind"]
+    if kind == "string":
+        return spec["value"]
+    if kind == "enum":
+        return codes.Repairability(spec["value"])
+    raise ValueError(f"unknown repairability input kind: {kind}")
+
+
+def build_expected(codes: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "Severity_from_str":
+        try:
+            parsed = codes.Severity.from_str(severity_input(codes, construct["input"]))
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "input_value": construct["input"]["value"],
+                "display": str(exc),
+            }
+        return {"ok": True, "value": parsed.value}
+
+    if kind == "Repairability_from_str":
+        try:
+            parsed = codes.Repairability.from_str(
+                repairability_input(codes, construct["input"])
+            )
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "input_value": construct["input"]["value"],
+                "display": str(exc),
+            }
+        return {"ok": True, "value": parsed.value}
+
+    if kind == "code_registry_row":
+        code = construct["code"]
+        info = codes.CODE_REGISTRY[code]
+        return code_info_expected(info)
+
+    if kind == "is_valid_code":
+        return {"valid": codes.is_valid_code(construct["code"])}
+
+    if kind == "get_code_info":
+        info = codes.get_code_info(construct["code"])
+        return code_info_expected(info)
+
+    if kind == "get_code_info_error":
+        from sesslint.errors import FindingError  # noqa: WPS433
+
+        try:
+            codes.get_code_info(construct["code"])
+        except FindingError as exc:
+            return {"display": str(exc)}
+        raise SystemExit(f"expected FindingError for {construct['code']}")
+
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def vector_specs(codes: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct})
+
+    add(
+        "severity_from_str_known_fatal",
+        {
+            "type": "Severity_from_str",
+            "input": {"kind": "string", "value": "fatal"},
+        },
+    )
+    add(
+        "severity_from_str_passthrough_warning_enum",
+        {
+            "type": "Severity_from_str",
+            "input": {"kind": "enum", "value": "warning"},
+        },
+    )
+    add(
+        "severity_from_str_unknown_nope",
+        {
+            "type": "Severity_from_str",
+            "input": {"kind": "string", "value": UNKNOWN_INPUT},
+        },
+    )
+
+    add(
+        "repairability_from_str_known_deterministic",
+        {
+            "type": "Repairability_from_str",
+            "input": {"kind": "string", "value": "deterministic"},
+        },
+    )
+    add(
+        "repairability_from_str_passthrough_lossy_explicit_enum",
+        {
+            "type": "Repairability_from_str",
+            "input": {"kind": "enum", "value": "lossy-explicit"},
+        },
+    )
+    add(
+        "repairability_from_str_unknown_nope",
+        {
+            "type": "Repairability_from_str",
+            "input": {"kind": "string", "value": UNKNOWN_INPUT},
+        },
+    )
+
+    for code in codes.Code:
+        add(
+            f"code_registry_row_{code.value.lower()}",
+            {"type": "code_registry_row", "code": code.value},
+        )
+
+    add("is_valid_code_sl001", {"type": "is_valid_code", "code": "SL001"})
+    add("is_valid_code_sl999", {"type": "is_valid_code", "code": "SL999"})
+    add("is_valid_code_empty", {"type": "is_valid_code", "code": ""})
+
+    add("get_code_info_sl203", {"type": "get_code_info", "code": "SL203"})
+    add(
+        "get_code_info_sl999_finding_error_display",
+        {"type": "get_code_info_error", "code": "SL999"},
+    )
+
+    return specs
+
+
+def main() -> int:
+    codes = load_codes_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs(codes):
+        expected = build_expected(codes, row["construct"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.codes",
+        "python_commit": PYTHON_COMMIT,
+        "codes_py_sha256": CODES_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.codes",
+        "python_commit": PYTHON_COMMIT,
+        "codes_py_sha256": CODES_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/codes/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic sesslint.codes registry and taxonomy parity (public code catalog only).",
+        "generator": "rust/parity/vectors/codes/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

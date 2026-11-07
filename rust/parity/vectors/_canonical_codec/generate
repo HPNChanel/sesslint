@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""Generate sesslint._canonical_codec parity vectors from the pinned worktree module."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import struct
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CANONICAL_CODEC_SHA256 = "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "normalize_canonical_key_order: Rust reify uses BTreeMap sorted keys; "
+        "Python dict normalization keeps insertion order until json.dumps sort_keys. "
+        "Parity compares canonical_json_bytes only, not normalize_canonical map order."
+    ),
+    (
+        "session_event_content_identity: SessionEvent is not ported; "
+        "content_identity_bytes/hash return Unsupported until the type exists."
+    ),
+    (
+        "active_codec_env: parity does not set SESSLINT_DISABLE_ACCEL or call "
+        "set_active_codec; unit tests cover those paths."
+    ),
+]
+
+HALFWAY_FLOAT_BITS = 0xC30FA36FD398D412
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_codec_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "_canonical_codec.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != CANONICAL_CODEC_SHA256:
+        raise SystemExit(
+            f"_canonical_codec.py sha256 mismatch: expected {CANONICAL_CODEC_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint import _canonical_codec as codec  # noqa: WPS433
+    from sesslint.errors import SchemaError  # noqa: WPS433
+
+    return codec, SchemaError
+
+
+def b64(data: bytes) -> str:
+    return base64.standard_b64encode(data).decode("ascii")
+
+
+def ok_bytes(data: bytes) -> dict[str, Any]:
+    return {"result": "ok", "bytes_b64": b64(data)}
+
+
+def schema_error(message: str) -> dict[str, Any]:
+    return {
+        "result": "error",
+        "raises": "SchemaError",
+        "exact_message": message,
+    }
+
+
+def unsupported(message: str) -> dict[str, Any]:
+    return {
+        "result": "error",
+        "raises": "Unsupported",
+        "exact_message": message,
+    }
+
+
+def nested_dicts(wraps: int) -> dict[str, Any]:
+    value: dict[str, Any] = {"leaf": 1}
+    for _ in range(wraps):
+        value = {"k": value}
+    return value
+
+
+def make_cyclic_dict() -> dict[str, Any]:
+    cyclic: dict[str, Any] = {"key": "val"}
+    cyclic["self"] = cyclic
+    return cyclic
+
+
+def vector_specs(codec: Any, SchemaError: Any) -> list[dict[str, Any]]:
+    canonical_json_bytes = codec.canonical_json_bytes
+    payload_content_hash = codec.payload_content_hash
+    plan_fingerprint = codec.plan_fingerprint
+
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    flat = {"b": 2, "a": 1}
+    add(
+        "canonical_flat_object",
+        {"type": "canonical_json_bytes", "shape": "json", "value": flat, "newline": False},
+        ok_bytes(canonical_json_bytes(flat, newline=False)),
+    )
+
+    nested = {"outer": {"z": 1, "a": {"m": 3, "b": 2}}}
+    add(
+        "canonical_nested_keys",
+        {"type": "canonical_json_bytes", "shape": "json", "value": nested, "newline": False},
+        ok_bytes(canonical_json_bytes(nested, newline=False)),
+    )
+
+    listed = {"items": [3, 1, 2]}
+    add(
+        "canonical_list",
+        {"type": "canonical_json_bytes", "shape": "json", "value": listed, "newline": False},
+        ok_bytes(canonical_json_bytes(listed, newline=False)),
+    )
+
+    unicode_obj = {"label": "Tiếng Việt / 日本語 / 🌍"}
+    add(
+        "canonical_unicode_utf8",
+        {
+            "type": "canonical_json_bytes",
+            "shape": "json",
+            "value": unicode_obj,
+            "newline": False,
+        },
+        ok_bytes(canonical_json_bytes(unicode_obj, newline=False)),
+    )
+
+    control = {"ctrl": "\u0001"}
+    add(
+        "canonical_control_char_escaped",
+        {"type": "canonical_json_bytes", "shape": "json", "value": control, "newline": False},
+        ok_bytes(canonical_json_bytes(control, newline=False)),
+    )
+
+    add(
+        "canonical_newline_trailing_lf",
+        {"type": "canonical_json_bytes", "shape": "json", "value": flat, "newline": True},
+        ok_bytes(canonical_json_bytes(flat, newline=True)),
+    )
+
+    tie_float = struct.unpack("d", struct.pack("Q", HALFWAY_FLOAT_BITS))[0]
+    tie_obj = {"tie": tie_float}
+    add(
+        "halfway_float_tie_even_digit",
+        {
+            "type": "canonical_json_bytes",
+            "shape": "halfway_float",
+            "bits": f"{HALFWAY_FLOAT_BITS:016x}",
+        },
+        ok_bytes(canonical_json_bytes(tie_obj, newline=False)),
+    )
+
+    nan_obj = {"bad": float("nan")}
+    try:
+        canonical_json_bytes(nan_obj)
+        raise SystemExit("expected SchemaError for nan")
+    except SchemaError as err:
+        add(
+            "error_float_nan_in_object",
+            {"type": "canonical_json_bytes", "shape": "float_nan_object"},
+            schema_error(str(err)),
+        )
+
+    inf_obj = {"bad": float("inf")}
+    try:
+        canonical_json_bytes(inf_obj)
+        raise SystemExit("expected SchemaError for inf")
+    except SchemaError as err:
+        add(
+            "error_float_inf_in_object",
+            {"type": "canonical_json_bytes", "shape": "float_inf_object"},
+            schema_error(str(err)),
+        )
+
+    non_string = {3: "x"}
+    try:
+        canonical_json_bytes(non_string)
+        raise SystemExit("expected SchemaError for non-string key")
+    except SchemaError as err:
+        add(
+            "error_non_string_dict_key",
+            {"type": "canonical_json_bytes", "shape": "non_string_key", "repr": "3"},
+            schema_error(str(err)),
+        )
+
+    try:
+        canonical_json_bytes(make_cyclic_dict())
+        raise SystemExit("expected SchemaError for cycle")
+    except SchemaError as err:
+        add(
+            "error_cyclic_dict",
+            {"type": "canonical_json_bytes", "shape": "cycle_dict"},
+            schema_error(str(err)),
+        )
+
+    try:
+        canonical_json_bytes(nested_dicts(993))
+        raise SystemExit("expected SchemaError for nesting overflow")
+    except SchemaError as err:
+        add(
+            "error_nesting_overflow_dict",
+            {"type": "canonical_json_bytes", "shape": "nested_dicts", "wraps": 993},
+            schema_error(str(err)),
+        )
+
+    payload = {"b": 2, "a": 1, "sub": {"k": "v"}}
+    add(
+        "payload_content_hash_synthetic",
+        {"type": "payload_content_hash", "shape": "json", "value": payload},
+        {"result": "ok", "digest": payload_content_hash(payload)},
+    )
+
+    plan = {
+        "session_id": "sess_syn",
+        "actions": [{"code": "SYN", "id": "evt_1"}],
+        "fingerprint": "ignored",
+    }
+    add(
+        "plan_fingerprint_synthetic",
+        {
+            "type": "plan_fingerprint",
+            "shape": "json",
+            "value": plan,
+            "policy": "conservative",
+        },
+        {"result": "ok", "fingerprint": plan_fingerprint(plan, policy="conservative")},
+    )
+
+    session_unavailable = "sesslint.canonical.SessionEvent is not available"
+    add(
+        "content_identity_bytes_unsupported",
+        {"type": "content_identity_bytes"},
+        unsupported(session_unavailable),
+    )
+    add(
+        "content_identity_hash_unsupported",
+        {"type": "content_identity_hash"},
+        unsupported(session_unavailable),
+    )
+
+    add(
+        "module_all_export_order",
+        {"type": "module_all"},
+        {"result": "ok", "names": list(codec.__all__)},
+    )
+
+    return specs
+
+
+def main() -> int:
+    codec, SchemaError = load_codec_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs(codec, SchemaError)
+    vectors: list[dict[str, Any]] = []
+    for row in specs:
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": row["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint._canonical_codec",
+        "python_commit": PYTHON_COMMIT,
+        "canonical_codec_py_sha256": CANONICAL_CODEC_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint._canonical_codec",
+        "python_commit": PYTHON_COMMIT,
+        "canonical_codec_py_sha256": CANONICAL_CODEC_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/_canonical_codec/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint._canonical_codec parity vectors (JSON shapes only, "
+            "no session payloads)."
+        ),
+        "generator": "rust/parity/vectors/_canonical_codec/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

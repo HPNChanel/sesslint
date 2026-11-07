@@ -1,0 +1,520 @@
+#!/usr/bin/env python3
+"""Generate sesslint.seal parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import types
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SEAL_PY_SHA256 = (
+    "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28"
+)
+CANONICAL_CODEC_PY_SHA256 = (
+    "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee"
+)
+SEAL_RS_SHA256 = (
+    "d8c3987425e6d579f7cc2f42b2bd9e12e84bb23eb2077ded908db769261d7c5a"
+)
+MODULE = "sesslint.seal"
+
+FIXED_NOW = datetime(2026, 1, 1, tzinfo=UTC)
+HEX_FILL = "a"
+HEX64 = HEX_FILL * 32 + "b" * 32
+REPORT_HEX = "b" * 64
+GENESIS_CHAIN = "c" * 64
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-seal-ledger-lock: append_seal and _ledger_lock use msvcrt.locking or "
+        "fcntl.flock; Rust ledger_lock closes the sidecar and returns "
+        "LockingUnavailable before append (not byte-compared here)."
+    ),
+    (
+        "GAP-seal-resources: get_seal_schema_path and load_seal_schema import "
+        "sesslint._resources.schema_path; Rust returns ResourcesUnavailable "
+        "(not byte-compared here)."
+    ),
+    (
+        "GAP-seal-verify-wide-json-integer: verify_lines on entries with integers "
+        "outside the Rust codec range returns a canonical error in Rust; Python "
+        "may still report chain divergence (not byte-compared here)."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def exec_module_from_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    errors_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/errors.py")
+    errors = exec_module_from_blob(errors_blob, "sesslint.errors")
+    pkg.errors = errors
+
+    canonical = types.ModuleType("sesslint.canonical")
+
+    class SessionEvent:  # noqa: D101
+        pass
+
+    canonical.SessionEvent = SessionEvent
+    sys.modules["sesslint.canonical"] = canonical
+    pkg.canonical = canonical
+
+    codec_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/_canonical_codec.py")
+    verify_digest(codec_blob, CANONICAL_CODEC_PY_SHA256, "_canonical_codec.py")
+    codec = exec_module_from_blob(codec_blob, "sesslint._canonical_codec")
+    pkg._canonical_codec = codec
+
+
+def load_seal_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/seal.py")
+    verify_digest(blob, SEAL_PY_SHA256, "seal.py")
+    seal = exec_module_from_blob(blob, "sesslint.seal")
+    sys.modules["sesslint"].seal = seal
+    return seal
+
+
+def hex_digest(byte_val: int) -> str:
+    return f"{byte_val:02x}" * 32
+
+
+def canonical_line(seal: Any, entry: dict[str, Any]) -> str:
+    from sesslint._canonical_codec import canonical_json_bytes  # noqa: WPS433
+
+    line = canonical_json_bytes(entry, newline=True)
+    return line.decode("utf-8")
+
+
+def linked_entry(
+    seal: Any,
+    seq: int,
+    prev: str,
+    byte_val: int,
+) -> dict[str, Any]:
+    file_sha = hex_digest(byte_val)
+    return seal.build_entry(
+        seq=seq,
+        prev_sha256=prev,
+        file_sha256=file_sha,
+        path=None,
+        tool="check",
+        verdict="healthy",
+        codes={},
+        report_sha256=REPORT_HEX,
+        now=FIXED_NOW,
+    )
+
+
+def entry_fields(entry: dict[str, Any]) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "schema": entry["schema"],
+        "seq": entry["seq"],
+        "prev_sha256": entry["prev_sha256"],
+        "file_sha256": entry["file_sha256"],
+        "tool": entry["tool"],
+        "verdict": entry["verdict"],
+        "codes": entry["codes"],
+        "report_sha256": entry["report_sha256"],
+        "sealed_at": entry["sealed_at"],
+        "entry_sha256": entry["entry_sha256"],
+    }
+    if "path" in entry:
+        row["path"] = entry["path"]
+    if "genesis_of" in entry:
+        row["genesis_of"] = entry["genesis_of"]
+    return row
+
+
+def divergence_expected(div: dict[str, Any] | None) -> dict[str, Any]:
+    if div is None:
+        return {"ok": True, "divergence": None}
+    out: dict[str, Any] = {
+        "ok": False,
+        "divergence": {
+            "kind": div["kind"],
+            "line": div["line"],
+            "detail": div["detail"],
+        },
+    }
+    if "seq" in div:
+        out["divergence"]["seq"] = div["seq"]
+    return out
+
+
+def ensure_fixtures(out_dir: Path, seal: Any) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    bin_path = fixtures / "synthetic_bytes.bin"
+    bin_path.write_bytes(b"abc")
+    first = linked_entry(seal, 1, seal.GENESIS, 0)
+    second = linked_entry(seal, 2, first["entry_sha256"], 1)
+    third = linked_entry(seal, 3, second["entry_sha256"], 2)
+    intact = fixtures / "synthetic_intact.jsonl"
+    lines = [canonical_line(seal, first), canonical_line(seal, second), canonical_line(seal, third)]
+    intact.write_text("".join(lines), encoding="utf-8", newline="\n")
+    edited = lines[1].replace("healthy", "invalid")
+    divergent = fixtures / "synthetic_divergent.jsonl"
+    divergent.write_text(lines[0] + edited + lines[2], encoding="utf-8", newline="\n")
+
+
+def vector_specs(seal: Any, out_dir: Path) -> list[dict[str, Any]]:
+    ensure_fixtures(out_dir, seal)
+    file_a = HEX_FILL * 64
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct})
+
+    add("module_all_export_order", {"type": "module_all"})
+    add("constants_closed_vocabulary", {"type": "module_constants"})
+    add("sha256_bytes_empty", {"type": "sha256_bytes", "data_hex": ""})
+    add("sha256_bytes_abc", {"type": "sha256_bytes", "data_hex": "616263"})
+    add(
+        "build_entry_golden_with_path",
+        {
+            "type": "build_entry",
+            "seq": 1,
+            "prev_sha256": seal.GENESIS,
+            "file_sha256": {"prefix": HEX_FILL, "count": 64},
+            "path": "sess.jsonl",
+            "tool": "check",
+            "verdict": "healthy",
+            "codes": [["SL101", 2]],
+            "report_sha256": {"prefix": "b", "count": 64},
+            "genesis_of": None,
+        },
+    )
+    add(
+        "build_entry_genesis_of_on_seq_one",
+        {
+            "type": "build_entry",
+            "seq": 1,
+            "prev_sha256": seal.GENESIS,
+            "file_sha256": {"prefix": HEX_FILL, "count": 64},
+            "path": None,
+            "tool": "verify",
+            "verdict": "healthy",
+            "codes": [],
+            "report_sha256": {"prefix": "b", "count": 64},
+            "genesis_of": {"prefix": "c", "count": 64},
+        },
+    )
+    for vector_id, seq in [("build_entry_rejects_seq_zero", 0), ("build_entry_rejects_seq_negative", -1)]:
+        add(
+            vector_id,
+            {
+                "type": "build_entry_error",
+                "seq": seq,
+                "prev_sha256": seal.GENESIS,
+                "file_sha256": {"prefix": HEX_FILL, "count": 64},
+                "tool": "check",
+                "verdict": "healthy",
+                "codes": [],
+                "report_sha256": {"prefix": "b", "count": 64},
+            },
+        )
+    add(
+        "build_entry_rejects_unknown_tool",
+        {
+            "type": "build_entry_error",
+            "seq": 1,
+            "prev_sha256": seal.GENESIS,
+            "file_sha256": {"prefix": HEX_FILL, "count": 64},
+            "tool": "scan",
+            "verdict": "healthy",
+            "codes": [],
+            "report_sha256": {"prefix": "b", "count": 64},
+        },
+    )
+    add(
+        "build_entry_rejects_negative_code_count",
+        {
+            "type": "build_entry_error",
+            "seq": 1,
+            "prev_sha256": seal.GENESIS,
+            "file_sha256": {"prefix": HEX_FILL, "count": 64},
+            "tool": "check",
+            "verdict": "healthy",
+            "codes": [["SL001", -1]],
+            "report_sha256": {"prefix": "b", "count": 64},
+        },
+    )
+
+    first = linked_entry(seal, 1, seal.GENESIS, 0)
+    second = linked_entry(seal, 2, first["entry_sha256"], 1)
+    third = linked_entry(seal, 3, second["entry_sha256"], 2)
+    chain_lines = [
+        (1, canonical_line(seal, first).rstrip("\n")),
+        (2, canonical_line(seal, second).rstrip("\n")),
+        (3, canonical_line(seal, third).rstrip("\n")),
+    ]
+    add(
+        "verify_lines_intact_three_entry_chain",
+        {"type": "verify_lines", "lines": [{"line": ln, "raw": raw} for ln, raw in chain_lines]},
+    )
+
+    edited = chain_lines[1][1].replace("healthy", "invalid")
+    add(
+        "verify_lines_hash_mismatch_on_middle_line",
+        {
+            "type": "verify_lines",
+            "lines": [
+                {"line": 1, "raw": chain_lines[0][1]},
+                {"line": 2, "raw": edited},
+            ],
+        },
+    )
+    add(
+        "verify_lines_seq_gap_when_seq_three_follows_one",
+        {
+            "type": "verify_lines",
+            "lines": [
+                {"line": 1, "raw": chain_lines[0][1]},
+                {"line": 2, "raw": chain_lines[2][1]},
+            ],
+        },
+    )
+    broken_prev = chain_lines[1][1].replace(first["entry_sha256"], seal.GENESIS)
+    add(
+        "verify_lines_chain_break_on_prev_hash",
+        {
+            "type": "verify_lines",
+            "lines": [
+                {"line": 1, "raw": chain_lines[0][1]},
+                {"line": 2, "raw": broken_prev},
+            ],
+        },
+    )
+    add(
+        "verify_lines_bad_schema_empty_object",
+        {"type": "verify_lines", "lines": [{"line": 2, "raw": "{}"}]},
+    )
+    add(
+        "verify_lines_malformed_json_truncated_object",
+        {"type": "verify_lines", "lines": [{"line": 1, "raw": "{"}]},
+    )
+    bool_hash = "9862fd74d2d5255990dd174c5e4737bf5eaf6330257ca4f14dbf6698b5d409f4"
+    bool_line = (
+        f'{{"codes":{{"SL101":true}},"entry_sha256":"{bool_hash}",'
+        f'"file_sha256":"{file_a}","prev_sha256":"{seal.GENESIS}",'
+        f'"report_sha256":"{REPORT_HEX}","schema":"{seal.SEAL_SCHEMA_ID}",'
+        f'"sealed_at":"2026-01-01T00:00:00Z","seq":1,"tool":"check","verdict":"healthy"}}'
+    )
+    add(
+        "verify_lines_accepts_json_bool_code_count",
+        {"type": "verify_lines", "lines": [{"line": 1, "raw": bool_line}]},
+    )
+
+    rel = "fixtures/synthetic_intact.jsonl"
+    add("verify_ledger_intact_fixture", {"type": "verify_ledger", "ledger_path": rel})
+    add(
+        "verify_ledger_missing_fixture",
+        {"type": "verify_ledger_error", "ledger_path": "fixtures/synthetic_missing.jsonl"},
+    )
+    add(
+        "verify_ledger_divergent_fixture",
+        {"type": "verify_ledger", "ledger_path": "fixtures/synthetic_divergent.jsonl"},
+    )
+    add(
+        "sha256_file_fixture_bytes",
+        {"type": "sha256_file", "path": "fixtures/synthetic_bytes.bin"},
+    )
+    return specs
+
+
+def materialize_hex(spec: dict[str, Any] | str | None) -> str | None:
+    if spec is None:
+        return None
+    if isinstance(spec, str):
+        return spec
+    prefix = str(spec["prefix"])
+    count = int(spec["count"])
+    return prefix * count
+
+
+def materialize_codes(rows: list[list[Any]]) -> dict[str, int]:
+    return {str(code): int(count) for code, count in rows}
+
+
+def build_expected(seal: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"names": list(seal.__all__)}
+    if kind == "module_constants":
+        return {
+            "SEAL_SCHEMA_ID": seal.SEAL_SCHEMA_ID,
+            "GENESIS": seal.GENESIS,
+            "SEAL_TOOLS": sorted(seal.SEAL_TOOLS),
+            "DIVERGENCE_KINDS": sorted(seal.DIVERGENCE_KINDS),
+        }
+    if kind == "sha256_bytes":
+        data = bytes.fromhex(construct["data_hex"]) if construct.get("data_hex") else b""
+        return {"digest": seal.sha256_bytes(data)}
+    if kind == "build_entry":
+        entry = seal.build_entry(
+            seq=int(construct["seq"]),
+            prev_sha256=str(construct["prev_sha256"]),
+            file_sha256=materialize_hex(construct["file_sha256"]),
+            path=construct.get("path"),
+            tool=str(construct["tool"]),
+            verdict=str(construct["verdict"]),
+            codes=materialize_codes(construct.get("codes") or []),
+            report_sha256=materialize_hex(construct["report_sha256"]),
+            genesis_of=materialize_hex(construct.get("genesis_of")),
+            now=FIXED_NOW,
+        )
+        return {"entry": entry_fields(entry)}
+    if kind == "build_entry_error":
+        try:
+            seal.build_entry(
+                seq=int(construct["seq"]),
+                prev_sha256=str(construct["prev_sha256"]),
+                file_sha256=materialize_hex(construct["file_sha256"]),
+                path=None,
+                tool=str(construct["tool"]),
+                verdict=str(construct["verdict"]),
+                codes=materialize_codes(construct.get("codes") or []),
+                report_sha256=materialize_hex(construct["report_sha256"]),
+                now=FIXED_NOW,
+            )
+        except seal.SealError as err:
+            return {"raises": "SealError", "message": str(err)}
+        raise SystemExit(f"{construct}: expected SealError")
+    if kind == "verify_lines":
+        rows = [(int(row["line"]), str(row["raw"])) for row in construct["lines"]]
+        div = seal.verify_lines(rows)
+        return divergence_expected(div)
+    if kind == "verify_ledger":
+        out_dir = repo_root() / "rust/parity/vectors/seal"
+        rel = str(construct["ledger_path"])
+        prev = os.getcwd()
+        try:
+            os.chdir(out_dir)
+            verified, div = seal.verify_ledger(rel)
+        finally:
+            os.chdir(prev)
+        out = divergence_expected(div)
+        out["entries_verified"] = verified
+        return out
+    if kind == "verify_ledger_error":
+        out_dir = repo_root() / "rust/parity/vectors/seal"
+        rel = str(construct["ledger_path"])
+        prev = os.getcwd()
+        try:
+            os.chdir(out_dir)
+            seal.verify_ledger(rel)
+        except seal.SealError as err:
+            return {"raises": "SealError", "message": str(err)}
+        finally:
+            os.chdir(prev)
+        raise SystemExit(f"{construct}: expected SealError")
+    if kind == "sha256_file":
+        out_dir = repo_root() / "rust/parity/vectors/seal"
+        rel = str(construct["path"])
+        prev = os.getcwd()
+        try:
+            os.chdir(out_dir)
+            digest = seal.sha256_file(rel)
+        finally:
+            os.chdir(prev)
+        return {"digest": digest}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    seal = load_seal_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs(seal, out_dir):
+        construct = dict(row["construct"])
+        expected = build_expected(seal, construct)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "seal_py_sha256": SEAL_PY_SHA256,
+        "canonical_codec_py_sha256": CANONICAL_CODEC_PY_SHA256,
+        "seal_rs_sha256": SEAL_RS_SHA256,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.seal parity (constants, hashing, build_entry, "
+            "verify_lines, verify_ledger, sha256_file; no session payloads)."
+        ),
+        "generator": "rust/parity/vectors/seal/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

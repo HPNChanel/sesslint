@@ -1,0 +1,156 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.policy",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_lib_rs_sha256": "96e315021816ea1f6770bf0d97e3ca1600f5d695b3fa556c61b398b364746804",
+  "known_parity_gaps": [
+    "TOOL_KINDS is a frozenset in Python; iteration order is not a contract; vectors record sorted membership for comparison"
+  ],
+  "vectors": [
+    {
+      "id": "package_dunder_all",
+      "construct": {
+        "type": "package_dunder_all"
+      },
+      "expected": {
+        "names": [
+          "SAFE_SIDE_EFFECT",
+          "TOOL_KINDS",
+          "Abstention",
+          "must_abstain"
+        ]
+      }
+    },
+    {
+      "id": "package_safe_side_effect",
+      "construct": {
+        "type": "package_safe_side_effect"
+      },
+      "expected": {
+        "value": "none"
+      }
+    },
+    {
+      "id": "package_tool_kinds_membership",
+      "construct": {
+        "type": "package_tool_kinds_membership"
+      },
+      "expected": {
+        "sorted_members": [
+          "tool_call",
+          "tool_result",
+          "tool_use"
+        ]
+      }
+    },
+    {
+      "id": "package_must_abstain_sl203_only",
+      "construct": {
+        "type": "package_must_abstain",
+        "findings": [
+          {
+            "code": "SL203",
+            "severity": "ERROR",
+            "repairability": "MANUAL",
+            "message": "synthetic marker",
+            "source": {
+              "path": "a.jsonl",
+              "line": 1,
+              "record_id": "rec-sl203"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "schema_version": "sesslint.finding/v1",
+            "message_template": null,
+            "evidence": null
+          }
+        ],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "allow_unknown_side_effects": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": true,
+          "reasons": [
+            "SL203 present"
+          ]
+        }
+      }
+    },
+    {
+      "id": "package_must_abstain_message_only_no_abstain",
+      "construct": {
+        "type": "package_must_abstain",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic-msg"
+                }
+              ]
+            ]
+          }
+        ],
+        "allow_unknown_side_effects": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": false,
+          "reasons": []
+        }
+      }
+    }
+  ]
+}

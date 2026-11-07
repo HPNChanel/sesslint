@@ -1,0 +1,1634 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.policy.abstention",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "abstention_rs_sha256": "46b681a6b615bd59d73730b402e73b76fc5b007d41766a3517500ee683c5f824",
+  "known_parity_gaps": [
+    "a missing or empty content_hash, because Python hashes and Rust returns a typed unavailable error",
+    "a bool used as an evidence index or a range endpoint",
+    "Python str(float), str(list), and str(dict)",
+    "reason order when more than one correlation id is present, because Python iterates a set",
+    "the order of the in-region tool walk, because Python iterates a set",
+    "an inclusive span wider than 1048576, and a range that ends at i64::MAX",
+    "side-effect-None; extract_side_effects already returns the string unknown"
+  ],
+  "vectors": [
+    {
+      "id": "extract_explicit_empty_string_with_read_payload",
+      "construct": {
+        "type": "extract_side_effects",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "tool_call"
+            }
+          ],
+          [
+            "side_effects",
+            {
+              "t": "str",
+              "v": ""
+            }
+          ],
+          [
+            "payload",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "name",
+                  {
+                    "t": "str",
+                    "v": "read"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": ""
+      }
+    },
+    {
+      "id": "extract_tool_result_default_none",
+      "construct": {
+        "type": "extract_side_effects",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "tool_result"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "none"
+      }
+    },
+    {
+      "id": "extract_tool_call_read_none",
+      "construct": {
+        "type": "extract_side_effects",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "tool_call"
+            }
+          ],
+          [
+            "payload",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "name",
+                  {
+                    "t": "str",
+                    "v": "read"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "none"
+      }
+    },
+    {
+      "id": "extract_tool_call_bash_unknown",
+      "construct": {
+        "type": "extract_side_effects",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "tool_call"
+            }
+          ],
+          [
+            "payload",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "name",
+                  {
+                    "t": "str",
+                    "v": "bash"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "unknown"
+      }
+    },
+    {
+      "id": "extract_payload_only_when_top_missing",
+      "construct": {
+        "type": "extract_side_effects",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "tool_call"
+            }
+          ],
+          [
+            "payload",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "possible"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "possible"
+      }
+    },
+    {
+      "id": "extract_top_wins_over_payload",
+      "construct": {
+        "type": "extract_side_effects",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "tool_call"
+            }
+          ],
+          [
+            "side_effects",
+            {
+              "t": "str",
+              "v": "unknown"
+            }
+          ],
+          [
+            "payload",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "possible"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "unknown"
+      }
+    },
+    {
+      "id": "region_pair_1_3_unclamped",
+      "construct": {
+        "type": "affected_region_all_indices",
+        "indices": [],
+        "ids": [],
+        "ranges": [
+          [
+            1,
+            3
+          ]
+        ],
+        "total_len": null
+      },
+      "expected": {
+        "indices": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "id": "region_clamp_total_len_4",
+      "construct": {
+        "type": "affected_region_all_indices",
+        "indices": [
+          9
+        ],
+        "ids": [],
+        "ranges": [
+          [
+            -2,
+            10
+          ]
+        ],
+        "total_len": 4
+      },
+      "expected": {
+        "indices": [
+          0,
+          1,
+          2,
+          3,
+          9
+        ]
+      }
+    },
+    {
+      "id": "should_sl203_only_reason_despite_side_effects",
+      "construct": {
+        "type": "should_abstain_from_repair",
+        "findings": [
+          {
+            "code": "SL203",
+            "severity": "ERROR",
+            "repairability": "MANUAL",
+            "message": "synthetic marker",
+            "source": {
+              "path": "a.jsonl",
+              "line": 1,
+              "record_id": "rec-sl203"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "schema_version": "sesslint.finding/v1",
+            "message_template": null,
+            "evidence": null
+          }
+        ],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "policy": "conservative",
+        "acknowledge_side_effects": false,
+        "step": null,
+        "has_recipe_region_fn": false,
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": true,
+          "reasons": [
+            "SL203 present"
+          ]
+        }
+      }
+    },
+    {
+      "id": "should_conservative_step_none_ignores_possible",
+      "construct": {
+        "type": "should_abstain_from_repair",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "policy": "conservative",
+        "acknowledge_side_effects": false,
+        "step": null,
+        "has_recipe_region_fn": false,
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": false,
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "should_salvage_no_ack_lists_possible",
+      "construct": {
+        "type": "should_abstain_from_repair",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "policy": "salvage",
+        "acknowledge_side_effects": false,
+        "step": null,
+        "has_recipe_region_fn": false,
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": true,
+          "reasons": [
+            "side-effect-possible at index 0"
+          ]
+        }
+      }
+    },
+    {
+      "id": "should_salvage_ack_no_abstain",
+      "construct": {
+        "type": "should_abstain_from_repair",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "policy": "salvage",
+        "acknowledge_side_effects": true,
+        "step": null,
+        "has_recipe_region_fn": false,
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": false,
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "should_custom_policy_no_sl203_no_abstain",
+      "construct": {
+        "type": "should_abstain_from_repair",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "policy": "unknown",
+        "acknowledge_side_effects": false,
+        "step": null,
+        "has_recipe_region_fn": false,
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": false,
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "must_sl203_only_reason",
+      "construct": {
+        "type": "must_abstain",
+        "findings": [
+          {
+            "code": "SL203",
+            "severity": "ERROR",
+            "repairability": "MANUAL",
+            "message": "synthetic marker",
+            "source": {
+              "path": "a.jsonl",
+              "line": 1,
+              "record_id": "rec-sl203"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "schema_version": "sesslint.finding/v1",
+            "message_template": null,
+            "evidence": null
+          }
+        ],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "allow_unknown_side_effects": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": true,
+          "reasons": [
+            "SL203 present"
+          ]
+        }
+      }
+    },
+    {
+      "id": "must_default_abstain_unknown_bash",
+      "construct": {
+        "type": "must_abstain",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "allow_unknown_side_effects": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": true,
+          "reasons": [
+            "side-effect-unknown at index 0"
+          ]
+        }
+      }
+    },
+    {
+      "id": "must_allow_unknown_no_walk",
+      "construct": {
+        "type": "must_abstain",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ],
+                    [
+                      "side_effects",
+                      {
+                        "t": "str",
+                        "v": "possible"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "allow_unknown_side_effects": true
+      },
+      "expected": {
+        "abstention": {
+          "abstain": false,
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "must_message_event_no_abstain",
+      "construct": {
+        "type": "must_abstain",
+        "findings": [],
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ]
+            ]
+          }
+        ],
+        "allow_unknown_side_effects": false
+      },
+      "expected": {
+        "abstention": {
+          "abstain": false,
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "ambiguous_dangling_call",
+      "construct": {
+        "type": "find_ambiguous_events",
+        "findings": null,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-a"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-a"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "ambiguous": {
+          "indices": [
+            0
+          ],
+          "ids": [
+            "call-a"
+          ],
+          "reasons": [
+            "dangling-call-corr-a at index 0"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ambiguous_orphan_result",
+      "construct": {
+        "type": "find_ambiguous_events",
+        "findings": null,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-b"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-b"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "ambiguous": {
+          "indices": [
+            0
+          ],
+          "ids": [
+            "res-b"
+          ],
+          "reasons": [
+            "orphan-result-corr-b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ambiguous_reused_correlation",
+      "construct": {
+        "type": "find_ambiguous_events",
+        "findings": null,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-c1"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-c"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-c2"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-c"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "read"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "ambiguous": {
+          "indices": [
+            0,
+            1
+          ],
+          "ids": [
+            "call-c1",
+            "call-c2"
+          ],
+          "reasons": [
+            "reused-correlation-corr-c"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ambiguous_duplicate_results_same_hash_not_conflicting",
+      "construct": {
+        "type": "find_ambiguous_events",
+        "findings": null,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-d"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-d"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "side_effects",
+                {
+                  "t": "str",
+                  "v": "none"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-d1"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-d"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "abc"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-d2"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-d"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "abc"
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "ambiguous": {
+          "indices": [],
+          "ids": [],
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "ambiguous_conflicting_result_hashes",
+      "construct": {
+        "type": "find_ambiguous_events",
+        "findings": null,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-e"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-e"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "side_effects",
+                {
+                  "t": "str",
+                  "v": "none"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-e1"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-e"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "abc"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-e2"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-e"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "unknown"
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "ambiguous": {
+          "indices": [
+            0,
+            1,
+            2
+          ],
+          "ids": [
+            "call-e",
+            "res-e1",
+            "res-e2"
+          ],
+          "reasons": []
+        }
+      }
+    },
+    {
+      "id": "scope_missing_region_fn",
+      "construct": {
+        "type": "check_step_scope",
+        "step": 0,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "read-tool"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "read"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "bash-tool"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "findings": null,
+        "has_recipe_region_fn": false,
+        "region": {
+          "indices": [
+            0
+          ],
+          "ids": [],
+          "ranges": [],
+          "unproven": false
+        },
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "ok": false,
+        "reason": "side-effect-scope-unproven"
+      }
+    },
+    {
+      "id": "scope_disjoint_read_allowed",
+      "construct": {
+        "type": "check_step_scope",
+        "step": 0,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "read-tool"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "read"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "bash-tool"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "findings": null,
+        "has_recipe_region_fn": true,
+        "region": {
+          "indices": [
+            0
+          ],
+          "ids": [],
+          "ranges": [],
+          "unproven": false
+        },
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "ok": false,
+        "reason": "side-effect-scope-unproven"
+      }
+    },
+    {
+      "id": "scope_sl203_abstains_disjoint_region",
+      "construct": {
+        "type": "check_step_scope",
+        "step": 0,
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "read-tool"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "read"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "bash-tool"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "name",
+                      {
+                        "t": "str",
+                        "v": "bash"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        "findings": [
+          {
+            "code": "SL203",
+            "severity": "ERROR",
+            "repairability": "MANUAL",
+            "message": "synthetic marker",
+            "source": {
+              "path": "a.jsonl",
+              "line": 1,
+              "record_id": "rec-sl203"
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "schema_version": "sesslint.finding/v1",
+            "message_template": null,
+            "evidence": null
+          }
+        ],
+        "has_recipe_region_fn": true,
+        "region": {
+          "indices": [],
+          "ids": [],
+          "ranges": [],
+          "unproven": false
+        },
+        "excludes_execution_dependence": false
+      },
+      "expected": {
+        "ok": false,
+        "reason": "side-effect-scope-unproven"
+      }
+    }
+  ]
+}

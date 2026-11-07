@@ -1,0 +1,18 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.doctor",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "doctor_py_sha256": "a9fa4e596f382298f1063e0c7c5aa3976c5486c183a3b4da70d435d0a34a70f3",
+  "doctor_rs_sha256": "d9e38e9491a87a00b8fa892d404236ad99fc9ee550b71dda8709642e479bf752",
+  "vector_count": 22,
+  "vectors_sha256": "8a876ab943695ee0aae7ef9a5b499ee6783da9df9c3fb412dee943d2255113c7",
+  "generator": "rust/parity/vectors/doctor/generate",
+  "known_parity_gaps": [
+    "GAP-doctor-index-health: index_health stops at sesslint.indexes.discover_index_files.",
+    "GAP-doctor-doctor-report: doctor_report stops at sesslint.adapters.supported_adapters.",
+    "GAP-doctor-schema-path: get_doctor_schema_path stops at sesslint._resources.schema_path.",
+    "GAP-doctor-load-schema: load_doctor_schema stops at sesslint._resources.schema_path.",
+    "GAP-doctor-minimize-path: RootDiag and DoctorReport to_dict, to_json, and render_human call sesslint.report.minimize_path unless paths are already shown via the parity shim.",
+    "GAP-doctor-check-file: quick_verdicts stops at sesslint.api.check_file when at least one regular file is selected."
+  ]
+}

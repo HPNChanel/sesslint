@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic argparse fixtures for sesslint.cli._scan_args build_scan_kwargs parity.",
+  "generator": "rust/parity/vectors/cli._scan_args/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-scan-args-cpu-count: jobs 'auto' or '0' (after strip and lower) use os.cpu_count() or 1 in Python; Rust uses thread::available_parallelism \u2014 job counts are not pinned.",
+    "GAP-scan-args-jobs-i64: a positive integer jobs token that does not fit in i64 is refused as jobs value does not fit in i64 in Rust, not Python arbitrary int semantics."
+  ]
+}

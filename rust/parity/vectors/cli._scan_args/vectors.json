@@ -1,0 +1,465 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._scan_args",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "scan_args_py_sha256": "e1bd634c6cda534ffbe90e494e9b02843ec4dcfb26cb401848fb6b766272448a",
+  "known_parity_gaps": [
+    "GAP-scan-args-cpu-count: jobs 'auto' or '0' (after strip and lower) use os.cpu_count() or 1 in Python; Rust uses thread::available_parallelism — job counts are not pinned.",
+    "GAP-scan-args-jobs-i64: a positive integer jobs token that does not fit in i64 is refused as jobs value does not fit in i64 in Rust, not Python arbitrary int semantics."
+  ],
+  "vectors": [
+    {
+      "id": "omitted_fields_pin_defaults",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20
+        }
+      },
+      "expected": {
+        "result": "ok",
+        "kwargs": {
+          "recursive": true,
+          "follow_symlinks": {
+            "kind": "bool",
+            "value": false
+          },
+          "max_files": {
+            "kind": "int",
+            "value": 10000
+          },
+          "max_bytes": {
+            "kind": "int",
+            "value": 1073741824
+          },
+          "max_file_bytes": {
+            "kind": "int",
+            "value": 100
+          },
+          "timestamp_skew_ms": {
+            "kind": "int",
+            "value": 2000
+          },
+          "max_findings_per_code": {
+            "kind": "int",
+            "value": 20
+          },
+          "newest": null,
+          "since": null,
+          "format": {
+            "kind": "str",
+            "value": "auto"
+          },
+          "profile": {
+            "kind": "str",
+            "value": "neutral"
+          },
+          "confidence_min": null,
+          "margin_min": null,
+          "progress_cb": {
+            "kind": "none"
+          },
+          "skip_undetected": {
+            "kind": "bool",
+            "value": false
+          },
+          "select": null,
+          "ignore": null,
+          "baseline": null,
+          "exclude": null,
+          "ext": null,
+          "incremental": {
+            "kind": "bool",
+            "value": false
+          },
+          "cache_dir": null,
+          "jobs": 1
+        }
+      }
+    },
+    {
+      "id": "recursive_always_true",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "recursive": false
+        }
+      },
+      "expected": {
+        "result": "ok",
+        "kwargs": {
+          "recursive": true,
+          "follow_symlinks": {
+            "kind": "bool",
+            "value": false
+          },
+          "max_files": {
+            "kind": "int",
+            "value": 10000
+          },
+          "max_bytes": {
+            "kind": "int",
+            "value": 1073741824
+          },
+          "max_file_bytes": {
+            "kind": "int",
+            "value": 100
+          },
+          "timestamp_skew_ms": {
+            "kind": "int",
+            "value": 2000
+          },
+          "max_findings_per_code": {
+            "kind": "int",
+            "value": 20
+          },
+          "newest": null,
+          "since": null,
+          "format": {
+            "kind": "str",
+            "value": "auto"
+          },
+          "profile": {
+            "kind": "str",
+            "value": "neutral"
+          },
+          "confidence_min": null,
+          "margin_min": null,
+          "progress_cb": {
+            "kind": "none"
+          },
+          "skip_undetected": {
+            "kind": "bool",
+            "value": false
+          },
+          "select": null,
+          "ignore": null,
+          "baseline": null,
+          "exclude": null,
+          "ext": null,
+          "incremental": {
+            "kind": "bool",
+            "value": false
+          },
+          "cache_dir": null,
+          "jobs": 1
+        }
+      }
+    },
+    {
+      "id": "jobs_positive_integer",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "jobs": "4"
+        }
+      },
+      "expected": {
+        "result": "ok",
+        "kwargs": {
+          "recursive": true,
+          "follow_symlinks": {
+            "kind": "bool",
+            "value": false
+          },
+          "max_files": {
+            "kind": "int",
+            "value": 10000
+          },
+          "max_bytes": {
+            "kind": "int",
+            "value": 1073741824
+          },
+          "max_file_bytes": {
+            "kind": "int",
+            "value": 100
+          },
+          "timestamp_skew_ms": {
+            "kind": "int",
+            "value": 2000
+          },
+          "max_findings_per_code": {
+            "kind": "int",
+            "value": 20
+          },
+          "newest": null,
+          "since": null,
+          "format": {
+            "kind": "str",
+            "value": "auto"
+          },
+          "profile": {
+            "kind": "str",
+            "value": "neutral"
+          },
+          "confidence_min": null,
+          "margin_min": null,
+          "progress_cb": {
+            "kind": "none"
+          },
+          "skip_undetected": {
+            "kind": "bool",
+            "value": false
+          },
+          "select": null,
+          "ignore": null,
+          "baseline": null,
+          "exclude": null,
+          "ext": null,
+          "incremental": {
+            "kind": "bool",
+            "value": false
+          },
+          "cache_dir": null,
+          "jobs": 4
+        }
+      }
+    },
+    {
+      "id": "jobs_non_integer_token",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "jobs": "  Nope  "
+        }
+      },
+      "expected": {
+        "result": "error",
+        "exception": "ValueError",
+        "message": "--jobs must be a positive integer or 'auto', got 'nope'"
+      }
+    },
+    {
+      "id": "jobs_below_one",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "jobs": "-1"
+        }
+      },
+      "expected": {
+        "result": "error",
+        "exception": "ValueError",
+        "message": "--jobs must be a positive integer or 'auto', got '-1'"
+      }
+    },
+    {
+      "id": "explicit_fields_and_rule_codes",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "follow_symlinks": true,
+          "max_files": 3,
+          "max_bytes": 9,
+          "adapter": "synthetic-adapter",
+          "profile": "synthetic-profile",
+          "select": "SL001\u001c, SL002",
+          "ignore": " SL009 ,, ",
+          "exclude": "synthetic-exclude",
+          "ext": ".jsonl",
+          "incremental": true,
+          "cache_dir": "synthetic-cache-dir",
+          "jobs": "2"
+        },
+        "baseline": [
+          "synthetic-baseline-b",
+          "synthetic-baseline-a",
+          "synthetic-baseline-b"
+        ]
+      },
+      "expected": {
+        "result": "ok",
+        "kwargs": {
+          "recursive": true,
+          "follow_symlinks": {
+            "kind": "bool",
+            "value": true
+          },
+          "max_files": {
+            "kind": "int",
+            "value": 3
+          },
+          "max_bytes": {
+            "kind": "int",
+            "value": 9
+          },
+          "max_file_bytes": {
+            "kind": "int",
+            "value": 100
+          },
+          "timestamp_skew_ms": {
+            "kind": "int",
+            "value": 2000
+          },
+          "max_findings_per_code": {
+            "kind": "int",
+            "value": 20
+          },
+          "newest": null,
+          "since": null,
+          "format": {
+            "kind": "str",
+            "value": "synthetic-adapter"
+          },
+          "profile": {
+            "kind": "str",
+            "value": "synthetic-profile"
+          },
+          "confidence_min": null,
+          "margin_min": null,
+          "progress_cb": {
+            "kind": "none"
+          },
+          "skip_undetected": {
+            "kind": "bool",
+            "value": false
+          },
+          "select": [
+            "SL001",
+            "SL002"
+          ],
+          "ignore": [
+            "SL009"
+          ],
+          "baseline": [
+            "synthetic-baseline-b",
+            "synthetic-baseline-a",
+            "synthetic-baseline-b"
+          ],
+          "exclude": {
+            "kind": "str",
+            "value": "synthetic-exclude"
+          },
+          "ext": {
+            "kind": "str",
+            "value": ".jsonl"
+          },
+          "incremental": {
+            "kind": "bool",
+            "value": true
+          },
+          "cache_dir": {
+            "kind": "str",
+            "value": "synthetic-cache-dir"
+          },
+          "jobs": 2
+        }
+      }
+    },
+    {
+      "id": "gap_jobs_auto_cpu_count",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "gap_id": "GAP-scan-args-cpu-count",
+        "omit_jobs_from_kwargs": true,
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "jobs": "auto"
+        }
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-scan-args-cpu-count"
+      }
+    },
+    {
+      "id": "gap_jobs_zero_cpu_count",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "gap_id": "GAP-scan-args-cpu-count",
+        "omit_jobs_from_kwargs": true,
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "jobs": "0"
+        }
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-scan-args-cpu-count"
+      }
+    },
+    {
+      "id": "gap_jobs_positive_i64_overflow",
+      "construct": {
+        "type": "build_scan_kwargs",
+        "gap_id": "GAP-scan-args-jobs-i64",
+        "ctx": {
+          "quiet": true,
+          "verbose": false,
+          "isatty": false
+        },
+        "args": {
+          "max_file_bytes": 100,
+          "timestamp_skew_ms": 2000,
+          "max_findings_per_code": 20,
+          "jobs": "9999999999999999999999999999999999999999"
+        }
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-scan-args-jobs-i64"
+      }
+    }
+  ]
+}

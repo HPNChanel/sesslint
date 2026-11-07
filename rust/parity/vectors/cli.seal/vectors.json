@@ -1,0 +1,33 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.seal",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "seal_py_sha256": "4e2c60b7230da68ddc42310b042031f1e09a4d782d9ea787311141a6fee6a167",
+  "seal_rs_sha256": "15120d6ce87c4e314a529f712a15ad5a6c37d06122918864d440e8d69bc7b0db",
+  "known_parity_gaps": [
+    "GAP-cli-seal-run: Python run() calls sesslint.seal.verify_ledger and may print ok:/JSON or divergence errors; Rust run() is a seam (verify_ledger unavailable) and does not read a ledger or emit stdout (not byte-compared here)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_metadata",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "seal",
+        "help": "[read-only] Verify a tamper-evident seal ledger's hash chain.",
+        "description": "[read-only] Re-walk a seal ledger produced by check/verify/repair --seal and report the first chain divergence (edited, dropped, reordered, or truncated lines). The ledger is a tamper-evident record of SessLint verdicts — self-verifying, no keys or trusted clock.",
+        "verify_flag": "--verify",
+        "verify_required": true,
+        "verify_metavar": "LEDGER",
+        "verify_default": null,
+        "verify_help": "Ledger JSONL file to re-walk and verify",
+        "json_flag": "--json",
+        "json_store_true": true,
+        "json_default": false,
+        "json_metavar": null,
+        "json_help": "Output the verification result as JSON to stdout"
+      }
+    }
+  ]
+}

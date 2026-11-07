@@ -1,0 +1,494 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.checkpoint module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CHECKPOINT_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CHECKPOINT_RS_SHA256 = (
+    "324c7354ce6378e05881735cea87d68887ab65fc8ebff73141ab06be180be7da"
+)
+MODULE = "sesslint.checks.checkpoint"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "A real SL201, SL202, SL203, or SL205 row calls make_finding with the fingerprint "
+    "omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits the finding.",
+    "check_checkpoint stops at the first family that would call make_finding. Python runs "
+    "every family and sorts the combined list.",
+    "An empty gap or divergence list with max_findings -1 takes the overflow path. Rust "
+    "returns the codec error. Python emits an overflow finding.",
+    "A float or list used where Python would call str is a typed error. Rust does not "
+    "invent the Python repr.",
+    "A seq string of Unicode digits is a typed error. Python str.isdigit accepts Unicode Nd.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_checkpoint_py_blob() -> None:
+    pin = git_show_blob(f"{CHECKPOINT_PY_PIN}:src/sesslint/checks/checkpoint.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/checkpoint.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/checkpoint.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_checkpoint_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "checkpoint.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != CHECKPOINT_RS_SHA256:
+        raise SystemExit(
+            "checks/src/checkpoint.rs sha256 mismatch: "
+            f"expected {CHECKPOINT_RS_SHA256}, got {digest}"
+        )
+
+
+def load_checkpoint_module() -> types.ModuleType:
+    verify_checkpoint_py_blob()
+    verify_checkpoint_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{CHECKPOINT_PY_PIN}:src/sesslint/checks/checkpoint.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_checkpoint.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_checkpoint_parity",
+            tmp_path,
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned checkpoint.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    *,
+    parent_id: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=parent_id,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,
+        payload=dict(payload) if payload else {},
+        correlation_id=None,
+        branch_id=None,
+        source_line=None,
+        extra_fields=dict(extra_fields) if extra_fields else {},
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "parent_id": ev.parent_id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "correlation_id": ev.correlation_id,
+        "branch_id": ev.branch_id,
+        "source_line": ev.source_line,
+        "payload": dict(ev.payload) if ev.payload else {},
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_checkpoint_events(
+    events: list[Any],
+    *,
+    source_path: str = "synth.jsonl",
+    max_findings_per_family: int | None = None,
+    checkpoint_sensitivity: str | None = None,
+    context: dict[str, Any] | None = None,
+    run_state_projection: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "type": "check_checkpoint_events",
+        "source_path": source_path,
+        "events": [encode_event_session(event_to_construct_dict(ev)) for ev in events],
+    }
+    if max_findings_per_family is not None:
+        out["max_findings_per_family"] = max_findings_per_family
+    if checkpoint_sensitivity is not None:
+        out["checkpoint_sensitivity"] = checkpoint_sensitivity
+    if context is not None:
+        out["context"] = context
+    if run_state_projection is not None:
+        out["run_state_projection"] = run_state_projection
+    return out
+
+
+def assert_silent(
+    mod: Any,
+    events: list[Any],
+    *,
+    case_id: str,
+    **kwargs: Any,
+) -> None:
+    out = mod.check_checkpoint(events, **kwargs)
+    if out:
+        raise SystemExit(
+            f"vector {case_id!r}: expected silent check_checkpoint; got {len(out)} findings"
+        )
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    py_all = list(mod.__all__)
+    expected_all = [
+        "MAX_CHECKPOINT_FINDINGS",
+        "cap_checkpoint_findings",
+        "check_checkpoint",
+        "check_checkpoint_divergence",
+        "check_checkpoint_gap",
+        "check_compaction_coverage",
+        "check_sl201",
+        "check_sl202",
+        "check_sl203",
+        "check_sl205",
+        "check_unsafe_continuation",
+        "compute_checkpoint_fingerprint",
+    ]
+    if py_all != expected_all:
+        raise SystemExit(f"unexpected __all__: {py_all!r}")
+
+    kind_run_start = sorted(mod._KIND_RUN_START)
+    tool_kinds = sorted(mod._TOOL_KINDS)
+    fp = mod.compute_checkpoint_fingerprint(mod.SL201, ["b", "a", "a"])
+    if fp != "c7bb30314b28cf0c":
+        raise SystemExit(f"fingerprint_sl201_aba: expected c7bb30314b28cf0c, got {fp!r}")
+
+    out: list[dict[str, Any]] = []
+
+    assert_silent(mod, [], case_id="empty_input_silent", source_path="synth.jsonl")
+    out.append(
+        {
+            "id": "empty_input_silent",
+            "construct": encode_checkpoint_events([], source_path="synth.jsonl"),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    assert_silent(mod, [], case_id="constants_and_all", source_path="synth.jsonl")
+    out.append(
+        {
+            "id": "constants_and_all",
+            "construct": encode_checkpoint_events([], source_path="synth.jsonl"),
+            "expected": {
+                "check_checkpoint_len": 0,
+                "max_checkpoint_findings": mod.MAX_CHECKPOINT_FINDINGS,
+                "kind_checkpoint": mod._KIND_CHECKPOINT,
+                "kind_run_start": kind_run_start,
+                "kind_compaction": mod._KIND_COMPACTION,
+                "tool_kinds": tool_kinds,
+                "python_all": py_all,
+            },
+        }
+    )
+
+    out.append(
+        {
+            "id": "fingerprint_sl201_aba",
+            "construct": {
+                "type": "fingerprint_items",
+                "code": mod.SL201,
+                "items": ["b", "a", "a"],
+            },
+            "expected": {"digest": "c7bb30314b28cf0c"},
+        }
+    )
+
+    ev_chk_before_run = [
+        session_event("evt-chk-synth", 0, "checkpoint", payload={"state_hash": "ab"}),
+        session_event("evt-run-synth", 0, "run_start"),
+    ]
+    assert_silent(
+        mod,
+        ev_chk_before_run,
+        case_id="checkpoint_before_run_start_silent",
+        source_path="synth.jsonl",
+    )
+    out.append(
+        {
+            "id": "checkpoint_before_run_start_silent",
+            "construct": encode_checkpoint_events(ev_chk_before_run, source_path="synth.jsonl"),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    ev_same_hash = [
+        session_event(
+            "evt-a-synth",
+            4,
+            "checkpoint",
+            payload={"state_hash": "aaaaaaaaaaaaaaaa1111"},
+        ),
+        session_event(
+            "evt-b-synth",
+            4,
+            "checkpoint",
+            payload={"state_hash": "aaaaaaaaaaaaaaaa1111"},
+        ),
+    ]
+    assert_silent(mod, ev_same_hash, case_id="same_hash_divergence_silent", source_path="synth.jsonl")
+    out.append(
+        {
+            "id": "same_hash_divergence_silent",
+            "construct": encode_checkpoint_events(ev_same_hash, source_path="synth.jsonl"),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    ev_pointerless = [
+        session_event("evt-compact-a-synth", 0, "compaction_boundary"),
+        session_event("evt-compact-b-synth", 0, "compaction_boundary"),
+    ]
+    assert_silent(
+        mod,
+        ev_pointerless,
+        case_id="pointerless_compaction_silent",
+        source_path="synth.jsonl",
+    )
+    out.append(
+        {
+            "id": "pointerless_compaction_silent",
+            "construct": encode_checkpoint_events(
+                ev_pointerless,
+                source_path="synth.jsonl",
+            ),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    ev_dup_leaf = [
+        session_event(
+            "bound-synth",
+            0,
+            "compaction_boundary",
+            extra_fields={"covered_through_id": "leaf-synth"},
+        ),
+        session_event("leaf-synth", 0, "message", parent_id=None),
+        session_event("leaf-synth", 1, "message", parent_id=None),
+    ]
+    assert_silent(mod, ev_dup_leaf, case_id="duplicated_leaf_silent", source_path="synth.jsonl")
+    out.append(
+        {
+            "id": "duplicated_leaf_silent",
+            "construct": encode_checkpoint_events(ev_dup_leaf, source_path="synth.jsonl"),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    ev_cycle = [
+        session_event("a-synth", 0, "message", parent_id="b-synth"),
+        session_event("b-synth", 1, "message", parent_id="a-synth"),
+        session_event(
+            "bound-synth",
+            2,
+            "compaction_boundary",
+            extra_fields={"covered_through_id": "a-synth"},
+        ),
+    ]
+    assert_silent(mod, ev_cycle, case_id="parent_cycle_silent", source_path="synth.jsonl")
+    out.append(
+        {
+            "id": "parent_cycle_silent",
+            "construct": encode_checkpoint_events(ev_cycle, source_path="synth.jsonl"),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    ev_root = [
+        session_event("leaf-synth", 0, "message", parent_id=None),
+        session_event(
+            "bound-synth",
+            1,
+            "compaction_boundary",
+            extra_fields={"covered_through_id": "leaf-synth"},
+        ),
+    ]
+    assert_silent(mod, ev_root, case_id="root_parent_contiguous_silent", source_path="synth.jsonl")
+    out.append(
+        {
+            "id": "root_parent_contiguous_silent",
+            "construct": encode_checkpoint_events(ev_root, source_path="synth.jsonl"),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    from sesslint.context import CheckContext
+
+    ctx_codex = CheckContext(
+        adapter_id="codex-rollout",
+        adapter_version="unknown",
+        profile_id="unknown",
+        profile_version="unknown",
+        source_metadata=None,
+    )
+    ev_codex = [
+        session_event("evt-compact-synth", 0, "compaction_boundary"),
+        session_event("evt-tool-synth", 0, "tool_call"),
+    ]
+    assert_silent(
+        mod,
+        ev_codex,
+        case_id="codex_rollout_continuation_silent",
+        source_path="synth.jsonl",
+        context=ctx_codex,
+    )
+    out.append(
+        {
+            "id": "codex_rollout_continuation_silent",
+            "construct": encode_checkpoint_events(
+                ev_codex,
+                source_path="synth.jsonl",
+                context={
+                    "adapter_id": "codex-rollout",
+                    "adapter_version": "unknown",
+                    "profile_id": "unknown",
+                    "profile_version": "unknown",
+                    "timestamp_skew_ms": 2000,
+                },
+            ),
+            "expected": {"check_checkpoint_len": 0},
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_checkpoint_module()
+    out_dir = Path(__file__).resolve().parent
+
+    vectors = vectors_from_module(mod)
+
+    for spec in vectors:
+        cid = spec["id"]
+        ex = spec["expected"]
+        if cid == "fingerprint_sl201_aba":
+            continue
+        if ex.get("check_checkpoint_len", 0) != 0:
+            raise SystemExit(f"vector {cid!r}: check_checkpoint_len must be 0 for silent vectors")
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_checkpoint_rs_sha256": CHECKPOINT_RS_SHA256,
+        "python_all": list(mod.__all__),
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_checkpoint_rs_sha256": CHECKPOINT_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.checkpoint/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.checkpoint parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.checkpoint/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,54 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.precheck",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "precheck_py_sha256": "ed5bd62b563701c3e3921201fe15c114c505a92e98fa915933f5848d60f0188e",
+  "precheck_rs_sha256": "ec350a5b57f90b9aed0793a8e30cba688ce343ff09acd69baaefee3740b6f764",
+  "known_parity_gaps": [
+    "GAP-precheck-check-file: non-directory paths invoke sesslint.api.check_file in Python; Rust returns CheckFileUnavailable (missing paths are io-error in Python, not byte-compared here).",
+    "GAP-precheck-decide-precheck: decide_precheck is not exported from Python; report classification runs inside precheck after check_file."
+  ],
+  "vectors": [
+    {
+      "id": "development_directory_path",
+      "construct": {
+        "type": "precheck",
+        "development_path": "fixtures/synthetic_dir"
+      },
+      "expected": {
+        "ok": false,
+        "reason": "io-error",
+        "report": null,
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "nested_directory_path",
+      "construct": {
+        "type": "precheck",
+        "development_path": "fixtures/synthetic_dir/nested"
+      },
+      "expected": {
+        "ok": false,
+        "reason": "io-error",
+        "report": null,
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "directory_with_profile_format",
+      "construct": {
+        "type": "precheck",
+        "development_path": "fixtures/synthetic_dir",
+        "profile": "claude-strict",
+        "format": "override"
+      },
+      "expected": {
+        "ok": false,
+        "reason": "io-error",
+        "report": null,
+        "exit_code": 2
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.reference parity (early gates and documented dump seam).",
+  "generator": "rust/parity/vectors/reference/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-reference-dump-canonical: reference_equivalent and reference_equivalent_if_clean on non-empty inputs at or below MAX_REFERENCE_EVENTS call sesslint.adapters.canonical.dump_canonical. Rust returns DumpCanonicalUnavailable and does not call dump_canonical or load_canonical. The harness asserts that seam and does not treat pin success as equal to the seam."
+  ]
+}

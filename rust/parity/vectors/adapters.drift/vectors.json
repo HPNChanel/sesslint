@@ -1,0 +1,1189 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.drift",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "drift_py_sha256": "6f21b713e6c30d0729c08be3452480075350b6be698a43cf5835d8b6c61c2290",
+  "drift_rs_sha256": "e456ecbac7b4f0ab647621a4f4ecf0cff05f7599700eb8710310c7e285b2e9f4",
+  "known_parity_gaps": [
+    "GAP-drift-finding-fingerprint: into_findings on a non-empty transition buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec and does not return Finding objects. The harness drives DriftTracker and checks only empty_ok versus that codec error. Pin snapshots of version_baseline, seen, and transition rows stay in the vector and are not asserted, because those fields are private."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "FOREIGN_SIGNATURE_TYPES",
+          "MAX_DRIFT_TRANSITIONS",
+          "DriftTracker"
+        ],
+        "max_drift_transitions": 8,
+        "foreign_signature_types": [
+          {
+            "type_name": "summary",
+            "format_label": "claude-code-jsonl"
+          },
+          {
+            "type_name": "user_message",
+            "format_label": "claude-code-jsonl"
+          },
+          {
+            "type_name": "assistant_message",
+            "format_label": "claude-code-jsonl"
+          },
+          {
+            "type_name": "tool_use",
+            "format_label": "claude-code-jsonl"
+          },
+          {
+            "type_name": "tool_call",
+            "format_label": "openai-agents"
+          },
+          {
+            "type_name": "function_call",
+            "format_label": "openai-agents"
+          },
+          {
+            "type_name": "function_call_output",
+            "format_label": "openai-agents"
+          },
+          {
+            "type_name": "handoff",
+            "format_label": "openai-agents"
+          },
+          {
+            "type_name": "checkpoint",
+            "format_label": "openai-agents"
+          },
+          {
+            "type_name": "session_meta",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "event_msg",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "turn_context",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "world_state",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "inter_agent_communication_metadata",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "token_usage_record",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "response_item",
+            "format_label": "codex-rollout"
+          },
+          {
+            "type_name": "compacted",
+            "format_label": "codex-rollout"
+          }
+        ]
+      }
+    },
+    {
+      "id": "version_chain_first_difference",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "claude-code-jsonl",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "schemaVersion"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "schemaVersion"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "0.1",
+            "supported": true,
+            "field": "schemaVersion"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "0.1",
+          "sl301_seen": false,
+          "transition_count": 1,
+          "seen_count": 1,
+          "transitions": [
+            {
+              "kind": "version",
+              "previous": "1",
+              "observed": "0.1",
+              "field": "schemaVersion",
+              "observed_format": null,
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "version_baseline_only_flush_empty",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "1",
+          "sl301_seen": false,
+          "transition_count": 0,
+          "seen_count": 0,
+          "transitions": []
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "version_unsupported_marker_sets_sl301",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "codex-rollout",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "9.9",
+            "supported": false,
+            "field": "version"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "1",
+          "sl301_seen": true,
+          "transition_count": 0,
+          "seen_count": 0,
+          "transitions": []
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "unsupported_before_baseline_suppresses",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "9.9",
+            "supported": false,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "1",
+          "sl301_seen": true,
+          "transition_count": 0,
+          "seen_count": 0,
+          "transitions": []
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "note_unsupported_clears_flush",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "claude-code-jsonl",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          },
+          {
+            "action": "note_unsupported_version"
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "session_meta"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": true,
+          "transition_count": 2,
+          "seen_count": 2,
+          "transitions": [
+            {
+              "kind": "signature",
+              "previous": "claude-code-jsonl",
+              "observed": "turn_context",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "claude-code-jsonl",
+              "observed": "session_meta",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "unsupported_after_buffer_suppresses_flush",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "codex-rollout",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "2",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "summary"
+            }
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "9.9",
+            "supported": false,
+            "field": "version"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "2",
+          "sl301_seen": true,
+          "transition_count": 2,
+          "seen_count": 2,
+          "transitions": [
+            {
+              "kind": "version",
+              "previous": "1",
+              "observed": "2",
+              "field": "version",
+              "observed_format": null,
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "codex-rollout",
+              "observed": "summary",
+              "field": "type",
+              "observed_format": "claude-code-jsonl",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "signature_foreign_turn_context",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "claude-code-jsonl",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "summary"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "user"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "nonsense-xyz"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "int",
+              "value": 123
+            }
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": false,
+          "transition_count": 1,
+          "seen_count": 1,
+          "transitions": [
+            {
+              "kind": "signature",
+              "previous": "claude-code-jsonl",
+              "observed": "turn_context",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "signature_dedup_keeps_first_coordinates",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            },
+            "line": 3,
+            "record_id": "syn-rec-03",
+            "record_ordinal": 3,
+            "byte_offset": 10,
+            "byte_end": 20
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            },
+            "line": 9,
+            "record_id": "syn-rec-09",
+            "record_ordinal": 9,
+            "byte_offset": 90,
+            "byte_end": 99
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": false,
+          "transition_count": 1,
+          "seen_count": 1,
+          "transitions": [
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "turn_context",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": 3,
+              "record_id": "syn-rec-03",
+              "record_ordinal": 3,
+              "byte_offset": 10,
+              "byte_end": 20
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "signature_dedup_and_cap",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "assistant_message"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "checkpoint"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "compacted"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "event_msg"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "function_call"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "function_call_output"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "handoff"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "inter_agent_communication_metadata"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "response_item"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "session_meta"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "summary"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "token_usage_record"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "tool_call"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "tool_use"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "user_message"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "world_state"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": false,
+          "transition_count": 8,
+          "seen_count": 17,
+          "transitions": [
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "turn_context",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "assistant_message",
+              "field": "type",
+              "observed_format": "claude-code-jsonl",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "checkpoint",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "compacted",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "event_msg",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "function_call",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "function_call_output",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "handoff",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "cap_full_advances_baseline_drops_version_row",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "assistant_message"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "checkpoint"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "compacted"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "event_msg"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "function_call"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "function_call_output"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "handoff"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "inter_agent_communication_metadata"
+            }
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "2",
+            "supported": true,
+            "field": "version"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "2",
+          "sl301_seen": false,
+          "transition_count": 8,
+          "seen_count": 9,
+          "transitions": [
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "assistant_message",
+              "field": "type",
+              "observed_format": "claude-code-jsonl",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "checkpoint",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "compacted",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "event_msg",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "function_call",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "function_call_output",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "handoff",
+              "field": "type",
+              "observed_format": "openai-agents",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "canonical",
+              "observed": "inter_agent_communication_metadata",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "version_string_equality_not_numeric",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "1.0",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "01",
+            "supported": true,
+            "field": "version"
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "01",
+          "sl301_seen": false,
+          "transition_count": 2,
+          "seen_count": 2,
+          "transitions": [
+            {
+              "kind": "version",
+              "previous": "1",
+              "observed": "1.0",
+              "field": "version",
+              "observed_format": null,
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "version",
+              "previous": "1.0",
+              "observed": "01",
+              "field": "version",
+              "observed_format": null,
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "version_and_signature_key_distinct",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "1",
+        "steps": [
+          {
+            "action": "observe_version",
+            "version_norm": "1",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_version",
+            "version_norm": "turn_context",
+            "supported": true,
+            "field": "version"
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": "turn_context",
+          "sl301_seen": false,
+          "transition_count": 2,
+          "seen_count": 2,
+          "transitions": [
+            {
+              "kind": "version",
+              "previous": "1",
+              "observed": "turn_context",
+              "field": "version",
+              "observed_format": null,
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            },
+            {
+              "kind": "signature",
+              "previous": "1",
+              "observed": "turn_context",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": null,
+              "record_id": null,
+              "record_ordinal": null,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "native_signature_silent_for_own_format",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "claude-code-jsonl",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "summary"
+            }
+          },
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "tool_use"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": false,
+          "transition_count": 0,
+          "seen_count": 0,
+          "transitions": []
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "gap_flush_single_buffered_signature",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "claude-code-jsonl",
+        "steps": [
+          {
+            "action": "observe_signature",
+            "raw_type": {
+              "kind": "str",
+              "text": "turn_context"
+            },
+            "line": 3,
+            "record_id": "syn-rec-gap",
+            "record_ordinal": 3
+          }
+        ]
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": false,
+          "transition_count": 1,
+          "seen_count": 1,
+          "transitions": [
+            {
+              "kind": "signature",
+              "previous": "claude-code-jsonl",
+              "observed": "turn_context",
+              "field": "type",
+              "observed_format": "codex-rollout",
+              "line": 3,
+              "record_id": "syn-rec-gap",
+              "record_ordinal": 3,
+              "byte_offset": null,
+              "byte_end": null
+            }
+          ]
+        },
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-drift-parity-path"
+        }
+      }
+    },
+    {
+      "id": "fresh_tracker_flush_empty_without_steps",
+      "construct": {
+        "type": "tracker_run",
+        "format_label": "canonical",
+        "steps": []
+      },
+      "expected": {
+        "state": {
+          "version_baseline": null,
+          "sl301_seen": false,
+          "transition_count": 0,
+          "seen_count": 0,
+          "transitions": []
+        },
+        "flush": {
+          "mode": "empty_ok",
+          "path": "  "
+        }
+      }
+    }
+  ]
+}

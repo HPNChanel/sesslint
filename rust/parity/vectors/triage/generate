@@ -1,0 +1,625 @@
+#!/usr/bin/env python3
+"""Generate sesslint.triage parity vectors (stdlib only; pinned git blob)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import types
+from dataclasses import dataclass
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+TRIAGE_PY_SHA256 = "a1b695b89ac9fc3142f098d51c9ffba01d2f1a20e9cebe202f6a41e26669029d"
+TRIAGE_RS_SHA256 = "2f452ff34e6ddad32957000629ff9512fe783b20e515b7ca25e822916b9ce9a0"
+MODULE = "sesslint.triage"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-triage-get-profile: triage() calls sesslint.profiles.get_profile before "
+    "any ledger work. Rust stops with sesslint.profiles.get_profile is not available "
+    "and does not return TriageReport.",
+    "GAP-triage-preview: _preview reads sesslint.assessment.SourceAssessment and calls "
+    "plan. Rust preview() stops with sesslint.assessment.SourceAssessment is not "
+    "available.",
+    "GAP-triage-read-codex-state: _native_state after copy guards calls "
+    "sesslint.state_db.read_codex_state and may return membership-matches or "
+    "membership-mismatch. Rust native_state() stops with "
+    "sesslint.state_db.read_codex_state is not available.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/test_triage.py",)
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+FIXED_MTIME = 1_700_000_000.0
+EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ABC_SHA = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(path: str) -> bytes:
+    return subprocess.check_output(["git", "show", f"{PYTHON_COMMIT}:{path}"], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes("src/sesslint/triage.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != TRIAGE_PY_SHA256:
+        raise SystemExit(f"triage.py pin sha256 mismatch: expected {TRIAGE_PY_SHA256}, got {digest}")
+    rs_path = repo_root() / "rust" / "crates" / "report" / "src" / "triage.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != TRIAGE_RS_SHA256:
+        raise SystemExit(f"triage.rs sha256 mismatch: expected {TRIAGE_RS_SHA256}, got {rs_digest}")
+
+
+def load_state_db() -> Any:
+    report = types.ModuleType("sesslint.report")
+    report.short_hash = lambda identifier, length=8: hashlib.sha256(
+        identifier.encode("utf-8")
+    ).hexdigest()[:length]
+    sys.modules.setdefault("sesslint.report", report)
+    pkg = sys.modules.setdefault("sesslint", types.ModuleType("sesslint"))
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    pkg.report = report
+    state_mod = types.ModuleType("sesslint.state_db")
+    sys.modules["sesslint.state_db"] = state_mod
+    exec(
+        compile(
+            git_show_bytes("src/sesslint/state_db.py").decode(),
+            f"<{PYTHON_COMMIT}:state_db.py>",
+            "exec",
+        ),
+        state_mod.__dict__,
+    )
+    pkg.state_db = state_mod
+    return state_mod
+
+
+def load_triage_module() -> Any:
+    verify_pin_hashes()
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+    load_state_db()
+
+    ver = types.ModuleType("sesslint._version")
+    ver.CLI_VERSION = "0.5.0"
+    sys.modules["sesslint._version"] = ver
+    pkg._version = ver
+
+    ass = types.ModuleType("sesslint.assessment")
+    ass.SourceAssessment = object
+    ass.assess_source = lambda *args, **kwargs: None
+    sys.modules["sesslint.assessment"] = ass
+    pkg.assessment = ass
+
+    codes = types.ModuleType("sesslint.codes")
+
+    class Severity:
+        ERROR = "error"
+        FATAL = "fatal"
+        WARNING = "warning"
+
+    codes.Severity = Severity
+    codes.CODE_REGISTRY = {}
+    sys.modules["sesslint.codes"] = codes
+    pkg.codes = codes
+
+    io_mod = types.ModuleType("sesslint.io")
+    io_mod.DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+    prev = types.ModuleType("sesslint.preview")
+    prev._deltas_for_plan = lambda *a, **k: []
+    sys.modules["sesslint.preview"] = prev
+    pkg.preview = prev
+
+    repair = types.ModuleType("sesslint.repair")
+    repair.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.repair"] = repair
+    pkg.repair = repair
+    plan = types.ModuleType("sesslint.repair.planner")
+    plan.plan = lambda *a, **k: None
+    sys.modules["sesslint.repair.planner"] = plan
+    ref = types.ModuleType("sesslint.repair.refusals")
+    ref.refusal_rationale_for = lambda *a, **k: None
+    sys.modules["sesslint.repair.refusals"] = ref
+    prof = types.ModuleType("sesslint.profiles")
+    prof.get_profile = lambda *a, **k: {}
+    sys.modules["sesslint.profiles"] = prof
+    pkg.profiles = prof
+
+    tri = types.ModuleType("sesslint.triage")
+    sys.modules["sesslint.triage"] = tri
+    pkg.triage = tri
+    blob = git_show_bytes("src/sesslint/triage.py")
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    spec = importlib.util.spec_from_file_location("sesslint.triage", tmp_path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["sesslint.triage"] = mod
+    spec.loader.exec_module(mod)
+    Path(tmp_path).unlink(missing_ok=True)
+    return mod
+
+
+def write_fixture(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    os.utime(path, (FIXED_MTIME, FIXED_MTIME))
+
+
+def ensure_fixtures(fixtures: Path) -> dict[str, Path]:
+    out: dict[str, Path] = {}
+    for name, payload in {
+        "empty.bin": b"",
+        "abc.bin": b"abc",
+        "wide.bin": bytes([1] + [0] * 65535 + [2]),
+    }.items():
+        target = fixtures / name
+        write_fixture(target, payload)
+        out[name] = target
+    return out
+
+
+def rel_fixture(fixtures: Path, path: Path) -> str:
+    return path.relative_to(fixtures).as_posix()
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains sbp_ token shape")
+    if b"\r" in raw:
+        raise SystemExit("committed output must use LF only")
+
+
+@dataclass
+class MockFinding:
+    severity: str
+    code: str
+    record_id: str | None = None
+    line: int | None = None
+    has_source: bool = True
+
+
+def mock_assessment(
+    tri: Any, events: list[dict[str, Any]], findings: list[MockFinding]
+) -> Any:
+    evs = [
+        SimpleNamespace(
+            id=row["id"],
+            parent_id=row.get("parent_id"),
+            source_line=row.get("source_line"),
+        )
+        for row in events
+    ]
+    rows = []
+    for item in findings:
+        source = None
+        if item.has_source:
+            source = SimpleNamespace(record_id=item.record_id, line=item.line)
+        rows.append(SimpleNamespace(severity=item.severity, code=item.code, source=source))
+    report = SimpleNamespace(findings=rows)
+    return SimpleNamespace(events=evs, report=report)
+
+
+def triage_report_parts(mod: Any) -> dict[str, Any]:
+    return {
+        "status": "checked",
+        "source_sha256": None,
+        "adapter": "unknown",
+        "profile": "neutral",
+        "assurance": "A0",
+        "coverage": {"performed": [], "skipped": []},
+        "findings": [
+            {
+                "title": "x",
+                "source_line": None,
+                "code": "SL004",
+                "severity": "error",
+                "repairability": "deterministic",
+            }
+        ],
+        "finding_count": 1,
+        "by_code": {"SL004": 1, "SL001": 2},
+        "previews": [],
+        "impact": {"status": "unverified"},
+        "native_state": {
+            "detail": "Native registry was not inspected.",
+            "status": "not-provided",
+        },
+        "missing_evidence": [
+            {
+                "code": "native-resume",
+                "detail": "Validate continuation in the originating application.",
+            }
+        ],
+        "next_actions": [
+            {
+                "command": "sesslint triage <source>",
+                "detail": "Provide a stable copy.",
+                "id": "inspect-source",
+            }
+        ],
+    }
+
+
+def vector_specs(mod: Any, fixtures: Path, paths: dict[str, Path]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(spec: dict[str, Any]) -> None:
+        vectors.append(spec)
+
+    add(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "schema_version": mod.TRIAGE_SCHEMA_VERSION,
+                "limitation": mod.LIMITATION,
+                "max_findings": mod.MAX_FINDINGS,
+                "max_impact_lines": mod.MAX_IMPACT_LINES,
+                "max_state_db_bytes": 256 * 1024 * 1024,
+            },
+        }
+    )
+
+    for status, code in (
+        ("checked", 0),
+        ("unreadable", 2),
+        ("needs-attention", 1),
+        ("blocked", 1),
+    ):
+        report = mod.TriageReport(
+            status=status,
+            source_sha256=None,
+            adapter="unknown",
+            profile="neutral",
+            assurance="A0",
+            coverage={"performed": [], "skipped": []},
+            findings=(),
+            finding_count=0,
+            by_code={},
+            previews=(),
+            impact={"status": "unverified"},
+            native_state={"status": "not-provided", "detail": "Native registry was not inspected."},
+            missing_evidence=(),
+            next_actions=(),
+        )
+        add(
+            {
+                "id": f"exit_code_{status.replace('-', '_')}",
+                "construct": {"type": "exit_code", "status": status},
+                "expected": {"exit_code": code, "pin_exit_code": report.exit_code},
+            }
+        )
+
+    parts = triage_report_parts(mod)
+    sample = mod.TriageReport(**parts)
+    add(
+        {
+            "id": "triage_report_to_json",
+            "construct": {"type": "to_json", "parts": parts},
+            "expected": {"json": sample.to_json()},
+        }
+    )
+
+    render = mod.TriageReport(
+        status="needs-attention",
+        source_sha256="",
+        adapter="codex-rollout",
+        profile="neutral",
+        assurance="A2",
+        coverage={},
+        findings=(),
+        finding_count=0,
+        by_code={"SL004": 1, "SL001": 2},
+        previews=[
+            {
+                "policy": "conservative",
+                "step_count": 1,
+                "kept_events": 2,
+                "lost_records": 3,
+                "blocked_count": 4,
+            }
+        ],
+        impact={"status": "mapped", "affected_events": 5, "parsed_events": 9},
+        native_state={"status": "unverified"},
+        missing_evidence=[{"code": "SL203", "detail": "Refusal text."}],
+        next_actions=[
+            {"id": "review", "detail": "Review codes.", "command": "sesslint check <source>"},
+            {"id": "quiet", "detail": "No command here.", "command": ""},
+        ],
+    )
+    add(
+        {
+            "id": "triage_report_render_human",
+            "construct": {"type": "render_human", "parts": render.__dict__},
+            "expected": {"text": render.render_human()},
+        }
+    )
+
+    truncated = mod.TriageReport(
+        **{
+            **triage_report_parts(mod),
+            "findings": [{}],
+            "finding_count": 2,
+        }
+    )
+    add(
+        {
+            "id": "findings_truncated_true",
+            "construct": {"type": "findings_truncated", "finding_count": 2, "findings_len": 1},
+            "expected": {
+                "findings_truncated": truncated.to_dict()["findings_truncated"]
+            },
+        }
+    )
+
+    events = [
+        {"id": "a", "parent_id": None, "source_line": 1},
+        {"id": "b", "parent_id": "a", "source_line": 2},
+        {"id": "c", "parent_id": "b", "source_line": 3},
+        {"id": "d", "parent_id": "nope", "source_line": 4},
+    ]
+    findings = [
+        MockFinding(mod.Severity.WARNING, "SL001", has_source=False),
+        MockFinding(mod.Severity.ERROR, "SL004", record_id="b"),
+        MockFinding(mod.Severity.FATAL, "SL010", record_id="missing"),
+    ]
+    impact = mod._impact(mock_assessment(mod, events, findings))
+    add(
+        {
+            "id": "impact_descendants_unmapped",
+            "construct": {
+                "type": "impact",
+                "events": events,
+                "findings": [
+                    {"severity": "warning", "code": "SL001"},
+                    {"severity": "error", "code": "SL004", "record_id": "b"},
+                    {"severity": "fatal", "code": "SL010", "record_id": "missing"},
+                ],
+            },
+            "expected": {"pin": impact},
+        }
+    )
+
+    for label, fixture, limit, want in (
+        ("file_digest_empty", "empty.bin", 0, EMPTY_SHA),
+        ("file_digest_abc", "abc.bin", 3, ABC_SHA),
+    ):
+        path = paths[fixture]
+        try:
+            pin = mod._file_digest(path, limit)
+            mode = "ok"
+        except ValueError as exc:
+            pin = str(exc)
+            mode = "raises"
+        add(
+            {
+                "id": label,
+                "construct": {
+                    "type": "file_digest",
+                    "fixture": rel_fixture(fixtures, path),
+                    "limit": limit,
+                },
+                "expected": {"mode": mode, "pin": pin},
+            }
+        )
+
+    over = paths["abc.bin"]
+    try:
+        mod._file_digest(over, 2)
+        raise SystemExit("expected limit")
+    except ValueError as exc:
+        add(
+            {
+                "id": "file_digest_over_limit",
+                "construct": {
+                    "type": "file_digest",
+                    "fixture": rel_fixture(fixtures, over),
+                    "limit": 2,
+                },
+                "expected": {"mode": "raises", "pin": str(exc)},
+            }
+        )
+
+    add(
+        {
+            "id": "native_state_not_provided",
+            "construct": {
+                "type": "native_state",
+                "setup": "not_provided",
+                "adapter": "codex-rollout",
+            },
+            "expected": {
+                "pin": mod._native_state(None, paths["abc.bin"], "codex-rollout")
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "native_state_wrong_adapter",
+            "construct": {
+                "type": "native_state",
+                "setup": "regular_copy",
+                "adapter": "canonical",
+            },
+            "expected": {
+                "pin": mod._native_state(paths["abc.bin"], paths["abc.bin"], "canonical")
+            },
+        }
+    )
+
+    db = fixtures / "synthetic-membership.sqlite"
+    source = fixtures / "rollout-2026-10-08-synthetic-identity.jsonl"
+    source.write_bytes(b"synthetic\n")
+    identity = "11111111-1111-4111-8111-111111111111"
+    db.unlink(missing_ok=True)
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT)")
+    con.execute("INSERT INTO threads VALUES (?, ?)", (identity, source.name))
+    con.close()
+    os.utime(db, (FIXED_MTIME, FIXED_MTIME))
+    pin_native = mod._native_state(db, source, "codex-rollout")
+    add(
+        {
+            "id": "native_state_membership_gap",
+            "construct": {
+                "type": "native_state",
+                "setup": "membership_db",
+                "adapter": "codex-rollout",
+            },
+            "expected": {
+                "pin": pin_native,
+                "rust_assertion": {"mode": "gap_read_codex_state"},
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "preview_assessment_gap",
+            "construct": {"type": "preview"},
+            "expected": {
+                "rust_assertion": {"mode": "gap_source_assessment"},
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "triage_get_profile_gap",
+            "construct": {"type": "triage", "fixture": rel_fixture(fixtures, paths["abc.bin"])},
+            "expected": {
+                "rust_assertion": {"mode": "gap_get_profile"},
+            },
+        }
+    )
+
+    return vectors
+
+
+def list_tests_in_file(rel: str) -> list[tuple[str, bool]]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[tuple[str, bool]] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            name = line.split("(")[0].replace("def ", "")
+            out.append((name, True))
+        elif not has_column0 and line.startswith("    def test_"):
+            name = line.split("(")[0].replace("def ", "").strip()
+            out.append((name, False))
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        tests = list_tests_in_file(rel)
+        for name, column0 in tests:
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                status = "covered"
+                covered += 1
+                row["vector_ids"] = list(needed)
+            else:
+                status = "not_applicable"
+                not_applicable += 1
+            row["status"] = status
+            rows.append(row)
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(text)
+    (out_dir / "coverage.json").write_text(text, encoding="utf-8", newline="\n")
+    return covered, not_applicable
+
+
+def main() -> int:
+    mod = load_triage_module()
+    out_dir = Path(__file__).resolve().parent
+    fixtures = out_dir / "fixtures"
+    paths = ensure_fixtures(fixtures)
+    vectors = vector_specs(mod, fixtures, paths)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "triage_py_sha256": TRIAGE_PY_SHA256,
+        "triage_rs_sha256": TRIAGE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    out_dir.joinpath("vectors.json").write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "triage_py_sha256": TRIAGE_PY_SHA256,
+        "triage_rs_sha256": TRIAGE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/triage/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    scan_committed_text(json.dumps(manifest) + "\n")
+    out_dir.joinpath("manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic triage helpers and envelope parity from pinned sesslint.triage.",
+        "generator": "rust/parity/vectors/triage/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    out_dir.joinpath("PROVENANCE.json").write_text(
+        prov_text, encoding="utf-8", newline="\n"
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"vector_count={len(vectors)}")
+    print(f"vectors_sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

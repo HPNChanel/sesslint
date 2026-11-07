@@ -1,0 +1,1039 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.detect",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "detect_py_sha256": "14d8f8f0947082529e98702ea2ea3d7bb99b2cd5091349e1314054dcf38136d1",
+  "detect_rs_sha256": "d1bd8cbcac85b367a49e45ffbfcadd389f025dafb21c599bb9fda4a9e7e84954",
+  "known_parity_gaps": [
+    "GAP-detect-finding-fingerprint: resolve_format and resolve_format_bytes call _resolve_failure_finding when detection abstains. The pin builds a Finding via make_finding without fingerprint. Rust stops at sesslint.determinism.canonical_json_bytes and does not return a Finding.",
+    "GAP-detect-cli: test_detect.py CLI smoke tests invoke sesslint.cli.main, which is outside this adapters.detect parity surface.",
+    "GAP-detect-mock-scores: boundary and effective-threshold tests patch per-adapter detect_* callables. Vectors use real sniff bytes instead."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "confidence_min": 0.55,
+        "margin_min": 0.15,
+        "sniff_bytes": 65536,
+        "epsilon": 0.000000001,
+        "format_claude_code": "claude-code-jsonl",
+        "format_openai_agents": "openai-agents",
+        "format_codex_rollout": "codex-rollout",
+        "format_canonical": "canonical",
+        "format_auto": "auto",
+        "supported_formats": [
+          "canonical",
+          "claude-code-jsonl",
+          "codex-rollout",
+          "openai-agents"
+        ],
+        "valid_format_options": [
+          "auto",
+          "canonical",
+          "claude-code-jsonl",
+          "codex-rollout",
+          "openai-agents"
+        ],
+        "reason_clear_winner": "clear-winner",
+        "reason_low_confidence": "low-confidence",
+        "reason_tie": "tie",
+        "reason_empty": "empty",
+        "reason_refused_live_db": "refused-live-db",
+        "reason_explicit_override": "explicit-override"
+      }
+    },
+    {
+      "id": "detect_fixture_claude",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/claude_sample.jsonl"
+      },
+      "expected": {
+        "result": {
+          "format": "claude-code-jsonl",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              1.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "assert_format": "claude-code-jsonl"
+      }
+    },
+    {
+      "id": "detect_fixture_openai",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/openai_sample.json"
+      },
+      "expected": {
+        "result": {
+          "format": "openai-agents",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              1.0
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "assert_format": "openai-agents"
+      }
+    },
+    {
+      "id": "detect_fixture_codex",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/codex_sample.jsonl"
+      },
+      "expected": {
+        "result": {
+          "format": "codex-rollout",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.2
+            ],
+            [
+              "openai-agents",
+              0.3
+            ],
+            [
+              "codex-rollout",
+              1.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "assert_format": "codex-rollout"
+      }
+    },
+    {
+      "id": "detect_fixture_canonical",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/canonical_sample.json"
+      },
+      "expected": {
+        "result": {
+          "format": "canonical",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ]
+        },
+        "assert_format": "canonical"
+      }
+    },
+    {
+      "id": "detect_ambiguous_tie",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/ambiguous.json"
+      },
+      "expected": {
+        "result": {
+          "format": null,
+          "reason": "tie",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.8
+            ],
+            [
+              "openai-agents",
+              0.8
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "detect_lying_jsonl",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-lying-canonical.jsonl"
+      },
+      "expected": {
+        "result": {
+          "format": "canonical",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ]
+        },
+        "assert_format": "canonical"
+      }
+    },
+    {
+      "id": "detect_bom_whitespace_file",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-bom-ws.json"
+      },
+      "expected": {
+        "result": {
+          "format": null,
+          "reason": "empty",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.0
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "detect_sniff_boundary",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-sniff-boundary.jsonl"
+      },
+      "expected": {
+        "result": {
+          "format": "claude-code-jsonl",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.8
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "assert_format": "claude-code-jsonl"
+      }
+    },
+    {
+      "id": "detect_giant_first_line",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-giant-line.jsonl"
+      },
+      "expected": {
+        "result": {
+          "format": "claude-code-jsonl",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.8
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "assert_format": "claude-code-jsonl"
+      }
+    },
+    {
+      "id": "detect_twice_canonical",
+      "construct": {
+        "type": "detect_format_twice",
+        "path_rel": "fixtures/canonical_sample.json"
+      },
+      "expected": {
+        "first": {
+          "format": "canonical",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ]
+        },
+        "second": {
+          "format": "canonical",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ]
+        },
+        "equal": true
+      }
+    },
+    {
+      "id": "detect_twice_ambiguous",
+      "construct": {
+        "type": "detect_format_twice",
+        "path_rel": "fixtures/ambiguous.json"
+      },
+      "expected": {
+        "first": {
+          "format": null,
+          "reason": "tie",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.8
+            ],
+            [
+              "openai-agents",
+              0.8
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "second": {
+          "format": null,
+          "reason": "tie",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.8
+            ],
+            [
+              "openai-agents",
+              0.8
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "equal": true
+      }
+    },
+    {
+      "id": "detect_default_thresholds_match",
+      "construct": {
+        "type": "detect_format_compare_thresholds",
+        "path_rel": "fixtures/syn-dummy.json"
+      },
+      "expected": {
+        "default": {
+          "format": null,
+          "reason": "low-confidence",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "explicit": {
+          "format": null,
+          "reason": "low-confidence",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.0
+            ],
+            [
+              "openai-agents",
+              0.2
+            ],
+            [
+              "codex-rollout",
+              0.0
+            ],
+            [
+              "canonical",
+              0.0
+            ]
+          ]
+        },
+        "equal": true
+      }
+    },
+    {
+      "id": "detect_path_not_found",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-missing-file.json"
+      },
+      "expected": {
+        "error_type": "FileNotFoundError",
+        "message": "Session file not found: fixtures/syn-missing-file.json"
+      }
+    },
+    {
+      "id": "detect_path_is_directory",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dir-not-file"
+      },
+      "expected": {
+        "error_type": "IsADirectoryError",
+        "message": "Expected session file, got directory: fixtures/syn-dir-not-file"
+      }
+    },
+    {
+      "id": "threshold_confidence_bool",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "bool",
+          "value": true
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got True"
+      }
+    },
+    {
+      "id": "threshold_confidence_str",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "str",
+          "text": "0.7"
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.7"
+      }
+    },
+    {
+      "id": "threshold_confidence_nan",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "text": "nan"
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got nan"
+      }
+    },
+    {
+      "id": "threshold_confidence_inf",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "text": "inf"
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got inf"
+      }
+    },
+    {
+      "id": "threshold_confidence_0",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": 0.0
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_1",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": 1.0
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": -0.1
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -0.1"
+      }
+    },
+    {
+      "id": "threshold_confidence_over",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": 1.1
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.1"
+      }
+    },
+    {
+      "id": "threshold_margin_0",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "margin_min": {
+          "kind": "float",
+          "value": 0.0
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "threshold_margin_1",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "margin_min": {
+          "kind": "float",
+          "value": 1.0
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got 1.0"
+      }
+    },
+    {
+      "id": "threshold_margin_exceeds",
+      "construct": {
+        "type": "detect_format",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": 0.5
+        },
+        "margin_min": {
+          "kind": "float",
+          "value": 0.9
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "margin_min (0.9) cannot exceed confidence_min (0.5)"
+      }
+    },
+    {
+      "id": "resolve_threshold_confidence_2",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": "canonical",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": 2.0
+        }
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 2.0"
+      }
+    },
+    {
+      "id": "resolve_explicit_canonical_on_ambiguous",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": "canonical",
+        "path_rel": "fixtures/ambiguous.json"
+      },
+      "expected": {
+        "format": "canonical",
+        "finding_count": 0,
+        "result": {
+          "format": "canonical",
+          "reason": "explicit-override",
+          "confidences": []
+        }
+      }
+    },
+    {
+      "id": "resolve_unknown_bogus",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": "bogus",
+        "path_rel": "fixtures/syn-dummy.json"
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unknown format 'bogus'. Must be one of ['auto', 'canonical', 'claude-code-jsonl', 'codex-rollout', 'openai-agents']"
+      }
+    },
+    {
+      "id": "resolve_unknown_yaml",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": "yaml",
+        "path_rel": "fixtures/syn-dummy.json"
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unknown format 'yaml'. Must be one of ['auto', 'canonical', 'claude-code-jsonl', 'codex-rollout', 'openai-agents']"
+      }
+    },
+    {
+      "id": "resolve_explicit_bypass_thresholds",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": "claude-code-jsonl",
+        "path_rel": "fixtures/syn-dummy.json",
+        "confidence_min": {
+          "kind": "float",
+          "value": 0.99
+        },
+        "margin_min": {
+          "kind": "float",
+          "value": 0.99
+        }
+      },
+      "expected": {
+        "format": "claude-code-jsonl",
+        "finding_count": 0,
+        "result": {
+          "format": "claude-code-jsonl",
+          "reason": "explicit-override",
+          "confidences": []
+        }
+      }
+    },
+    {
+      "id": "to_source_block_auto",
+      "construct": {
+        "type": "to_source_block",
+        "result": {
+          "format": "canonical",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.123456
+            ],
+            [
+              "openai-agents",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ]
+        },
+        "requested": "auto"
+      },
+      "expected": {
+        "block": {
+          "requested": "auto",
+          "resolved": "canonical",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.123
+            ],
+            [
+              "openai-agents",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ],
+          "reason": "clear-winner"
+        }
+      }
+    },
+    {
+      "id": "to_source_block_method",
+      "construct": {
+        "type": "to_source_block_method",
+        "result": {
+          "format": "canonical",
+          "reason": "clear-winner",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.123456
+            ],
+            [
+              "openai-agents",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ]
+        },
+        "requested": "canonical"
+      },
+      "expected": {
+        "block": {
+          "requested": "canonical",
+          "resolved": "canonical",
+          "confidences": [
+            [
+              "claude-code-jsonl",
+              0.123
+            ],
+            [
+              "openai-agents",
+              0.0
+            ],
+            [
+              "canonical",
+              1.0
+            ]
+          ],
+          "reason": "clear-winner"
+        }
+      }
+    },
+    {
+      "id": "to_source_block_none",
+      "construct": {
+        "type": "to_source_block",
+        "result": null,
+        "requested": "auto"
+      },
+      "expected": {
+        "block": {
+          "requested": "auto",
+          "resolved": null,
+          "confidences": [],
+          "reason": "unknown"
+        }
+      }
+    },
+    {
+      "id": "gap_resolve_empty_sl001",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": null,
+        "path_rel": "fixtures/empty.jsonl"
+      },
+      "expected": {
+        "pin": {
+          "format": null,
+          "finding_count": 1,
+          "result": {
+            "format": null,
+            "reason": "empty",
+            "confidences": [
+              [
+                "claude-code-jsonl",
+                0.0
+              ],
+              [
+                "openai-agents",
+                0.0
+              ],
+              [
+                "codex-rollout",
+                0.0
+              ],
+              [
+                "canonical",
+                0.0
+              ]
+            ]
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint"
+        },
+        "reason": "empty"
+      }
+    },
+    {
+      "id": "gap_resolve_ambiguous_sl302",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": null,
+        "path_rel": "fixtures/ambiguous.json"
+      },
+      "expected": {
+        "pin": {
+          "format": null,
+          "finding_count": 1,
+          "result": {
+            "format": null,
+            "reason": "tie",
+            "confidences": [
+              [
+                "claude-code-jsonl",
+                0.8
+              ],
+              [
+                "openai-agents",
+                0.8
+              ],
+              [
+                "codex-rollout",
+                0.0
+              ],
+              [
+                "canonical",
+                0.0
+              ]
+            ]
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint"
+        },
+        "reason": "tie"
+      }
+    },
+    {
+      "id": "gap_resolve_sqlite_sl001",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": null,
+        "path_rel": "fixtures/syn-live-sqlite.bin"
+      },
+      "expected": {
+        "pin": {
+          "format": null,
+          "finding_count": 1,
+          "result": {
+            "format": null,
+            "reason": "refused-live-db",
+            "confidences": [
+              [
+                "claude-code-jsonl",
+                0.0
+              ],
+              [
+                "openai-agents",
+                0.0
+              ],
+              [
+                "codex-rollout",
+                0.0
+              ],
+              [
+                "canonical",
+                0.0
+              ]
+            ]
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint"
+        },
+        "reason": "refused-live-db"
+      }
+    },
+    {
+      "id": "gap_resolve_low_confidence",
+      "construct": {
+        "type": "resolve_format",
+        "explicit": "auto",
+        "path_rel": "fixtures/syn-random.txt"
+      },
+      "expected": {
+        "pin": {
+          "format": null,
+          "finding_count": 1,
+          "result": {
+            "format": null,
+            "reason": "low-confidence",
+            "confidences": [
+              [
+                "claude-code-jsonl",
+                0.0
+              ],
+              [
+                "openai-agents",
+                0.0
+              ],
+              [
+                "codex-rollout",
+                0.0
+              ],
+              [
+                "canonical",
+                0.0
+              ]
+            ]
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint"
+        },
+        "reason": "low-confidence"
+      }
+    }
+  ]
+}

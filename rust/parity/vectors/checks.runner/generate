@@ -1,0 +1,557 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.runner parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Callable, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+RUNNER_PY_SHA256 = (
+    "7a46ab2503cb5ce50ae3ff3ca0cd029cd366b0efd42a2623204c499498fc0341"
+)
+RUNNER_RS_SHA256 = (
+    "1a78321cd7d6144ac84821cbc1b257a266d484685644af1d033c7ebc206e0450"
+)
+MODULE = "sesslint.checks.runner"
+COVERAGE_SEAM = "sesslint.report.Coverage is not available"
+BUILTIN_SEAM = "sesslint.profiles.builtin is not available"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-runner-coverage: return_coverage true builds sesslint.report.Coverage in "
+    "Python after detectors. Rust returns the coverage seam and does not construct "
+    "Coverage on the successful path.",
+    "GAP-runner-profile-name: profile supplied as a str resolves through get_profile "
+    "and sesslint.profiles.builtin in Python. Rust stops at the builtin seam for "
+    "ProfileArg::Name.",
+    "GAP-runner-detector-profile-deps: non-empty streams call tool_pairing and other "
+    "detectors that import sesslint.profiles in Python. Rust returns "
+    "sesslint.profiles is not available instead of running the detector chain.",
+    "GAP-runner-executor-alias: repair.executor re-exports run_all_checks; parity "
+    "vectors exercise sesslint.checks.runner.run_all_checks only.",
+    "GAP-runner-verify-delegate: verify._run_detector_checks delegates to the runner "
+    "with adapter=canonical; that entry point is not this module's vector surface.",
+)
+
+PROFILES_SEAM = "sesslint.profiles is not available"
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/checks/test_runner.py",)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def git_show_text(rev_path: str) -> str:
+    return git_show_bytes(rev_path).decode("utf-8")
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"src/sesslint/{tail}.py", f"src/sesslint/{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure_file_paths(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        chosen = None
+        for candidate in mod_to_paths(mod):
+            try:
+                git_show_text(f"{PYTHON_COMMIT}:{candidate}")
+                chosen = candidate
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if chosen is None:
+            continue
+        order.append(chosen)
+        source = git_show_text(f"{PYTHON_COMMIT}:{chosen}")
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []
+        sys.modules[name] = mod
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"failed to create import spec for {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        if not hasattr(parent_mod, "__path__"):
+            parent_mod.__path__ = []
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def load_modules_for(root_mod: str) -> None:
+    ensure_pkg("sesslint")
+    pending = closure_file_paths(root_mod)
+    for _ in range(64):
+        if not pending:
+            break
+        next_pending: list[str] = []
+        for rel in pending:
+            fn = fullname_for(rel)
+            for i in range(1, len(fn.split("."))):
+                ensure_pkg(".".join(fn.split(".")[: i + 1]))
+            try:
+                exec_blob(git_show_bytes(f"{PYTHON_COMMIT}:{rel}"), fn)
+            except Exception:
+                next_pending.append(rel)
+        pending = next_pending
+    if pending:
+        raise SystemExit(f"failed to load modules: {pending[:8]} ...")
+
+
+def verify_runner_digests() -> None:
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/checks/runner.py")
+    digest = hashlib.sha256(py_blob).hexdigest()
+    if digest != RUNNER_PY_SHA256:
+        raise SystemExit(
+            f"runner.py pin sha256 mismatch: expected {RUNNER_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "runner.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != RUNNER_RS_SHA256:
+        raise SystemExit(
+            f"runner.rs sha256 mismatch: expected {RUNNER_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def import_paths_from_pin() -> list[str]:
+    source = git_show_text(f"{PYTHON_COMMIT}:src/sesslint/checks/runner.py")
+    tree = ast.parse(source)
+    paths: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.lineno < 19 or node.lineno > 37:
+            continue
+        if not node.module:
+            continue
+        for alias in node.names:
+            name = alias.asname or alias.name
+            paths.append(f"{node.module}.{name}")
+    if len(paths) != 22:
+        raise SystemExit(f"unexpected import path count: {len(paths)}")
+    return paths
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "parent_id": ev.parent_id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "correlation_id": ev.correlation_id,
+        "branch_id": ev.branch_id,
+        "source_line": ev.source_line,
+        "payload": dict(ev.payload) if ev.payload else {},
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def graph_healthy_events() -> list[Any]:
+    load_modules_for("sesslint.adapters.canonical")
+    canonical = sys.modules["sesslint.adapters.canonical"]
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:fixtures/checks/graph_healthy.json")
+    with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as handle:
+        handle.write(blob)
+        tmp = Path(handle.name)
+    try:
+        events, load_findings = canonical.load_canonical(tmp)
+        if load_findings:
+            raise SystemExit("graph_healthy load_findings must be empty")
+        return list(events)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def encode_events(events: list[Any]) -> list[dict[str, Any]]:
+    return [encode_event_session(event_to_construct_dict(ev)) for ev in events]
+
+
+def invoke_run_all_checks(
+    runner: Any, construct: dict[str, Any], events: list[Any]
+) -> dict[str, Any]:
+    profile = construct.get("profile", "absent")
+    kwargs: dict[str, Any] = {
+        "source_path": construct.get("source_path", "<repaired>"),
+        "return_coverage": bool(construct.get("return_coverage", False)),
+    }
+    if profile == "absent":
+        pass
+    elif isinstance(profile, str):
+        kwargs["profile"] = profile
+    elif isinstance(profile, dict) and profile.get("type") == "inline":
+        prof_mod = sys.modules["sesslint.profiles.profile"]
+        spec = profile["spec"]
+        kwargs["profile"] = prof_mod.Profile(
+            spec["id"],
+            spec["version"],
+            frozenset(spec.get("adapters", ["canonical"])),
+            frozenset(spec.get("enabled_rules", [])),
+            spec.get("options", {}),
+            spec.get("default_policy", "default"),
+        )
+    else:
+        raise SystemExit(f"unsupported profile spec: {profile!r}")
+
+    adapter = construct.get("adapter")
+    if adapter is not None:
+        kwargs["adapter"] = adapter
+
+    skips = construct.get("adapter_skips", [])
+    if skips:
+        report = sys.modules["sesslint.report"]
+        kwargs["adapter_skips"] = tuple(
+            report.CoverageSkip(item["check"], item["reason"], item.get("detail", ""))
+            for item in skips
+        )
+
+    deselected = construct.get("deselected_rules", [])
+    if deselected:
+        kwargs["deselected_rules"] = tuple(deselected)
+
+    try:
+        out = runner.run_all_checks(events, **kwargs)
+    except Exception as exc:
+        return {
+            "outcome": "error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+
+    if kwargs["return_coverage"]:
+        findings, coverage = out
+        return {
+            "outcome": "ok",
+            "findings_count": len(findings),
+            "coverage_keys": sorted(coverage.to_dict().keys()),
+        }
+    return {"outcome": "ok", "findings_count": len(out)}
+
+
+def build_vectors(runner: Any) -> list[dict[str, Any]]:
+    import_paths = import_paths_from_pin()
+    expected_all = list(runner.__all__)
+    if expected_all != ["run_all_checks"]:
+        raise SystemExit(f"unexpected __all__: {expected_all!r}")
+
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_all_export",
+        {"type": "module_all"},
+        {"names": expected_all},
+    )
+
+    add(
+        "import_paths_pin_order",
+        {"type": "import_paths"},
+        {"paths": import_paths},
+    )
+
+    add(
+        "empty_neutral_no_findings",
+        {"type": "run_all_checks", "events": []},
+        {"outcome": "ok", "findings_count": 0},
+    )
+
+    cov_construct = {
+        "type": "run_all_checks",
+        "events": [],
+        "return_coverage": True,
+    }
+    pin_cov = invoke_run_all_checks(runner, cov_construct, [])
+    add(
+        "return_coverage_empty_stop",
+        cov_construct,
+        {
+            "pin": pin_cov,
+            "rust_assertion": {
+                "mode": "coverage_unavailable",
+                "message": COVERAGE_SEAM,
+            },
+        },
+    )
+
+    for vid, reason, check in (
+        ("version_gated_skips_detectors", "version-gated", "SL301"),
+        ("cap_exceeded_skips_detectors", "cap-exceeded", "SL301"),
+    ):
+        construct = {
+            "type": "run_all_checks",
+            "events": [],
+            "adapter_skips": [
+                {
+                    "check": check,
+                    "reason": reason,
+                    "detail": "synthetic gate",
+                }
+            ],
+        }
+        add(vid, construct, invoke_run_all_checks(runner, construct, []))
+
+    healthy = graph_healthy_events()
+    healthy_construct = {
+        "type": "run_all_checks",
+        "events": encode_events(healthy),
+        "source_path": "synth-graph-healthy.jsonl",
+    }
+    pin_healthy = invoke_run_all_checks(runner, healthy_construct, healthy)
+    add(
+        "graph_healthy_fixture_silent",
+        healthy_construct,
+        {
+            "pin": pin_healthy,
+            "rust_assertion": {
+                "mode": "profiles_unavailable",
+                "message": PROFILES_SEAM,
+            },
+        },
+    )
+
+    name_construct = {
+        "type": "run_all_checks",
+        "events": [],
+        "profile": "neutral",
+    }
+    pin_name = invoke_run_all_checks(runner, name_construct, [])
+    add(
+        "profile_name_neutral_builtin",
+        name_construct,
+        {
+            "pin": pin_name,
+            "rust_assertion": {
+                "mode": "builtin_unavailable",
+                "message": BUILTIN_SEAM,
+            },
+        },
+    )
+
+    return vectors
+
+
+def assert_payload_safe(payload: bytes) -> None:
+    if _BANNED_LIVE_TEST.search(payload):
+        raise SystemExit("vectors.json matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(payload):
+        raise SystemExit("vectors.json contains forbidden sbp_ token pattern")
+    if b"\r" in payload:
+        raise SystemExit("vectors.json must use LF only")
+    text = payload.decode("utf-8")
+    for token in ("sesslint-wt", "WORK_PROJECT", ":\\\\", "D:/", "D:\\"):
+        if token in text:
+            raise SystemExit(f"vectors.json must not contain path leak {token!r}")
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = git_show_text(f"{PYTHON_COMMIT}:{rel}")
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(
+    out_dir: Path, vector_ids: frozenset[str]
+) -> tuple[int, int, list[dict[str, object]]]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                not_applicable += 1
+            rows.append(row)
+    coverage_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage_doc, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable, rows
+
+
+def main() -> int:
+    verify_runner_digests()
+    load_modules_for("sesslint.checks.runner")
+    runner = sys.modules["sesslint.checks.runner"]
+    import_paths = import_paths_from_pin()
+    vectors = build_vectors(runner)
+
+    out_dir = Path(__file__).resolve().parent
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_runner_py_sha256": RUNNER_PY_SHA256,
+        "checks_runner_rs_sha256": RUNNER_RS_SHA256,
+        "python_all": list(runner.__all__),
+        "python_import_paths": import_paths,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_safe(payload_bytes)
+
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_runner_py_sha256": RUNNER_PY_SHA256,
+        "checks_runner_rs_sha256": RUNNER_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.runner/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    covered, not_applicable, _ = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.runner parity (run_all_checks outcomes from "
+            "the pinned Python module; graph_healthy fixture from pin via git show)."
+        ),
+        "generator": "rust/parity/vectors/checks.runner/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"coverage covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

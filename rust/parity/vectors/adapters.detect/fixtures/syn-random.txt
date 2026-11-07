@@ -1,0 +1,2 @@
+random unstructured log content line 1
+line 2

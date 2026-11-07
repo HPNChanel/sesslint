@@ -1,0 +1,593 @@
+#!/usr/bin/env python3
+"""Generate sesslint.assessment parity vectors (stdlib only; pinned git blob)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ASSESSMENT_PY_SHA256 = (
+    "fa64f1ea4b7b7bd1340cdd4ea5ed0c76580086f58a6ce44647a9762d20b8c064"
+)
+ASSESSMENT_RS_SHA256 = (
+    "d4da13ae39098db38b0be046c381339df095c127b5aa92f09ef836e381c2fa5f"
+)
+MODULE = "sesslint.assessment"
+CHECK_IMPL_SEAM = "sesslint.api._check_impl is not available"
+DEFAULT_MAX = 100 * 1024 * 1024
+EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ABC_SHA = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-assessment-check-impl: assess_source on a regular file runs "
+    "sesslint.api._check_impl in Python and returns SourceAssessment. Rust "
+    "stops at CheckImpl and does not build Report or events.",
+    "GAP-assessment-missing-path-message: a missing path raises OSError text "
+    "from CPython; Rust returns std::io::Error display.",
+    "GAP-assessment-identity-dev-ino: st_dev and st_ino are 0 on non-Unix "
+    "Rust ports without unstable metadata APIs.",
+    "GAP-assessment-io-default: DEFAULT_MAX_FILE_BYTES is duplicated in Rust "
+    "from the pin io.py blob; this crate does not depend on an io crate.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/test_triage.py",)
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+FIXED_MTIME = 1_700_000_000.0
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/assessment.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != ASSESSMENT_PY_SHA256:
+        raise SystemExit(
+            f"assessment.py pin sha256 mismatch: expected {ASSESSMENT_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "assessment.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != ASSESSMENT_RS_SHA256:
+        raise SystemExit(
+            "checks/src/assessment.rs sha256 mismatch: "
+            f"expected {ASSESSMENT_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    io_mod = types.ModuleType("sesslint.io")
+    io_mod.DEFAULT_MAX_FILE_BYTES = DEFAULT_MAX
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+    canonical = types.ModuleType("sesslint.canonical")
+    canonical.SessionEvent = dict
+    sys.modules["sesslint.canonical"] = canonical
+    pkg.canonical = canonical
+
+    report_mod = types.ModuleType("sesslint.report")
+
+    @dataclass(frozen=True)
+    class Report:
+        source_fingerprint: str
+
+    report_mod.Report = Report
+    sys.modules["sesslint.report"] = report_mod
+    pkg.report = report_mod
+
+    api_mod = types.ModuleType("sesslint.api")
+
+    def _check_impl(
+        _target: Any,
+        *,
+        data: bytes | None = None,
+        format: str | None = None,
+        profile: str = "neutral",
+        _capture_events: Any = None,
+        _oversized_snapshot: bool = False,
+        **_: Any,
+    ) -> Report:
+        if _oversized_snapshot or data is None:
+            fingerprint = "0" * 64
+        else:
+            fingerprint = hashlib.sha256(data).hexdigest()
+        if _capture_events is not None:
+            adapter = format or "canonical"
+            _capture_events(adapter, [])
+        return Report(source_fingerprint=fingerprint)
+
+    api_mod._check_impl = _check_impl
+    sys.modules["sesslint.api"] = api_mod
+    pkg.api = api_mod
+
+
+def load_assessment_module() -> types.ModuleType:
+    verify_pin_hashes()
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/assessment.py")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "sesslint.assessment"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed import spec for assessment.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        sys.modules["sesslint"].assessment = mod
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def write_fixture(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    os.utime(path, (FIXED_MTIME, FIXED_MTIME))
+
+
+def ensure_fixtures(fixtures: Path) -> dict[str, Path]:
+    out: dict[str, Path] = {}
+    specs = {
+        "empty.bin": b"",
+        "abc.bin": b"abc",
+        "short.bin": b"abcd",
+        "wide.bin": b"xy",
+        "chunk-65536.bin": b"a" * 65_536,
+        "chunk-65537.bin": b"a" * 65_537,
+    }
+    for name, payload in specs.items():
+        target = fixtures / name
+        write_fixture(target, payload)
+        out[name] = target
+    return out
+
+
+def rel_fixture(fixtures: Path, path: Path) -> str:
+    return path.relative_to(fixtures).as_posix()
+
+
+def pin_ok(assessment: Any, path: Path, **kwargs: Any) -> dict[str, Any]:
+    item = assessment.assess_source(path, **kwargs)
+    return {
+        "outcome": "ok",
+        "profile": item.profile,
+        "format": item.format,
+        "readable_snapshot": item.readable_snapshot,
+        "source_fingerprint": item.report.source_fingerprint,
+        "events_len": len(item.events),
+    }
+
+
+def pin_raise(fn: Any, fixtures: Path) -> dict[str, Any]:
+    try:
+        fn()
+    except Exception as exc:
+        message = str(exc)
+        prefix = str(fixtures)
+        forms = [
+            prefix,
+            prefix.replace("\\", "\\\\"),
+            prefix.replace("\\", "/"),
+        ]
+        for form in forms:
+            message = message.replace(form, "fixtures")
+        message = message.replace("\\\\", "/").replace("\\", "/")
+        return {"raises": type(exc).__name__, "message": message}
+    raise SystemExit("expected exception")
+
+
+def pin_unchanged(assessment: Any, path: Path, fingerprint: str, readable: bool) -> bool:
+    if not path.is_file():
+        identity = (0, 0, 0, 0)
+    else:
+        st = path.stat()
+        identity = assessment._identity(st)
+    report_mod = sys.modules["sesslint.report"].Report
+    report = report_mod(source_fingerprint=fingerprint)
+    item = assessment.SourceAssessment(
+        path=path,
+        report=report,
+        events=[],
+        format=None,
+        profile="neutral",
+        identity=identity,
+        readable_snapshot=readable,
+    )
+    return bool(item.unchanged())
+
+
+def check_impl_expected(pin: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "pin": pin,
+        "rust_assertion": {"mode": "check_impl_unavailable", "message": CHECK_IMPL_SEAM},
+    }
+
+
+def vector_specs(
+    assessment: Any, fixtures: Path, paths: dict[str, Path]
+) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(spec: dict[str, Any]) -> None:
+        vectors.append(spec)
+
+    add(
+        {
+            "id": "default_max_file_bytes",
+            "construct": {"type": "module_constant"},
+            "expected": {"default_max_file_bytes": DEFAULT_MAX},
+        }
+    )
+
+    missing = fixtures / "synthetic-missing.bin"
+
+    for vid, cap in (
+        ("max_file_bytes_bool_true", True),
+        ("max_file_bytes_bool_false", False),
+    ):
+        add(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "assess_source_raises",
+                    "path_kind": "missing",
+                    "max_file_bytes": {"t": "bool", "v": cap},
+                },
+                "expected": pin_raise(
+                    lambda cap=cap: assessment.assess_source(
+                        missing, max_file_bytes=cap
+                    ),
+                    fixtures,
+                ),
+            }
+        )
+
+    for vid, value in (
+        ("max_file_bytes_zero", 0),
+        ("max_file_bytes_negative", -1),
+    ):
+        add(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "assess_source_raises",
+                    "path_kind": "missing",
+                    "max_file_bytes": {"t": "int", "v": value},
+                },
+                "expected": pin_raise(
+                    lambda value=value: assessment.assess_source(
+                        missing, max_file_bytes=value
+                    ),
+                    fixtures,
+                ),
+            }
+        )
+
+    add(
+        {
+            "id": "assess_directory",
+            "construct": {"type": "assess_source_raises", "path_kind": "directory"},
+            "expected": pin_raise(
+                lambda: assessment.assess_source(
+                    fixtures, max_file_bytes=DEFAULT_MAX
+                ),
+                fixtures,
+            ),
+        }
+    )
+
+    add(
+        {
+            "id": "assess_missing_regular_file",
+            "construct": {"type": "assess_source_raises", "path_kind": "missing"},
+            "expected": {
+                "pin": pin_raise(
+                    lambda: assessment.assess_source(
+                        missing, max_file_bytes=DEFAULT_MAX
+                    ),
+                    fixtures,
+                ),
+                "rust_assertion": {"mode": "io_error", "kind": "NotFound"},
+            },
+        }
+    )
+
+    short = paths["short.bin"]
+    add(
+        {
+            "id": "assess_regular_short",
+            "construct": {
+                "type": "assess_source",
+                "fixture": rel_fixture(fixtures, short),
+                "max_file_bytes": 4,
+            },
+            "expected": check_impl_expected(
+                pin_ok(assessment, short, max_file_bytes=4)
+            ),
+        }
+    )
+
+    add(
+        {
+            "id": "assess_regular_with_format",
+            "construct": {
+                "type": "assess_source",
+                "fixture": rel_fixture(fixtures, short),
+                "format": "canonical",
+                "max_file_bytes": 8,
+            },
+            "expected": check_impl_expected(
+                pin_ok(
+                    assessment,
+                    short,
+                    format="canonical",
+                    profile="neutral",
+                    max_file_bytes=8,
+                )
+            ),
+        }
+    )
+
+    wide = paths["wide.bin"]
+    add(
+        {
+            "id": "assess_oversized_limit",
+            "construct": {
+                "type": "assess_source",
+                "fixture": rel_fixture(fixtures, wide),
+                "max_file_bytes": 1,
+            },
+            "expected": check_impl_expected(
+                pin_ok(assessment, wide, max_file_bytes=1)
+            ),
+        }
+    )
+
+    empty = paths["empty.bin"]
+    add(
+        {
+            "id": "assess_empty_regular_file",
+            "construct": {
+                "type": "assess_source",
+                "fixture": rel_fixture(fixtures, empty),
+                "max_file_bytes": 1,
+            },
+            "expected": check_impl_expected(
+                pin_ok(assessment, empty, max_file_bytes=1)
+            ),
+        }
+    )
+
+    add(
+        {
+            "id": "unchanged_not_readable",
+            "construct": {
+                "type": "unchanged",
+                "fixture": "synthetic-missing.bin",
+                "fingerprint": EMPTY_SHA,
+                "readable_snapshot": False,
+            },
+            "expected": {
+                "unchanged": pin_unchanged(
+                    assessment, missing, EMPTY_SHA, False
+                )
+            },
+        }
+    )
+
+    abc = paths["abc.bin"]
+    add(
+        {
+            "id": "unchanged_empty_file",
+            "construct": {
+                "type": "unchanged",
+                "fixture": rel_fixture(fixtures, empty),
+                "fingerprint": EMPTY_SHA,
+                "readable_snapshot": True,
+            },
+            "expected": {
+                "unchanged": pin_unchanged(assessment, empty, EMPTY_SHA, True)
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "unchanged_abc_file",
+            "construct": {
+                "type": "unchanged",
+                "fixture": rel_fixture(fixtures, abc),
+                "fingerprint": ABC_SHA,
+                "readable_snapshot": True,
+            },
+            "expected": {
+                "unchanged": pin_unchanged(assessment, abc, ABC_SHA, True)
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "unchanged_wrong_fingerprint",
+            "construct": {
+                "type": "unchanged",
+                "fixture": rel_fixture(fixtures, empty),
+                "fingerprint": ABC_SHA,
+                "readable_snapshot": True,
+            },
+            "expected": {
+                "unchanged": pin_unchanged(assessment, empty, ABC_SHA, True)
+            },
+        }
+    )
+
+    for label, fname in (
+        ("unchanged_chunk_65536", "chunk-65536.bin"),
+        ("unchanged_chunk_65537", "chunk-65537.bin"),
+    ):
+        chunk = paths[fname]
+        payload = chunk.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        add(
+            {
+                "id": label,
+                "construct": {
+                    "type": "unchanged",
+                    "fixture": rel_fixture(fixtures, chunk),
+                    "fingerprint": digest,
+                    "readable_snapshot": True,
+                },
+                "expected": {
+                    "unchanged": pin_unchanged(assessment, chunk, digest, True)
+                },
+            }
+        )
+
+    return vectors
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("vectors.json contains forbidden sbp_ token pattern")
+    if b"\r" in raw:
+        raise SystemExit("vectors.json payload must use LF only")
+
+
+def list_tests_in_file(rel: str) -> list[tuple[str, bool]]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[tuple[str, bool]] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            name = line.split("(")[0].replace("def ", "")
+            out.append((name, True))
+        elif not has_column0 and line.startswith("    def test_"):
+            name = line.split("(")[0].replace("def ", "").strip()
+            out.append((name, False))
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        try:
+            tests = list_tests_in_file(rel)
+        except subprocess.CalledProcessError:
+            continue
+        for name, column0 in tests:
+            qual = f"{rel}::{name}" if column0 else f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                status = "covered"
+                covered += 1
+                row["vector_ids"] = list(needed)
+            else:
+                status = "not_applicable"
+                not_applicable += 1
+            row["status"] = status
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def write_manifest(out_dir: Path, vector_count: int, digest: str) -> None:
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "assessment_py_sha256": ASSESSMENT_PY_SHA256,
+        "assessment_rs_sha256": ASSESSMENT_RS_SHA256,
+        "vector_count": vector_count,
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/assessment/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def main() -> int:
+    assessment = load_assessment_module()
+    out_dir = Path(__file__).resolve().parent
+    fixtures = out_dir / "fixtures"
+    paths = ensure_fixtures(fixtures)
+    vectors = vector_specs(assessment, fixtures, paths)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "assessment_py_sha256": ASSESSMENT_PY_SHA256,
+        "assessment_rs_sha256": ASSESSMENT_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.assessment parity: cap validation, regular-file "
+            "check_impl seam, and SourceAssessment.unchanged SHA-256 probes."
+        ),
+        "generator": "rust/parity/vectors/assessment/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    write_manifest(out_dir, len(vectors), digest)
+    covered, not_app = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"coverage covered={covered} not_applicable={not_app}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

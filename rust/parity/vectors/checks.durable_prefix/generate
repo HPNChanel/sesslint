@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.durable_prefix module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DURABLE_PREFIX_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DURABLE_PREFIX_RS_SHA256 = (
+    "d8f230ca9534583298dacdf6cac1a866e0f8280083180b5ee55cf1da4e9584bd"
+)
+MODULE = "sesslint.checks.durable_prefix"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "trailing-non-durable, durable-gap, and missing-required-field call make_finding "
+    "with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. "
+    "Python emits a finding.",
+    "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
+    'A bool is not an int. durable is exactly true.',
+    "MapLookup::Borrowed is a failed borrow, not a missing key.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_durable_prefix_py_blob() -> None:
+    pin = git_show_blob(f"{DURABLE_PREFIX_PY_PIN}:src/sesslint/checks/durable_prefix.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/durable_prefix.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/durable_prefix.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_durable_prefix_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "durable_prefix.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != DURABLE_PREFIX_RS_SHA256:
+        raise SystemExit(
+            "checks/src/durable_prefix.rs sha256 mismatch: "
+            f"expected {DURABLE_PREFIX_RS_SHA256}, got {digest}"
+        )
+
+
+def load_durable_prefix_module() -> types.ModuleType:
+    verify_durable_prefix_py_blob()
+    verify_durable_prefix_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{DURABLE_PREFIX_PY_PIN}:src/sesslint/checks/durable_prefix.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_durable_prefix.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sesslint_checks_durable_prefix_parity", tmp_path
+        )
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned durable_prefix.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    extra_fields: dict[str, Any],
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields=extra_fields,
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_construct_durable_prefix_check(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "durable_prefix_check",
+        "events": [encode_event(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    if list(mod.__all__) != ["check_durable_prefix"]:
+        raise SystemExit(f"unexpected __all__: {list(mod.__all__)!r}")
+
+    # Module export surface: Python __all__ matches Rust ALL (asserted in Rust via pinned constants).
+    ev_empty: list[Any] = []
+    out.append(
+        {
+            "id": "module_all_exports_only_check_durable_prefix",
+            "construct": encode_construct_durable_prefix_check(ev_empty),
+            "expected": {
+                "findings_count": len(mod.check_durable_prefix(ev_empty)),
+                "records_count": 0,
+                "all_exports": list(mod.__all__),
+            },
+        }
+    )
+
+    # No codex marker: empty findings.
+    ev_no_codex = [
+        session_event("evt-par-dp-no-a", 0, "message", {}),
+        session_event("evt-par-dp-no-b", 1, "message", {}),
+    ]
+    out.append(
+        {
+            "id": "no_codex_marker_empty_findings",
+            "construct": encode_construct_durable_prefix_check(ev_no_codex),
+            "expected": {
+                "findings_count": len(mod.check_durable_prefix(ev_no_codex)),
+                "records_count": 0,
+            },
+        }
+    )
+
+    # Non-durable tail with no subagent_history_start_ordinal: silent.
+    ev_tail = [
+        session_event(
+            "evt-par-dp-dur",
+            0,
+            "message",
+            {"codex": {"ordinal": 0, "durable": True}},
+        ),
+        session_event(
+            "evt-par-dp-tail",
+            1,
+            "message",
+            {
+                "codex": {
+                    "ordinal": 1,
+                    "durable": False,
+                    "envelope_type": "event_msg",
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "non_durable_tail_no_claim_empty_findings",
+            "construct": encode_construct_durable_prefix_check(ev_tail),
+            "expected": {
+                "findings_count": len(mod.check_durable_prefix(ev_tail)),
+                "records_count": 0,
+            },
+        }
+    )
+
+    # Durable at 0 and 2, non-durable at 1, no inherited claim: not a gap.
+    ev_interleave = [
+        session_event(
+            "evt-par-dp-z",
+            0,
+            "message",
+            {"codex": {"ordinal": 0, "durable": True}},
+        ),
+        session_event(
+            "evt-par-dp-o",
+            1,
+            "message",
+            {"codex": {"ordinal": 1, "durable": False}},
+        ),
+        session_event(
+            "evt-par-dp-t",
+            2,
+            "message",
+            {"codex": {"ordinal": 2, "durable": True}},
+        ),
+    ]
+    out.append(
+        {
+            "id": "durable_interleaved_non_durable_not_a_gap_empty_findings",
+            "construct": encode_construct_durable_prefix_check(ev_interleave),
+            "expected": {
+                "findings_count": len(mod.check_durable_prefix(ev_interleave)),
+                "records_count": 0,
+            },
+        }
+    )
+
+    # Every reasoning item has has_encrypted_content False and none True: silent.
+    ev_reasoning = [
+        session_event(
+            "evt-par-dp-r1",
+            0,
+            "message",
+            {
+                "codex": {
+                    "item_type": "reasoning",
+                    "has_encrypted_content": False,
+                    "ordinal": 1,
+                }
+            },
+        ),
+        session_event(
+            "evt-par-dp-r2",
+            1,
+            "message",
+            {
+                "codex": {
+                    "item_type": "reasoning",
+                    "has_encrypted_content": False,
+                    "ordinal": 2,
+                }
+            },
+        ),
+    ]
+    out.append(
+        {
+            "id": "reasoning_all_missing_encrypted_content_empty_findings",
+            "construct": encode_construct_durable_prefix_check(ev_reasoning),
+            "expected": {
+                "findings_count": len(mod.check_durable_prefix(ev_reasoning)),
+                "records_count": 0,
+            },
+        }
+    )
+
+    # Bool ordinal is ignored.
+    ev_bool_ord = [
+        session_event(
+            "evt-par-dp-bool-ord",
+            0,
+            "message",
+            {"codex": {"ordinal": True, "durable": True}},
+        ),
+    ]
+    out.append(
+        {
+            "id": "bool_ordinal_ignored_empty_findings",
+            "construct": encode_construct_durable_prefix_check(ev_bool_ord),
+            "expected": {
+                "findings_count": len(mod.check_durable_prefix(ev_bool_ord)),
+                "records_count": 0,
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_durable_prefix_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_module(mod)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        fc = spec["expected"]["findings_count"]
+        if fc != 0:
+            raise SystemExit(
+                f'vector {spec["id"]!r} expected silent Python side; got findings_count={fc}'
+            )
+        rc = spec["expected"]["records_count"]
+        if rc != 0:
+            raise SystemExit(
+                f'vector {spec["id"]!r} expected no durable_prefix records; got records_count={rc}'
+            )
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": spec["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_durable_prefix_rs_sha256": DURABLE_PREFIX_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_durable_prefix_rs_sha256": DURABLE_PREFIX_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.durable_prefix/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.durable_prefix parity "
+            "(stdlib-only vectors; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.durable_prefix/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

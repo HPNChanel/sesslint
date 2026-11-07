@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic cli.completion subcommand configure() metadata from pinned src/sesslint/cli/completion.py (subcommand only; run() is a documented gap).",
+  "generator": "rust/parity/vectors/cli.completion/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-completion-run: Python run() calls sesslint.completion.generate_completion and prints a script; Rust run() is a seam (generate_completion unavailable) and does not print script bytes (not byte-compared here)."
+  ]
+}

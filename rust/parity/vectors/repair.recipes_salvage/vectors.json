@@ -1,0 +1,425 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "known_parity_gaps": [
+    "GAP-recipes-salvage-affected-region-orphan: Python affected_region_orphan_result_drop returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts Rust Display only."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "mode": "names",
+        "names": [
+          "MAX_COMPONENT_SIZE",
+          "RECIPES",
+          "RECIPE_ORPHAN_RESULT_DROP",
+          "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
+          "RECIPE_TORN_COMPACTION_PROJECT",
+          "RECIPE_TORN_RECORD_EXCISION",
+          "RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE",
+          "SALVAGE_RECIPES",
+          "affected_region_orphan_result_drop",
+          "apply_orphan_result_drop",
+          "apply_orphan_result_drop_with_loss",
+          "apply_side_effect_unknown_truncate",
+          "apply_side_effect_unknown_truncate_with_loss",
+          "apply_torn_compaction_project",
+          "apply_torn_compaction_project_with_loss",
+          "apply_torn_record_excision",
+          "apply_torn_record_excision_with_loss",
+          "apply_unresolvable_branch_amputate",
+          "apply_unresolvable_branch_amputate_with_loss",
+          "register_all",
+          "sl001_excisable",
+          "sl101_orphan_present"
+        ]
+      }
+    },
+    {
+      "id": "register_all_idempotent",
+      "construct": {
+        "type": "register_all"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "recipe_count": 5
+        }
+      }
+    },
+    {
+      "id": "registration_salvage_matrix",
+      "construct": {
+        "type": "registration_matrix"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "recipe_count": 5,
+          "names": [
+            "orphan-result-drop",
+            "side-effect-unknown-truncate",
+            "torn-compaction-project",
+            "torn-record-excision",
+            "unresolvable-branch-amputate"
+          ],
+          "recipes": {
+            "unresolvable-branch-amputate": {
+              "mode": "recipe",
+              "name": "unresolvable-branch-amputate",
+              "handles": [
+                "SL005",
+                "SL006"
+              ],
+              "preconditions": [
+                "salvage_policy",
+                "branch_has_no_checkpoint"
+              ],
+              "lossy": true,
+              "salvage_only": true,
+              "min_policy": "salvage",
+              "version": "1.0.0",
+              "excludes_execution_dependence": false,
+              "apply": {
+                "present": true
+              },
+              "affected_region": {
+                "present": false
+              }
+            },
+            "torn-compaction-project": {
+              "mode": "recipe",
+              "name": "torn-compaction-project",
+              "handles": [
+                "SL108"
+              ],
+              "preconditions": [
+                "salvage_policy",
+                "sl108_present"
+              ],
+              "lossy": true,
+              "salvage_only": true,
+              "min_policy": "salvage",
+              "version": "1.0.0",
+              "excludes_execution_dependence": false,
+              "apply": {
+                "present": true
+              },
+              "affected_region": {
+                "present": false
+              }
+            },
+            "side-effect-unknown-truncate": {
+              "mode": "recipe",
+              "name": "side-effect-unknown-truncate",
+              "handles": [
+                "SL102"
+              ],
+              "preconditions": [
+                "salvage_policy",
+                "acknowledge_side_effects"
+              ],
+              "lossy": true,
+              "salvage_only": true,
+              "min_policy": "salvage",
+              "version": "1.0.0",
+              "excludes_execution_dependence": false,
+              "apply": {
+                "present": true
+              },
+              "affected_region": {
+                "present": false
+              }
+            },
+            "orphan-result-drop": {
+              "mode": "recipe",
+              "name": "orphan-result-drop",
+              "handles": [
+                "SL101"
+              ],
+              "preconditions": [
+                "salvage_policy",
+                "acknowledge_side_effects",
+                "sl101_orphan_present"
+              ],
+              "lossy": true,
+              "salvage_only": true,
+              "min_policy": "salvage",
+              "version": "1.0.0",
+              "excludes_execution_dependence": false,
+              "apply": {
+                "present": true
+              },
+              "affected_region": {
+                "present": true
+              }
+            },
+            "torn-record-excision": {
+              "mode": "recipe",
+              "name": "torn-record-excision",
+              "handles": [
+                "SL001"
+              ],
+              "preconditions": [
+                "salvage_policy",
+                "acknowledge_side_effects",
+                "sl001_excisable"
+              ],
+              "lossy": true,
+              "salvage_only": true,
+              "min_policy": "salvage",
+              "version": "1.0.0",
+              "excludes_execution_dependence": false,
+              "apply": {
+                "present": true
+              },
+              "affected_region": {
+                "present": false
+              }
+            }
+          },
+          "recipes_for": {
+            "SL001": [
+              "torn-record-excision"
+            ],
+            "SL005": [
+              "unresolvable-branch-amputate"
+            ],
+            "SL006": [
+              "unresolvable-branch-amputate"
+            ],
+            "SL101": [
+              "orphan-result-drop"
+            ],
+            "SL102": [
+              "side-effect-unknown-truncate"
+            ],
+            "SL108": [
+              "torn-compaction-project"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "sl001_excisable_precondition",
+      "construct": {
+        "type": "sl001_excisable_precondition"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "kind": "bool_checks",
+          "values": [
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        }
+      }
+    },
+    {
+      "id": "apply_torn_record_excision_validation",
+      "construct": {
+        "type": "apply_torn_record_excision_validation"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "success": {
+            "loss": {
+              "torn-record": 1
+            },
+            "ids": [
+              "msg-0",
+              "msg-2"
+            ],
+            "plain_eq": true
+          },
+          "refusals": [
+            "torn-record-excision: cannot apply to an empty session",
+            "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line=None record_ordinal=2 byte_offset=1 byte_end=5",
+            "torn-record-excision: step params do not anchor a real torn record (line=0, record_ordinal=2, byte_offset=1, byte_end=5)",
+            "torn-record-excision: step params do not anchor a real torn record (line=3, record_ordinal=0, byte_offset=1, byte_end=5)",
+            "torn-record-excision: step params do not anchor a real torn record (line=3, record_ordinal=2, byte_offset=5, byte_end=5)",
+            "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line='3' record_ordinal=2 byte_offset=1 byte_end=5",
+            "torn-record-excision: a parsed event parents to the torn record's id; excision would orphan a known dependent"
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_direct_apply_validation",
+      "construct": {
+        "type": "amputate_direct_apply_validation"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "messages": [
+            "Cannot amputate an empty session",
+            "Invalid target_index 99 for amputation",
+            "Branch contains a checkpoint; cannot amputate",
+            "Amputating entire session is forbidden"
+          ]
+        }
+      }
+    },
+    {
+      "id": "torn_compaction_direct_apply_validation",
+      "construct": {
+        "type": "torn_compaction_direct_apply_validation"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "messages": [
+            "Cannot project across compaction in empty session",
+            "Event at index 0 is not a compaction_boundary",
+            "Compaction boundary at index 1 has no split pairs or orphaned halves"
+          ]
+        }
+      }
+    },
+    {
+      "id": "truncate_direct_apply_validation",
+      "construct": {
+        "type": "truncate_direct_apply_validation"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "messages": [
+            "Cannot truncate an empty session",
+            "Cannot truncate at index 0: would empty or violate session root",
+            "Cut index 5 is out of bounds for session of length 1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "orphan_result_drop_resolves_by_params",
+      "construct": {
+        "type": "orphan_result_drop_resolves_by_params"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "ids_by_corr": [
+            "m0",
+            "tc1",
+            "tr1"
+          ],
+          "ids_by_id": [
+            "m0",
+            "tc1",
+            "tr1"
+          ],
+          "ambiguous": "orphan-result-drop: no unambiguous orphan result target could be resolved"
+        }
+      }
+    },
+    {
+      "id": "orphan_result_drop_direct_apply_refusals",
+      "construct": {
+        "type": "orphan_result_drop_direct_apply_refusals"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "messages": [
+            "orphan-result-drop: cannot apply to an empty session",
+            "orphan-result-drop: invalid target index 99",
+            "orphan-result-drop: event at index 0 is not a tool_result",
+            "orphan-result-drop: result at index 2 is not an orphan (a matching tool call exists)",
+            "orphan-result-drop: result has dependent child events; dropping it would create missing parents"
+          ]
+        }
+      }
+    },
+    {
+      "id": "affected_region_orphan_gap",
+      "construct": {
+        "type": "affected_region_orphan_gap",
+        "events": [
+          {
+            "t": "session",
+            "id": "m0",
+            "parent_id": null,
+            "seq": 0,
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "user",
+            "kind": "message"
+          },
+          {
+            "t": "session",
+            "id": "tc1",
+            "parent_id": "m0",
+            "seq": 1,
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "assistant",
+            "kind": "tool_call",
+            "correlation_id": "corr-ok"
+          },
+          {
+            "t": "session",
+            "id": "tr1",
+            "parent_id": "tc1",
+            "seq": 2,
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "tool",
+            "kind": "tool_result",
+            "correlation_id": "corr-ok"
+          },
+          {
+            "t": "session",
+            "id": "tr_orph",
+            "parent_id": "m0",
+            "seq": 3,
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "tool",
+            "kind": "tool_result",
+            "correlation_id": "corr-orphan"
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 3
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-recipes-salvage-affected-region-orphan",
+        "region": {
+          "unproven": false,
+          "indices": [
+            3
+          ],
+          "ids": [
+            "tr_orph"
+          ],
+          "ranges": []
+        }
+      }
+    }
+  ]
+}

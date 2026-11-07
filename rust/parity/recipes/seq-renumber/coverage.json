@@ -1,0 +1,107 @@
+{
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "seq-renumber",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 1,
+  "not_applicable_count": 13,
+  "rows": [
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_nonadjacent_dup_plans_drop_plus_renumber",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan; one assertion inside a multi-assert sweep is not the whole test"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_adjacent_dup_still_collapses",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan; one assertion inside a multi-assert sweep is not the whole test"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_conflicting_dup_blocked_manual",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_drop_removes_only_later_identicals",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_renumbered_seq_contiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_no_renumber_without_drops",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_no_renumber_on_vendor_input",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan; vendor input stays skipped and is not renumbered"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_repair_output_idempotent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan; one assertion inside a multi-assert sweep is not the whole test"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_seq_renumber_step_idempotent",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "seq_renumber_step_idempotent",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_conflicting_variant",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_seq_renumber"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_content_drift",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_seq_renumber"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_plan_determinism_with_synthetic_step",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_seq_renumber_absent_when_no_steps",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_planner_input_format_default_off",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-seq-renumber-planner blocks a full plan"
+    }
+  ]
+}

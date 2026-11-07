@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic seq-renumber parity. Apply expected values come from the pinned blob. The planner seam stays uncovered.",
+  "generator": "rust/parity/recipes/seq-renumber/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-seq-renumber-affected-region: Python affected_region_seq_renumber returns an empty sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
+    "GAP-seq-renumber-planner: the planner seam blocks a full plan. Vendor input stays skipped and is not renumbered. fixtures/repair/t04_seq_renumber/source.jsonl is not applied."
+  ]
+}

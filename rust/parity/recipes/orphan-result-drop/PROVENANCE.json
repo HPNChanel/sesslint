@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic orphan-result-drop parity. Refusal messages come from the pinned blob. The planner seam and the affected-region seam stay uncovered.",
+  "generator": "rust/parity/recipes/orphan-result-drop/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-orphan-result-drop-affected-region: Python affected_region_orphan_result_drop returns a sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
+    "GAP-orphan-result-drop-planner: plan is not executed. A missing canonical_json_bytes call is not a successful plan. No fingerprint is stored. Zero steps are not a diff."
+  ]
+}

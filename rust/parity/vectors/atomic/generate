@@ -1,0 +1,589 @@
+#!/usr/bin/env python3
+"""Generate sesslint.atomic parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ATOMIC_SHA256 = "94064b211d3f8298e34a5e71fb6b6ef9ae766147e1ef7d43827c63631b2f6609"
+
+SYNTHETIC = b"synthetic-bytes\n"
+SYNTHETIC_SHA256 = "6d2be2f98608ff3a889e146ea56ea3a3087fcaa42ca1a35e3c30c519e654868d"
+TEXT_UTF8 = "synthetic-\xe9\n"
+TEXT_UTF8_SHA256 = "9eb40278b60348b930cd6120ab0f409b5d587e106312d42cc33f3d0977077e4a"
+TEXT_LATIN1_SHA256 = "42fd1e2b82cc9d1997e29b0abe4e9510aa52ab5d0ab2d33d30282e6cb1077509"
+
+KNOWN_PARITY_GAPS = [
+    "lone_surrogate_encoding: Rust str cannot hold a lone surrogate; no vector.",
+    (
+        "exclusive_race_after_existence_check: dest created after the check may be "
+        "replaced by Windows rename; no vector."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_atomic_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "atomic.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != ATOMIC_SHA256:
+        raise SystemExit(
+            f"atomic.py sha256 mismatch: expected {ATOMIC_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.atomic import atomic_write_bytes, atomic_write_text  # noqa: WPS433
+    from sesslint.errors import AtomicWriteError  # noqa: WPS433
+
+    return atomic_write_bytes, atomic_write_text, AtomicWriteError
+
+
+def b64(data: bytes) -> str:
+    return base64.standard_b64encode(data).decode("ascii")
+
+
+def temps(root: Path, prefix: str = ".sesslint_tmp_") -> list[Path]:
+    return list(root.glob(prefix + "*"))
+
+
+Runner = Callable[[], dict[str, Any]]
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    awb: Any = None
+    awt: Any = None
+    AtomicWriteError: Any = None
+
+    def load() -> None:
+        nonlocal awb, awt, AtomicWriteError
+        if awb is None:
+            awb, awt, AtomicWriteError = load_atomic_module()
+
+    def with_scratch(fn: Callable[[Path], dict[str, Any]]) -> Runner:
+        def run() -> dict[str, Any]:
+            load()
+            with tempfile.TemporaryDirectory(prefix="sesslint-atomic-par-") as tmp:
+                return fn(Path(tmp))
+
+        return run
+
+    def apply_setup(name: str, root: Path) -> None:
+        if name == "empty":
+            return
+        if name == "seed_keep_me":
+            (root / "out.bin").write_bytes(b"keep-me")
+            return
+        if name == "seed_hook_dest":
+            (root / "out.bin").write_bytes(b"pre-existing untouched")
+            return
+        if name == "parent_is_file":
+            (root / "file.txt").write_bytes(b"not a directory")
+            return
+        if name == "hardlink_alias":
+            source = root / "source.bin"
+            source.write_bytes(b"initial source")
+            os.link(source, root / "alias.bin")
+            return
+        if name == "case_alias":
+            (root / "Case.TXT").write_bytes(b"abc")
+            return
+        if name == "other_refuse":
+            (root / "other.bin").write_bytes(b"other-content-bytes")
+            return
+        if name == "seed_overwrite":
+            (root / "out.bin").write_bytes(b"old version")
+            return
+        raise SystemExit(f"unknown setup: {name}")
+
+    def error_block(kind: str, **extra: Any) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "result": "error",
+            "raises": "AtomicWriteError",
+            "error_kind": kind,
+        }
+        out.update(extra)
+        return out
+
+    def catch_atomic(
+        root: Path,
+        action: Callable[[], None],
+        *,
+        error_kind: str,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        try:
+            action()
+        except AtomicWriteError:
+            payload = error_block(error_kind, **extra)
+            payload["temp_count"] = len(temps(root))
+            return payload
+        raise SystemExit(f"expected AtomicWriteError for {error_kind}")
+
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], runner: Runner) -> None:
+        specs.append({"id": vector_id, "construct": construct, "_runner": runner})
+
+    add(
+        "happy_write_synthetic_digest",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "empty",
+            "dest": "out.bin",
+            "data_b64": b64(SYNTHETIC),
+            "sync_dir": True,
+        },
+        with_scratch(
+            lambda root: {
+                "result": "ok",
+                "sha256": awb(root / "out.bin", SYNTHETIC, sync_dir=True),
+                "dest_b64": b64((root / "out.bin").read_bytes()),
+                "temp_count": len(temps(root)),
+            }
+        ),
+    )
+
+    add(
+        "missing_parent_no_temp",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "empty",
+            "dest": "missing_dir/out.bin",
+            "data_b64": b64(SYNTHETIC),
+        },
+        with_scratch(
+            lambda root: catch_atomic(
+                root,
+                lambda: awb(root / "missing_dir" / "out.bin", SYNTHETIC),
+                error_kind="missing_parent",
+            )
+        ),
+    )
+
+    add(
+        "parent_path_is_file_refused",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "parent_is_file",
+            "dest": "file.txt/out.bin",
+            "data_b64": b64(SYNTHETIC),
+        },
+        with_scratch(
+            lambda root: (
+                apply_setup("parent_is_file", root),
+                catch_atomic(
+                    root,
+                    lambda: awb(root / "file.txt" / "out.bin", SYNTHETIC),
+                    error_kind="parent_not_dir",
+                    parent_rel="file.txt",
+                ),
+            )[1]
+        ),
+    )
+
+    add(
+        "refuse_dotdot_before_parent_error",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "empty",
+            "dest": "missing/../out.bin",
+            "data_b64": b64(b"new"),
+            "refuse_paths": ["out.bin"],
+        },
+        with_scratch(
+            lambda root: catch_atomic(
+                root,
+                lambda: awb(
+                    root / "missing" / ".." / "out.bin",
+                    b"new",
+                    refuse_paths=[root / "out.bin"],
+                ),
+                error_kind="refuse_protected",
+                dest_rel="missing/../out.bin",
+                prohibited_rel="out.bin",
+            )
+        ),
+    )
+
+    add(
+        "refuse_hardlink_same_file",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "hardlink_alias",
+            "dest": "alias.bin",
+            "data_b64": b64(b"corrupted rewrite"),
+            "refuse_paths": ["source.bin"],
+        },
+        with_scratch(
+            lambda root: (
+                apply_setup("hardlink_alias", root),
+                catch_atomic(
+                    root,
+                    lambda: awb(
+                        root / "alias.bin",
+                        b"corrupted rewrite",
+                        refuse_paths=[root / "source.bin"],
+                    ),
+                    error_kind="refuse_protected",
+                    dest_rel="alias.bin",
+                    prohibited_rel="source.bin",
+                    source_unchanged_b64=b64((root / "source.bin").read_bytes()),
+                ),
+            )[1]
+        ),
+    )
+
+    add(
+        "refuse_case_alias_same_file",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "case_alias",
+            "dest": "case.txt",
+            "data_b64": b64(b"zzz"),
+            "refuse_paths": ["Case.TXT"],
+            "requires_platform": "windows",
+        },
+        with_scratch(
+            lambda root: (
+                apply_setup("case_alias", root),
+                catch_atomic(
+                    root,
+                    lambda: awb(
+                        root / "case.txt",
+                        b"zzz",
+                        refuse_paths=[root / "Case.TXT"],
+                    ),
+                    error_kind="refuse_protected",
+                    dest_rel="case.txt",
+                    prohibited_rel="Case.TXT",
+                    source_unchanged_b64=b64((root / "Case.TXT").read_bytes()),
+                ),
+            )[1]
+        ),
+    )
+
+    add(
+        "refuse_other_file_allows_write",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "other_refuse",
+            "dest": "out.bin",
+            "data_b64": b64(SYNTHETIC),
+            "refuse_paths": ["other.bin"],
+        },
+        with_scratch(
+            lambda root: (
+                apply_setup("other_refuse", root),
+                {
+                    "result": "ok",
+                    "sha256": awb(
+                        root / "out.bin",
+                        SYNTHETIC,
+                        refuse_paths=[root / "other.bin"],
+                    ),
+                    "other_unchanged_b64": b64((root / "other.bin").read_bytes()),
+                    "dest_b64": b64((root / "out.bin").read_bytes()),
+                    "temp_count": len(temps(root)),
+                },
+            )[1]
+        ),
+    )
+
+    add(
+        "overwrite_false_keeps_existing_bytes",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "seed_keep_me",
+            "dest": "out.bin",
+            "data_b64": b64(b"new"),
+            "overwrite": False,
+        },
+        with_scratch(
+            lambda root: (
+                apply_setup("seed_keep_me", root),
+                catch_atomic(
+                    root,
+                    lambda: awb(root / "out.bin", b"new", overwrite=False),
+                    error_kind="write_failed_exclusive",
+                    dest_unchanged_b64=b64((root / "out.bin").read_bytes()),
+                ),
+            )[1]
+        ),
+    )
+
+    add(
+        "overwrite_true_replaces_bytes",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "seed_overwrite",
+            "dest": "out.bin",
+            "data_b64": b64(SYNTHETIC),
+        },
+        with_scratch(
+            lambda root: (
+                apply_setup("seed_overwrite", root),
+                {
+                    "result": "ok",
+                    "sha256": awb(root / "out.bin", SYNTHETIC),
+                    "dest_b64": b64((root / "out.bin").read_bytes()),
+                    "temp_count": len(temps(root)),
+                },
+            )[1]
+        ),
+    )
+
+    def run_hooks_ok(root: Path) -> dict[str, Any]:
+        events: list[str] = []
+
+        def on_pre_write() -> None:
+            events.append("pre_write")
+
+        def on_pre_rename(temp: Path) -> None:
+            events.append("pre_rename")
+            assert temp.read_bytes() == b"payload"
+
+        awb(
+            root / "out.bin",
+            b"payload",
+            pre_write_hook=on_pre_write,
+            pre_rename_hook=on_pre_rename,
+            sync_dir=True,
+        )
+        return {
+            "result": "ok",
+            "hook_events": events,
+            "dest_b64": b64((root / "out.bin").read_bytes()),
+            "temp_count": len(temps(root)),
+        }
+
+    add(
+        "hooks_pre_write_then_pre_rename",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "empty",
+            "dest": "out.bin",
+            "data_b64": b64(b"payload"),
+            "hook": "lifecycle",
+            "sync_dir": True,
+        },
+        with_scratch(run_hooks_ok),
+    )
+
+    def run_hook_fail(root: Path) -> dict[str, Any]:
+        apply_setup("seed_hook_dest", root)
+
+        def failing(_temp: Path) -> None:
+            raise RuntimeError("Fault injection before rename")
+
+        return catch_atomic(
+            root,
+            lambda: awb(root / "out.bin", b"bad new data", pre_rename_hook=failing),
+            error_kind="write_failed_hook",
+            dest_unchanged_b64=b64((root / "out.bin").read_bytes()),
+        )
+
+    add(
+        "hook_pre_rename_fail_cleans_temp",
+        {
+            "type": "atomic_write_bytes",
+            "setup": "seed_hook_dest",
+            "dest": "out.bin",
+            "data_b64": b64(b"bad new data"),
+            "hook": "pre_rename_fail",
+        },
+        with_scratch(run_hook_fail),
+    )
+
+    add(
+        "text_utf8_default_digest",
+        {
+            "type": "atomic_write_text",
+            "setup": "empty",
+            "dest": "utf8.bin",
+            "text": TEXT_UTF8,
+        },
+        with_scratch(
+            lambda root: {
+                "result": "ok",
+                "sha256": awt(root / "utf8.bin", TEXT_UTF8),
+                "temp_count": len(temps(root)),
+            }
+        ),
+    )
+
+    add(
+        "text_latin1_digest",
+        {
+            "type": "atomic_write_text",
+            "setup": "empty",
+            "dest": "latin.bin",
+            "text": TEXT_UTF8,
+            "encoding": "latin-1",
+        },
+        with_scratch(
+            lambda root: {
+                "result": "ok",
+                "sha256": awt(root / "latin.bin", TEXT_UTF8, encoding="latin-1"),
+                "dest_b64": b64((root / "latin.bin").read_bytes()),
+                "temp_count": len(temps(root)),
+            }
+        ),
+    )
+
+    add(
+        "text_ascii_encode_error",
+        {
+            "type": "atomic_write_text",
+            "setup": "empty",
+            "dest": "out.bin",
+            "text": "\xe9",
+            "encoding": "ascii",
+        },
+        with_scratch(
+            lambda root: catch_atomic(
+                root,
+                lambda: awt(root / "out.bin", "\xe9", encoding="ascii"),
+                error_kind="encode_ascii",
+                dest_exists=False,
+            )
+        ),
+    )
+
+    add(
+        "text_unknown_encoding_no_file",
+        {
+            "type": "atomic_write_text",
+            "setup": "empty",
+            "dest": "out.bin",
+            "text": "synthetic",
+            "encoding": "no-such",
+        },
+        with_scratch(
+            lambda root: catch_atomic(
+                root,
+                lambda: awt(root / "out.bin", "synthetic", encoding="no-such"),
+                error_kind="encode_unknown",
+                dest_exists=False,
+            )
+        ),
+    )
+
+    return specs
+
+
+def enrich_expected(expected: dict[str, Any]) -> None:
+    kind = expected.get("error_kind")
+    if kind == "encode_ascii":
+        expected["exact_message"] = (
+            "Failed to encode text with encoding 'ascii': "
+            "'ascii' codec can't encode character '\\xe9' in position 0: "
+            "ordinal not in range(128)"
+        )
+    elif kind == "encode_unknown":
+        expected["exact_message"] = (
+            "Failed to encode text with encoding 'no-such': unknown encoding: no-such"
+        )
+
+
+def assert_digest_constants(expected: dict[str, Any], vector_id: str) -> None:
+    if expected.get("result") != "ok":
+        return
+    digest = expected.get("sha256")
+    if vector_id == "happy_write_synthetic_digest":
+        if digest != SYNTHETIC_SHA256:
+            raise SystemExit(f"{vector_id}: digest mismatch")
+    elif vector_id == "refuse_other_file_allows_write":
+        if digest != SYNTHETIC_SHA256:
+            raise SystemExit(f"{vector_id}: digest mismatch")
+    elif vector_id == "overwrite_true_replaces_bytes":
+        if digest != SYNTHETIC_SHA256:
+            raise SystemExit(f"{vector_id}: digest mismatch")
+    elif vector_id == "text_utf8_default_digest":
+        if digest != TEXT_UTF8_SHA256:
+            raise SystemExit(f"{vector_id}: digest mismatch")
+    elif vector_id == "text_latin1_digest":
+        if digest != TEXT_LATIN1_SHA256:
+            raise SystemExit(f"{vector_id}: digest mismatch")
+
+
+def main() -> int:
+    load_atomic_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs()
+    vectors: list[dict[str, Any]] = []
+    for row in specs:
+        expected = row["_runner"]()
+        enrich_expected(expected)
+        assert_digest_constants(expected, row["id"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.atomic",
+        "python_commit": PYTHON_COMMIT,
+        "atomic_py_sha256": ATOMIC_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.atomic",
+        "python_commit": PYTHON_COMMIT,
+        "atomic_py_sha256": ATOMIC_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/atomic/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.atomic atomic_write_bytes/text parity "
+            "(fixed payloads, temp-dir scenarios only)."
+        ),
+        "generator": "rust/parity/vectors/atomic/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

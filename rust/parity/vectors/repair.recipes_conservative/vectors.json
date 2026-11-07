@@ -1,0 +1,612 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
+  "recipes_conservative_rs_sha256": "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8",
+  "known_parity_gaps": [
+    "GAP-recipes-conservative-affected-region: Python affected_region_* returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts the seam only."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "names": [
+            "CONSERVATIVE_RECIPES",
+            "PreconditionFailed",
+            "RECIPES",
+            "RECIPE_COMPACTION_PROJECTION_REUNION",
+            "RECIPE_DUPLICATE_PROJECTION_REMOVAL",
+            "RECIPE_IDENTICAL_DUPLICATE_DROP",
+            "RECIPE_SEQ_RENUMBER",
+            "RECIPE_IDENTICAL_DUPLICATE_COLLAPSE",
+            "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
+            "RECIPE_TERMINAL_SUFFIX_DISCARD",
+            "affected_region_compaction_projection_reunion",
+            "affected_region_duplicate_projection_removal",
+            "affected_region_identical_duplicate_drop",
+            "affected_region_identical_duplicate_collapse",
+            "affected_region_proven_unique_parent_restore",
+            "affected_region_torn_terminal_record_discard",
+            "apply_compaction_projection_reunion",
+            "apply_duplicate_projection_removal",
+            "apply_identical_duplicate_collapse",
+            "apply_identical_duplicate_drop",
+            "apply_seq_renumber",
+            "apply_proven_unique_parent_restore",
+            "apply_terminal_suffix_discard",
+            "compaction_projection_reunion",
+            "duplicate_projection_removal",
+            "identical_duplicate_collapse",
+            "proven_unique_parent_restore",
+            "register_all",
+            "terminal_suffix_discard"
+          ]
+        }
+      }
+    },
+    {
+      "id": "registration_handles_matrix",
+      "construct": {
+        "type": "registration_matrix"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "recipe_count": 7,
+          "names": [
+            "terminal-suffix-discard",
+            "identical-duplicate-collapse",
+            "proven-unique-parent-restore",
+            "compaction-projection-reunion",
+            "duplicate-projection-removal",
+            "identical-duplicate-drop",
+            "seq-renumber"
+          ],
+          "recipes": {
+            "terminal-suffix-discard": {
+              "handles": [
+                "SL005"
+              ],
+              "preconditions": [
+                "no_prior_safe_tool_after_cut"
+              ],
+              "lossy": true,
+              "salvage_only": true
+            },
+            "identical-duplicate-collapse": {
+              "handles": [
+                "SL003"
+              ],
+              "preconditions": [
+                "no_sl203",
+                "adjacent_identical_duplicate"
+              ],
+              "lossy": false,
+              "salvage_only": false
+            },
+            "proven-unique-parent-restore": {
+              "handles": [
+                "SL004"
+              ],
+              "preconditions": [
+                "no_sl203",
+                "unique_parent_candidate"
+              ],
+              "lossy": false,
+              "salvage_only": false
+            },
+            "compaction-projection-reunion": {
+              "handles": [
+                "SL108"
+              ],
+              "preconditions": [
+                "no_sl203",
+                "single_boundary_split"
+              ],
+              "lossy": false,
+              "salvage_only": false
+            },
+            "duplicate-projection-removal": {
+              "handles": [
+                "SL104"
+              ],
+              "preconditions": [
+                "no_sl203",
+                "duplicate_projection_identical"
+              ],
+              "lossy": false,
+              "salvage_only": false
+            },
+            "identical-duplicate-drop": {
+              "handles": [
+                "SL003"
+              ],
+              "preconditions": [
+                "no_sl203",
+                "sl003_identical_duplicate"
+              ],
+              "lossy": false,
+              "salvage_only": false
+            },
+            "seq-renumber": {
+              "handles": [],
+              "preconditions": [],
+              "lossy": false,
+              "salvage_only": false
+            }
+          },
+          "recipes_for": {
+            "SL003": [
+              "identical-duplicate-collapse",
+              "identical-duplicate-drop"
+            ],
+            "SL004": [
+              "proven-unique-parent-restore"
+            ],
+            "SL005": [
+              "terminal-suffix-discard"
+            ],
+            "SL104": [
+              "duplicate-projection-removal"
+            ],
+            "SL108": [
+              "compaction-projection-reunion"
+            ],
+            "SL203": [],
+            "SL101": []
+          }
+        }
+      }
+    },
+    {
+      "id": "register_all_idempotent",
+      "construct": {
+        "type": "register_all"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "recipe_count": 7
+        }
+      }
+    },
+    {
+      "id": "fixture_terminal_suffix_discard",
+      "construct": {
+        "type": "fixture_apply",
+        "fixture": "fixtures/repair/recipe_suffix_discard.json",
+        "fn": "apply_terminal_suffix_discard",
+        "loss": true
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "ids": [
+            "msg-0",
+            "call-1",
+            "res-1"
+          ],
+          "len": 3,
+          "parents": {
+            "msg-0": null,
+            "call-1": "msg-0",
+            "res-1": "call-1"
+          },
+          "loss_count": 1
+        }
+      }
+    },
+    {
+      "id": "suffix_discard_refusal_empty_session",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_terminal_suffix_discard",
+        "events": [
+          {
+            "id": "e0",
+            "kind": "message",
+            "actor": "user",
+            "seq": 0,
+            "parent_id": null
+          },
+          {
+            "id": "e1",
+            "kind": "message",
+            "actor": "assistant",
+            "seq": 1,
+            "parent_id": "e0"
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "terminal-suffix-discard",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "terminal-suffix-discard: cut at index 0 would empty session (refused)"
+        }
+      }
+    },
+    {
+      "id": "suffix_discard_refusal_out_of_bounds",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_terminal_suffix_discard",
+        "events": [
+          {
+            "id": "e0",
+            "kind": "message",
+            "actor": "user",
+            "seq": 0,
+            "parent_id": null
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "terminal-suffix-discard",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 5
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "terminal-suffix-discard: cut at index 5 >= session length 1"
+        }
+      }
+    },
+    {
+      "id": "suffix_discard_refusal_checkpoint_in_suffix",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_terminal_suffix_discard",
+        "events": [
+          {
+            "id": "e0",
+            "kind": "message",
+            "actor": "user",
+            "seq": 0,
+            "parent_id": null
+          },
+          {
+            "id": "e1",
+            "kind": "message",
+            "actor": "assistant",
+            "seq": 1,
+            "parent_id": "e0"
+          },
+          {
+            "id": "chk",
+            "kind": "checkpoint",
+            "actor": "system",
+            "seq": 2,
+            "parent_id": "e1",
+            "payload": {}
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "terminal-suffix-discard",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "terminal-suffix-discard: checkpoint at index 2 cannot be discarded"
+        }
+      }
+    },
+    {
+      "id": "reunion_refusal_zero_boundaries",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_compaction_projection_reunion",
+        "events": [
+          {
+            "id": "c1",
+            "kind": "tool_call",
+            "correlation_id": "c1",
+            "seq": 0,
+            "parent_id": null
+          },
+          {
+            "id": "r1",
+            "kind": "tool_result",
+            "correlation_id": "c1",
+            "seq": 1,
+            "parent_id": "c1"
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "compaction-projection-reunion",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "c1"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "compaction-projection-reunion: expected exactly 1 boundary strictly between pair, found 0"
+        }
+      }
+    },
+    {
+      "id": "reunion_refusal_multiple_boundaries",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_compaction_projection_reunion",
+        "events": [
+          {
+            "id": "c1",
+            "kind": "tool_call",
+            "correlation_id": "c1",
+            "seq": 0,
+            "parent_id": null
+          },
+          {
+            "id": "b1",
+            "kind": "compaction_boundary",
+            "seq": 1,
+            "parent_id": "c1"
+          },
+          {
+            "id": "b2",
+            "kind": "compaction_boundary",
+            "seq": 2,
+            "parent_id": "b1"
+          },
+          {
+            "id": "r1",
+            "kind": "tool_result",
+            "correlation_id": "c1",
+            "seq": 3,
+            "parent_id": "b2"
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "compaction-projection-reunion",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "c1"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "compaction-projection-reunion: expected exactly 1 boundary strictly between pair, found 2"
+        }
+      }
+    },
+    {
+      "id": "reunion_refusal_boundary_at_endpoint",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_compaction_projection_reunion",
+        "events": [
+          {
+            "id": "c1",
+            "kind": "tool_call",
+            "correlation_id": "c1",
+            "seq": 0,
+            "parent_id": null
+          },
+          {
+            "id": "b1",
+            "kind": "compaction_boundary",
+            "seq": 1,
+            "parent_id": "c1"
+          },
+          {
+            "id": "r1",
+            "kind": "tool_result",
+            "correlation_id": "c1",
+            "seq": 2,
+            "parent_id": "b1"
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "compaction-projection-reunion",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "c1"
+                }
+              ],
+              [
+                "boundary_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "compaction-projection-reunion: boundary sits at pair endpoint (not strictly between)"
+        }
+      }
+    },
+    {
+      "id": "duplicate_collapse_refusal_checkpoint_or_boundary",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_identical_duplicate_collapse",
+        "events": [
+          {
+            "id": "chk1",
+            "kind": "checkpoint",
+            "seq": 0,
+            "payload": {
+              "hash": "h1"
+            }
+          },
+          {
+            "id": "chk2",
+            "kind": "checkpoint",
+            "seq": 1,
+            "payload": {
+              "hash": "h1"
+            }
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "identical-duplicate-collapse",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-collapse: cannot collapse boundary kind 'checkpoint'"
+        }
+      }
+    },
+    {
+      "id": "duplicate_collapse_refusal_mixed_kinds",
+      "construct": {
+        "type": "apply",
+        "fn": "apply_identical_duplicate_collapse",
+        "events": [
+          {
+            "id": "e0",
+            "kind": "tool_call",
+            "seq": 0,
+            "payload": {
+              "data": "shared"
+            }
+          },
+          {
+            "id": "e1",
+            "kind": "tool_result",
+            "seq": 1,
+            "payload": {
+              "data": "shared"
+            }
+          }
+        ],
+        "step": {
+          "seq": 0,
+          "recipe": "identical-duplicate-collapse",
+          "target_finding_fp": "f0",
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "mode": "precondition",
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-collapse: kind mismatch between 'tool_call' and 'tool_result'"
+        }
+      }
+    }
+  ]
+}

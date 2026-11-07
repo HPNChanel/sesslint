@@ -1,0 +1,273 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.assessment",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "assessment_py_sha256": "fa64f1ea4b7b7bd1340cdd4ea5ed0c76580086f58a6ce44647a9762d20b8c064",
+  "assessment_rs_sha256": "d4da13ae39098db38b0be046c381339df095c127b5aa92f09ef836e381c2fa5f",
+  "known_parity_gaps": [
+    "GAP-assessment-check-impl: assess_source on a regular file runs sesslint.api._check_impl in Python and returns SourceAssessment. Rust stops at CheckImpl and does not build Report or events.",
+    "GAP-assessment-missing-path-message: a missing path raises OSError text from CPython; Rust returns std::io::Error display.",
+    "GAP-assessment-identity-dev-ino: st_dev and st_ino are 0 on non-Unix Rust ports without unstable metadata APIs.",
+    "GAP-assessment-io-default: DEFAULT_MAX_FILE_BYTES is duplicated in Rust from the pin io.py blob; this crate does not depend on an io crate."
+  ],
+  "vectors": [
+    {
+      "id": "default_max_file_bytes",
+      "construct": {
+        "type": "module_constant"
+      },
+      "expected": {
+        "default_max_file_bytes": 104857600
+      }
+    },
+    {
+      "id": "max_file_bytes_bool_true",
+      "construct": {
+        "type": "assess_source_raises",
+        "path_kind": "missing",
+        "max_file_bytes": {
+          "t": "bool",
+          "v": true
+        }
+      },
+      "expected": {
+        "raises": "ValueError",
+        "message": "max_file_bytes must be a positive integer"
+      }
+    },
+    {
+      "id": "max_file_bytes_bool_false",
+      "construct": {
+        "type": "assess_source_raises",
+        "path_kind": "missing",
+        "max_file_bytes": {
+          "t": "bool",
+          "v": false
+        }
+      },
+      "expected": {
+        "raises": "ValueError",
+        "message": "max_file_bytes must be a positive integer"
+      }
+    },
+    {
+      "id": "max_file_bytes_zero",
+      "construct": {
+        "type": "assess_source_raises",
+        "path_kind": "missing",
+        "max_file_bytes": {
+          "t": "int",
+          "v": 0
+        }
+      },
+      "expected": {
+        "raises": "ValueError",
+        "message": "max_file_bytes must be a positive integer"
+      }
+    },
+    {
+      "id": "max_file_bytes_negative",
+      "construct": {
+        "type": "assess_source_raises",
+        "path_kind": "missing",
+        "max_file_bytes": {
+          "t": "int",
+          "v": -1
+        }
+      },
+      "expected": {
+        "raises": "ValueError",
+        "message": "max_file_bytes must be a positive integer"
+      }
+    },
+    {
+      "id": "assess_directory",
+      "construct": {
+        "type": "assess_source_raises",
+        "path_kind": "directory"
+      },
+      "expected": {
+        "raises": "OSError",
+        "message": "Triage requires a regular file"
+      }
+    },
+    {
+      "id": "assess_missing_regular_file",
+      "construct": {
+        "type": "assess_source_raises",
+        "path_kind": "missing"
+      },
+      "expected": {
+        "pin": {
+          "raises": "FileNotFoundError",
+          "message": "[WinError 2] The system cannot find the file specified: 'fixtures/synthetic-missing.bin'"
+        },
+        "rust_assertion": {
+          "mode": "io_error",
+          "kind": "NotFound"
+        }
+      }
+    },
+    {
+      "id": "assess_regular_short",
+      "construct": {
+        "type": "assess_source",
+        "fixture": "short.bin",
+        "max_file_bytes": 4
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "profile": "neutral",
+          "format": "canonical",
+          "readable_snapshot": true,
+          "source_fingerprint": "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589",
+          "events_len": 0
+        },
+        "rust_assertion": {
+          "mode": "check_impl_unavailable",
+          "message": "sesslint.api._check_impl is not available"
+        }
+      }
+    },
+    {
+      "id": "assess_regular_with_format",
+      "construct": {
+        "type": "assess_source",
+        "fixture": "short.bin",
+        "format": "canonical",
+        "max_file_bytes": 8
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "profile": "neutral",
+          "format": "canonical",
+          "readable_snapshot": true,
+          "source_fingerprint": "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589",
+          "events_len": 0
+        },
+        "rust_assertion": {
+          "mode": "check_impl_unavailable",
+          "message": "sesslint.api._check_impl is not available"
+        }
+      }
+    },
+    {
+      "id": "assess_oversized_limit",
+      "construct": {
+        "type": "assess_source",
+        "fixture": "wide.bin",
+        "max_file_bytes": 1
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "profile": "neutral",
+          "format": "canonical",
+          "readable_snapshot": false,
+          "source_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+          "events_len": 0
+        },
+        "rust_assertion": {
+          "mode": "check_impl_unavailable",
+          "message": "sesslint.api._check_impl is not available"
+        }
+      }
+    },
+    {
+      "id": "assess_empty_regular_file",
+      "construct": {
+        "type": "assess_source",
+        "fixture": "empty.bin",
+        "max_file_bytes": 1
+      },
+      "expected": {
+        "pin": {
+          "outcome": "ok",
+          "profile": "neutral",
+          "format": "canonical",
+          "readable_snapshot": true,
+          "source_fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events_len": 0
+        },
+        "rust_assertion": {
+          "mode": "check_impl_unavailable",
+          "message": "sesslint.api._check_impl is not available"
+        }
+      }
+    },
+    {
+      "id": "unchanged_not_readable",
+      "construct": {
+        "type": "unchanged",
+        "fixture": "synthetic-missing.bin",
+        "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "readable_snapshot": false
+      },
+      "expected": {
+        "unchanged": false
+      }
+    },
+    {
+      "id": "unchanged_empty_file",
+      "construct": {
+        "type": "unchanged",
+        "fixture": "empty.bin",
+        "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "readable_snapshot": true
+      },
+      "expected": {
+        "unchanged": true
+      }
+    },
+    {
+      "id": "unchanged_abc_file",
+      "construct": {
+        "type": "unchanged",
+        "fixture": "abc.bin",
+        "fingerprint": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "readable_snapshot": true
+      },
+      "expected": {
+        "unchanged": true
+      }
+    },
+    {
+      "id": "unchanged_wrong_fingerprint",
+      "construct": {
+        "type": "unchanged",
+        "fixture": "empty.bin",
+        "fingerprint": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "readable_snapshot": true
+      },
+      "expected": {
+        "unchanged": false
+      }
+    },
+    {
+      "id": "unchanged_chunk_65536",
+      "construct": {
+        "type": "unchanged",
+        "fixture": "chunk-65536.bin",
+        "fingerprint": "bf718b6f653bebc184e1479f1935b8da974d701b893afcf49e701f3e2f9f9c5a",
+        "readable_snapshot": true
+      },
+      "expected": {
+        "unchanged": true
+      }
+    },
+    {
+      "id": "unchanged_chunk_65537",
+      "construct": {
+        "type": "unchanged",
+        "fixture": "chunk-65537.bin",
+        "fingerprint": "008ffc88d3c96a9f307524eb361e47c5222a887fc45fa0c1fb8d429c5c23b430",
+        "readable_snapshot": true
+      },
+      "expected": {
+        "unchanged": true
+      }
+    }
+  ]
+}

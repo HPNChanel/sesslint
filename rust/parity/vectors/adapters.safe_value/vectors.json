@@ -1,0 +1,4256 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.safe_value",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "safe_value_py_sha256": "dd864071a538898e7eed4bf318edbf4a2169373e56557d44ccd7bdcf98d518ee",
+  "safe_value_rs_sha256": "178188f5f9ff93a9fb1a69a16608e78ec9e4875e3c3c661a8ad4071a53a720b3",
+  "known_parity_gaps": [
+    "str_subclass_type_name: a str subclass keeps its own __name__ in Python safe_type_value; Rust PyValue::Str always reports as str — no required vector.",
+    "lone_surrogate_discriminator: a lone UTF-16 surrogate cannot be stored in Rust str — no required vector."
+  ],
+  "vectors": [
+    {
+      "id": "module_python_all",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "safe_discriminator",
+          "safe_type_value"
+        ]
+      }
+    },
+    {
+      "id": "safe_type_str",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "str",
+          "text": "hello"
+        }
+      },
+      "expected": {
+        "value": "<str:len=5>"
+      }
+    },
+    {
+      "id": "safe_type_bytes",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "bytes_hex",
+          "hex": "6279746573"
+        }
+      },
+      "expected": {
+        "value": "<bytes:len=5>"
+      }
+    },
+    {
+      "id": "safe_type_list",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            },
+            {
+              "kind": "int",
+              "value": 3
+            }
+          ]
+        }
+      },
+      "expected": {
+        "value": "<list:len=3>"
+      }
+    },
+    {
+      "id": "safe_type_dict",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "dict",
+          "entries": {
+            "a": {
+              "kind": "int",
+              "value": 1
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": "<dict:len=1>"
+      }
+    },
+    {
+      "id": "safe_type_set",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "set",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "value": "<set:len=2>"
+      }
+    },
+    {
+      "id": "safe_type_tuple",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "tuple",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "value": "<tuple:len=1>"
+      }
+    },
+    {
+      "id": "safe_type_none",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "none"
+        }
+      },
+      "expected": {
+        "value": "<NoneType>"
+      }
+    },
+    {
+      "id": "safe_type_int",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "int",
+          "value": 42
+        }
+      },
+      "expected": {
+        "value": "<int>"
+      }
+    },
+    {
+      "id": "safe_type_float",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "float",
+          "value": 3.14
+        }
+      },
+      "expected": {
+        "value": "<float>"
+      }
+    },
+    {
+      "id": "safe_type_bool",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "bool",
+          "value": true
+        }
+      },
+      "expected": {
+        "value": "<bool>"
+      }
+    },
+    {
+      "id": "safe_type_other",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "frozenset",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "value": "<frozenset>"
+      }
+    },
+    {
+      "id": "disc_non_string_none",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "none"
+        }
+      },
+      "expected": {
+        "type_value": "<NoneType>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_int",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "int",
+          "value": 12345
+        }
+      },
+      "expected": {
+        "type_value": "<int>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_float",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "float",
+          "value": 99.9
+        }
+      },
+      "expected": {
+        "type_value": "<float>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_bool",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "bool",
+          "value": true
+        }
+      },
+      "expected": {
+        "type_value": "<bool>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_list",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "type_value": "<list:len=2>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_dict",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "dict",
+          "entries": {
+            "key": {
+              "kind": "str",
+              "text": "val"
+            }
+          }
+        }
+      },
+      "expected": {
+        "type_value": "<dict:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_set",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "set",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "type_value": "<set:len=2>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_tuple",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "tuple",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "type_value": "<tuple:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_bytes",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "bytes_hex",
+          "hex": "64617461"
+        }
+      },
+      "expected": {
+        "type_value": "<bytes:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_bytes_empty",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "type_value": "<bytes:len=0>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_list_empty",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "list",
+          "items": []
+        }
+      },
+      "expected": {
+        "type_value": "<list:len=0>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "disc_non_string_frozenset",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "frozenset",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "type_value": "<frozenset>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_empty",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ""
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=0>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_one_char",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "a"
+        }
+      },
+      "expected": {
+        "type_value": "a",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_len_64",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_len_65",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=65>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_hyphen_len_64",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "----------------------------------------------------------------"
+        }
+      },
+      "expected": {
+        "type_value": "----------------------------------------------------------------",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_hyphen_len_65",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "-----------------------------------------------------------------"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=65>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_echo_message",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "message"
+        }
+      },
+      "expected": {
+        "type_value": "message",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_futureWidget",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "futureWidget"
+        }
+      },
+      "expected": {
+        "type_value": "futureWidget",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_custom_type",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "custom_type"
+        }
+      },
+      "expected": {
+        "type_value": "custom_type",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_event-v2",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "event-v2"
+        }
+      },
+      "expected": {
+        "type_value": "event-v2",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_dotted.name",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "dotted.name"
+        }
+      },
+      "expected": {
+        "type_value": "dotted.name",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_mixed.type_name-123",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "mixed.type_name-123"
+        }
+      },
+      "expected": {
+        "type_value": "mixed.type_name-123",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_UPPER_LOWER-123.test",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "UPPER_LOWER-123.test"
+        }
+      },
+      "expected": {
+        "type_value": "UPPER_LOWER-123.test",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_echo_npm_package_metadata",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "npm_package_metadata"
+        }
+      },
+      "expected": {
+        "type_value": "npm_package_metadata",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "allowlist_reject_type_with_spaces",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type with spaces"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=16>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_with_colons",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type:with:colons"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=16>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_with_slashes",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type/with/slashes"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=17>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_with_backslashe",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type\\with\\backslashes"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=21>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_custom_xml_tag",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "custom<xml>tag"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=14>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_custom_sql_inject",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "custom;sql-inject"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=17>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_domain_com",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type@domain.com"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=15>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_anchor",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type#anchor"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=11>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_var",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type$var"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=8>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_percent",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type%percent"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=12>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_exclamation",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type!exclamation"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=16>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_assignment",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type=assignment"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=15>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_newline",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type\nnewline"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=12>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_type_tab",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "type\ttab"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=8>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_cafe",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "café"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_emoji_suffix",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ab🎉"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_accents_64",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=64>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "allowlist_reject_sk_accent",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "sk-é"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_000",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0000"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_001",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0001"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_002",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0002"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_003",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0003"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_004",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0004"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_005",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0005"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_006",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0006"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_007",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0007"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_008",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\b"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_009",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\t"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_010",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\n"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_011",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u000b"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_012",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\f"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_013",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\r"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_014",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u000e"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_015",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u000f"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_016",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0010"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_017",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0011"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_018",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0012"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_019",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0013"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_020",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0014"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_021",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0015"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_022",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0016"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_023",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0017"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_024",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0018"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_025",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u0019"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_026",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u001a"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_027",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u001b"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_028",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u001c"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_029",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u001d"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_030",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u001e"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_031",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\u001f"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_032",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": " "
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_033",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "!"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_034",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\""
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_035",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "#"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_036",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "$"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_037",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "%"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_038",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "&"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_039",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "'"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_040",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "("
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_041",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ")"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_042",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "*"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_043",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "+"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_044",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ","
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_045",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "-"
+        }
+      },
+      "expected": {
+        "type_value": "-",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_046",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "."
+        }
+      },
+      "expected": {
+        "type_value": ".",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_047",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "/"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_048",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "0"
+        }
+      },
+      "expected": {
+        "type_value": "0",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_049",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "1"
+        }
+      },
+      "expected": {
+        "type_value": "1",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_050",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "2"
+        }
+      },
+      "expected": {
+        "type_value": "2",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_051",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "3"
+        }
+      },
+      "expected": {
+        "type_value": "3",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_052",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "4"
+        }
+      },
+      "expected": {
+        "type_value": "4",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_053",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "5"
+        }
+      },
+      "expected": {
+        "type_value": "5",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_054",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "6"
+        }
+      },
+      "expected": {
+        "type_value": "6",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_055",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "7"
+        }
+      },
+      "expected": {
+        "type_value": "7",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_056",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "8"
+        }
+      },
+      "expected": {
+        "type_value": "8",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_057",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "9"
+        }
+      },
+      "expected": {
+        "type_value": "9",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_058",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ":"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_059",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ";"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_060",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "<"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_061",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "="
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_062",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ">"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_063",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "?"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_064",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "@"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_065",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "A"
+        }
+      },
+      "expected": {
+        "type_value": "A",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_066",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "B"
+        }
+      },
+      "expected": {
+        "type_value": "B",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_067",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "C"
+        }
+      },
+      "expected": {
+        "type_value": "C",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_068",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "D"
+        }
+      },
+      "expected": {
+        "type_value": "D",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_069",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "E"
+        }
+      },
+      "expected": {
+        "type_value": "E",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_070",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "F"
+        }
+      },
+      "expected": {
+        "type_value": "F",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_071",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "G"
+        }
+      },
+      "expected": {
+        "type_value": "G",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_072",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "H"
+        }
+      },
+      "expected": {
+        "type_value": "H",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_073",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "I"
+        }
+      },
+      "expected": {
+        "type_value": "I",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_074",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "J"
+        }
+      },
+      "expected": {
+        "type_value": "J",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_075",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "K"
+        }
+      },
+      "expected": {
+        "type_value": "K",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_076",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "L"
+        }
+      },
+      "expected": {
+        "type_value": "L",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_077",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "M"
+        }
+      },
+      "expected": {
+        "type_value": "M",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_078",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "N"
+        }
+      },
+      "expected": {
+        "type_value": "N",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_079",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "O"
+        }
+      },
+      "expected": {
+        "type_value": "O",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_080",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "P"
+        }
+      },
+      "expected": {
+        "type_value": "P",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_081",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "Q"
+        }
+      },
+      "expected": {
+        "type_value": "Q",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_082",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "R"
+        }
+      },
+      "expected": {
+        "type_value": "R",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_083",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "S"
+        }
+      },
+      "expected": {
+        "type_value": "S",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_084",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "T"
+        }
+      },
+      "expected": {
+        "type_value": "T",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_085",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "U"
+        }
+      },
+      "expected": {
+        "type_value": "U",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_086",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "V"
+        }
+      },
+      "expected": {
+        "type_value": "V",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_087",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "W"
+        }
+      },
+      "expected": {
+        "type_value": "W",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_088",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "X"
+        }
+      },
+      "expected": {
+        "type_value": "X",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_089",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "Y"
+        }
+      },
+      "expected": {
+        "type_value": "Y",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_090",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "Z"
+        }
+      },
+      "expected": {
+        "type_value": "Z",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_091",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "["
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_092",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "\\"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_093",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "]"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_094",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "^"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_095",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "_"
+        }
+      },
+      "expected": {
+        "type_value": "_",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_096",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "`"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_097",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "a"
+        }
+      },
+      "expected": {
+        "type_value": "a",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_098",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "b"
+        }
+      },
+      "expected": {
+        "type_value": "b",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_099",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "c"
+        }
+      },
+      "expected": {
+        "type_value": "c",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_100",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "d"
+        }
+      },
+      "expected": {
+        "type_value": "d",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_101",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "e"
+        }
+      },
+      "expected": {
+        "type_value": "e",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_102",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "f"
+        }
+      },
+      "expected": {
+        "type_value": "f",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_103",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "g"
+        }
+      },
+      "expected": {
+        "type_value": "g",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_104",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "h"
+        }
+      },
+      "expected": {
+        "type_value": "h",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_105",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "i"
+        }
+      },
+      "expected": {
+        "type_value": "i",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_106",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "j"
+        }
+      },
+      "expected": {
+        "type_value": "j",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_107",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "k"
+        }
+      },
+      "expected": {
+        "type_value": "k",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_108",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "l"
+        }
+      },
+      "expected": {
+        "type_value": "l",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_109",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "m"
+        }
+      },
+      "expected": {
+        "type_value": "m",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_110",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "n"
+        }
+      },
+      "expected": {
+        "type_value": "n",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_111",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "o"
+        }
+      },
+      "expected": {
+        "type_value": "o",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_112",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "p"
+        }
+      },
+      "expected": {
+        "type_value": "p",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_113",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "q"
+        }
+      },
+      "expected": {
+        "type_value": "q",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_114",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "r"
+        }
+      },
+      "expected": {
+        "type_value": "r",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_115",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "s"
+        }
+      },
+      "expected": {
+        "type_value": "s",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_116",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "t"
+        }
+      },
+      "expected": {
+        "type_value": "t",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_117",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "u"
+        }
+      },
+      "expected": {
+        "type_value": "u",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_118",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "v"
+        }
+      },
+      "expected": {
+        "type_value": "v",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_119",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "w"
+        }
+      },
+      "expected": {
+        "type_value": "w",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_120",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "x"
+        }
+      },
+      "expected": {
+        "type_value": "x",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_121",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "y"
+        }
+      },
+      "expected": {
+        "type_value": "y",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_122",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "z"
+        }
+      },
+      "expected": {
+        "type_value": "z",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "ascii_byte_123",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "{"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_124",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "|"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_125",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "}"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_126",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "~"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "ascii_byte_127",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": ""
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=1>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_skhyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "sk-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_skus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "sk_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_rkhyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "rk-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_rkus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "rk_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_ghpus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghp_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_ghous",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gho_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_ghuus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghu_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_ghsus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghs_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_ghrus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghr_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_glpathyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "glpat-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=6>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_akia",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "akia"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_asia",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "asia"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_aiza",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "aiza"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_xoxbhyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxb-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=5>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_xoxphyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxp-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=5>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_xapphyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xapp-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=5>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_xoxahyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxa-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=5>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_xoxrhyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxr-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=5>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_slackustokenus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "slack_token_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=12>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_bearerhyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "bearer-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=7>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_prefix_bearerus",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "bearer_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=7>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_GHP_",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "GHP_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_SK_",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "SK-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_Rk_",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "Rk_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=3>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_AKiA",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "AKiA"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_AiZa",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "AiZa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=4>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_XOXB_",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "XOXB-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=5>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "credential_casefold_BeArEr_",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "BeArEr_"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=7>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_sk",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "sk"
+        }
+      },
+      "expected": {
+        "type_value": "sk",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_rk",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "rk"
+        }
+      },
+      "expected": {
+        "type_value": "rk",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_ghp",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghp"
+        }
+      },
+      "expected": {
+        "type_value": "ghp",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_glpat",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "glpat"
+        }
+      },
+      "expected": {
+        "type_value": "glpat",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_aiz",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "aiz"
+        }
+      },
+      "expected": {
+        "type_value": "aiz",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_aki",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "aki"
+        }
+      },
+      "expected": {
+        "type_value": "aki",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_xoxb",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxb"
+        }
+      },
+      "expected": {
+        "type_value": "xoxb",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_bearer",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "bearer"
+        }
+      },
+      "expected": {
+        "type_value": "bearer",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_without_sep_echo_slack_token",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "slack_token"
+        }
+      },
+      "expected": {
+        "type_value": "slack_token",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_slack_token_hyphen_trunc",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "slack_token-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=12>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "prefix_slack_token_dhyphen_trunc",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "slack-token-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=12>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "prefix_slack_token_upper_trunc",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "SLACK-TOKEN-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=12>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "prefix_slack_token_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "slack-token"
+        }
+      },
+      "expected": {
+        "type_value": "slack-token",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "prefix_slack_token_dot_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "slack.token-"
+        }
+      },
+      "expected": {
+        "type_value": "slack.token-",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "secret_family_hit_whsec",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "whsec_aaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=30>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "secret_family_miss_whsec",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "whsec_aaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "whsec_aaaaaaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "secret_family_hit_github_pat",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "github_pat_aaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=33>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "secret_family_miss_github_pat",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "github_pat_aaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "github_pat_aaaaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "secret_family_hit_sbp",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "prefix": "sbp_",
+          "fill": "a",
+          "count": 40
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=44>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "secret_family_miss_sbp",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "sbp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "sbp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "shared_family_sk_dash_20",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "sk-aaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=23>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "shared_family_npm_20",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "npm_aaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=24>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "shared_family_hf_20",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "hf_aaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=23>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "shared_family_aiza_20",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "AIzaAAAAAAAAAAAAAAAAAAAA"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=24>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "shared_family_akia_embedded",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.AKIAAAAAAAAAAAAAAAAA"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=24>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "shared_family_npm_19_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "npm_aaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "npm_aaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "shared_family_hf_19_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "hf_aaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "hf_aaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "shared_family_npm_us_20_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "npm_____________________"
+        }
+      },
+      "expected": {
+        "type_value": "npm_____________________",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "shared_family_hf_us_20_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "hf_____________________"
+        }
+      },
+      "expected": {
+        "type_value": "hf_____________________",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "content_free_ghp_hit",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghp-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=20>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "content_free_gho_hit",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gho-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=20>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "content_free_ghp_miss_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghp-aaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "ghp-aaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "content_free_ghs_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghs-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "ghs-aaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "content_free_ghu_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghu-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "ghu-aaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "content_free_ghr_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "ghr-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "ghr-aaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_xoxc",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxc-a"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=6>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_xoxc_upper",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "XOXC-A"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=6>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_xoxc_prefix_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxc-"
+        }
+      },
+      "expected": {
+        "type_value": "xoxc-",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_xoxc_us_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xoxc-_"
+        }
+      },
+      "expected": {
+        "type_value": "xoxc-_",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_xox_digit_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xox1-a"
+        }
+      },
+      "expected": {
+        "type_value": "xox1-a",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_ghp_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.GHP_a"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=9>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_ghp_mixed",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.ghP_Z"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=9>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_ghpa_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "GHPa"
+        }
+      },
+      "expected": {
+        "type_value": "GHPa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_ghp_double_us_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.ghp__"
+        }
+      },
+      "expected": {
+        "type_value": "foo.ghp__",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_ghq_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.ghq_a"
+        }
+      },
+      "expected": {
+        "type_value": "foo.ghq_a",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_glpat_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.glpat-9"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=11>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_glpat_upper",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.glpat-Z"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=11>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_glpat_prefix_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.glpat-"
+        }
+      },
+      "expected": {
+        "type_value": "foo.glpat-",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_glpat_us_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.glpat-_"
+        }
+      },
+      "expected": {
+        "type_value": "foo.glpat-_",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_akia_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "x-akiaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=22>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_asia_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.asia0000000000000000"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=24>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_akia_us_prefix",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo_AKIAAAAAAAAAAAAAAAAA"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=24>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_akia_short_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.akiaaaaaaaaaaaaaaaa_"
+        }
+      },
+      "expected": {
+        "type_value": "foo.akiaaaaaaaaaaaaaaaa_",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_aiza_us",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.aiza____________________"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_aiza_hyphen",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.aiza--------------------"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_aiza_upper",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.AIZAAAAAAAAAAAAAAAAAAAAA"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_aiza_us_19_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.aiza___________________"
+        }
+      },
+      "expected": {
+        "type_value": "foo.aiza___________________",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_aiza_dot_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.aiza.aaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "foo.aiza.aaaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_bearer_prefix_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xbearer-"
+        }
+      },
+      "expected": {
+        "type_value": "xbearer-",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "sensitive_bearer_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.bearer-"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=11>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_sk_us_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo_sk-aaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=27>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_sk_dash_delim",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo-sk-aaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=22>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "sensitive_sk_xx_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "xxsk-aaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "xxsk-aaaaaaaaaaaaaaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_azure_client_secret_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client-secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_client_secret_16",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client-secret-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=36>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_client_secret_7_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client-secret-aaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "azure-client-secret-aaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_azure_clientsecret_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-clientsecret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=27>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_client_secret_us",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure_client_secret_aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_client_us_mixed",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client_secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_upper",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "AZURE-CLIENT-SECRET-AAAAAAAA"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_gcp_service_account_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-service-account-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_gcp_service_account_16",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-service-account-aaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=36>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_gcp_serviceaccount_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-serviceaccount-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=27>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_gcp_service_us",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-service_account-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=28>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_gcp_private_key_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-private-key-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=24>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_gcp_privatekey_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-privatekey-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=23>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_privatekey_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-privatekey-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=25>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_privatekey_7_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-privatekey-aaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "azure-privatekey-aaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_gcp_client_secret_8",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcp-client-secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=26>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_dot_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure.client-secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "azure.client-secret-aaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_gcp_x_client_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "gcpx-client-secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "gcpx-client-secret-aaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_azure_nested",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "foo.azure-client-secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=32>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "cloud_azure_double_sep_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client--secret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "azure-client--secret-aaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_azure_dup_tail_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-clientsecretsecret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "azure-clientsecretsecret-aaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_azure_dup_secret_echo",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client-secretsecret-aaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "azure-client-secretsecret-aaaaaaaa",
+        "is_truncated": false
+      }
+    },
+    {
+      "id": "cloud_azure_long_suffix",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "azure-client-secret-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected": {
+        "type_value": "<str:len=70>",
+        "is_truncated": true
+      }
+    },
+    {
+      "id": "echo_preserves_casing",
+      "construct": {
+        "type": "safe_discriminator",
+        "val": {
+          "kind": "str",
+          "text": "futureWidget"
+        }
+      },
+      "expected": {
+        "type_value": "futureWidget",
+        "is_truncated": false
+      }
+    }
+  ]
+}

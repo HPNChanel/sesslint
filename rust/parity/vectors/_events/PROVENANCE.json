@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint._events parity (_event_kind, _event_id, _event_parent_id, _event_corr_id, _event_content_fingerprint, _to_event_dict, _copy_events_as_dicts, _copy_events_as_dicts_strict).",
+  "generator": "rust/parity/vectors/_events/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error",
+    "a mapping with no usable content_hash: Python hashes the payload or the whole mapping",
+    "SessionEvent canonical_hash, payload_hash, and to_canonical_dict",
+    "sha256(str(ev))",
+    "Python str(float), str(list), and str(dict) for a getter field",
+    "the tolerant dict(ev) fallback",
+    "an int outside i64"
+  ]
+}

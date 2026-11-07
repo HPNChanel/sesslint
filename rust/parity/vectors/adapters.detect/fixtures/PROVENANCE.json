@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic detect parity fixtures copied from pinned fixtures/detect at python_commit",
+  "generator": "rust/parity/vectors/adapters.detect/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

@@ -1,0 +1,751 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.graph module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+GRAPH_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+GRAPH_RS_SHA256 = (
+    "3bdd9fa51178eb7bc7ce232cdaa01ce3b3fff5a43b7face1458e03bf1210f382"
+)
+MODULE = "sesslint.checks.graph"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "Graph check findings use make_finding with fingerprint omitted; Rust returns "
+    "FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python str(float), str(list), and str(mapping) for event fields; Rust returns "
+    "typed errors and does not invent Python repr strings.",
+    "Python events.index on an event object inside same_compaction_segment; Rust does "
+    "not emulate list identity search (PYTHON_EVENT_INDEX_UNREPRESENTABLE gap).",
+    "Evidence map lookup with borrowed/reference semantics; Rust treats Borrowed as "
+    "distinct from missing key (BORROWED_LOOKUP).",
+    "Graph counts and indices that do not fit in i64 (COUNT_UNREPRESENTABLE).",
+    "Empty-string parent_id is a finding in Python; omitted from required parity vectors.",
+    "Self-loop and other cycle findings; omitted (fingerprint gap).",
+    "Two disconnected components (SL006); omitted (fingerprint gap).",
+    "Two heads on one branch (SL007); omitted (fingerprint gap).",
+    "Finding-cap overflow path; omitted (fingerprint gap).",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_rev_parse(rev_path: str) -> str:
+    return (
+        subprocess.check_output(
+            ["git", "rev-parse", f"{rev_path}"],
+            cwd=repo_root(),
+            text=True,
+        )
+        .strip()
+    )
+
+
+def verify_graph_py_blob() -> None:
+    pin = git_rev_parse(f"{GRAPH_PY_PIN}:src/sesslint/checks/graph.py")
+    head = git_rev_parse("HEAD:src/sesslint/checks/graph.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/graph.py differs from pin blob; "
+            f"pin={pin} HEAD={head}"
+        )
+
+
+def verify_graph_rs_sha256() -> None:
+    graph_rs = repo_root() / "rust" / "crates" / "checks" / "src" / "graph.rs"
+    digest = hashlib.sha256(graph_rs.read_bytes()).hexdigest()
+    if digest != GRAPH_RS_SHA256:
+        raise SystemExit(
+            f"checks/src/graph.rs sha256 mismatch: expected {GRAPH_RS_SHA256}, got {digest}"
+        )
+
+
+def load_graph_module() -> types.ModuleType:
+    verify_graph_py_blob()
+    verify_graph_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    graph_path = src / "sesslint" / "checks" / "graph.py"
+    # Load under a private name so `sesslint.checks` is not imported mid-exec
+    # (that would recurse into a half-initialized `sesslint.checks.graph`).
+    spec = importlib.util.spec_from_file_location(
+        "_sesslint_checks_graph_parity", graph_path
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("failed to create import spec for graph.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event(ev: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in ev.items()]}
+
+
+def encode_graph_scalar(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        return {"kind": "str", "v": value}
+    if isinstance(value, bool):
+        return {"kind": "bool", "v": value}
+    if isinstance(value, int):
+        return {"kind": "int", "v": value}
+    raise TypeError(f"bad graph scalar {type(value)}")
+
+
+def encode_construct(raw: dict[str, Any]) -> dict[str, Any]:
+    kind = raw["type"]
+    if kind == "module_dunder_all":
+        return dict(raw)
+    if kind == "module_constants":
+        return dict(raw)
+    if kind == "compute_graph_fingerprint":
+        return {
+            "type": "compute_graph_fingerprint",
+            "code": raw["code"],
+            "ids": [encode_graph_scalar(x) for x in raw["ids"]],
+        }
+    if kind == "is_qualifying_parent_candidate":
+        return {
+            "type": "is_qualifying_parent_candidate",
+            "candidate": encode_event(raw["candidate"]),
+            "child": encode_event(raw["child"]),
+            "events": [encode_event(e) for e in raw["events"]],
+            "missing_parent_id": raw["missing_parent_id"],
+        }
+    if kind == "find_qualifying_parent_candidates":
+        return {
+            "type": "find_qualifying_parent_candidates",
+            "events": [encode_event(e) for e in raw["events"]],
+            "child": encode_event(raw["child"]),
+            "target_idx": raw["target_idx"],
+            "missing_parent_id": raw["missing_parent_id"],
+        }
+    if kind == "same_compaction_segment":
+        return {
+            "type": "same_compaction_segment",
+            "events": [encode_event(e) for e in raw["events"]],
+            "endpoint_a": raw["endpoint_a"],
+            "endpoint_b": raw["endpoint_b"],
+        }
+    if kind in (
+        "check_missing_parent",
+        "check_cycles",
+        "check_components",
+        "check_heads",
+        "check_graph",
+    ):
+        return {
+            "type": kind,
+            "events": [encode_event(e) for e in raw["events"]],
+            "source_path": raw.get("source_path", "<canonical>"),
+        }
+    raise ValueError(f"unknown construct {kind}")
+
+
+def vectors_from_graph(graph: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    out.append(
+        {
+            "id": "module_dunder_all",
+            "construct": {"type": "module_dunder_all"},
+            "expected": {"names": list(graph.__all__)},
+        }
+    )
+
+    out.append(
+        {
+            "id": "module_constants_max_limits",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "MAX_GRAPH_FINDINGS": graph.MAX_GRAPH_FINDINGS,
+                "MAX_MEMBER_SAMPLE_SIZE": graph.MAX_MEMBER_SAMPLE_SIZE,
+            },
+        }
+    )
+
+    code_fp = "SL004"
+    out.append(
+        {
+            "id": "compute_graph_fingerprint_empty_ids",
+            "construct": {
+                "type": "compute_graph_fingerprint",
+                "code": code_fp,
+                "ids": [],
+            },
+            "expected": {
+                "fingerprint": graph.compute_graph_fingerprint(code_fp, []),
+            },
+        }
+    )
+    dup_ids = ["z-aa-001", "a-aa-001", "m-aa-001"]
+    out.append(
+        {
+            "id": "compute_graph_fingerprint_duplicate_ids_either_order",
+            "construct": {
+                "type": "compute_graph_fingerprint",
+                "code": code_fp,
+                "ids": list(dup_ids),
+            },
+            "expected": {
+                "fingerprint": graph.compute_graph_fingerprint(code_fp, dup_ids),
+            },
+        }
+    )
+    out.append(
+        {
+            "id": "compute_graph_fingerprint_duplicate_ids_reversed",
+            "construct": {
+                "type": "compute_graph_fingerprint",
+                "code": code_fp,
+                "ids": list(reversed(dup_ids)),
+            },
+            "expected": {
+                "fingerprint": graph.compute_graph_fingerprint(code_fp, dup_ids),
+            },
+        }
+    )
+    out.append(
+        {
+            "id": "compute_graph_fingerprint_bool_true_vs_str_true",
+            "construct": {
+                "type": "compute_graph_fingerprint",
+                "code": code_fp,
+                "ids": [True, "True"],
+            },
+            "expected": {
+                "fingerprint": graph.compute_graph_fingerprint(code_fp, [True, "True"]),
+            },
+        }
+    )
+
+    # is_qualifying_parent_candidate: exact id match
+    events_ok: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "p-par-001",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 0,
+        },
+        {
+            "kind": "message",
+            "id": "c-par-002",
+            "parent_id": "p-par-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    qualifies, reason_ok = graph.is_qualifying_parent_candidate(
+        candidate=events_ok[0],
+        child=events_ok[1],
+        events=events_ok,
+        missing_parent_id="p-par-001",
+    )
+    out.append(
+        {
+            "id": "is_qualifying_parent_candidate_exact_id",
+            "construct": {
+                "type": "is_qualifying_parent_candidate",
+                "candidate": events_ok[0],
+                "child": events_ok[1],
+                "events": events_ok,
+                "missing_parent_id": "p-par-001",
+            },
+            "expected": {"qualifies": qualifies, "reason": reason_ok},
+        }
+    )
+
+    # Prefix is not a match (full equality only)
+    events_prefix: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "p-pre-001x",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 0,
+        },
+        {
+            "kind": "message",
+            "id": "c-pre-002",
+            "parent_id": "p-pre-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    q_pre, r_pre = graph.is_qualifying_parent_candidate(
+        candidate=events_prefix[0],
+        child=events_prefix[1],
+        events=events_prefix,
+        missing_parent_id=None,
+    )
+    out.append(
+        {
+            "id": "is_qualifying_parent_candidate_prefix_not_full_match",
+            "construct": {
+                "type": "is_qualifying_parent_candidate",
+                "candidate": events_prefix[0],
+                "child": events_prefix[1],
+                "events": events_prefix,
+                "missing_parent_id": None,
+            },
+            "expected": {"qualifies": q_pre, "reason": r_pre},
+        }
+    )
+
+    # find_qualifying_parent_candidates: no earlier full-id match
+    ev_none: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "x-fqc-000",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 0,
+        },
+        {
+            "kind": "message",
+            "id": "c-fqc-001",
+            "parent_id": "missing-fqc-xyz",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    qn, rej_n, conf_n, reason_n = graph.find_qualifying_parent_candidates(
+        ev_none,
+        ev_none[1],
+        1,
+        missing_parent_id="missing-fqc-xyz",
+    )
+    out.append(
+        {
+            "id": "find_qualifying_parent_candidates_no_earlier_match",
+            "construct": {
+                "type": "find_qualifying_parent_candidates",
+                "events": ev_none,
+                "child": ev_none[1],
+                "target_idx": 1,
+                "missing_parent_id": "missing-fqc-xyz",
+            },
+            "expected": {
+                "qualifying_indices": qn,
+                "rejected_decoys": rej_n,
+                "confinement": conf_n,
+                "reason": reason_n,
+            },
+        }
+    )
+
+    ev_one: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "p-fqc-010",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 0,
+        },
+        {
+            "kind": "message",
+            "id": "n-fqc-011",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 1,
+        },
+        {
+            "kind": "message",
+            "id": "c-fqc-012",
+            "parent_id": "p-fqc-010",
+            "branch_id": None,
+            "seq": 2,
+        },
+    ]
+    q1, rej1, conf1, reason1 = graph.find_qualifying_parent_candidates(
+        ev_one,
+        ev_one[2],
+        2,
+        missing_parent_id="p-fqc-010",
+    )
+    out.append(
+        {
+            "id": "find_qualifying_parent_candidates_one_earlier_exact",
+            "construct": {
+                "type": "find_qualifying_parent_candidates",
+                "events": ev_one,
+                "child": ev_one[2],
+                "target_idx": 2,
+                "missing_parent_id": "p-fqc-010",
+            },
+            "expected": {
+                "qualifying_indices": q1,
+                "rejected_decoys": rej1,
+                "confinement": conf1,
+                "reason": reason1,
+            },
+        }
+    )
+
+    ev_two: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "p-fqc-020",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 0,
+        },
+        {
+            "kind": "message",
+            "id": "p-fqc-020",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 1,
+        },
+        {
+            "kind": "message",
+            "id": "c-fqc-022",
+            "parent_id": "p-fqc-020",
+            "branch_id": None,
+            "seq": 2,
+        },
+    ]
+    q2, rej2, conf2, reason2 = graph.find_qualifying_parent_candidates(
+        ev_two,
+        ev_two[2],
+        2,
+        missing_parent_id="p-fqc-020",
+    )
+    out.append(
+        {
+            "id": "find_qualifying_parent_candidates_two_earlier_exact",
+            "construct": {
+                "type": "find_qualifying_parent_candidates",
+                "events": ev_two,
+                "child": ev_two[2],
+                "target_idx": 2,
+                "missing_parent_id": "p-fqc-020",
+            },
+            "expected": {
+                "qualifying_indices": q2,
+                "rejected_decoys": rej2,
+                "confinement": conf2,
+                "reason": reason2,
+            },
+        }
+    )
+
+    # same_compaction_segment: boundary strictly between -> false
+    ev_seg_false: list[dict[str, Any]] = [
+        {
+            "kind": "compaction_boundary",
+            "id": "b-scs-000",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 1,
+        },
+        {"kind": "message", "id": "m-scs-001", "parent_id": None, "seq": 0},
+        {"kind": "message", "id": "m-scs-002", "parent_id": None, "seq": 3},
+    ]
+    seg_false = graph.same_compaction_segment(ev_seg_false, 0, 3)
+    out.append(
+        {
+            "id": "same_compaction_segment_boundary_between_false",
+            "construct": {
+                "type": "same_compaction_segment",
+                "events": ev_seg_false,
+                "endpoint_a": {"kind": "seq", "v": 0},
+                "endpoint_b": {"kind": "seq", "v": 3},
+            },
+            "expected": {"same": seg_false},
+        }
+    )
+
+    # Span of one event: endpoints differ by 1 -> true
+    ev_seg_true: list[dict[str, Any]] = [
+        {
+            "kind": "compaction_boundary",
+            "id": "b-scs-100",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 5,
+        },
+        {"kind": "message", "id": "m-scs-101", "parent_id": None, "seq": 6},
+    ]
+    seg_true = graph.same_compaction_segment(ev_seg_true, 5, 6)
+    out.append(
+        {
+            "id": "same_compaction_segment_adjacent_seq_true",
+            "construct": {
+                "type": "same_compaction_segment",
+                "events": ev_seg_true,
+                "endpoint_a": {"kind": "seq", "v": 5},
+                "endpoint_b": {"kind": "seq", "v": 6},
+            },
+            "expected": {"same": seg_true},
+        }
+    )
+
+    # check_missing_parent: present parent
+    ev_mp_present: list[dict[str, Any]] = [
+        {"kind": "message", "id": "r-mp-001", "parent_id": None, "seq": 0},
+        {
+            "kind": "message",
+            "id": "c-mp-002",
+            "parent_id": "r-mp-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_missing_parent_present_parent",
+            "construct": {
+                "type": "check_missing_parent",
+                "events": ev_mp_present,
+            },
+            "expected": {
+                "findings_count": len(graph.check_missing_parent(ev_mp_present)),
+            },
+        }
+    )
+
+    # Later parent still satisfies id_set
+    ev_mp_later: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "c-mp-101",
+            "parent_id": "p-mp-103",
+            "branch_id": None,
+            "seq": 0,
+        },
+        {"kind": "message", "id": "n-mp-102", "parent_id": None, "seq": 1},
+        {
+            "kind": "message",
+            "id": "p-mp-103",
+            "parent_id": None,
+            "branch_id": None,
+            "seq": 2,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_missing_parent_later_parent",
+            "construct": {
+                "type": "check_missing_parent",
+                "events": ev_mp_later,
+            },
+            "expected": {
+                "findings_count": len(graph.check_missing_parent(ev_mp_later)),
+            },
+        }
+    )
+
+    # Self-parent: deferred to SL005, not SL004
+    ev_mp_self: list[dict[str, Any]] = [
+        {
+            "kind": "message",
+            "id": "s-mp-201",
+            "parent_id": "s-mp-201",
+            "branch_id": None,
+            "seq": 0,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_missing_parent_self_parent",
+            "construct": {
+                "type": "check_missing_parent",
+                "events": ev_mp_self,
+            },
+            "expected": {
+                "findings_count": len(graph.check_missing_parent(ev_mp_self)),
+            },
+        }
+    )
+
+    # check_cycles: acyclic chain
+    ev_cyc: list[dict[str, Any]] = [
+        {"kind": "message", "id": "root-cy-001", "parent_id": None, "seq": 0},
+        {
+            "kind": "message",
+            "id": "child-cy-002",
+            "parent_id": "root-cy-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_cycles_none",
+            "construct": {"type": "check_cycles", "events": ev_cyc},
+            "expected": {"findings_count": len(graph.check_cycles(ev_cyc))},
+        }
+    )
+
+    # check_components: one component
+    ev_comp: list[dict[str, Any]] = [
+        {"kind": "message", "id": "a-cmp-001", "parent_id": None, "seq": 0},
+        {
+            "kind": "message",
+            "id": "b-cmp-002",
+            "parent_id": "a-cmp-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_components_one_component",
+            "construct": {"type": "check_components", "events": ev_comp},
+            "expected": {
+                "findings_count": len(graph.check_components(ev_comp)),
+            },
+        }
+    )
+
+    # check_heads: single head per (None) branch
+    ev_heads: list[dict[str, Any]] = [
+        {"kind": "message", "id": "h-001", "parent_id": None, "seq": 0},
+        {
+            "kind": "message",
+            "id": "h-002",
+            "parent_id": "h-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_heads_single_tip",
+            "construct": {"type": "check_heads", "events": ev_heads},
+            "expected": {"findings_count": len(graph.check_heads(ev_heads))},
+        }
+    )
+
+    # check_graph: clean chain
+    ev_graph: list[dict[str, Any]] = [
+        {"kind": "message", "id": "g-001", "parent_id": None, "seq": 0},
+        {
+            "kind": "message",
+            "id": "g-002",
+            "parent_id": "g-001",
+            "branch_id": None,
+            "seq": 1,
+        },
+    ]
+    out.append(
+        {
+            "id": "check_graph_clean_chain",
+            "construct": {"type": "check_graph", "events": ev_graph},
+            "expected": {"findings_count": len(graph.check_graph(ev_graph))},
+        }
+    )
+
+    return out
+
+
+def encode_expected_case(spec: dict[str, Any]) -> dict[str, Any]:
+    cid = spec["id"]
+    raw_exp = spec["expected"]
+    if cid == "find_qualifying_parent_candidates_no_earlier_match":
+        return raw_exp
+    if cid == "find_qualifying_parent_candidates_one_earlier_exact":
+        return raw_exp
+    if cid == "find_qualifying_parent_candidates_two_earlier_exact":
+        return raw_exp
+    return dict(raw_exp)
+
+
+def main() -> int:
+    graph = load_graph_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_graph(graph)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": encode_construct(spec["construct"]),
+                "expected": encode_expected_case(spec),
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_graph_rs_sha256": GRAPH_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_graph_rs_sha256": GRAPH_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.graph/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.graph parity (stdlib-only vectors; no session "
+            "payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.graph/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

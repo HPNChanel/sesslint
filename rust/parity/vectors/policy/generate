@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+"""Generate sesslint.policy package-surface parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+POLICY_INIT_BLOB_SHA1 = "5692ffa35b745fdb76c72d06f1fd2665c271d42f"
+LIB_RS_SHA256 = (
+    "96e315021816ea1f6770bf0d97e3ca1600f5d695b3fa556c61b398b364746804"
+)
+
+MODULE = "sesslint.policy"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "TOOL_KINDS is a frozenset in Python; iteration order is not a contract; "
+    "vectors record sorted membership for comparison",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_blob_sha1(path: Path) -> str:
+    return (
+        subprocess.check_output(
+            ["git", "hash-object", str(path)],
+            cwd=repo_root(),
+            text=True,
+        )
+        .strip()
+    )
+
+
+def verify_policy_init_blob() -> None:
+    init_path = repo_root() / "src" / "sesslint" / "policy" / "__init__.py"
+    blob = git_blob_sha1(init_path)
+    if blob != POLICY_INIT_BLOB_SHA1:
+        raise SystemExit(
+            "src/sesslint/policy/__init__.py git blob mismatch: "
+            f"expected {POLICY_INIT_BLOB_SHA1}, got {blob}"
+        )
+
+
+def verify_lib_rs_sha256() -> None:
+    lib_rs = repo_root() / "rust" / "crates" / "checks" / "src" / "lib.rs"
+    digest = hashlib.sha256(lib_rs.read_bytes()).hexdigest()
+    if digest != LIB_RS_SHA256:
+        raise SystemExit(
+            f"checks/src/lib.rs sha256 mismatch: expected {LIB_RS_SHA256}, got {digest}"
+        )
+
+
+def load_policy_module() -> Any:
+    verify_policy_init_blob()
+    verify_lib_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    import sesslint.policy as policy  # noqa: WPS433
+
+    return policy
+
+
+def abstention_dict(abstention: Any) -> dict[str, Any]:
+    d = abstention.to_dict()
+    return {"abstain": d["abstain"], "reasons": list(d["reasons"])}
+
+
+def vectors_from_policy(policy: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    dunder_all = list(policy.__all__)
+    out.append(
+        {
+            "id": "package_dunder_all",
+            "construct": {"type": "package_dunder_all"},
+            "expected": {"names": dunder_all},
+        }
+    )
+
+    out.append(
+        {
+            "id": "package_safe_side_effect",
+            "construct": {"type": "package_safe_side_effect"},
+            "expected": {"value": policy.SAFE_SIDE_EFFECT},
+        }
+    )
+
+    tool_kinds_sorted = sorted(policy.TOOL_KINDS)
+    out.append(
+        {
+            "id": "package_tool_kinds_membership",
+            "construct": {"type": "package_tool_kinds_membership"},
+            "expected": {"sorted_members": tool_kinds_sorted},
+        }
+    )
+
+    # Minimal valid Finding + one tool event (content parallels policy.abstention vectors).
+    from sesslint.codes import Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import Finding, SourceRef  # noqa: WPS433
+
+    finding = Finding(
+        code="SL203",
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message="synthetic marker",
+        source=SourceRef(path="a.jsonl", line=1, record_id="rec-sl203"),
+        related_ids=(),
+        fingerprint="0123456789abcdef",
+    )
+    sl203_findings = [finding]
+
+    tool_event: dict[str, Any] = {
+        "kind": "tool_call",
+        "id": "evt-synthetic",
+        "payload": {"name": "bash", "side_effects": "possible"},
+    }
+
+    out.append(
+        {
+            "id": "package_must_abstain_sl203_only",
+            "construct": {
+                "type": "package_must_abstain",
+                "findings": sl203_findings,
+                "events": [tool_event],
+                "allow_unknown_side_effects": False,
+            },
+            "expected": {
+                "abstention": abstention_dict(
+                    policy.must_abstain(
+                        sl203_findings,
+                        [tool_event],
+                        allow_unknown_side_effects=False,
+                    )
+                )
+            },
+        }
+    )
+
+    message_only: dict[str, Any] = {"kind": "message", "id": "evt-synthetic-msg"}
+    no_findings: list[Any] = []
+    out.append(
+        {
+            "id": "package_must_abstain_message_only_no_abstain",
+            "construct": {
+                "type": "package_must_abstain",
+                "findings": no_findings,
+                "events": [message_only],
+                "allow_unknown_side_effects": False,
+            },
+            "expected": {
+                "abstention": abstention_dict(
+                    policy.must_abstain(
+                        no_findings,
+                        [message_only],
+                        allow_unknown_side_effects=False,
+                    )
+                )
+            },
+        }
+    )
+
+    return out
+
+
+def encode_finding(f: Any) -> dict[str, Any]:
+    src = f.source
+    line = None if src.line is None else int(src.line)
+    record_id = src.record_id
+    return {
+        "code": f.code,
+        "severity": f.severity.name,
+        "repairability": f.repairability.name,
+        "message": f.message,
+        "source": {
+            "path": src.path,
+            "line": line,
+            "record_id": record_id,
+        },
+        "related_ids": list(f.related_ids),
+        "fingerprint": f.fingerprint,
+        "schema_version": f.schema_version,
+        "message_template": f.message_template,
+        "evidence": None,
+    }
+
+
+def encode_event(ev: dict[str, Any]) -> dict[str, Any]:
+    """Mirror abstention parity tagged event encoding."""
+
+    def tagged(value: Any) -> dict[str, Any]:
+        if value is None:
+            return {"t": "null"}
+        if isinstance(value, bool):
+            return {"t": "bool", "v": value}
+        if isinstance(value, int):
+            return {"t": "int", "v": value}
+        if isinstance(value, str):
+            return {"t": "str", "v": value}
+        if isinstance(value, dict):
+            entries: list[list[Any]] = []
+            for key, val in value.items():
+                entries.append([key, tagged(val)])
+            return {"t": "map", "entries": entries}
+        raise TypeError(f"unencodable {type(value)}")
+
+    return {"entries": [[k, tagged(v)] for k, v in ev.items()]}
+
+
+def encode_construct(raw: dict[str, Any]) -> dict[str, Any]:
+    kind = raw["type"]
+    if kind == "package_dunder_all":
+        return dict(raw)
+    if kind == "package_safe_side_effect":
+        return dict(raw)
+    if kind == "package_tool_kinds_membership":
+        return dict(raw)
+    if kind == "package_must_abstain":
+        findings = raw["findings"]
+        events = raw["events"]
+        return {
+            "type": "package_must_abstain",
+            "findings": [encode_finding(f) for f in findings],
+            "events": [{"entries": encode_event(e)["entries"]} for e in events],
+            "allow_unknown_side_effects": raw["allow_unknown_side_effects"],
+        }
+    raise ValueError(f"unknown construct {kind}")
+
+
+def main() -> int:
+    policy = load_policy_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_policy(policy)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": encode_construct(spec["construct"]),
+                "expected": spec["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_lib_rs_sha256": LIB_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_lib_rs_sha256": LIB_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/policy/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.policy package parity (__all__, SAFE_SIDE_EFFECT, TOOL_KINDS "
+            "membership, must_abstain via package import)."
+        ),
+        "generator": "rust/parity/vectors/policy/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

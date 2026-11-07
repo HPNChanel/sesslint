@@ -1,0 +1,1707 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.completion",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "completion_py_sha256": "bb1b7b66ecd39557e425b87c0173d6dc30d55aa0477b3153406d491a62a56c54",
+  "completion_rs_sha256": "d49cb1c9ee7f146b21cf72b173fa62435349ffa542acd37e67f0ff16c31ab2bd",
+  "known_parity_gaps": [
+    "GAP-completion-profile-choices: Python _profile_choices imports sesslint.profiles.list_profiles; Rust profile_choices returns ListProfilesUnavailable (not byte-compared here).",
+    "GAP-completion-create-parser: Python generate_completion(parser=None) imports sesslint.cli.create_parser; Rust returns CreateParserUnavailable (not byte-compared here).",
+    "GAP-completion-harvest-profile-live: Python harvest with --profile and no fixed choices calls _profile_choices; Rust harvest_parser returns ListProfilesUnavailable (not byte-compared here)."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "completion_shells": [
+          "bash",
+          "zsh",
+          "fish",
+          "powershell"
+        ],
+        "prog": "sesslint"
+      }
+    },
+    {
+      "id": "clean_help_none",
+      "construct": {
+        "type": "clean_help",
+        "raw": {
+          "kind": "none"
+        }
+      },
+      "expected": {
+        "help": ""
+      }
+    },
+    {
+      "id": "clean_help_argparse_suppress",
+      "construct": {
+        "type": "clean_help",
+        "raw": {
+          "kind": "suppress"
+        }
+      },
+      "expected": {
+        "help": ""
+      }
+    },
+    {
+      "id": "clean_help_suppress_text",
+      "construct": {
+        "type": "clean_help",
+        "raw": {
+          "kind": "text",
+          "value": "==SUPPRESS=="
+        }
+      },
+      "expected": {
+        "help": ""
+      }
+    },
+    {
+      "id": "clean_help_not_str",
+      "construct": {
+        "type": "clean_help",
+        "raw": {
+          "kind": "not_str"
+        }
+      },
+      "expected": {
+        "help": ""
+      }
+    },
+    {
+      "id": "clean_help_whitespace_unicode",
+      "construct": {
+        "type": "clean_help",
+        "raw": {
+          "kind": "text",
+          "value": "  alpha:  beta's\t[gamma]\néééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      },
+      "expected": {
+        "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      }
+    },
+    {
+      "id": "clean_help_nbsp",
+      "construct": {
+        "type": "clean_help",
+        "raw": {
+          "kind": "text",
+          "value": "a b"
+        }
+      },
+      "expected": {
+        "help": "a b"
+      }
+    },
+    {
+      "id": "ps_quote_embedded",
+      "construct": {
+        "type": "ps_quote",
+        "value": "it's a 'quote'"
+      },
+      "expected": {
+        "quoted": "'it''s a ''quote'''"
+      }
+    },
+    {
+      "id": "ps_quote_empty",
+      "construct": {
+        "type": "ps_quote",
+        "value": ""
+      },
+      "expected": {
+        "quoted": "''"
+      }
+    },
+    {
+      "id": "harvest_synthetic_main",
+      "construct": {
+        "type": "harvest_parser",
+        "surface": {
+          "kind": "synthetic_main"
+        }
+      },
+      "expected": {
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "harvest_fixed_choices",
+      "construct": {
+        "type": "harvest_parser",
+        "surface": {
+          "actions": [
+            {
+              "kind": "not_subcommands"
+            },
+            {
+              "kind": "subcommands",
+              "names": [
+                {
+                  "name": "z-alias",
+                  "body_id": 2
+                },
+                {
+                  "name": "scan",
+                  "body_id": 1
+                },
+                {
+                  "name": "chk",
+                  "body_id": 2
+                },
+                {
+                  "name": "check",
+                  "body_id": 2
+                },
+                {
+                  "name": "sc",
+                  "body_id": 1
+                }
+              ],
+              "canonical": [
+                "scan",
+                "check"
+              ],
+              "bodies": [
+                {
+                  "body_id": 1,
+                  "actions": [
+                    {
+                      "kind": "help"
+                    },
+                    {
+                      "kind": "option",
+                      "option_strings": [
+                        "-q",
+                        "--quiet"
+                      ],
+                      "choices": {
+                        "kind": "not_string_sequence"
+                      },
+                      "help": {
+                        "kind": "none"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "body_id": 2,
+                  "actions": [
+                    {
+                      "kind": "help"
+                    },
+                    {
+                      "kind": "option",
+                      "option_strings": [
+                        "--zeta",
+                        "-z"
+                      ],
+                      "choices": {
+                        "kind": "strings",
+                        "values": [
+                          "b",
+                          "a"
+                        ]
+                      },
+                      "help": {
+                        "kind": "text",
+                        "value": "  alpha   beta\tgamma "
+                      }
+                    },
+                    {
+                      "kind": "option",
+                      "option_strings": [],
+                      "choices": {
+                        "kind": "not_string_sequence"
+                      },
+                      "help": {
+                        "kind": "text",
+                        "value": "pos help"
+                      }
+                    },
+                    {
+                      "kind": "option",
+                      "option_strings": [
+                        "--profile"
+                      ],
+                      "choices": {
+                        "kind": "strings",
+                        "values": [
+                          "y",
+                          "x"
+                        ]
+                      },
+                      "help": {
+                        "kind": "text",
+                        "value": "==SUPPRESS=="
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "commands": [
+          {
+            "name": "check",
+            "aliases": [
+              "chk",
+              "z-alias"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "a",
+                  "b"
+                ],
+                "help": "alpha beta gamma"
+              },
+              {
+                "options": [
+                  "--profile"
+                ],
+                "choices": [
+                  "x",
+                  "y"
+                ],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "scan",
+            "aliases": [
+              "sc"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "command_words_synthetic",
+      "construct": {
+        "type": "command_words",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "words": [
+          "aaa-alias",
+          "aah",
+          "alpha",
+          "bee",
+          "beta"
+        ]
+      }
+    },
+    {
+      "id": "bash_script_synthetic",
+      "construct": {
+        "type": "bash_script",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "# sesslint completion (bash) - generated at runtime; do not edit.\n_sesslint_complete() {\n    local cur prev cmd opts\n    COMPREPLY=()\n    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n    cmd=\"\"\n    for w in \"${COMP_WORDS[@]:1}\"; do\n        case \"$w\" in\n            -*) continue ;;\n            *) cmd=\"$w\"; break ;;\n        esac\n    done\n    if [ -z \"$cmd\" ]; then\n        COMPREPLY=( $(compgen -W \"aaa-alias aah alpha bee beta\" -- \"$cur\") )\n        return 0\n    fi\n    case \"$cmd\" in\n            alpha|aaa-alias|aah)\n                opts=\"--alpha --zeta -z --quiet -q\"\n                case \"$prev\" in\n                    --alpha) COMPREPLY=( $(compgen -W \"aaa mid zzz\" -- \"$cur\") ); return 0 ;;\n                    --zeta) COMPREPLY=( $(compgen -W \"aaa mid zzz\" -- \"$cur\") ); return 0 ;;\n                    -z) COMPREPLY=( $(compgen -W \"aaa mid zzz\" -- \"$cur\") ); return 0 ;;\n                esac ;;\n            beta|bee)\n                opts=\"--quiet -q\" ;;\n        *) return 0 ;;\n    esac\n    COMPREPLY=( $(compgen -W \"$opts\" -- \"$cur\") )\n    return 0\n}\ncomplete -F _sesslint_complete sesslint\n"
+      }
+    },
+    {
+      "id": "zsh_script_synthetic",
+      "construct": {
+        "type": "zsh_script",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "#compdef sesslint\n# sesslint completion (zsh) - generated at runtime; do not edit.\n_sesslint() {\n    local -a commands=('alpha:sesslint alpha command' 'beta:sesslint beta command' 'aaa-alias:alias for sesslint alpha' 'aah:alias for sesslint alpha' 'bee:alias for sesslint beta')\n    local curcontext=\"$curcontext\" state ret=1\n    _arguments -C '1:command:->cmd' '*:: :->args' && ret=0\n    case $state in\n        cmd) _describe 'command' commands && ret=0 ;;\n        args) case $words[1] in\n      alpha|aaa-alias|aah) _arguments -s '--alpha[alpha\\: betas \\[gamma\\] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé]:value:(aaa mid zzz)' '--zeta[alpha\\: betas \\[gamma\\] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé]:value:(aaa mid zzz)' '-z[alpha\\: betas \\[gamma\\] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé]:value:(aaa mid zzz)' '--quiet[]' '-q[]' ;;\n      beta|bee) _arguments -s '--quiet[]' '-q[]' ;;\n            *) _arguments '*:file:_files' && ret=0 ;;\n        esac ;;\n    esac\n    return ret\n}\n_sesslint\n"
+      }
+    },
+    {
+      "id": "fish_script_synthetic",
+      "construct": {
+        "type": "fish_script",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "# sesslint completion (fish) - generated at runtime; do not edit.\ncomplete -c sesslint -n \"__fish_use_subcommand\" -a \"aaa-alias aah alpha bee beta\"\n# alpha --alpha --zeta -z\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -l alpha -a \"aaa mid zzz\" -d 'alpha: betas [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -l zeta -a \"aaa mid zzz\" -d 'alpha: betas [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -s z -a \"aaa mid zzz\" -d 'alpha: betas [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n# alpha --quiet -q\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -l quiet\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -s q\n# beta --quiet -q\ncomplete -c sesslint -n \"__fish_seen_subcommand_from beta bee\" -l quiet\ncomplete -c sesslint -n \"__fish_seen_subcommand_from beta bee\" -s q\n"
+      }
+    },
+    {
+      "id": "powershell_script_synthetic",
+      "construct": {
+        "type": "powershell_script",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "# sesslint completion (powershell) - generated at runtime; do not edit.\n# Install: paste this script into your $PROFILE, or run:\n#   sesslint completion powershell >> $PROFILE\n$sesslintCommandNames = @('aaa-alias', 'aah', 'alpha', 'bee', 'beta')\n$sesslintFlagMap = @{\n    'aaa-alias' = @('--alpha', '--zeta', '-z', '--quiet', '-q')\n    'aah' = @('--alpha', '--zeta', '-z', '--quiet', '-q')\n    'alpha' = @('--alpha', '--zeta', '-z', '--quiet', '-q')\n    'bee' = @('--quiet', '-q')\n    'beta' = @('--quiet', '-q')\n}\n$sesslintChoiceMap = @{\n    'aaa-alias --alpha' = @('aaa', 'mid', 'zzz')\n    'aaa-alias --zeta' = @('aaa', 'mid', 'zzz')\n    'aaa-alias -z' = @('aaa', 'mid', 'zzz')\n    'aah --alpha' = @('aaa', 'mid', 'zzz')\n    'aah --zeta' = @('aaa', 'mid', 'zzz')\n    'aah -z' = @('aaa', 'mid', 'zzz')\n    'alpha --alpha' = @('aaa', 'mid', 'zzz')\n    'alpha --zeta' = @('aaa', 'mid', 'zzz')\n    'alpha -z' = @('aaa', 'mid', 'zzz')\n}\n$sesslintHelpMap = @{\n    'aaa-alias --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aaa-alias --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aaa-alias -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aah --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aah --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aah -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'alpha --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'alpha --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'alpha -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n}\n$sesslintCore = {\n    param($wordToComplete, $commandAst)\n    $elements = @($commandAst.CommandElements)\n    $prevIndex = $elements.Count - 1\n    if ($wordToComplete -ne '' -and $prevIndex -ge 1) { $prevIndex-- }\n    $prev = if ($prevIndex -ge 1) { $elements[$prevIndex].Extent.Text } else { $null }\n    $cmd = $null\n    for ($i = 1; $i -le $prevIndex; $i++) {\n        $t = $elements[$i].Extent.Text\n        if (-not $t.StartsWith('-')) { $cmd = $t; break }\n    }\n    $candidates = @()\n    if ($null -eq $cmd) {\n        $candidates = $sesslintCommandNames\n    } elseif ($null -ne $prev -and $sesslintChoiceMap.ContainsKey(\"$cmd $prev\")) {\n        $candidates = $sesslintChoiceMap[\"$cmd $prev\"]\n    } elseif ($sesslintFlagMap.ContainsKey($cmd)) {\n        $candidates = $sesslintFlagMap[$cmd]\n    }\n    $candidates | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object {\n        $tip = $sesslintHelpMap[\"$cmd $_\"]\n        if ($null -eq $tip) { $tip = $_ }\n        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)\n    }\n}\n$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue\nif ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {\n    Register-ArgumentCompleter -Native -CommandName sesslint -ScriptBlock {\n        param($wordToComplete, $commandAst, $cursorPosition)\n        & $sesslintCore $wordToComplete $commandAst\n    }.GetNewClosure()\n} else {\n    Register-ArgumentCompleter -CommandName sesslint -ScriptBlock {\n        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)\n        & $sesslintCore $wordToComplete $commandAst\n    }.GetNewClosure()\n}\n"
+      }
+    },
+    {
+      "id": "powershell_script_empty",
+      "construct": {
+        "type": "powershell_script",
+        "commands": []
+      },
+      "expected": {
+        "script": "# sesslint completion (powershell) - generated at runtime; do not edit.\n# Install: paste this script into your $PROFILE, or run:\n#   sesslint completion powershell >> $PROFILE\n$sesslintCommandNames = @()\n$sesslintFlagMap = @{\n\n}\n$sesslintChoiceMap = @{\n\n}\n$sesslintHelpMap = @{\n\n}\n$sesslintCore = {\n    param($wordToComplete, $commandAst)\n    $elements = @($commandAst.CommandElements)\n    $prevIndex = $elements.Count - 1\n    if ($wordToComplete -ne '' -and $prevIndex -ge 1) { $prevIndex-- }\n    $prev = if ($prevIndex -ge 1) { $elements[$prevIndex].Extent.Text } else { $null }\n    $cmd = $null\n    for ($i = 1; $i -le $prevIndex; $i++) {\n        $t = $elements[$i].Extent.Text\n        if (-not $t.StartsWith('-')) { $cmd = $t; break }\n    }\n    $candidates = @()\n    if ($null -eq $cmd) {\n        $candidates = $sesslintCommandNames\n    } elseif ($null -ne $prev -and $sesslintChoiceMap.ContainsKey(\"$cmd $prev\")) {\n        $candidates = $sesslintChoiceMap[\"$cmd $prev\"]\n    } elseif ($sesslintFlagMap.ContainsKey($cmd)) {\n        $candidates = $sesslintFlagMap[$cmd]\n    }\n    $candidates | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object {\n        $tip = $sesslintHelpMap[\"$cmd $_\"]\n        if ($null -eq $tip) { $tip = $_ }\n        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)\n    }\n}\n$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue\nif ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {\n    Register-ArgumentCompleter -Native -CommandName sesslint -ScriptBlock {\n        param($wordToComplete, $commandAst, $cursorPosition)\n        & $sesslintCore $wordToComplete $commandAst\n    }.GetNewClosure()\n} else {\n    Register-ArgumentCompleter -CommandName sesslint -ScriptBlock {\n        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)\n        & $sesslintCore $wordToComplete $commandAst\n    }.GetNewClosure()\n}\n"
+      }
+    },
+    {
+      "id": "generate_completion_bash_synthetic",
+      "construct": {
+        "type": "generate_completion",
+        "shell": "bash",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "# sesslint completion (bash) - generated at runtime; do not edit.\n_sesslint_complete() {\n    local cur prev cmd opts\n    COMPREPLY=()\n    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n    cmd=\"\"\n    for w in \"${COMP_WORDS[@]:1}\"; do\n        case \"$w\" in\n            -*) continue ;;\n            *) cmd=\"$w\"; break ;;\n        esac\n    done\n    if [ -z \"$cmd\" ]; then\n        COMPREPLY=( $(compgen -W \"aaa-alias aah alpha bee beta\" -- \"$cur\") )\n        return 0\n    fi\n    case \"$cmd\" in\n            alpha|aaa-alias|aah)\n                opts=\"--alpha --zeta -z --quiet -q\"\n                case \"$prev\" in\n                    --alpha) COMPREPLY=( $(compgen -W \"aaa mid zzz\" -- \"$cur\") ); return 0 ;;\n                    --zeta) COMPREPLY=( $(compgen -W \"aaa mid zzz\" -- \"$cur\") ); return 0 ;;\n                    -z) COMPREPLY=( $(compgen -W \"aaa mid zzz\" -- \"$cur\") ); return 0 ;;\n                esac ;;\n            beta|bee)\n                opts=\"--quiet -q\" ;;\n        *) return 0 ;;\n    esac\n    COMPREPLY=( $(compgen -W \"$opts\" -- \"$cur\") )\n    return 0\n}\ncomplete -F _sesslint_complete sesslint\n"
+      }
+    },
+    {
+      "id": "generate_completion_zsh_synthetic",
+      "construct": {
+        "type": "generate_completion",
+        "shell": "zsh",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "#compdef sesslint\n# sesslint completion (zsh) - generated at runtime; do not edit.\n_sesslint() {\n    local -a commands=('alpha:sesslint alpha command' 'beta:sesslint beta command' 'aaa-alias:alias for sesslint alpha' 'aah:alias for sesslint alpha' 'bee:alias for sesslint beta')\n    local curcontext=\"$curcontext\" state ret=1\n    _arguments -C '1:command:->cmd' '*:: :->args' && ret=0\n    case $state in\n        cmd) _describe 'command' commands && ret=0 ;;\n        args) case $words[1] in\n      alpha|aaa-alias|aah) _arguments -s '--alpha[alpha\\: betas \\[gamma\\] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé]:value:(aaa mid zzz)' '--zeta[alpha\\: betas \\[gamma\\] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé]:value:(aaa mid zzz)' '-z[alpha\\: betas \\[gamma\\] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé]:value:(aaa mid zzz)' '--quiet[]' '-q[]' ;;\n      beta|bee) _arguments -s '--quiet[]' '-q[]' ;;\n            *) _arguments '*:file:_files' && ret=0 ;;\n        esac ;;\n    esac\n    return ret\n}\n_sesslint\n"
+      }
+    },
+    {
+      "id": "generate_completion_fish_synthetic",
+      "construct": {
+        "type": "generate_completion",
+        "shell": "fish",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "# sesslint completion (fish) - generated at runtime; do not edit.\ncomplete -c sesslint -n \"__fish_use_subcommand\" -a \"aaa-alias aah alpha bee beta\"\n# alpha --alpha --zeta -z\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -l alpha -a \"aaa mid zzz\" -d 'alpha: betas [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -l zeta -a \"aaa mid zzz\" -d 'alpha: betas [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -s z -a \"aaa mid zzz\" -d 'alpha: betas [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n# alpha --quiet -q\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -l quiet\ncomplete -c sesslint -n \"__fish_seen_subcommand_from alpha aaa-alias aah\" -s q\n# beta --quiet -q\ncomplete -c sesslint -n \"__fish_seen_subcommand_from beta bee\" -l quiet\ncomplete -c sesslint -n \"__fish_seen_subcommand_from beta bee\" -s q\n"
+      }
+    },
+    {
+      "id": "generate_completion_powershell_synthetic",
+      "construct": {
+        "type": "generate_completion",
+        "shell": "powershell",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "script": "# sesslint completion (powershell) - generated at runtime; do not edit.\n# Install: paste this script into your $PROFILE, or run:\n#   sesslint completion powershell >> $PROFILE\n$sesslintCommandNames = @('aaa-alias', 'aah', 'alpha', 'bee', 'beta')\n$sesslintFlagMap = @{\n    'aaa-alias' = @('--alpha', '--zeta', '-z', '--quiet', '-q')\n    'aah' = @('--alpha', '--zeta', '-z', '--quiet', '-q')\n    'alpha' = @('--alpha', '--zeta', '-z', '--quiet', '-q')\n    'bee' = @('--quiet', '-q')\n    'beta' = @('--quiet', '-q')\n}\n$sesslintChoiceMap = @{\n    'aaa-alias --alpha' = @('aaa', 'mid', 'zzz')\n    'aaa-alias --zeta' = @('aaa', 'mid', 'zzz')\n    'aaa-alias -z' = @('aaa', 'mid', 'zzz')\n    'aah --alpha' = @('aaa', 'mid', 'zzz')\n    'aah --zeta' = @('aaa', 'mid', 'zzz')\n    'aah -z' = @('aaa', 'mid', 'zzz')\n    'alpha --alpha' = @('aaa', 'mid', 'zzz')\n    'alpha --zeta' = @('aaa', 'mid', 'zzz')\n    'alpha -z' = @('aaa', 'mid', 'zzz')\n}\n$sesslintHelpMap = @{\n    'aaa-alias --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aaa-alias --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aaa-alias -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aah --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aah --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'aah -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'alpha --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'alpha --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n    'alpha -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'\n}\n$sesslintCore = {\n    param($wordToComplete, $commandAst)\n    $elements = @($commandAst.CommandElements)\n    $prevIndex = $elements.Count - 1\n    if ($wordToComplete -ne '' -and $prevIndex -ge 1) { $prevIndex-- }\n    $prev = if ($prevIndex -ge 1) { $elements[$prevIndex].Extent.Text } else { $null }\n    $cmd = $null\n    for ($i = 1; $i -le $prevIndex; $i++) {\n        $t = $elements[$i].Extent.Text\n        if (-not $t.StartsWith('-')) { $cmd = $t; break }\n    }\n    $candidates = @()\n    if ($null -eq $cmd) {\n        $candidates = $sesslintCommandNames\n    } elseif ($null -ne $prev -and $sesslintChoiceMap.ContainsKey(\"$cmd $prev\")) {\n        $candidates = $sesslintChoiceMap[\"$cmd $prev\"]\n    } elseif ($sesslintFlagMap.ContainsKey($cmd)) {\n        $candidates = $sesslintFlagMap[$cmd]\n    }\n    $candidates | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object {\n        $tip = $sesslintHelpMap[\"$cmd $_\"]\n        if ($null -eq $tip) { $tip = $_ }\n        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)\n    }\n}\n$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue\nif ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {\n    Register-ArgumentCompleter -Native -CommandName sesslint -ScriptBlock {\n        param($wordToComplete, $commandAst, $cursorPosition)\n        & $sesslintCore $wordToComplete $commandAst\n    }.GetNewClosure()\n} else {\n    Register-ArgumentCompleter -CommandName sesslint -ScriptBlock {\n        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)\n        & $sesslintCore $wordToComplete $commandAst\n    }.GetNewClosure()\n}\n"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_csh",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "csh",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'csh'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_empty",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell ''; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_it's",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "it's",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell \"it's\"; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_a\"b",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "a\"b",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'a\"b'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_both'\"",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "both'\"",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'both\\'\"'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_\\",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "\\",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell '\\\\'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_\n",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "\n",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell '\\n'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_PowerShell",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "PowerShell",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'PowerShell'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_bash ",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "bash ",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'bash '; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_é",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "é",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'é'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_ ",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": " ",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell '\\xa0'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "generate_completion_unsupported_cmd",
+      "construct": {
+        "type": "generate_completion_error",
+        "shell": "cmd",
+        "commands": [
+          {
+            "name": "alpha",
+            "aliases": [
+              "aaa-alias",
+              "aah"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--alpha",
+                  "--zeta",
+                  "-z"
+                ],
+                "choices": [
+                  "aaa",
+                  "mid",
+                  "zzz"
+                ],
+                "help": "alpha: beta's [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              },
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          },
+          {
+            "name": "beta",
+            "aliases": [
+              "bee"
+            ],
+            "flags": [
+              {
+                "options": [
+                  "--quiet",
+                  "-q"
+                ],
+                "choices": [],
+                "help": ""
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "error_type": "ValueError",
+        "message": "Unsupported shell 'cmd\\x7f'; expected one of ('bash', 'zsh', 'fish', 'powershell')"
+      }
+    },
+    {
+      "id": "profile_choices_live",
+      "construct": {
+        "type": "profile_choices"
+      },
+      "expected": {
+        "profiles": [
+          "claude-strict",
+          "neutral",
+          "openai-strict"
+        ]
+      }
+    },
+    {
+      "id": "harvest_profile_seam_not_string_sequence",
+      "construct": {
+        "type": "harvest_profile_seam",
+        "surface": {
+          "actions": [
+            {
+              "kind": "subcommands",
+              "names": [
+                {
+                  "name": "check",
+                  "body_id": 1
+                }
+              ],
+              "canonical": [
+                "check"
+              ],
+              "bodies": [
+                {
+                  "body_id": 1,
+                  "actions": [
+                    {
+                      "kind": "option",
+                      "option_strings": [
+                        "-p",
+                        "--profile"
+                      ],
+                      "choices": {
+                        "kind": "not_string_sequence"
+                      },
+                      "help": {
+                        "kind": "none"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "raises": "ListProfilesUnavailable"
+      }
+    },
+    {
+      "id": "harvest_profile_seam_empty_strings",
+      "construct": {
+        "type": "harvest_profile_seam",
+        "surface": {
+          "actions": [
+            {
+              "kind": "subcommands",
+              "names": [
+                {
+                  "name": "check",
+                  "body_id": 1
+                }
+              ],
+              "canonical": [
+                "check"
+              ],
+              "bodies": [
+                {
+                  "body_id": 1,
+                  "actions": [
+                    {
+                      "kind": "option",
+                      "option_strings": [
+                        "-p",
+                        "--profile"
+                      ],
+                      "choices": {
+                        "kind": "strings",
+                        "values": []
+                      },
+                      "help": {
+                        "kind": "none"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "raises": "ListProfilesUnavailable"
+      }
+    },
+    {
+      "id": "generate_completion_create_parser_seam",
+      "construct": {
+        "type": "generate_completion_create_parser",
+        "shell": "bash"
+      },
+      "expected": {
+        "raises": "CreateParserUnavailable"
+      }
+    }
+  ]
+}

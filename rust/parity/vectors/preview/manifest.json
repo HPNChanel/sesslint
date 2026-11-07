@@ -1,0 +1,14 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.preview",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "preview_py_sha256": "13f05663816b930c1df1d6297740168545b9b702fd3e2abdf67f25df1a54f5a9",
+  "vector_count": 20,
+  "vectors_sha256": "9bfae2b16ce6b93f4155401ebb07aa078a8c5eef0dbbe561273db52979dc224c",
+  "generator": "rust/parity/vectors/preview/generate",
+  "known_parity_gaps": [
+    "repair_preview: Rust returns EvidenceError::Unsupported; Python calls sesslint.batch._plan_detail and sesslint.report.minimize_path.",
+    "get_preview_schema_path: Rust returns EvidenceError::Unsupported; Python calls sesslint._resources.schema_path.",
+    "load_preview_schema: Rust returns EvidenceError::Unsupported; Python reads schemas/sesslint.preview.v1.json."
+  ]
+}

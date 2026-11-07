@@ -1,0 +1,13 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.seal",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "seal_py_sha256": "4e2c60b7230da68ddc42310b042031f1e09a4d782d9ea787311141a6fee6a167",
+  "seal_rs_sha256": "15120d6ce87c4e314a529f712a15ad5a6c37d06122918864d440e8d69bc7b0db",
+  "vector_count": 1,
+  "vectors_sha256": "db3db3455bf65d0483bea6d7e1d40ef45a8ef927b7ff844f98e6707e588d7f9a",
+  "generator": "rust/parity/vectors/cli.seal/generate",
+  "known_parity_gaps": [
+    "GAP-cli-seal-run: Python run() calls sesslint.seal.verify_ledger and may print ok:/JSON or divergence errors; Rust run() is a seam (verify_ledger unavailable) and does not read a ledger or emit stdout (not byte-compared here)."
+  ]
+}

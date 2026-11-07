@@ -1,0 +1,12 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._context",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "context_py_sha256": "333e2b5cc857a22387ed5f67e22806491ebdfdabaef970f006d97aff32253667",
+  "vector_count": 24,
+  "vectors_sha256": "54179d2f9208725ccd52ac324fce029dfcc4336426061f96773e7c4536caa93e",
+  "generator": "rust/parity/vectors/cli._context/generate",
+  "known_gaps": [
+    "build_context calls sesslint.config.load_config; Rust returns ContextError::Unsupported"
+  ]
+}

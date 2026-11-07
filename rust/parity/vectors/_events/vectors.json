@@ -1,0 +1,649 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint._events",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "events_rs_sha256": "7cb5cb9aa2bf64030792490986617f06d8549d7c3293f5bc0265cb53b7301913",
+  "known_parity_gaps": [
+    "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error",
+    "a mapping with no usable content_hash: Python hashes the payload or the whole mapping",
+    "SessionEvent canonical_hash, payload_hash, and to_canonical_dict",
+    "sha256(str(ev))",
+    "Python str(float), str(list), and str(dict) for a getter field",
+    "the tolerant dict(ev) fallback",
+    "an int outside i64"
+  ],
+  "vectors": [
+    {
+      "id": "mapping_kind_string",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": "message"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "message"
+      }
+    },
+    {
+      "id": "mapping_kind_missing_key",
+      "construct": {
+        "type": "event_kind",
+        "mapping": []
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_kind_json_null",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "null"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_kind_empty_string",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "str",
+              "v": ""
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": ""
+      }
+    },
+    {
+      "id": "mapping_id_string",
+      "construct": {
+        "type": "event_id",
+        "mapping": [
+          [
+            "id",
+            {
+              "t": "str",
+              "v": "evt-synthetic"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "evt-synthetic"
+      }
+    },
+    {
+      "id": "mapping_id_missing_key",
+      "construct": {
+        "type": "event_id",
+        "mapping": []
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_id_json_null",
+      "construct": {
+        "type": "event_id",
+        "mapping": [
+          [
+            "id",
+            {
+              "t": "null"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_id_empty_string",
+      "construct": {
+        "type": "event_id",
+        "mapping": [
+          [
+            "id",
+            {
+              "t": "str",
+              "v": ""
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": ""
+      }
+    },
+    {
+      "id": "mapping_parent_id_string",
+      "construct": {
+        "type": "event_parent_id",
+        "mapping": [
+          [
+            "parent_id",
+            {
+              "t": "str",
+              "v": "parent-synthetic"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "parent-synthetic"
+      }
+    },
+    {
+      "id": "mapping_parent_id_missing_key",
+      "construct": {
+        "type": "event_parent_id",
+        "mapping": []
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_parent_id_json_null",
+      "construct": {
+        "type": "event_parent_id",
+        "mapping": [
+          [
+            "parent_id",
+            {
+              "t": "null"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_parent_id_empty_string",
+      "construct": {
+        "type": "event_parent_id",
+        "mapping": [
+          [
+            "parent_id",
+            {
+              "t": "str",
+              "v": ""
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": ""
+      }
+    },
+    {
+      "id": "mapping_correlation_id_string",
+      "construct": {
+        "type": "event_corr_id",
+        "mapping": [
+          [
+            "correlation_id",
+            {
+              "t": "str",
+              "v": "corr-synthetic"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "corr-synthetic"
+      }
+    },
+    {
+      "id": "mapping_correlation_id_missing_key",
+      "construct": {
+        "type": "event_corr_id",
+        "mapping": []
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_correlation_id_json_null",
+      "construct": {
+        "type": "event_corr_id",
+        "mapping": [
+          [
+            "correlation_id",
+            {
+              "t": "null"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "mapping_correlation_id_empty_string",
+      "construct": {
+        "type": "event_corr_id",
+        "mapping": [
+          [
+            "correlation_id",
+            {
+              "t": "str",
+              "v": ""
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": ""
+      }
+    },
+    {
+      "id": "coercion_kind_true",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "bool",
+              "v": true
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "True"
+      }
+    },
+    {
+      "id": "coercion_kind_false",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "bool",
+              "v": false
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "False"
+      }
+    },
+    {
+      "id": "coercion_kind_int_positive",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "int",
+              "v": 42
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "42"
+      }
+    },
+    {
+      "id": "coercion_kind_int_negative",
+      "construct": {
+        "type": "event_kind",
+        "mapping": [
+          [
+            "kind",
+            {
+              "t": "int",
+              "v": -7
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "-7"
+      }
+    },
+    {
+      "id": "content_fingerprint_mapping_hash_abc",
+      "construct": {
+        "type": "event_content_fingerprint",
+        "source": "mapping",
+        "mapping": [
+          [
+            "content_hash",
+            {
+              "t": "str",
+              "v": "abc"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "value": "abc"
+      }
+    },
+    {
+      "id": "content_fingerprint_attr_object_hash_abc",
+      "construct": {
+        "type": "event_content_fingerprint",
+        "source": "attr_content_hash",
+        "content_hash": "abc"
+      },
+      "expected": {
+        "value": "abc"
+      }
+    },
+    {
+      "id": "to_event_dict_flat_insertion_order",
+      "construct": {
+        "type": "to_event_dict",
+        "mapping": [
+          [
+            "key-z",
+            {
+              "t": "str",
+              "v": "last"
+            }
+          ],
+          [
+            "key-a",
+            {
+              "t": "str",
+              "v": "first"
+            }
+          ],
+          [
+            "key-m",
+            {
+              "t": "int",
+              "v": 1
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "ordered": [
+          [
+            "key-z",
+            {
+              "t": "str",
+              "v": "last"
+            }
+          ],
+          [
+            "key-a",
+            {
+              "t": "str",
+              "v": "first"
+            }
+          ],
+          [
+            "key-m",
+            {
+              "t": "int",
+              "v": 1
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "to_event_dict_nested_mapping",
+      "construct": {
+        "type": "to_event_dict",
+        "mapping": [
+          [
+            "outer",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "inner",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "ordered": [
+          [
+            "outer",
+            {
+              "t": "map",
+              "entries": [
+                [
+                  "inner",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "copy_events_as_dicts_two_with_nested",
+      "construct": {
+        "type": "copy_events_as_dicts",
+        "events": [
+          {
+            "entries": [
+              [
+                "a",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "b",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "nested",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "x",
+                      {
+                        "t": "str",
+                        "v": "message"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "dicts": [
+          [
+            [
+              "a",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ],
+            [
+              "b",
+              {
+                "t": "str",
+                "v": "evt-synthetic"
+              }
+            ]
+          ],
+          [
+            [
+              "nested",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "x",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": "copy_events_as_dicts_strict_two_with_nested",
+      "construct": {
+        "type": "copy_events_as_dicts_strict",
+        "events": [
+          {
+            "entries": [
+              [
+                "a",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "b",
+                {
+                  "t": "str",
+                  "v": "evt-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "nested",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "x",
+                      {
+                        "t": "str",
+                        "v": "message"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "dicts": [
+          [
+            [
+              "a",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ],
+            [
+              "b",
+              {
+                "t": "str",
+                "v": "evt-synthetic"
+              }
+            ]
+          ],
+          [
+            [
+              "nested",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "x",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": "session_event_simple_attrs_all_getters",
+      "construct": {
+        "type": "session_event_getters",
+        "event": {
+          "kind": "message",
+          "id": "evt-synthetic",
+          "parent_id": null,
+          "correlation_id": "corr-synthetic"
+        }
+      },
+      "expected": {
+        "kind": "message",
+        "id": "evt-synthetic",
+        "parent_id": null,
+        "correlation_id": "corr-synthetic"
+      }
+    }
+  ]
+}

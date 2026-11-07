@@ -1,0 +1,888 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.profiles.builtin",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_builtin_rs_sha256": "8ac5a563c81e05189577d1177425b26dab911fb1fed4338f7c0abf0c235312fd",
+  "checks_profile_rs_sha256": "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c",
+  "python_all": [
+    "ALL_RULES",
+    "CLAUDE_STRICT_PROFILE",
+    "NEUTRAL_PROFILE",
+    "OPENAI_STRICT_PROFILE",
+    "REGISTRY"
+  ],
+  "known_parity_gaps": [
+    "checks::profile::get_profile is not wired to this registry. It still returns sesslint.profiles.builtin is not available. Python get_profile returns the registered profile.",
+    "REGISTRY.get of a missing name is None. Python dict lookup raises KeyError. Do not require the KeyError text."
+  ],
+  "vectors": [
+    {
+      "id": "all_rules_order",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "codes": [
+          "SL001",
+          "SL002",
+          "SL003",
+          "SL004",
+          "SL005",
+          "SL006",
+          "SL007",
+          "SL008",
+          "SL009",
+          "SL010",
+          "SL011",
+          "SL101",
+          "SL102",
+          "SL103",
+          "SL104",
+          "SL105",
+          "SL106",
+          "SL107",
+          "SL108",
+          "SL201",
+          "SL202",
+          "SL203",
+          "SL204",
+          "SL205",
+          "SL206",
+          "SL207",
+          "SL208",
+          "SL301",
+          "SL302",
+          "SL303",
+          "SL304",
+          "SL305",
+          "SL306",
+          "SL401",
+          "SL402"
+        ]
+      }
+    },
+    {
+      "id": "neutral_to_dict",
+      "construct": {
+        "type": "profile_to_dict",
+        "profile": "NEUTRAL_PROFILE"
+      },
+      "expected": {
+        "dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "canonical"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  },
+                  {
+                    "t": "str",
+                    "v": "openai"
+                  },
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "auto"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "default"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "Vendor-neutral baseline profile using standard generic rules and default thresholds."
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL003"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL004"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL005"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL006"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL007"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL008"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL009"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL010"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL011"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL101"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL102"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL103"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL104"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL105"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL106"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL107"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL108"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL201"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL202"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL203"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL204"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL205"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL206"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL207"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL208"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL301"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL302"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL303"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL304"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL305"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL306"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL401"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL402"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "neutral"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.55
+                    }
+                  ],
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.15
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ],
+            [
+              "rule_severities",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "SL107",
+                    {
+                      "t": "str",
+                      "v": "warning"
+                    }
+                  ],
+                  [
+                    "SL108",
+                    {
+                      "t": "str",
+                      "v": "warning"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "claude_strict_to_dict",
+      "construct": {
+        "type": "profile_to_dict",
+        "profile": "CLAUDE_STRICT_PROFILE"
+      },
+      "expected": {
+        "dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  },
+                  {
+                    "t": "str",
+                    "v": "canonical"
+                  },
+                  {
+                    "t": "str",
+                    "v": "auto"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "default"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "Strict profile for Claude Code sessions with tight format margins and strict version checks."
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL003"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL004"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL005"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL006"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL007"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL008"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL009"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL010"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL011"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL101"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL102"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL103"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL104"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL105"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL106"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL107"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL108"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL201"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL202"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL203"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL204"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL205"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL206"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL207"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL208"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL301"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL302"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL303"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL304"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL305"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL306"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL401"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL402"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "claude-strict"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.55
+                    }
+                  ],
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.2
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ],
+            [
+              "rule_severities",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "SL107",
+                    {
+                      "t": "str",
+                      "v": "error"
+                    }
+                  ],
+                  [
+                    "SL108",
+                    {
+                      "t": "str",
+                      "v": "error"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "openai_strict_to_dict",
+      "construct": {
+        "type": "profile_to_dict",
+        "profile": "OPENAI_STRICT_PROFILE"
+      },
+      "expected": {
+        "dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "openai"
+                  },
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "canonical"
+                  },
+                  {
+                    "t": "str",
+                    "v": "auto"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "high"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "Strict profile for OpenAI Agents SDK sessions with high checkpoint sensitivity."
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL003"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL004"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL005"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL006"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL007"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL008"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL009"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL010"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL011"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL101"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL102"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL103"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL104"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL105"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL106"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL107"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL108"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL201"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL202"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL203"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL204"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL205"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL206"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL207"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL208"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL301"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL302"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL303"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL304"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL305"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL306"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL401"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL402"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "openai-strict"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.55
+                    }
+                  ],
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.15
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ],
+            [
+              "rule_severities",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "SL107",
+                    {
+                      "t": "str",
+                      "v": "error"
+                    }
+                  ],
+                  [
+                    "SL108",
+                    {
+                      "t": "str",
+                      "v": "error"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "registry_order",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "keys": [
+          "neutral",
+          "claude-strict",
+          "openai-strict"
+        ]
+      }
+    },
+    {
+      "id": "all_names",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "names": [
+          "ALL_RULES",
+          "CLAUDE_STRICT_PROFILE",
+          "NEUTRAL_PROFILE",
+          "OPENAI_STRICT_PROFILE",
+          "REGISTRY"
+        ]
+      }
+    }
+  ]
+}

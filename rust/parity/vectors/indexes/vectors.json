@@ -1,0 +1,169 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.indexes",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "indexes_py_sha256": "6b95d0dc5ce789a722b772871d09bbbb12be03a4de0721b130663ae9d5d10818",
+  "vectors": [
+    {
+      "id": "claude_wellformed_membership",
+      "construct": {
+        "type": "read_index",
+        "fixture": "claude_wellformed",
+        "target": "sessions-index.json"
+      },
+      "expected": {
+        "format": "claude-sessions-index",
+        "entry_ids": [
+          "sid-aaa",
+          "sid-bbb",
+          "sid-ccc"
+        ],
+        "entry_paths": [
+          "synthetic/sid-aaa.jsonl",
+          "synthetic/sid-bbb.jsonl",
+          "synthetic/sid-ccc.jsonl"
+        ],
+        "normalized_ids": [
+          "sid-aaa",
+          "sid-bbb",
+          "sid-ccc"
+        ],
+        "entry_count": 3,
+        "parse_ok": true,
+        "truncated": false,
+        "schema_note": null,
+        "membership_complete": true
+      }
+    },
+    {
+      "id": "codex_jsonl_ids_only",
+      "construct": {
+        "type": "read_index",
+        "fixture": "codex_wellformed",
+        "target": "session_index.jsonl"
+      },
+      "expected": {
+        "format": "codex-session-index",
+        "entry_ids": [
+          "codex-u-a",
+          "codex-u-b"
+        ],
+        "entry_paths": [],
+        "normalized_ids": [
+          "codex-u-a",
+          "codex-u-b"
+        ],
+        "entry_count": 2,
+        "parse_ok": true,
+        "truncated": false,
+        "schema_note": null,
+        "membership_complete": true
+      }
+    },
+    {
+      "id": "claude_truncated_salvages_prefix",
+      "construct": {
+        "type": "read_index",
+        "fixture": "claude_truncated",
+        "target": "sessions-index.json"
+      },
+      "expected": {
+        "format": "claude-sessions-index",
+        "entry_ids": [
+          "trunc-a",
+          "trunc-b"
+        ],
+        "entry_paths": [
+          "synthetic/trunc-a.jsonl",
+          "synthetic/trunc-b.jsonl"
+        ],
+        "normalized_ids": [
+          "trunc-a",
+          "trunc-b"
+        ],
+        "entry_count": 2,
+        "parse_ok": false,
+        "truncated": true,
+        "schema_note": "truncated",
+        "membership_complete": false
+      }
+    },
+    {
+      "id": "codex_jsonl_malformed_mid_line",
+      "construct": {
+        "type": "read_index",
+        "fixture": "codex_malformed_mid",
+        "target": "session_index.jsonl"
+      },
+      "expected": {
+        "format": "codex-session-index",
+        "entry_ids": [
+          "mid-u-a"
+        ],
+        "entry_paths": [],
+        "normalized_ids": [
+          "mid-u-a"
+        ],
+        "entry_count": 1,
+        "parse_ok": false,
+        "truncated": false,
+        "schema_note": "malformed",
+        "membership_complete": false
+      }
+    },
+    {
+      "id": "read_index_oversized_refused",
+      "construct": {
+        "type": "read_index",
+        "setup": "oversized_claude"
+      },
+      "expected": {
+        "format": "claude-sessions-index",
+        "entry_ids": [],
+        "entry_paths": [],
+        "normalized_ids": [],
+        "entry_count": 0,
+        "parse_ok": false,
+        "truncated": false,
+        "schema_note": "oversized",
+        "membership_complete": false
+      }
+    },
+    {
+      "id": "read_index_symlink_not_followed",
+      "construct": {
+        "type": "read_index",
+        "setup": "symlink_claude"
+      },
+      "expected": {
+        "format": "claude-sessions-index",
+        "entry_ids": [],
+        "entry_paths": [],
+        "normalized_ids": [],
+        "entry_count": 0,
+        "parse_ok": false,
+        "truncated": false,
+        "schema_note": "symlink",
+        "membership_complete": false
+      }
+    },
+    {
+      "id": "public_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "all": [
+          "INDEX_FILE_NAMES",
+          "IndexEntry",
+          "MAX_INDEX_BYTES",
+          "MAX_INDEX_ENTRIES",
+          "IndexSnapshot",
+          "discover_index_files",
+          "has_index_format",
+          "read_index"
+        ]
+      }
+    }
+  ]
+}

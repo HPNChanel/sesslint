@@ -1,0 +1,1062 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.tool_pairing_2",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_tool_pairing_2_rs_sha256": "3cf94a430e3810d77f0633e513aed1428a43c79d1c37ddea8101849e622e271f",
+  "python_all": [
+    "CALL_KINDS",
+    "COMPACTION_KINDS",
+    "MAX_INDEX_SAMPLE_SIZE",
+    "MAX_INTERVENING_KINDS_SAMPLE",
+    "MAX_PAIRING_FINDINGS",
+    "RESULT_KINDS",
+    "TOOL_KINDS",
+    "cap_pairing_findings",
+    "check_adjacency",
+    "check_compaction_split",
+    "check_cross_branch",
+    "check_reversed_order",
+    "check_sl105",
+    "check_sl106",
+    "check_sl107",
+    "check_sl108",
+    "check_tool_pairing_2",
+    "compute_pairing_fingerprint"
+  ],
+  "known_parity_gaps": [
+    "Offender path calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a normal finding with code SL105, SL106, SL107, or SL108.",
+    "A string profile passes sesslint.profiles import in Python; the except returns the default severity. Rust returns sesslint.profiles is not available (PROFILES_UNAVAILABLE) and does not use the default severity.",
+    "Empty input with max_findings -1 takes the overflow path in Rust (codec error). Python emits an overflow finding for that family.",
+    "Float and list ids or kinds are typed errors in Rust. Python uses str() on non-string values."
+  ],
+  "vectors": [
+    {
+      "id": "empty_input_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": []
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "paired_call_result_parent_adjacent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-par-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-par-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-par-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "call-par-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-par-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "two_tool_calls_mis_correlated_interleaved",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-a-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-a-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-b-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-b-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-a-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "call-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-a-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "two_calls_one_result_shared_correlation_not_clean",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-s1-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-shared-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-s2-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-shared-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-s-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "call-s1-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-shared-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "message_only_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "msg-only-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "compaction_bounds_pair_adjacent_result_parent_call",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "bound-pre-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-comp-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-comp-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-comp-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "call-comp-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-comp-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "bound-post-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "same_nonempty_branch_id_adjacent_no_parent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-br-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-br-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "str",
+                  "v": "branch-synth-parity-1"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-br-synth"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-br-synth"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "str",
+                  "v": "branch-synth-parity-1"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_reversed_order_len": 0,
+        "check_cross_branch_len": 0,
+        "check_adjacency_len": 0,
+        "check_compaction_split_len": 0,
+        "check_tool_pairing_2_len": 0
+      }
+    },
+    {
+      "id": "constants_and_all",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": []
+      },
+      "expected": {
+        "MAX_PAIRING_FINDINGS": 500,
+        "MAX_INDEX_SAMPLE_SIZE": 32,
+        "MAX_INTERVENING_KINDS_SAMPLE": 16,
+        "check_reversed_order_len": 0
+      }
+    },
+    {
+      "id": "fingerprint_sl105_aba",
+      "construct": {
+        "type": "pairing_fingerprint",
+        "code": "SL105",
+        "items": [
+          "b",
+          "a",
+          "a"
+        ]
+      },
+      "expected": {
+        "fingerprint": "fd7f5d41cb93b80a"
+      }
+    }
+  ]
+}

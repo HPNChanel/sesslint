@@ -1,0 +1,323 @@
+{
+  "module": "sesslint.repair.recipes_salvage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 7,
+  "not_applicable_count": 38,
+  "rows": [
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_acknowledgement",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_no_shorthand",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_assurance_lattice",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_fingerprint_differs_by_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_component_too_large",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_sums",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_sl203_refusal_beats_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_empty_events_salvage_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_key_injection_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_invalid_policy_string_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_direct_apply_validation",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "amputate_direct_apply_validation",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_torn_compaction_direct_apply_validation",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "torn_compaction_direct_apply_validation",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_truncate_direct_apply_validation",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "truncate_direct_apply_validation",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_vendor_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_dual_policy_plan_merge_attempt",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_plans_and_applies",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_conservative_blocks",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_resolves_by_params",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "orphan_result_drop_resolves_by_params",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_direct_apply_refusals",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "orphan_result_drop_direct_apply_refusals",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_every_code_has_recipe_or_documented_refusal",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_uncovered_codes_match_registry_exactly",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_registry_keys_are_known_codes",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_refusal_entries_are_well_formed",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_refusal_entries_are_content_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_pinned_citations_for_key_codes",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_sl101_salvage_path_is_explicit_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_sl001_salvage_path_is_explicit_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_blocked_describe_surfaces_rationale",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_blocked_describe_falls_back_without_entry",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_blocked_describe_includes_salvage_path",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_render_substitutes_path_placeholder",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_registry_validation_rejects_bad_entries",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_refusals_module_is_vendor_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_sl001_excisable_precondition",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "sl001_excisable_precondition",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_salvage_emits_excision_step",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_conservative_and_noack_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_dependents_and_size_limit_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_multiple_torn_lines",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_apply_torn_record_excision_validation",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "apply_torn_record_excision_validation",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_repair_torn_record_end_to_end",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    }
+  ]
+}

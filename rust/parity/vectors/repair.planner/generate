@@ -1,0 +1,433 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.planner parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PLANNER_PY_SHA256 = (
+    "5021c0148210c8d0311d5c9d8feb62d275c948e8e30a85ce1b9922bf5e8564da"
+)
+PLANNER_RS_SHA256 = (
+    "a41959e3332afab236e95b4866fb57ae5447264963d751bbad2a1e6d9a4b42e1"
+)
+MODULE = "sesslint.repair.planner"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-planner-schema-path: get_plan_schema_path and load_plan_schema import "
+    "sesslint._resources.schema_path. Rust displays sesslint._resources.schema_path "
+    "is not available and does not read schemas/sesslint.plan.v1.json.",
+    "GAP-planner-register-all: plan after policy, source_hash, and profile checks "
+    "imports sesslint.repair.recipes_conservative.register_all. Rust displays "
+    "sesslint.repair.recipes_conservative.register_all is not available and does "
+    "not return a RepairPlan on the pin success path.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+    "repair/recipes_salvage.py",
+]
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+COVERAGE_OVERRIDES: dict[str, str] = {
+    "tests/repair/test_recipes_salvage.py::test_invalid_policy_string_rejected": (
+        "plan_policy_aggressive"
+    ),
+}
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def fullname_for(path: str) -> str:
+    rel = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    return rel
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str, fake_file: str | None = None) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"failed to create import spec for {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    if fake_file is not None:
+        mod.__file__ = fake_file
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def verify_planner_digests() -> None:
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/planner.py")
+    py_digest = hashlib.sha256(py_blob).hexdigest()
+    if py_digest != PLANNER_PY_SHA256:
+        raise SystemExit(
+            f"planner.py pin sha256 mismatch: expected {PLANNER_PY_SHA256}, got {py_digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "repair" / "src" / "planner.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != PLANNER_RS_SHA256:
+        raise SystemExit(
+            f"planner.rs sha256 mismatch: expected {PLANNER_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def load_planner_module() -> Any:
+    verify_planner_digests()
+    root = repo_root()
+    fake_planner = str(root / "src" / "sesslint" / "repair" / "planner.py")
+    for rel in PIN_CLOSURE:
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for i in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:i]))
+        ensure_pkg("sesslint.repair")
+        fake = fake_planner if rel == "repair/planner.py" else None
+        exec_blob(blob, fullname, fake)
+    return sys.modules["sesslint.repair.planner"]
+
+
+def vemsg(callable_obj: Any) -> str:
+    try:
+        callable_obj()
+    except ValueError as exc:
+        return str(exc)
+    except TypeError as exc:
+        return str(exc)
+    raise SystemExit("expected ValueError or TypeError")
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def sorted_names(values: Any) -> list[str]:
+    return sorted(str(item) for item in values)
+
+
+def fixture_plan_dict() -> dict[str, Any]:
+    path = repo_root() / "fixtures" / "repair" / "exec_basic" / "plan.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def run_expected(planner: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"names": list(planner.__all__)}
+    if kind == "module_constants":
+        return {
+            "max_steps": planner.MAX_STEPS,
+            "plan_version": planner.PLAN_VERSION,
+            "empty_events_hash": planner.EMPTY_EVENTS_HASH,
+            "synthetic_step_fp": getattr(planner, "SYNTHETIC_STEP_FP", None),
+            "allowed_loss_classes": sorted_names(planner.ALLOWED_LOSS_CLASSES),
+            "non_event_loss_classes": sorted_names(planner.NON_EVENT_LOSS_CLASSES),
+            "event_drop_recipes": sorted_names(planner.EVENT_DROP_RECIPES),
+        }
+    if kind == "compute_events_source_hash":
+        digest = planner.compute_events_source_hash([])
+        return {"digest": digest}
+    if kind == "plan_step_from_dict":
+        data = construct["data"]
+        return {"message": vemsg(lambda: planner.PlanStep.from_dict(data))}
+    if kind == "repair_plan_from_dict":
+        data = construct["data"]
+        return {"message": vemsg(lambda: planner.RepairPlan.from_dict(data))}
+    if kind == "plan_call":
+        policy = construct.get("policy", "conservative")
+        profile = construct.get("profile", "neutral")
+        ev_list: list[Any] = []
+        findings: list[Any] = []
+        kwargs: dict[str, Any] = {"profile": profile, "policy": policy}
+        if "source_hash" in construct:
+            kwargs["source_hash"] = construct["source_hash"]
+        if construct.get("gap") == "register_all":
+            plan = planner.plan(findings, ev_list, **kwargs)
+            snap = plan.to_dict()
+            return {
+                "mode": "repair_plan",
+                "version": snap["version"],
+                "step_count": len(snap["steps"]),
+                "blocked_count": len(snap["blocked"]),
+                "fingerprint_len": len(snap["fingerprint"]),
+                "profile": snap["profile"],
+                "policy": snap.get("policy"),
+            }
+        return {"message": vemsg(lambda: planner.plan(findings, ev_list, **kwargs))}
+    if kind == "get_plan_schema_path":
+        path = planner.get_plan_schema_path()
+        return {
+            "is_file": path.is_file(),
+            "suffix": path.name,
+        }
+    if kind == "load_plan_schema":
+        schema = planner.load_plan_schema()
+        return {
+            "schema_key": schema["$schema"],
+            "schema_id": schema["$id"],
+            "version_const": schema["properties"]["version"]["const"],
+        }
+    raise SystemExit(f"unknown construct type {kind!r}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    base_plan = fixture_plan_dict()
+    specs: list[dict[str, Any]] = [
+        {
+            "id": "module_all_export_order",
+            "construct": {"type": "module_all"},
+        },
+        {
+            "id": "module_constants_snapshot",
+            "construct": {"type": "module_constants"},
+        },
+        {
+            "id": "compute_events_source_hash_empty",
+            "construct": {"type": "compute_events_source_hash"},
+        },
+        {
+            "id": "plan_step_from_dict_not_object",
+            "construct": {"type": "plan_step_from_dict", "data": []},
+        },
+        {
+            "id": "plan_step_invalid_loss_class",
+            "construct": {
+                "type": "plan_step_from_dict",
+                "data": {
+                    "seq": 0,
+                    "recipe": "recipe-alpha",
+                    "target_finding_fp": "fp",
+                    "target_index": 0,
+                    "min_policy": "conservative",
+                    "recipe_version": "1.0.0",
+                    "params": {},
+                    "lossy": True,
+                    "loss": {"not-a-class": 1},
+                },
+            },
+        },
+        {
+            "id": "plan_policy_aggressive",
+            "construct": {"type": "plan_call", "policy": "Aggressive"},
+        },
+        {
+            "id": "plan_policy_empty_string",
+            "construct": {"type": "plan_call", "policy": ""},
+        },
+        {
+            "id": "plan_policy_true_bool",
+            "construct": {"type": "plan_call", "policy": True},
+        },
+        {
+            "id": "plan_policy_none",
+            "construct": {"type": "plan_call", "policy": None},
+        },
+        {
+            "id": "plan_policy_int_one",
+            "construct": {"type": "plan_call", "policy": 1},
+        },
+        {
+            "id": "plan_empty_conservative_success_gap",
+            "construct": {
+                "type": "plan_call",
+                "policy": "conservative",
+                "profile": "neutral",
+                "gap": "register_all",
+            },
+        },
+        {
+            "id": "get_plan_schema_path_gap",
+            "construct": {"type": "get_plan_schema_path"},
+        },
+        {
+            "id": "load_plan_schema_gap",
+            "construct": {"type": "load_plan_schema"},
+        },
+    ]
+    for field in ("seq", "recipe", "min_policy", "recipe_version"):
+        broken = json.loads(json.dumps(base_plan))
+        del broken["steps"][0][field]
+        specs.append(
+            {
+                "id": f"repair_plan_from_dict_missing_{field}",
+                "construct": {"type": "repair_plan_from_dict", "data": broken},
+            }
+        )
+    return specs
+
+
+def discover_coverage_rows() -> list[dict[str, Any]]:
+    root = repo_root()
+    rows: list[dict[str, Any]] = []
+    vector_ids = {spec["id"] for spec in vector_specs()}
+    reverse_override = {v: k for k, v in COVERAGE_OVERRIDES.items()}
+    col0 = re.compile(r"^def (test_\w+)")
+    indented = re.compile(r"^    def (test_\w+)")
+    for path in sorted(root.glob("tests/**/*.py")):
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        if "sesslint.repair.planner" not in text:
+            continue
+        lines = text.splitlines()
+        has_col0 = any(col0.match(line) for line in lines)
+        names: list[tuple[str, str]] = []
+        for line in lines:
+            match = col0.match(line)
+            if match:
+                names.append((match.group(1), "column_0"))
+            elif not has_col0 and (match := indented.match(line)):
+                names.append((match.group(1), "indented"))
+        for name, column in names:
+            key = f"{rel}::{name}"
+            vector_id = COVERAGE_OVERRIDES.get(key)
+            if vector_id is None:
+                vector_id = reverse_override.get(name)
+            status = "not_applicable"
+            note = ""
+            if vector_id and vector_id in vector_ids:
+                status = "covered"
+                note = f"vector {vector_id}"
+            rows.append(
+                {
+                    "test": key,
+                    "column": column,
+                    "status": status,
+                    "vector_id": vector_id,
+                    "note": note,
+                }
+            )
+    return rows
+
+
+def main() -> int:
+    planner = load_planner_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        expected = run_expected(planner, spec["construct"])
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": expected,
+            }
+        )
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "planner_py_sha256": PLANNER_PY_SHA256,
+        "planner_rs_sha256": PLANNER_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    coverage_rows = discover_coverage_rows()
+    covered = sum(1 for row in coverage_rows if row["status"] == "covered")
+    not_applicable = sum(1 for row in coverage_rows if row["status"] == "not_applicable")
+    coverage_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": coverage_rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage_doc, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.planner parity (constants, parsing, "
+            "policy rejection, schema and register_all seams)."
+        ),
+        "generator": "rust/parity/vectors/repair.planner/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"coverage covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

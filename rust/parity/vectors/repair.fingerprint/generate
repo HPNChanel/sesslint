@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.fingerprint parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+FINGERPRINT_RS_SHA256 = (
+    "e7553e1c6b9f72b238c99b89ef8c4147216c9764674b7d2cb9518c0b6d4ce12f"
+)
+
+KNOWN_PARITY_GAPS = [
+    (
+        "canonical_json_bytes / plan inputs: JSON Number NaN and Infinity (Python float); "
+        "Rust float codec rejects them — parity not required here."
+    ),
+    (
+        "canonical_json_bytes: Unicode string containing a lone surrogate (U+D800); "
+        "Rust Value string is valid Unicode — parity not required here."
+    ),
+    (
+        "canonical_json_bytes: integers outside i64; Rust Value uses i64 — parity "
+        "not required here."
+    ),
+    (
+        "compute_plan_fingerprint: non-mapping plan. Python may raise TypeError from Mapping; "
+        "Rust returns codec CanonicalError — if exception text differs from codec error, parity "
+        "on message is not required."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_fingerprint_module() -> Any:
+    root = repo_root()
+    rs_path = root / "rust" / "crates" / "repair" / "src" / "fingerprint.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != FINGERPRINT_RS_SHA256:
+        raise SystemExit(
+            "repair fingerprint.rs sha256 mismatch: "
+            f"expected {FINGERPRINT_RS_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.repair import fingerprint  # noqa: WPS433
+
+    return fingerprint
+
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {"id": "module_all_export_order"},
+        {
+            "id": "plan_fp_small_policy_omitted",
+            "plan": {"id": "s1"},
+            "policy": None,
+        },
+        {
+            "id": "plan_fp_small_policy_conservative",
+            "plan": {"id": "s1"},
+            "policy": "conservative",
+        },
+        {
+            "id": "plan_fp_extra_fingerprint_policy_omitted",
+            "plan": {"id": "s1", "fingerprint": "marker"},
+            "policy": None,
+        },
+        {
+            "id": "plan_fp_extra_fingerprint_policy_conservative",
+            "plan": {"id": "s1", "fingerprint": "marker"},
+            "policy": "conservative",
+        },
+        {
+            "id": "canonical_json_non_ascii_newline_true",
+            "value": {"id": "s1", "label": "Ti\u1ebfng"},
+            "newline": True,
+        },
+        {
+            "id": "canonical_json_non_ascii_newline_false",
+            "value": {"id": "s1", "label": "Ti\u1ebfng"},
+            "newline": False,
+        },
+    ]
+
+
+def build_construct(spec: dict[str, Any]) -> dict[str, Any]:
+    vid = spec["id"]
+    if vid == "module_all_export_order":
+        return {"type": "module_all"}
+
+    if "plan" in spec:
+        row: dict[str, Any] = {
+            "type": "compute_plan_fingerprint",
+            "value": spec["plan"],
+        }
+        policy = spec["policy"]
+        if policy is not None:
+            row["policy"] = policy
+        return row
+
+    if "value" in spec:
+        row = {
+            "type": "canonical_json_bytes",
+            "value": spec["value"],
+        }
+        if "newline" in spec:
+            row["newline"] = spec["newline"]
+        return row
+
+    raise ValueError(f"unknown spec: {spec!r}")
+
+
+def build_expected(fingerprint: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    vid = spec["id"]
+    if vid == "module_all_export_order":
+        return {"names": list(fingerprint.__all__)}
+
+    if "plan" in spec:
+        plan = spec["plan"]
+        policy = spec["policy"]
+        digest = fingerprint.compute_plan_fingerprint(plan, policy=policy)
+        return {"digest": digest}
+
+    if "value" in spec:
+        val = spec["value"]
+        newline = spec.get("newline", True)
+        raw = fingerprint.canonical_json_bytes(val, newline=newline)
+        return {"bytes_b64": b64(raw)}
+
+    raise ValueError(f"unknown spec: {spec!r}")
+
+
+def main() -> int:
+    fingerprint = load_fingerprint_module()
+    out_dir = Path(__file__).resolve().parent
+    specs_in = vector_specs()
+    vectors: list[dict[str, Any]] = []
+    for row in specs_in:
+        construct = build_construct(row)
+        expected = build_expected(fingerprint, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    omitted = next(v for v in vectors if v["id"] == "plan_fp_small_policy_omitted")
+    conservative = next(
+        v for v in vectors if v["id"] == "plan_fp_small_policy_conservative"
+    )
+    if omitted["expected"]["digest"] == conservative["expected"]["digest"]:
+        raise SystemExit("policy omitted and conservative must yield different digests")
+
+    ex_omit = next(
+        v for v in vectors if v["id"] == "plan_fp_extra_fingerprint_policy_omitted"
+    )
+    ex_cons = next(
+        v for v in vectors if v["id"] == "plan_fp_extra_fingerprint_policy_conservative"
+    )
+    if ex_omit["expected"]["digest"] != omitted["expected"]["digest"]:
+        raise SystemExit("extra fingerprint key must not change digest (policy omitted)")
+    if ex_cons["expected"]["digest"] != conservative["expected"]["digest"]:
+        raise SystemExit("extra fingerprint key must not change digest (conservative)")
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.fingerprint",
+        "python_commit": PYTHON_COMMIT,
+        "fingerprint_rs_sha256": FINGERPRINT_RS_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.fingerprint",
+        "python_commit": PYTHON_COMMIT,
+        "fingerprint_rs_sha256": FINGERPRINT_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.fingerprint/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.fingerprint parity (module __all__, "
+            "compute_plan_fingerprint, canonical_json_bytes re-exports)."
+        ),
+        "generator": "rust/parity/vectors/repair.fingerprint/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

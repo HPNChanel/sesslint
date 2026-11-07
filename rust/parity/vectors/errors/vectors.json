@@ -1,0 +1,486 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "vectors": [
+    {
+      "id": "sesslint_error_default",
+      "construct": {
+        "type": "SesslintError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "ERROR",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "sesslint_error_with_code",
+      "construct": {
+        "type": "SesslintError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "schema_error_default",
+      "construct": {
+        "type": "SchemaError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "SCHEMA",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "schema_error_with_code",
+      "construct": {
+        "type": "SchemaError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "version_error_sl301_absent",
+      "construct": {
+        "type": "VersionError",
+        "message": "unsupported schema version"
+      },
+      "expected": {
+        "display": "unsupported schema version (code: VERSION / SL301)",
+        "code": "VERSION",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL301",
+        "version": null
+      }
+    },
+    {
+      "id": "version_error_sl301_present",
+      "construct": {
+        "type": "VersionError",
+        "message": "already cites SL301",
+        "version": "synthetic/9.9"
+      },
+      "expected": {
+        "display": "already cites SL301",
+        "code": "VERSION",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL301",
+        "version": "synthetic/9.9"
+      }
+    },
+    {
+      "id": "version_error_sl301_empty",
+      "construct": {
+        "type": "VersionError",
+        "message": ""
+      },
+      "expected": {
+        "display": " (code: VERSION / SL301)",
+        "code": "VERSION",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL301",
+        "version": null
+      }
+    },
+    {
+      "id": "version_error_sl301_substring",
+      "construct": {
+        "type": "VersionError",
+        "message": "prefix-SL301-suffix"
+      },
+      "expected": {
+        "display": "prefix-SL301-suffix",
+        "code": "VERSION",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL301",
+        "version": null
+      }
+    },
+    {
+      "id": "version_error_unicode_sl301_absent",
+      "construct": {
+        "type": "VersionError",
+        "message": "phiên bản không hỗ trợ"
+      },
+      "expected": {
+        "display": "phiên bản không hỗ trợ (code: VERSION / SL301)",
+        "code": "VERSION",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL301",
+        "version": null
+      }
+    },
+    {
+      "id": "unknown_field_sl302_absent",
+      "construct": {
+        "type": "UnknownFieldError",
+        "message": "Unknown field in session header",
+        "field_name": "synthetic-field"
+      },
+      "expected": {
+        "display": "Unknown field in session header (code: UNKNOWN_FIELD / SL302)",
+        "code": "UNKNOWN_FIELD",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL302",
+        "field_name": "synthetic-field"
+      }
+    },
+    {
+      "id": "unknown_field_sl302_present",
+      "construct": {
+        "type": "UnknownFieldError",
+        "message": "Unknown field (SL302)",
+        "field_name": "synthetic-field"
+      },
+      "expected": {
+        "display": "Unknown field (SL302)",
+        "code": "UNKNOWN_FIELD",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL302",
+        "field_name": "synthetic-field"
+      }
+    },
+    {
+      "id": "unknown_field_sl302_empty_message",
+      "construct": {
+        "type": "UnknownFieldError",
+        "message": ""
+      },
+      "expected": {
+        "display": " (code: UNKNOWN_FIELD / SL302)",
+        "code": "UNKNOWN_FIELD",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false,
+        "reason_code": "SL302",
+        "field_name": null
+      }
+    },
+    {
+      "id": "finding_default",
+      "construct": {
+        "type": "FindingError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "FINDING",
+        "is_schema": false,
+        "is_value_error": true,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "finding_with_code",
+      "construct": {
+        "type": "FindingError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": true,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "assurance_default",
+      "construct": {
+        "type": "AssuranceError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "ASSURANCE",
+        "is_schema": false,
+        "is_value_error": true,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "assurance_with_code",
+      "construct": {
+        "type": "AssuranceError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": true,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "content_leak_default",
+      "construct": {
+        "type": "ContentLeakError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CONTENT_LEAK",
+        "is_schema": false,
+        "is_value_error": true,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "content_leak_with_code",
+      "construct": {
+        "type": "ContentLeakError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": true,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "file_too_large_default",
+      "construct": {
+        "type": "FileTooLargeError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "LIMIT_EXCEEDED",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "file_too_large_with_code",
+      "construct": {
+        "type": "FileTooLargeError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "max_records_default",
+      "construct": {
+        "type": "MaxRecordsExceededError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "LIMIT_EXCEEDED",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "max_records_with_code",
+      "construct": {
+        "type": "MaxRecordsExceededError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "header_missing_default",
+      "construct": {
+        "type": "HeaderMissingError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "HEADER_MISSING",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "header_missing_with_code",
+      "construct": {
+        "type": "HeaderMissingError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": true,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "source_changed_default",
+      "construct": {
+        "type": "SourceChangedError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "SOURCE_CHANGED",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "source_changed_with_code",
+      "construct": {
+        "type": "SourceChangedError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "atomic_write_default",
+      "construct": {
+        "type": "AtomicWriteError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "ATOMIC_WRITE_ERROR",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": true
+      }
+    },
+    {
+      "id": "atomic_write_with_code",
+      "construct": {
+        "type": "AtomicWriteError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": true
+      }
+    },
+    {
+      "id": "operational_default",
+      "construct": {
+        "type": "OperationalError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "OPERATIONAL_ERROR",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "operational_with_code",
+      "construct": {
+        "type": "OperationalError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "adapter_default",
+      "construct": {
+        "type": "AdapterError",
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "ADAPTER_ERROR",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    },
+    {
+      "id": "adapter_with_code",
+      "construct": {
+        "type": "AdapterError",
+        "message": "synthetic-check-ok",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "code": "CUSTOM",
+        "is_schema": false,
+        "is_value_error": false,
+        "is_os_error": false
+      }
+    }
+  ]
+}

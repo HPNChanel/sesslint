@@ -1,0 +1,240 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.watch",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "watch_py_sha256": "8329fffaf88e78b3d2881fef699fbc6a66b636180ee68034a6d8dc5de1113bb7",
+  "watch_rs_sha256": "a9d4fd57c621b28951aa55765c39e1bc90c48efa6f3fa4903c9f7f290c3de55d",
+  "known_parity_gaps": [
+    "GAP-watch-check-file: omitted check_fn imports sesslint.api.check_file in Python; Rust returns CheckFileUnavailable before walking (not byte-compared here).",
+    "GAP-watch-minimize-path: format_transition and WatchTransition.to_dict import sesslint.report.minimize_path in Python; Rust returns MinimizePathUnavailable at that import (not byte-compared here)."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "watch_event_schema": "sesslint.watch-event/v1",
+        "default_interval": 2.0,
+        "min_interval": 0.05,
+        "max_tracked_files": 4096,
+        "excluded_dirs": [
+          ".git",
+          ".hg",
+          ".svn"
+        ],
+        "excluded_names": [
+          ".sesslint.toml",
+          "sesslint.toml"
+        ],
+        "all_exports": [
+          "DEFAULT_INTERVAL",
+          "MAX_TRACKED_FILES",
+          "MIN_INTERVAL",
+          "WATCH_EVENT_SCHEMA",
+          "CheckFn",
+          "WatchTransition",
+          "format_transition",
+          "watch"
+        ]
+      }
+    },
+    {
+      "id": "interval_below_min",
+      "construct": {
+        "type": "interval_error",
+        "interval": 0.04
+      },
+      "expected": {
+        "raises": "ValueError",
+        "message": "interval must be >= 0.05s, got 0.04"
+      }
+    },
+    {
+      "id": "snapshot_missing",
+      "construct": {
+        "type": "snapshot_file",
+        "path": "fixtures/synthetic_missing.jsonl"
+      },
+      "expected": {
+        "snapshot": null
+      }
+    },
+    {
+      "id": "snapshot_single",
+      "construct": {
+        "type": "snapshot_file",
+        "path": "fixtures/synthetic_single.jsonl"
+      },
+      "expected": {
+        "snapshot": [
+          1700000000000000000,
+          28
+        ]
+      }
+    },
+    {
+      "id": "walk_synthetic_tree",
+      "construct": {
+        "type": "walk_files",
+        "root": "fixtures/synthetic_walk"
+      },
+      "expected": {
+        "paths": [
+          "synthetic_walk/alpha.jsonl",
+          "synthetic_walk/beta.jsonl",
+          "synthetic_walk/nested/gamma.jsonl"
+        ]
+      }
+    },
+    {
+      "id": "verdict_unsupported",
+      "construct": {
+        "type": "verdict_of",
+        "limitation": "Unsupported: synthetic",
+        "by_severity": {},
+        "finding_codes": []
+      },
+      "expected": {
+        "verdict": "unsupported",
+        "codes": []
+      }
+    },
+    {
+      "id": "verdict_skipped",
+      "construct": {
+        "type": "verdict_of",
+        "limitation": "Skipped: synthetic",
+        "by_severity": {},
+        "finding_codes": []
+      },
+      "expected": {
+        "verdict": "skipped",
+        "codes": []
+      }
+    },
+    {
+      "id": "verdict_invalid",
+      "construct": {
+        "type": "verdict_of",
+        "limitation": "",
+        "by_severity": {
+          "error": 1
+        },
+        "finding_codes": [
+          "SL001",
+          "SL002"
+        ]
+      },
+      "expected": {
+        "verdict": "invalid",
+        "codes": [
+          "SL001",
+          "SL002"
+        ]
+      }
+    },
+    {
+      "id": "verdict_warnings_severity",
+      "construct": {
+        "type": "verdict_of",
+        "limitation": "",
+        "by_severity": {
+          "warning": 1
+        },
+        "finding_codes": [
+          "SL010"
+        ]
+      },
+      "expected": {
+        "verdict": "warnings",
+        "codes": [
+          "SL010"
+        ]
+      }
+    },
+    {
+      "id": "verdict_warnings_findings_only",
+      "construct": {
+        "type": "verdict_of",
+        "limitation": "",
+        "by_severity": {},
+        "finding_codes": [
+          "SL011"
+        ]
+      },
+      "expected": {
+        "verdict": "warnings",
+        "codes": [
+          "SL011"
+        ]
+      }
+    },
+    {
+      "id": "verdict_healthy",
+      "construct": {
+        "type": "verdict_of",
+        "limitation": "",
+        "by_severity": {},
+        "finding_codes": []
+      },
+      "expected": {
+        "verdict": "healthy",
+        "codes": []
+      }
+    },
+    {
+      "id": "watch_max_polls_one_no_emit",
+      "construct": {
+        "type": "watch",
+        "roots": [
+          "fixtures/synthetic_single.jsonl"
+        ],
+        "interval": 0.05,
+        "max_polls": 1,
+        "check": "healthy"
+      },
+      "expected": {
+        "emitted": 0,
+        "transitions": []
+      }
+    },
+    {
+      "id": "watch_invalid_transition",
+      "construct": {
+        "type": "watch",
+        "roots": [
+          "fixtures/synthetic_single.jsonl"
+        ],
+        "interval": 0.05,
+        "max_polls": 2,
+        "check": "invalid"
+      },
+      "expected": {
+        "emitted": 1,
+        "transitions": [
+          {
+            "path_suffix": "synthetic_single.jsonl",
+            "from_state": "new",
+            "to_state": "invalid",
+            "codes": [
+              "SL777"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "watch_cancelled",
+      "construct": {
+        "type": "watch_cancelled",
+        "max_polls": 1
+      },
+      "expected": {
+        "raises": "OperationCancelled",
+        "message": "operation cancelled"
+      }
+    }
+  ]
+}

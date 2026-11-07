@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli.seal subcommand parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SEAL_PY_SHA256 = "4e2c60b7230da68ddc42310b042031f1e09a4d782d9ea787311141a6fee6a167"
+SEAL_RS_SHA256 = "15120d6ce87c4e314a529f712a15ad5a6c37d06122918864d440e8d69bc7b0db"
+MODULE = "sesslint.cli.seal"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-cli-seal-run: Python run() calls sesslint.seal.verify_ledger and may "
+        "print ok:/JSON or divergence errors; Rust run() is a seam (verify_ledger "
+        "unavailable) and does not read a ledger or emit stdout (not byte-compared here)."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_seal_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/seal.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != SEAL_PY_SHA256:
+        raise SystemExit(
+            f"cli/seal.py pin sha256 mismatch: expected {SEAL_PY_SHA256}, got {digest}"
+        )
+
+
+def load_seal_module() -> Any:
+    blob = pinned_seal_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "seal.py"
+    if module_path.read_bytes() != blob:
+        raise SystemExit("worktree cli/seal.py does not match pinned blob")
+    src = root / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    import importlib
+
+    return importlib.import_module("sesslint.cli.seal")
+
+
+def configure_expected(seal: Any) -> dict[str, Any]:
+    parser = argparse.ArgumentParser(prog="sesslint")
+    subparsers = parser.add_subparsers()
+    sub = seal.configure(subparsers)
+
+    subcommand_help = None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice_action in action._choices_actions:
+                if choice_action.dest == seal.NAME:
+                    subcommand_help = choice_action.help
+                    break
+    if subcommand_help is None:
+        raise SystemExit("failed to introspect subcommand help from configure()")
+
+    verify_flag = None
+    verify_required = None
+    verify_metavar = None
+    verify_default: bool | None = None
+    verify_help = None
+    json_flag = None
+    json_store_true = None
+    json_default = None
+    json_metavar: str | None = None
+    json_help = None
+
+    for action in sub._actions:
+        if action.dest == "verify":
+            verify_flag = action.option_strings[0] if action.option_strings else None
+            verify_required = action.required
+            verify_metavar = action.metavar
+            verify_default = action.default
+            verify_help = action.help
+        elif action.dest == "json":
+            json_flag = action.option_strings[0] if action.option_strings else None
+            json_store_true = action.const is True and action.nargs == 0
+            json_default = action.default
+            json_metavar = action.metavar
+            json_help = action.help
+
+    if verify_flag is None or json_flag is None:
+        raise SystemExit("failed to introspect --verify or --json from configure()")
+
+    verify_default_json: Any
+    if verify_default is argparse.SUPPRESS:
+        verify_default_json = None
+    elif verify_default is None:
+        verify_default_json = None
+    else:
+        verify_default_json = verify_default
+
+    return {
+        "name": seal.NAME,
+        "help": subcommand_help,
+        "description": sub.description,
+        "verify_flag": verify_flag,
+        "verify_required": verify_required,
+        "verify_metavar": verify_metavar,
+        "verify_default": verify_default_json,
+        "verify_help": verify_help,
+        "json_flag": json_flag,
+        "json_store_true": json_store_true,
+        "json_default": json_default,
+        "json_metavar": json_metavar,
+        "json_help": json_help,
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "configure_subcommand_metadata",
+            "construct": {"type": "configure"},
+        },
+    ]
+
+
+def build_vectors(seal: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = (
+            configure_expected(seal)
+            if row["construct"]["type"] == "configure"
+            else None
+        )
+        if expected is None:
+            raise SystemExit(f"unknown construct for {row['id']}")
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "seal_py_sha256": SEAL_PY_SHA256,
+        "seal_rs_sha256": SEAL_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "seal_py_sha256": SEAL_PY_SHA256,
+        "seal_rs_sha256": SEAL_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli.seal/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic cli.seal subcommand configure() metadata from pinned "
+            "src/sesslint/cli/seal.py (subcommand only; run() is a documented gap)."
+        ),
+        "generator": "rust/parity/vectors/cli.seal/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    seal = load_seal_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = build_vectors(seal)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

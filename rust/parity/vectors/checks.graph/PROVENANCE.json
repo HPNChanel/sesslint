@@ -1,0 +1,19 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.graph parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.graph/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "Graph check findings use make_finding with fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python str(float), str(list), and str(mapping) for event fields; Rust returns typed errors and does not invent Python repr strings.",
+    "Python events.index on an event object inside same_compaction_segment; Rust does not emulate list identity search (PYTHON_EVENT_INDEX_UNREPRESENTABLE gap).",
+    "Evidence map lookup with borrowed/reference semantics; Rust treats Borrowed as distinct from missing key (BORROWED_LOOKUP).",
+    "Graph counts and indices that do not fit in i64 (COUNT_UNREPRESENTABLE).",
+    "Empty-string parent_id is a finding in Python; omitted from required parity vectors.",
+    "Self-loop and other cycle findings; omitted (fingerprint gap).",
+    "Two disconnected components (SL006); omitted (fingerprint gap).",
+    "Two heads on one branch (SL007); omitted (fingerprint gap).",
+    "Finding-cap overflow path; omitted (fingerprint gap)."
+  ]
+}

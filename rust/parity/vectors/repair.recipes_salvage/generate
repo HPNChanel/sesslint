@@ -1,0 +1,1003 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.recipes_salvage parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+RECIPES_SALVAGE_PY_SHA256 = (
+    "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166"
+)
+RECIPES_SALVAGE_RS_SHA256 = (
+    "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a"
+)
+MODULE = "sesslint.repair.recipes_salvage"
+GAP_ORPHAN_REGION = "GAP-recipes-salvage-affected-region-orphan"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    f"{GAP_ORPHAN_REGION}: Python affected_region_orphan_result_drop returns "
+    "sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; "
+    "parity asserts Rust Display only.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/errors.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+    "repair/recipes_salvage.py",
+]
+
+TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/repair/test_recipes_salvage.py",
+    "tests/repair/test_refusal_catalog.py",
+    "tests/repair/test_sl001_excision.py",
+)
+
+COVERED: Final[dict[str, str]] = {
+    "test_sl001_excisable_precondition": "sl001_excisable_precondition",
+    "test_apply_torn_record_excision_validation": "apply_torn_record_excision_validation",
+    "test_amputate_direct_apply_validation": "amputate_direct_apply_validation",
+    "test_torn_compaction_direct_apply_validation": "torn_compaction_direct_apply_validation",
+    "test_truncate_direct_apply_validation": "truncate_direct_apply_validation",
+    "test_orphan_result_drop_resolves_by_params": "orphan_result_drop_resolves_by_params",
+    "test_orphan_result_drop_direct_apply_refusals": "orphan_result_drop_direct_apply_refusals",
+}
+
+SEAM_SENTENCE = "sesslint.policy.abstention.AffectedRegion is not available"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def fullname_for(path: str) -> str:
+    rel = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    return rel
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"failed to create import spec for {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def verify_recipes_salvage_rs() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "repair" / "src" / "recipes_salvage.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != RECIPES_SALVAGE_RS_SHA256:
+        raise SystemExit(
+            f"recipes_salvage.rs sha256 mismatch: expected {RECIPES_SALVAGE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_salvage_module() -> Any:
+    verify_recipes_salvage_rs()
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_salvage.py")
+    py_digest = hashlib.sha256(py_blob).hexdigest()
+    if py_digest != RECIPES_SALVAGE_PY_SHA256:
+        raise SystemExit(
+            f"pinned recipes_salvage.py sha256 mismatch: "
+            f"expected {RECIPES_SALVAGE_PY_SHA256}, got {py_digest}"
+        )
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_salvage.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for i in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:i]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    return exec_blob(py_blob, "sesslint.repair.recipes_salvage")
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        entries = [[k, tagged(v)] for k, v in value.items()]
+        return {"t": "map", "entries": entries}
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(v) for v in value]}
+    raise TypeError(f"unencodable {type(value)!r}")
+
+
+def session_row(**fields: Any) -> dict[str, Any]:
+    return {"t": "session", **fields}
+
+
+def mapping_row(entries: dict[str, Any]) -> dict[str, Any]:
+    return {"t": "mapping", "entries": [[k, tagged(v)] for k, v in entries.items()]}
+
+
+def step_spec(
+    *,
+    target_index: Any,
+    params: Any,
+) -> dict[str, Any]:
+    if target_index is None:
+        ti: dict[str, Any] = {"t": "null"}
+    elif isinstance(target_index, bool):
+        ti = {"t": "bool", "v": target_index}
+    elif isinstance(target_index, int):
+        ti = {"t": "int", "v": target_index}
+    else:
+        ti = tagged(target_index)
+    if params == "not_mapping":
+        pm = {"t": "not_mapping"}
+    elif isinstance(params, dict):
+        pm = {"t": "map", "entries": [[k, tagged(v)] for k, v in params.items()]}
+    else:
+        pm = {"t": "map", "entries": []}
+    return {"target_index": ti, "params": pm}
+
+
+def decode_events(spec: list[dict[str, Any]]) -> list[Any]:
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
+
+    out: list[Any] = []
+    for row in spec:
+        if row.get("t") == "session":
+            payload = row.get("payload")
+            out.append(
+                SessionEvent(
+                    _untag(row["id"]),
+                    _untag(row.get("parent_id")),
+                    _untag(row["seq"]),
+                    _untag(row["ts"]),
+                    _untag(row["actor"]),
+                    _untag(row["kind"]),
+                    payload=payload if isinstance(payload, dict) else _untag(payload) if payload else {},
+                )
+                if "payload" in row
+                else SessionEvent(
+                    _untag(row["id"]),
+                    _untag(row.get("parent_id")),
+                    _untag(row["seq"]),
+                    _untag(row["ts"]),
+                    _untag(row["actor"]),
+                    _untag(row["kind"]),
+                    correlation_id=_untag(row["correlation_id"]) if "correlation_id" in row else None,
+                )
+            )
+        else:
+            out.append({k: _untag(v) for k, v in row.get("entries", [])})
+    return out
+
+
+def _untag(node: Any) -> Any:
+    if not isinstance(node, dict) or "t" not in node:
+        return node
+    kind = node["t"]
+    if kind == "null":
+        return None
+    if kind == "bool":
+        return node["v"]
+    if kind == "int":
+        return node["v"]
+    if kind == "float":
+        return node["v"]
+    if kind == "str":
+        return node["v"]
+    if kind == "map":
+        return {k: _untag(v) for k, v in node["entries"]}
+    if kind == "list":
+        return [_untag(v) for v in node["items"]]
+    raise ValueError(node)
+
+
+def decode_step(spec: dict[str, Any]) -> Any:
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+
+    ti = spec["target_index"]
+    if ti.get("t") == "null":
+        target = None
+    elif ti.get("t") == "int":
+        target = ti["v"]
+    elif ti.get("t") == "bool":
+        target = ti["v"]
+    else:
+        target = _untag(ti)
+    pm = spec["params"]
+    if pm.get("t") == "not_mapping":
+        params: Any = "not-a-mapping"
+    else:
+        params = {k: _untag(v) for k, v in pm.get("entries", [])}
+    return PlanStep(
+        seq=0,
+        recipe="synthetic",
+        target_finding_fp="fp",
+        target_index=target,
+        params=params,
+        lossy=True,
+    )
+
+
+def precondition_pin(message: str) -> dict[str, Any]:
+    return {
+        "mode": "comparable",
+        "pin": {"mode": "precondition", "error_type": "PreconditionFailed", "message": message},
+    }
+
+
+def ok_ids_pin(ids: list[str], *, loss: dict[str, int] | None = None) -> dict[str, Any]:
+    pin: dict[str, Any] = {"mode": "ok", "ids": ids, "len": len(ids)}
+    if loss is not None:
+        pin["loss"] = loss
+    return {"mode": "comparable", "pin": pin}
+
+
+def recipe_snapshot(recipe: Any) -> dict[str, Any]:
+    return {
+        "mode": "recipe",
+        "name": recipe.name,
+        "handles": list(recipe.handles),
+        "preconditions": list(recipe.preconditions),
+        "lossy": recipe.lossy,
+        "salvage_only": recipe.salvage_only,
+        "min_policy": recipe.min_policy,
+        "version": recipe.version,
+        "excludes_execution_dependence": recipe.excludes_execution_dependence,
+        "apply": {"present": recipe.apply is not None},
+        "affected_region": {"present": recipe.affected_region is not None},
+    }
+
+
+def run_registration(mod: Any) -> dict[str, Any]:
+    import sesslint.repair.registry as reg  # noqa: WPS433
+    from sesslint.codes import SL001, SL005, SL006, SL101, SL102, SL108  # noqa: WPS433
+
+    reg.clear_registry()
+    mod.register_all()
+    recipes = reg.list_recipes()
+    names = sorted(r.name for r in recipes)
+    snap: dict[str, Any] = {"recipe_count": len(recipes), "names": names, "recipes": {}}
+    for const in (
+        "RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE",
+        "RECIPE_TORN_COMPACTION_PROJECT",
+        "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
+        "RECIPE_ORPHAN_RESULT_DROP",
+        "RECIPE_TORN_RECORD_EXCISION",
+    ):
+        recipe = getattr(mod, const)
+        snap["recipes"][recipe.name] = recipe_snapshot(recipe)
+    snap["recipes_for"] = {
+        "SL001": [r.name for r in reg.recipes_for(SL001)],
+        "SL005": [r.name for r in reg.recipes_for(SL005)],
+        "SL006": [r.name for r in reg.recipes_for(SL006)],
+        "SL101": [r.name for r in reg.recipes_for(SL101)],
+        "SL102": [r.name for r in reg.recipes_for(SL102)],
+        "SL108": [r.name for r in reg.recipes_for(SL108)],
+    }
+    assert len(recipes) == 5
+    return {"mode": "comparable", "pin": snap}
+
+
+def run_register_all(mod: Any) -> dict[str, Any]:
+    import sesslint.repair.registry as reg  # noqa: WPS433
+
+    reg.clear_registry()
+    mod.register_all()
+    mod.register_all()
+    return {"mode": "comparable", "pin": {"recipe_count": len(reg.list_recipes())}}
+
+
+def orphan_events_spec() -> list[dict[str, Any]]:
+    ts = "2026-09-05T12:00:00Z"
+    return [
+        session_row(id="m0", parent_id=None, seq=0, ts=ts, actor="user", kind="message"),
+        session_row(
+            id="tc1",
+            parent_id="m0",
+            seq=1,
+            ts=ts,
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-ok",
+        ),
+        session_row(
+            id="tr1",
+            parent_id="tc1",
+            seq=2,
+            ts=ts,
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-ok",
+        ),
+        session_row(
+            id="tr_orph",
+            parent_id="m0",
+            seq=3,
+            ts=ts,
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-orphan",
+        ),
+    ]
+
+
+def run_sl001_excisable(mod: Any) -> dict[str, Any]:
+    from sesslint.codes import SL001, SL006  # noqa: WPS433
+    from sesslint.finding import Repairability, Severity, SourceRef, make_finding  # noqa: WPS433
+    from sesslint.repair.preconditions import PreconditionContext  # noqa: WPS433
+
+    def ev(i: int, parent: str | None = None) -> Any:
+        from sesslint.canonical import SessionEvent  # noqa: WPS433
+
+        return SessionEvent(
+            id=f"msg-{i}",
+            parent_id=parent,
+            seq=i,
+            ts=f"2026-09-05T12:00:0{i}Z",
+            actor="user" if i % 2 == 0 else "assistant",
+            kind="message",
+            payload={"text": f"m{i}"},
+        )
+
+    torn_evidence = {"byte_offset": 120, "byte_end": 210, "record_ordinal": 2}
+
+    def sl001_finding(
+        *,
+        line: int | None = 3,
+        record_id: str | None = "msg-torn",
+        evidence: dict[str, Any] | None = None,
+    ) -> Any:
+        return make_finding(
+            code=SL001,
+            severity=Severity.ERROR,
+            repairability=Repairability.MANUAL,
+            message_template="Malformed nonterminal record on line {line} for record {record_id}",
+            source=SourceRef(path="sess.jsonl", line=line, record_id=record_id),
+            evidence=dict(torn_evidence if evidence is None else evidence),
+        )
+
+    def ctx(finding: Any, events: list[Any], *, policy: str = "salvage", ack: bool = True) -> Any:
+        return PreconditionContext(
+            findings=[finding],
+            events=events,
+            profile="neutral",
+            source_hash="0" * 64,
+            finding=finding,
+            policy=policy,
+            acknowledge_side_effects=ack,
+        )
+
+    events = [ev(0), ev(2)]
+    f = sl001_finding()
+    checks: list[bool] = []
+    checks.append(mod.sl001_excisable(ctx(f, events)))
+    f_size = sl001_finding(evidence={"reason": "size_limit_exceeded", "limit": 10})
+    checks.append(mod.sl001_excisable(ctx(f_size, events)))
+    checks.append(mod.sl001_excisable(ctx(sl001_finding(line=None), events)))
+    for bad_ev in (
+        {"byte_end": 10, "record_ordinal": 1},
+        {"byte_offset": 5, "record_ordinal": 1},
+        {"byte_offset": 0, "byte_end": 9, "record_ordinal": 0},
+        {"byte_offset": 9, "byte_end": 9, "record_ordinal": 1},
+        {"byte_offset": "x", "byte_end": 9, "record_ordinal": 1},
+    ):
+        checks.append(mod.sl001_excisable(ctx(sl001_finding(evidence=bad_ev), events)))
+    dependent = ev(3, parent="msg-torn")
+    checks.append(mod.sl001_excisable(ctx(f, events + [dependent])))
+    f_other = make_finding(
+        code=SL006,
+        severity=Severity.WARNING,
+        repairability=Repairability.MANUAL,
+        message_template="Disconnected branch at line {line}",
+        source=SourceRef(path="sess.jsonl", line=3),
+        evidence=dict(torn_evidence),
+    )
+    checks.append(mod.sl001_excisable(ctx(f_other, events)))
+    return {"mode": "comparable", "pin": {"kind": "bool_checks", "values": checks}}
+
+
+def run_excision_validation(mod: Any) -> dict[str, Any]:
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+    from sesslint.repair.recipes_conservative import PreconditionFailed  # noqa: WPS433
+
+    def ev(i: int, parent: str | None = None) -> SessionEvent:
+        return SessionEvent(
+            id=f"msg-{i}",
+            parent_id=parent,
+            seq=i,
+            ts=f"2026-09-05T12:00:0{i}Z",
+            actor="user" if i % 2 == 0 else "assistant",
+            kind="message",
+            payload={"text": f"m{i}"},
+        )
+
+    events = [ev(0), ev(2)]
+    step = PlanStep(
+        seq=0,
+        recipe="torn-record-excision",
+        target_finding_fp="fp",
+        target_index=None,
+        params={
+            "line": 3,
+            "record_ordinal": 2,
+            "byte_offset": 120,
+            "byte_end": 210,
+            "record_id": "msg-torn",
+        },
+        lossy=True,
+        loss={"torn-record": 1},
+        min_policy="salvage",
+    )
+    pin: dict[str, Any] = {}
+    out, loss = mod.apply_torn_record_excision_with_loss(events, step)
+    pin["success"] = {
+        "loss": loss,
+        "ids": [e["id"] for e in out],
+        "plain_eq": mod.apply_torn_record_excision(events, step) == out,
+    }
+    refuses: list[str] = []
+    try:
+        mod.apply_torn_record_excision([], step)
+    except PreconditionFailed as exc:
+        refuses.append(str(exc))
+    for bad in (
+        {"record_ordinal": 2, "byte_offset": 1, "byte_end": 5},
+        {"line": 0, "record_ordinal": 2, "byte_offset": 1, "byte_end": 5},
+        {"line": 3, "record_ordinal": 0, "byte_offset": 1, "byte_end": 5},
+        {"line": 3, "record_ordinal": 2, "byte_offset": 5, "byte_end": 5},
+        {"line": "3", "record_ordinal": 2, "byte_offset": 1, "byte_end": 5},
+    ):
+        bad_step = PlanStep(
+            seq=0,
+            recipe="torn-record-excision",
+            target_finding_fp="fp",
+            target_index=None,
+            params=bad,
+            lossy=True,
+            loss={"torn-record": 1},
+            min_policy="salvage",
+        )
+        try:
+            mod.apply_torn_record_excision(events, bad_step)
+            raise SystemExit("expected refusal")
+        except PreconditionFailed as exc:
+            refuses.append(str(exc))
+    dependent = ev(3, parent="msg-torn")
+    try:
+        mod.apply_torn_record_excision(events + [dependent], step)
+        raise SystemExit("expected dependent refusal")
+    except PreconditionFailed as exc:
+        refuses.append(str(exc))
+    pin["refusals"] = refuses
+    return {"mode": "comparable", "pin": pin}
+
+
+def run_amputate_validation(mod: Any) -> dict[str, Any]:
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+    from sesslint.repair.recipes_conservative import PreconditionFailed  # noqa: WPS433
+
+    step = PlanStep(
+        seq=0,
+        recipe="unresolvable-branch-amputate",
+        target_finding_fp="fp",
+        target_index=0,
+        lossy=True,
+    )
+    messages: list[str] = []
+    try:
+        mod.apply_unresolvable_branch_amputate([], step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    ev = SessionEvent(
+        id="m0",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+    )
+    bad_step = PlanStep(
+        seq=0,
+        recipe="unresolvable-branch-amputate",
+        target_finding_fp="fp",
+        target_index=99,
+        lossy=True,
+    )
+    try:
+        mod.apply_unresolvable_branch_amputate([ev], bad_step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    ev_cp = SessionEvent(
+        id="cp1",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="system",
+        kind="checkpoint",
+    )
+    ev_ch = SessionEvent(
+        id="ch1",
+        parent_id="cp1",
+        seq=1,
+        ts="2026-09-05T12:00:01Z",
+        actor="user",
+        kind="message",
+    )
+    cp_step = PlanStep(
+        seq=0,
+        recipe="unresolvable-branch-amputate",
+        target_finding_fp="fp",
+        target_index=1,
+        lossy=True,
+    )
+    try:
+        mod.apply_unresolvable_branch_amputate([ev_cp, ev_ch], cp_step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    ev_single = SessionEvent(
+        id="s1",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+    )
+    try:
+        mod.apply_unresolvable_branch_amputate([ev_single], step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    return {"mode": "comparable", "pin": {"messages": messages}}
+
+
+def run_compaction_validation(mod: Any) -> dict[str, Any]:
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+    from sesslint.repair.recipes_conservative import PreconditionFailed  # noqa: WPS433
+
+    step = PlanStep(
+        seq=0,
+        recipe="torn-compaction-project",
+        target_finding_fp="fp",
+        target_index=0,
+        lossy=True,
+    )
+    messages: list[str] = []
+    try:
+        mod.apply_torn_compaction_project([], step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    ev_msg = SessionEvent(
+        id="m0",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+    )
+    try:
+        mod.apply_torn_compaction_project([ev_msg], step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    ev_cb = SessionEvent(
+        id="cb0",
+        parent_id="m0",
+        seq=1,
+        ts="2026-09-05T12:00:01Z",
+        actor="system",
+        kind="compaction_boundary",
+    )
+    step_cb = PlanStep(
+        seq=0,
+        recipe="torn-compaction-project",
+        target_finding_fp="fp",
+        target_index=1,
+        lossy=True,
+    )
+    try:
+        mod.apply_torn_compaction_project([ev_msg, ev_cb], step_cb)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    return {"mode": "comparable", "pin": {"messages": messages}}
+
+
+def run_truncate_validation(mod: Any) -> dict[str, Any]:
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+    from sesslint.repair.recipes_conservative import PreconditionFailed  # noqa: WPS433
+
+    step = PlanStep(
+        seq=0,
+        recipe="side-effect-unknown-truncate",
+        target_finding_fp="fp",
+        target_index=0,
+        lossy=True,
+    )
+    messages: list[str] = []
+    try:
+        mod.apply_side_effect_unknown_truncate([], step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    ev = SessionEvent(
+        id="m0",
+        parent_id=None,
+        seq=0,
+        ts="2026-09-05T12:00:00Z",
+        actor="user",
+        kind="message",
+    )
+    try:
+        mod.apply_side_effect_unknown_truncate([ev], step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    bad_step = PlanStep(
+        seq=0,
+        recipe="side-effect-unknown-truncate",
+        target_finding_fp="fp",
+        target_index=5,
+        lossy=True,
+    )
+    try:
+        mod.apply_side_effect_unknown_truncate([ev], bad_step)
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    return {"mode": "comparable", "pin": {"messages": messages}}
+
+
+def run_orphan_resolves(mod: Any) -> dict[str, Any]:
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+    from sesslint.repair.recipes_conservative import PreconditionFailed  # noqa: WPS433
+
+    events = decode_events(orphan_events_spec())
+    step_by_corr = PlanStep(
+        seq=0,
+        recipe="orphan-result-drop",
+        target_finding_fp="fp",
+        target_index=None,
+        params={"correlation_id": "corr-orphan"},
+        lossy=True,
+    )
+    out = mod.apply_orphan_result_drop(events, step_by_corr)
+    ids_corr = [e["id"] for e in out]
+    step_by_id = PlanStep(
+        seq=0,
+        recipe="orphan-result-drop",
+        target_finding_fp="fp",
+        target_index=None,
+        params={"result_id": "tr_orph"},
+        lossy=True,
+    )
+    out2 = mod.apply_orphan_result_drop(events, step_by_id)
+    ids_id = [e["id"] for e in out2]
+    events_amb = events + decode_events(
+        [
+            session_row(
+                id="tr_orph2",
+                parent_id="m0",
+                seq=4,
+                ts="2026-09-05T12:00:04Z",
+                actor="tool",
+                kind="tool_result",
+                correlation_id="corr-orphan",
+            )
+        ]
+    )
+    amb_message = ""
+    try:
+        mod.apply_orphan_result_drop(events_amb, step_by_corr)
+    except PreconditionFailed as exc:
+        amb_message = str(exc)
+    return {
+        "mode": "comparable",
+        "pin": {"ids_by_corr": ids_corr, "ids_by_id": ids_id, "ambiguous": amb_message},
+    }
+
+
+def run_orphan_refusals(mod: Any) -> dict[str, Any]:
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+    from sesslint.repair.recipes_conservative import PreconditionFailed  # noqa: WPS433
+
+    events = decode_events(orphan_events_spec())
+
+    def mkstep(**kw: Any) -> PlanStep:
+        base: dict[str, Any] = {
+            "seq": 0,
+            "recipe": "orphan-result-drop",
+            "target_finding_fp": "fp",
+            "target_index": 3,
+            "lossy": True,
+        }
+        base.update(kw)
+        return PlanStep(**base)
+
+    messages: list[str] = []
+    try:
+        mod.apply_orphan_result_drop([], mkstep(target_index=None))
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    try:
+        mod.apply_orphan_result_drop(events, mkstep(target_index=99))
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    try:
+        mod.apply_orphan_result_drop(events, mkstep(target_index=0))
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    try:
+        mod.apply_orphan_result_drop(events, mkstep(target_index=2))
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    child_spec = [
+        session_row(
+            id="ch1",
+            parent_id="tr_orph",
+            seq=4,
+            ts="2026-09-05T12:00:04Z",
+            actor="assistant",
+            kind="message",
+        )
+    ]
+    try:
+        mod.apply_orphan_result_drop(events + decode_events(child_spec), mkstep(target_index=3))
+    except PreconditionFailed as exc:
+        messages.append(str(exc))
+    return {"mode": "comparable", "pin": {"messages": messages}}
+
+
+def run_affected_region_gap(mod: Any, events: list[dict[str, Any]], step: dict[str, Any]) -> dict[str, Any]:
+    evs = decode_events(events)
+    st = decode_step(step)
+    region = mod.affected_region_orphan_result_drop(st, evs)
+    indices = sorted(region.indices) if region.indices is not None else []
+    ids = sorted(region.ids) if region.ids is not None else []
+    ranges = [list(pair) for pair in region.ranges] if region.ranges else []
+    return {
+        "mode": "gap",
+        "gap_id": GAP_ORPHAN_REGION,
+        "region": {
+            "unproven": bool(region.unproven),
+            "indices": indices,
+            "ids": ids,
+            "ranges": ranges,
+        },
+    }
+
+
+def run_expected(mod: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"mode": "names", "names": list(mod.__all__)}
+    if kind == "register_all":
+        return run_register_all(mod)
+    if kind == "registration_matrix":
+        return run_registration(mod)
+    if kind == "sl001_excisable_precondition":
+        return run_sl001_excisable(mod)
+    if kind == "apply_torn_record_excision_validation":
+        return run_excision_validation(mod)
+    if kind == "amputate_direct_apply_validation":
+        return run_amputate_validation(mod)
+    if kind == "torn_compaction_direct_apply_validation":
+        return run_compaction_validation(mod)
+    if kind == "truncate_direct_apply_validation":
+        return run_truncate_validation(mod)
+    if kind == "orphan_result_drop_resolves_by_params":
+        return run_orphan_resolves(mod)
+    if kind == "orphan_result_drop_direct_apply_refusals":
+        return run_orphan_refusals(mod)
+    if kind == "affected_region_orphan_gap":
+        return run_affected_region_gap(
+            mod, construct["events"], construct["step"],
+        )
+    raise SystemExit(f"unknown construct {kind!r}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = [
+        {"id": "module_all_export_order", "construct": {"type": "module_all"}},
+        {"id": "register_all_idempotent", "construct": {"type": "register_all"}},
+        {"id": "registration_salvage_matrix", "construct": {"type": "registration_matrix"}},
+        {
+            "id": "sl001_excisable_precondition",
+            "construct": {"type": "sl001_excisable_precondition"},
+        },
+        {
+            "id": "apply_torn_record_excision_validation",
+            "construct": {"type": "apply_torn_record_excision_validation"},
+        },
+        {
+            "id": "amputate_direct_apply_validation",
+            "construct": {"type": "amputate_direct_apply_validation"},
+        },
+        {
+            "id": "torn_compaction_direct_apply_validation",
+            "construct": {"type": "torn_compaction_direct_apply_validation"},
+        },
+        {
+            "id": "truncate_direct_apply_validation",
+            "construct": {"type": "truncate_direct_apply_validation"},
+        },
+        {
+            "id": "orphan_result_drop_resolves_by_params",
+            "construct": {"type": "orphan_result_drop_resolves_by_params"},
+        },
+        {
+            "id": "orphan_result_drop_direct_apply_refusals",
+            "construct": {"type": "orphan_result_drop_direct_apply_refusals"},
+        },
+        {
+            "id": "affected_region_orphan_gap",
+            "construct": {
+                "type": "affected_region_orphan_gap",
+                "events": orphan_events_spec(),
+                "step": step_spec(target_index=3, params={}),
+            },
+        },
+    ]
+    return specs
+
+
+def discover_coverage(vector_ids: set[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    test_re = re.compile(r"^def (test_\w+)")
+    for rel in TEST_FILES:
+        text = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+        for line in text.splitlines():
+            match = test_re.match(line)
+            if not match:
+                continue
+            name = match.group(1)
+            key = f"{rel}::{name}"
+            vid = COVERED.get(name)
+            status = "covered" if vid and vid in vector_ids else "not_applicable"
+            rows.append(
+                {
+                    "test": key,
+                    "column": "column_0",
+                    "status": status,
+                    "vector_id": vid if status == "covered" else None,
+                    "note": "",
+                }
+            )
+    return rows
+
+
+def assert_payload_clean(payload: str) -> None:
+    if "\r" in payload:
+        raise SystemExit("payload contains CR")
+    if SEAM_SENTENCE in payload:
+        raise SystemExit("payload stores the Rust seam sentence")
+    if "FOR_WORK" in payload or "sesslint-wt" in payload:
+        raise SystemExit("payload stores a forbidden path token")
+    if re.search(r"sbp_[0-9a-f]{40}", payload):
+        raise SystemExit("payload stores sbp hash")
+
+
+def main() -> int:
+    mod = load_salvage_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        expected = run_expected(mod, spec["construct"])
+        vectors.append({"id": spec["id"], "construct": spec["construct"], "expected": expected})
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_py_sha256": RECIPES_SALVAGE_PY_SHA256,
+        "recipes_salvage_rs_sha256": RECIPES_SALVAGE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    assert_payload_clean(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    vids = {v["id"] for v in vectors}
+    cov = discover_coverage(vids)
+    cov_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": sum(1 for r in cov if r["status"] == "covered"),
+        "not_applicable_count": sum(1 for r in cov if r["status"] == "not_applicable"),
+        "rows": cov,
+    }
+    cov_payload = json.dumps(cov_doc, indent=2) + "\n"
+    assert_payload_clean(cov_payload)
+    (out_dir / "coverage.json").write_text(cov_payload, encoding="utf-8", newline="\n")
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic sesslint.repair.recipes_salvage module parity vectors.",
+        "generator": "rust/parity/vectors/repair.recipes_salvage/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_payload = json.dumps(provenance, indent=2) + "\n"
+    assert_payload_clean(prov_payload)
+    (out_dir / "PROVENANCE.json").write_text(prov_payload, encoding="utf-8", newline="\n")
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_rs_sha256": RECIPES_SALVAGE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.recipes_salvage/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    man_payload = json.dumps(manifest, indent=2) + "\n"
+    assert_payload_clean(man_payload)
+    (out_dir / "manifest.json").write_text(man_payload, encoding="utf-8", newline="\n")
+    print(f"wrote {len(vectors)} vectors")
+    print(f"sha256={digest}")
+    print(f"covered={cov_doc['covered_count']} not_applicable={cov_doc['not_applicable_count']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

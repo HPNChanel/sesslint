@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.assurance parity vectors from the pinned module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ASSURANCE_SHA256 = (
+    "8c0a182503418d404b26816b7d1db03274577c8cbc4af9532cdcd681a69fc529"
+)
+
+KNOWN_PARITY_GAPS = [
+    (
+        "cap_assurance: when plan has attribute 'steps' whose value is not iterable, "
+        "Python raises TypeError; Rust Plan::AttributeSteps only accepts a slice."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_assurance_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "repair" / "assurance.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != ASSURANCE_SHA256:
+        raise SystemExit(
+            f"assurance.py sha256 mismatch: expected {ASSURANCE_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.repair import assurance  # noqa: WPS433
+
+    return assurance
+
+
+def make_step(spec: dict[str, Any]) -> Any:
+    view = spec["view"]
+    if view == "attribute":
+        lossy = spec.get("lossy", False)
+        return SimpleNamespace(lossy=lossy)
+    if view == "mapping":
+        if "lossy" not in spec:
+            return {}
+        return {"lossy": spec["lossy"]}
+    if view == "other":
+        return SimpleNamespace()
+    raise ValueError(f"unknown step view: {view}")
+
+
+def make_steps(specs: list[dict[str, Any]]) -> list[Any]:
+    return [make_step(row) for row in specs]
+
+
+def make_plan(spec: dict[str, Any], steps: list[Any]) -> Any:
+    kind = spec["kind"]
+    if kind == "attribute_steps":
+        return SimpleNamespace(steps=tuple(steps))
+    if kind == "mapping_iterable":
+        return {"steps": steps}
+    if kind == "mapping_not_iterable":
+        return {"steps": spec.get("raw_steps", 42)}
+    if kind == "mapping_string_steps":
+        return {"steps": spec.get("raw_steps", "ab")}
+    if kind == "iterable":
+        return steps
+    if kind == "mapping_keys_only":
+        return spec.get("mapping", {"k": 1})
+    if kind in ("str", "bytes", "other"):
+        if kind == "str":
+            return "xy"
+        if kind == "bytes":
+            return b"xy"
+        return 0
+    raise ValueError(f"unknown plan kind: {kind}")
+
+
+def run_cap(assurance: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    base = construct["base"]
+    plan_spec = construct["plan"]
+    step_specs = construct.get("steps", [])
+    steps = make_steps(step_specs)
+    plan = make_plan(plan_spec, steps)
+    try:
+        value = assurance.cap_assurance(base, plan)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "value": value}
+
+
+def run_ceiling(assurance: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    revalidation = construct["revalidation"]
+    policy = construct["policy"]
+    try:
+        value = assurance.compute_assurance_ceiling(revalidation, policy)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "value": value}
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct})
+
+    lossy_attr = [{"view": "attribute", "lossy": True}]
+    lossless_attr = [{"view": "attribute", "lossy": False}]
+
+    unknown_bases = [
+        "invalid-level",
+        " clean ",
+        "Clean",
+        "a\\b",
+        "a\nb",
+        "x\u0000y",
+        "\u00a0",
+        "\u200b",
+        "\u00e9",
+        "nope'quote",
+        'a"b',
+        "a'\"b",
+    ]
+    for index, base in enumerate(unknown_bases):
+        add(
+            f"unknown_base_{index}",
+            {
+                "type": "cap_assurance",
+                "base": base,
+                "plan": {"kind": "attribute_steps"},
+                "steps": lossy_attr,
+            },
+        )
+
+    empty_plans = [
+        {"kind": "attribute_steps"},
+        {"kind": "mapping_iterable"},
+        {"kind": "mapping_not_iterable"},
+        {"kind": "iterable"},
+        {"kind": "str"},
+        {"kind": "bytes"},
+        {"kind": "other"},
+    ]
+    for base in ("unrepairable", "salvaged", "repaired-lossless", "clean"):
+        for plan in empty_plans:
+            add(
+                f"no_steps_{base}_{plan['kind']}",
+                {
+                    "type": "cap_assurance",
+                    "base": base,
+                    "plan": plan,
+                    "steps": [],
+                },
+            )
+
+    lossy_truthiness = [
+        ("none", {"view": "attribute", "lossy": None}),
+        ("zero", {"view": "attribute", "lossy": 0}),
+        ("empty_str", {"view": "attribute", "lossy": ""}),
+        ("one", {"view": "attribute", "lossy": 1}),
+        ("str_zero", {"view": "attribute", "lossy": "0"}),
+        ("map_missing", {"view": "mapping"}),
+        ("map_none", {"view": "mapping", "lossy": None}),
+        ("map_zero", {"view": "mapping", "lossy": 0}),
+        ("map_true", {"view": "mapping", "lossy": True}),
+        ("str_zero_map", {"view": "mapping", "lossy": "0"}),
+    ]
+    for label, step_spec in lossy_truthiness:
+        for base in ("clean", "repaired-lossless", "salvaged", "unrepairable"):
+            add(
+                f"lossy_truth_{label}_{base}",
+                {
+                    "type": "cap_assurance",
+                    "base": base,
+                    "plan": {"kind": "attribute_steps"},
+                    "steps": [step_spec],
+                },
+            )
+
+    for base in ("clean", "repaired-lossless", "salvaged", "unrepairable"):
+        for plan_kind in ("attribute_steps", "mapping_iterable", "iterable"):
+            add(
+                f"any_lossy_{base}_{plan_kind}",
+                {
+                    "type": "cap_assurance",
+                    "base": base,
+                    "plan": {"kind": plan_kind},
+                    "steps": lossy_attr,
+                },
+            )
+
+    for base in ("clean", "repaired-lossless", "salvaged", "unrepairable"):
+        for plan_kind in ("attribute_steps", "mapping_iterable", "iterable"):
+            add(
+                f"all_lossless_{base}_{plan_kind}",
+                {
+                    "type": "cap_assurance",
+                    "base": base,
+                    "plan": {"kind": plan_kind},
+                    "steps": lossless_attr,
+                },
+            )
+
+    add(
+        "mixed_lossy_then_lossless_clean",
+        {
+            "type": "cap_assurance",
+            "base": "clean",
+            "plan": {"kind": "iterable"},
+            "steps": [
+                {"view": "attribute", "lossy": True},
+                {"view": "attribute", "lossy": False},
+            ],
+        },
+    )
+    add(
+        "mixed_lossless_then_lossy_unrepairable",
+        {
+            "type": "cap_assurance",
+            "base": "unrepairable",
+            "plan": {"kind": "attribute_steps"},
+            "steps": [
+                {"view": "attribute", "lossy": False},
+                {"view": "attribute", "lossy": True},
+            ],
+        },
+    )
+    add(
+        "all_lossless_multi_step_clean",
+        {
+            "type": "cap_assurance",
+            "base": "clean",
+            "plan": {"kind": "mapping_iterable"},
+            "steps": [
+                {"view": "attribute", "lossy": False},
+                {"view": "other"},
+                {"view": "mapping"},
+            ],
+        },
+    )
+    add(
+        "mapping_string_steps_caps_clean",
+        {
+            "type": "cap_assurance",
+            "base": "clean",
+            "plan": {"kind": "mapping_string_steps"},
+            "steps": [],
+        },
+    )
+    add(
+        "mapping_keys_only_caps_clean",
+        {
+            "type": "cap_assurance",
+            "base": "clean",
+            "plan": {"kind": "mapping_keys_only"},
+            "steps": [],
+        },
+    )
+
+    for level in ("A0", "A1", "A2", "A3", "A4"):
+        for policy in ("conservative", "repaired-lossless", "clean"):
+            add(
+                f"ceiling_preserve_{level}_{policy}",
+                {
+                    "type": "compute_assurance_ceiling",
+                    "revalidation": level,
+                    "policy": policy,
+                },
+            )
+
+    salvage_expect = {
+        "A0": "A0",
+        "A1": "A1",
+        "A2": "A2",
+        "A3": "A2",
+        "A4": "A2",
+    }
+    for level, expected in salvage_expect.items():
+        add(
+            f"ceiling_salvage_{level}",
+            {
+                "type": "compute_assurance_ceiling",
+                "revalidation": level,
+                "policy": "salvage",
+            },
+        )
+        add(
+            f"ceiling_salvaged_{level}",
+            {
+                "type": "compute_assurance_ceiling",
+                "revalidation": level,
+                "policy": "salvaged",
+            },
+        )
+
+    add(
+        "ceiling_whitespace_salvage",
+        {
+            "type": "compute_assurance_ceiling",
+            "revalidation": "A4",
+            "policy": "  SaLvAgE ",
+        },
+    )
+    add(
+        "ceiling_whitespace_unicode",
+        {
+            "type": "compute_assurance_ceiling",
+            "revalidation": "\u001cA3",
+            "policy": "\tSalvaged\n",
+        },
+    )
+    add(
+        "ceiling_whitespace_repaired",
+        {
+            "type": "compute_assurance_ceiling",
+            "revalidation": "\u00a0a4 ",
+            "policy": " RePaired-Lossless ",
+        },
+    )
+    add(
+        "ceiling_whitespace_clean",
+        {
+            "type": "compute_assurance_ceiling",
+            "revalidation": " a1 ",
+            "policy": " Clean ",
+        },
+    )
+
+    ceiling_errors = [
+        ("invalid_level", "INVALID", "conservative"),
+        ("spaced_level", " A9 ", "conservative"),
+        ("empty_level", "", "conservative"),
+        ("unknown_policy", "A3", "unknown_policy"),
+        ("spaced_policy", "A3", " unknown "),
+        ("lossy_alias", "A2", "lossy"),
+        ("unrepairable_policy", "A2", "unrepairable"),
+        ("both_invalid", "nope", "bad"),
+    ]
+    for label, revalidation, policy in ceiling_errors:
+        add(
+            f"ceiling_error_{label}",
+            {
+                "type": "compute_assurance_ceiling",
+                "revalidation": revalidation,
+                "policy": policy,
+            },
+        )
+
+    return specs
+
+
+def build_expected(assurance: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    construct = spec["construct"]
+    kind = construct["type"]
+    if kind == "cap_assurance":
+        return run_cap(assurance, construct)
+    if kind == "compute_assurance_ceiling":
+        out = run_ceiling(assurance, construct)
+        if spec["id"].startswith("ceiling_salvage_") or spec["id"].startswith(
+            "ceiling_salvaged_"
+        ):
+            level = construct["revalidation"]
+            salvage_expect = {
+                "A0": "A0",
+                "A1": "A1",
+                "A2": "A2",
+                "A3": "A2",
+                "A4": "A2",
+            }
+            if out.get("ok") and out.get("value") != salvage_expect[level]:
+                raise SystemExit(
+                    f"{spec['id']}: salvage ceiling weakened: {out.get('value')!r}"
+                )
+        return out
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    assurance = load_assurance_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs()
+    vectors: list[dict[str, Any]] = []
+    for row in specs:
+        expected = build_expected(assurance, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.assurance",
+        "python_commit": PYTHON_COMMIT,
+        "assurance_py_sha256": ASSURANCE_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.assurance",
+        "python_commit": PYTHON_COMMIT,
+        "assurance_py_sha256": ASSURANCE_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.assurance/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.assurance parity (cap_assurance lattice "
+            "and compute_assurance_ceiling only)."
+        ),
+        "generator": "rust/parity/vectors/repair.assurance/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

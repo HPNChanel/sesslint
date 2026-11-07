@@ -1,0 +1,548 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.io",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "scan_io_rs_sha256": "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b",
+  "known_parity_gaps": [
+    "SL001, SL002, SL303, and SL009 findings: Python yields Finding objects; Rust stops with FINGERPRINT_CODEC_UNAVAILABLE. Do not expect codec text as if Python raised it.",
+    "read_header and iter_events with a non-empty dup_sink when duplicate keys match critical keys: Rust returns FINGERPRINT_CODEC_UNAVAILABLE; vectors omit dup_sink hit paths.",
+    "SecretScanTracker::into_findings with hits: Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Clean streams with an empty tracker are compared.",
+    "mmap fast path (_open_byte_source / _MMapLineSource): not ported; no mmap vectors.",
+    "Header JSON non-object type labels: Rust uses object/array/string/number/bool/null; Python uses dict/list/str/int/float/NoneType. Vectors use Rust labels only.",
+    "JSON integers outside i64: ReadHeaderError::IntegerRange, not a schema finding.",
+    "Python ReaderLimits rejects bool subclasses for limit fields; Rust has no bool on i64.",
+    "truth is SKIP_BAD (-2) for skip_scalar; trueth is accepted as true prefix.",
+    "Live/test API key-shaped tokens: synthetic parity only; secret hit paths are gaps."
+  ],
+  "vectors": [
+    {
+      "id": "constants_default",
+      "construct": {
+        "type": "io_constants"
+      },
+      "expected": {
+        "DEFAULT_MAX_LINE_BYTES": 8388608,
+        "DEFAULT_MAX_DEPTH": 100,
+        "DEFAULT_MAX_FILE_BYTES": 104857600,
+        "PROBE_CHUNK_BYTES": 1048576,
+        "CHUNK_DRAIN_SIZE": 65536,
+        "MMAP_MIN_BYTES": 4194304,
+        "MMAP_MIN_LINE_BYTES": 65536,
+        "MMAP_SNIFF_BYTES": 65536,
+        "DEFAULT_READER_LIMITS": {
+          "max_line_bytes": 8388608,
+          "max_depth": 100,
+          "max_file_bytes": 104857600,
+          "max_records": null
+        }
+      }
+    },
+    {
+      "id": "reader_limits_line_zero",
+      "construct": {
+        "type": "io_reader_limits",
+        "limits": {
+          "max_line_bytes": 0,
+          "max_depth": 1,
+          "max_file_bytes": 1
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "max_line_bytes must be a positive integer, got 0"
+      }
+    },
+    {
+      "id": "reader_limits_records_zero",
+      "construct": {
+        "type": "io_reader_limits",
+        "limits": {
+          "max_line_bytes": 1,
+          "max_depth": 1,
+          "max_file_bytes": 1,
+          "max_records": 0
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "max_records must be a positive integer or None, got 0"
+      }
+    },
+    {
+      "id": "skip_scalar_true_0",
+      "construct": {
+        "type": "io_skip_scalar",
+        "text": "true",
+        "pos": 0
+      },
+      "expected": {
+        "pos_after": 4
+      }
+    },
+    {
+      "id": "skip_scalar_truth_0",
+      "construct": {
+        "type": "io_skip_scalar",
+        "text": "truth",
+        "pos": 0
+      },
+      "expected": {
+        "pos_after": -2
+      }
+    },
+    {
+      "id": "skip_scalar_trueth_0",
+      "construct": {
+        "type": "io_skip_scalar",
+        "text": "trueth",
+        "pos": 0
+      },
+      "expected": {
+        "pos_after": 4
+      }
+    },
+    {
+      "id": "skip_scalar_1comma_0",
+      "construct": {
+        "type": "io_skip_scalar",
+        "text": "1,",
+        "pos": 0
+      },
+      "expected": {
+        "pos_after": 1
+      }
+    },
+    {
+      "id": "skip_scalar_tru_0",
+      "construct": {
+        "type": "io_skip_scalar",
+        "text": "tru",
+        "pos": 0
+      },
+      "expected": {
+        "pos_after": -1
+      }
+    },
+    {
+      "id": "is_cut_44136fa3",
+      "construct": {
+        "type": "io_is_cut_json_object",
+        "text": "{}"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_cut_263db80d",
+      "construct": {
+        "type": "io_is_cut_json_object",
+        "text": "{\"a\":1,\""
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_cut_51b3fd5b",
+      "construct": {
+        "type": "io_is_cut_json_object",
+        "text": "{\"a\":truth}"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "torn_7b226964223a_False",
+      "construct": {
+        "type": "io_is_torn_append",
+        "line": {
+          "kind": "bytes_hex",
+          "hex": "7b226964223a20226532222c20227061796c"
+        },
+        "strip_bom": false
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "torn_7b226964223a_False",
+      "construct": {
+        "type": "io_is_torn_append",
+        "line": {
+          "kind": "bytes_hex",
+          "hex": "7b226964223a20226532227d"
+        },
+        "strip_bom": false
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "torn_efbbbf7b2269_True",
+      "construct": {
+        "type": "io_is_torn_append",
+        "line": {
+          "kind": "bytes_hex",
+          "hex": "efbbbf7b226964223a2022653222"
+        },
+        "strip_bom": true
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "decode_json_clean",
+      "construct": {
+        "type": "io_decode_json_dupaware",
+        "text": "{\"a\": 1, \"b\": {\"c\": 2}}"
+      },
+      "expected": {
+        "dup_count": 0,
+        "truncated": false
+      }
+    },
+    {
+      "id": "nesting_depth_shallow",
+      "construct": {
+        "type": "io_check_nesting_depth",
+        "max_depth": 1,
+        "json_text": "{\"a\":{\"b\":1}}"
+      },
+      "expected": {
+        "within": false
+      }
+    },
+    {
+      "id": "nesting_depth_ok",
+      "construct": {
+        "type": "io_check_nesting_depth",
+        "max_depth": 2,
+        "json_text": "{\"a\":{\"b\":1}}"
+      },
+      "expected": {
+        "within": true
+      }
+    },
+    {
+      "id": "read_header_stream_empty",
+      "construct": {
+        "type": "io_read_header_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": ""
+        },
+        "limits": {
+          "max_line_bytes": 8388608,
+          "max_depth": 100,
+          "max_file_bytes": 104857600
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Session file is empty or contains no header: <stream>"
+      }
+    },
+    {
+      "id": "read_header_stream_ok",
+      "construct": {
+        "type": "io_read_header_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d615f76657273696f6e223a22736573736c696e742e73657373696f6e2f7631222c2273657373696f6e5f6964223a22736573732d73796e746865746963222c22637265617465645f6174223a22323032342d30322d32395430303a30303a30305a227d0a"
+        },
+        "limits": {
+          "max_line_bytes": 8388608,
+          "max_depth": 100,
+          "max_file_bytes": 104857600
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "header_json": "{\"created_at\": \"2024-02-29T00:00:00Z\", \"schema_version\": \"sesslint.session/v1\", \"session_id\": \"sess-synthetic\"}"
+      }
+    },
+    {
+      "id": "read_header_line_limit",
+      "construct": {
+        "type": "io_read_header_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "303132333435363738390a"
+        },
+        "limits": {
+          "max_line_bytes": 8,
+          "max_depth": 10,
+          "max_file_bytes": 1000
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Header line 1 exceeds maximum line byte limit (8 bytes)"
+      }
+    },
+    {
+      "id": "read_header_missing_identity",
+      "construct": {
+        "type": "io_read_header_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "7b22637265617465645f6174223a22323032342d30322d32395430303a30303a30305a227d0a"
+        },
+        "limits": {
+          "max_line_bytes": 8388608,
+          "max_depth": 100,
+          "max_file_bytes": 104857600
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "First record is not a session header (missing schema_version/session_id): <stream>"
+      }
+    },
+    {
+      "id": "iter_events_two_events",
+      "construct": {
+        "type": "io_iter_events_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d615f76657273696f6e223a22736573736c696e742e73657373696f6e2f7631222c2273657373696f6e5f6964223a22736573732d73796e746865746963222c22637265617465645f6174223a22323032342d30322d32395430303a30303a30305a227d0a7b226964223a226576742d6f6e65222c22706172656e745f6964223a6e756c6c2c22736571223a312c227473223a22323032342d30322d32395430303a30303a30305a222c226163746f72223a2275736572222c226b696e64223a226d657373616765222c227061796c6f6164223a7b7d7d0a7b226964223a226576742d74776f222c22706172656e745f6964223a6e756c6c2c22736571223a322c227473223a22323032342d30322d32395430303a30303a30305a222c226163746f72223a2275736572222c226b696e64223a226d657373616765222c227061796c6f6164223a7b7d7d0a"
+        }
+      },
+      "expected": {
+        "event_count": 2,
+        "events": [
+          {
+            "id": "evt-one",
+            "seq": 1,
+            "actor": "user",
+            "kind": "message",
+            "parent_id": null
+          },
+          {
+            "id": "evt-two",
+            "seq": 2,
+            "actor": "user",
+            "kind": "message",
+            "parent_id": null
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "id": "iter_events_no_records",
+      "construct": {
+        "type": "io_iter_events_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "event_count": 0,
+        "error": "Session file contains no records: <stream>"
+      }
+    },
+    {
+      "id": "iter_events_max_records",
+      "construct": {
+        "type": "io_iter_events_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d615f76657273696f6e223a22736573736c696e742e73657373696f6e2f7631222c2273657373696f6e5f6964223a22736573732d73796e746865746963222c22637265617465645f6174223a22323032342d30322d32395430303a30303a30305a227d0a7b226964223a226576742d6f6e65222c22706172656e745f6964223a6e756c6c2c22736571223a312c227473223a22323032342d30322d32395430303a30303a30305a222c226163746f72223a2275736572222c226b696e64223a226d657373616765222c227061796c6f6164223a7b7d7d0a7b226964223a226576742d74776f222c22706172656e745f6964223a6e756c6c2c22736571223a322c227473223a22323032342d30322d32395430303a30303a30305a222c226163746f72223a2275736572222c226b696e64223a226d657373616765222c227061796c6f6164223a7b7d7d0a"
+        },
+        "limits": {
+          "max_line_bytes": 8388608,
+          "max_depth": 100,
+          "max_file_bytes": 104857600,
+          "max_records": 2
+        }
+      },
+      "expected": {
+        "event_count": 1,
+        "first_id": "evt-one",
+        "error": "Record count 3 exceeds limit of 2"
+      }
+    },
+    {
+      "id": "iter_events_blank_ordinals",
+      "construct": {
+        "type": "io_iter_events_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "0a7b22736368656d615f76657273696f6e223a22736573736c696e742e73657373696f6e2f7631222c2273657373696f6e5f6964223a22736573732d73796e746865746963222c22637265617465645f6174223a22323032342d30322d32395430303a30303a30305a227d0a0b0c0a20090a7b226964223a226576742d6f6e65222c22706172656e745f6964223a6e756c6c2c22736571223a312c227473223a22323032342d30322d32395430303a30303a30305a222c226163746f72223a2275736572222c226b696e64223a226d657373616765222c227061796c6f6164223a7b7d7d0a"
+        },
+        "limits": {
+          "max_line_bytes": 8388608,
+          "max_depth": 100,
+          "max_file_bytes": 104857600,
+          "max_records": 2
+        },
+        "collect_raw": true
+      },
+      "expected": {
+        "record_count": 2,
+        "first_ordinal": 1,
+        "second_ordinal": 2,
+        "event_count": 1,
+        "first_event_id": "evt-one"
+      }
+    },
+    {
+      "id": "iter_events_drain_tail",
+      "construct": {
+        "type": "io_iter_events_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "30313233345758595a0a"
+        },
+        "limits": {
+          "max_line_bytes": 4,
+          "max_depth": 100,
+          "max_file_bytes": 100
+        },
+        "collect_raw": true
+      },
+      "expected": {
+        "raw_record_hex": "3031323334",
+        "byte_end": 10,
+        "no_wxyz_in_record": true
+      }
+    },
+    {
+      "id": "read_header_path_missing",
+      "construct": {
+        "type": "io_read_header_path",
+        "path": "synthetic/missing-session.jsonl",
+        "write_bytes": null
+      },
+      "expected": {
+        "message": "Session file not found: synthetic/missing-session.jsonl"
+      }
+    },
+    {
+      "id": "read_header_path_directory",
+      "construct": {
+        "type": "io_read_header_path",
+        "mode": "directory"
+      },
+      "expected": {
+        "prefix": "Expected session file, got directory: "
+      }
+    },
+    {
+      "id": "read_header_file_size",
+      "construct": {
+        "type": "io_read_header_path",
+        "mode": "file",
+        "filename": "big.jsonl",
+        "file_bytes": {
+          "kind": "bytes_hex",
+          "hex": "68656c6c6f"
+        },
+        "limits": {
+          "max_line_bytes": 100,
+          "max_depth": 10,
+          "max_file_bytes": 4
+        }
+      },
+      "expected": {
+        "message": "File size 5 bytes exceeds maximum limit (4 bytes); split file into smaller sessions"
+      }
+    },
+    {
+      "id": "read_header_path_empty",
+      "construct": {
+        "type": "io_read_header_path",
+        "mode": "file",
+        "filename": "empty.jsonl",
+        "file_bytes": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "suffix": "Session file is empty or contains no header: "
+      }
+    },
+    {
+      "id": "read_header_stream_byte_limit",
+      "construct": {
+        "type": "io_read_header_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "200a200a0a"
+        },
+        "limits": {
+          "max_line_bytes": 100,
+          "max_depth": 10,
+          "max_file_bytes": 4
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "message": "Stream exceeded maximum file size limit (4 bytes); split file into smaller sessions"
+      }
+    },
+    {
+      "id": "iter_events_blanks_named",
+      "construct": {
+        "type": "io_iter_events_stream",
+        "stream": {
+          "kind": "bytes_hex",
+          "hex": "200a090a"
+        },
+        "name": "dir\\file.jsonl"
+      },
+      "expected": {
+        "event_count": 0,
+        "error": "Session file contains no records: dir/file.jsonl"
+      }
+    },
+    {
+      "id": "iter_events_path_missing",
+      "construct": {
+        "type": "io_iter_events_path",
+        "path": "synthetic/missing-session.jsonl"
+      },
+      "expected": {
+        "message": "Session file not found: synthetic/missing-session.jsonl"
+      }
+    },
+    {
+      "id": "iter_events_path_directory",
+      "construct": {
+        "type": "io_iter_events_path",
+        "mode": "directory"
+      },
+      "expected": {
+        "prefix": "Expected session file, got directory: "
+      }
+    },
+    {
+      "id": "iter_events_path_file_size",
+      "construct": {
+        "type": "io_iter_events_path",
+        "mode": "file",
+        "filename": "stat-big.jsonl",
+        "file_bytes": {
+          "kind": "bytes_hex",
+          "hex": "68656c6c6f"
+        },
+        "limits": {
+          "max_line_bytes": 100,
+          "max_depth": 10,
+          "max_file_bytes": 4
+        }
+      },
+      "expected": {
+        "message": "File size 5 bytes exceeds maximum limit (4 bytes); split file into smaller sessions"
+      }
+    }
+  ]
+}
