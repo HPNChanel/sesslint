@@ -13,9 +13,10 @@
 //! The record-id pattern and the strict JSON decoder are defined here.
 //! Duplicate-key decoding from lines 347–667 of the same pin is appended
 //! below. Torn-append detection from lines 670–878 of the same pin is
-//! appended after [`skip_string`]. The streaming reader after line 878 is
-//! not part of this file. OS errors propagate as `std::io::Error` and are
-//! not turned into findings here.
+//! appended after [`skip_string`]. Physical line processing from lines
+//! 881–1067 of the same pin is appended after [`MalformedTailTracker`].
+//! The streaming reader after line 1067 is not part of this file. OS errors
+//! propagate as `std::io::Error` and are not turned into findings here.
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -23,11 +24,12 @@ use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::Path;
 
-use model::codes::{Repairability, Severity, SL001, SL002, SL303};
+use model::canonical::{parse_session_event, parse_session_header, Payload, SessionEvent};
+use model::codes::{get_code_info, Repairability, Severity, SL001, SL002, SL303};
 use model::errors::FindingError;
 use model::finding::{
     enforce_content_free_text, make_finding, Evidence, EvidenceKey, EvidenceLookup, Finding,
-    MakeFindingInput, PyValue, SourceLine, SourceRef,
+    MakeFindingInput, PyValue, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
 };
 use sha2::{Digest, Sha256};
 
@@ -776,6 +778,34 @@ fn is_python_space(code: u32) -> bool {
     )
 }
 
+/// Source spelling of one JSON number.
+///
+/// The parser stores the token so a later conversion can keep an integer
+/// that fits in `i64` distinct from a float. A hand-built value uses
+/// [`JsonNumber::opaque`] and has no token. Numbers are not scanned for
+/// surrogates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsonNumber {
+    token: Option<String>,
+}
+
+impl JsonNumber {
+    fn from_token(token: &str) -> Self {
+        Self {
+            token: Some(token.to_owned()),
+        }
+    }
+
+    #[cfg(test)]
+    fn opaque() -> Self {
+        Self { token: None }
+    }
+
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+}
+
 /// JSON tree the surrogate walker can visit.
 ///
 /// Strings and object keys are Unicode code points, not Rust `char`, so a
@@ -785,8 +815,8 @@ fn is_python_space(code: u32) -> bool {
 pub enum JsonValue {
     Null,
     Bool(bool),
-    /// Numeric scalars are not scanned for surrogates.
-    Number,
+    /// Numeric scalar. The token is the source spelling.
+    Number(JsonNumber),
     String(Vec<u32>),
     Array(Vec<JsonValue>),
     /// Insertion-ordered string keys, matching the pin's dict stack.
@@ -867,7 +897,7 @@ fn for_each_string(value: &JsonValue, mut visit: impl FnMut(&[u32])) {
                     stack.push(WalkItem::Chars(key));
                 }
             }
-            WalkItem::Value(JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number) => {}
+            WalkItem::Value(JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_)) => {}
         }
     }
 }
@@ -1094,7 +1124,7 @@ fn json_has_children(value: &JsonValue) -> bool {
     match value {
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(pairs) => !pairs.is_empty(),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => false,
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => false,
     }
 }
 
@@ -1107,7 +1137,7 @@ fn detach_json_children(value: &mut JsonValue, stack: &mut Vec<JsonValue>) {
             }
             pairs.clear();
         }
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => {}
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => {}
     }
 }
 
@@ -1191,7 +1221,7 @@ pub fn check_nesting_depth(obj: &JsonValue, max_depth: i64) -> bool {
                 push_container_values(&mut stack, pairs_values(pairs), next_depth)
             }
             JsonValue::Array(items) => push_container_values(&mut stack, items, next_depth),
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => {}
+            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => {}
         }
     }
     true
@@ -2538,8 +2568,12 @@ impl HandJsonParser {
             b'I' => step_infinity(bytes, index),
             b'-' => step_minus(text, index),
             b'0'..=b'9' => {
+                let start = *index;
                 parse_json_number(text, index)?;
-                Ok(Some((JsonValue::Number, DuplicateMark::Empty)))
+                Ok(Some((
+                    taken_number(text, start, *index)?,
+                    DuplicateMark::Empty,
+                )))
             }
             _ => Err(syntax("Expecting value")),
         }
@@ -2820,8 +2854,12 @@ fn step_minus(
         *index += "-Infinity".len();
         return Err(JsonDecodeError::numeric_constant("-Infinity"));
     }
+    let start = *index;
     parse_json_number(text, index)?;
-    Ok(Some((JsonValue::Number, DuplicateMark::Empty)))
+    Ok(Some((
+        taken_number(text, start, *index)?,
+        DuplicateMark::Empty,
+    )))
 }
 
 fn consume_literal(bytes: &[u8], index: &mut usize, literal: &[u8]) -> Result<(), JsonDecodeError> {
@@ -2836,6 +2874,13 @@ fn consume_literal(bytes: &[u8], index: &mut usize, literal: &[u8]) -> Result<()
 fn skip_json_ws(bytes: &[u8], index: &mut usize) {
     while *index < bytes.len() && matches!(bytes[*index], b' ' | b'\t' | b'\n' | b'\r') {
         *index += 1;
+    }
+}
+
+fn taken_number(text: &str, start: usize, end: usize) -> Result<JsonValue, JsonDecodeError> {
+    match text.get(start..end) {
+        Some(token) => Ok(JsonValue::Number(JsonNumber::from_token(token))),
+        None => Err(syntax("Expecting value")),
     }
 }
 
@@ -3004,10 +3049,11 @@ mod tests {
         decode_error_message_template, for_each_string, lone_surrogate_escapes, open_byte_source,
         probe_buffered_read, probe_bytes_encoding, probe_stream_encoding, probe_text_encoding,
         reject_constant, search_record_id_pattern, sha256_file_bytes, sha256_file_bytes_chunk,
-        strict_parse_float, BufferedByteSource, EncodingProbe, JsonValue, LoneSurrogateError,
-        ReaderLimits, SliceLineCursor, StrictJsonDecoder, CHUNK_DRAIN_SIZE, DEFAULT_MAX_DEPTH,
-        DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_LINE_BYTES, DEFAULT_READER_LIMITS, MMAP_MIN_BYTES,
-        MMAP_MIN_LINE_BYTES, MMAP_SNIFF_BYTES, PROBE_CHUNK_BYTES, STRICT_JSON_DECODER,
+        strict_parse_float, BufferedByteSource, EncodingProbe, JsonNumber, JsonValue,
+        LoneSurrogateError, ReaderLimits, SliceLineCursor, StrictJsonDecoder, CHUNK_DRAIN_SIZE,
+        DEFAULT_MAX_DEPTH, DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_LINE_BYTES, DEFAULT_READER_LIMITS,
+        MMAP_MIN_BYTES, MMAP_MIN_LINE_BYTES, MMAP_SNIFF_BYTES, PROBE_CHUNK_BYTES,
+        STRICT_JSON_DECODER,
     };
     use sha2::{Digest, Sha256};
     use std::fs::File;
@@ -3731,7 +3777,7 @@ mod tests {
             JsonValue::Null,
             JsonValue::Bool(true),
             JsonValue::Bool(false),
-            JsonValue::Number,
+            JsonValue::Number(JsonNumber::opaque()),
             JsonValue::String(codes("A")),
         ]);
         let mut scalar_seen = Vec::new();
@@ -3808,8 +3854,8 @@ mod duplicate_key_tests {
         check_nesting_depth, collect_duplicate_keys, decode_json_dupaware, dup_finding_severity,
         dup_key_findings, duplicate_key_evidence, extract_record_id, reject_lone_surrogates,
         skip_string, validate_stream_coordinates, DuplicateAwareDecoder, DuplicateKey,
-        DuplicateMark, JsonDecodeError, JsonValue, RawLine, MAX_DUP_KEYS_PER_RECORD, SKIP_BAD,
-        SKIP_CUT,
+        DuplicateMark, JsonDecodeError, JsonNumber, JsonValue, RawLine, MAX_DUP_KEYS_PER_RECORD,
+        SKIP_BAD, SKIP_CUT,
     };
     use model::codes::Severity;
     use model::finding::{PyValue, FINGERPRINT_CODEC_UNAVAILABLE};
@@ -3846,9 +3892,10 @@ mod duplicate_key_tests {
                         None => return depth,
                     }
                 }
-                JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => {
-                    return depth
-                }
+                JsonValue::Null
+                | JsonValue::Bool(_)
+                | JsonValue::Number(_)
+                | JsonValue::String(_) => return depth,
             }
         }
     }
@@ -3887,7 +3934,10 @@ mod duplicate_key_tests {
     fn check_nesting_depth_starts_at_one_and_ignores_non_containers() {
         // The pin also treats tuples as containers. JSON has no tuple, so only
         // objects and arrays count.
-        assert!(check_nesting_depth(&JsonValue::Number, 0));
+        assert!(check_nesting_depth(
+            &JsonValue::Number(JsonNumber::opaque()),
+            0
+        ));
         assert!(check_nesting_depth(&JsonValue::Bool(false), 0));
         assert!(check_nesting_depth(&JsonValue::Null, 0));
         assert!(check_nesting_depth(
@@ -3901,7 +3951,7 @@ mod duplicate_key_tests {
             codes("a"),
             JsonValue::Object(vec![(
                 codes("b"),
-                JsonValue::Object(vec![(codes("c"), JsonValue::Number)]),
+                JsonValue::Object(vec![(codes("c"), JsonValue::Number(JsonNumber::opaque()))]),
             )]),
         )]);
         assert!(check_nesting_depth(&deep, 3));
@@ -3915,7 +3965,10 @@ mod duplicate_key_tests {
         )]);
         assert!(check_nesting_depth(&empty_nested, 4));
         assert!(!check_nesting_depth(&empty_nested, 3));
-        let long_key = JsonValue::Object(vec![(codes(&"k".repeat(80)), JsonValue::Number)]);
+        let long_key = JsonValue::Object(vec![(
+            codes(&"k".repeat(80)),
+            JsonValue::Number(JsonNumber::opaque()),
+        )]);
         assert!(check_nesting_depth(&long_key, 1));
     }
 
@@ -3934,7 +3987,8 @@ mod duplicate_key_tests {
             extract_record_id(Some(r#"{"id":"evt_raw"}"#), Some(&blank)).as_deref(),
             Some("evt_raw")
         );
-        let number = JsonValue::Object(vec![(codes("id"), JsonValue::Number)]);
+        let number =
+            JsonValue::Object(vec![(codes("id"), JsonValue::Number(JsonNumber::opaque()))]);
         assert_eq!(
             extract_record_id(Some(r#"{"id":"evt_num"}"#), Some(&number)).as_deref(),
             Some("evt_num")
@@ -3989,7 +4043,7 @@ mod duplicate_key_tests {
             panic!("object");
         };
         assert_eq!(pairs.len(), 3);
-        assert_eq!(pairs[0].1, JsonValue::Number);
+        assert_eq!(pairs[0].1, JsonValue::Number(JsonNumber::from_token("1")));
         assert!(matches!(pairs[1].1, JsonValue::Object(_)));
         assert!(matches!(pairs[2].1, JsonValue::Array(_)));
         assert_eq!(
@@ -4104,7 +4158,7 @@ mod duplicate_key_tests {
                 .expect("index");
         assert_eq!(paths(&dups), ["$[1].k"]);
         let (direct, direct_truncated) = collect_duplicate_keys(
-            &JsonValue::Object(vec![(codes("a"), JsonValue::Number)]),
+            &JsonValue::Object(vec![(codes("a"), JsonValue::Number(JsonNumber::opaque()))]),
             &DuplicateMark::Object {
                 duplicates: vec![("a".to_owned(), 2)],
                 children: vec![DuplicateMark::Empty],
@@ -4915,5 +4969,1139 @@ mod torn_append_tests {
         assert_absent(ignored.evidence().expect("ignored"), "following_bytes");
         let rendered = format!("{:?}", anchor.evidence());
         assert!(!rendered.contains("payload-alpha"));
+    }
+}
+
+const LINE_LIMIT_TEMPLATE: &str =
+    "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}";
+const NUL_BYTE_TEMPLATE: &str = "Forbidden NUL byte on line {line} for record {record_id}";
+const UTF8_ENCODING_TEMPLATE: &str =
+    "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}";
+const NESTING_LIMIT_TEMPLATE: &str =
+    "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] for record {record_id}";
+
+/// Stand-in for `SecretScanTracker.feed`.
+///
+/// The arguments are the raw line bytes, line number, byte offset, byte end,
+/// and record ordinal. This crate does not copy the tracker.
+pub type SecretFeed<'a> = dyn FnMut(&[u8], i64, i64, i64, i64) + 'a;
+
+/// Inputs for [`process_line_decision`] and [`process_line`].
+///
+/// `critical_keys` of `None` is the empty set inside [`decode_json_dupaware`].
+#[derive(Debug, Clone, Copy)]
+pub struct ProcessLineInput<'a> {
+    pub raw: &'a RawLine,
+    pub is_terminal: bool,
+    pub path_str: &'a str,
+    pub limits: &'a ReaderLimits,
+    pub is_first_record: bool,
+    pub critical_keys: Option<&'a BTreeSet<String>>,
+}
+
+/// Defect chosen before [`make_finding`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineDefect {
+    code: &'static str,
+    message_template: &'static str,
+    record_id: Option<String>,
+    evidence: Evidence,
+}
+
+impl LineDefect {
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+
+    pub fn message_template(&self) -> &'static str {
+        self.message_template
+    }
+
+    pub fn record_id(&self) -> Option<&str> {
+        self.record_id.as_deref()
+    }
+
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
+    }
+}
+
+/// Result of classifying one physical line without building a finding.
+#[derive(Debug)]
+pub enum LineOutcome {
+    /// Valid session header. The wrapper returns `None`.
+    Header,
+    /// Valid event. The wrapper returns this event.
+    Event(Box<SessionEvent>),
+    /// Code, template, record id, and evidence for [`make_finding`].
+    Defect(LineDefect),
+    /// Conversion could not build a [`Payload`] without inventing a value.
+    Stop(ProcessLineError),
+}
+
+/// Decision for one line, including duplicate keys observed after a parse.
+///
+/// An empty duplicate list is not a request to call [`dup_key_findings`].
+#[derive(Debug)]
+pub struct LineDecision {
+    duplicates: Vec<DuplicateKey>,
+    duplicates_truncated: bool,
+    duplicate_record_id: Option<String>,
+    outcome: LineOutcome,
+}
+
+impl LineDecision {
+    pub fn duplicates(&self) -> &[DuplicateKey] {
+        &self.duplicates
+    }
+
+    pub fn duplicates_truncated(&self) -> bool {
+        self.duplicates_truncated
+    }
+
+    pub fn duplicate_record_id(&self) -> Option<&str> {
+        self.duplicate_record_id.as_deref()
+    }
+
+    pub fn outcome(&self) -> &LineOutcome {
+        &self.outcome
+    }
+
+    fn stop(err: ProcessLineError) -> Self {
+        Self {
+            duplicates: Vec::new(),
+            duplicates_truncated: false,
+            duplicate_record_id: None,
+            outcome: LineOutcome::Stop(err),
+        }
+    }
+}
+
+/// Failure from [`process_line`].
+///
+/// [`ProcessLineError::Finding`] carries [`FINGERPRINT_CODEC_UNAVAILABLE`]
+/// when [`make_finding`] or [`dup_key_findings`] is asked to fingerprint.
+/// [`ProcessLineError::IntegerRange`] is a JSON integer that does not fit in
+/// `i64`. It is not truncated and it is not turned into a finding.
+#[derive(Debug)]
+pub enum ProcessLineError {
+    Finding(FindingError),
+    Numeric(NumericLiteralError),
+    IntegerRange,
+    OpaqueNumber,
+    NonScalar,
+}
+
+impl std::fmt::Display for ProcessLineError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Finding(err) => err.fmt(formatter),
+            Self::Numeric(err) => err.fmt(formatter),
+            Self::IntegerRange => formatter.write_str("JSON integer is outside i64"),
+            Self::OpaqueNumber => formatter.write_str("JSON number token is not available"),
+            Self::NonScalar => formatter.write_str("JSON string contains a lone surrogate"),
+        }
+    }
+}
+
+impl Error for ProcessLineError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Finding(err) => Some(err),
+            Self::Numeric(err) => Some(err),
+            Self::IntegerRange | Self::OpaqueNumber | Self::NonScalar => None,
+        }
+    }
+}
+
+impl From<FindingError> for ProcessLineError {
+    fn from(err: FindingError) -> Self {
+        Self::Finding(err)
+    }
+}
+
+/// Classify one physical line.
+///
+/// Check order follows `_process_line` at `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`
+/// lines 881–1067. This function does not call [`make_finding`] or
+/// [`dup_key_findings`] and does not take a secret-feed callback.
+///
+/// [`parse_session_header`] and [`parse_session_event`] return
+/// [`model::errors::SchemaError`]. That is the malformed SL001 decision.
+/// Neither parser returns [`model::canonical::CanonicalUnavailable`]. A
+/// conversion that cannot build a [`Payload`] without inventing a number or
+/// a string is [`LineOutcome::Stop`]. A header success is
+/// [`LineOutcome::Header`]. A valid event is [`LineOutcome::Event`].
+#[must_use]
+pub fn process_line_decision(input: &ProcessLineInput<'_>) -> LineDecision {
+    if let Some(decision) = physical_defect(input.raw, input.is_terminal) {
+        return decision;
+    }
+    let decoded = match strict_record_text(input.raw, input.is_terminal) {
+        Ok(text) => text,
+        Err(decision) => return *decision,
+    };
+    let parsed = decode_json_dupaware(&decoded, input.critical_keys, MAX_DUP_KEYS_PER_RECORD);
+    let (value, dups, truncated) = match parsed {
+        Ok(parsed) => parsed,
+        Err(err) => return json_decode_defect(input.raw, input.is_terminal, &decoded, &err),
+    };
+    let duplicate_id = duplicate_record_id(&decoded, &value, &dups);
+    let outcome = classify_decoded(input, &decoded, &value);
+    attach_duplicates(outcome, dups, truncated, duplicate_id)
+}
+
+/// Run the secret feed, duplicate sink, and [`make_finding`] around
+/// [`process_line_decision`].
+///
+/// The feed runs first, on the raw bytes, before any rejection. Duplicate
+/// keys call [`dup_key_findings`] only when the list is non-empty. That call
+/// and every defect call [`make_finding`] with fingerprint [`PyValue::None`]
+/// and return [`FINGERPRINT_CODEC_UNAVAILABLE`]. The error is propagated.
+/// This function does not invent a fingerprint, a digest, or a [`Finding`].
+/// A header success is `Ok(None)`. A valid event is `Ok(Some(event))`.
+pub fn process_line(
+    input: &ProcessLineInput<'_>,
+    dup_sink: Option<&mut Vec<Finding>>,
+    secret_feed: Option<&mut SecretFeed<'_>>,
+) -> Result<Option<SessionEvent>, ProcessLineError> {
+    if let Some(feed) = secret_feed {
+        let raw = input.raw;
+        feed(
+            raw.raw_bytes(),
+            raw.line_number(),
+            raw.byte_offset(),
+            raw.byte_end(),
+            raw.record_ordinal(),
+        );
+    }
+    let decision = process_line_decision(input);
+    if let Some(sink) = dup_sink {
+        if !decision.duplicates.is_empty() {
+            let findings = dup_key_findings(
+                &decision.duplicates,
+                decision.duplicates_truncated,
+                input.path_str,
+                Some(input.raw.line_number()),
+                decision.duplicate_record_id.as_deref(),
+                Some(input.raw.record_ordinal()),
+            )?;
+            sink.extend(findings);
+        }
+    }
+    match decision.outcome {
+        LineOutcome::Header => Ok(None),
+        LineOutcome::Event(event) => Ok(Some(*event)),
+        LineOutcome::Defect(defect) => Err(emit_defect(input, &defect)),
+        LineOutcome::Stop(err) => Err(err),
+    }
+}
+
+fn emit_defect(input: &ProcessLineInput<'_>, defect: &LineDefect) -> ProcessLineError {
+    let finding_input = match defect_finding_input(input, defect) {
+        Ok(finding_input) => finding_input,
+        Err(err) => return ProcessLineError::Finding(err),
+    };
+    match make_finding(&finding_input) {
+        Err(err) => ProcessLineError::Finding(err),
+        Ok(_) => ProcessLineError::Finding(FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE)),
+    }
+}
+
+fn defect_finding_input(
+    input: &ProcessLineInput<'_>,
+    defect: &LineDefect,
+) -> Result<MakeFindingInput, FindingError> {
+    let info = get_code_info(defect.code)?;
+    let source = SourceRef::try_new(
+        input.path_str,
+        Some(SourceLine::Int(input.raw.line_number())),
+        defect.record_id.as_deref(),
+    )?;
+    Ok(MakeFindingInput {
+        code: PyValue::string(defect.code),
+        severity: PyValue::severity(info.default_severity),
+        repairability: PyValue::repairability(info.default_repairability),
+        message_template: PyValue::string(defect.message_template),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(Vec::new()),
+        evidence: evidence_to_py(&defect.evidence),
+        fingerprint: PyValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    })
+}
+
+fn evidence_to_py(evidence: &Evidence) -> PyValue {
+    let mut entries = Vec::new();
+    for key in ["byte_offset", "byte_end", "record_ordinal", "unterminated"] {
+        let EvidenceLookup::Present(value) = evidence.map_string(key) else {
+            continue;
+        };
+        let py = if let Some(number) = value.as_int() {
+            PyValue::int(number)
+        } else if let Some(flag) = value.as_bool() {
+            PyValue::bool_value(flag)
+        } else if let Some(text) = value.as_str() {
+            PyValue::string(text.to_owned())
+        } else {
+            PyValue::None
+        };
+        entries.push((PyValue::string(key), py));
+    }
+    PyValue::map(entries)
+}
+
+fn physical_defect(raw: &RawLine, is_terminal: bool) -> Option<LineDecision> {
+    if raw.truncated_limit() {
+        let record_id = extract_record_id(Some(&utf8_replace(raw.raw_bytes())), None);
+        return Some(line_defect(
+            raw,
+            SL001,
+            LINE_LIMIT_TEMPLATE,
+            record_id,
+            false,
+        ));
+    }
+    if raw.raw_bytes().contains(&0) {
+        let record_id = extract_record_id(Some(&utf8_replace(raw.raw_bytes())), None);
+        let code = decode_defect_code(raw, is_terminal);
+        return Some(line_defect(raw, code, NUL_BYTE_TEMPLATE, record_id, true));
+    }
+    None
+}
+
+fn strict_record_text(raw: &RawLine, is_terminal: bool) -> Result<String, Box<LineDecision>> {
+    let text = match std::str::from_utf8(bom_stripped(raw)) {
+        Ok(text) => text,
+        Err(_) => return Err(Box::new(utf8_defect(raw, is_terminal))),
+    };
+    Ok(python_strip_line(text).to_owned())
+}
+
+fn utf8_defect(raw: &RawLine, is_terminal: bool) -> LineDecision {
+    let record_id = extract_record_id(Some(&utf8_replace(raw.raw_bytes())), None);
+    let code = decode_defect_code(raw, is_terminal);
+    line_defect(raw, code, UTF8_ENCODING_TEMPLATE, record_id, true)
+}
+
+fn bom_stripped(raw: &RawLine) -> &[u8] {
+    let bytes = raw.raw_bytes();
+    if raw.line_number() == 1 && bytes.starts_with(&UTF8_BOM) {
+        &bytes[UTF8_BOM.len()..]
+    } else {
+        bytes
+    }
+}
+
+fn python_strip_line(text: &str) -> &str {
+    text.trim_matches(is_python_space_char)
+}
+
+fn utf8_replace(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+fn json_decode_defect(
+    raw: &RawLine,
+    is_terminal: bool,
+    decoded: &str,
+    err: &JsonDecodeError,
+) -> LineDecision {
+    if matches!(err, JsonDecodeError::Nesting(_)) {
+        return nesting_defect(raw, extract_record_id(Some(decoded), None));
+    }
+    let code = decode_defect_code(raw, is_terminal);
+    let template = json_error_template(err, code == SL002);
+    let record_id = extract_record_id(Some(decoded), None);
+    line_defect(raw, code, template, record_id, true)
+}
+
+fn json_error_template(err: &JsonDecodeError, terminal: bool) -> &'static str {
+    match err {
+        JsonDecodeError::LoneSurrogate(inner) => decode_error_message_template(inner, terminal),
+        JsonDecodeError::Numeric(inner) => decode_error_message_template(inner, terminal),
+        JsonDecodeError::Syntax(inner) => decode_error_message_template(inner, terminal),
+        JsonDecodeError::Nesting(inner) => decode_error_message_template(inner, terminal),
+    }
+}
+
+fn classify_decoded(
+    input: &ProcessLineInput<'_>,
+    decoded: &str,
+    value: &JsonValue,
+) -> LineDecision {
+    if !matches!(value, JsonValue::Object(_)) {
+        return non_object_defect(input.raw);
+    }
+    if container_mark_count(decoded) > input.limits.max_depth()
+        && !check_nesting_depth(value, input.limits.max_depth())
+    {
+        return nesting_defect(input.raw, extract_record_id(Some(decoded), Some(value)));
+    }
+    let payload = match json_to_payload(value) {
+        Ok(payload) => payload,
+        Err(err) => return LineDecision::stop(err),
+    };
+    if input.is_first_record && header_object(value) {
+        header_outcome(input.raw, decoded, value, &payload)
+    } else {
+        event_outcome(input.raw, decoded, value, &payload)
+    }
+}
+
+fn header_object(value: &JsonValue) -> bool {
+    let JsonValue::Object(pairs) = value else {
+        return false;
+    };
+    pairs.iter().any(|(key, _)| key_is(key, "schema_version"))
+        || pairs.iter().any(|(key, _)| key_is(key, "session_id"))
+}
+
+fn key_is(key: &[u32], name: &str) -> bool {
+    let mut chars = name.chars();
+    for &code in key {
+        match chars.next() {
+            Some(ch) if u32::from(ch) == code => {}
+            _ => return false,
+        }
+    }
+    chars.next().is_none()
+}
+
+fn header_outcome(
+    raw: &RawLine,
+    decoded: &str,
+    value: &JsonValue,
+    payload: &Payload,
+) -> LineDecision {
+    match parse_session_header(payload) {
+        Ok(_) => LineDecision {
+            duplicates: Vec::new(),
+            duplicates_truncated: false,
+            duplicate_record_id: None,
+            outcome: LineOutcome::Header,
+        },
+        Err(_) => malformed_defect(raw, extract_record_id(Some(decoded), Some(value))),
+    }
+}
+
+fn event_outcome(
+    raw: &RawLine,
+    decoded: &str,
+    value: &JsonValue,
+    payload: &Payload,
+) -> LineDecision {
+    match parse_session_event(payload, None) {
+        Ok(event) => LineDecision {
+            duplicates: Vec::new(),
+            duplicates_truncated: false,
+            duplicate_record_id: None,
+            outcome: LineOutcome::Event(Box::new(event)),
+        },
+        Err(_) => malformed_defect(raw, extract_record_id(Some(decoded), Some(value))),
+    }
+}
+
+fn duplicate_record_id(decoded: &str, value: &JsonValue, dups: &[DuplicateKey]) -> Option<String> {
+    if dups.is_empty() {
+        None
+    } else {
+        extract_record_id(Some(decoded), Some(value))
+    }
+}
+
+fn attach_duplicates(
+    mut decision: LineDecision,
+    duplicates: Vec<DuplicateKey>,
+    duplicates_truncated: bool,
+    duplicate_record_id: Option<String>,
+) -> LineDecision {
+    decision.duplicates = duplicates;
+    decision.duplicates_truncated = duplicates_truncated;
+    decision.duplicate_record_id = duplicate_record_id;
+    decision
+}
+
+fn non_object_defect(raw: &RawLine) -> LineDecision {
+    line_defect(raw, SL001, MALFORMED_TEMPLATE, None, false)
+}
+
+fn nesting_defect(raw: &RawLine, record_id: Option<String>) -> LineDecision {
+    line_defect(raw, SL001, NESTING_LIMIT_TEMPLATE, record_id, false)
+}
+
+fn malformed_defect(raw: &RawLine, record_id: Option<String>) -> LineDecision {
+    line_defect(raw, SL001, MALFORMED_TEMPLATE, record_id, false)
+}
+
+fn line_defect(
+    raw: &RawLine,
+    code: &'static str,
+    message_template: &'static str,
+    record_id: Option<String>,
+    shaped: bool,
+) -> LineDecision {
+    let entries = coordinate_entries(raw);
+    let evidence = if shaped {
+        defect_evidence(code, entries)
+    } else {
+        Evidence::map(entries)
+    };
+    LineDecision {
+        duplicates: Vec::new(),
+        duplicates_truncated: false,
+        duplicate_record_id: None,
+        outcome: LineOutcome::Defect(LineDefect {
+            code,
+            message_template,
+            record_id,
+            evidence,
+        }),
+    }
+}
+
+fn coordinate_entries(raw: &RawLine) -> Vec<(EvidenceKey, Evidence)> {
+    vec![
+        (
+            EvidenceKey::text("byte_offset"),
+            Evidence::int(raw.byte_offset()),
+        ),
+        (EvidenceKey::text("byte_end"), Evidence::int(raw.byte_end())),
+        (
+            EvidenceKey::text("record_ordinal"),
+            Evidence::int(raw.record_ordinal()),
+        ),
+    ]
+}
+
+fn container_mark_count(text: &str) -> i64 {
+    let mut total = 0_i64;
+    for byte in text.bytes() {
+        if byte == b'{' || byte == b'[' {
+            total = total.saturating_add(1);
+        }
+    }
+    total
+}
+
+fn json_to_payload(value: &JsonValue) -> Result<Payload, ProcessLineError> {
+    match value {
+        JsonValue::Null => Ok(Payload::null()),
+        JsonValue::Bool(flag) => Ok(Payload::bool_value(*flag)),
+        JsonValue::Number(number) => number_to_payload(number),
+        JsonValue::String(codes) => Ok(Payload::string(codes_to_string(codes)?)),
+        JsonValue::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(json_to_payload(item)?);
+            }
+            Ok(Payload::list(out))
+        }
+        JsonValue::Object(pairs) => {
+            let mut out = Vec::with_capacity(pairs.len());
+            for (key, child) in pairs {
+                out.push((
+                    Payload::string(codes_to_string(key)?),
+                    json_to_payload(child)?,
+                ));
+            }
+            Ok(Payload::map(out))
+        }
+    }
+}
+
+fn number_to_payload(number: &JsonNumber) -> Result<Payload, ProcessLineError> {
+    let Some(token) = number.token() else {
+        return Err(ProcessLineError::OpaqueNumber);
+    };
+    if token.bytes().any(|byte| matches!(byte, b'.' | b'e' | b'E')) {
+        let value = strict_parse_float(token).map_err(ProcessLineError::Numeric)?;
+        return Ok(Payload::float(value));
+    }
+    match parse_json_i64(token) {
+        Some(value) => Ok(Payload::int(value)),
+        None => Err(ProcessLineError::IntegerRange),
+    }
+}
+
+fn parse_json_i64(token: &str) -> Option<i64> {
+    let bytes = token.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    let (negative, digits) = if bytes[0] == b'-' {
+        (true, &bytes[1..])
+    } else {
+        (false, bytes)
+    };
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let mut value = 0_i64;
+    for &byte in digits {
+        let digit = i64::from(byte - b'0');
+        value = if negative {
+            value.checked_mul(10)?.checked_sub(digit)?
+        } else {
+            value.checked_mul(10)?.checked_add(digit)?
+        };
+    }
+    Some(value)
+}
+
+fn codes_to_string(codes: &[u32]) -> Result<String, ProcessLineError> {
+    let mut out = String::with_capacity(codes.len());
+    for &code in codes {
+        let Some(ch) = char::from_u32(code) else {
+            return Err(ProcessLineError::NonScalar);
+        };
+        out.push(ch);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod process_line_tests {
+    use std::collections::BTreeSet;
+
+    use model::canonical::MapLookup;
+    use model::codes::{get_code_info, Repairability, Severity, SL001, SL002};
+    use model::finding::{Evidence, EvidenceKey, PyValue, FINGERPRINT_CODEC_UNAVAILABLE};
+
+    use super::{
+        defect_finding_input, json_to_payload, process_line, process_line_decision, JsonNumber,
+        JsonValue, LineDefect, LineOutcome, ProcessLineError, ProcessLineInput, RawLine,
+        ReaderLimits, DEFAULT_MAX_DEPTH, DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_LINE_BYTES,
+        LINE_LIMIT_TEMPLATE, LONE_SURROGATE_WHY, MALFORMED_TEMPLATE, NESTING_LIMIT_TEMPLATE,
+        NUL_BYTE_TEMPLATE, TORN_TERMINAL_TEMPLATE, UTF8_BOM, UTF8_ENCODING_TEMPLATE,
+    };
+
+    const TS: &str = "2024-02-29T00:00:00Z";
+    const HEADER_JSON: &str = concat!(
+        r#"{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","#,
+        r#""created_at":"2024-02-29T00:00:00Z"}"#
+    );
+    const EVENT_JSON: &str = concat!(
+        r#"{"id":"evt-synthetic","parent_id":null,"seq":1,"ts":"2024-02-29T00:00:00Z","#,
+        r#""actor":"user","kind":"message","payload":{}}"#
+    );
+
+    fn limits(max_depth: i64) -> ReaderLimits {
+        ReaderLimits::try_new(
+            DEFAULT_MAX_LINE_BYTES,
+            max_depth,
+            DEFAULT_MAX_FILE_BYTES,
+            None,
+        )
+        .expect("limits")
+    }
+
+    fn positioned(line_number: i64, bytes: &[u8], truncated: bool) -> RawLine {
+        RawLine::try_new(line_number, bytes.to_vec(), truncated, 5, 18, 4).expect("coordinates")
+    }
+
+    fn built<'a>(
+        raw: &'a RawLine,
+        limits: &'a ReaderLimits,
+        is_terminal: bool,
+        is_first_record: bool,
+    ) -> ProcessLineInput<'a> {
+        ProcessLineInput {
+            raw,
+            is_terminal,
+            path_str: "synthetic.jsonl",
+            limits,
+            is_first_record,
+            critical_keys: None,
+        }
+    }
+
+    fn defect_of(decision: &super::LineDecision) -> LineDefect {
+        match &decision.outcome {
+            LineOutcome::Defect(defect) => defect.clone(),
+            other => panic!("expected defect, got {other:?}"),
+        }
+    }
+
+    fn coords(unterminated: bool) -> Evidence {
+        let mut entries = vec![
+            (EvidenceKey::text("byte_offset"), Evidence::int(5)),
+            (EvidenceKey::text("byte_end"), Evidence::int(18)),
+            (EvidenceKey::text("record_ordinal"), Evidence::int(4)),
+        ];
+        if unterminated {
+            entries.push((
+                EvidenceKey::text("unterminated"),
+                Evidence::bool_value(true),
+            ));
+        }
+        Evidence::map(entries)
+    }
+
+    fn event_json(seq: &str, payload: &str) -> String {
+        format!(
+            r#"{{"id":"evt-synthetic","parent_id":null,"seq":{seq},"ts":"{TS}","actor":"user","kind":"message","payload":{payload}}}"#
+        )
+    }
+
+    #[test]
+    fn template_literals_match_the_pin() {
+        assert_eq!(
+            LINE_LIMIT_TEMPLATE,
+            "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}"
+        );
+        assert_eq!(
+            NUL_BYTE_TEMPLATE,
+            "Forbidden NUL byte on line {line} for record {record_id}"
+        );
+        assert_eq!(
+            UTF8_ENCODING_TEMPLATE,
+            "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}"
+        );
+        assert_eq!(
+            NESTING_LIMIT_TEMPLATE,
+            "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] for record {record_id}"
+        );
+        assert_eq!(
+            MALFORMED_TEMPLATE,
+            "Malformed record on line {line} for record {record_id}"
+        );
+        assert_eq!(
+            TORN_TERMINAL_TEMPLATE,
+            "Torn terminal record on line {line} for record {record_id}"
+        );
+    }
+
+    #[test]
+    fn secret_feed_sees_raw_bytes_of_a_rejected_line() {
+        let bytes = b"{\"id\":\"evt-synthetic\"}\xff";
+        let raw = positioned(3, bytes, true);
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let input = built(&raw, &limits, true, false);
+        let mut fed = Vec::new();
+        let err = process_line(
+            &input,
+            None,
+            Some(&mut |seen, line, offset, end, ordinal| {
+                fed.push((seen.to_vec(), line, offset, end, ordinal));
+            }),
+        )
+        .expect_err("fingerprint");
+        assert_eq!(fed, vec![(bytes.to_vec(), 3, 5, 18, 4)]);
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_ne!(err.to_string().len(), 16);
+        let defect = defect_of(&process_line_decision(&input));
+        assert_eq!(defect.code(), SL001);
+        assert_eq!(defect.message_template(), LINE_LIMIT_TEMPLATE);
+        assert_eq!(defect.record_id(), Some("evt-synthetic"));
+        assert_eq!(defect.evidence(), &coords(false));
+    }
+
+    #[test]
+    fn nul_bytes_use_defect_code_and_keep_the_nul_template() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let interior = positioned(1, b"{\x00}", false);
+        let interior_input = built(&interior, &limits, true, false);
+        let interior_defect = defect_of(&process_line_decision(&interior_input));
+        assert_eq!(interior_defect.code(), SL001);
+        assert_eq!(interior_defect.message_template(), NUL_BYTE_TEMPLATE);
+        assert_eq!(interior_defect.evidence(), &coords(false));
+
+        let trailing = positioned(1, b"{\x00", false);
+        let trailing_input = built(&trailing, &limits, true, false);
+        let trailing_defect = defect_of(&process_line_decision(&trailing_input));
+        assert_eq!(trailing_defect.code(), SL002);
+        assert_eq!(trailing_defect.message_template(), NUL_BYTE_TEMPLATE);
+        assert_eq!(trailing_defect.evidence(), &coords(true));
+    }
+
+    #[test]
+    fn utf8_failure_uses_replacement_for_the_record_id() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let raw = positioned(4, b"{\"id\":\"evt-synthetic\"}\xff", false);
+        let input = built(&raw, &limits, false, false);
+        let defect = defect_of(&process_line_decision(&input));
+        assert_eq!(defect.code(), SL001);
+        assert_eq!(defect.message_template(), UTF8_ENCODING_TEMPLATE);
+        assert_eq!(defect.record_id(), Some("evt-synthetic"));
+        assert_eq!(defect.evidence(), &coords(false));
+
+        let torn = positioned(1, b"\xc3", false);
+        let torn_input = built(&torn, &limits, true, false);
+        let torn_defect = defect_of(&process_line_decision(&torn_input));
+        assert_eq!(torn_defect.code(), SL002);
+        assert_eq!(torn_defect.message_template(), UTF8_ENCODING_TEMPLATE);
+        assert_eq!(torn_defect.record_id(), None);
+        assert_eq!(torn_defect.evidence(), &coords(true));
+    }
+
+    #[test]
+    fn line_one_drops_a_leading_bom_only_for_the_strict_decode() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let mut bytes = UTF8_BOM.to_vec();
+        bytes.extend_from_slice(HEADER_JSON.as_bytes());
+        let raw = positioned(1, &bytes, false);
+        let input = built(&raw, &limits, false, true);
+        let mut saw_bom = false;
+        let got = process_line(
+            &input,
+            None,
+            Some(&mut |seen, line, _, _, _| {
+                saw_bom = seen.starts_with(&UTF8_BOM) && line == 1;
+            }),
+        )
+        .expect("header");
+        assert!(got.is_none());
+        assert!(saw_bom);
+        assert!(matches!(
+            process_line_decision(&input).outcome,
+            LineOutcome::Header
+        ));
+
+        let second = positioned(2, &bytes, false);
+        let second_input = built(&second, &limits, false, true);
+        let defect = defect_of(&process_line_decision(&second_input));
+        assert_eq!(defect.code(), SL001);
+        assert_eq!(defect.message_template(), MALFORMED_TEMPLATE);
+        assert_eq!(defect.evidence(), &coords(false));
+    }
+
+    #[test]
+    fn json_syntax_sets_terminal_only_for_sl002() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let torn = positioned(2, b"{", false);
+        let torn_input = built(&torn, &limits, true, false);
+        let torn_defect = defect_of(&process_line_decision(&torn_input));
+        assert_eq!(torn_defect.code(), SL002);
+        assert_eq!(torn_defect.message_template(), TORN_TERMINAL_TEMPLATE);
+        assert_eq!(torn_defect.evidence(), &coords(true));
+
+        let open = positioned(2, b"{", false);
+        let open_input = built(&open, &limits, false, false);
+        let open_defect = defect_of(&process_line_decision(&open_input));
+        assert_eq!(open_defect.code(), SL001);
+        assert_eq!(open_defect.message_template(), MALFORMED_TEMPLATE);
+        assert_eq!(open_defect.evidence(), &coords(false));
+
+        let spaces = positioned(2, b"   ", false);
+        let space_input = built(&spaces, &limits, true, false);
+        let space_defect = defect_of(&process_line_decision(&space_input));
+        assert_eq!(space_defect.code(), SL002);
+        assert_eq!(space_defect.message_template(), TORN_TERMINAL_TEMPLATE);
+    }
+
+    #[test]
+    fn lone_surrogate_and_nan_use_the_decode_templates() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let lone = positioned(2, br#"{"id":"evt-synthetic","a":"\ud800"}"#, false);
+        let lone_input = built(&lone, &limits, false, false);
+        let lone_defect = defect_of(&process_line_decision(&lone_input));
+        assert_eq!(lone_defect.code(), SL001);
+        assert_eq!(lone_defect.message_template(), LONE_SURROGATE_WHY);
+        assert_eq!(lone_defect.record_id(), Some("evt-synthetic"));
+        assert_eq!(lone_defect.evidence(), &coords(false));
+
+        let nan = positioned(2, br#"{"a":NaN}"#, false);
+        let nan_input = built(&nan, &limits, false, false);
+        let nan_defect = defect_of(&process_line_decision(&nan_input));
+        assert_eq!(nan_defect.message_template(), MALFORMED_TEMPLATE);
+        assert_eq!(nan_defect.record_id(), None);
+        assert!(process_line_decision(&nan_input).duplicates.is_empty());
+    }
+
+    #[test]
+    fn decode_nesting_limit_is_the_limit_template() {
+        let mut text = String::new();
+        for _ in 0..1001 {
+            text.push('[');
+        }
+        text.push('1');
+        for _ in 0..1001 {
+            text.push(']');
+        }
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let raw = positioned(2, text.as_bytes(), false);
+        let input = built(&raw, &limits, true, false);
+        let defect = defect_of(&process_line_decision(&input));
+        assert_eq!(defect.code(), SL001);
+        assert_eq!(defect.message_template(), NESTING_LIMIT_TEMPLATE);
+        assert_eq!(defect.record_id(), None);
+        assert_eq!(defect.evidence(), &coords(false));
+    }
+
+    #[test]
+    fn a_non_object_keeps_the_record_id_absent() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let raw = positioned(2, br#"[{"id":"evt-synthetic"}]"#, false);
+        let input = built(&raw, &limits, true, true);
+        let decision = process_line_decision(&input);
+        let defect = defect_of(&decision);
+        assert_eq!(defect.code(), SL001);
+        assert_eq!(defect.message_template(), MALFORMED_TEMPLATE);
+        assert_eq!(defect.record_id(), None);
+        assert_eq!(defect.evidence(), &coords(false));
+        assert!(decision.duplicates.is_empty());
+        let err = process_line(&input, None, None).expect_err("fingerprint");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("evt-synthetic"));
+    }
+
+    #[test]
+    fn brace_count_gates_the_nesting_check() {
+        let shallow = limits(1);
+        let nested = positioned(2, br#"{"id":"evt-synthetic","a":{"b":1}}"#, false);
+        let nested_input = built(&nested, &shallow, false, false);
+        let nested_defect = defect_of(&process_line_decision(&nested_input));
+        assert_eq!(nested_defect.message_template(), NESTING_LIMIT_TEMPLATE);
+        assert_eq!(nested_defect.record_id(), Some("evt-synthetic"));
+        assert_eq!(nested_defect.evidence(), &coords(false));
+
+        let deep_limits = limits(DEFAULT_MAX_DEPTH);
+        let same = built(&nested, &deep_limits, false, false);
+        let schema = defect_of(&process_line_decision(&same));
+        assert_eq!(schema.message_template(), MALFORMED_TEMPLATE);
+
+        let text = concat!(
+            r#"{"id":"evt-synthetic","parent_id":null,"seq":1,"ts":"2024-02-29T00:00:00Z","#,
+            r#""actor":"user","kind":"message","payload":{"note":"{{{"}}"#,
+        );
+        assert!(text.matches('{').count() + text.matches('[').count() > 2);
+        let wide = limits(2);
+        let raw = positioned(2, text.as_bytes(), false);
+        let input = built(&raw, &wide, false, false);
+        let decision = process_line_decision(&input);
+        let LineOutcome::Event(event) = decision.outcome else {
+            panic!("braces in a string are not depth");
+        };
+        assert_eq!(event.id, "evt-synthetic");
+        assert_eq!(event.seq, 1);
+    }
+
+    #[test]
+    fn header_success_is_none_and_integer_version_stays_an_int() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let stripped = format!("\u{001c}{HEADER_JSON}\u{001c}");
+        let raw = positioned(1, stripped.as_bytes(), false);
+        let input = built(&raw, &limits, false, true);
+        assert!(matches!(
+            process_line_decision(&input).outcome,
+            LineOutcome::Header
+        ));
+        assert!(process_line(&input, None, None).expect("header").is_none());
+
+        let versioned = format!(
+            r#"{{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","created_at":"{TS}","version":3}}"#
+        );
+        let version_raw = positioned(1, versioned.as_bytes(), false);
+        let version_input = built(&version_raw, &limits, false, true);
+        assert!(matches!(
+            process_line_decision(&version_input).outcome,
+            LineOutcome::Header
+        ));
+
+        let float_version = versioned.replace("\"version\":3", "\"version\":3.0");
+        let float_raw = positioned(1, float_version.as_bytes(), false);
+        let float_input = built(&float_raw, &limits, false, true);
+        let defect = defect_of(&process_line_decision(&float_input));
+        assert_eq!(defect.code(), SL001);
+        assert_eq!(defect.message_template(), MALFORMED_TEMPLATE);
+    }
+
+    #[test]
+    fn schema_errors_use_the_malformed_template() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let only_session = positioned(1, br#"{"session_id":"sess-synthetic"}"#, false);
+        let only_input = built(&only_session, &limits, false, true);
+        let defect = defect_of(&process_line_decision(&only_input));
+        assert_eq!(defect.message_template(), MALFORMED_TEMPLATE);
+        assert_eq!(defect.record_id(), None);
+
+        let event_raw = positioned(1, EVENT_JSON.as_bytes(), false);
+        let event_input = built(&event_raw, &limits, false, true);
+        let LineOutcome::Event(event) = process_line_decision(&event_input).outcome else {
+            panic!("first record without header keys is an event");
+        };
+        assert_eq!(event.id, "evt-synthetic");
+        assert_eq!(event.seq, 1);
+        assert!(event.parent_id.is_none());
+
+        let later = positioned(2, HEADER_JSON.as_bytes(), false);
+        let later_input = built(&later, &limits, false, false);
+        let later_defect = defect_of(&process_line_decision(&later_input));
+        assert_eq!(later_defect.message_template(), MALFORMED_TEMPLATE);
+        assert!(matches!(
+            process_line_decision(&later_input).outcome,
+            LineOutcome::Defect(_)
+        ));
+    }
+
+    #[test]
+    fn a_valid_event_keeps_ints_and_floats() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let text = event_json(
+            "9223372036854775807",
+            r#"{"n":-2,"f":1.5,"m":-9223372036854775808}"#,
+        );
+        let raw = positioned(2, text.as_bytes(), false);
+        let input = built(&raw, &limits, false, false);
+        let mut sink = Vec::new();
+        let event = process_line(&input, Some(&mut sink), None)
+            .expect("event")
+            .expect("some");
+        assert!(sink.is_empty());
+        assert_eq!(event.seq, i64::MAX);
+        assert_eq!(event.actor, "user");
+        assert_eq!(event.kind, "message");
+        let MapLookup::Present(negative) = event.payload.map_string("n") else {
+            panic!("n");
+        };
+        assert_eq!(negative.as_int(), Some(-2));
+        let MapLookup::Present(fraction) = event.payload.map_string("f") else {
+            panic!("f");
+        };
+        assert_eq!(fraction.as_float(), Some(1.5));
+        let MapLookup::Present(minimum) = event.payload.map_string("m") else {
+            panic!("m");
+        };
+        assert_eq!(minimum.as_int(), Some(i64::MIN));
+    }
+
+    #[test]
+    fn duplicate_keys_keep_the_last_number_and_stop_at_the_fingerprint_gap() {
+        let text = event_json("1", r#"{"n":3}"#).replace("\"seq\":1", "\"seq\":1,\"seq\":2");
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let raw = positioned(2, text.as_bytes(), false);
+        let mut input = built(&raw, &limits, false, false);
+        let keys = BTreeSet::from(["seq".to_owned()]);
+        input.critical_keys = Some(&keys);
+        let decision = process_line_decision(&input);
+        assert_eq!(decision.duplicates.len(), 1);
+        assert_eq!(decision.duplicates[0].key_path(), "$.seq");
+        assert_eq!(decision.duplicates[0].occurrence_count(), 2);
+        assert!(decision.duplicates[0].critical());
+        assert!(!decision.duplicates_truncated);
+        assert_eq!(
+            decision.duplicate_record_id.as_deref(),
+            Some("evt-synthetic")
+        );
+        let LineOutcome::Event(event) = &decision.outcome else {
+            panic!("duplicate keys still parse");
+        };
+        assert_eq!(event.seq, 2);
+        let MapLookup::Present(value) = event.payload.map_string("n") else {
+            panic!("n");
+        };
+        assert_eq!(value.as_int(), Some(3));
+
+        let mut sink = Vec::new();
+        let err = process_line(&input, Some(&mut sink), None).expect_err("fingerprint");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(sink.is_empty());
+        assert!(!err.to_string().contains("evt-synthetic"));
+
+        let plain = process_line(&input, None, None)
+            .expect("no sink")
+            .expect("event");
+        assert_eq!(plain.seq, 2);
+    }
+
+    #[test]
+    fn an_integer_outside_i64_is_not_a_finding() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let text = event_json("9223372036854775808", "{}");
+        let raw = positioned(2, text.as_bytes(), false);
+        let input = built(&raw, &limits, false, false);
+        match process_line_decision(&input).outcome {
+            LineOutcome::Stop(ProcessLineError::IntegerRange) => {}
+            other => panic!("expected range, got {other:?}"),
+        }
+        let err = process_line(&input, None, None).expect_err("range");
+        assert_eq!(err.to_string(), "JSON integer is outside i64");
+        assert_ne!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+
+        let dup =
+            event_json("1", "{}").replace("\"seq\":1", "\"seq\":1,\"seq\":9223372036854775808");
+        let dup_raw = positioned(2, dup.as_bytes(), false);
+        let dup_input = built(&dup_raw, &limits, false, false);
+        let decision = process_line_decision(&dup_input);
+        assert_eq!(decision.duplicates.len(), 1);
+        assert!(matches!(
+            decision.outcome,
+            LineOutcome::Stop(ProcessLineError::IntegerRange)
+        ));
+        let mut sink = Vec::new();
+        let gap = process_line(&dup_input, Some(&mut sink), None).expect_err("gap");
+        assert_eq!(gap.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(sink.is_empty());
+    }
+
+    #[test]
+    fn finding_defaults_match_the_code_registry() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let torn = positioned(2, b"{", false);
+        let torn_input = built(&torn, &limits, true, false);
+        let torn_defect = defect_of(&process_line_decision(&torn_input));
+        let torn_made = defect_finding_input(&torn_input, &torn_defect).expect("sl002");
+        let sl002 = get_code_info(SL002).expect("sl002");
+        assert_eq!(torn_made.severity, PyValue::severity(Severity::Error));
+        assert_eq!(
+            torn_made.repairability,
+            PyValue::repairability(Repairability::Deterministic)
+        );
+        assert_eq!(
+            torn_made.severity,
+            PyValue::severity(sl002.default_severity)
+        );
+        assert_eq!(
+            torn_made.repairability,
+            PyValue::repairability(sl002.default_repairability)
+        );
+        assert_eq!(torn_made.fingerprint, PyValue::None);
+
+        let bad = positioned(2, b"[1]", false);
+        let bad_input = built(&bad, &limits, false, false);
+        let bad_defect = defect_of(&process_line_decision(&bad_input));
+        let bad_made = defect_finding_input(&bad_input, &bad_defect).expect("sl001");
+        let sl001 = get_code_info(SL001).expect("sl001");
+        assert_eq!(bad_made.code, PyValue::string(SL001));
+        assert_eq!(bad_made.severity, PyValue::severity(Severity::Error));
+        assert_eq!(
+            bad_made.repairability,
+            PyValue::repairability(Repairability::Manual)
+        );
+        assert_eq!(bad_made.severity, PyValue::severity(sl001.default_severity));
+        assert_eq!(
+            bad_made.repairability,
+            PyValue::repairability(sl001.default_repairability)
+        );
+        assert_eq!(bad_made.fingerprint, PyValue::None);
+        assert_eq!(bad_made.template_args, PyValue::None);
+    }
+
+    #[test]
+    fn a_blank_path_fails_in_source_ref() {
+        let limits = limits(DEFAULT_MAX_DEPTH);
+        let raw = positioned(2, b"{", false);
+        let mut input = built(&raw, &limits, false, false);
+        input.path_str = "   ";
+        let err = process_line(&input, None, None).expect_err("path");
+        assert!(err.to_string().contains("SourceRef.path"));
+        assert_ne!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+    }
+
+    #[test]
+    fn opaque_numbers_and_lone_surrogates_are_not_invented() {
+        let opaque = json_to_payload(&JsonValue::Number(JsonNumber::opaque())).expect_err("opaque");
+        assert!(matches!(opaque, ProcessLineError::OpaqueNumber));
+        assert_ne!(opaque.to_string(), "0");
+        let surrogate = json_to_payload(&JsonValue::String(vec![0xD800])).expect_err("surrogate");
+        assert!(matches!(surrogate, ProcessLineError::NonScalar));
+        assert!(!surrogate.to_string().contains('\u{FFFD}'));
     }
 }
