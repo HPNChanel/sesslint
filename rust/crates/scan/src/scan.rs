@@ -4412,3 +4412,976 @@ mod scan_path_seam {
         assert!(!missing.to_string().contains("C:"));
     }
 }
+
+/// Python default for `_walk_rollout_files(..., max_files=200_000)`.
+///
+/// Pass [`ScanCount::Int`]`(WALK_ROLLOUT_MAX_FILES)` when the caller omits
+/// the argument. This is not [`DEFAULT_MAX_FILES`].
+pub const WALK_ROLLOUT_MAX_FILES: i64 = 200_000;
+
+/// `sesslint.adapters.safe_value.safe_discriminator` is not in this crate.
+pub const SAFE_DISCRIMINATOR_UNAVAILABLE: &str =
+    "sesslint.adapters.safe_value.safe_discriminator is not available";
+
+const ROLLOUT_PREFIX: &str = "rollout-";
+const CODEX_UUID_GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
+const CODEX_UUID_LEN: usize = 36;
+
+/// On-disk Codex rollout names and the minimized paths that would name them.
+///
+/// Python returns `(uuids, minimized_paths)`. Both sets stay empty unless a
+/// later port can call `minimize_path`. This card does not invent those paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RolloutWalk {
+    pub uuids: BTreeSet<String>,
+    pub paths: BTreeSet<String>,
+}
+
+/// `max_files` was a bool, or a rollout ledger reached `minimize_path`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WalkRolloutFilesError {
+    /// `max_files bool is not an int`. `True` is not `1`. `False` is not `0`.
+    MaxFilesBool,
+    /// [`MINIMIZE_PATH_UNAVAILABLE`].
+    MinimizePath,
+}
+
+impl fmt::Display for WalkRolloutFilesError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MaxFilesBool => formatter.write_str("max_files bool is not an int"),
+            Self::MinimizePath => formatter.write_str(MINIMIZE_PATH_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for WalkRolloutFilesError {}
+
+/// `sesslint.adapters.safe_value.safe_discriminator` is not in this crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SafeDiscriminatorUnavailable;
+
+impl fmt::Display for SafeDiscriminatorUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(SAFE_DISCRIMINATOR_UNAVAILABLE)
+    }
+}
+
+impl Error for SafeDiscriminatorUnavailable {}
+
+/// Python: `_rollout_uuid`.
+///
+/// Port of `src/sesslint/scan.py` lines 1508–1517
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+///
+/// The pattern is
+/// `^rollout-.*-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$`.
+/// `.` does not match a newline. `$` also matches before one trailing newline.
+/// The capture is ASCII-lowercased. This is not
+/// [`crate::state_db::rollout_uuid_from_name`]: that function accepts the
+/// first UUID anywhere and does not require this prefix or the end anchor.
+#[must_use]
+pub fn rollout_uuid(stem: &str) -> Option<String> {
+    let stem = stem.strip_suffix('\n').unwrap_or(stem);
+    if !stem.starts_with(ROLLOUT_PREFIX) {
+        return None;
+    }
+    let chars: Vec<char> = stem.chars().collect();
+    let uuid_at = chars.len().checked_sub(CODEX_UUID_LEN)?;
+    let hyphen_at = uuid_at.checked_sub(1)?;
+    if hyphen_at < ROLLOUT_PREFIX.len() {
+        return None;
+    }
+    if chars.get(hyphen_at).copied() != Some('-') {
+        return None;
+    }
+    let middle = chars.get(ROLLOUT_PREFIX.len()..hyphen_at)?;
+    if middle.contains(&'\n') {
+        return None;
+    }
+    let uuid = chars.get(uuid_at..)?;
+    lowercase_uuid(uuid)
+}
+
+fn lowercase_uuid(chars: &[char]) -> Option<String> {
+    if chars.len() != CODEX_UUID_LEN {
+        return None;
+    }
+    let mut out = String::with_capacity(CODEX_UUID_LEN);
+    let mut index = 0;
+    for (group, &width) in CODEX_UUID_GROUPS.iter().enumerate() {
+        if group > 0 {
+            if chars.get(index).copied() != Some('-') {
+                return None;
+            }
+            out.push('-');
+            index += 1;
+        }
+        for _ in 0..width {
+            let ch = chars.get(index).copied()?;
+            if !ch.is_ascii_hexdigit() {
+                return None;
+            }
+            out.push(ch.to_ascii_lowercase());
+            index += 1;
+        }
+    }
+    if index == CODEX_UUID_LEN {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+/// Python: `_looks_pathy`.
+///
+/// Port of `src/sesslint/scan.py` lines 1555–1558
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+///
+/// Backslashes are rewritten to `/` before the slash and suffix checks.
+/// `.jsonl` does not count as `.json`. The suffix check is case-sensitive.
+#[must_use]
+pub fn looks_pathy(target: &str) -> bool {
+    let normalized = target.replace('\\', "/");
+    normalized.contains('/') || normalized.ends_with(".jsonl") || normalized.ends_with(".json")
+}
+
+/// Python: `_walk_rollout_files`.
+///
+/// Port of `src/sesslint/scan.py` lines 1520–1552
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+///
+/// The walk starts at `sessions_dir` and enters only real subdirectories of
+/// that tree. It does not follow a directory symlink, does not open a parent,
+/// and does not read file bytes. Names in one directory are visited in
+/// ascending file-name order, top-down, so the cap does not depend on
+/// `os.walk` order.
+///
+/// `sessions_dir` is a directory only when `Path.is_dir` would be true after
+/// following a symlink. A missing path, a file, or a stat failure is not
+/// provable and returns `Ok(None)`. A listing error also returns `Ok(None)`
+/// and stops. The partial names already seen are not returned.
+///
+/// `max_files` is read only at `seen > max_files`, after a file has been
+/// counted and before its name is classified. A bool is rejected there.
+/// `True` is not `1`. `False` is not `0`. Zero and negative ints keep the
+/// pin comparison. The omitted-argument value is [`WALK_ROLLOUT_MAX_FILES`].
+///
+/// A `rollout-*.jsonl` name at or under the cap runs [`rollout_uuid`] and
+/// then stops. Display is [`MINIMIZE_PATH_UNAVAILABLE`]. No minimized path
+/// and no UUID set is returned. [`ScanReport`] is not built.
+///
+/// # Errors
+///
+/// [`WalkRolloutFilesError::MaxFilesBool`] or
+/// [`WalkRolloutFilesError::MinimizePath`]. This function does not panic.
+pub fn walk_rollout_files(
+    sessions_dir: &Path,
+    max_files: ScanCount,
+) -> Result<Option<RolloutWalk>, WalkRolloutFilesError> {
+    if !metadata_is_dir(sessions_dir) {
+        return Ok(None);
+    }
+    let mut stack = vec![sessions_dir.to_path_buf()];
+    let mut seen: i64 = 0;
+    while let Some(dir) = stack.pop() {
+        let Some(listing) = list_rollout_dir(&dir) else {
+            return Ok(None);
+        };
+        for name in listing.files {
+            seen = match seen.checked_add(1) {
+                Some(next) => next,
+                None => return Ok(None),
+            };
+            if cap_reached(seen, max_files)? {
+                return Ok(None);
+            }
+            if let Some(text) = name.to_str() {
+                if is_rollout_ledger(text) {
+                    return Err(stop_at_minimize_path(text, &dir));
+                }
+            }
+        }
+        for child in listing.directories.into_iter().rev() {
+            stack.push(child);
+        }
+    }
+    Ok(Some(empty_rollout_walk()))
+}
+
+fn metadata_is_dir(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+fn cap_reached(seen: i64, max_files: ScanCount) -> Result<bool, WalkRolloutFilesError> {
+    match max_files {
+        ScanCount::Bool(_) => Err(WalkRolloutFilesError::MaxFilesBool),
+        ScanCount::Int(limit) => Ok(seen > limit),
+    }
+}
+
+fn is_rollout_ledger(name: &str) -> bool {
+    name.starts_with("rollout-") && name.ends_with(".jsonl")
+}
+
+fn stop_at_minimize_path(name: &str, dir: &Path) -> WalkRolloutFilesError {
+    let stem = &name[..name.len() - ".jsonl".len()];
+    let uuid = rollout_uuid(stem);
+    let joined = dir.join(name);
+    let _bound = (uuid.as_deref().map(str::len), joined.as_os_str().len());
+    WalkRolloutFilesError::MinimizePath
+}
+
+fn empty_rollout_walk() -> RolloutWalk {
+    RolloutWalk {
+        uuids: BTreeSet::new(),
+        paths: BTreeSet::new(),
+    }
+}
+
+struct RolloutDirListing {
+    files: Vec<std::ffi::OsString>,
+    directories: Vec<PathBuf>,
+}
+
+enum RolloutEntry {
+    File,
+    Directory,
+    Skipped,
+}
+
+fn list_rollout_dir(dir: &Path) -> Option<RolloutDirListing> {
+    let read = std::fs::read_dir(dir).ok()?;
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    for item in read {
+        let entry = item.ok()?;
+        match classify_entry(&entry) {
+            RolloutEntry::File => files.push(entry.file_name()),
+            RolloutEntry::Directory => directories.push(entry.path()),
+            RolloutEntry::Skipped => {}
+        }
+    }
+    files.sort();
+    directories.sort();
+    Some(RolloutDirListing { files, directories })
+}
+
+fn classify_entry(entry: &std::fs::DirEntry) -> RolloutEntry {
+    match entry.file_type() {
+        Ok(kind) if kind.is_symlink() => classify_symlink(entry),
+        Ok(kind) if kind.is_dir() => RolloutEntry::Directory,
+        Ok(_) | Err(_) => RolloutEntry::File,
+    }
+}
+
+fn classify_symlink(entry: &std::fs::DirEntry) -> RolloutEntry {
+    match std::fs::metadata(entry.path()) {
+        Ok(meta) if meta.is_dir() => RolloutEntry::Skipped,
+        _ => RolloutEntry::File,
+    }
+}
+
+struct FileIndex {
+    by_session: BTreeMap<String, BTreeSet<usize>>,
+    by_stem: BTreeMap<String, BTreeSet<usize>>,
+    by_tip: BTreeMap<String, BTreeSet<usize>>,
+}
+
+struct LinkDraft {
+    resolution: &'static str,
+    severity: Severity,
+    message: &'static str,
+    candidate_count: usize,
+}
+
+/// Python: `_resolve_cross_file_links`.
+///
+/// Port of `src/sesslint/scan.py` lines 1561–1671
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+/// Stops before `_reconcile_session_indexes`.
+///
+/// Session ids, filename stems, rollout UUIDs, and tip ids are indexed
+/// before any link is resolved. An empty string is not indexed. A link with
+/// one other candidate, or only its own file, is unchanged. `session_ref`
+/// also matches a path-like target's stem. `head_ref` and every other kind
+/// use tip ids only.
+///
+/// The pin imports `sesslint.adapters.safe_value.safe_discriminator` and
+/// calls it only when a link would become an SL401 finding. That function
+/// is not in this crate. Display is [`SAFE_DISCRIMINATOR_UNAVAILABLE`].
+/// [`make_finding`] is not called. Baseline filtering runs after that call,
+/// so a baseline does not turn the seam into success. No [`FileResult`] list
+/// is returned when the call is required. No [`ScanReport`] is returned.
+///
+/// `None` is the pin's omitted baseline. Resolved input is cloned and returned.
+///
+/// # Errors
+///
+/// [`SafeDiscriminatorUnavailable`] when a link is ambiguous, missing, or
+/// unresolved. This function does not panic.
+pub fn resolve_cross_file_links(
+    results: &[FileResult],
+    baseline: Option<&BTreeSet<String>>,
+) -> Result<Vec<FileResult>, SafeDiscriminatorUnavailable> {
+    let index = index_file_results(results);
+    for (idx, res) in results.iter().enumerate() {
+        if res.links.is_empty() {
+            continue;
+        }
+        for (link_index, link) in res.links.iter().enumerate() {
+            let mut cand = if link.kind == "session_ref" {
+                session_candidates(&index, &link.target)
+            } else {
+                tip_candidates(&index, &link.target)
+            };
+            let self_matched = cand.contains(&idx);
+            cand.remove(&idx);
+            if cand.len() == 1 || (self_matched && cand.is_empty()) {
+                continue;
+            }
+            let draft = classify_link(&link.kind, &link.target, cand.len());
+            return Err(stop_before_safe_discriminator(&draft, link_index, baseline));
+        }
+    }
+    Ok(results.to_vec())
+}
+
+fn index_file_results(results: &[FileResult]) -> FileIndex {
+    let mut index = FileIndex {
+        by_session: BTreeMap::new(),
+        by_stem: BTreeMap::new(),
+        by_tip: BTreeMap::new(),
+    };
+    for (idx, res) in results.iter().enumerate() {
+        if let Some(session_id) = present_text(res.session_id.as_deref()) {
+            insert_id(&mut index.by_session, session_id, idx);
+        }
+        let stem = python_path_stem(&res.path);
+        if !stem.is_empty() {
+            insert_id(&mut index.by_stem, &stem, idx);
+            if let Some(uuid) = rollout_uuid(&stem) {
+                insert_id(&mut index.by_stem, &uuid, idx);
+            }
+        }
+        if let Some(tip_id) = present_text(res.tip_id.as_deref()) {
+            insert_id(&mut index.by_tip, tip_id, idx);
+        }
+    }
+    index
+}
+
+fn present_text(value: Option<&str>) -> Option<&str> {
+    value.filter(|text| !text.is_empty())
+}
+
+fn insert_id(map: &mut BTreeMap<String, BTreeSet<usize>>, key: &str, idx: usize) {
+    map.entry(key.to_owned()).or_default().insert(idx);
+}
+
+fn session_candidates(index: &FileIndex, target: &str) -> BTreeSet<usize> {
+    let mut cand = BTreeSet::new();
+    extend_ids(&mut cand, &index.by_session, target);
+    extend_ids(&mut cand, &index.by_stem, target);
+    if looks_pathy(target) {
+        let stem = python_path_stem(target);
+        extend_ids(&mut cand, &index.by_session, &stem);
+        extend_ids(&mut cand, &index.by_stem, &stem);
+    }
+    cand
+}
+
+fn tip_candidates(index: &FileIndex, target: &str) -> BTreeSet<usize> {
+    let mut cand = BTreeSet::new();
+    extend_ids(&mut cand, &index.by_tip, target);
+    cand
+}
+
+fn extend_ids(cand: &mut BTreeSet<usize>, map: &BTreeMap<String, BTreeSet<usize>>, key: &str) {
+    if let Some(found) = map.get(key) {
+        cand.extend(found.iter().copied());
+    }
+}
+
+fn classify_link(kind: &str, target: &str, candidate_count: usize) -> LinkDraft {
+    if candidate_count > 1 {
+        LinkDraft {
+            resolution: "ambiguous",
+            severity: Severity::Warning,
+            message: "Cross-file resume link is ambiguous: multiple scanned files match",
+            candidate_count,
+        }
+    } else if kind == "head_ref" || looks_pathy(target) {
+        LinkDraft {
+            resolution: "unresolved",
+            severity: Severity::Info,
+            message: "Cross-file resume link target is outside the scanned set",
+            candidate_count,
+        }
+    } else {
+        LinkDraft {
+            resolution: "missing",
+            severity: Severity::Warning,
+            message: "Cross-file resume link target is absent from the scanned set",
+            candidate_count,
+        }
+    }
+}
+
+fn stop_before_safe_discriminator(
+    draft: &LinkDraft,
+    link_index: usize,
+    baseline: Option<&BTreeSet<String>>,
+) -> SafeDiscriminatorUnavailable {
+    let _bound = (
+        draft.resolution,
+        draft.severity,
+        draft.message,
+        draft.candidate_count,
+        link_index,
+        baseline.map(BTreeSet::len),
+    );
+    SafeDiscriminatorUnavailable
+}
+
+fn python_path_stem(path: &str) -> String {
+    stem_of_name(final_component(path))
+}
+
+fn final_component(path: &str) -> &str {
+    let bytes = path.as_bytes();
+    let mut last = "";
+    let mut start = 0;
+    let mut index = 0;
+    while index <= bytes.len() {
+        let at_end = index == bytes.len();
+        let is_sep = !at_end && (bytes[index] == b'/' || bytes[index] == b'\\');
+        if at_end || is_sep {
+            let part = &path[start..index];
+            if !part.is_empty() && part != "." {
+                last = part;
+            }
+            start = index.saturating_add(1);
+        }
+        if at_end {
+            break;
+        }
+        index += 1;
+    }
+    last
+}
+
+fn stem_of_name(name: &str) -> String {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 && dot + 1 < name.len() => name[..dot].to_owned(),
+        _ => name.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod rollout_links {
+    use std::any::TypeId;
+    use std::collections::BTreeSet;
+    use std::error::Error;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        looks_pathy, resolve_cross_file_links, rollout_uuid, walk_rollout_files, FileResult,
+        RolloutWalk, SafeDiscriminatorUnavailable, ScanCount, ScanReport, SessionLink, Verdict,
+        WalkRolloutFilesError, MINIMIZE_PATH_UNAVAILABLE, SAFE_DISCRIMINATOR_UNAVAILABLE,
+        WALK_ROLLOUT_MAX_FILES,
+    };
+
+    const UUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
+    const PARENT_UUID: &str = "019f8b5a-7c3e-4d2f-9a1b-000000000001";
+
+    fn int(number: i64) -> ScanCount {
+        ScanCount::Int(number)
+    }
+
+    fn flag(value: bool) -> ScanCount {
+        ScanCount::Bool(value)
+    }
+
+    fn link(kind: &str, target: &str) -> SessionLink {
+        SessionLink::new(kind, target)
+    }
+
+    fn file(path: &str, session_id: Option<&str>, tip_id: Option<&str>) -> FileResult {
+        let mut result = FileResult::new(path, Verdict::Healthy);
+        result.session_id = session_id.map(str::to_owned);
+        result.tip_id = tip_id.map(str::to_owned);
+        result
+    }
+
+    fn assert_resolved(results: &[FileResult], baseline: Option<&BTreeSet<String>>) {
+        assert_ne!(
+            TypeId::of::<Result<Vec<FileResult>, SafeDiscriminatorUnavailable>>(),
+            TypeId::of::<ScanReport>()
+        );
+        let resolved = resolve_cross_file_links(results, baseline).expect("resolved links");
+        assert_eq!(resolved, results);
+    }
+
+    fn assert_seam(results: &[FileResult], baseline: Option<&BTreeSet<String>>, hidden: &[&str]) {
+        assert_ne!(
+            TypeId::of::<Result<Vec<FileResult>, SafeDiscriminatorUnavailable>>(),
+            TypeId::of::<ScanReport>()
+        );
+        assert_ne!(
+            TypeId::of::<Vec<FileResult>>(),
+            TypeId::of::<Result<Vec<FileResult>, SafeDiscriminatorUnavailable>>()
+        );
+        let error = resolve_cross_file_links(results, baseline).expect_err("discriminator seam");
+        assert_eq!(error, SafeDiscriminatorUnavailable);
+        assert_eq!(error.to_string(), SAFE_DISCRIMINATOR_UNAVAILABLE);
+        assert_eq!(
+            error.to_string(),
+            "sesslint.adapters.safe_value.safe_discriminator is not available"
+        );
+        assert!(error.source().is_none());
+        let text = error.to_string();
+        for secret in hidden {
+            assert!(!text.contains(secret), "{secret}");
+        }
+        assert!(!text.contains("ambiguous"));
+        assert!(!text.contains("missing"));
+        assert!(!text.contains("unresolved"));
+    }
+
+    #[test]
+    fn rollout_uuid_is_anchored_and_not_the_state_db_search() {
+        let stamped = format!("rollout-2026-01-01T00-00-00-{UUID}");
+        assert_eq!(rollout_uuid(&stamped).as_deref(), Some(UUID));
+        let upper = format!("rollout-2026-01-01T00-00-00-{}", UUID.to_ascii_uppercase());
+        assert_eq!(rollout_uuid(&upper).as_deref(), Some(UUID));
+        assert_eq!(
+            rollout_uuid(&format!("rollout-x-{UUID}")).as_deref(),
+            Some(UUID)
+        );
+        assert_eq!(
+            rollout_uuid(&format!("rollout--{UUID}")).as_deref(),
+            Some(UUID)
+        );
+        assert_eq!(
+            rollout_uuid(&format!("rollout-x-{UUID}\n")).as_deref(),
+            Some(UUID)
+        );
+        assert_eq!(
+            rollout_uuid(&format!("rollout-\u{FF10}-{UUID}")).as_deref(),
+            Some(UUID)
+        );
+        assert_eq!(rollout_uuid(&format!("rollout-{UUID}")), None);
+        assert_eq!(
+            crate::state_db::rollout_uuid_from_name(&format!("rollout-{UUID}")).as_deref(),
+            Some(UUID)
+        );
+        assert_eq!(rollout_uuid(&format!("not-rollout-x-{UUID}")), None);
+        assert_eq!(rollout_uuid(&format!("Rollout-x-{UUID}")), None);
+        assert_eq!(rollout_uuid(&format!("rollout-x-{UUID}\n\n")), None);
+        assert_eq!(rollout_uuid(&format!("rollout-x-{UUID} ")), None);
+        assert_eq!(rollout_uuid(&format!("rollout-x-{UUID}-extra")), None);
+        assert_eq!(rollout_uuid(&format!("prefix-rollout-x-{UUID}")), None);
+        assert_eq!(rollout_uuid(&format!("rollout-\n-{UUID}")), None);
+        assert_eq!(
+            rollout_uuid("rollout-x-01234567-89ab-cdef-0123-456789abcdeg"),
+            None
+        );
+        assert_eq!(
+            rollout_uuid("rollout-x-\u{FF10}1234567-89ab-cdef-0123-456789abcdef"),
+            None
+        );
+        assert_eq!(rollout_uuid(""), None);
+        assert_eq!(rollout_uuid("rollout-"), None);
+        assert_eq!(rollout_uuid(PARENT_UUID), None);
+    }
+
+    #[test]
+    fn looks_pathy_normalizes_slashes_and_keeps_suffix_case() {
+        assert!(!looks_pathy("sess-b"));
+        assert!(!looks_pathy(""));
+        assert!(!looks_pathy("foo.JSONL"));
+        assert!(!looks_pathy("foo.JSON"));
+        assert!(!looks_pathy("foo.jsonl.bak"));
+        assert!(looks_pathy("foo.jsonl"));
+        assert!(looks_pathy("foo.json"));
+        assert!(looks_pathy(".jsonl"));
+        assert!(looks_pathy(".json"));
+        assert!(looks_pathy("a/b"));
+        assert!(looks_pathy("a\\b"));
+        assert!(looks_pathy("../elsewhere/sess-q.jsonl"));
+        assert!(looks_pathy("..\\elsewhere\\sess-q.jsonl"));
+    }
+
+    #[test]
+    fn path_stem_drops_dot_parts_and_both_separators() {
+        let cases = [
+            ("foo/./bar.jsonl", "bar"),
+            ("foo/../bar.jsonl", "bar"),
+            ("./bar.jsonl", "bar"),
+            ("foo//bar.jsonl", "bar"),
+            ("foo/bar/.", "bar"),
+            ("/bar.jsonl", "bar"),
+            ("foo/..", ".."),
+            ("..", ".."),
+            ("foo\\..\\bar.jsonl", "bar"),
+            ("C:/foo/bar.jsonl", "bar"),
+            ("sess-c.jsonl", "sess-c"),
+            (".jsonl", ".jsonl"),
+            ("foo.", "foo."),
+            ("", ""),
+            (".", ""),
+            ("foo/bar/", "bar"),
+            ("a\\b\\c.jsonl", "c"),
+            ("dir\\foo.jsonl", "foo"),
+            ("../elsewhere/sess-q.jsonl", "sess-q"),
+            ("..\\elsewhere\\sess-q.jsonl", "sess-q"),
+            ("foo.jsonl.bak", "foo.jsonl"),
+            ("foo\\bar\\", "bar"),
+            (
+                "rollout-2026-01-01T00-00-00-019f8b5a-7c3e-4d2f-9a1b-000000000001.jsonl",
+                "rollout-2026-01-01T00-00-00-019f8b5a-7c3e-4d2f-9a1b-000000000001",
+            ),
+        ];
+        for (path, stem) in cases {
+            assert_eq!(super::python_path_stem(path), stem, "{path}");
+        }
+    }
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("sesslint-scan-06-{}-{name}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("scratch");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent");
+        }
+        fs::write(path, b"").expect("touch");
+    }
+
+    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(target, link)
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link)
+        }
+        #[cfg(not(any(windows, unix)))]
+        {
+            let _ = (target, link);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "symlink",
+            ))
+        }
+    }
+
+    fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link)
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link)
+        }
+        #[cfg(not(any(windows, unix)))]
+        {
+            let _ = (target, link);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "symlink",
+            ))
+        }
+    }
+
+    fn assert_empty(walk: Option<RolloutWalk>) {
+        let walk = walk.expect("provable empty walk");
+        assert!(walk.uuids.is_empty());
+        assert!(walk.paths.is_empty());
+    }
+
+    fn assert_minimize(dir: &Path, max_files: ScanCount) {
+        assert_ne!(
+            TypeId::of::<Result<Option<RolloutWalk>, WalkRolloutFilesError>>(),
+            TypeId::of::<ScanReport>()
+        );
+        let error = walk_rollout_files(dir, max_files).expect_err("minimize seam");
+        assert_eq!(error, WalkRolloutFilesError::MinimizePath);
+        assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert_eq!(
+            error.to_string(),
+            "sesslint.report.minimize_path is not available"
+        );
+        assert!(error.source().is_none());
+        let text = error.to_string();
+        assert!(!text.contains("rollout"));
+        assert!(!text.contains("019f"));
+        assert!(!text.contains("secret"));
+        assert!(!text.chars().any(|ch| ch.is_ascii_digit()));
+    }
+
+    #[test]
+    fn walk_default_cap_is_200000_and_stops_on_a_rollout_ledger() {
+        assert_eq!(WALK_ROLLOUT_MAX_FILES, 200_000);
+        assert_ne!(WALK_ROLLOUT_MAX_FILES, super::DEFAULT_MAX_FILES);
+        let scratch = Scratch::new("cap");
+        let sessions = scratch.path().join("sessions");
+        touch(&sessions.join("note.txt"));
+        touch(&sessions.join("nested").join("also.txt"));
+        touch(&scratch.path().join("rollout-outside.jsonl"));
+        let listed = walk_rollout_files(&sessions, int(WALK_ROLLOUT_MAX_FILES)).expect("walk");
+        assert_empty(listed);
+        assert_minimize(scratch.path(), int(WALK_ROLLOUT_MAX_FILES));
+        assert!(walk_rollout_files(&sessions, int(1))
+            .expect("two files hit the cap")
+            .is_none());
+        assert!(
+            walk_rollout_files(&scratch.path().join("missing"), flag(false))
+                .expect("absent")
+                .is_none()
+        );
+        assert!(walk_rollout_files(&sessions.join("note.txt"), flag(true))
+            .expect("file")
+            .is_none());
+        let empty = sessions.join("empty-child");
+        fs::create_dir_all(&empty).expect("empty");
+        assert_empty(walk_rollout_files(&empty, flag(true)).expect("bool is unused"));
+        assert_empty(walk_rollout_files(&empty, flag(false)).expect("bool is unused"));
+        let bool_error = walk_rollout_files(&sessions, flag(true)).expect_err("true is not 1");
+        assert_eq!(bool_error, WalkRolloutFilesError::MaxFilesBool);
+        assert_eq!(bool_error.to_string(), "max_files bool is not an int");
+        assert!(!bool_error.to_string().contains("True"));
+        assert!(!bool_error.to_string().contains('1'));
+        let false_error = walk_rollout_files(&sessions, flag(false)).expect_err("false is not 0");
+        assert_eq!(false_error.to_string(), "max_files bool is not an int");
+        assert!(!false_error.to_string().contains("False"));
+        assert!(!false_error.to_string().contains('0'));
+        assert!(walk_rollout_files(&sessions, int(0))
+            .expect("zero")
+            .is_none());
+        assert!(walk_rollout_files(&sessions, int(-4))
+            .expect("negative")
+            .is_none());
+    }
+
+    #[test]
+    fn walk_counts_top_down_and_stops_before_minimize_path() {
+        let scratch = Scratch::new("order");
+        let sessions = scratch.path().join("sessions");
+        touch(&sessions.join("z.txt"));
+        touch(&sessions.join("sub").join("rollout-z.jsonl"));
+        assert!(walk_rollout_files(&sessions, int(1))
+            .expect("root file fills the cap")
+            .is_none());
+        assert_minimize(&sessions, int(2));
+        assert_minimize(&sessions, int(WALK_ROLLOUT_MAX_FILES));
+        let only = scratch.path().join("only");
+        touch(&only.join("rollout-secret.jsonl"));
+        assert_minimize(&only, int(1));
+        assert!(walk_rollout_files(&only, int(0))
+            .expect("cap before name")
+            .is_none());
+        let bool_first = walk_rollout_files(&only, flag(true)).expect_err("bool before seam");
+        assert_eq!(bool_first, WalkRolloutFilesError::MaxFilesBool);
+        touch(&sessions.join("a.txt"));
+        assert!(walk_rollout_files(&sessions, int(1))
+            .expect("sorted a.txt is first")
+            .is_none());
+    }
+
+    #[test]
+    fn walk_does_not_follow_directory_symlinks_or_leave_the_root() {
+        let scratch = Scratch::new("links");
+        let sessions = scratch.path().join("sessions");
+        fs::create_dir_all(&sessions).expect("sessions");
+        touch(&sessions.join("note.txt"));
+        let elsewhere = scratch.path().join("elsewhere");
+        touch(&elsewhere.join("rollout-linked.jsonl"));
+        symlink_dir(&elsewhere, &sessions.join("linked")).expect("dir symlink");
+        let listed = walk_rollout_files(&sessions, int(WALK_ROLLOUT_MAX_FILES)).expect("walk");
+        assert_empty(listed);
+        let outside = scratch.path().join("rollout-outside.jsonl");
+        touch(&outside);
+        symlink_file(&outside, &sessions.join("rollout-via-link.jsonl")).expect("file symlink");
+        assert_minimize(&sessions, int(WALK_ROLLOUT_MAX_FILES));
+        let child = sessions.join("nested-only");
+        fs::create_dir_all(&child).expect("child");
+        touch(&child.join("plain.txt"));
+        let child_walk = walk_rollout_files(&child, int(WALK_ROLLOUT_MAX_FILES)).expect("child");
+        assert_empty(child_walk);
+    }
+
+    #[test]
+    fn resolved_links_stay_a_file_result_list() {
+        assert_resolved(&[], None);
+        let mut self_link = file("sess-s.jsonl", Some("sess-s"), Some("s2"));
+        self_link.links.push(link("session_ref", "sess-s"));
+        self_link.warning_count = 0;
+        assert_resolved(std::slice::from_ref(&self_link), None);
+
+        let parent = file("parent-file.jsonl", Some("opaque-id"), Some("p2"));
+        let mut child = file("child.jsonl", Some("child-id"), Some("c2"));
+        child.links.push(link("session_ref", "parent-file"));
+        assert_resolved(&[parent, child.clone()], None);
+
+        let mut head = file("sess-h.jsonl", Some("sess-h"), Some("a2"));
+        head.links.push(link("head_ref", "a2"));
+        let source = file("sess-a.jsonl", Some("sess-a"), Some("a2"));
+        assert_resolved(&[source, head], None);
+
+        let mut own_tip = file("sess-m.jsonl", Some("sess-m"), Some("m-tip"));
+        own_tip.links.push(link("head_ref", "m-tip"));
+        assert_resolved(std::slice::from_ref(&own_tip), None);
+
+        let mut first = file("a.jsonl", Some("same"), None);
+        let mut second = file("b.jsonl", Some("same"), None);
+        second.links.push(link("session_ref", "same"));
+        assert_resolved(&[first.clone(), second], None);
+        first.links.push(link("session_ref", "same"));
+        let third = file("c.jsonl", Some("same"), None);
+        assert_resolved(&[first, third], None);
+
+        let torn = file(
+            "rollout-2026-01-01T00-00-00-019f8b5a-7c3e-4d2f-9a1b-000000000001.jsonl",
+            None,
+            None,
+        );
+        let mut spawned = file("rollout-child.jsonl", Some("thread-child"), Some("e1"));
+        spawned.links.push(link("session_ref", PARENT_UUID));
+        assert_resolved(&[torn, spawned], None);
+
+        let upper_name = format!(
+            "rollout-2026-01-01T00-00-00-{}.jsonl",
+            PARENT_UUID.to_ascii_uppercase()
+        );
+        let upper = file(&upper_name, None, None);
+        let mut lower_link = file("child.jsonl", Some("thread-child"), None);
+        lower_link.links.push(link("session_ref", PARENT_UUID));
+        assert_resolved(&[upper, lower_link], None);
+
+        let nested = file("nested/parent-file.jsonl", Some("opaque-id"), None);
+        let mut path_link = file("child.jsonl", Some("child-id"), None);
+        path_link
+            .links
+            .push(link("session_ref", "dir/parent-file.jsonl"));
+        assert_resolved(&[nested, path_link], None);
+
+        let windows_stem = file("nested\\parent-file.jsonl", Some("opaque-id"), None);
+        let mut bare = file("child.jsonl", Some("child-id"), None);
+        bare.links.push(link("session_ref", "parent-file"));
+        assert_resolved(&[windows_stem, bare], None);
+
+        let mut spaced = file("space.jsonl", Some(" "), Some("tip"));
+        let mut spacer = file("other.jsonl", Some("other"), None);
+        spacer.links.push(link("session_ref", " "));
+        assert_resolved(&[spaced.clone(), spacer], None);
+        spaced.links.push(link("session_ref", "sess-s"));
+        spaced.links.push(link("head_ref", "tip"));
+        let known = file("sess-s.jsonl", Some("sess-s"), Some("tip"));
+        let baseline = BTreeSet::from(["fp-synthetic".to_owned()]);
+        assert_resolved(&[known, spaced], Some(&baseline));
+    }
+
+    #[test]
+    fn unresolved_links_stop_at_safe_discriminator() {
+        let mut missing = file("sess-c.jsonl", Some("sess-c"), Some("c2"));
+        missing.links.push(link("session_ref", "sess-b"));
+        missing.links.push(link("head_ref", "gone-tip"));
+        assert_seam(&[missing], None, &["sess-b", "sess-c", "gone-tip"]);
+
+        let mut outside = file("sess-x.jsonl", Some("sess-x"), None);
+        outside
+            .links
+            .push(link("session_ref", "../elsewhere/sess-q.jsonl"));
+        assert_seam(&[outside], None, &["elsewhere", "sess-q", "sess-x"]);
+
+        let parent = file("sess-a.jsonl", Some("sess-a"), Some("a2"));
+        let mut mid = file("sess-m.jsonl", Some("sess-m"), Some("m2"));
+        mid.links.push(link("head_ref", "a1"));
+        assert_seam(&[parent.clone(), mid], None, &["a1", "sess-a"]);
+
+        let mut path_head = file("sess-p.jsonl", Some("sess-p"), Some("tip-a"));
+        path_head.links.push(link("head_ref", "../x/tip-a"));
+        assert_seam(&[path_head], None, &["tip-a"]);
+
+        let mut not_session = file("sess-t.jsonl", Some("sess-a"), Some("other-tip"));
+        not_session.links.push(link("head_ref", "sess-a"));
+        assert_seam(&[parent, not_session], None, &["sess-a"]);
+
+        let mut other_kind = file("sess-k.jsonl", Some("sess-k"), Some("k-tip"));
+        other_kind.links.push(link("other", "sess-k"));
+        assert_seam(std::slice::from_ref(&other_kind), None, &["sess-k"]);
+        other_kind.links.clear();
+        other_kind.links.push(link("other", "k-tip"));
+        assert_resolved(std::slice::from_ref(&other_kind), None);
+
+        let blank = file("blank.jsonl", Some(""), None);
+        let mut blank_link = file("child.jsonl", Some("child"), None);
+        blank_link.links.push(link("session_ref", ""));
+        assert_seam(&[blank, blank_link], None, &["child", "blank"]);
+
+        let left = file("a.jsonl", Some("same"), None);
+        let right = file("b.jsonl", Some("same"), None);
+        let mut ambiguous = file("c.jsonl", Some("child"), Some("c2"));
+        ambiguous.links.push(link("session_ref", "known"));
+        ambiguous.links.push(link("session_ref", "same"));
+        assert_seam(&[left, right, ambiguous], None, &["same", "known", "child"]);
+
+        let mut upper_target = file("child.jsonl", Some("thread-child"), None);
+        upper_target
+            .links
+            .push(link("session_ref", &PARENT_UUID.to_ascii_uppercase()));
+        let upper_name = format!(
+            "rollout-2026-01-01T00-00-00-{}.jsonl",
+            PARENT_UUID.to_ascii_uppercase()
+        );
+        let upper = file(&upper_name, None, None);
+        assert_seam(
+            &[upper, upper_target],
+            None,
+            &[PARENT_UUID, "019F8B5A", "thread-child"],
+        );
+
+        let mut one = file("only.jsonl", Some("only"), None);
+        one.links.push(link("session_ref", "absent-id"));
+        let baseline = BTreeSet::from(["fp-synthetic".to_owned()]);
+        assert_seam(
+            &[one],
+            Some(&baseline),
+            &["absent-id", "fp-synthetic", "only"],
+        );
+
+        let mut self_then_missing = file("sess-s.jsonl", Some("sess-s"), Some("s2"));
+        self_then_missing.links.push(link("session_ref", "sess-s"));
+        self_then_missing
+            .links
+            .push(link("session_ref", "sess-missing"));
+        assert_seam(
+            &[self_then_missing],
+            Some(&baseline),
+            &["sess-missing", "sess-s"],
+        );
+    }
+}
