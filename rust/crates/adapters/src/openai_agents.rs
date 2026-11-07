@@ -1,8 +1,8 @@
 //! OpenAI Agents SDK run-state projection, detection, payload assembly, and load gates.
 //!
 //! Port of `src/sesslint/adapters/openai_agents.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–1201.
-//! Stops before `_check_version` (line 1204).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–1300.
+//! Stops before `_process_openai_item` (line 1303).
 //!
 //! Lines 1–313 port [`safe_type_value`] (Python `_safe_type_value`),
 //! [`project_run_state`], and [`SourceMetadata`]. [`SourceMetadata`] is the
@@ -77,8 +77,52 @@
 //! A truncated line, a NUL line, and invalid UTF-8 then stop at
 //! [`EXTRACT_RECORD_ID_UNAVAILABLE`], before [`model::finding::make_finding`].
 //! A decodable line stops at [`DECODE_JSON_DUPAWARE_UNAVAILABLE`]. JSON is not
-//! parsed. SL001, SL002, SL009, and SL011 are not produced. `_check_version`
-//! is not ported.
+//! parsed. SL001, SL002, SL009, and SL011 are not produced. [`check_version`]
+//! is not called.
+//!
+//! [`check_version`] ports `_check_version` (lines 1204–1284).
+//! [`MetaValue::Null`] returns the incoming seen flag. It does not mint an id
+//! and does not write `version_raw`. A missing record id calls
+//! [`synthetic_event_id`] with adapter `openai_agents`. `ordinal` is
+//! `record_ordinal` or `0`. `payload_len` is `byte_end - byte_offset` when
+//! both offsets are present and the difference fits in `i64`, and `0` when
+//! either offset is absent. A wider span is [`CheckVersionError::Span`] and
+//! does not mint an id. When a guard is present,
+//! [`SyntheticIdCollisionGuard::register_synthetic`] runs next and its error
+//! is returned immediately. Coordinate pairs are then built in order
+//! `byte_offset`, `byte_end`, `record_ordinal`, each only when present.
+//!
+//! A `str`, `int`, `float`, or `bool` uses `str`. `True` is `True` and
+//! `False` is `False`. Floats use `python_float_str`, including `nan`,
+//! `inf`, `-inf`, `0.0`, and `-0.0`. The text is stripped, stored with
+//! [`SourceMetadata::set_attribute`], and passed to [`normalize_version`].
+//! Membership is [`SUPPORTED_OPENAI_AGENTS_VERSIONS`]. An unsupported
+//! normalized value with the seen flag false calls [`make_finding`] with the
+//! fingerprint omitted. The code is [`SL301`], severity error, repairability
+//! unsupported. Evidence is `version_raw` from [`safe_discriminator`] on the
+//! stripped text, then `supported_set` as the sorted tuple of the eight
+//! versions, then the coordinate pairs. The [`FindingError`] is returned. No
+//! finding is appended and the function does not return true. The display
+//! after the other checks is
+//! `sesslint.determinism.canonical_json_bytes is not available`. A supported
+//! normalized version does not call [`make_finding`] and returns the seen
+//! flag. When that flag is already true, an unsupported scalar still stores
+//! `version_raw` and returns true without [`make_finding`]. Any other type
+//! does not store `version_raw`. When the seen flag is false the same finding
+//! is built with `version_raw` `<invalid_version_type>` and
+//! [`safe_discriminator`] is not called. When the seen flag is true that type
+//! returns true without [`make_finding`].
+//!
+//! [`openai_version_field`] ports `_openai_version_field` (lines 1295–1300).
+//! It walks `sdk_version`, `export_version`, `agent_sdk_version`, `version`.
+//! The first key whose value equals the candidate under Python `==` is
+//! returned. A missing key is `None`, so a missing first key matches a
+//! [`MetaValue::Null`] candidate. `True == 1 == 1.0` and `False == 0 == 0.0`.
+//! The string `1` is not equal to the int `1`. The last duplicate key wins.
+//! If none match, the result is `version`. This function does not call
+//! [`make_finding`]. [`load_openai_agents`], [`load_openai_agents_json`],
+//! [`load_openai_agents_jsonl`], [`process_jsonl_line`], and [`build_payload`]
+//! do not call [`check_version`] or [`openai_version_field`].
 //!
 //! `limits is None` uses [`DEFAULT_MAX_FILE_BYTES`] from `src/sesslint/io.py`
 //! at this pin (`100 * 1024 * 1024`). A provided integer is that cap.
@@ -102,10 +146,19 @@
 //! `str(key)`, project at most 32 keys, then project at most 8 checkpoints.
 //!
 //! Gaps vs Python (recorded, not papered over):
-//! - `SUPPORTED_OPENAI_AGENTS_VERSIONS`, `CRITICAL_KEYS`, `KNOWN_RECORD_KEYS`,
-//!   `ITEM_TYPE_MAP`, and `CanonicalEvent` are not read by the functions in
-//!   this file. They are not ported. [`build_payload`] does not apply
-//!   `ITEM_TYPE_MAP`; `kind` is already classified.
+//! - `CRITICAL_KEYS`, `KNOWN_RECORD_KEYS`, `ITEM_TYPE_MAP`, and
+//!   `CanonicalEvent` are not read by the functions in this file. They are
+//!   not ported. [`build_payload`] does not apply `ITEM_TYPE_MAP`; `kind` is
+//!   already classified. [`SUPPORTED_OPENAI_AGENTS_VERSIONS`] is ported.
+//!   [`check_version`] tests membership after [`normalize_version`].
+//! - [`MetaValue::Bytes`], [`MetaValue::Set`], and [`MetaValue::Object`] do
+//!   not compare equal in [`openai_version_field`], except empty `bytes` and
+//!   an empty `set`. Their content and identity are not stored. A Python
+//!   `int` outside `i64` is not [`MetaValue::Int`]. `MapValue::items_raise`
+//!   is not consulted by that equality.
+//! - `byte_end - byte_offset` is passed to [`synthetic_event_id`] only when
+//!   the difference fits in `i64`. A wider span is [`CheckVersionError::Span`]
+//!   and does not mint an id.
 //! - `str.isdigit` accepts Unicode decimal digits (`١`, U+0661) and then
 //!   `int` keeps them. A seq string is ASCII `0-9` only here, so U+0661 stays
 //!   `None`. Superscripts such as `²` fail `int` in Python and also stay
@@ -171,15 +224,18 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PrefixComponent};
 
 use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity, SL001};
+use model::codes::{Repairability, Severity, SL001, SL301};
+use model::errors::{AdapterError, FindingError};
 use model::finding::PyValue as FindingValue;
-use model::finding::{make_finding, Finding, MakeFindingInput, SourceLine, SourceRef};
+use model::finding::{
+    make_finding, Finding, MakeFindingInput, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+};
 
 use crate::drift::DriftTracker;
 use crate::safe_value::safe_discriminator;
 use crate::safe_value::PyValue;
 use crate::source::SuppliedReaderLimits;
-use crate::synthetic::SyntheticIdCollisionGuard;
+use crate::synthetic::{synthetic_event_id, SyntheticIdCollisionGuard};
 
 /// Python: `MAX_PROJECTED_RUN_STATE_KEYS`.
 pub const MAX_PROJECTED_RUN_STATE_KEYS: usize = 32;
@@ -2504,25 +2560,493 @@ fn strict_decode_bytes(raw: &RawLine) -> &[u8] {
     }
 }
 
+/// Python: `SUPPORTED_OPENAI_AGENTS_VERSIONS`.
+///
+/// Membership is [`normalize_version`] of the stripped `str` form.
+pub const SUPPORTED_OPENAI_AGENTS_VERSIONS: [&str; 8] = [
+    "0.1",
+    "0.1.0",
+    "0.2",
+    "0.2.0",
+    "1",
+    "1.0",
+    "1.0.0",
+    "openai-agents-v1",
+];
+
+const OPENAI_VERSION_KEYS: [&str; 4] = [
+    "sdk_version",
+    "export_version",
+    "agent_sdk_version",
+    "version",
+];
+
+const UNSUPPORTED_VERSION_TEMPLATE: &str =
+    "Unsupported format version on line {line} for record {record_id}";
+
+const INVALID_VERSION_TYPE: &str = "<invalid_version_type>";
+
+const SPAN_OUTSIDE_I64: &str = "byte_end - byte_offset is outside i64";
+
+/// Failure from [`check_version`].
+///
+/// [`Display`](std::fmt::Display) is the inner message.
+/// [`Self::Finding`] is the omitted-fingerprint seam, or an earlier
+/// [`SourceRef`] rejection. [`Self::Collision`] is `register_synthetic`.
+/// [`Self::Span`] is a payload length that does not fit in `i64`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckVersionError {
+    /// `byte_end - byte_offset` does not fit in `i64`.
+    Span,
+    /// The minted id collided with a real id.
+    Collision(AdapterError),
+    /// [`SourceRef`] or [`make_finding`] failed.
+    Finding(FindingError),
+}
+
+impl CheckVersionError {
+    /// The Python exception text, or the missing-codec seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Span => SPAN_OUTSIDE_I64,
+            Self::Collision(error) => error.message(),
+            Self::Finding(error) => error.message(),
+        }
+    }
+}
+
+impl fmt::Display for CheckVersionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for CheckVersionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Collision(error) => Some(error),
+            Self::Finding(error) => Some(error),
+            Self::Span => None,
+        }
+    }
+}
+
+/// Evaluate one format version and stop an unsupported value at the fingerprint seam.
+///
+/// Python: `_check_version`. [`MetaValue::Null`] returns `seen_version_sl301`
+/// and does not mint an id or write `version_raw`. Otherwise a missing
+/// `rec_id` calls [`synthetic_event_id`] and, when `guard` is present,
+/// [`SyntheticIdCollisionGuard::register_synthetic`]. That error is returned
+/// before coordinates, `version_raw`, or [`make_finding`].
+///
+/// A `str`, `int`, `float`, or `bool` is rendered with `str` (`True` /
+/// `False`, and `python_float_str` for floats), stripped, stored with
+/// [`SourceMetadata::set_attribute`], then passed to [`normalize_version`].
+/// A supported normalized text does not call [`make_finding`]. It returns the
+/// seen flag. An unsupported text with the flag false calls [`make_finding`]
+/// with [`FindingValue::None`] as the fingerprint. The [`FindingError`] is
+/// returned. The finding is not appended and this function does not return
+/// true. When the flag is already true, the raw text is still stored and the
+/// result is true.
+///
+/// Any other type does not store `version_raw`. The same omitted fingerprint
+/// is used, with evidence `version_raw` equal to `<invalid_version_type>`.
+/// [`safe_discriminator`] is not called for that arm. When the seen flag is
+/// already true, the result is true and [`make_finding`] is not called.
+///
+/// `findings` is not extended.
+///
+/// # Errors
+///
+/// [`CheckVersionError::Span`] when `byte_end - byte_offset` does not fit in
+/// `i64`. [`CheckVersionError::Collision`] from `register_synthetic`.
+/// [`CheckVersionError::Finding`] from [`SourceRef`] or [`make_finding`].
+/// After the other checks, that display is
+/// `sesslint.determinism.canonical_json_bytes is not available`.
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+#[must_use = "the seen flag or the fingerprint seam is the result"]
+pub fn check_version(
+    version_candidate: &MetaValue,
+    path_str: &str,
+    line_number: i64,
+    rec_id: Option<&str>,
+    findings: &[Finding],
+    source_metadata: &mut SourceMetadata,
+    seen_version_sl301: bool,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+    guard: Option<&mut SyntheticIdCollisionGuard>,
+) -> Result<bool, CheckVersionError> {
+    let _ = findings;
+    if matches!(version_candidate, MetaValue::Null) {
+        return Ok(seen_version_sl301);
+    }
+    let rec_id_str = match rec_id {
+        Some(record_id) => record_id.to_owned(),
+        None => {
+            let minted = minted_record_id(path_str, byte_offset, byte_end, record_ordinal)?;
+            if let Some(guard) = guard {
+                guard
+                    .register_synthetic(&minted)
+                    .map_err(CheckVersionError::Collision)?;
+            }
+            minted
+        }
+    };
+    let coordinates = coordinate_pairs(byte_offset, byte_end, record_ordinal);
+    if let Some(rendered) = version_scalar_text(version_candidate) {
+        let version_raw = python_strip(&rendered).to_owned();
+        source_metadata.set_attribute("version_raw", MetaValue::Str(version_raw.clone()));
+        let version_norm = normalize_version(&version_raw);
+        if !supported_version(&version_norm) && !seen_version_sl301 {
+            return Err(refuse_unsupported(
+                path_str,
+                line_number,
+                &rec_id_str,
+                discriminated_version_evidence(&version_raw, &coordinates),
+            ));
+        }
+    } else if !seen_version_sl301 {
+        return Err(refuse_unsupported(
+            path_str,
+            line_number,
+            &rec_id_str,
+            invalid_type_evidence(&coordinates),
+        ));
+    }
+    Ok(seen_version_sl301)
+}
+
+/// Return the version-key name that supplied `version_candidate`.
+///
+/// Python: `_openai_version_field`. The walk is `sdk_version`,
+/// `export_version`, `agent_sdk_version`, `version`. A missing key compares
+/// as `None`. The last duplicate string key wins. Non-string keys are not
+/// `dict.get` hits. If none match, the result is `version`.
+///
+/// This function does not call [`make_finding`].
+#[must_use]
+pub fn openai_version_field(obj: &MapValue, version_candidate: &MetaValue) -> String {
+    for key in OPENAI_VERSION_KEYS {
+        let equal = match last_string_value(obj, key) {
+            Some(value) => py_eq(value, version_candidate),
+            None => matches!(version_candidate, MetaValue::Null),
+        };
+        if equal {
+            return key.to_owned();
+        }
+    }
+    "version".to_owned()
+}
+
+fn minted_record_id(
+    path_str: &str,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+) -> Result<String, CheckVersionError> {
+    let ordinal = record_ordinal.unwrap_or(0);
+    let payload_len = match (byte_offset, byte_end) {
+        (Some(start), Some(end)) => i64_span(start, end)?,
+        _ => 0,
+    };
+    Ok(synthetic_event_id(
+        "openai_agents",
+        ordinal,
+        path_str,
+        payload_len,
+    ))
+}
+
+fn i64_span(start: i64, end: i64) -> Result<i64, CheckVersionError> {
+    let wide = i128::from(end) - i128::from(start);
+    i64::try_from(wide).map_err(|_| CheckVersionError::Span)
+}
+
+fn supported_version(normalized: &str) -> bool {
+    SUPPORTED_OPENAI_AGENTS_VERSIONS.contains(&normalized)
+}
+
+fn version_scalar_text(value: &MetaValue) -> Option<String> {
+    match value {
+        MetaValue::Str(text) => Some(text.clone()),
+        MetaValue::Int(number) => Some(number.to_string()),
+        MetaValue::Bool(true) => Some("True".to_owned()),
+        MetaValue::Bool(false) => Some("False".to_owned()),
+        MetaValue::Float(bits) => Some(python_float_str(f64::from_bits(*bits))),
+        MetaValue::Null
+        | MetaValue::Bytes(_)
+        | MetaValue::List(_)
+        | MetaValue::Tuple(_)
+        | MetaValue::Map(_)
+        | MetaValue::Set(_)
+        | MetaValue::Object(_) => None,
+    }
+}
+
+fn coordinate_pairs(
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+) -> Vec<(FindingValue, FindingValue)> {
+    let mut pairs = Vec::new();
+    if let Some(offset) = byte_offset {
+        pairs.push((
+            FindingValue::string("byte_offset"),
+            FindingValue::int(offset),
+        ));
+    }
+    if let Some(end) = byte_end {
+        pairs.push((FindingValue::string("byte_end"), FindingValue::int(end)));
+    }
+    if let Some(ordinal) = record_ordinal {
+        pairs.push((
+            FindingValue::string("record_ordinal"),
+            FindingValue::int(ordinal),
+        ));
+    }
+    pairs
+}
+
+enum VersionEvidenceText<'a> {
+    Discriminated(&'a str),
+    InvalidType,
+}
+
+fn discriminated_version_evidence(
+    version_raw: &str,
+    coordinates: &[(FindingValue, FindingValue)],
+) -> FindingValue {
+    let (safe_version, _truncated) = safe_discriminator(PyValue::Str(version_raw));
+    version_sl301_evidence(
+        VersionEvidenceText::Discriminated(&safe_version),
+        coordinates,
+    )
+}
+
+fn invalid_type_evidence(coordinates: &[(FindingValue, FindingValue)]) -> FindingValue {
+    version_sl301_evidence(VersionEvidenceText::InvalidType, coordinates)
+}
+
+fn version_sl301_evidence(
+    version_raw: VersionEvidenceText<'_>,
+    coordinates: &[(FindingValue, FindingValue)],
+) -> FindingValue {
+    let raw = match version_raw {
+        VersionEvidenceText::Discriminated(text) => text,
+        VersionEvidenceText::InvalidType => INVALID_VERSION_TYPE,
+    };
+    let mut entries = vec![
+        (
+            FindingValue::string("version_raw"),
+            FindingValue::string(raw),
+        ),
+        (FindingValue::string("supported_set"), supported_set_tuple()),
+    ];
+    entries.extend_from_slice(coordinates);
+    FindingValue::map(entries)
+}
+
+fn supported_set_tuple() -> FindingValue {
+    let mut versions = SUPPORTED_OPENAI_AGENTS_VERSIONS;
+    versions.sort_unstable();
+    FindingValue::tuple(versions.into_iter().map(FindingValue::string).collect())
+}
+
+fn refuse_unsupported(
+    path_str: &str,
+    line_number: i64,
+    record_id: &str,
+    evidence: FindingValue,
+) -> CheckVersionError {
+    let source = match SourceRef::try_new(
+        path_str,
+        Some(SourceLine::Int(line_number)),
+        Some(record_id),
+    ) {
+        Ok(source) => source,
+        Err(error) => return CheckVersionError::Finding(error),
+    };
+    match make_finding(&MakeFindingInput {
+        code: FindingValue::string(SL301),
+        severity: FindingValue::severity(Severity::Error),
+        repairability: FindingValue::repairability(Repairability::Unsupported),
+        message_template: FindingValue::string(UNSUPPORTED_VERSION_TEMPLATE),
+        template_args: FindingValue::None,
+        source: FindingValue::source(source),
+        related_ids: FindingValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: FindingValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    }) {
+        Err(error) => CheckVersionError::Finding(error),
+        Ok(_finding) => {
+            CheckVersionError::Finding(FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE))
+        }
+    }
+}
+
+fn last_string_value<'a>(obj: &'a MapValue, key: &str) -> Option<&'a MetaValue> {
+    obj.entries
+        .iter()
+        .rev()
+        .find(|(name, _)| matches!(name, MapKey::Str(text) if text == key))
+        .map(|(_, value)| value)
+}
+
+enum PyNumber {
+    Int(i64),
+    Float(f64),
+}
+
+fn py_eq(left: &MetaValue, right: &MetaValue) -> bool {
+    if let (Some(left_number), Some(right_number)) = (as_number(left), as_number(right)) {
+        return numbers_eq(left_number, right_number);
+    }
+    match (left, right) {
+        (MetaValue::Null, MetaValue::Null) => true,
+        (MetaValue::Str(left_text), MetaValue::Str(right_text)) => left_text == right_text,
+        (MetaValue::Bytes(0), MetaValue::Bytes(0)) | (MetaValue::Set(0), MetaValue::Set(0)) => true,
+        (MetaValue::List(left_items), MetaValue::List(right_items))
+        | (MetaValue::Tuple(left_items), MetaValue::Tuple(right_items)) => {
+            same_len_eq(left_items, right_items)
+        }
+        (MetaValue::Map(left_map), MetaValue::Map(right_map)) => maps_eq(left_map, right_map),
+        _ => false,
+    }
+}
+
+fn same_len_eq(left: &[MetaValue], right: &[MetaValue]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(item, other)| py_eq(item, other))
+}
+
+fn maps_eq(left: &MapValue, right: &MapValue) -> bool {
+    let left_items = collapse_map(left);
+    let right_items = collapse_map(right);
+    left_items.len() == right_items.len()
+        && left_items.iter().all(|(key, value)| {
+            right_items
+                .iter()
+                .any(|(other_key, other_value)| key_eq(key, other_key) && py_eq(value, other_value))
+        })
+}
+
+fn collapse_map(map: &MapValue) -> Vec<(MapKey, &MetaValue)> {
+    let mut collapsed = Vec::new();
+    for (key, value) in &map.entries {
+        if let Some(slot) = collapsed
+            .iter_mut()
+            .find(|(existing, _)| key_eq(existing, key))
+        {
+            slot.1 = value;
+        } else {
+            collapsed.push((key.clone(), value));
+        }
+    }
+    collapsed
+}
+
+fn key_eq(left: &MapKey, right: &MapKey) -> bool {
+    if let (Some(left_number), Some(right_number)) = (key_number(left), key_number(right)) {
+        return numbers_eq(left_number, right_number);
+    }
+    match (left, right) {
+        (MapKey::Null, MapKey::Null) => true,
+        (MapKey::Str(left_text), MapKey::Str(right_text)) => left_text == right_text,
+        _ => false,
+    }
+}
+
+fn as_number(value: &MetaValue) -> Option<PyNumber> {
+    match value {
+        MetaValue::Bool(true) => Some(PyNumber::Int(1)),
+        MetaValue::Bool(false) => Some(PyNumber::Int(0)),
+        MetaValue::Int(number) => Some(PyNumber::Int(*number)),
+        MetaValue::Float(bits) => Some(PyNumber::Float(f64::from_bits(*bits))),
+        MetaValue::Null
+        | MetaValue::Str(_)
+        | MetaValue::Bytes(_)
+        | MetaValue::List(_)
+        | MetaValue::Tuple(_)
+        | MetaValue::Map(_)
+        | MetaValue::Set(_)
+        | MetaValue::Object(_) => None,
+    }
+}
+
+fn key_number(key: &MapKey) -> Option<PyNumber> {
+    match key {
+        MapKey::Bool(true) => Some(PyNumber::Int(1)),
+        MapKey::Bool(false) => Some(PyNumber::Int(0)),
+        MapKey::Int(number) => Some(PyNumber::Int(*number)),
+        MapKey::Float(bits) => Some(PyNumber::Float(f64::from_bits(*bits))),
+        MapKey::Str(_) | MapKey::Null | MapKey::Rendered(_) => None,
+    }
+}
+
+#[allow(clippy::float_cmp)]
+fn numbers_eq(left: PyNumber, right: PyNumber) -> bool {
+    match (left, right) {
+        (PyNumber::Int(left_int), PyNumber::Int(right_int)) => left_int == right_int,
+        (PyNumber::Float(left_float), PyNumber::Float(right_float)) => left_float == right_float,
+        (PyNumber::Int(int_value), PyNumber::Float(float_value)) => {
+            int_eq_float(int_value, float_value)
+        }
+        (PyNumber::Float(float_value), PyNumber::Int(int_value)) => {
+            int_eq_float(int_value, float_value)
+        }
+    }
+}
+
+#[allow(clippy::float_cmp, clippy::cast_possible_truncation)]
+fn int_eq_float(value: i64, float_value: f64) -> bool {
+    if !float_value.is_finite() || float_value.fract() != 0.0 {
+        return false;
+    }
+    let limit = (2.0_f64).powi(63);
+    if float_value >= limit || float_value < -limit {
+        return false;
+    }
+    value == (float_value as i64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_payload, detect_openai_agents, load_openai_agents, load_openai_agents_json,
-        load_openai_agents_jsonl, normalize_timestamp, normalize_version, process_jsonl_line,
-        project_run_state, python_path_text, safe_type_value, AgentsDocumentKind, AttrObject,
-        BuildPayloadError, EventList, FindingGate, LoadOpenAiAgentsError,
-        LoadOpenAiAgentsJsonError, LoadOpenAiAgentsJsonlError, MapKey, MapValue, MaxFileBytes,
-        MetaValue, OpenAiAgentsSource, ProcessJsonlLineError, ProjectedCheckpoint, RawLine,
-        RunSource, SeqNumber, SourceMetadata, SuppliedSecretScanTracker, TruncationTotals,
-        DECODE_JSON_DUPAWARE_UNAVAILABLE, DEFAULT_MAX_FILE_BYTES, EXTRACT_RECORD_ID_UNAVAILABLE,
+        build_payload, check_version, detect_openai_agents, discriminated_version_evidence,
+        invalid_type_evidence, load_openai_agents, load_openai_agents_json,
+        load_openai_agents_jsonl, normalize_timestamp, normalize_version, openai_version_field,
+        process_jsonl_line, project_run_state, python_path_text, safe_type_value,
+        AgentsDocumentKind, AttrObject, BuildPayloadError, CheckVersionError, EventList,
+        FindingGate, LoadOpenAiAgentsError, LoadOpenAiAgentsJsonError, LoadOpenAiAgentsJsonlError,
+        MapKey, MapValue, MaxFileBytes, MetaValue, OpenAiAgentsSource, ProcessJsonlLineError,
+        ProjectedCheckpoint, RawLine, RunSource, SeqNumber, SourceMetadata,
+        SuppliedSecretScanTracker, TruncationTotals, DECODE_JSON_DUPAWARE_UNAVAILABLE,
+        DEFAULT_MAX_FILE_BYTES, EXTRACT_RECORD_ID_UNAVAILABLE, INVALID_VERSION_TYPE,
         MALFORMED_TAIL_TRACKER_UNAVAILABLE, MAX_PROJECTED_CHECKPOINTS,
         MAX_PROJECTED_RUN_STATE_KEYS, SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
-        SECRET_SCAN_FEED_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE, SQLITE_MAGIC,
-        STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
+        SECRET_SCAN_FEED_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE, SPAN_OUTSIDE_I64,
+        SQLITE_MAGIC, STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
+        SUPPORTED_OPENAI_AGENTS_VERSIONS,
     };
     use crate::safe_value::{safe_discriminator, PyValue};
     use crate::source::SuppliedReaderLimits;
+    use crate::synthetic::{synthetic_event_id, SyntheticIdCollisionGuard};
+    use std::error::Error;
+
     use model::canonical::SessionEvent;
+    use model::finding::PyValue as FindingValue;
     use model::finding::{Finding, FINGERPRINT_CODEC_UNAVAILABLE};
     use std::fs;
     use std::io::{self, Read};
@@ -4444,5 +4968,677 @@ mod tests {
         assert_eq!(defaults.byte_end(), 0);
         assert_eq!(defaults.record_ordinal(), 1);
         assert_eq!(defaults.line_number(), 7);
+    }
+
+    fn run_version(
+        candidate: &MetaValue,
+        rec_id: Option<&str>,
+        seen: bool,
+        line: i64,
+        meta: &mut SourceMetadata,
+        guard: Option<&mut SyntheticIdCollisionGuard>,
+    ) -> Result<bool, CheckVersionError> {
+        check_version(
+            candidate,
+            "session.json",
+            line,
+            rec_id,
+            &[],
+            meta,
+            seen,
+            None,
+            None,
+            None,
+            guard,
+        )
+    }
+
+    fn stored_raw(meta: &SourceMetadata) -> Option<&str> {
+        match meta.get("version_raw") {
+            Some(MetaValue::Str(text)) => Some(text.as_str()),
+            Some(_) => panic!("version_raw is not a str"),
+            None => None,
+        }
+    }
+
+    fn supported_tuple() -> FindingValue {
+        FindingValue::tuple(
+            SUPPORTED_OPENAI_AGENTS_VERSIONS
+                .into_iter()
+                .map(FindingValue::string)
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn supported_versions_store_raw_and_skip_the_finding() {
+        assert_eq!(
+            SUPPORTED_OPENAI_AGENTS_VERSIONS,
+            [
+                "0.1",
+                "0.1.0",
+                "0.2",
+                "0.2.0",
+                "1",
+                "1.0",
+                "1.0.0",
+                "openai-agents-v1",
+            ]
+        );
+        for version in SUPPORTED_OPENAI_AGENTS_VERSIONS {
+            let mut meta = SourceMetadata::new();
+            let flag = run_version(
+                &MetaValue::Str(version.to_owned()),
+                Some("evt"),
+                false,
+                0,
+                &mut meta,
+                None,
+            )
+            .expect("supported");
+            assert!(!flag);
+            assert_eq!(stored_raw(&meta), Some(version));
+        }
+        let mut marked = SourceMetadata::new();
+        let flag = run_version(
+            &MetaValue::Str("  V1.0 \n".to_owned()),
+            Some("evt"),
+            true,
+            0,
+            &mut marked,
+            None,
+        )
+        .expect("normalized");
+        assert!(flag);
+        assert_eq!(stored_raw(&marked), Some("V1.0"));
+        assert!(!SUPPORTED_OPENAI_AGENTS_VERSIONS.contains(&"V1.0"));
+        assert_eq!(normalize_version("V1.0"), "1.0");
+
+        let mut number = SourceMetadata::new();
+        let flag =
+            run_version(&MetaValue::Int(1), Some("evt"), false, 0, &mut number, None).expect("int");
+        assert!(!flag);
+        assert_eq!(stored_raw(&number), Some("1"));
+
+        let mut one = SourceMetadata::new();
+        let flag = run_version(
+            &MetaValue::float(1.0),
+            Some("evt"),
+            false,
+            0,
+            &mut one,
+            None,
+        )
+        .expect("float");
+        assert!(!flag);
+        assert_eq!(stored_raw(&one), Some("1.0"));
+    }
+
+    #[test]
+    fn none_candidate_does_not_mint_or_store() {
+        let id = synthetic_event_id("openai_agents", 0, "session.json", 0);
+        let mut guard = SyntheticIdCollisionGuard::new();
+        guard.register_real(&id).expect("real");
+        let mut meta =
+            SourceMetadata::from_entries([("version_raw", MetaValue::Str("keep".to_owned()))]);
+        let unseen = run_version(
+            &MetaValue::Null,
+            None,
+            false,
+            0,
+            &mut meta,
+            Some(&mut guard),
+        )
+        .expect("none");
+        assert!(!unseen);
+        assert_eq!(stored_raw(&meta), Some("keep"));
+        assert!(guard.seen_synthetic_ids().is_empty());
+        let seen = run_version(&MetaValue::Null, None, true, 4, &mut meta, Some(&mut guard))
+            .expect("seen");
+        assert!(seen);
+        assert!(guard.seen_synthetic_ids().is_empty());
+    }
+
+    #[test]
+    fn unsupported_scalar_stops_at_the_fingerprint_seam() {
+        let samples = [
+            (MetaValue::Str("0.0.1".to_owned()), "0.0.1"),
+            (MetaValue::Str("  2 \t".to_owned()), "2"),
+            (MetaValue::Int(0), "0"),
+            (MetaValue::Bool(true), "True"),
+            (MetaValue::Bool(false), "False"),
+            (MetaValue::float(0.0), "0.0"),
+            (MetaValue::float(-0.0), "-0.0"),
+            (MetaValue::float(f64::NAN), "nan"),
+            (MetaValue::float(f64::INFINITY), "inf"),
+            (MetaValue::float(f64::NEG_INFINITY), "-inf"),
+        ];
+        for (candidate, raw) in samples {
+            let mut meta = SourceMetadata::new();
+            let mut guard = SyntheticIdCollisionGuard::new();
+            let err = check_version(
+                &candidate,
+                "session.json",
+                3,
+                None,
+                &[],
+                &mut meta,
+                false,
+                Some(4),
+                Some(9),
+                Some(2),
+                Some(&mut guard),
+            )
+            .expect_err("unsupported");
+            assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+            assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+            assert!(matches!(err, CheckVersionError::Finding(_)));
+            assert_eq!(stored_raw(&meta), Some(raw));
+            assert_eq!(guard.seen_synthetic_ids().len(), 1);
+        }
+    }
+
+    #[test]
+    fn seen_unsupported_scalar_stores_raw_and_skips_make_finding() {
+        let mut meta = SourceMetadata::new();
+        let flag = run_version(
+            &MetaValue::Bool(true),
+            Some("evt"),
+            true,
+            0,
+            &mut meta,
+            None,
+        )
+        .expect("seen");
+        assert!(flag);
+        assert_eq!(stored_raw(&meta), Some("True"));
+        let mut number = SourceMetadata::new();
+        let flag = run_version(
+            &MetaValue::Str("0.0.1".to_owned()),
+            Some("evt"),
+            true,
+            0,
+            &mut number,
+            None,
+        )
+        .expect("seen raw");
+        assert!(flag);
+        assert_eq!(stored_raw(&number), Some("0.0.1"));
+    }
+
+    #[test]
+    fn invalid_version_type_does_not_store_raw() {
+        let invalid = [
+            MetaValue::List(vec![MetaValue::Int(1)]),
+            MetaValue::Tuple(vec![MetaValue::Int(1)]),
+            MetaValue::Map(MapValue::new(vec![])),
+            MetaValue::Bytes(4),
+            MetaValue::Set(2),
+            MetaValue::Object(Box::new(AttrObject::new("Widget"))),
+        ];
+        for candidate in invalid {
+            let mut meta =
+                SourceMetadata::from_entries([("version_raw", MetaValue::Str("keep".to_owned()))]);
+            let err =
+                run_version(&candidate, Some("evt"), false, 1, &mut meta, None).expect_err("type");
+            assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+            assert_eq!(stored_raw(&meta), Some("keep"));
+            let mut seen_meta = SourceMetadata::new();
+            let flag = run_version(&candidate, Some("evt"), true, 0, &mut seen_meta, None)
+                .expect("seen type");
+            assert!(flag);
+            assert_eq!(stored_raw(&seen_meta), None);
+        }
+    }
+
+    #[test]
+    fn synthetic_id_uses_ordinal_span_and_raw_hint() {
+        let path = "dir\\file.json";
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let flag = check_version(
+            &MetaValue::Str("1".to_owned()),
+            path,
+            0,
+            None,
+            &[],
+            &mut meta,
+            false,
+            Some(8),
+            Some(3),
+            Some(9),
+            Some(&mut guard),
+        )
+        .expect("supported");
+        assert!(!flag);
+        let expected = synthetic_event_id("openai_agents", 9, path, -5);
+        assert!(guard.seen_synthetic_ids().contains(&expected));
+        assert_eq!(guard.seen_synthetic_ids().len(), 1);
+
+        let mut partial = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        check_version(
+            &MetaValue::Int(1),
+            "session.json",
+            1,
+            None,
+            &[],
+            &mut meta,
+            false,
+            Some(5),
+            None,
+            None,
+            Some(&mut partial),
+        )
+        .expect("one offset");
+        let zero = synthetic_event_id("openai_agents", 0, "session.json", 0);
+        assert!(partial.seen_synthetic_ids().contains(&zero));
+
+        let mut named = SyntheticIdCollisionGuard::new();
+        named.register_real(&zero).expect("real");
+        let mut meta = SourceMetadata::new();
+        let flag = check_version(
+            &MetaValue::Str("1".to_owned()),
+            "session.json",
+            1,
+            Some("evt"),
+            &[],
+            &mut meta,
+            false,
+            Some(i64::MIN),
+            Some(i64::MAX),
+            Some(4),
+            Some(&mut named),
+        )
+        .expect("given id");
+        assert!(!flag);
+        assert!(named.seen_synthetic_ids().is_empty());
+        assert_eq!(stored_raw(&meta), Some("1"));
+    }
+
+    #[test]
+    fn span_and_collision_stop_before_version_raw() {
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta =
+            SourceMetadata::from_entries([("version_raw", MetaValue::Str("keep".to_owned()))]);
+        let err = check_version(
+            &MetaValue::Str("1".to_owned()),
+            "session.json",
+            0,
+            None,
+            &[],
+            &mut meta,
+            false,
+            Some(i64::MIN),
+            Some(i64::MAX),
+            Some(1),
+            Some(&mut guard),
+        )
+        .expect_err("span");
+        assert_eq!(err, CheckVersionError::Span);
+        assert_eq!(err.to_string(), SPAN_OUTSIDE_I64);
+        assert_eq!(err.message(), SPAN_OUTSIDE_I64);
+        assert_eq!(stored_raw(&meta), Some("keep"));
+        assert!(guard.seen_synthetic_ids().is_empty());
+
+        let id = synthetic_event_id("openai_agents", 0, "session.json", 0);
+        let mut blocked = SyntheticIdCollisionGuard::new();
+        blocked.register_real(&id).expect("real");
+        let mut meta = SourceMetadata::new();
+        let err = run_version(
+            &MetaValue::Str("nope".to_owned()),
+            None,
+            false,
+            0,
+            &mut meta,
+            Some(&mut blocked),
+        )
+        .expect_err("collision");
+        assert!(matches!(err, CheckVersionError::Collision(_)));
+        assert!(err.to_string().contains("Synthetic ID collision"));
+        assert!(err.to_string().contains(&id));
+        assert_ne!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_ne!(
+            err.to_string(),
+            "SourceRef.line must be a positive integer or None, got 0"
+        );
+        assert_eq!(stored_raw(&meta), None);
+        assert!(blocked.seen_synthetic_ids().is_empty());
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn source_ref_rejects_before_the_fingerprint_seam() {
+        let mut meta = SourceMetadata::new();
+        let err = run_version(
+            &MetaValue::Str("0.0.1".to_owned()),
+            Some("evt"),
+            false,
+            0,
+            &mut meta,
+            None,
+        )
+        .expect_err("line");
+        assert_eq!(
+            err.to_string(),
+            "SourceRef.line must be a positive integer or None, got 0"
+        );
+        assert_eq!(stored_raw(&meta), Some("0.0.1"));
+
+        let mut meta = SourceMetadata::new();
+        let err = check_version(
+            &MetaValue::Str("0.0.1".to_owned()),
+            "",
+            2,
+            Some("evt"),
+            &[],
+            &mut meta,
+            false,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect_err("path");
+        assert!(err.to_string().contains("SourceRef.path"));
+        assert_ne!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(stored_raw(&meta), Some("0.0.1"));
+
+        let mut meta = SourceMetadata::new();
+        let err = run_version(
+            &MetaValue::List(vec![]),
+            Some("user@example.com"),
+            false,
+            1,
+            &mut meta,
+            None,
+        )
+        .expect_err("record");
+        assert!(err.to_string().contains("SourceRef.record_id"));
+        assert_eq!(stored_raw(&meta), None);
+    }
+
+    #[test]
+    fn sl301_evidence_orders_safe_version_then_coordinates() {
+        let (safe, truncated) = safe_discriminator(PyValue::Str("not allow listed"));
+        assert!(truncated);
+        assert_ne!(safe, "not allow listed");
+        let evidence = discriminated_version_evidence(
+            "not allow listed",
+            &[
+                (FindingValue::string("byte_offset"), FindingValue::int(2)),
+                (FindingValue::string("record_ordinal"), FindingValue::int(4)),
+            ],
+        );
+        assert_eq!(
+            evidence,
+            FindingValue::map(vec![
+                (
+                    FindingValue::string("version_raw"),
+                    FindingValue::string(safe)
+                ),
+                (FindingValue::string("supported_set"), supported_tuple(),),
+                (FindingValue::string("byte_offset"), FindingValue::int(2)),
+                (FindingValue::string("record_ordinal"), FindingValue::int(4),),
+            ])
+        );
+        let plain = discriminated_version_evidence("0.0.1", &[]);
+        assert_eq!(
+            plain,
+            FindingValue::map(vec![
+                (
+                    FindingValue::string("version_raw"),
+                    FindingValue::string("0.0.1"),
+                ),
+                (FindingValue::string("supported_set"), supported_tuple(),),
+            ])
+        );
+        let (redacted, _) = safe_discriminator(PyValue::Str(INVALID_VERSION_TYPE));
+        assert_ne!(redacted, INVALID_VERSION_TYPE);
+        let invalid =
+            invalid_type_evidence(&[(FindingValue::string("byte_end"), FindingValue::int(8))]);
+        assert_eq!(
+            invalid,
+            FindingValue::map(vec![
+                (
+                    FindingValue::string("version_raw"),
+                    FindingValue::string(INVALID_VERSION_TYPE),
+                ),
+                (FindingValue::string("supported_set"), supported_tuple(),),
+                (FindingValue::string("byte_end"), FindingValue::int(8)),
+            ])
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn version_field_uses_python_equality_and_last_duplicate() {
+        assert_eq!(
+            openai_version_field(&MapValue::new(vec![]), &MetaValue::Null),
+            "sdk_version"
+        );
+        let later = MapValue::new(vec![(
+            MapKey::Str("export_version".to_owned()),
+            MetaValue::Str("1".to_owned()),
+        )]);
+        assert_eq!(
+            openai_version_field(&later, &MetaValue::Null),
+            "sdk_version"
+        );
+        let present = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::Int(1),
+        )]);
+        assert_eq!(
+            openai_version_field(&present, &MetaValue::Null),
+            "export_version"
+        );
+
+        let truthy = MapValue::new(vec![(
+            MapKey::Str("agent_sdk_version".to_owned()),
+            MetaValue::Bool(true),
+        )]);
+        assert_eq!(
+            openai_version_field(&truthy, &MetaValue::Int(1)),
+            "agent_sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&truthy, &MetaValue::float(1.0)),
+            "agent_sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&truthy, &MetaValue::Bool(true)),
+            "agent_sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&truthy, &MetaValue::Str("1".to_owned())),
+            "version"
+        );
+        assert_eq!(openai_version_field(&truthy, &MetaValue::Int(2)), "version");
+
+        let zero = MapValue::new(vec![(
+            MapKey::Str("version".to_owned()),
+            MetaValue::float(-0.0),
+        )]);
+        assert_eq!(
+            openai_version_field(&zero, &MetaValue::Bool(false)),
+            "version"
+        );
+        assert_eq!(openai_version_field(&zero, &MetaValue::Int(0)), "version");
+        assert_eq!(
+            openai_version_field(&zero, &MetaValue::float(0.0)),
+            "version"
+        );
+        assert_eq!(
+            openai_version_field(&zero, &MetaValue::float(0.5)),
+            "version"
+        );
+
+        let duplicates = MapValue::new(vec![
+            (MapKey::Str("sdk_version".to_owned()), MetaValue::Int(1)),
+            (
+                MapKey::Str("sdk_version".to_owned()),
+                MetaValue::Str("1".to_owned()),
+            ),
+        ]);
+        assert_eq!(
+            openai_version_field(&duplicates, &MetaValue::Str("1".to_owned())),
+            "sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&duplicates, &MetaValue::Int(1)),
+            "version"
+        );
+        let export = MapValue::new(vec![
+            (
+                MapKey::Str("export_version".to_owned()),
+                MetaValue::Str("a".to_owned()),
+            ),
+            (
+                MapKey::Str("export_version".to_owned()),
+                MetaValue::Str("b".to_owned()),
+            ),
+        ]);
+        assert_eq!(
+            openai_version_field(&export, &MetaValue::Str("a".to_owned())),
+            "version"
+        );
+        assert_eq!(
+            openai_version_field(&export, &MetaValue::Str("b".to_owned())),
+            "export_version"
+        );
+
+        let first = MapValue::new(vec![
+            (MapKey::Str("sdk_version".to_owned()), MetaValue::Int(1)),
+            (MapKey::Str("version".to_owned()), MetaValue::Int(1)),
+        ]);
+        assert_eq!(
+            openai_version_field(&first, &MetaValue::Int(1)),
+            "sdk_version"
+        );
+
+        let rendered = MapValue::new(vec![(
+            MapKey::Rendered("sdk_version".to_owned()),
+            MetaValue::Str("1".to_owned()),
+        )]);
+        assert_eq!(
+            openai_version_field(&rendered, &MetaValue::Str("1".to_owned())),
+            "version"
+        );
+
+        let mantissa = 1_i64 << 53;
+        let exact = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::float((2.0_f64).powi(53)),
+        )]);
+        assert_eq!(
+            openai_version_field(&exact, &MetaValue::Int(mantissa)),
+            "sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&exact, &MetaValue::Int(mantissa + 1)),
+            "version"
+        );
+        let min_float = MapValue::new(vec![(
+            MapKey::Str("export_version".to_owned()),
+            MetaValue::float(-(2.0_f64).powi(63)),
+        )]);
+        assert_eq!(
+            openai_version_field(&min_float, &MetaValue::Int(i64::MIN)),
+            "export_version"
+        );
+        let max_float = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::float((2.0_f64).powi(63)),
+        )]);
+        assert_eq!(
+            openai_version_field(&max_float, &MetaValue::Int(i64::MAX)),
+            "version"
+        );
+        let step = (1_i64 << 62) + 1024;
+        let stepped = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::float((2.0_f64).powi(62) + 1024.0),
+        )]);
+        assert_eq!(
+            openai_version_field(&stepped, &MetaValue::Int(step)),
+            "sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&stepped, &MetaValue::Int(step - 1024 + 1)),
+            "version"
+        );
+
+        let inf = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::float(f64::INFINITY),
+        )]);
+        assert_eq!(
+            openai_version_field(&inf, &MetaValue::float(f64::INFINITY)),
+            "sdk_version"
+        );
+        assert_eq!(
+            openai_version_field(&inf, &MetaValue::float(f64::NEG_INFINITY)),
+            "version"
+        );
+        let nan = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::float(f64::NAN),
+        )]);
+        assert_eq!(
+            openai_version_field(&nan, &MetaValue::float(f64::NAN)),
+            "version"
+        );
+
+        let items = MapValue::new(vec![(
+            MapKey::Str("export_version".to_owned()),
+            MetaValue::List(vec![MetaValue::Int(1)]),
+        )]);
+        assert_eq!(
+            openai_version_field(&items, &MetaValue::List(vec![MetaValue::Bool(true)])),
+            "export_version"
+        );
+        assert_eq!(
+            openai_version_field(&items, &MetaValue::Tuple(vec![MetaValue::Int(1)])),
+            "version"
+        );
+        let left = MetaValue::Map(MapValue::new(vec![(
+            MapKey::Int(1),
+            MetaValue::Str("a".to_owned()),
+        )]));
+        let right = MetaValue::Map(MapValue::new(vec![(
+            MapKey::Bool(true),
+            MetaValue::Str("a".to_owned()),
+        )]));
+        let maps = MapValue::new(vec![(MapKey::Str("sdk_version".to_owned()), left)]);
+        assert_eq!(openai_version_field(&maps, &right), "sdk_version");
+
+        let empty_bytes = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::Bytes(0),
+        )]);
+        assert_eq!(
+            openai_version_field(&empty_bytes, &MetaValue::Bytes(0)),
+            "sdk_version"
+        );
+        let some_bytes = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::Bytes(2),
+        )]);
+        assert_eq!(
+            openai_version_field(&some_bytes, &MetaValue::Bytes(2)),
+            "version"
+        );
+        let widget = MapValue::new(vec![(
+            MapKey::Str("sdk_version".to_owned()),
+            MetaValue::Object(Box::new(AttrObject::new("Widget"))),
+        )]);
+        assert_eq!(
+            openai_version_field(
+                &widget,
+                &MetaValue::Object(Box::new(AttrObject::new("Widget")))
+            ),
+            "version"
+        );
     }
 }
