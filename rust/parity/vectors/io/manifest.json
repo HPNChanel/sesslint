@@ -1,0 +1,20 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.io",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "scan_io_rs_sha256": "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b",
+  "vector_count": 36,
+  "vectors_sha256": "a84c4b91fa83776dbb6c3f45c63d041aaa2c8bf4378f84ee04539cc0b0137189",
+  "generator": "rust/parity/vectors/io/generate",
+  "known_parity_gaps": [
+    "SL001, SL002, SL303, and SL009 findings: Python yields Finding objects; Rust stops with FINGERPRINT_CODEC_UNAVAILABLE. Do not expect codec text as if Python raised it.",
+    "read_header and iter_events with a non-empty dup_sink when duplicate keys match critical keys: Rust returns FINGERPRINT_CODEC_UNAVAILABLE; vectors omit dup_sink hit paths.",
+    "SecretScanTracker::into_findings with hits: Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Clean streams with an empty tracker are compared.",
+    "mmap fast path (_open_byte_source / _MMapLineSource): not ported; no mmap vectors.",
+    "Header JSON non-object type labels: Rust uses object/array/string/number/bool/null; Python uses dict/list/str/int/float/NoneType. Vectors use Rust labels only.",
+    "JSON integers outside i64: ReadHeaderError::IntegerRange, not a schema finding.",
+    "Python ReaderLimits rejects bool subclasses for limit fields; Rust has no bool on i64.",
+    "truth is SKIP_BAD (-2) for skip_scalar; trueth is accepted as true prefix.",
+    "Live/test API key-shaped tokens: synthetic parity only; secret hit paths are gaps."
+  ]
+}
