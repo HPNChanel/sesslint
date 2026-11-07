@@ -58,6 +58,18 @@
 //! `model::canonical::to_canonical_json` on [`RepairManifest::to_dict`] and
 //! returns [`CanonicalUnavailable`]. It does not emit JSON.
 //!
+//! Lines 1349–1607: [`parse_manifest`]. A string is the `json.loads` branch
+//! and returns [`JsonLoadsUnavailable`]. It is not parsed and it is not
+//! reported as malformed JSON. A mapping checks synthetic success fields,
+//! unknown keys in insertion order, and missing required fields in source
+//! literal order ([`MANIFEST_FIELD_ORDER_DEVIATION`]) before
+//! `schema_version`. Actions are a list or tuple, sorted with
+//! [`action_sort_key`]. `declared_loss` keeps input order. The function
+//! then calls [`RepairAction::try_new`], [`RevalidationSummary::try_new`],
+//! and [`RepairManifest::try_new`] and returns their errors unchanged.
+//! It does not call `sesslint._resources`, `sesslint.profiles.builtin`, or
+//! `sesslint.repair.refusals`. The first failure wins.
+//!
 //! The late import `sesslint.codes` (`SL001`, `SL002`, `Severity`) is the
 //! ported codes registry. `enforce_content_free_text` is the ported finding
 //! helper. No wall clock, randomness, or `HashMap` is used.
@@ -4664,6 +4676,729 @@ fn lift_envelope(error: EnvelopeError) -> ParseReportError {
     }
 }
 
+/// `REQUIRED_MANIFEST_FIELDS` and `KNOWN_MANIFEST_FIELDS` are frozensets.
+///
+/// Missing-field checks walk the source literal order. CPython frozenset
+/// iteration is not reproduced. This walk is not a hash-seed order.
+pub const MANIFEST_FIELD_ORDER_DEVIATION: &str = "REQUIRED_MANIFEST_FIELDS and KNOWN_MANIFEST_FIELDS are frozensets. Missing-field checks walk the source literal order. CPython frozenset iteration is not reproduced";
+
+/// Pin tuple order. The first present name wins, before the unknown-key scan.
+const FORBIDDEN_MANIFEST_FIELDS: [&str; 4] = ["success", "passed", "ok", "healthy"];
+
+/// Source literal order of `KNOWN_MANIFEST_FIELDS`. Membership only.
+///
+/// The pin stores a frozenset. See [`MANIFEST_FIELD_ORDER_DEVIATION`].
+const KNOWN_MANIFEST_FIELDS: [&str; 18] = [
+    "schema_version",
+    "input_fingerprint",
+    "output_fingerprint",
+    "plan_fingerprint",
+    "assurance",
+    "assurance_ceiling",
+    "recipe_versions",
+    "profile_version",
+    "adapter_id",
+    "adapter_version",
+    "byte_counts",
+    "record_counts",
+    "policy",
+    "actions",
+    "declared_loss",
+    "revalidate_report",
+    "revalidation",
+    "idempotency_key",
+];
+
+/// Source literal order of `REQUIRED_MANIFEST_FIELDS`.
+///
+/// The pin stores a frozenset. Missing-field checks walk this order.
+/// See [`MANIFEST_FIELD_ORDER_DEVIATION`].
+const REQUIRED_MANIFEST_FIELDS: [&str; 10] = [
+    "schema_version",
+    "input_fingerprint",
+    "output_fingerprint",
+    "policy",
+    "actions",
+    "declared_loss",
+    "revalidate_report",
+    "idempotency_key",
+    "revalidation",
+    "assurance_ceiling",
+];
+
+const ACTION_FIELDS: [&str; 3] = ["kind", "record_id", "detail"];
+
+const REVALIDATION_FIELDS: [&str; 6] = [
+    "assurance",
+    "error_count",
+    "warning_count",
+    "profile_id",
+    "profile_version",
+    "report_fingerprint",
+];
+
+const REQUIRED_REVALIDATION_FIELDS: [&str; 5] = [
+    "assurance",
+    "error_count",
+    "warning_count",
+    "profile_id",
+    "profile_version",
+];
+
+/// Failure from [`parse_manifest`].
+///
+/// [`Display`](fmt::Display) is the Python exception message.
+/// [`Self::Json`] displays [`JsonLoadsUnavailable::MESSAGE`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseManifestError {
+    Schema(SchemaError),
+    Version(VersionError),
+    UnknownField(UnknownFieldError),
+    Assurance(AssuranceError),
+    ContentLeak(ContentLeakError),
+    /// Python `TypeError`. The string is `str(exc)`.
+    Type(String),
+    /// Late import named by the string, without the ` is not available` suffix.
+    Unavailable(&'static str),
+    Json(JsonLoadsUnavailable),
+}
+
+impl fmt::Display for ParseManifestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schema(error) => write!(formatter, "{error}"),
+            Self::Version(error) => write!(formatter, "{error}"),
+            Self::UnknownField(error) => write!(formatter, "{error}"),
+            Self::Assurance(error) => write!(formatter, "{error}"),
+            Self::ContentLeak(error) => write!(formatter, "{error}"),
+            Self::Type(message) => formatter.write_str(message),
+            Self::Unavailable(name) => write!(formatter, "{name} is not available"),
+            Self::Json(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for ParseManifestError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Schema(error) => Some(error),
+            Self::Version(error) => Some(error),
+            Self::UnknownField(error) => Some(error),
+            Self::Assurance(error) => Some(error),
+            Self::ContentLeak(error) => Some(error),
+            Self::Json(error) => Some(error),
+            Self::Type(_) | Self::Unavailable(_) => None,
+        }
+    }
+}
+
+/// Python: `parse_manifest`.
+///
+/// A string is the `json.loads` branch. This crate has no JSON parser, so
+/// every string returns [`JsonLoadsUnavailable`] and is not inspected.
+/// A non-string, non-mapping returns
+/// `Manifest must be a Mapping or JSON string, got {type}`.
+///
+/// A mapping checks synthetic success fields, then unknown keys in insertion
+/// order, then missing required fields in literal order
+/// ([`MANIFEST_FIELD_ORDER_DEVIATION`]). `schema_version` uses the pin
+/// `repr` in [`VersionError`]. Actions are a list or tuple and are sorted
+/// with [`action_sort_key`]. `declared_loss` keeps input order.
+/// [`RepairManifest::try_new`] runs after the field checks. Its error is
+/// returned unchanged. The first failure wins.
+pub fn parse_manifest(obj: &InputValue) -> Result<RepairManifest, ParseManifestError> {
+    match obj {
+        InputValue::Str(_) => Err(ParseManifestError::Json(JsonLoadsUnavailable)),
+        InputValue::Dict(entries) => parse_manifest_mapping(entries),
+        other => Err(schema_manifest(format!(
+            "Manifest must be a Mapping or JSON string, got {}",
+            input_type_name(other)
+        ))),
+    }
+}
+
+fn parse_manifest_mapping(
+    entries: &[(InputKey, InputValue)],
+) -> Result<RepairManifest, ParseManifestError> {
+    reject_synthetic_success(entries)?;
+    reject_manifest_unknown(entries)?;
+    require_manifest_fields(entries)?;
+    manifest_schema_version(manifest_field(entries, "schema_version")?)?;
+    let input_fingerprint =
+        manifest_fingerprint(manifest_field(entries, "input_fingerprint")?, "input_fingerprint")?;
+    let output_fingerprint = manifest_fingerprint(
+        manifest_field(entries, "output_fingerprint")?,
+        "output_fingerprint",
+    )?;
+    let policy = parse_manifest_policy(manifest_field(entries, "policy")?)?;
+    let actions = parse_manifest_actions(manifest_field(entries, "actions")?)?;
+    let declared_loss = parse_declared_loss(manifest_field(entries, "declared_loss")?)?;
+    let revalidate_report = parse_revalidate_report(manifest_field(entries, "revalidate_report")?)?;
+    let idempotency_key = parse_idempotency(manifest_field(entries, "idempotency_key")?)?;
+    let plan_fingerprint = optional_text(
+        entries,
+        "plan_fingerprint",
+        "RepairManifest.plan_fingerprint must be a non-empty string",
+    )?;
+    let assurance = optional_text(
+        entries,
+        "assurance",
+        "RepairManifest.assurance must be a non-empty string",
+    )?;
+    let recipe_versions = copied_mapping(
+        entries,
+        "recipe_versions",
+        "RepairManifest.recipe_versions must be a mapping",
+    )?;
+    let profile_version = optional_text(
+        entries,
+        "profile_version",
+        "RepairManifest.profile_version must be a non-empty string",
+    )?;
+    let adapter_id = optional_text(
+        entries,
+        "adapter_id",
+        "RepairManifest.adapter_id must be a non-empty string",
+    )?;
+    let adapter_version = optional_text(
+        entries,
+        "adapter_version",
+        "RepairManifest.adapter_version must be a non-empty string",
+    )?;
+    let byte_counts = copied_mapping(
+        entries,
+        "byte_counts",
+        "RepairManifest.byte_counts must be a mapping",
+    )?;
+    let record_counts = copied_mapping(
+        entries,
+        "record_counts",
+        "RepairManifest.record_counts must be a mapping",
+    )?;
+    let revalidation = parse_revalidation_block(manifest_field(entries, "revalidation")?)?;
+    let assurance_ceiling = parse_ceiling(manifest_field(entries, "assurance_ceiling")?)?;
+    finish_manifest(ParsedManifest {
+        input_fingerprint,
+        output_fingerprint,
+        policy,
+        actions,
+        declared_loss,
+        revalidate_report,
+        idempotency_key,
+        plan_fingerprint,
+        assurance,
+        recipe_versions,
+        profile_version,
+        adapter_id,
+        adapter_version,
+        byte_counts,
+        record_counts,
+        revalidation,
+        assurance_ceiling,
+    })
+}
+
+struct ParsedManifest {
+    input_fingerprint: String,
+    output_fingerprint: String,
+    policy: String,
+    actions: Vec<RepairAction>,
+    declared_loss: Vec<String>,
+    revalidate_report: Option<String>,
+    idempotency_key: String,
+    plan_fingerprint: Option<String>,
+    assurance: Option<String>,
+    recipe_versions: Vec<(InputKey, InputValue)>,
+    profile_version: Option<String>,
+    adapter_id: Option<String>,
+    adapter_version: Option<String>,
+    byte_counts: Vec<(InputKey, InputValue)>,
+    record_counts: Vec<(InputKey, InputValue)>,
+    revalidation: RevalidationSummary,
+    assurance_ceiling: String,
+}
+
+fn finish_manifest(parsed: ParsedManifest) -> Result<RepairManifest, ParseManifestError> {
+    let schema_version = InputValue::str_value(MANIFEST_SCHEMA_VERSION);
+    let input_fingerprint = InputValue::str_value(parsed.input_fingerprint);
+    let output_fingerprint = InputValue::str_value(parsed.output_fingerprint);
+    let policy = InputValue::str_value(parsed.policy);
+    let actions = ActionSeq::Tuple(parsed.actions.into_iter().map(ActionElem::Action).collect());
+    let declared_loss = InputValue::tuple(
+        parsed
+            .declared_loss
+            .into_iter()
+            .map(InputValue::str_value)
+            .collect(),
+    );
+    let revalidate_report = present_text(parsed.revalidate_report);
+    let idempotency_key = InputValue::str_value(parsed.idempotency_key);
+    let revalidation = RevalidationInput::Summary(parsed.revalidation);
+    let assurance_ceiling = InputValue::str_value(parsed.assurance_ceiling);
+    let plan_fingerprint = present_text(parsed.plan_fingerprint);
+    let assurance = present_text(parsed.assurance);
+    let recipe_versions = InputValue::dict(parsed.recipe_versions);
+    let profile_version = present_text(parsed.profile_version);
+    let adapter_id = present_text(parsed.adapter_id);
+    let adapter_version = present_text(parsed.adapter_version);
+    let byte_counts = InputValue::dict(parsed.byte_counts);
+    let record_counts = InputValue::dict(parsed.record_counts);
+    RepairManifest::try_new(RepairManifestParts {
+        schema_version: &schema_version,
+        input_fingerprint: &input_fingerprint,
+        output_fingerprint: &output_fingerprint,
+        policy: &policy,
+        actions: &actions,
+        declared_loss: &declared_loss,
+        revalidate_report: &revalidate_report,
+        idempotency_key: &idempotency_key,
+        revalidation: &revalidation,
+        assurance_ceiling: &assurance_ceiling,
+        plan_fingerprint: &plan_fingerprint,
+        assurance: &assurance,
+        recipe_versions: &recipe_versions,
+        profile_version: &profile_version,
+        adapter_id: &adapter_id,
+        adapter_version: &adapter_version,
+        byte_counts: &byte_counts,
+        record_counts: &record_counts,
+    })
+    .map_err(lift_manifest)
+}
+
+fn present_text(value: Option<String>) -> InputValue {
+    match value {
+        Some(text) => InputValue::str_value(text),
+        None => InputValue::None,
+    }
+}
+
+fn reject_synthetic_success(entries: &[(InputKey, InputValue)]) -> Result<(), ParseManifestError> {
+    for name in FORBIDDEN_MANIFEST_FIELDS {
+        if mapped_ref(entries, name).is_some() {
+            return Err(schema_manifest(format!(
+                "Manifest must not contain synthetic '{name}' field (never-synthetic-success invariant)"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn reject_manifest_unknown(entries: &[(InputKey, InputValue)]) -> Result<(), ParseManifestError> {
+    for (key, _) in entries {
+        if string_allowed(key, &KNOWN_MANIFEST_FIELDS) {
+            continue;
+        }
+        let name = key_text(key);
+        return Err(ParseManifestError::UnknownField(UnknownFieldError::new(
+            format!("Unknown top-level field in manifest: '{name}'"),
+            Some(name),
+        )));
+    }
+    Ok(())
+}
+
+fn require_manifest_fields(entries: &[(InputKey, InputValue)]) -> Result<(), ParseManifestError> {
+    for name in REQUIRED_MANIFEST_FIELDS {
+        if mapped_ref(entries, name).is_none() {
+            return Err(schema_manifest(format!(
+                "Missing required field in manifest: '{name}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn manifest_field<'a>(
+    entries: &'a [(InputKey, InputValue)],
+    name: &str,
+) -> Result<&'a InputValue, ParseManifestError> {
+    match mapped_ref(entries, name) {
+        Some(value) => Ok(value),
+        None => Err(schema_manifest(format!(
+            "Missing required field in manifest: '{name}'"
+        ))),
+    }
+}
+
+fn manifest_schema_version(value: &InputValue) -> Result<(), ParseManifestError> {
+    if matches!(value, InputValue::Str(text) if text == MANIFEST_SCHEMA_VERSION) {
+        return Ok(());
+    }
+    Err(ParseManifestError::Version(VersionError::new(
+        format!(
+            "Unsupported manifest schema version: {}",
+            input_repr(value)
+        ),
+        Some(python_str_value(value)),
+    )))
+}
+
+fn manifest_fingerprint(value: &InputValue, label: &str) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if !python_strip(text).is_empty() => {
+            Ok(python_strip(text).to_owned())
+        }
+        other => Err(schema_manifest(format!(
+            "RepairManifest.{label} must be a non-empty string, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn parse_manifest_policy(value: &InputValue) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if VALID_POLICIES.contains(&text.as_str()) => Ok(text.clone()),
+        other => Err(schema_manifest(format!(
+            "Invalid manifest policy: {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn parse_manifest_actions(value: &InputValue) -> Result<Vec<RepairAction>, ParseManifestError> {
+    let items = match value {
+        InputValue::List(items) | InputValue::Tuple(items) => items,
+        other => {
+            return Err(schema_manifest(format!(
+                "actions must be a list or tuple, got {}",
+                input_type_name(other)
+            )));
+        }
+    };
+    let mut actions = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        actions.push(parse_manifest_action(index, item)?);
+    }
+    sort_parsed_actions(&mut actions);
+    Ok(actions)
+}
+
+fn sort_parsed_actions(actions: &mut [RepairAction]) {
+    actions.sort_by(|left, right| {
+        action_sort_key(ActionSortFields {
+            kind: left.kind(),
+            record_id: left.record_id(),
+            detail: left.detail(),
+        })
+        .cmp(&action_sort_key(ActionSortFields {
+            kind: right.kind(),
+            record_id: right.record_id(),
+            detail: right.detail(),
+        }))
+    });
+}
+
+fn parse_manifest_action(
+    index: usize,
+    item: &InputValue,
+) -> Result<RepairAction, ParseManifestError> {
+    let InputValue::Dict(entries) = item else {
+        return Err(schema_manifest(format!(
+            "actions[{index}] must be a mapping, got {}",
+            input_type_name(item)
+        )));
+    };
+    let Some(kind_value) = mapped_ref(entries, "kind") else {
+        return Err(schema_manifest(format!(
+            "actions[{index}] missing required field 'kind'"
+        )));
+    };
+    reject_action_unknown(index, entries)?;
+    let kind = action_kind(index, kind_value)?;
+    let record_id = action_record_id(index, entries)?;
+    let detail = action_detail(index, entries)?;
+    let kind_input = InputValue::str_value(kind);
+    let record_input = present_text(record_id);
+    let detail_input = InputValue::str_value(detail);
+    RepairAction::try_new(&kind_input, &record_input, &detail_input).map_err(lift_manifest)
+}
+
+fn reject_action_unknown(
+    index: usize,
+    entries: &[(InputKey, InputValue)],
+) -> Result<(), ParseManifestError> {
+    for (key, _) in entries {
+        if string_allowed(key, &ACTION_FIELDS) {
+            continue;
+        }
+        let name = key_text(key);
+        return Err(ParseManifestError::UnknownField(UnknownFieldError::new(
+            format!("Unknown field in action[{index}]: '{name}'"),
+            Some(name),
+        )));
+    }
+    Ok(())
+}
+
+fn action_kind(index: usize, value: &InputValue) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(python_strip(text).to_owned()),
+        other => Err(schema_manifest(format!(
+            "actions[{index}].kind must be a non-empty string, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn action_record_id(
+    index: usize,
+    entries: &[(InputKey, InputValue)],
+) -> Result<Option<String>, ParseManifestError> {
+    match mapped_ref(entries, "record_id") {
+        None | Some(InputValue::None) => Ok(None),
+        Some(InputValue::Str(text)) if !python_strip(text).is_empty() => {
+            Ok(Some(python_strip(text).to_owned()))
+        }
+        Some(other) => Err(schema_manifest(format!(
+            "actions[{index}].record_id must be non-empty string or None, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn action_detail(
+    index: usize,
+    entries: &[(InputKey, InputValue)],
+) -> Result<String, ParseManifestError> {
+    match mapped_ref(entries, "detail") {
+        None => Ok(String::new()),
+        Some(InputValue::Str(text)) => Ok(python_strip(text).to_owned()),
+        Some(other) => Err(schema_manifest(format!(
+            "actions[{index}].detail must be a string, got {}",
+            input_type_name(other)
+        ))),
+    }
+}
+
+fn parse_declared_loss(value: &InputValue) -> Result<Vec<String>, ParseManifestError> {
+    let items = match value {
+        InputValue::List(items) | InputValue::Tuple(items) => items,
+        other => {
+            return Err(schema_manifest(format!(
+                "declared_loss must be a list or tuple, got {}",
+                input_type_name(other)
+            )));
+        }
+    };
+    let mut loss = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            InputValue::Str(text) if !python_strip(text).is_empty() => {
+                loss.push(python_strip(text).to_owned());
+            }
+            other => {
+                return Err(schema_manifest(format!(
+                    "declared_loss[{index}] must be a non-empty string, got {}",
+                    input_repr(other)
+                )));
+            }
+        }
+    }
+    Ok(loss)
+}
+
+fn parse_revalidate_report(value: &InputValue) -> Result<Option<String>, ParseManifestError> {
+    match value {
+        InputValue::None => Ok(None),
+        InputValue::Str(text) if !python_strip(text).is_empty() => {
+            Ok(Some(python_strip(text).replace('\\', "/")))
+        }
+        other => Err(schema_manifest(format!(
+            "RepairManifest.revalidate_report must be a non-empty string path or None, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn parse_idempotency(value: &InputValue) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if is_sha256_hex(text) => Ok(text.clone()),
+        other => Err(schema_manifest(format!(
+            "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn optional_text(
+    entries: &[(InputKey, InputValue)],
+    name: &str,
+    message: &str,
+) -> Result<Option<String>, ParseManifestError> {
+    match mapped_ref(entries, name) {
+        None | Some(InputValue::None) => Ok(None),
+        Some(InputValue::Str(text)) if !python_strip(text).is_empty() => {
+            Ok(Some(python_strip(text).to_owned()))
+        }
+        Some(_) => Err(schema_manifest(message.to_owned())),
+    }
+}
+
+fn copied_mapping(
+    entries: &[(InputKey, InputValue)],
+    name: &str,
+    message: &str,
+) -> Result<Vec<(InputKey, InputValue)>, ParseManifestError> {
+    match mapped_ref(entries, name) {
+        None => Ok(Vec::new()),
+        Some(InputValue::Dict(pairs)) => Ok(collapse_pairs(pairs)),
+        Some(_) => Err(schema_manifest(message.to_owned())),
+    }
+}
+
+fn parse_revalidation_block(
+    value: &InputValue,
+) -> Result<RevalidationSummary, ParseManifestError> {
+    let entries = match value {
+        InputValue::Dict(entries) => entries.as_slice(),
+        other => {
+            return Err(schema_manifest(format!(
+                "RepairManifest.revalidation must be a mapping, got {}",
+                input_type_name(other)
+            )));
+        }
+    };
+    reject_revalidation_unknown(entries)?;
+    require_revalidation_fields(entries)?;
+    let assurance = revalidation_assurance(revalidation_field(entries, "assurance")?)?;
+    let error_count = revalidation_count(revalidation_field(entries, "error_count")?, "error_count")?;
+    let warning_count =
+        revalidation_count(revalidation_field(entries, "warning_count")?, "warning_count")?;
+    let profile_id = revalidation_text(revalidation_field(entries, "profile_id")?, "profile_id")?;
+    let profile_version = revalidation_text(
+        revalidation_field(entries, "profile_version")?,
+        "profile_version",
+    )?;
+    let report_fingerprint = revalidation_fingerprint(entries)?;
+    let assurance_input = InputValue::str_value(assurance);
+    let error_input = InputValue::int(error_count);
+    let warning_input = InputValue::int(warning_count);
+    let profile_input = InputValue::str_value(profile_id);
+    let version_input = InputValue::str_value(profile_version);
+    let fingerprint_input = present_text(report_fingerprint);
+    RevalidationSummary::try_new(
+        &assurance_input,
+        &error_input,
+        &warning_input,
+        &profile_input,
+        &version_input,
+        &fingerprint_input,
+    )
+    .map_err(lift_manifest)
+}
+
+fn reject_revalidation_unknown(
+    entries: &[(InputKey, InputValue)],
+) -> Result<(), ParseManifestError> {
+    for (key, _) in entries {
+        if string_allowed(key, &REVALIDATION_FIELDS) {
+            continue;
+        }
+        let name = key_text(key);
+        return Err(ParseManifestError::UnknownField(UnknownFieldError::new(
+            format!("Unknown field in manifest revalidation: '{name}'"),
+            Some(name),
+        )));
+    }
+    Ok(())
+}
+
+fn require_revalidation_fields(
+    entries: &[(InputKey, InputValue)],
+) -> Result<(), ParseManifestError> {
+    for name in REQUIRED_REVALIDATION_FIELDS {
+        if mapped_ref(entries, name).is_none() {
+            return Err(schema_manifest(format!(
+                "Missing required field in manifest revalidation: '{name}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn revalidation_field<'a>(
+    entries: &'a [(InputKey, InputValue)],
+    name: &str,
+) -> Result<&'a InputValue, ParseManifestError> {
+    match mapped_ref(entries, name) {
+        Some(value) => Ok(value),
+        None => Err(schema_manifest(format!(
+            "Missing required field in manifest revalidation: '{name}'"
+        ))),
+    }
+}
+
+fn revalidation_assurance(value: &InputValue) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => Ok(text.clone()),
+        other => Err(ParseManifestError::Assurance(AssuranceError::new(format!(
+            "Invalid revalidation assurance: {}. Must be one of {}",
+            input_repr(other),
+            sorted_assurance_repr()
+        )))),
+    }
+}
+
+fn revalidation_count(value: &InputValue, field: &str) -> Result<i64, ParseManifestError> {
+    match value {
+        InputValue::Int(number) if *number >= 0 => Ok(*number),
+        other => Err(schema_manifest(format!(
+            "revalidation.{field} must be a non-negative integer, got {}",
+            input_repr(other)
+        ))),
+    }
+}
+
+fn revalidation_text(value: &InputValue, field: &str) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(python_strip(text).to_owned()),
+        _ => Err(schema_manifest(format!(
+            "revalidation.{field} must be a non-empty string"
+        ))),
+    }
+}
+
+fn revalidation_fingerprint(
+    entries: &[(InputKey, InputValue)],
+) -> Result<Option<String>, ParseManifestError> {
+    match mapped_ref(entries, "report_fingerprint") {
+        None | Some(InputValue::None) => Ok(None),
+        Some(InputValue::Str(text)) if !python_strip(text).is_empty() => {
+            Ok(Some(python_strip(text).to_owned()))
+        }
+        Some(_) => Err(schema_manifest(
+            "revalidation.report_fingerprint must be a non-empty string or None".to_owned(),
+        )),
+    }
+}
+
+fn parse_ceiling(value: &InputValue) -> Result<String, ParseManifestError> {
+    match value {
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => Ok(text.clone()),
+        other => Err(ParseManifestError::Assurance(AssuranceError::new(format!(
+            "Invalid assurance_ceiling: {}. Must be one of {}",
+            input_repr(other),
+            sorted_assurance_repr()
+        )))),
+    }
+}
+
+fn schema_manifest(message: String) -> ParseManifestError {
+    ParseManifestError::Schema(schema(message))
+}
+
+fn lift_manifest(error: EnvelopeError) -> ParseManifestError {
+    match error {
+        EnvelopeError::Schema(error) => ParseManifestError::Schema(error),
+        EnvelopeError::Version(error) => ParseManifestError::Version(error),
+        EnvelopeError::Assurance(error) => ParseManifestError::Assurance(error),
+        EnvelopeError::ContentLeak(error) => ParseManifestError::ContentLeak(error),
+        EnvelopeError::TypeMismatch(message) => ParseManifestError::Type(message),
+        EnvelopeError::Unavailable(name) => ParseManifestError::Unavailable(name),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -9200,6 +9935,882 @@ mod parse_report_port {
                 );
             }
             other => panic!("non-string key, got {other}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod parse_manifest_port {
+    use std::error::Error;
+
+    use super::{
+        parse_manifest, InputKey, InputValue, JsonLoadsUnavailable, ParseManifestError,
+        MANIFEST_FIELD_ORDER_DEVIATION,
+    };
+    use model::errors::{AssuranceError, SchemaError};
+    use model::finding::enforce_content_free_text;
+    use model::version::MANIFEST_SCHEMA_VERSION;
+
+    const LEVELS: &str = "['A0', 'A1', 'A2', 'A3', 'A4']";
+    const UNKNOWN_SUFFIX: &str = " (code: UNKNOWN_FIELD / SL302)";
+    const VERSION_SUFFIX: &str = " (code: VERSION / SL301)";
+
+    fn text(value: &str) -> InputValue {
+        InputValue::str_value(value)
+    }
+
+    fn entry(name: &str, value: InputValue) -> (InputKey, InputValue) {
+        (InputKey::str_key(name), value)
+    }
+
+    fn dict(entries: Vec<(InputKey, InputValue)>) -> InputValue {
+        InputValue::dict(entries)
+    }
+
+    fn idem() -> String {
+        "ab".repeat(32)
+    }
+
+    fn revalidation() -> InputValue {
+        dict(vec![
+            entry("assurance", text("A1")),
+            entry("error_count", InputValue::int(0)),
+            entry("warning_count", InputValue::int(1)),
+            entry("profile_id", text("neutral")),
+            entry("profile_version", text("1")),
+        ])
+    }
+
+    fn action(kind: &str, record_id: Option<&str>, detail: Option<&str>) -> InputValue {
+        let mut entries = vec![entry("kind", text(kind))];
+        if let Some(record_id) = record_id {
+            entries.push(entry("record_id", text(record_id)));
+        }
+        if let Some(detail) = detail {
+            entries.push(entry("detail", text(detail)));
+        }
+        dict(entries)
+    }
+
+    fn manifest() -> InputValue {
+        dict(vec![
+            entry("schema_version", text(MANIFEST_SCHEMA_VERSION)),
+            entry("input_fingerprint", text("in")),
+            entry("output_fingerprint", text("out")),
+            entry("policy", text("conservative")),
+            entry("actions", InputValue::list(Vec::new())),
+            entry("declared_loss", InputValue::list(Vec::new())),
+            entry("revalidate_report", InputValue::None),
+            entry("idempotency_key", text(&idem())),
+            entry("revalidation", revalidation()),
+            entry("assurance_ceiling", text("A2")),
+        ])
+    }
+
+    fn replace(value: &InputValue, name: &str, next: InputValue) -> InputValue {
+        let InputValue::Dict(entries) = value else {
+            panic!("manifest mapping");
+        };
+        let mut entries = entries.clone();
+        let mut found = false;
+        for (key, slot) in &mut entries {
+            if matches!(key, InputKey::Str(text) if text == name) {
+                *slot = next.clone();
+                found = true;
+            }
+        }
+        if !found {
+            entries.push(entry(name, next));
+        }
+        dict(entries)
+    }
+
+    fn remove(value: &InputValue, name: &str) -> InputValue {
+        let InputValue::Dict(entries) = value else {
+            panic!("manifest mapping");
+        };
+        dict(
+            entries
+                .iter()
+                .filter(|(key, _)| !matches!(key, InputKey::Str(text) if text == name))
+                .cloned()
+                .collect(),
+        )
+    }
+
+    fn parse_ok(value: &InputValue) -> super::RepairManifest {
+        match parse_manifest(value) {
+            Ok(manifest) => manifest,
+            Err(error) => panic!("parse_manifest rejected a valid manifest: {error}"),
+        }
+    }
+
+    fn parse_err(value: &InputValue) -> ParseManifestError {
+        match parse_manifest(value) {
+            Err(error) => error,
+            Ok(_) => panic!("parse_manifest accepted an invalid manifest"),
+        }
+    }
+
+    fn message(value: &InputValue) -> String {
+        parse_err(value).to_string()
+    }
+
+    fn replace_revalidation(name: &str, next: InputValue) -> InputValue {
+        let InputValue::Dict(entries) = revalidation() else {
+            panic!("revalidation mapping");
+        };
+        let mut entries = entries.clone();
+        let mut found = false;
+        for (key, slot) in &mut entries {
+            if matches!(key, InputKey::Str(text) if text == name) {
+                *slot = next.clone();
+                found = true;
+            }
+        }
+        if !found {
+            entries.push(entry(name, next));
+        }
+        replace(&manifest(), "revalidation", dict(entries))
+    }
+
+    #[test]
+    fn string_input_stops_at_json_loads() {
+        let looks_like = format!("{{\"schema_version\":\"{MANIFEST_SCHEMA_VERSION}\"}}");
+        for sample in ["{}", "[]", "not valid json {", "", looks_like.as_str()] {
+            let error = parse_err(&text(sample));
+            assert_eq!(error.to_string(), "json.loads is not available");
+            assert_eq!(error.to_string(), JsonLoadsUnavailable::MESSAGE);
+            assert!(!error.to_string().contains("Malformed JSON"));
+            match &error {
+                ParseManifestError::Json(inner) => {
+                    assert_eq!(inner.to_string(), JsonLoadsUnavailable::MESSAGE);
+                }
+                other => panic!("expected json.loads, got {other:?}"),
+            }
+            let source = Error::source(&error).map(ToString::to_string);
+            assert_eq!(source.as_deref(), Some(JsonLoadsUnavailable::MESSAGE));
+        }
+    }
+
+    #[test]
+    fn non_mapping_uses_the_pin_type_message() {
+        let cases = [
+            (InputValue::int(123), "int"),
+            (InputValue::list(Vec::new()), "list"),
+            (InputValue::tuple(Vec::new()), "tuple"),
+            (InputValue::set(Vec::new()), "set"),
+            (InputValue::FrozenSet(Vec::new()), "frozenset"),
+            (InputValue::None, "NoneType"),
+            (InputValue::bool_value(true), "bool"),
+            (InputValue::other("float", "1.5"), "float"),
+        ];
+        for (value, type_name) in cases {
+            let error = parse_err(&value);
+            assert_eq!(
+                error.to_string(),
+                format!("Manifest must be a Mapping or JSON string, got {type_name}")
+            );
+            match error {
+                ParseManifestError::Schema(inner) => {
+                    assert_eq!(inner.code(), SchemaError::DEFAULT_CODE);
+                }
+                other => panic!("expected SchemaError, got {other:?}"),
+            }
+            assert!(!message(&value).contains("Manifest root must be a mapping"));
+            assert!(!message(&value).contains("Malformed JSON"));
+        }
+    }
+
+    #[test]
+    fn synthetic_success_wins_before_unknown_keys() {
+        let base = manifest();
+        let mut success_later = match remove(&base, "schema_version") {
+            InputValue::Dict(entries) => entries,
+            other => panic!("dict, got {other:?}"),
+        };
+        success_later.insert(0, entry("rogue", text("x")));
+        success_later.push(entry("success", InputValue::None));
+        assert_eq!(
+            message(&dict(success_later)),
+            "Manifest must not contain synthetic 'success' field (never-synthetic-success invariant)"
+        );
+        let mut passed_after_healthy = match base.clone() {
+            InputValue::Dict(entries) => entries,
+            other => panic!("dict, got {other:?}"),
+        };
+        passed_after_healthy.insert(0, entry("healthy", text("1")));
+        passed_after_healthy.push(entry("passed", text("1")));
+        assert_eq!(
+            message(&dict(passed_after_healthy)),
+            "Manifest must not contain synthetic 'passed' field (never-synthetic-success invariant)"
+        );
+        assert_eq!(
+            message(&replace(&base, "ok", text("1"))),
+            "Manifest must not contain synthetic 'ok' field (never-synthetic-success invariant)"
+        );
+        assert_eq!(
+            message(&replace(&base, "healthy", text("1"))),
+            "Manifest must not contain synthetic 'healthy' field (never-synthetic-success invariant)"
+        );
+        match parse_err(&replace(&base, "healthy", text("1"))) {
+            ParseManifestError::Schema(error) => {
+                assert_eq!(error.code(), SchemaError::DEFAULT_CODE);
+                assert!(!error.to_string().contains("SL302"));
+            }
+            other => panic!("synthetic field is SchemaError, got {other:?}"),
+        }
+
+        let mut unknown = match base.clone() {
+            InputValue::Dict(entries) => entries,
+            other => panic!("dict, got {other:?}"),
+        };
+        unknown.insert(0, (InputKey::int(1), text("x")));
+        unknown.push(entry("rogue", text("y")));
+        match parse_err(&dict(unknown)) {
+            ParseManifestError::UnknownField(error) => {
+                assert_eq!(error.reason_code(), "SL302");
+                assert_eq!(error.field_name(), Some("1"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unknown top-level field in manifest: '1'{UNKNOWN_SUFFIX}")
+                );
+            }
+            other => panic!("first unknown key, got {other:?}"),
+        }
+        let mut named = match &base {
+            InputValue::Dict(entries) => entries.clone(),
+            other => panic!("dict, got {other:?}"),
+        };
+        named.insert(0, entry("rogue", text("x")));
+        named.push(entry("aaa", text("y")));
+        match parse_err(&dict(named)) {
+            ParseManifestError::UnknownField(error) => {
+                assert_eq!(error.field_name(), Some("rogue"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unknown top-level field in manifest: 'rogue'{UNKNOWN_SUFFIX}")
+                );
+            }
+            other => panic!("insertion order, got {other:?}"),
+        }
+        let mut false_key = match base {
+            InputValue::Dict(entries) => entries,
+            other => panic!("dict, got {other:?}"),
+        };
+        false_key.insert(0, (InputKey::bool_value(false), text("x")));
+        match parse_err(&dict(false_key)) {
+            ParseManifestError::UnknownField(error) => {
+                assert_eq!(error.field_name(), Some("False"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unknown top-level field in manifest: 'False'{UNKNOWN_SUFFIX}")
+                );
+            }
+            other => panic!("bool key, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_fields_follow_the_source_literal_order() {
+        assert!(MANIFEST_FIELD_ORDER_DEVIATION.contains("frozenset"));
+        assert!(MANIFEST_FIELD_ORDER_DEVIATION.contains("literal order"));
+        assert!(MANIFEST_FIELD_ORDER_DEVIATION.contains("not reproduced"));
+        let base = manifest();
+        let missing_schema = remove(&remove(&base, "schema_version"), "output_fingerprint");
+        assert_eq!(
+            message(&missing_schema),
+            "Missing required field in manifest: 'schema_version'"
+        );
+        assert!(!message(&missing_schema).contains("SL302"));
+        let missing_revalidation = remove(&remove(&base, "revalidation"), "assurance_ceiling");
+        assert_eq!(
+            message(&missing_revalidation),
+            "Missing required field in manifest: 'revalidation'"
+        );
+        let missing_input = remove(&remove(&base, "input_fingerprint"), "assurance_ceiling");
+        assert_eq!(
+            message(&missing_input),
+            "Missing required field in manifest: 'input_fingerprint'"
+        );
+        let unknown_and_missing = replace(
+            &remove(&base, "policy"),
+            "schema_version",
+            text("sesslint.repair-manifest/v9"),
+        );
+        let unknown_and_missing = replace(&unknown_and_missing, "rogue", text("x"));
+        match parse_err(&unknown_and_missing) {
+            ParseManifestError::UnknownField(error) => {
+                assert_eq!(error.field_name(), Some("rogue"));
+            }
+            other => panic!("unknown field must win over missing and version, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn version_error_uses_the_pin_repr() {
+        let base = manifest();
+        match parse_err(&replace(
+            &base,
+            "schema_version",
+            text("sesslint.repair-manifest/v9"),
+        )) {
+            ParseManifestError::Version(error) => {
+                assert_eq!(error.reason_code(), "SL301");
+                assert_eq!(error.version(), Some("sesslint.repair-manifest/v9"));
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "Unsupported manifest schema version: 'sesslint.repair-manifest/v9'{VERSION_SUFFIX}"
+                    )
+                );
+                assert!(!error.to_string().contains("RepairManifest.schema_version must be"));
+            }
+            other => panic!("string version, got {other:?}"),
+        }
+        match parse_err(&replace(&base, "schema_version", InputValue::int(4))) {
+            ParseManifestError::Version(error) => {
+                assert_eq!(error.version(), Some("4"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unsupported manifest schema version: 4{VERSION_SUFFIX}")
+                );
+            }
+            other => panic!("int version, got {other:?}"),
+        }
+        match parse_err(&replace(&base, "schema_version", InputValue::bool_value(true))) {
+            ParseManifestError::Version(error) => {
+                assert_eq!(error.version(), Some("True"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unsupported manifest schema version: True{VERSION_SUFFIX}")
+                );
+            }
+            other => panic!("bool version, got {other:?}"),
+        }
+        let bad_fingerprint = replace(
+            &replace(&base, "schema_version", text("sesslint.repair-manifest/v9")),
+            "input_fingerprint",
+            InputValue::int(1),
+        );
+        assert!(message(&bad_fingerprint).starts_with("Unsupported manifest schema version:"));
+    }
+
+    #[test]
+    fn fingerprints_policy_actions_and_loss_use_pin_messages() {
+        let base = manifest();
+        assert_eq!(
+            message(&replace(&base, "input_fingerprint", text("  "))),
+            "RepairManifest.input_fingerprint must be a non-empty string, got '  '"
+        );
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "input_fingerprint", InputValue::int(1)),
+                "output_fingerprint",
+                text("  ")
+            )),
+            "RepairManifest.input_fingerprint must be a non-empty string, got 1"
+        );
+        assert_eq!(
+            message(&replace(&base, "output_fingerprint", text(""))),
+            "RepairManifest.output_fingerprint must be a non-empty string, got ''"
+        );
+        assert_eq!(
+            message(&replace(&base, "policy", text(" conservative"))),
+            "Invalid manifest policy: ' conservative'"
+        );
+        assert_eq!(
+            message(&replace(&base, "policy", text("Salvage"))),
+            "Invalid manifest policy: 'Salvage'"
+        );
+        assert!(!message(&replace(&base, "policy", text("nope"))).contains("must be one of"));
+        let bad_actions = replace(
+            &replace(&base, "actions", text("no")),
+            "declared_loss",
+            InputValue::int(1),
+        );
+        assert_eq!(message(&bad_actions), "actions must be a list or tuple, got str");
+        assert_eq!(
+            message(&replace(
+                &base,
+                "actions",
+                InputValue::list(vec![InputValue::int(1)])
+            )),
+            "actions[0] must be a mapping, got int"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "actions",
+                InputValue::list(vec![dict(vec![entry("rogue", text("x"))])])
+            )),
+            "actions[0] missing required field 'kind'"
+        );
+        match parse_err(&replace(
+            &base,
+            "actions",
+            InputValue::list(vec![dict(vec![
+                entry("kind", text("")),
+                entry("rogue", InputValue::int(7)),
+            ])]),
+        )) {
+            ParseManifestError::UnknownField(error) => {
+                assert_eq!(error.field_name(), Some("rogue"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unknown field in action[0]: 'rogue'{UNKNOWN_SUFFIX}")
+                );
+            }
+            other => panic!("action unknown field, got {other:?}"),
+        }
+        assert_eq!(
+            message(&replace(
+                &base,
+                "actions",
+                InputValue::list(vec![
+                    action("drop", None, None),
+                    dict(vec![entry("kind", text("drop")), entry("rogue", text("x"))]),
+                ])
+            )),
+            format!("Unknown field in action[1]: 'rogue'{UNKNOWN_SUFFIX}")
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "actions",
+                InputValue::list(vec![action("  ", None, None)])
+            )),
+            "actions[0].kind must be a non-empty string, got '  '"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "actions",
+                InputValue::list(vec![dict(vec![
+                    entry("kind", text("drop")),
+                    entry("record_id", text("  ")),
+                    entry("detail", InputValue::int(1)),
+                ])])
+            )),
+            "actions[0].record_id must be non-empty string or None, got '  '"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "actions",
+                InputValue::list(vec![dict(vec![
+                    entry("kind", text("drop")),
+                    entry("detail", InputValue::None),
+                ])])
+            )),
+            "actions[0].detail must be a string, got NoneType"
+        );
+        assert_eq!(
+            message(&replace(&base, "declared_loss", InputValue::int(1))),
+            "declared_loss must be a list or tuple, got int"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "declared_loss",
+                InputValue::list(vec![text("  ")])
+            )),
+            "declared_loss[0] must be a non-empty string, got '  '"
+        );
+        assert_eq!(
+            message(&replace(
+                &base,
+                "declared_loss",
+                InputValue::tuple(vec![InputValue::int(3)])
+            )),
+            "declared_loss[0] must be a non-empty string, got 3"
+        );
+    }
+
+    #[test]
+    fn path_idempotency_and_optional_fields_keep_pin_order() {
+        let base = manifest();
+        assert_eq!(
+            message(&replace(&base, "revalidate_report", InputValue::int(4))),
+            "RepairManifest.revalidate_report must be a non-empty string path or None, got 4"
+        );
+        assert_eq!(
+            message(&replace(&base, "revalidate_report", text("  "))),
+            "RepairManifest.revalidate_report must be a non-empty string path or None, got '  '"
+        );
+        let upper = "AB".repeat(32);
+        assert_eq!(
+            message(&replace(&base, "idempotency_key", text("AA"))),
+            "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got 'AA'"
+        );
+        assert_eq!(
+            message(&replace(&base, "idempotency_key", text(&upper))),
+            format!(
+                "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got '{upper}'"
+            )
+        );
+        assert_eq!(
+            message(&replace(&base, "idempotency_key", text(&"ab".repeat(31)))),
+            format!(
+                "RepairManifest.idempotency_key must be a 64-character lowercase hex string, got '{}'",
+                "ab".repeat(31)
+            )
+        );
+        let bad_key = replace(
+            &replace(&base, "idempotency_key", text("AA")),
+            "plan_fingerprint",
+            text(""),
+        );
+        assert!(message(&bad_key).contains("idempotency_key"));
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "plan_fingerprint", text("  ")),
+                "assurance",
+                text("")
+            )),
+            "RepairManifest.plan_fingerprint must be a non-empty string"
+        );
+        assert_eq!(
+            message(&replace(&base, "assurance", InputValue::int(1))),
+            "RepairManifest.assurance must be a non-empty string"
+        );
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "recipe_versions", InputValue::None),
+                "profile_version",
+                text("  ")
+            )),
+            "RepairManifest.recipe_versions must be a mapping"
+        );
+        assert_eq!(
+            message(&replace(&base, "profile_version", text(""))),
+            "RepairManifest.profile_version must be a non-empty string"
+        );
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "adapter_id", text(" ")),
+                "adapter_version",
+                InputValue::int(1)
+            )),
+            "RepairManifest.adapter_id must be a non-empty string"
+        );
+        assert_eq!(
+            message(&replace(&base, "adapter_version", text(" "))),
+            "RepairManifest.adapter_version must be a non-empty string"
+        );
+        let absent_text = parse_ok(&replace(&base, "adapter_version", InputValue::None));
+        assert_eq!(absent_text.adapter_version(), None);
+        assert_eq!(
+            message(&replace(
+                &replace(&base, "byte_counts", InputValue::list(Vec::new())),
+                "record_counts",
+                InputValue::None
+            )),
+            "RepairManifest.byte_counts must be a mapping"
+        );
+        assert_eq!(
+            message(&replace(&base, "record_counts", InputValue::None)),
+            "RepairManifest.record_counts must be a mapping"
+        );
+        let bad_records = replace(
+            &replace(&base, "record_counts", InputValue::int(1)),
+            "revalidation",
+            InputValue::int(1),
+        );
+        assert_eq!(
+            message(&bad_records),
+            "RepairManifest.record_counts must be a mapping"
+        );
+    }
+
+    #[test]
+    fn revalidation_checks_run_before_the_ceiling() {
+        let base = manifest();
+        assert_eq!(
+            message(&replace(&base, "revalidation", InputValue::int(1))),
+            "RepairManifest.revalidation must be a mapping, got int"
+        );
+        let unknown = dict(vec![
+            entry("rogue", text("x")),
+            entry("error_count", InputValue::int(0)),
+        ]);
+        match parse_err(&replace(&base, "revalidation", unknown)) {
+            ParseManifestError::UnknownField(error) => {
+                assert_eq!(error.field_name(), Some("rogue"));
+                assert_eq!(
+                    error.to_string(),
+                    format!("Unknown field in manifest revalidation: 'rogue'{UNKNOWN_SUFFIX}")
+                );
+            }
+            other => panic!("revalidation unknown field, got {other:?}"),
+        }
+        let missing = dict(vec![
+            entry("error_count", InputValue::int(0)),
+            entry("warning_count", InputValue::int(0)),
+            entry("profile_id", text("neutral")),
+            entry("profile_version", text("1")),
+        ]);
+        assert_eq!(
+            message(&replace(&base, "revalidation", missing)),
+            "Missing required field in manifest revalidation: 'assurance'"
+        );
+        let missing_version = dict(vec![
+            entry("assurance", text("A1")),
+            entry("error_count", InputValue::int(0)),
+            entry("warning_count", InputValue::int(0)),
+            entry("profile_id", text("neutral")),
+        ]);
+        assert_eq!(
+            message(&replace(&base, "revalidation", missing_version)),
+            "Missing required field in manifest revalidation: 'profile_version'"
+        );
+        assert_eq!(
+            message(&replace_revalidation("assurance", text("A9"))),
+            format!("Invalid revalidation assurance: 'A9'. Must be one of {LEVELS}")
+        );
+        assert!(!message(&replace_revalidation("assurance", text("A9")))
+            .contains("Invalid revalidation assurance 'A9'"));
+        assert_eq!(
+            message(&replace_revalidation("error_count", InputValue::bool_value(true))),
+            "revalidation.error_count must be a non-negative integer, got True"
+        );
+        assert_eq!(
+            message(&replace_revalidation("error_count", InputValue::bool_value(false))),
+            "revalidation.error_count must be a non-negative integer, got False"
+        );
+        assert_eq!(
+            message(&replace_revalidation("error_count", InputValue::int(-1))),
+            "revalidation.error_count must be a non-negative integer, got -1"
+        );
+        assert!(!message(&replace_revalidation("error_count", InputValue::bool_value(true)))
+            .contains("RevalidationSummary.error_count"));
+        let warning_bool = replace_revalidation("warning_count", InputValue::bool_value(true));
+        let warning_bool = replace(
+            &warning_bool,
+            "assurance_ceiling",
+            text("A9"),
+        );
+        assert_eq!(
+            message(&warning_bool),
+            "revalidation.warning_count must be a non-negative integer, got True"
+        );
+        assert_eq!(
+            message(&replace_revalidation("profile_id", text("  "))),
+            "revalidation.profile_id must be a non-empty string"
+        );
+        assert_eq!(
+            message(&replace_revalidation("profile_version", InputValue::int(1))),
+            "revalidation.profile_version must be a non-empty string"
+        );
+        assert_eq!(
+            message(&replace_revalidation("report_fingerprint", text("  "))),
+            "revalidation.report_fingerprint must be a non-empty string or None"
+        );
+        match parse_err(&replace(&base, "assurance_ceiling", text("A9"))) {
+            ParseManifestError::Assurance(error) => {
+                assert_eq!(error.code(), AssuranceError::DEFAULT_CODE);
+                assert_eq!(
+                    error.to_string(),
+                    format!("Invalid assurance_ceiling: 'A9'. Must be one of {LEVELS}")
+                );
+                assert!(!error
+                    .to_string()
+                    .contains("RepairManifest.assurance_ceiling must be one of"));
+            }
+            other => panic!("ceiling, got {other:?}"),
+        }
+        assert_eq!(
+            message(&replace(&base, "assurance_ceiling", InputValue::int(3))),
+            format!("Invalid assurance_ceiling: 3. Must be one of {LEVELS}")
+        );
+    }
+
+    #[test]
+    fn parsed_manifest_keeps_order_and_calls_the_constructor() {
+        let minimal = parse_ok(&manifest());
+        assert_eq!(minimal.schema_version(), MANIFEST_SCHEMA_VERSION);
+        assert_eq!(minimal.input_fingerprint(), "in");
+        assert_eq!(minimal.output_fingerprint(), "out");
+        assert_eq!(minimal.policy(), "conservative");
+        assert!(minimal.actions().is_empty());
+        assert!(minimal.declared_loss().is_empty());
+        assert_eq!(minimal.revalidate_report(), None);
+        assert_eq!(minimal.idempotency_key(), idem());
+        assert_eq!(minimal.assurance_ceiling(), "A2");
+        assert_eq!(minimal.plan_fingerprint(), None);
+        assert_eq!(minimal.assurance(), None);
+        assert!(minimal.recipe_versions().is_empty());
+        assert_eq!(minimal.profile_version(), None);
+        assert_eq!(minimal.adapter_id(), None);
+        assert_eq!(minimal.adapter_version(), None);
+        assert!(minimal.byte_counts().is_empty());
+        assert!(minimal.record_counts().is_empty());
+        assert_eq!(minimal.revalidation().assurance(), "A1");
+        assert_eq!(minimal.revalidation().error_count(), 0);
+        assert_eq!(minimal.revalidation().warning_count(), 1);
+        assert_eq!(minimal.revalidation().profile_id(), "neutral");
+        assert_eq!(minimal.revalidation().profile_version(), "1");
+        assert_eq!(minimal.revalidation().report_fingerprint(), None);
+
+        let explicit_none = parse_ok(&replace(&manifest(), "plan_fingerprint", InputValue::None));
+        assert_eq!(explicit_none.plan_fingerprint(), None);
+
+        let actions = InputValue::list(vec![
+            action("  zeta  ", None, Some(" later ")),
+            action(" alpha ", Some(" b "), Some(" d ")),
+            action("alpha", None, None),
+        ]);
+        let loss = InputValue::list(vec![text("  zeta  "), text(" alpha ")]);
+        let recipes = dict(vec![
+            entry("a", text("1")),
+            entry("b", text("2")),
+            entry("a", text("9")),
+        ]);
+        let bytes = dict(vec![
+            entry("rows", InputValue::int(2)),
+            entry("kept", InputValue::int(1)),
+        ]);
+        let records = dict(vec![
+            entry("kept", InputValue::int(4)),
+            entry("dropped", InputValue::int(1)),
+        ]);
+        let mut rich = replace(&manifest(), "input_fingerprint", text("  in  "));
+        rich = replace(&rich, "output_fingerprint", text("  out  "));
+        rich = replace(&rich, "policy", text("salvage"));
+        rich = replace(&rich, "actions", actions);
+        rich = replace(&rich, "declared_loss", loss);
+        rich = replace(&rich, "revalidate_report", text("  C:\\tmp\\x  "));
+        rich = replace(&rich, "plan_fingerprint", text("  plan  "));
+        rich = replace(&rich, "assurance", text("  note  "));
+        rich = replace(&rich, "recipe_versions", recipes);
+        rich = replace(&rich, "profile_version", text("  9  "));
+        rich = replace(&rich, "adapter_id", text("  canon  "));
+        rich = replace(&rich, "adapter_version", text("  2  "));
+        rich = replace(&rich, "byte_counts", bytes);
+        rich = replace(&rich, "record_counts", records);
+        rich = replace(
+            &rich,
+            "revalidation",
+            replace_nested_fingerprint("  cd  "),
+        );
+        let parsed = parse_ok(&rich);
+        assert_eq!(parsed.input_fingerprint(), "in");
+        assert_eq!(parsed.output_fingerprint(), "out");
+        assert_eq!(parsed.policy(), "salvage");
+        assert_eq!(parsed.revalidate_report(), Some("C:/tmp/x"));
+        assert_eq!(parsed.plan_fingerprint(), Some("plan"));
+        assert_eq!(parsed.assurance(), Some("note"));
+        assert_eq!(parsed.profile_version(), Some("9"));
+        assert_eq!(parsed.adapter_id(), Some("canon"));
+        assert_eq!(parsed.adapter_version(), Some("2"));
+        assert_eq!(parsed.assurance_ceiling(), "A2");
+        assert_eq!(parsed.idempotency_key(), idem());
+        let kinds: Vec<(&str, Option<&str>, &str)> = parsed
+            .actions()
+            .iter()
+            .map(|action| (action.kind(), action.record_id(), action.detail()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ("alpha", None, ""),
+                ("alpha", Some("b"), "d"),
+                ("zeta", None, "later"),
+            ]
+        );
+        assert_eq!(
+            parsed.declared_loss(),
+            &["zeta".to_owned(), "alpha".to_owned()]
+        );
+        assert_eq!(
+            parsed.recipe_versions(),
+            &[
+                (InputKey::str_key("a"), text("9")),
+                (InputKey::str_key("b"), text("2")),
+            ]
+        );
+        assert_eq!(
+            parsed.byte_counts(),
+            &[
+                (InputKey::str_key("rows"), InputValue::int(2)),
+                (InputKey::str_key("kept"), InputValue::int(1)),
+            ]
+        );
+        assert_eq!(
+            parsed.record_counts(),
+            &[
+                (InputKey::str_key("kept"), InputValue::int(4)),
+                (InputKey::str_key("dropped"), InputValue::int(1)),
+            ]
+        );
+        assert_eq!(parsed.revalidation().report_fingerprint(), Some("cd"));
+        assert_eq!(parsed.revalidation().profile_id(), "neutral");
+
+        let tuple_actions = InputValue::tuple(vec![
+            action("  zeta  ", None, Some(" later ")),
+            action(" alpha ", Some(" b "), Some(" d ")),
+            action("alpha", None, None),
+        ]);
+        let from_tuple = parse_ok(&replace(&rich, "actions", tuple_actions));
+        assert_eq!(from_tuple.actions(), parsed.actions());
+        let tuple_loss = InputValue::tuple(vec![text("  zeta  "), text(" alpha ")]);
+        let from_loss = parse_ok(&replace(&rich, "declared_loss", tuple_loss));
+        assert_eq!(from_loss.declared_loss(), parsed.declared_loss());
+
+        let collapsed = dict(vec![
+            (InputKey::bool_value(true), text("first")),
+            (InputKey::int(1), text("second")),
+            entry("z", text("tail")),
+        ]);
+        let collapsed = parse_ok(&replace(&manifest(), "recipe_versions", collapsed));
+        assert_eq!(
+            collapsed.recipe_versions(),
+            &[
+                (InputKey::bool_value(true), text("second")),
+                (InputKey::str_key("z"), text("tail")),
+            ]
+        );
+    }
+
+    fn replace_nested_fingerprint(value: &str) -> InputValue {
+        replace_revalidation_value("report_fingerprint", text(value))
+    }
+
+    fn replace_revalidation_value(name: &str, next: InputValue) -> InputValue {
+        let InputValue::Dict(entries) = revalidation() else {
+            panic!("revalidation mapping");
+        };
+        let mut entries = entries.clone();
+        entries.push(entry(name, next));
+        dict(entries)
+    }
+
+    #[test]
+    fn action_constructor_error_is_propagated() {
+        let leaked = "keep\nnote";
+        let finding = match enforce_content_free_text(leaked, "RepairAction.detail") {
+            Ok(()) => panic!("expected content leak"),
+            Err(error) => error.to_string(),
+        };
+        let bad = replace(
+            &replace(
+                &manifest(),
+                "actions",
+                InputValue::list(vec![action("drop", None, Some("  keep\nnote  "))]),
+            ),
+            "declared_loss",
+            InputValue::int(1),
+        );
+        match parse_err(&bad) {
+            ParseManifestError::ContentLeak(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    format!("Intrinsic content leak in RepairAction.detail: {finding}")
+                );
+                assert!(!error.to_string().contains("declared_loss"));
+                assert!(!error.to_string().contains("SL302"));
+            }
+            other => panic!("constructor content leak, got {other:?}"),
         }
     }
 }
