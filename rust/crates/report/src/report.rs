@@ -14426,3 +14426,1303 @@ mod port_1924 {
         assert!(!root_first.contains("finding"));
     }
 }
+
+#[allow(
+    clippy::items_after_test_module,
+    reason = "RX-P2.5-report-report-10 appends after the existing tests"
+)]
+mod render_human_port {
+    use std::error::Error;
+    use std::fmt;
+
+    use model::codes::{Repairability, Severity, CODE_REGISTRY, SL001, SL009};
+    use model::finding::{Evidence, EvidenceLookup, Finding};
+
+    use super::{
+        finding_report_sort_key, get_finding_remediation, hint_path, human_bytes, minimize_path,
+        Counts, HomeDirectoryError, MinimizePathError, PathInput, RefusalRationaleUnavailable,
+        Report,
+    };
+
+    /// Python: module `__all__`, lines 2318–2370, source order.
+    pub const REPORT_MODULE_ALL: [&str; 51] = [
+        "ASSURANCE_DESCRIPTIONS",
+        "ASSURANCE_LIMITATIONS",
+        "KNOWN_MANIFEST_FIELDS",
+        "KNOWN_REPORT_FIELDS",
+        "MANIFEST_SCHEMA_VERSION",
+        "REPORT_DEFAULT_FINDING_KEYS",
+        "REPORT_FINDING_KEYS",
+        "REPORT_FORBIDDEN_FINDING_KEYS",
+        "REPORT_ROOT_KEYS",
+        "REPORT_SCHEMA_VERSION",
+        "REQUIRED_MANIFEST_FIELDS",
+        "REQUIRED_REPORT_FIELDS",
+        "REQUIRED_SEVERITIES",
+        "VALID_ASSURANCE_LEVELS",
+        "VALID_COVERAGE_SKIP_REASONS",
+        "VALID_POLICIES",
+        "Assurance",
+        "Counts",
+        "Coverage",
+        "CoverageSkip",
+        "Policy",
+        "RepairAction",
+        "RepairManifest",
+        "Report",
+        "ReproMetadata",
+        "RevalidationSummary",
+        "apply_plan_assurance",
+        "build_manifest",
+        "build_report",
+        "build_repro_metadata",
+        "cap_assurance",
+        "compute_assurance",
+        "compute_manifest_idempotency_key",
+        "dump_manifest",
+        "dump_report",
+        "enforce_content_free",
+        "finding_report_sort_key",
+        "format_finding_content_free",
+        "get_finding_remediation",
+        "hint_path",
+        "get_manifest_schema_path",
+        "get_report_schema_path",
+        "load_manifest_schema",
+        "load_report_schema",
+        "minimize_id",
+        "minimize_path",
+        "parse_manifest",
+        "parse_report",
+        "render_human",
+        "render_json",
+        "short_hash",
+    ];
+
+    const MANUAL_NEXT_ACTION: &str = "Manual inspection required; automated repair refused.";
+
+    /// Failure from [`render_human`].
+    ///
+    /// [`Self::Home`] is [`HomeDirectoryError`] from [`hint_path`].
+    /// [`Self::Minimize`] is [`MinimizePathError`]. [`Self::Refusal`] is the
+    /// missing `sesslint.repair.refusals.refusal_rationale_for` import.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RenderHumanError {
+        Home(HomeDirectoryError),
+        Minimize(MinimizePathError),
+        Refusal(RefusalRationaleUnavailable),
+    }
+
+    impl fmt::Display for RenderHumanError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Home(error) => write!(formatter, "{error}"),
+                Self::Minimize(error) => write!(formatter, "{error}"),
+                Self::Refusal(error) => write!(formatter, "{error}"),
+            }
+        }
+    }
+
+    impl Error for RenderHumanError {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            match self {
+                Self::Home(error) => Some(error),
+                Self::Minimize(error) => Some(error),
+                Self::Refusal(error) => Some(error),
+            }
+        }
+    }
+
+    impl From<HomeDirectoryError> for RenderHumanError {
+        fn from(value: HomeDirectoryError) -> Self {
+            Self::Home(value)
+        }
+    }
+
+    impl From<MinimizePathError> for RenderHumanError {
+        fn from(value: MinimizePathError) -> Self {
+            Self::Minimize(value)
+        }
+    }
+
+    impl From<RefusalRationaleUnavailable> for RenderHumanError {
+        fn from(value: RefusalRationaleUnavailable) -> Self {
+            Self::Refusal(value)
+        }
+    }
+
+    struct Ansi {
+        green: &'static str,
+        red: &'static str,
+        yellow: &'static str,
+        bold: &'static str,
+        reset: &'static str,
+    }
+
+    struct HumanFace {
+        verdict: &'static str,
+        colored: String,
+        files_summary: &'static str,
+        err_cnt: i64,
+        warn_cnt: i64,
+        has_error: bool,
+        has_warning: bool,
+    }
+
+    fn ansi(color: bool) -> Ansi {
+        if color {
+            Ansi {
+                green: "\x1b[32m",
+                red: "\x1b[31m",
+                yellow: "\x1b[33m",
+                bold: "\x1b[1m",
+                reset: "\x1b[0m",
+            }
+        } else {
+            Ansi {
+                green: "",
+                red: "",
+                yellow: "",
+                bold: "",
+                reset: "",
+            }
+        }
+    }
+
+    fn count_of(counts: &Counts, name: &str) -> i64 {
+        counts.severity_count(name).unwrap_or_default()
+    }
+
+    fn human_verdict(report: &Report, colors: &Ansi) -> HumanFace {
+        let error_count = count_of(report.counts(), Severity::Error.as_str());
+        let fatal_count = count_of(report.counts(), Severity::Fatal.as_str());
+        let warn_cnt = count_of(report.counts(), Severity::Warning.as_str());
+        let has_error = error_count > 0 || fatal_count > 0;
+        let has_warning = warn_cnt > 0;
+        let err_cnt = error_count + fatal_count;
+        let (verdict, label, files_summary) = if report.limitation().starts_with("Unsupported:") {
+            (
+                "unsupported",
+                "Unsupported input (format-undetected)",
+                "H=0 I=0 U=1 R=0 S=0",
+            )
+        } else if report.limitation().starts_with("Skipped:") {
+            (
+                "skipped",
+                "Skipped input (file-too-large)",
+                "H=0 I=0 U=0 R=0 S=1",
+            )
+        } else if has_error {
+            ("invalid", "Integrity check failed", "H=0 I=1 U=0 R=0 S=0")
+        } else if has_warning {
+            (
+                "healthy with warnings",
+                "Session is healthy with warnings",
+                "H=1 I=0 U=0 R=0 S=0",
+            )
+        } else {
+            ("healthy", "Session is healthy", "H=1 I=0 U=0 R=0 S=0")
+        };
+        let colored = if verdict == "invalid" {
+            format!(
+                "{bold}{red}{label}{reset}",
+                bold = colors.bold,
+                red = colors.red,
+                reset = colors.reset
+            )
+        } else if verdict == "healthy with warnings" {
+            format!(
+                "{bold}{yellow}{label}{reset}",
+                bold = colors.bold,
+                yellow = colors.yellow,
+                reset = colors.reset
+            )
+        } else if verdict == "healthy" {
+            format!(
+                "{bold}{green}{label}{reset}",
+                bold = colors.bold,
+                green = colors.green,
+                reset = colors.reset
+            )
+        } else {
+            format!(
+                "{bold}{label}{reset}",
+                bold = colors.bold,
+                reset = colors.reset
+            )
+        };
+        HumanFace {
+            verdict,
+            colored,
+            files_summary,
+            err_cnt,
+            warn_cnt,
+            has_error,
+            has_warning,
+        }
+    }
+
+    fn registry_name(code: &str) -> &'static str {
+        for info in CODE_REGISTRY {
+            if info.code == code {
+                return info.name;
+            }
+        }
+        "Integrity finding"
+    }
+
+    fn mapped_int(evidence: &Evidence, key: &str) -> Option<i64> {
+        let value = match evidence.map_string(key) {
+            EvidenceLookup::Present(value) => value,
+            EvidenceLookup::NotAMap | EvidenceLookup::Borrowed | EvidenceLookup::Absent => {
+                return None;
+            }
+        };
+        if value.as_bool().is_some() {
+            return None;
+        }
+        value.as_int()
+    }
+
+    fn byte_span(finding: &Finding, min_path: &str) -> String {
+        let mut loc = match finding.source().line() {
+            Some(line) => format!("{min_path}:{line}"),
+            None => min_path.to_owned(),
+        };
+        let Some(evidence) = finding.evidence() else {
+            return loc;
+        };
+        if !evidence.is_map() {
+            return loc;
+        }
+        let Some(start) = mapped_int(evidence, "byte_offset") else {
+            return loc;
+        };
+        let Some(end) = mapped_int(evidence, "byte_end") else {
+            return loc;
+        };
+        if start >= 0 && end >= start {
+            loc = format!("{loc} (bytes {start}-{end})");
+        }
+        loc
+    }
+
+    fn why_with_sl001_tail(finding: &Finding) -> String {
+        let mut why = finding.message().to_owned();
+        let template = finding.message_template().unwrap_or("");
+        let surrogate = template.contains("lone surrogate, e.g.");
+        if finding.code() != SL001 || surrogate {
+            return why;
+        }
+        let Some(evidence) = finding.evidence() else {
+            return why;
+        };
+        if !evidence.is_map() {
+            return why;
+        }
+        let Some(records) = mapped_int(evidence, "following_complete_records") else {
+            return why;
+        };
+        let Some(bytes) = mapped_int(evidence, "following_bytes") else {
+            return why;
+        };
+        why.push_str(&format!(
+            " ({records} further record(s) / {} may be invisible to vendor loaders)",
+            human_bytes(bytes)
+        ));
+        why
+    }
+
+    fn severity_color<'a>(severity: Severity, red: &'a str, yellow: &'a str) -> &'a str {
+        if matches!(severity, Severity::Error | Severity::Fatal) {
+            red
+        } else {
+            yellow
+        }
+    }
+
+    fn repair_command(
+        report: &Report,
+        home: Option<&str>,
+        salvage: bool,
+    ) -> Result<String, RenderHumanError> {
+        let Some(finding) = report.findings().first() else {
+            return refusal_stop(MANUAL_NEXT_ACTION);
+        };
+        let path = hint_path(PathInput::Text(finding.source().path()), home)?;
+        if salvage {
+            Ok(format!(
+                "Run 'sesslint repair {path} --output <out> --policy salvage'"
+            ))
+        } else {
+            Ok(format!("Run 'sesslint repair {path} --output <out>'"))
+        }
+    }
+
+    fn refusal_stop(next_action: &str) -> Result<String, RenderHumanError> {
+        let _ = next_action;
+        Err(RenderHumanError::Refusal(RefusalRationaleUnavailable))
+    }
+
+    fn choose_next_action(
+        report: &Report,
+        face: &HumanFace,
+        home: Option<&str>,
+    ) -> Result<String, RenderHumanError> {
+        if face.verdict == "unsupported" {
+            return Ok(
+                "Choose a supported session format; no integrity conclusion is available."
+                    .to_owned(),
+            );
+        }
+        if face.verdict == "skipped" {
+            return Ok(
+                "Raise --max-file-bytes to inspect this file within your memory budget.".to_owned(),
+            );
+        }
+        if face.has_error {
+            let deterministic = report
+                .findings()
+                .iter()
+                .any(|finding| finding.repairability() == Repairability::Deterministic);
+            if deterministic {
+                return repair_command(report, home, false);
+            }
+            let lossy = report
+                .findings()
+                .iter()
+                .any(|finding| finding.repairability() == Repairability::LossyExplicit);
+            if lossy {
+                return repair_command(report, home, true);
+            }
+            return refusal_stop(MANUAL_NEXT_ACTION);
+        }
+        if report
+            .findings()
+            .iter()
+            .any(|finding| finding.code() == SL009)
+        {
+            return Ok("Review secret warning; rotate or revoke exposed credentials.".to_owned());
+        }
+        if face.has_warning {
+            return Ok(
+                "Review warnings and the reported assurance limits before resuming.".to_owned(),
+            );
+        }
+        Ok("No repair needed.".to_owned())
+    }
+
+    fn human_header(
+        report: &Report,
+        face: &HumanFace,
+        next_action: &str,
+        profile: &str,
+        adapter: &str,
+    ) -> String {
+        let summary = format!(
+            "verdict: {} / errors: {} / warnings: {} / files: {} / profile: {profile} / adapter: {adapter}",
+            face.verdict, face.err_cnt, face.warn_cnt, face.files_summary
+        );
+        let mut lines = vec![
+            format!("[read-only] {} ({summary})", face.colored),
+            format!("Next Action: {next_action}"),
+            format!(
+                "Assurance: {} - {}",
+                report.assurance(),
+                report.limitation()
+            ),
+            format!("Limitation: {}", report.limitation()),
+            format!("Source fingerprint: {}", report.source_fingerprint()),
+        ];
+        let performed = report.coverage().performed();
+        let perf_str = if performed.is_empty() {
+            "none".to_owned()
+        } else {
+            performed.join(", ")
+        };
+        lines.push(format!(
+            "Coverage: {} checks performed ({perf_str})",
+            performed.len()
+        ));
+        let skipped = report.coverage().skipped();
+        if !skipped.is_empty() {
+            let items = skipped
+                .iter()
+                .map(|skip| format!("{} ({})", skip.check(), skip.reason()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("  Skipped ({}): {items}", skipped.len()));
+        }
+        lines.join("\n")
+    }
+
+    /// Python: `render_human`.
+    ///
+    /// Port of `src/sesslint/report.py` lines 2137-2315
+    /// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+    ///
+    /// Color escapes are empty when `color` is false. The verdict checks the
+    /// limitation prefixes `Unsupported:` and `Skipped:`, then error or fatal
+    /// counts, then warning counts, then healthy. Those counts are the report
+    /// counts, not a recount of findings. A provided `home` is passed through
+    /// to [`hint_path`] and [`minimize_path`].
+    ///
+    /// When `next_action` is `None` and the verdict has errors, a deterministic
+    /// finding uses the repair command and a lossy-explicit finding uses the
+    /// salvage command. Any other repairability sets the manual sentence and
+    /// stops at `sesslint.repair.refusals.refusal_rationale_for` before the
+    /// salvage loop and before the summary.
+    ///
+    /// A report with no findings returns the header joined by `\n`. A report
+    /// with findings is sorted with [`finding_report_sort_key`]. [`minimize_path`]
+    /// runs before [`get_finding_remediation`]. A bool is not an int. The
+    /// remediation error propagates. The Fix line, the fingerprint line, and
+    /// the SL009 rollup are not emitted.
+    ///
+    /// Python defaults, which Rust does not infer: `color` is false, `adapter`
+    /// is `canonical`, `profile` is `neutral`, and `next_action` and `home`
+    /// are `None`.
+    pub fn render_human(
+        report: &Report,
+        color: bool,
+        adapter: &str,
+        profile: &str,
+        next_action: Option<&str>,
+        home: Option<&str>,
+    ) -> Result<String, RenderHumanError> {
+        let colors = ansi(color);
+        let face = human_verdict(report, &colors);
+        let action = match next_action {
+            Some(text) => text.to_owned(),
+            None => choose_next_action(report, &face, home)?,
+        };
+        let header = human_header(report, &face, &action, profile, adapter);
+        if report.findings().is_empty() {
+            return Ok(header);
+        }
+        let _ = header.len();
+        let mut sorted = report.findings().to_vec();
+        sorted.sort_by_key(finding_report_sort_key);
+        let mut prefixes = Vec::new();
+        for finding in &sorted {
+            let title = registry_name(finding.code());
+            let min_path = minimize_path(PathInput::Text(finding.source().path()), home)?;
+            let loc_str = byte_span(finding, &min_path);
+            let sev_color = severity_color(finding.severity(), colors.red, colors.yellow);
+            let why_str = why_with_sl001_tail(finding);
+            prefixes.push((title.to_owned(), loc_str, sev_color.to_owned(), why_str));
+            get_finding_remediation(finding, home, true)?;
+        }
+        let _ = prefixes.len();
+        Err(RenderHumanError::Refusal(RefusalRationaleUnavailable))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::super::{
+            CountKey, CountValue, Counts, CountsInput, Coverage, CoverageInput, CoverageSkip,
+            FindingElem, FindingsInput, HomeDirectoryError, InputKey, InputValue,
+            MinimizePathError, RefusalRationaleUnavailable, Report, ReportParts, SkipElem, SkipSeq,
+            REPORT_SCHEMA_VERSION,
+        };
+        use super::{
+            byte_span, choose_next_action, human_verdict, registry_name, render_human,
+            why_with_sl001_tail, Ansi, RenderHumanError, REPORT_MODULE_ALL,
+        };
+        use model::codes::{Repairability, Severity, SL001, SL002, SL005, SL008, SL009, SL011};
+        use model::finding::{
+            Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION,
+        };
+
+        const HOME: &str = "C:/SyntheticHome";
+        const REFUSAL: &str = "sesslint.repair.refusals.refusal_rationale_for is not available";
+        const SHA1: &str = "hashlib.sha1 is not available";
+        const HEALTHY: &str = "\
+[read-only] Session is healthy (verdict: healthy / errors: 0 / warnings: 0 / files: H=1 I=0 U=0 R=0 S=0 / profile: neutral / adapter: canonical)\n\
+Next Action: No repair needed.\n\
+Assurance: A1 - lim-marker\n\
+Limitation: lim-marker\n\
+Source fingerprint: fp-marker\n\
+Coverage: 0 checks performed (none)";
+
+        fn counts_for(findings: &[Finding]) -> Counts {
+            let mut severity = [0_i64; 4];
+            let mut code_pairs: Vec<(String, i64)> = Vec::new();
+            for finding in findings {
+                let slot = match finding.severity() {
+                    Severity::Fatal => 0,
+                    Severity::Error => 1,
+                    Severity::Warning => 2,
+                    Severity::Info => 3,
+                };
+                severity[slot] += 1;
+                let mut found = false;
+                for pair in &mut code_pairs {
+                    if pair.0 == finding.code() {
+                        pair.1 += 1;
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    code_pairs.push((finding.code().to_owned(), 1));
+                }
+            }
+            let by_severity = CountValue::dict(
+                ["fatal", "error", "warning", "info"]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, name)| {
+                        (CountKey::str_key(name), CountValue::int(severity[index]))
+                    })
+                    .collect(),
+            );
+            let by_code = CountValue::dict(
+                code_pairs
+                    .iter()
+                    .map(|(code, count)| {
+                        (CountKey::str_key(code.as_str()), CountValue::int(*count))
+                    })
+                    .collect(),
+            );
+            let total = match i64::try_from(findings.len()) {
+                Ok(total) => total,
+                Err(_) => panic!("synthetic finding list does not fit i64"),
+            };
+            match Counts::try_new(&by_severity, &by_code, &CountValue::int(total)) {
+                Ok(counts) => counts,
+                Err(error) => panic!("counts rejected: {error}"),
+            }
+        }
+
+        fn make_coverage(performed: &[&str], skipped: &[CoverageSkip]) -> Coverage {
+            let performed_value = InputValue::tuple(
+                performed
+                    .iter()
+                    .copied()
+                    .map(InputValue::str_value)
+                    .collect(),
+            );
+            let skipped_seq = SkipSeq::Tuple(skipped.iter().cloned().map(SkipElem::Skip).collect());
+            let adapter = InputValue::dict(vec![
+                (InputKey::str_key("id"), InputValue::str_value("canonical")),
+                (InputKey::str_key("version"), InputValue::str_value("1")),
+            ]);
+            let profile = InputValue::dict(vec![
+                (InputKey::str_key("id"), InputValue::str_value("neutral")),
+                (InputKey::str_key("version"), InputValue::str_value("1")),
+            ]);
+            match Coverage::try_new(&performed_value, &skipped_seq, &adapter, &profile) {
+                Ok(coverage) => coverage,
+                Err(error) => panic!("coverage rejected: {error}"),
+            }
+        }
+
+        fn make_report(findings: &[Finding], limitation: &str, coverage: &Coverage) -> Report {
+            let schema = InputValue::str_value(REPORT_SCHEMA_VERSION);
+            let session = InputValue::str_value("sess-marker");
+            let fingerprint = InputValue::str_value("fp-marker");
+            let tool = InputValue::str_value("tool-marker");
+            let assurance = InputValue::str_value("A1");
+            let limitation_value = InputValue::str_value(limitation);
+            let findings_input =
+                FindingsInput::Tuple(findings.iter().cloned().map(FindingElem::Finding).collect());
+            let counts_input = CountsInput::Value(counts_for(findings));
+            match Report::try_new(ReportParts {
+                schema_version: &schema,
+                session_id: &session,
+                source_fingerprint: &fingerprint,
+                tool_version: &tool,
+                findings: &findings_input,
+                counts: &counts_input,
+                assurance: &assurance,
+                limitation: &limitation_value,
+                coverage: CoverageInput::Value(coverage),
+            }) {
+                Ok(report) => report,
+                Err(error) => panic!("report rejected: {error}"),
+            }
+        }
+
+        fn finding_at(
+            path: &str,
+            code: &str,
+            severity: Severity,
+            repairability: Repairability,
+            evidence: PyValue,
+            template: PyValue,
+            line: Option<i64>,
+        ) -> Finding {
+            let source_line = line.map(SourceLine::Int);
+            let source = match SourceRef::try_new(path, source_line, None) {
+                Ok(source) => source,
+                Err(error) => panic!("source rejected: {error}"),
+            };
+            match Finding::try_new(FindingInput {
+                code: PyValue::string(code),
+                severity: PyValue::severity(severity),
+                repairability: PyValue::repairability(repairability),
+                message: PyValue::string("synthetic marker"),
+                source: PyValue::source(source),
+                related_ids: PyValue::tuple(Vec::new()),
+                fingerprint: PyValue::string("0123456789abcdef"),
+                schema_version: PyValue::string(SCHEMA_VERSION),
+                message_template: template,
+                evidence,
+            }) {
+                Ok(finding) => finding,
+                Err(error) => panic!("finding rejected: {error}"),
+            }
+        }
+
+        fn plain(
+            path: &str,
+            code: &str,
+            severity: Severity,
+            repairability: Repairability,
+        ) -> Finding {
+            finding_at(
+                path,
+                code,
+                severity,
+                repairability,
+                PyValue::None,
+                PyValue::None,
+                Some(1),
+            )
+        }
+
+        fn ev(entries: Vec<(&str, PyValue)>) -> PyValue {
+            PyValue::map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (PyValue::string(key), value))
+                    .collect(),
+            )
+        }
+
+        fn render(
+            report: &Report,
+            color: bool,
+            next_action: Option<&str>,
+            home: Option<&str>,
+        ) -> Result<String, RenderHumanError> {
+            render_human(report, color, "canonical", "neutral", next_action, home)
+        }
+
+        fn refusal_text(result: Result<String, RenderHumanError>) -> String {
+            match result {
+                Ok(text) => panic!("returned a header: {text}"),
+                Err(RenderHumanError::Refusal(error)) => {
+                    assert_eq!(error.to_string(), REFUSAL);
+                    assert!(!error.to_string().contains("Fix:"));
+                    assert!(!error.to_string().contains("Fingerprint:"));
+                    assert!(!error.to_string().contains("Possible path"));
+                    assert!(!error.to_string().contains("0123456789abcdef"));
+                    error.to_string()
+                }
+                Err(error) => panic!("expected refusal, got {error}"),
+            }
+        }
+
+        #[test]
+        fn healthy_success_path() {
+            let coverage = make_coverage(&[], &[]);
+            let report = make_report(&[], "lim-marker", &coverage);
+            let text = match render(&report, false, None, Some(HOME)) {
+                Ok(text) => text,
+                Err(error) => panic!("healthy report rejected: {error}"),
+            };
+            assert_eq!(text, HEALTHY);
+            assert!(!text.ends_with('\n'));
+            assert!(!text.contains('\r'));
+            assert!(!text.contains('\u{1b}'));
+            let omitted = match render(&report, false, None, None) {
+                Ok(text) => text,
+                Err(error) => panic!("omitted home rejected: {error}"),
+            };
+            assert_eq!(omitted, text);
+            let colored = match render(&report, true, None, Some(HOME)) {
+                Ok(text) => text,
+                Err(error) => panic!("color rejected: {error}"),
+            };
+            let expected_color = HEALTHY.replacen(
+                "Session is healthy",
+                "\x1b[1m\x1b[32mSession is healthy\x1b[0m",
+                1,
+            );
+            assert_eq!(colored, expected_color);
+            assert!(!colored.contains("\x1b[31m"));
+            assert!(!colored.contains("\x1b[33m"));
+            let supplied = match render(&report, false, Some("Operator supplied."), Some(HOME)) {
+                Ok(text) => text,
+                Err(error) => panic!("supplied action rejected: {error}"),
+            };
+            assert_eq!(
+                supplied,
+                HEALTHY.replacen("No repair needed.", "Operator supplied.", 1)
+            );
+            let custom = match render_human(
+                &report,
+                false,
+                "custom-adapter",
+                "custom-profile",
+                None,
+                Some(HOME),
+            ) {
+                Ok(text) => text,
+                Err(error) => panic!("custom names rejected: {error}"),
+            };
+            assert!(custom.contains("profile: custom-profile / adapter: custom-adapter"));
+            assert!(!custom.contains("profile: neutral"));
+            let rich = make_coverage(&["zeta", "alpha"], &[skip("alpha-check")]);
+            let rich_report = make_report(&[], "lim-marker", &rich);
+            let rich_text = match render(&rich_report, false, None, Some(HOME)) {
+                Ok(text) => text,
+                Err(error) => panic!("coverage rejected: {error}"),
+            };
+            assert_eq!(
+                rich_text,
+                "\
+[read-only] Session is healthy (verdict: healthy / errors: 0 / warnings: 0 / files: H=1 I=0 U=0 R=0 S=0 / profile: neutral / adapter: canonical)\n\
+Next Action: No repair needed.\n\
+Assurance: A1 - lim-marker\n\
+Limitation: lim-marker\n\
+Source fingerprint: fp-marker\n\
+Coverage: 2 checks performed (alpha, zeta)\n  Skipped (1): alpha-check (profile-gated)"
+            );
+            let unsupported = make_report(&[], "Unsupported: format-undetected", &coverage);
+            let unsupported_text = match render(&unsupported, false, None, Some(HOME)) {
+                Ok(text) => text,
+                Err(error) => panic!("unsupported rejected: {error}"),
+            };
+            assert_eq!(
+                unsupported_text,
+                "\
+[read-only] Unsupported input (format-undetected) (verdict: unsupported / errors: 0 / warnings: 0 / files: H=0 I=0 U=1 R=0 S=0 / profile: neutral / adapter: canonical)\n\
+Next Action: Choose a supported session format; no integrity conclusion is available.\n\
+Assurance: A1 - Unsupported: format-undetected\n\
+Limitation: Unsupported: format-undetected\n\
+Source fingerprint: fp-marker\n\
+Coverage: 0 checks performed (none)"
+            );
+            let skipped = make_report(&[], "Skipped: file-too-large", &coverage);
+            let skipped_text = match render(&skipped, false, None, Some(HOME)) {
+                Ok(text) => text,
+                Err(error) => panic!("skipped rejected: {error}"),
+            };
+            assert_eq!(
+                skipped_text,
+                "\
+[read-only] Skipped input (file-too-large) (verdict: skipped / errors: 0 / warnings: 0 / files: H=0 I=0 U=0 R=0 S=1 / profile: neutral / adapter: canonical)\n\
+Next Action: Raise --max-file-bytes to inspect this file within your memory budget.\n\
+Assurance: A1 - Skipped: file-too-large\n\
+Limitation: Skipped: file-too-large\n\
+Source fingerprint: fp-marker\n\
+Coverage: 0 checks performed (none)"
+            );
+            let face = human_verdict(&report, &plain_ansi());
+            let action = match choose_next_action(&report, &face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("healthy action rejected: {error}"),
+            };
+            assert_eq!(action, "No repair needed.");
+            assert_eq!(face.err_cnt, 0);
+            assert_eq!(face.warn_cnt, 0);
+            assert!(!face.has_error);
+        }
+
+        fn skip(check: &str) -> CoverageSkip {
+            match CoverageSkip::try_new(
+                &InputValue::str_value(check),
+                &InputValue::str_value("profile-gated"),
+                &InputValue::str_value(""),
+            ) {
+                Ok(skip) => skip,
+                Err(error) => panic!("skip rejected: {error}"),
+            }
+        }
+
+        fn plain_ansi() -> Ansi {
+            Ansi {
+                green: "",
+                red: "",
+                yellow: "",
+                bold: "",
+                reset: "",
+            }
+        }
+
+        #[test]
+        fn refusal_stops_before_salvage() {
+            let coverage = make_coverage(&[], &[]);
+            for (code, severity, repairability) in [
+                (SL001, Severity::Error, Repairability::Manual),
+                (SL005, Severity::Fatal, Repairability::Unsupported),
+                (SL001, Severity::Error, Repairability::Unsupported),
+            ] {
+                let report = make_report(
+                    &[plain("dir/manual.jsonl", code, severity, repairability)],
+                    "lim-marker",
+                    &coverage,
+                );
+                let text = refusal_text(render(&report, false, None, Some(HOME)));
+                assert_eq!(text, REFUSAL);
+                assert_ne!(text, SHA1);
+                assert!(!text.contains("Manual inspection"));
+                assert!(!text.contains("salvage"));
+                assert!(!text.contains("sesslint repair"));
+                assert!(!text.contains("Source fingerprint"));
+            }
+            let manual: RenderHumanError = RefusalRationaleUnavailable.into();
+            assert!(matches!(manual, RenderHumanError::Refusal(_)));
+            assert_eq!(manual.to_string(), REFUSAL);
+            let home: RenderHumanError = HomeDirectoryError.into();
+            assert!(matches!(home, RenderHumanError::Home(_)));
+            assert_eq!(home.to_string(), "Could not determine home directory.");
+            assert!(std::error::Error::source(&home).is_some());
+        }
+
+        #[test]
+        fn bool_byte_offset_is_not_an_int() {
+            assert_eq!(registry_name(SL001), "Malformed record");
+            assert_eq!(registry_name(SL009), "Persisted secret material");
+            assert_eq!(registry_name("absent"), "Integrity finding");
+            let at = |evidence: PyValue, line: Option<i64>| {
+                let finding = finding_at(
+                    "file.jsonl",
+                    SL001,
+                    Severity::Error,
+                    Repairability::Manual,
+                    evidence,
+                    PyValue::None,
+                    line,
+                );
+                byte_span(&finding, "file.jsonl")
+            };
+            let flags = ev(vec![
+                ("byte_offset", PyValue::bool_value(true)),
+                ("byte_end", PyValue::bool_value(true)),
+            ]);
+            let ones = ev(vec![
+                ("byte_offset", PyValue::int(1)),
+                ("byte_end", PyValue::int(1)),
+            ]);
+            assert_eq!(at(flags, Some(1)), "file.jsonl:1");
+            assert_eq!(at(ones, Some(1)), "file.jsonl:1 (bytes 1-1)");
+            assert_ne!(
+                at(
+                    ev(vec![
+                        ("byte_offset", PyValue::bool_value(true)),
+                        ("byte_end", PyValue::bool_value(true)),
+                    ]),
+                    Some(1)
+                ),
+                "file.jsonl:1 (bytes 1-1)"
+            );
+            assert_eq!(
+                at(
+                    ev(vec![
+                        ("byte_offset", PyValue::bool_value(false)),
+                        ("byte_end", PyValue::int(0)),
+                    ]),
+                    Some(1)
+                ),
+                "file.jsonl:1"
+            );
+            assert_eq!(
+                at(
+                    ev(vec![
+                        ("byte_offset", PyValue::int(0)),
+                        ("byte_end", PyValue::int(0)),
+                    ]),
+                    Some(1)
+                ),
+                "file.jsonl:1 (bytes 0-0)"
+            );
+            assert_eq!(
+                at(
+                    ev(vec![
+                        ("byte_offset", PyValue::int(8)),
+                        ("byte_end", PyValue::int(3)),
+                    ]),
+                    Some(1)
+                ),
+                "file.jsonl:1"
+            );
+            assert_eq!(
+                at(
+                    ev(vec![
+                        ("byte_offset", PyValue::int(-1)),
+                        ("byte_end", PyValue::int(4)),
+                    ]),
+                    Some(1)
+                ),
+                "file.jsonl:1"
+            );
+            assert_eq!(
+                at(ev(vec![("byte_offset", PyValue::int(4))]), Some(1)),
+                "file.jsonl:1"
+            );
+            assert_eq!(
+                at(
+                    ev(vec![
+                        ("byte_offset", PyValue::int(4)),
+                        ("byte_end", PyValue::int(9)),
+                    ]),
+                    None
+                ),
+                "file.jsonl (bytes 4-9)"
+            );
+            let tail = ev(vec![
+                ("following_complete_records", PyValue::int(3)),
+                ("following_bytes", PyValue::int(1024)),
+            ]);
+            let sl001 = finding_at(
+                "file.jsonl",
+                SL001,
+                Severity::Error,
+                Repairability::Manual,
+                tail,
+                PyValue::None,
+                Some(1),
+            );
+            assert_eq!(
+                why_with_sl001_tail(&sl001),
+                "synthetic marker (3 further record(s) / 1.0 KiB may be invisible to vendor loaders)"
+            );
+            let flagged = finding_at(
+                "file.jsonl",
+                SL001,
+                Severity::Error,
+                Repairability::Manual,
+                ev(vec![
+                    ("following_complete_records", PyValue::bool_value(true)),
+                    ("following_bytes", PyValue::bool_value(true)),
+                    ("byte_offset", PyValue::bool_value(true)),
+                    ("byte_end", PyValue::bool_value(true)),
+                ]),
+                PyValue::None,
+                Some(1),
+            );
+            assert_eq!(why_with_sl001_tail(&flagged), "synthetic marker");
+            assert_eq!(byte_span(&flagged, "file.jsonl"), "file.jsonl:1");
+            let mixed = finding_at(
+                "file.jsonl",
+                SL001,
+                Severity::Error,
+                Repairability::Manual,
+                ev(vec![
+                    ("following_complete_records", PyValue::int(3)),
+                    ("following_bytes", PyValue::bool_value(true)),
+                ]),
+                PyValue::None,
+                Some(1),
+            );
+            assert_eq!(why_with_sl001_tail(&mixed), "synthetic marker");
+            let surrogate = finding_at(
+                "file.jsonl",
+                SL001,
+                Severity::Error,
+                Repairability::Manual,
+                ev(vec![
+                    ("following_complete_records", PyValue::int(3)),
+                    ("following_bytes", PyValue::int(1024)),
+                ]),
+                PyValue::string("lone surrogate, e.g. marker"),
+                Some(1),
+            );
+            assert_eq!(why_with_sl001_tail(&surrogate), "synthetic marker");
+            let other = finding_at(
+                "file.jsonl",
+                SL002,
+                Severity::Error,
+                Repairability::Deterministic,
+                ev(vec![
+                    ("following_complete_records", PyValue::int(3)),
+                    ("following_bytes", PyValue::int(1024)),
+                ]),
+                PyValue::None,
+                Some(1),
+            );
+            assert_eq!(why_with_sl001_tail(&other), "synthetic marker");
+            let report = make_report(&[flagged], "lim-marker", &make_coverage(&[], &[]));
+            let stopped = refusal_text(render(&report, false, Some("kept"), Some(HOME)));
+            assert!(!stopped.contains("(bytes"));
+            assert!(!stopped.contains("KiB"));
+            assert!(!stopped.contains("further record"));
+        }
+
+        #[test]
+        fn minimize_error_propagates_before_remediation() {
+            let coverage = make_coverage(&[], &[]);
+            let only = make_report(
+                &[plain(
+                    "dir/only.jsonl",
+                    SL001,
+                    Severity::Error,
+                    Repairability::Manual,
+                )],
+                "lim-marker",
+                &coverage,
+            );
+            match render(&only, false, Some("kept"), Some(HOME)) {
+                Err(RenderHumanError::Minimize(error)) => {
+                    assert_eq!(error.to_string(), SHA1);
+                    assert!(matches!(error, MinimizePathError::Sha1));
+                    assert!(!error.to_string().contains("dir/only.jsonl"));
+                    assert!(!error.to_string().contains("Fix:"));
+                }
+                other => panic!("expected sha1, got {other:?}"),
+            }
+            let nested = plain("dir/z.jsonl", SL001, Severity::Error, Repairability::Manual);
+            let plain_file = plain("a.jsonl", SL001, Severity::Error, Repairability::Manual);
+            let mut sorted = [nested.clone(), plain_file.clone()];
+            sorted.sort_by_key(super::super::finding_report_sort_key);
+            assert_eq!(sorted[0].source().path(), "a.jsonl");
+            let ordered = make_report(&[nested, plain_file], "lim-marker", &coverage);
+            let stopped = refusal_text(render(&ordered, false, Some("kept"), Some(HOME)));
+            assert_ne!(stopped, SHA1);
+            let deterministic = make_report(
+                &[plain(
+                    "dir/det.jsonl",
+                    SL002,
+                    Severity::Error,
+                    Repairability::Deterministic,
+                )],
+                "lim-marker",
+                &coverage,
+            );
+            let face = human_verdict(&deterministic, &plain_ansi());
+            assert_eq!(face.verdict, "invalid");
+            assert_eq!(face.err_cnt, 1);
+            assert_eq!(face.files_summary, "H=0 I=1 U=0 R=0 S=0");
+            let action = match choose_next_action(&deterministic, &face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("deterministic action rejected: {error}"),
+            };
+            assert_eq!(action, "Run 'sesslint repair dir/det.jsonl --output <out>'");
+            match render(&deterministic, false, None, Some(HOME)) {
+                Err(RenderHumanError::Minimize(error)) => assert_eq!(error.to_string(), SHA1),
+                other => panic!("expected sha1 after hint, got {other:?}"),
+            }
+            let warning = make_report(
+                &[plain(
+                    "dir/warn.jsonl",
+                    SL008,
+                    Severity::Warning,
+                    Repairability::Manual,
+                )],
+                "lim-marker",
+                &coverage,
+            );
+            let warning_face = human_verdict(&warning, &plain_ansi());
+            assert_eq!(warning_face.verdict, "healthy with warnings");
+            assert_eq!(warning_face.warn_cnt, 1);
+            assert!(!warning_face.has_error);
+            let warning_action = match choose_next_action(&warning, &warning_face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("warning action rejected: {error}"),
+            };
+            assert_eq!(
+                warning_action,
+                "Review warnings and the reported assurance limits before resuming."
+            );
+            match render(&warning, false, None, Some(HOME)) {
+                Err(RenderHumanError::Minimize(error)) => assert_eq!(error.to_string(), SHA1),
+                other => panic!("expected sha1 for warning, got {other:?}"),
+            }
+            let secret = make_report(
+                &[plain(
+                    "dir/secret.jsonl",
+                    SL009,
+                    Severity::Warning,
+                    Repairability::Manual,
+                )],
+                "lim-marker",
+                &coverage,
+            );
+            let secret_face = human_verdict(&secret, &plain_ansi());
+            let secret_action = match choose_next_action(&secret, &secret_face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("sl009 action rejected: {error}"),
+            };
+            assert_eq!(
+                secret_action,
+                "Review secret warning; rotate or revoke exposed credentials."
+            );
+            match render(&secret, false, None, Some(HOME)) {
+                Err(RenderHumanError::Minimize(error)) => assert_eq!(error.to_string(), SHA1),
+                other => panic!("expected sha1 for sl009, got {other:?}"),
+            }
+            let info = make_report(
+                &[plain(
+                    "note.jsonl",
+                    SL011,
+                    Severity::Info,
+                    Repairability::Manual,
+                )],
+                "lim-marker",
+                &coverage,
+            );
+            let info_face = human_verdict(&info, &plain_ansi());
+            assert_eq!(info_face.verdict, "healthy");
+            assert_eq!(info_face.err_cnt, 0);
+            assert_eq!(info_face.warn_cnt, 0);
+            let info_action = match choose_next_action(&info, &info_face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("info action rejected: {error}"),
+            };
+            assert_eq!(info_action, "No repair needed.");
+            refusal_text(render(&info, false, None, Some(HOME)));
+            for limitation in ["Unsupported: format-undetected", "Skipped: file-too-large"] {
+                let prefixed = make_report(
+                    &[plain(
+                        "dir/bad.jsonl",
+                        SL001,
+                        Severity::Error,
+                        Repairability::Manual,
+                    )],
+                    limitation,
+                    &coverage,
+                );
+                let prefixed_face = human_verdict(&prefixed, &plain_ansi());
+                assert_eq!(prefixed_face.err_cnt, 1);
+                assert_ne!(prefixed_face.verdict, "invalid");
+                let prefixed_action =
+                    match choose_next_action(&prefixed, &prefixed_face, Some(HOME)) {
+                        Ok(action) => action,
+                        Err(error) => panic!("prefix action rejected: {error}"),
+                    };
+                assert!(!prefixed_action.contains("Manual inspection"));
+                match render(&prefixed, false, None, Some(HOME)) {
+                    Err(RenderHumanError::Minimize(error)) => assert_eq!(error.to_string(), SHA1),
+                    other => panic!("expected sha1 for {limitation}, got {other:?}"),
+                }
+            }
+            let lossy = plain(
+                "C:/SyntheticHome/loss.jsonl",
+                SL001,
+                Severity::Error,
+                Repairability::LossyExplicit,
+            );
+            let later = plain(
+                "C:/SyntheticHome/det.jsonl",
+                SL002,
+                Severity::Error,
+                Repairability::Deterministic,
+            );
+            let mixed = make_report(&[lossy, later], "lim-marker", &coverage);
+            let mixed_face = human_verdict(&mixed, &plain_ansi());
+            assert_eq!(mixed_face.err_cnt, 2);
+            let mixed_action = match choose_next_action(&mixed, &mixed_face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("mixed action rejected: {error}"),
+            };
+            assert_eq!(
+                mixed_action,
+                "Run 'sesslint repair ~/loss.jsonl --output <out>'"
+            );
+            assert!(!mixed_action.contains("salvage"));
+            assert!(!mixed_action.contains("det.jsonl"));
+            match choose_next_action(&mixed, &mixed_face, None) {
+                Ok(text) => {
+                    assert!(text.contains("C:/SyntheticHome/loss.jsonl"), "{text}");
+                    assert!(!text.starts_with("Run 'sesslint repair ~/"), "{text}");
+                }
+                Err(RenderHumanError::Home(error)) => {
+                    assert_eq!(error.to_string(), "Could not determine home directory.");
+                }
+                Err(error) => panic!("unexpected hint error: {error}"),
+            }
+            refusal_text(render(&mixed, false, None, Some(HOME)));
+            let salvage = make_report(
+                &[plain(
+                    "C:/SyntheticHome/loss.jsonl",
+                    SL001,
+                    Severity::Error,
+                    Repairability::LossyExplicit,
+                )],
+                "lim-marker",
+                &coverage,
+            );
+            let salvage_face = human_verdict(&salvage, &plain_ansi());
+            let salvage_action = match choose_next_action(&salvage, &salvage_face, Some(HOME)) {
+                Ok(action) => action,
+                Err(error) => panic!("salvage action rejected: {error}"),
+            };
+            assert_eq!(
+                salvage_action,
+                "Run 'sesslint repair ~/loss.jsonl --output <out> --policy salvage'"
+            );
+            refusal_text(render(&salvage, false, None, Some(HOME)));
+            let sha_into: RenderHumanError = MinimizePathError::Sha1.into();
+            assert!(matches!(
+                sha_into,
+                RenderHumanError::Minimize(MinimizePathError::Sha1)
+            ));
+        }
+
+        #[test]
+        fn module_all_is_the_pin_list() {
+            assert_eq!(
+                REPORT_MODULE_ALL,
+                [
+                    "ASSURANCE_DESCRIPTIONS",
+                    "ASSURANCE_LIMITATIONS",
+                    "KNOWN_MANIFEST_FIELDS",
+                    "KNOWN_REPORT_FIELDS",
+                    "MANIFEST_SCHEMA_VERSION",
+                    "REPORT_DEFAULT_FINDING_KEYS",
+                    "REPORT_FINDING_KEYS",
+                    "REPORT_FORBIDDEN_FINDING_KEYS",
+                    "REPORT_ROOT_KEYS",
+                    "REPORT_SCHEMA_VERSION",
+                    "REQUIRED_MANIFEST_FIELDS",
+                    "REQUIRED_REPORT_FIELDS",
+                    "REQUIRED_SEVERITIES",
+                    "VALID_ASSURANCE_LEVELS",
+                    "VALID_COVERAGE_SKIP_REASONS",
+                    "VALID_POLICIES",
+                    "Assurance",
+                    "Counts",
+                    "Coverage",
+                    "CoverageSkip",
+                    "Policy",
+                    "RepairAction",
+                    "RepairManifest",
+                    "Report",
+                    "ReproMetadata",
+                    "RevalidationSummary",
+                    "apply_plan_assurance",
+                    "build_manifest",
+                    "build_report",
+                    "build_repro_metadata",
+                    "cap_assurance",
+                    "compute_assurance",
+                    "compute_manifest_idempotency_key",
+                    "dump_manifest",
+                    "dump_report",
+                    "enforce_content_free",
+                    "finding_report_sort_key",
+                    "format_finding_content_free",
+                    "get_finding_remediation",
+                    "hint_path",
+                    "get_manifest_schema_path",
+                    "get_report_schema_path",
+                    "load_manifest_schema",
+                    "load_report_schema",
+                    "minimize_id",
+                    "minimize_path",
+                    "parse_manifest",
+                    "parse_report",
+                    "render_human",
+                    "render_json",
+                    "short_hash",
+                ]
+            );
+        }
+    }
+}
+
+pub use render_human_port::{render_human, RenderHumanError, REPORT_MODULE_ALL};
