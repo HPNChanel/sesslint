@@ -1,0 +1,931 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.detect parity vectors (stdlib only; pinned git blobs)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import math
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DETECT_PY_SHA256 = (
+    "14d8f8f0947082529e98702ea2ea3d7bb99b2cd5091349e1314054dcf38136d1"
+)
+DETECT_RS_SHA256 = (
+    "d1bd8cbcac85b367a49e45ffbfcadd389f025dafb21c599bb9fda4a9e7e84954"
+)
+MODULE = "sesslint.adapters.detect"
+
+SYN_MISSING = "fixtures/syn-missing-file.json"
+SYN_DIR = "fixtures/syn-dir-not-file"
+SYN_WS = "fixtures/syn-whitespace.json"
+SYN_BOM_WS = "fixtures/syn-bom-ws.json"
+SYN_SQLITE = "fixtures/syn-live-sqlite.bin"
+SYN_RANDOM = "fixtures/syn-random.txt"
+SYN_LYING = "fixtures/syn-lying-canonical.jsonl"
+SYN_GIANT = "fixtures/syn-giant-line.jsonl"
+SYN_BOUNDARY = "fixtures/syn-sniff-boundary.jsonl"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-detect-finding-fingerprint: resolve_format and resolve_format_bytes "
+    "call _resolve_failure_finding when detection abstains. The pin builds a "
+    "Finding via make_finding without fingerprint. Rust stops at "
+    "sesslint.determinism.canonical_json_bytes and does not return a Finding.",
+    "GAP-detect-cli: test_detect.py CLI smoke tests invoke sesslint.cli.main, "
+    "which is outside this adapters.detect parity surface.",
+    "GAP-detect-mock-scores: boundary and effective-threshold tests patch "
+    "per-adapter detect_* callables. Vectors use real sniff bytes instead.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/adapters/test_detect.py",
+    "tests/adapters/test_modern_metadata.py",
+    "tests/conformance/test_adapter_suite.py",
+    "tests/fuzz/test_repair_invariants.py",
+    "tests/repair/test_snapshot_consistency.py",
+    "tests/test_docs_consistency.py",
+)
+
+# Guide rows read ADAPTER_GUIDE.md. Missing-path and directory rows use a
+# different path. Threshold, bypass, and default-threshold rows call
+# _write_sniffable, whose bytes are not syn-dummy.json.
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/adapters/test_detect.py::test_threshold_constants_pinned": (
+        "module_constants",
+    ),
+    "tests/adapters/test_detect.py::test_each_vendor_clear_winner": (
+        "detect_fixture_claude",
+        "detect_fixture_openai",
+        "detect_fixture_codex",
+        "detect_fixture_canonical",
+    ),
+    "tests/adapters/test_detect.py::test_explicit_override_wins": (
+        "resolve_explicit_canonical_on_ambiguous",
+    ),
+    "tests/adapters/test_detect.py::test_explicit_invalid_exits": (
+        "resolve_unknown_bogus",
+        "resolve_unknown_yaml",
+    ),
+    "tests/adapters/test_detect.py::test_lying_extension": ("detect_lying_jsonl",),
+    "tests/adapters/test_detect.py::test_bom_and_whitespace_refused": (
+        "detect_bom_whitespace_file",
+    ),
+    "tests/adapters/test_detect.py::test_to_source_block_helper": (
+        "to_source_block_auto",
+        "to_source_block_method",
+        "to_source_block_none",
+    ),
+    "tests/adapters/test_detect.py::test_sniff_boundary_partial_utf8_sliced": (
+        "detect_sniff_boundary",
+    ),
+    "tests/adapters/test_detect.py::test_giant_first_line_bounded": (
+        "detect_giant_first_line",
+    ),
+    "tests/adapters/test_detect.py::test_detection_deterministic": (
+        "detect_twice_canonical",
+        "detect_twice_ambiguous",
+    ),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/adapters/detect.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != DETECT_PY_SHA256:
+        raise SystemExit(
+            f"detect.py pin sha256 mismatch: expected {DETECT_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "detect.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != DETECT_RS_SHA256:
+        raise SystemExit(
+            "detect.rs sha256 mismatch: "
+            f"expected {DETECT_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def add_sesslint_module(found: set[str], name: str) -> None:
+    if name == "sesslint" or not name.startswith("sesslint."):
+        return
+    found.add(name)
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                add_sesslint_module(found, alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            add_sesslint_module(found, node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.io",
+        "sesslint.scan",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.determinism",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str, *, temp_main: bool = False) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    if temp_main and mod == "sesslint.adapters.detect":
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".py", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(source)
+            path = handle.name
+        code = compile(source, path, "exec")
+    else:
+        code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_pinned_detect() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    mods = [
+        m for m in closure("sesslint.adapters.detect") if m != "sesslint.adapters.detect"
+    ]
+    pending = list(mods)
+    for _ in range(200):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod, temp_main=False)
+                progress = True
+            except (ModuleNotFoundError, ImportError, SyntaxError, Exception):
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:12]}")
+    load_module("sesslint.adapters.detect", temp_main=True)
+    return sys.modules["sesslint.adapters.detect"]
+
+
+def encode_payload(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"kind": "null"}
+    if isinstance(value, bool):
+        return {"kind": "bool", "value": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"kind": "int", "value": value}
+    if isinstance(value, float):
+        if math.isnan(value):
+            return {"kind": "float", "text": "nan"}
+        if math.isinf(value):
+            return {
+                "kind": "float",
+                "text": "inf" if value > 0 else "-inf",
+            }
+        return {"kind": "float", "value": value}
+    if isinstance(value, str):
+        return {"kind": "str", "text": value}
+    if isinstance(value, list):
+        return {"kind": "list", "items": [encode_payload(v) for v in value]}
+    if isinstance(value, dict):
+        return {
+            "kind": "map",
+            "entries": [
+                {"key": encode_payload(k), "value": encode_payload(v)}
+                for k, v in value.items()
+            ],
+        }
+    raise SystemExit(f"cannot encode payload {type(value)!r}")
+
+
+def encode_confidences(conf: dict[str, float]) -> list[list[Any]]:
+    return [[key, value] for key, value in conf.items()]
+
+
+def encode_detection_result(res: Any) -> dict[str, Any]:
+    return {
+        "format": res.format,
+        "reason": res.reason,
+        "confidences": encode_confidences(res.confidences),
+    }
+
+
+def encode_source_block(block: dict[str, Any]) -> dict[str, Any]:
+    conf = block.get("confidences", {})
+    if isinstance(conf, dict):
+        conf_out = [[key, value] for key, value in conf.items()]
+    else:
+        conf_out = conf
+    return {
+        "requested": block["requested"],
+        "resolved": block.get("resolved"),
+        "confidences": conf_out,
+        "reason": block["reason"],
+    }
+
+
+def pin_detect_path(mod: Any, path: Path, **kwargs: Any) -> dict[str, Any]:
+    try:
+        res = mod.detect_format(path, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    return {"result": encode_detection_result(res)}
+
+
+def pin_detect_bytes(mod: Any, data: bytes, filename: str, **kwargs: Any) -> dict[str, Any]:
+    try:
+        res = mod.detect_format_bytes(data, filename=filename, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    return {"result": encode_detection_result(res)}
+
+
+def pin_validate(mod: Any, confidence_min: Any, margin_min: Any) -> dict[str, Any]:
+    try:
+        mod.validate_detection_thresholds(confidence_min, margin_min)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    return {"ok": True}
+
+
+def pin_resolve(mod: Any, explicit: Any, path: Path, **kwargs: Any) -> dict[str, Any]:
+    try:
+        fmt, det, findings = mod.resolve_format(explicit, path, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    return {
+        "format": fmt,
+        "finding_count": len(findings),
+        "result": encode_detection_result(det) if det is not None else None,
+    }
+
+
+def relativize_message(message: str) -> str:
+    out_dir = Path(__file__).resolve().parent
+    prefix = str(out_dir)
+    needles: list[str] = []
+    for item in (prefix, prefix.replace("\\", "\\\\")):
+        for sep in ("\\", "/", "\\\\"):
+            needles.append(item + sep)
+        needles.append(item)
+    needles.sort(key=len, reverse=True)
+    text = message
+    for needle in needles:
+        if needle:
+            text = text.replace(needle, "")
+    return text.replace("\\\\", "/").replace("\\", "/")
+
+
+def ensure_fixtures(out_dir: Path, mod: Any) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(exist_ok=True)
+    pin_names = [
+        "ambiguous.json",
+        "canonical_sample.json",
+        "claude_sample.jsonl",
+        "codex_sample.jsonl",
+        "empty.jsonl",
+        "openai_sample.json",
+    ]
+    for name in pin_names:
+        dest = fixtures / name
+        if not dest.exists():
+            dest.write_bytes(
+                git_show_bytes(f"{commit_path()}:fixtures/detect/{name}")
+            )
+    (fixtures / SYN_WS.split("/")[-1]).write_text(
+        "   \n\t  \r\n   ", encoding="utf-8", newline="\n"
+    )
+    (fixtures / SYN_BOM_WS.split("/")[-1]).write_bytes(
+        b"\xef\xbb\xbf   \r\n\t"
+    )
+    sqlite_magic = mod.SQLITE_MAGIC if hasattr(mod, "SQLITE_MAGIC") else (
+        __import__("sesslint.adapters.openai_agents", fromlist=["SQLITE_MAGIC"]).SQLITE_MAGIC
+    )
+    (fixtures / SYN_SQLITE.split("/")[-1]).write_bytes(sqlite_magic + b"\x00" * 84)
+    (fixtures / SYN_RANDOM.split("/")[-1]).write_text(
+        "random unstructured log content line 1\nline 2",
+        encoding="utf-8",
+        newline="\n",
+    )
+    canon = (fixtures / "canonical_sample.json").read_bytes()
+    (fixtures / SYN_LYING.split("/")[-1]).write_bytes(canon)
+    line = (
+        '{"type":"user_message","sessionId":"sess-large"}'
+        + (" " * 200_000)
+        + "\n"
+    )
+    (fixtures / SYN_GIANT.split("/")[-1]).write_bytes(line.encode("utf-8"))
+    sniff = mod.SNIFF_BYTES
+    head = b'{"id":"msg_01","type":"user_message"}\n'
+    pad = b" " * (sniff - len(head) - 1)
+    boundary = head + pad + b"\xe2"
+    assert len(boundary) == sniff
+    (fixtures / SYN_BOUNDARY.split("/")[-1]).write_bytes(
+        boundary + (b"\x80\x99 extra content\n" * 5000)
+    )
+    snif_missing = fixtures / "syn-missing-file.json"
+    if snif_missing.exists():
+        snif_missing.unlink()
+    directory = fixtures / "syn-dir-not-file"
+    directory.mkdir(exist_ok=True)
+    (directory / "KEEP").write_text(
+        "Synthetic directory fixture. The path itself is the input.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    dummy = fixtures / "syn-dummy.json"
+    dummy.write_text("{}", encoding="utf-8", newline="\n")
+
+
+def commit_path() -> str:
+    return PYTHON_COMMIT
+
+
+def add_threshold_fields(construct: dict[str, Any], kwargs: dict[str, Any]) -> None:
+    if "confidence_min" in kwargs:
+        construct["confidence_min"] = encode_payload(kwargs["confidence_min"])
+    if "margin_min" in kwargs:
+        construct["margin_min"] = encode_payload(kwargs["margin_min"])
+
+
+def vector_specs(mod: Any, out_dir: Path) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    fx = out_dir / "fixtures"
+
+    def add(spec: dict[str, Any]) -> None:
+        specs.append(spec)
+
+    supported = sorted(mod.SUPPORTED_FORMATS)
+    valid = sorted(mod.VALID_FORMAT_OPTIONS)
+    add(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "confidence_min": mod.CONFIDENCE_MIN,
+                "margin_min": mod.MARGIN_MIN,
+                "sniff_bytes": mod.SNIFF_BYTES,
+                "epsilon": float(f"{mod.EPSILON:.17f}"),
+                "format_claude_code": mod.FORMAT_CLAUDE_CODE,
+                "format_openai_agents": mod.FORMAT_OPENAI_AGENTS,
+                "format_codex_rollout": mod.FORMAT_CODEX_ROLLOUT,
+                "format_canonical": mod.FORMAT_CANONICAL,
+                "format_auto": mod.FORMAT_AUTO,
+                "supported_formats": supported,
+                "valid_format_options": valid,
+                "reason_clear_winner": mod.REASON_CLEAR_WINNER,
+                "reason_low_confidence": mod.REASON_LOW_CONFIDENCE,
+                "reason_tie": mod.REASON_TIE,
+                "reason_empty": mod.REASON_EMPTY,
+                "reason_refused_live_db": mod.REASON_REFUSED_LIVE_DB,
+                "reason_explicit_override": mod.REASON_EXPLICIT_OVERRIDE,
+            },
+        }
+    )
+
+    fixture_rows = [
+        ("detect_fixture_claude", "claude_sample.jsonl", mod.FORMAT_CLAUDE_CODE),
+        ("detect_fixture_openai", "openai_sample.json", mod.FORMAT_OPENAI_AGENTS),
+        ("detect_fixture_codex", "codex_sample.jsonl", mod.FORMAT_CODEX_ROLLOUT),
+        ("detect_fixture_canonical", "canonical_sample.json", mod.FORMAT_CANONICAL),
+    ]
+    for vid, fname, want_fmt in fixture_rows:
+        path = fx / fname
+        pin = pin_detect_path(mod, path)
+        add(
+            {
+                "id": vid,
+                "construct": {"type": "detect_format", "path_rel": f"fixtures/{fname}"},
+                "expected": {**pin, "assert_format": want_fmt},
+            }
+        )
+
+    amb_path = fx / "ambiguous.json"
+    pin_amb = pin_detect_path(mod, amb_path)
+    add(
+        {
+            "id": "detect_ambiguous_tie",
+            "construct": {
+                "type": "detect_format",
+                "path_rel": "fixtures/ambiguous.json",
+            },
+            "expected": pin_amb,
+        }
+    )
+
+    add(
+        {
+            "id": "detect_lying_jsonl",
+            "construct": {"type": "detect_format", "path_rel": SYN_LYING},
+            "expected": {
+                **pin_detect_path(mod, fx / SYN_LYING.split("/")[-1]),
+                "assert_format": mod.FORMAT_CANONICAL,
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "detect_bom_whitespace_file",
+            "construct": {"type": "detect_format", "path_rel": SYN_BOM_WS},
+            "expected": pin_detect_path(mod, fx / SYN_BOM_WS.split("/")[-1]),
+        }
+    )
+
+    add(
+        {
+            "id": "detect_sniff_boundary",
+            "construct": {"type": "detect_format", "path_rel": SYN_BOUNDARY},
+            "expected": {
+                **pin_detect_path(mod, fx / SYN_BOUNDARY.split("/")[-1]),
+                "assert_format": mod.FORMAT_CLAUDE_CODE,
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "detect_giant_first_line",
+            "construct": {"type": "detect_format", "path_rel": SYN_GIANT},
+            "expected": {
+                **pin_detect_path(mod, fx / SYN_GIANT.split("/")[-1]),
+                "assert_format": mod.FORMAT_CLAUDE_CODE,
+            },
+        }
+    )
+
+    for vid, rel in (
+        ("detect_twice_canonical", "fixtures/canonical_sample.json"),
+        ("detect_twice_ambiguous", "fixtures/ambiguous.json"),
+    ):
+        path = out_dir / rel
+        r1 = mod.detect_format(path)
+        r2 = mod.detect_format(path)
+        add(
+            {
+                "id": vid,
+                "construct": {"type": "detect_format_twice", "path_rel": rel},
+                "expected": {
+                    "first": encode_detection_result(r1),
+                    "second": encode_detection_result(r2),
+                    "equal": r1 == r2,
+                },
+            }
+        )
+
+    writable = fx / "syn-dummy.json"
+    add(
+        {
+            "id": "detect_default_thresholds_match",
+            "construct": {
+                "type": "detect_format_compare_thresholds",
+                "path_rel": "fixtures/syn-dummy.json",
+            },
+            "expected": {
+                "default": encode_detection_result(mod.detect_format(writable)),
+                "explicit": encode_detection_result(
+                    mod.detect_format(
+                        writable,
+                        confidence_min=mod.CONFIDENCE_MIN,
+                        margin_min=mod.MARGIN_MIN,
+                    )
+                ),
+                "equal": mod.detect_format(writable)
+                == mod.detect_format(
+                    writable,
+                    confidence_min=mod.CONFIDENCE_MIN,
+                    margin_min=mod.MARGIN_MIN,
+                ),
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "detect_path_not_found",
+            "construct": {"type": "detect_format", "path_rel": SYN_MISSING},
+            "expected": {
+                **pin_detect_path(mod, out_dir / SYN_MISSING),
+                "message": f"Session file not found: {SYN_MISSING}",
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "detect_path_is_directory",
+            "construct": {"type": "detect_format", "path_rel": SYN_DIR},
+            "expected": {
+                **pin_detect_path(mod, out_dir / SYN_DIR),
+                "message": f"Expected session file, got directory: {SYN_DIR}",
+            },
+        }
+    )
+
+    threshold_rows = [
+        ("threshold_confidence_bool", {"confidence_min": True}, "confidence_min"),
+        ("threshold_confidence_str", {"confidence_min": "0.7"}, "confidence_min"),
+        ("threshold_confidence_nan", {"confidence_min": float("nan")}, "confidence_min"),
+        ("threshold_confidence_inf", {"confidence_min": float("inf")}, "confidence_min"),
+        ("threshold_confidence_0", {"confidence_min": 0.0}, "confidence_min"),
+        ("threshold_confidence_1", {"confidence_min": 1.0}, "confidence_min"),
+        ("threshold_confidence_neg", {"confidence_min": -0.1}, "confidence_min"),
+        ("threshold_confidence_over", {"confidence_min": 1.1}, "confidence_min"),
+        ("threshold_margin_0", {"margin_min": 0.0}, "margin_min"),
+        ("threshold_margin_1", {"margin_min": 1.0}, "margin_min"),
+        (
+            "threshold_margin_exceeds",
+            {"confidence_min": 0.5, "margin_min": 0.9},
+            "margin_min",
+        ),
+    ]
+    for vid, kwargs, _field in threshold_rows:
+        construct = {
+            "type": "detect_format",
+            "path_rel": "fixtures/syn-dummy.json",
+        }
+        add_threshold_fields(construct, kwargs)
+        pin = pin_detect_path(mod, writable, **kwargs)
+        add({"id": vid, "construct": construct, "expected": pin})
+
+    add(
+        {
+            "id": "resolve_threshold_confidence_2",
+            "construct": {
+                "type": "resolve_format",
+                "explicit": mod.FORMAT_CANONICAL,
+                "path_rel": "fixtures/syn-dummy.json",
+                "confidence_min": encode_payload(2.0),
+            },
+            "expected": pin_resolve(
+                mod, mod.FORMAT_CANONICAL, writable, confidence_min=2.0
+            ),
+        }
+    )
+
+    add(
+        {
+            "id": "resolve_explicit_canonical_on_ambiguous",
+            "construct": {
+                "type": "resolve_format",
+                "explicit": mod.FORMAT_CANONICAL,
+                "path_rel": "fixtures/ambiguous.json",
+            },
+            "expected": pin_resolve(mod, mod.FORMAT_CANONICAL, amb_path),
+        }
+    )
+
+    for vid, name in (("resolve_unknown_bogus", "bogus"), ("resolve_unknown_yaml", "yaml")):
+        add(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "resolve_format",
+                    "explicit": name,
+                    "path_rel": "fixtures/syn-dummy.json",
+                },
+                "expected": pin_resolve(mod, name, writable),
+            }
+        )
+
+    add(
+        {
+            "id": "resolve_explicit_bypass_thresholds",
+            "construct": {
+                "type": "resolve_format",
+                "explicit": mod.FORMAT_CLAUDE_CODE,
+                "path_rel": "fixtures/syn-dummy.json",
+                "confidence_min": encode_payload(0.99),
+                "margin_min": encode_payload(0.99),
+            },
+            "expected": pin_resolve(
+                mod,
+                mod.FORMAT_CLAUDE_CODE,
+                writable,
+                confidence_min=0.99,
+                margin_min=0.99,
+            ),
+        }
+    )
+
+    result = mod.DetectionResult(
+        format=mod.FORMAT_CANONICAL,
+        confidences={
+            mod.FORMAT_CLAUDE_CODE: 0.123456,
+            mod.FORMAT_OPENAI_AGENTS: 0.0,
+            mod.FORMAT_CANONICAL: 1.0,
+        },
+        reason=mod.REASON_CLEAR_WINNER,
+    )
+    add(
+        {
+            "id": "to_source_block_auto",
+            "construct": {
+                "type": "to_source_block",
+                "result": encode_detection_result(result),
+                "requested": "auto",
+            },
+            "expected": {
+                "block": encode_source_block(
+                    mod.to_source_block(result, requested="auto")
+                )
+            },
+        }
+    )
+    add(
+        {
+            "id": "to_source_block_method",
+            "construct": {
+                "type": "to_source_block_method",
+                "result": encode_detection_result(result),
+                "requested": "canonical",
+            },
+            "expected": {
+                "block": encode_source_block(
+                    result.to_source_block(requested="canonical")
+                )
+            },
+        }
+    )
+    add(
+        {
+            "id": "to_source_block_none",
+            "construct": {
+                "type": "to_source_block",
+                "result": None,
+                "requested": "auto",
+            },
+            "expected": {
+                "block": encode_source_block(
+                    mod.to_source_block(None, requested="auto")
+                )
+            },
+        }
+    )
+
+    gap_cases = [
+        (
+            "gap_resolve_empty_sl001",
+            "fixtures/empty.jsonl",
+            None,
+            {"reason": mod.REASON_EMPTY},
+        ),
+        (
+            "gap_resolve_ambiguous_sl302",
+            "fixtures/ambiguous.json",
+            None,
+            {"reason": mod.REASON_TIE},
+        ),
+        (
+            "gap_resolve_sqlite_sl001",
+            SYN_SQLITE,
+            None,
+            {"reason": mod.REASON_REFUSED_LIVE_DB},
+        ),
+        (
+            "gap_resolve_low_confidence",
+            SYN_RANDOM,
+            "auto",
+            {"reason": mod.REASON_LOW_CONFIDENCE},
+        ),
+    ]
+    for vid, rel, explicit, want_det in gap_cases:
+        path = out_dir / rel if rel.startswith("fixtures/") else fx / rel.split("/")[-1]
+        pin = pin_resolve(mod, explicit, path)
+        add(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "resolve_format",
+                    "explicit": explicit,
+                    "path_rel": rel,
+                },
+                "expected": {
+                    "pin": pin,
+                    "rust_assertion": {"mode": "gap_finding_fingerprint"},
+                    **want_det,
+                },
+            }
+        )
+
+    return specs
+
+
+def imports_module(rel: str) -> bool:
+    try:
+        source = subprocess.check_output(
+            ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return "sesslint.adapters.detect" in source
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        if not imports_module(rel):
+            continue
+        tests = list_tests_in_file(rel)
+        for name in tests:
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                not_applicable += 1
+            rows.append(row)
+        if rel == "tests/test_docs_consistency.py" and imports_module(rel):
+            pass
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def main() -> int:
+    mod = load_pinned_detect()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir, mod)
+    vectors = vector_specs(mod, out_dir)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "detect_py_sha256": DETECT_PY_SHA256,
+        "detect_rs_sha256": DETECT_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload = payload.replace('"epsilon": 1e-09', '"epsilon": 0.000000001')
+    payload = payload.replace('"epsilon": 1e-9', '"epsilon": 0.000000001')
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.detect parity: constants, sniff "
+            "arbitration, thresholds, to_source_block, explicit resolve, "
+            "and documented finding fingerprint gaps."
+        ),
+        "generator": "rust/parity/vectors/adapters.detect/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "detect_py_sha256": DETECT_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/adapters.detect/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
