@@ -10814,3 +10814,1910 @@ mod parse_manifest_port {
         }
     }
 }
+
+// Lines 1610–1921: content-free enforcement, schema loading, plan assurance,
+// path rendering, identifier minimization, and reproduction metadata.
+//
+// `get_report_schema_path` and `get_manifest_schema_path` call
+// `sesslint._resources.schema_path`. That module is not in this crate.
+// `load_report_schema` and `load_manifest_schema` call those functions
+// first and do not read a schema file. `apply_plan_assurance` calls
+// `sesslint.repair.assurance.cap_assurance`. `minimize_path` reaches
+// `hashlib.sha1` only after the home-relative checks fail. `hint_path`
+// does not hash. `build_repro_metadata` imports `sesslint.__version__`
+// before it builds a value. Lexical `.` and `..` collapsing does not join
+// the working directory and does not resolve symlinks.
+
+/// `sesslint._resources.schema_path` is not linked into this crate.
+pub const RESOURCES_SCHEMA_PATH: &str = "sesslint._resources.schema_path";
+
+/// `sesslint.repair.assurance.cap_assurance` is not linked into this crate.
+pub const CAP_ASSURANCE: &str = "sesslint.repair.assurance.cap_assurance";
+
+/// `hashlib.sha1` is not a dependency of this crate.
+pub const HASHLIB_SHA1: &str = "hashlib.sha1";
+
+/// `sesslint.__version__` is not linked into this crate.
+pub const SESSLINT_VERSION: &str = "sesslint.__version__";
+
+/// Python default for [`short_hash`] when the caller omits `length`.
+pub const SHORT_HASH_DEFAULT_LENGTH: usize = 8;
+
+/// Failure from [`get_report_schema_path`], [`get_manifest_schema_path`],
+/// [`load_report_schema`], and [`load_manifest_schema`].
+///
+/// [`Display`](fmt::Display) is `sesslint._resources.schema_path is not available`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchemaPathUnavailable;
+
+impl fmt::Display for SchemaPathUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{RESOURCES_SCHEMA_PATH} is not available")
+    }
+}
+
+impl Error for SchemaPathUnavailable {}
+
+/// Failure from [`apply_plan_assurance`].
+///
+/// [`Display`](fmt::Display) is
+/// `sesslint.repair.assurance.cap_assurance is not available`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapAssuranceUnavailable;
+
+impl fmt::Display for CapAssuranceUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{CAP_ASSURANCE} is not available")
+    }
+}
+
+impl Error for CapAssuranceUnavailable {}
+
+/// `Path.home()` could not read the process home.
+///
+/// [`Display`](fmt::Display) is `Could not determine home directory.`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HomeDirectoryError;
+
+impl fmt::Display for HomeDirectoryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Could not determine home directory.")
+    }
+}
+
+impl Error for HomeDirectoryError {}
+
+/// Failure from [`minimize_path`].
+///
+/// [`Self::Sha1`] is `hashlib.sha1 is not available`. [`Self::Home`] is
+/// [`HomeDirectoryError`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MinimizePathError {
+    Sha1,
+    Home(HomeDirectoryError),
+}
+
+impl fmt::Display for MinimizePathError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sha1 => write!(formatter, "{HASHLIB_SHA1} is not available"),
+            Self::Home(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for MinimizePathError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Home(error) => Some(error),
+            Self::Sha1 => None,
+        }
+    }
+}
+
+/// Failure from [`build_repro_metadata`].
+///
+/// [`Display`](fmt::Display) is `sesslint.__version__ is not available`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SesslintVersionUnavailable;
+
+impl fmt::Display for SesslintVersionUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{SESSLINT_VERSION} is not available")
+    }
+}
+
+impl Error for SesslintVersionUnavailable {}
+
+/// Python `Report`, `RepairManifest`, or another object.
+///
+/// [`ContentFreeInput::Other`] carries `type(obj).__name__`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentFreeInput<'a> {
+    Report(&'a Report),
+    Manifest(&'a RepairManifest),
+    Other { type_name: &'a str },
+}
+
+/// Failure from [`enforce_content_free`].
+///
+/// [`Self::Leak`] is [`ContentLeakError`]. [`Self::Type`] is Python
+/// `TypeError` text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentFreeError {
+    Leak(ContentLeakError),
+    Type(String),
+}
+
+impl fmt::Display for ContentFreeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Leak(error) => write!(formatter, "{error}"),
+            Self::Type(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl Error for ContentFreeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Leak(error) => Some(error),
+            Self::Type(_) => None,
+        }
+    }
+}
+
+/// Python `str` or `pathlib.Path` passed to [`minimize_path`] and [`hint_path`].
+///
+/// The `~/`, `~`, and `.._` shortcut in [`minimize_path`] applies only to
+/// [`Self::Text`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathInput<'a> {
+    Text(&'a str),
+    Path(&'a std::path::Path),
+}
+
+/// One value in a [`MinimizedId::Map`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MinimizedField {
+    Text(String),
+    Int(i64),
+}
+
+/// Dict mode of [`minimize_id`].
+///
+/// Key order is `short`, then `ordinal` when it is present, then `full`
+/// when content is included.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MinimizedIdMap {
+    pub short: String,
+    pub ordinal: Option<i64>,
+    pub full: Option<String>,
+}
+
+impl MinimizedIdMap {
+    /// Entries in Python dict insertion order.
+    #[must_use]
+    pub fn entries(&self) -> Vec<(&'static str, MinimizedField)> {
+        let mut entries = vec![("short", MinimizedField::Text(self.short.clone()))];
+        if let Some(ordinal) = self.ordinal {
+            entries.push(("ordinal", MinimizedField::Int(ordinal)));
+        }
+        if let Some(full) = &self.full {
+            entries.push(("full", MinimizedField::Text(full.clone())));
+        }
+        entries
+    }
+}
+
+/// Python return of [`minimize_id`]: a string or an ordered dict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MinimizedId {
+    Text(String),
+    Map(MinimizedIdMap),
+}
+
+/// Scalar stored in a reproduction-metadata map.
+///
+/// `confidence` is [`Self::Null`] or [`Self::Float`]. Names and versions are
+/// [`Self::Text`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReproValue {
+    Null,
+    Float(f64),
+    Text(String),
+}
+
+/// Python: `ReproMetadata`.
+///
+/// Field order matches the dataclass. [`Self::to_dict`] uses a different key
+/// order. Nested maps keep the `Vec` insertion order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReproMetadata {
+    pub cli_version: String,
+    pub schema_versions: Vec<(String, String)>,
+    pub adapter: Vec<(String, String)>,
+    pub profile: Vec<(String, String)>,
+    pub detection: Vec<(String, ReproValue)>,
+    pub platform: Vec<(String, String)>,
+}
+
+/// One value in [`ReproDict::entries`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReproEntry {
+    Text(String),
+    Map(Vec<(String, String)>),
+    Any(Vec<(String, ReproValue)>),
+}
+
+/// Python: `ReproMetadata.to_dict`.
+///
+/// Key order is `adapter`, `cli_version`, `detection`, `platform`, `profile`,
+/// `schema_versions`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReproDict {
+    pub adapter: Vec<(String, String)>,
+    pub cli_version: String,
+    pub detection: Vec<(String, ReproValue)>,
+    pub platform: Vec<(String, String)>,
+    pub profile: Vec<(String, String)>,
+    pub schema_versions: Vec<(String, String)>,
+}
+
+impl ReproDict {
+    /// Entries in the pinned `to_dict` order.
+    #[must_use]
+    pub fn entries(&self) -> Vec<(&'static str, ReproEntry)> {
+        vec![
+            ("adapter", ReproEntry::Map(self.adapter.clone())),
+            ("cli_version", ReproEntry::Text(self.cli_version.clone())),
+            ("detection", ReproEntry::Any(self.detection.clone())),
+            ("platform", ReproEntry::Map(self.platform.clone())),
+            ("profile", ReproEntry::Map(self.profile.clone())),
+            (
+                "schema_versions",
+                ReproEntry::Map(self.schema_versions.clone()),
+            ),
+        ]
+    }
+}
+
+impl ReproMetadata {
+    /// Python: `ReproMetadata.to_dict`.
+    ///
+    /// Each nested map is copied. Insertion order is preserved.
+    #[must_use]
+    pub fn to_dict(&self) -> ReproDict {
+        ReproDict {
+            adapter: self.adapter.clone(),
+            cli_version: self.cli_version.clone(),
+            detection: self.detection.clone(),
+            platform: self.platform.clone(),
+            profile: self.profile.clone(),
+            schema_versions: self.schema_versions.clone(),
+        }
+    }
+}
+
+/// Keyword arguments of [`build_repro_metadata`].
+///
+/// Python defaults, which Rust does not infer: omitted names and versions are
+/// `"unknown"`, and omitted `detection_confidence` is `None`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReproRequest<'a> {
+    pub adapter_name: &'a str,
+    pub adapter_version: &'a str,
+    pub profile_name: &'a str,
+    pub profile_version: &'a str,
+    pub detection_method: &'a str,
+    pub detection_confidence: Option<f64>,
+}
+
+/// Python: `enforce_content_free`.
+///
+/// `forbidden_substrings` of `None` leaves the extra list empty. Otherwise
+/// each item that is non-empty after `strip` is kept, in input order.
+/// [`enforce_content_free_text`] runs before the substring scan. A
+/// [`FindingError`] becomes [`ContentLeakError`] with
+/// `Intrinsic content leak in {context}: {err}`. The substring message is
+/// `Forbidden payload text {sub!r} detected in {context}: {text!r}`.
+/// Anything other than a [`Report`] or [`RepairManifest`] is
+/// `Expected Report or RepairManifest, got {type}`.
+pub fn enforce_content_free(
+    artifact: ContentFreeInput<'_>,
+    forbidden_substrings: Option<&[&str]>,
+) -> Result<(), ContentFreeError> {
+    let cleaned = clean_substrings(forbidden_substrings);
+    match artifact {
+        ContentFreeInput::Report(report) => enforce_report(report, &cleaned),
+        ContentFreeInput::Manifest(manifest) => enforce_manifest(manifest, &cleaned),
+        ContentFreeInput::Other { type_name } => Err(ContentFreeError::Type(format!(
+            "Expected Report or RepairManifest, got {type_name}"
+        ))),
+    }
+}
+
+/// Python: `get_report_schema_path`.
+///
+/// Calls `sesslint._resources.schema_path` and does not invent a filesystem path.
+pub fn get_report_schema_path() -> Result<std::path::PathBuf, SchemaPathUnavailable> {
+    resources_schema_path()
+}
+
+/// Python: `load_report_schema`.
+///
+/// Calls [`get_report_schema_path`] first. This crate does not read a schema
+/// file and does not call `json.loads`.
+pub fn load_report_schema() -> Result<Vec<(String, String)>, SchemaPathUnavailable> {
+    let _path = get_report_schema_path()?;
+    Err(SchemaPathUnavailable)
+}
+
+/// Python: `get_manifest_schema_path`.
+///
+/// Calls `sesslint._resources.schema_path` and does not invent a filesystem path.
+pub fn get_manifest_schema_path() -> Result<std::path::PathBuf, SchemaPathUnavailable> {
+    resources_schema_path()
+}
+
+/// Python: `load_manifest_schema`.
+///
+/// Calls [`get_manifest_schema_path`] first. This crate does not read a schema
+/// file and does not call `json.loads`.
+pub fn load_manifest_schema() -> Result<Vec<(String, String)>, SchemaPathUnavailable> {
+    let _path = get_manifest_schema_path()?;
+    Err(SchemaPathUnavailable)
+}
+
+/// Python: `apply_plan_assurance`.
+///
+/// The body is `return cap_assurance(base, plan)`. This crate does not link
+/// `sesslint.repair` and does not return `base` unchanged.
+pub fn apply_plan_assurance<Plan>(
+    base: &str,
+    plan: &Plan,
+) -> Result<String, CapAssuranceUnavailable> {
+    let _ = (base, plan);
+    Err(CapAssuranceUnavailable)
+}
+
+/// Python: `minimize_path`.
+///
+/// A provided `home` is the only directory used. An omitted `home` reads the
+/// process home (`USERPROFILE` on Windows, `HOME` on Unix) on each call.
+/// A string that is `~`, starts with `~/`, or starts with `.._` is returned
+/// unchanged. Home-relative absolute paths render `~` or `~/...` with forward
+/// slashes. A relative path with no parent returns the file name. The hashed
+/// `.._<8hex>/name` branch returns [`MinimizePathError::Sha1`] and does not
+/// invent hex digits.
+pub fn minimize_path(path: PathInput<'_>, home: Option<&str>) -> Result<String, MinimizePathError> {
+    if let PathInput::Text(text) = path {
+        if is_minimized_prefix(text) {
+            return Ok(text.to_owned());
+        }
+    }
+    let shown = shown_text(path);
+    let parsed = parse_input(path);
+    let home_path = parse_py_path(&require_home(home).map_err(MinimizePathError::Home)?);
+    if is_abs_text(&parsed, &shown) {
+        if let Some(relative) = parsed.relative_to(&home_path) {
+            return Ok(render_tilde(&relative, false));
+        }
+        if is_native_abs(&parsed, &shown) {
+            let resolved = parsed.resolve_lexical();
+            let resolved_home = home_path.resolve_lexical();
+            if let Some(relative) = resolved.relative_to(&resolved_home) {
+                return Ok(render_tilde(&relative, false));
+            }
+        }
+        return Err(MinimizePathError::Sha1);
+    }
+    if parsed.parent_is_dot() {
+        return Ok(parsed.name());
+    }
+    Err(MinimizePathError::Sha1)
+}
+
+/// Python: `_human_bytes`.
+///
+/// Values below 1024, including negatives, render `{n} B`. Larger values use
+/// one decimal place in the same way as Python `f"{n:.1f}"`.
+#[must_use]
+pub fn human_bytes(n: i64) -> String {
+    if n < 1024 {
+        return format!("{n} B");
+    }
+    let (scaled, suffix) = if n < 1024 * 1024 {
+        ((n as f64) / 1024.0, "KiB")
+    } else if n < 1024 * 1024 * 1024 {
+        ((n as f64) / (1024.0 * 1024.0), "MiB")
+    } else {
+        ((n as f64) / (1024.0 * 1024.0 * 1024.0), "GiB")
+    };
+    format!("{} {suffix}", one_decimal(scaled))
+}
+
+/// Python: `hint_path`.
+///
+/// A provided `home` is the only directory used. An omitted `home` reads the
+/// process home only when the path is absolute. Home-relative absolute paths
+/// render `~/...` with forward slashes, including `~/.` for the home directory
+/// itself. An absolute path outside home returns the slash-normalized path.
+/// This function does not hash.
+pub fn hint_path(path: PathInput<'_>, home: Option<&str>) -> Result<String, HomeDirectoryError> {
+    let shown = shown_text(path);
+    if is_minimized_prefix(&shown) {
+        return Ok(shown);
+    }
+    let parsed = parse_input(path);
+    if !is_abs_text(&parsed, &shown) {
+        return Ok(shown);
+    }
+    let home_path = parse_py_path(&require_home(home)?);
+    if let Some(relative) = parsed.relative_to(&home_path) {
+        return Ok(render_tilde(&relative, true));
+    }
+    if is_native_abs(&parsed, &shown) {
+        let resolved = parsed.resolve_lexical();
+        let resolved_home = home_path.resolve_lexical();
+        if let Some(relative) = resolved.relative_to(&resolved_home) {
+            return Ok(render_tilde(&relative, true));
+        }
+    }
+    Ok(shown)
+}
+
+/// Python: `short_hash`.
+///
+/// SHA-256 of the UTF-8 identifier, then the first `length` hex characters.
+/// `length` of 0 is empty. `length` above 64 is the whole digest.
+#[must_use]
+pub fn short_hash(identifier: &str, length: usize) -> String {
+    let digest = sha256_hex(identifier.as_bytes());
+    let take = length.min(digest.len());
+    digest[..take].to_owned()
+}
+
+/// Python: `minimize_id`.
+///
+/// Dict key order is `short`, then `ordinal` when it is an int, then `full`
+/// when `include_content` is set. A bool is not an ordinal. String mode with
+/// `include_content` returns the identifier. String mode with an int ordinal
+/// returns `#{ordinal}`. Otherwise the result is [`short_hash`] of length 8.
+#[must_use]
+pub fn minimize_id(
+    identifier: &str,
+    ordinal: Option<&InputValue>,
+    include_content: bool,
+    as_dict: bool,
+) -> MinimizedId {
+    let short = short_hash(identifier, SHORT_HASH_DEFAULT_LENGTH);
+    let ordinal = ordinal.and_then(ordinal_int);
+    if as_dict {
+        let full = if include_content {
+            Some(identifier.to_owned())
+        } else {
+            None
+        };
+        return MinimizedId::Map(MinimizedIdMap {
+            short,
+            ordinal,
+            full,
+        });
+    }
+    if include_content {
+        return MinimizedId::Text(identifier.to_owned());
+    }
+    if let Some(number) = ordinal {
+        return MinimizedId::Text(format!("#{number}"));
+    }
+    MinimizedId::Text(short)
+}
+
+/// Python: `build_repro_metadata`.
+///
+/// Imports `sesslint.__version__` before building a [`ReproMetadata`]. That
+/// attribute is not in this crate, so this does not invent a version, an
+/// architecture, an operating-system name, or a Python version. Tests can
+/// still construct [`ReproMetadata`] directly.
+pub fn build_repro_metadata(
+    request: ReproRequest<'_>,
+) -> Result<ReproMetadata, SesslintVersionUnavailable> {
+    let _bound = (
+        request.adapter_name,
+        request.adapter_version,
+        request.profile_name,
+        request.profile_version,
+        request.detection_method,
+        request.detection_confidence.is_some(),
+    );
+    Err(SesslintVersionUnavailable)
+}
+
+fn resources_schema_path() -> Result<std::path::PathBuf, SchemaPathUnavailable> {
+    Err(SchemaPathUnavailable)
+}
+
+fn clean_substrings(forbidden: Option<&[&str]>) -> Vec<String> {
+    let Some(items) = forbidden else {
+        return Vec::new();
+    };
+    let mut cleaned = Vec::new();
+    for item in items {
+        if item.is_empty() {
+            continue;
+        }
+        let stripped = python_strip(item);
+        if !stripped.is_empty() {
+            cleaned.push(stripped.to_owned());
+        }
+    }
+    cleaned
+}
+
+fn enforce_report(report: &Report, subs: &[String]) -> Result<(), ContentFreeError> {
+    check_text(report.session_id(), "Report.session_id", subs)?;
+    check_text(
+        report.source_fingerprint(),
+        "Report.source_fingerprint",
+        subs,
+    )?;
+    check_text(report.tool_version(), "Report.tool_version", subs)?;
+    check_text(report.limitation(), "Report.limitation", subs)?;
+    for (index, skip) in report.coverage().skipped().iter().enumerate() {
+        check_text(
+            skip.check(),
+            &format!("Report.coverage.skipped[{index}].check"),
+            subs,
+        )?;
+        check_text(
+            skip.detail(),
+            &format!("Report.coverage.skipped[{index}].detail"),
+            subs,
+        )?;
+    }
+    for (index, finding) in report.findings().iter().enumerate() {
+        check_text(
+            finding.message(),
+            &format!("Report.findings[{index}].message"),
+            subs,
+        )?;
+        if let Some(template) = finding.message_template() {
+            check_text(
+                template,
+                &format!("Report.findings[{index}].message_template"),
+                subs,
+            )?;
+        }
+        check_text(
+            finding.source().path(),
+            &format!("Report.findings[{index}].source.path"),
+            subs,
+        )?;
+        if let Some(record_id) = finding.source().record_id() {
+            check_text(
+                record_id,
+                &format!("Report.findings[{index}].source.record_id"),
+                subs,
+            )?;
+        }
+        for (rel_index, rel_id) in finding.related_ids().iter().enumerate() {
+            check_text(
+                rel_id,
+                &format!("Report.findings[{index}].related_ids[{rel_index}]"),
+                subs,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn enforce_manifest(manifest: &RepairManifest, subs: &[String]) -> Result<(), ContentFreeError> {
+    check_text(
+        manifest.input_fingerprint(),
+        "RepairManifest.input_fingerprint",
+        subs,
+    )?;
+    check_text(
+        manifest.output_fingerprint(),
+        "RepairManifest.output_fingerprint",
+        subs,
+    )?;
+    if let Some(path) = manifest.revalidate_report() {
+        check_text(path, "RepairManifest.revalidate_report", subs)?;
+    }
+    for (index, loss) in manifest.declared_loss().iter().enumerate() {
+        check_text(
+            loss,
+            &format!("RepairManifest.declared_loss[{index}]"),
+            subs,
+        )?;
+    }
+    for (index, action) in manifest.actions().iter().enumerate() {
+        check_text(
+            action.kind(),
+            &format!("RepairManifest.actions[{index}].kind"),
+            subs,
+        )?;
+        if let Some(record_id) = action.record_id() {
+            check_text(
+                record_id,
+                &format!("RepairManifest.actions[{index}].record_id"),
+                subs,
+            )?;
+        }
+        check_text(
+            action.detail(),
+            &format!("RepairManifest.actions[{index}].detail"),
+            subs,
+        )?;
+    }
+    let revalidation = manifest.revalidation();
+    check_text(
+        revalidation.profile_id(),
+        "RepairManifest.revalidation.profile_id",
+        subs,
+    )?;
+    check_text(
+        revalidation.profile_version(),
+        "RepairManifest.revalidation.profile_version",
+        subs,
+    )?;
+    if let Some(fingerprint) = revalidation.report_fingerprint() {
+        check_text(
+            fingerprint,
+            "RepairManifest.revalidation.report_fingerprint",
+            subs,
+        )?;
+    }
+    if let Some(adapter_id) = manifest.adapter_id() {
+        check_text(adapter_id, "RepairManifest.adapter_id", subs)?;
+    }
+    Ok(())
+}
+
+fn check_text(text: &str, context: &str, subs: &[String]) -> Result<(), ContentFreeError> {
+    if let Err(error) = enforce_content_free_text(text, context) {
+        return Err(ContentFreeError::Leak(ContentLeakError::new(format!(
+            "Intrinsic content leak in {context}: {error}"
+        ))));
+    }
+    for sub in subs {
+        if text.contains(sub.as_str()) || contains_lower(text, sub) {
+            return Err(ContentFreeError::Leak(ContentLeakError::new(format!(
+                "Forbidden payload text {} detected in {context}: {}",
+                python_str_repr(sub),
+                python_str_repr(text)
+            ))));
+        }
+    }
+    Ok(())
+}
+
+fn contains_lower(text: &str, sub: &str) -> bool {
+    text.to_lowercase().contains(&sub.to_lowercase())
+}
+
+fn ordinal_int(value: &InputValue) -> Option<i64> {
+    match value {
+        InputValue::Int(number) => Some(*number),
+        InputValue::Bool(_)
+        | InputValue::None
+        | InputValue::Str(_)
+        | InputValue::List(_)
+        | InputValue::Tuple(_)
+        | InputValue::Set(_)
+        | InputValue::FrozenSet(_)
+        | InputValue::Dict(_)
+        | InputValue::Other { .. } => None,
+    }
+}
+
+fn one_decimal(value: f64) -> String {
+    let negative = value.is_sign_negative() && value != 0.0;
+    let tenths = round_half_even(value.abs() * 10.0);
+    let whole = tenths.div_euclid(10);
+    let frac = tenths.rem_euclid(10);
+    if negative {
+        format!("-{whole}.{frac}")
+    } else {
+        format!("{whole}.{frac}")
+    }
+}
+
+fn round_half_even(scaled: f64) -> i64 {
+    if !scaled.is_finite() || scaled >= (i64::MAX as f64) {
+        return i64::MAX;
+    }
+    let floor = scaled.floor();
+    let mut base = floor as i64;
+    let diff = scaled - floor;
+    if diff > 0.5 || (diff == 0.5 && base % 2 != 0) {
+        base = base.saturating_add(1);
+    }
+    base
+}
+
+fn home_env_key() -> &'static str {
+    if cfg!(windows) {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    }
+}
+
+fn process_home() -> Result<String, HomeDirectoryError> {
+    match std::env::var(home_env_key()) {
+        Ok(value) if !value.is_empty() => Ok(value),
+        _ => Err(HomeDirectoryError),
+    }
+}
+
+fn require_home(home: Option<&str>) -> Result<String, HomeDirectoryError> {
+    match home {
+        Some(text) => Ok(text.to_owned()),
+        None => process_home(),
+    }
+}
+
+fn is_minimized_prefix(text: &str) -> bool {
+    text.starts_with("~/") || text == "~" || text.starts_with(".._")
+}
+
+fn shown_text(path: PathInput<'_>) -> String {
+    match path {
+        PathInput::Text(text) => text.replace('\\', "/"),
+        PathInput::Path(path) => parse_py_path(&path.to_string_lossy())
+            .to_py_str()
+            .replace('\\', "/"),
+    }
+}
+
+fn parse_input(path: PathInput<'_>) -> PyPath {
+    match path {
+        PathInput::Text(text) => parse_py_path(text),
+        PathInput::Path(path) => parse_py_path(&path.to_string_lossy()),
+    }
+}
+
+fn is_abs_text(parsed: &PyPath, shown: &str) -> bool {
+    parsed.is_absolute() || shown.starts_with('/') || second_is_colon(shown)
+}
+
+fn is_native_abs(parsed: &PyPath, shown: &str) -> bool {
+    parsed.is_absolute() || shown.starts_with('/')
+}
+
+fn second_is_colon(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next();
+    chars.next() == Some(':')
+}
+
+fn render_tilde(relative: &PyPath, hint: bool) -> String {
+    let bare_dot = relative.drv.is_empty() && relative.root.is_empty() && relative.parts.is_empty();
+    if !hint && bare_dot {
+        return "~".to_owned();
+    }
+    format!("~/{}", relative.as_posix())
+}
+
+fn os_sep() -> &'static str {
+    if cfg!(windows) {
+        "\\"
+    } else {
+        "/"
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PyPath {
+    drv: String,
+    root: String,
+    parts: Vec<String>,
+}
+
+impl PyPath {
+    fn from_tail(drv: String, root: String, tail: Vec<String>) -> Self {
+        let mut parts = Vec::new();
+        if !drv.is_empty() || !root.is_empty() {
+            parts.push(format!("{drv}{root}"));
+        }
+        parts.extend(tail);
+        Self { drv, root, parts }
+    }
+
+    fn is_absolute(&self) -> bool {
+        if self.root.is_empty() {
+            return false;
+        }
+        if cfg!(windows) {
+            !self.drv.is_empty()
+        } else {
+            true
+        }
+    }
+
+    fn name(&self) -> String {
+        let anchor = usize::from(!self.drv.is_empty() || !self.root.is_empty());
+        if self.parts.len() == anchor {
+            String::new()
+        } else {
+            self.parts.last().cloned().unwrap_or_default()
+        }
+    }
+
+    fn parent_is_dot(&self) -> bool {
+        self.drv.is_empty() && self.root.is_empty() && self.parts.len() <= 1
+    }
+
+    fn tail(&self) -> impl Iterator<Item = &str> {
+        let skip = usize::from(!self.drv.is_empty() || !self.root.is_empty());
+        self.parts.iter().skip(skip).map(String::as_str)
+    }
+
+    fn abs_parts(&self) -> Vec<String> {
+        if self.root.is_empty() {
+            self.parts.clone()
+        } else {
+            let mut out = vec![self.drv.clone(), self.root.clone()];
+            out.extend(self.parts.iter().skip(1).cloned());
+            out
+        }
+    }
+
+    fn relative_to(&self, other: &Self) -> Option<Self> {
+        let abs = self.abs_parts();
+        let to = other.abs_parts();
+        let count = to.len();
+        let anchored = !self.drv.is_empty() || !self.root.is_empty();
+        let mismatch = if count == 0 {
+            anchored
+        } else {
+            !prefix_equal(&abs, &to)
+        };
+        if mismatch {
+            return None;
+        }
+        let root = if count == 1 {
+            self.root.clone()
+        } else {
+            String::new()
+        };
+        Some(Self {
+            drv: String::new(),
+            root,
+            parts: abs.into_iter().skip(count).collect(),
+        })
+    }
+
+    fn resolve_lexical(&self) -> Self {
+        let mut tail = Vec::new();
+        let has_root = !self.root.is_empty();
+        for component in self.tail() {
+            if component == ".." {
+                if tail.last().is_some_and(|previous| previous != "..") {
+                    tail.pop();
+                } else if !has_root {
+                    tail.push("..".to_owned());
+                }
+            } else {
+                tail.push(component.to_owned());
+            }
+        }
+        Self::from_tail(self.drv.clone(), self.root.clone(), tail)
+    }
+
+    fn to_py_str(&self) -> String {
+        let sep = os_sep();
+        if !self.drv.is_empty() || !self.root.is_empty() {
+            let mut out = String::new();
+            out.push_str(&self.drv);
+            out.push_str(&self.root);
+            let mut tail = self.parts.iter().skip(1);
+            if let Some(first) = tail.next() {
+                out.push_str(first);
+                for part in tail {
+                    out.push_str(sep);
+                    out.push_str(part);
+                }
+            }
+            return out;
+        }
+        if self.parts.is_empty() {
+            ".".to_owned()
+        } else {
+            self.parts.join(sep)
+        }
+    }
+
+    fn as_posix(&self) -> String {
+        let text = self.to_py_str();
+        if cfg!(windows) {
+            text.replace('\\', "/")
+        } else {
+            text
+        }
+    }
+}
+
+fn parse_py_path(text: &str) -> PyPath {
+    if cfg!(windows) {
+        parse_windows(text)
+    } else {
+        parse_posix(text)
+    }
+}
+
+fn parse_windows(text: &str) -> PyPath {
+    let normalized = text.replace('/', "\\");
+    let (drv, root, rel) = splitroot_windows(&normalized);
+    PyPath::from_tail(drv, root, split_tail(&rel, '\\'))
+}
+
+fn parse_posix(text: &str) -> PyPath {
+    let leading = text.chars().take_while(|ch| *ch == '/').count();
+    let (root, rel) = if leading == 0 {
+        (String::new(), text.to_owned())
+    } else if leading == 2 {
+        (
+            "//".to_owned(),
+            text[2..].trim_start_matches('/').to_owned(),
+        )
+    } else {
+        ("/".to_owned(), text[leading..].to_owned())
+    };
+    PyPath::from_tail(String::new(), root, split_tail(&rel, '/'))
+}
+
+fn split_tail(rel: &str, sep: char) -> Vec<String> {
+    if rel.is_empty() {
+        return Vec::new();
+    }
+    rel.split(sep)
+        .filter(|piece| !piece.is_empty() && *piece != ".")
+        .map(str::to_owned)
+        .collect()
+}
+
+fn splitroot_windows(part: &str) -> (String, String, String) {
+    let chars: Vec<char> = part.chars().collect();
+    let mut index = 0usize;
+    let mut prefix = String::new();
+    if char_at(&chars, 0) == Some('\\') && char_at(&chars, 1) == Some('\\') {
+        let (extended, next) = split_extended(&chars);
+        prefix = extended;
+        index = next;
+    }
+    let first = char_at(&chars, index);
+    let second = char_at(&chars, index + 1);
+    let third = char_at(&chars, index + 2);
+    if first == Some('\\') && second == Some('\\') && third != Some('\\') {
+        if let Some(unc) = split_unc(&chars, index, &prefix) {
+            return unc;
+        }
+    }
+    let mut cursor = index;
+    let mut drive = String::new();
+    if first.is_some_and(|ch| ch.is_ascii_alphabetic()) && second == Some(':') {
+        drive = chars[cursor..cursor + 2].iter().collect();
+        cursor += 2;
+    }
+    let mut root = String::new();
+    if char_at(&chars, cursor) == Some('\\') {
+        root = "\\".to_owned();
+        cursor += 1;
+        while char_at(&chars, cursor) == Some('\\') {
+            cursor += 1;
+        }
+    }
+    let rel: String = chars.get(cursor..).unwrap_or_default().iter().collect();
+    (format!("{prefix}{drive}"), root, rel)
+}
+
+fn split_extended(chars: &[char]) -> (String, usize) {
+    if chars.len() >= 4
+        && chars[0] == '\\'
+        && chars[1] == '\\'
+        && chars[2] == '?'
+        && chars[3] == '\\'
+    {
+        let prefix: String = chars[..4].iter().collect();
+        return (prefix, 4);
+    }
+    (String::new(), 0)
+}
+
+fn split_unc(chars: &[char], start: usize, prefix: &str) -> Option<(String, String, String)> {
+    let index = find_char(chars, '\\', start + 2)?;
+    let index2 = find_char(chars, '\\', index + 1).unwrap_or(chars.len());
+    if index2 == index + 1 {
+        return None;
+    }
+    let drive = if prefix.is_empty() {
+        chars.get(start..index2)?.iter().collect()
+    } else {
+        let mut combined = prefix.to_owned();
+        let from = start + 1;
+        if from < index2 {
+            combined.extend(chars.get(from..index2)?.iter().copied());
+        }
+        combined
+    };
+    let rel = if index2 >= chars.len() {
+        String::new()
+    } else {
+        chars.get(index2 + 1..).unwrap_or_default().iter().collect()
+    };
+    Some((drive, "\\".to_owned(), rel))
+}
+
+fn char_at(chars: &[char], index: usize) -> Option<char> {
+    chars.get(index).copied()
+}
+
+fn find_char(chars: &[char], needle: char, from: usize) -> Option<usize> {
+    chars
+        .iter()
+        .skip(from)
+        .position(|ch| *ch == needle)
+        .map(|offset| from + offset)
+}
+
+fn prefix_equal(left: &[String], right: &[String]) -> bool {
+    if right.len() > left.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right.iter())
+        .all(|(item, expected)| casefold(item) == casefold(expected))
+}
+
+fn casefold(text: &str) -> String {
+    if cfg!(windows) {
+        text.to_lowercase()
+    } else {
+        text.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod port_1610 {
+    use super::{
+        apply_plan_assurance, build_repro_metadata, enforce_content_free, get_manifest_schema_path,
+        get_report_schema_path, hint_path, human_bytes, load_manifest_schema, load_report_schema,
+        minimize_id, minimize_path, python_str_repr, short_hash, ActionElem, ActionSeq,
+        CapAssuranceUnavailable, ContentFreeError, ContentFreeInput, CountKey, CountValue, Counts,
+        CountsInput, Coverage, CoverageInput, CoverageSkip, FindingElem, FindingsInput,
+        HomeDirectoryError, InputKey, InputValue, MinimizePathError, MinimizedField, MinimizedId,
+        PathInput, RepairAction, RepairManifest, RepairManifestParts, Report, ReportParts,
+        ReproEntry, ReproMetadata, ReproRequest, ReproValue, RevalidationInput,
+        RevalidationSummary, SchemaPathUnavailable, SesslintVersionUnavailable, SkipElem, SkipSeq,
+        CAP_ASSURANCE, HASHLIB_SHA1, REPORT_SCHEMA_VERSION, RESOURCES_SCHEMA_PATH,
+        SESSLINT_VERSION, SHORT_HASH_DEFAULT_LENGTH,
+    };
+    use model::codes::{Repairability, Severity, SL001};
+    use model::finding::{
+        enforce_content_free_text, Finding, FindingInput, PyValue, SourceLine, SourceRef,
+        SCHEMA_VERSION,
+    };
+    use std::path::Path;
+
+    const HOME: &str = "C:/SyntheticHome";
+    const ABC_SHA256: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    fn text(value: &str) -> InputValue {
+        InputValue::str_value(value)
+    }
+
+    fn minimized(path: &str) -> Result<String, MinimizePathError> {
+        minimize_path(PathInput::Text(path), Some(HOME))
+    }
+
+    fn hinted(path: &str) -> String {
+        match hint_path(PathInput::Text(path), Some(HOME)) {
+            Ok(value) => value,
+            Err(error) => panic!("hint {path:?} failed: {error}"),
+        }
+    }
+
+    fn binding(id: &str, version: &str) -> InputValue {
+        InputValue::dict(vec![
+            (InputKey::str_key("id"), text(id)),
+            (InputKey::str_key("version"), text(version)),
+        ])
+    }
+
+    fn counts_for(code: &str, total: i64) -> Counts {
+        let by_severity = CountValue::dict(vec![
+            (CountKey::str_key("fatal"), CountValue::int(0)),
+            (CountKey::str_key("error"), CountValue::int(total)),
+            (CountKey::str_key("warning"), CountValue::int(0)),
+            (CountKey::str_key("info"), CountValue::int(0)),
+        ]);
+        let by_code = if total == 0 {
+            CountValue::dict(Vec::new())
+        } else {
+            CountValue::dict(vec![(CountKey::str_key(code), CountValue::int(total))])
+        };
+        match Counts::try_new(&by_severity, &by_code, &CountValue::int(total)) {
+            Ok(counts) => counts,
+            Err(error) => panic!("counts rejected: {error}"),
+        }
+    }
+
+    fn make_finding(
+        message: &str,
+        template: Option<&str>,
+        path: &str,
+        record_id: Option<&str>,
+        related: &[&str],
+    ) -> Finding {
+        let source = match SourceRef::try_new(path, Some(SourceLine::Int(1)), record_id) {
+            Ok(source) => source,
+            Err(error) => panic!("source rejected: {error}"),
+        };
+        let template = match template {
+            Some(value) => PyValue::string(value),
+            None => PyValue::None,
+        };
+        match Finding::try_new(FindingInput {
+            code: PyValue::string(SL001),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message: PyValue::string(message),
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(related.iter().copied().map(PyValue::string).collect()),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: template,
+            evidence: PyValue::None,
+        }) {
+            Ok(finding) => finding,
+            Err(error) => panic!("finding rejected: {error}"),
+        }
+    }
+
+    fn make_report(
+        session_id: &str,
+        fingerprint: &str,
+        tool_version: &str,
+        limitation: &str,
+        findings: &[Finding],
+        skips: &[CoverageSkip],
+    ) -> Report {
+        let coverage = match Coverage::try_new(
+            &InputValue::tuple(Vec::new()),
+            &SkipSeq::Tuple(skips.iter().cloned().map(SkipElem::Skip).collect()),
+            &binding("canonical", "1"),
+            &binding("neutral", "1"),
+        ) {
+            Ok(coverage) => coverage,
+            Err(error) => panic!("coverage rejected: {error}"),
+        };
+        let schema = text(REPORT_SCHEMA_VERSION);
+        let session = text(session_id);
+        let source = text(fingerprint);
+        let tool = text(tool_version);
+        let assurance = text("A1");
+        let limit = text(limitation);
+        let findings_input =
+            FindingsInput::Tuple(findings.iter().cloned().map(FindingElem::Finding).collect());
+        let counts = counts_for(SL001, i64::try_from(findings.len()).unwrap_or(0));
+        let counts_input = CountsInput::Value(counts);
+        match Report::try_new(ReportParts {
+            schema_version: &schema,
+            session_id: &session,
+            source_fingerprint: &source,
+            tool_version: &tool,
+            findings: &findings_input,
+            counts: &counts_input,
+            assurance: &assurance,
+            limitation: &limit,
+            coverage: CoverageInput::Value(&coverage),
+        }) {
+            Ok(report) => report,
+            Err(error) => panic!("report rejected: {error}"),
+        }
+    }
+
+    fn rich_report() -> Report {
+        let skip = match CoverageSkip::try_new(
+            &text("check-marker-eee"),
+            &text("deselected"),
+            &text("detail-marker-fff"),
+        ) {
+            Ok(skip) => skip,
+            Err(error) => panic!("skip rejected: {error}"),
+        };
+        let finding = make_finding(
+            "message-marker-ggg",
+            Some("template-marker-hhh"),
+            "path-marker-iii.jsonl",
+            Some("record-marker-jjj"),
+            &["rel-clean", "rel-marker-kkk"],
+        );
+        make_report(
+            "sess-marker-aaa",
+            "fp-marker-bbb",
+            "tool-marker-ccc",
+            "lim-marker-ddd",
+            &[finding],
+            &[skip],
+        )
+    }
+
+    fn forbid(report: &Report, subs: &[&str]) -> ContentFreeError {
+        match enforce_content_free(ContentFreeInput::Report(report), Some(subs)) {
+            Ok(()) => panic!("expected a content-free failure"),
+            Err(error) => error,
+        }
+    }
+
+    fn forbidden_message(sub: &str, context: &str, text: &str) -> String {
+        format!(
+            "Forbidden payload text {} detected in {context}: {}",
+            python_str_repr(sub),
+            python_str_repr(text)
+        )
+    }
+
+    fn rich_manifest() -> RepairManifest {
+        let action = match RepairAction::try_new(
+            &text("kind-marker-eee"),
+            &text("record-marker-fff"),
+            &text("detail-marker-ggg"),
+        ) {
+            Ok(action) => action,
+            Err(error) => panic!("action rejected: {error}"),
+        };
+        let actions = ActionSeq::Tuple(vec![ActionElem::Action(action)]);
+        let loss = InputValue::tuple(vec![text("loss-marker-ddd")]);
+        let revalidation = match RevalidationSummary::try_new(
+            &text("A1"),
+            &InputValue::int(0),
+            &InputValue::int(1),
+            &text("profile-marker-hhh"),
+            &text("ver-marker-iii"),
+            &text("report-marker-jjj"),
+        ) {
+            Ok(summary) => summary,
+            Err(error) => panic!("revalidation rejected: {error}"),
+        };
+        let revalidation = RevalidationInput::Summary(revalidation);
+        let schema = text(model::version::MANIFEST_SCHEMA_VERSION);
+        let input = text("in-marker-aaa");
+        let output = text("out-marker-bbb");
+        let policy = text("conservative");
+        let revalidate = text("reports/reval-marker-ccc.json");
+        let key_text = "a".repeat(64);
+        let key = text(&key_text);
+        let ceiling = text("A2");
+        let none = InputValue::None;
+        let empty = InputValue::dict(Vec::new());
+        let adapter = text("adapter-marker-kkk");
+        let adapter_version = text("version-marker-lll");
+        match RepairManifest::try_new(RepairManifestParts {
+            schema_version: &schema,
+            input_fingerprint: &input,
+            output_fingerprint: &output,
+            policy: &policy,
+            actions: &actions,
+            declared_loss: &loss,
+            revalidate_report: &revalidate,
+            idempotency_key: &key,
+            revalidation: &revalidation,
+            assurance_ceiling: &ceiling,
+            plan_fingerprint: &none,
+            assurance: &none,
+            recipe_versions: &empty,
+            profile_version: &none,
+            adapter_id: &adapter,
+            adapter_version: &adapter_version,
+            byte_counts: &empty,
+            record_counts: &empty,
+        }) {
+            Ok(manifest) => manifest,
+            Err(error) => panic!("manifest rejected: {error}"),
+        }
+    }
+
+    #[test]
+    fn report_fields_are_checked_in_pin_order() {
+        let report = rich_report();
+        let cases = [
+            ("marker-aaa", "Report.session_id", "sess-marker-aaa"),
+            ("marker-bbb", "Report.source_fingerprint", "fp-marker-bbb"),
+            ("marker-ccc", "Report.tool_version", "tool-marker-ccc"),
+            ("marker-ddd", "Report.limitation", "lim-marker-ddd"),
+            (
+                "marker-eee",
+                "Report.coverage.skipped[0].check",
+                "check-marker-eee",
+            ),
+            (
+                "marker-fff",
+                "Report.coverage.skipped[0].detail",
+                "detail-marker-fff",
+            ),
+            (
+                "marker-ggg",
+                "Report.findings[0].message",
+                "message-marker-ggg",
+            ),
+            (
+                "marker-hhh",
+                "Report.findings[0].message_template",
+                "template-marker-hhh",
+            ),
+            (
+                "marker-iii",
+                "Report.findings[0].source.path",
+                "path-marker-iii.jsonl",
+            ),
+            (
+                "marker-jjj",
+                "Report.findings[0].source.record_id",
+                "record-marker-jjj",
+            ),
+            (
+                "marker-kkk",
+                "Report.findings[0].related_ids[1]",
+                "rel-marker-kkk",
+            ),
+        ];
+        for (sub, context, stored) in cases {
+            match forbid(&report, &[sub]) {
+                ContentFreeError::Leak(error) => {
+                    assert_eq!(error.to_string(), forbidden_message(sub, context, stored));
+                }
+                ContentFreeError::Type(message) => panic!("type error for {context}: {message}"),
+            }
+        }
+        let shared = make_report(
+            "sess-shared-marker",
+            "fp",
+            "0.0.0",
+            "lim-shared-marker",
+            &[make_finding(
+                "synthetic marker",
+                None,
+                "probe.jsonl",
+                None,
+                &[],
+            )],
+            &[],
+        );
+        match forbid(&shared, &["shared-marker"]) {
+            ContentFreeError::Leak(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    forbidden_message("shared-marker", "Report.session_id", "sess-shared-marker")
+                );
+            }
+            ContentFreeError::Type(message) => panic!("shared type error: {message}"),
+        }
+    }
+
+    #[test]
+    fn forbidden_substrings_strip_and_none_skips_only_the_extra_list() {
+        let report = rich_report();
+        match enforce_content_free(ContentFreeInput::Report(&report), None) {
+            Ok(()) => {}
+            Err(error) => panic!("none must not fail a clean report: {error}"),
+        }
+        match enforce_content_free(ContentFreeInput::Report(&report), Some(&[])) {
+            Ok(()) => {}
+            Err(error) => panic!("empty list must not fail: {error}"),
+        }
+        match enforce_content_free(ContentFreeInput::Report(&report), Some(&["", "   "])) {
+            Ok(()) => {}
+            Err(error) => panic!("blank substrings must be dropped: {error}"),
+        }
+        match forbid(&report, &["  marker-aaa  ", "", "marker-bbb"]) {
+            ContentFreeError::Leak(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    forbidden_message("marker-aaa", "Report.session_id", "sess-marker-aaa")
+                );
+            }
+            ContentFreeError::Type(message) => panic!("strip type error: {message}"),
+        }
+        let cased = make_report(
+            "sess",
+            "fp",
+            "0.0.0",
+            "Hello Marker",
+            &[make_finding(
+                "synthetic marker",
+                None,
+                "probe.jsonl",
+                None,
+                &[],
+            )],
+            &[],
+        );
+        match forbid(&cased, &["hello marker"]) {
+            ContentFreeError::Leak(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    forbidden_message("hello marker", "Report.limitation", "Hello Marker")
+                );
+            }
+            ContentFreeError::Type(message) => panic!("case type error: {message}"),
+        }
+    }
+
+    #[test]
+    fn intrinsic_leak_is_reported_before_the_substring_scan() {
+        let report = make_report(
+            "sess",
+            "fp",
+            "0.0.0",
+            "line\nbreak",
+            &[make_finding(
+                "synthetic marker",
+                None,
+                "probe.jsonl",
+                None,
+                &[],
+            )],
+            &[],
+        );
+        let inner = match enforce_content_free_text("line\nbreak", "Report.limitation") {
+            Ok(()) => panic!("newline must be an intrinsic leak"),
+            Err(error) => error.to_string(),
+        };
+        match forbid(&report, &["line"]) {
+            ContentFreeError::Leak(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    format!("Intrinsic content leak in Report.limitation: {inner}")
+                );
+                assert!(!error.to_string().contains("Forbidden payload"));
+            }
+            ContentFreeError::Type(message) => panic!("intrinsic type error: {message}"),
+        }
+    }
+
+    #[test]
+    fn other_artifacts_are_type_errors() {
+        match enforce_content_free(
+            ContentFreeInput::Other { type_name: "str" },
+            Some(&["marker"]),
+        ) {
+            Err(ContentFreeError::Type(message)) => {
+                assert_eq!(message, "Expected Report or RepairManifest, got str");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+        match enforce_content_free(
+            ContentFreeInput::Other {
+                type_name: "NoneType",
+            },
+            None,
+        ) {
+            Err(ContentFreeError::Type(message)) => {
+                assert_eq!(message, "Expected Report or RepairManifest, got NoneType");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn manifest_fields_are_checked_in_pin_order() {
+        let manifest = rich_manifest();
+        let cases = [
+            (
+                "marker-aaa",
+                "RepairManifest.input_fingerprint",
+                "in-marker-aaa",
+            ),
+            (
+                "marker-bbb",
+                "RepairManifest.output_fingerprint",
+                "out-marker-bbb",
+            ),
+            (
+                "marker-ccc",
+                "RepairManifest.revalidate_report",
+                "reports/reval-marker-ccc.json",
+            ),
+            (
+                "marker-ddd",
+                "RepairManifest.declared_loss[0]",
+                "loss-marker-ddd",
+            ),
+            (
+                "marker-eee",
+                "RepairManifest.actions[0].kind",
+                "kind-marker-eee",
+            ),
+            (
+                "marker-fff",
+                "RepairManifest.actions[0].record_id",
+                "record-marker-fff",
+            ),
+            (
+                "marker-ggg",
+                "RepairManifest.actions[0].detail",
+                "detail-marker-ggg",
+            ),
+            (
+                "marker-hhh",
+                "RepairManifest.revalidation.profile_id",
+                "profile-marker-hhh",
+            ),
+            (
+                "marker-iii",
+                "RepairManifest.revalidation.profile_version",
+                "ver-marker-iii",
+            ),
+            (
+                "marker-jjj",
+                "RepairManifest.revalidation.report_fingerprint",
+                "report-marker-jjj",
+            ),
+            (
+                "marker-kkk",
+                "RepairManifest.adapter_id",
+                "adapter-marker-kkk",
+            ),
+        ];
+        for (sub, context, stored) in cases {
+            match enforce_content_free(ContentFreeInput::Manifest(&manifest), Some(&[sub])) {
+                Err(ContentFreeError::Leak(error)) => {
+                    assert_eq!(error.to_string(), forbidden_message(sub, context, stored));
+                }
+                other => panic!("manifest {context}: {other:?}"),
+            }
+        }
+        match enforce_content_free(
+            ContentFreeInput::Manifest(&manifest),
+            Some(&["version-marker-lll"]),
+        ) {
+            Ok(()) => {}
+            Err(error) => panic!("adapter_version is not a checked field: {error}"),
+        }
+    }
+
+    #[test]
+    fn schema_loaders_stop_at_the_missing_resource_helper() {
+        let display = format!("{RESOURCES_SCHEMA_PATH} is not available");
+        assert_eq!(SchemaPathUnavailable.to_string(), display);
+        match get_report_schema_path() {
+            Ok(path) => panic!("invented report schema path {}", path.display()),
+            Err(error) => assert_eq!(error.to_string(), display),
+        }
+        match load_report_schema() {
+            Ok(schema) => panic!("loaded a report schema: {schema:?}"),
+            Err(error) => assert_eq!(error.to_string(), display),
+        }
+        match get_manifest_schema_path() {
+            Ok(path) => panic!("invented manifest schema path {}", path.display()),
+            Err(error) => assert_eq!(error.to_string(), display),
+        }
+        match load_manifest_schema() {
+            Ok(schema) => panic!("loaded a manifest schema: {schema:?}"),
+            Err(error) => assert_eq!(error.to_string(), display),
+        }
+    }
+
+    #[test]
+    fn plan_assurance_does_not_return_the_base_level() {
+        let display = format!("{CAP_ASSURANCE} is not available");
+        assert_eq!(CapAssuranceUnavailable.to_string(), display);
+        match apply_plan_assurance("clean", &()) {
+            Ok(level) => panic!("returned {level} unchanged"),
+            Err(error) => {
+                assert_eq!(error.to_string(), display);
+                assert_ne!(error.to_string(), "clean");
+            }
+        }
+    }
+
+    #[test]
+    fn minimize_path_renders_home_and_stops_before_sha1() {
+        assert_eq!(minimized(HOME).expect("home"), "~");
+        assert_eq!(hinted(HOME), "~/.");
+        assert_eq!(
+            minimized("C:/SyntheticHome/work/a.jsonl").expect("under"),
+            "~/work/a.jsonl"
+        );
+        assert_eq!(hinted("C:/SyntheticHome/work/a.jsonl"), "~/work/a.jsonl");
+        assert_eq!(
+            minimized("C:\\SyntheticHome\\work\\a.jsonl").expect("slashes"),
+            "~/work/a.jsonl"
+        );
+        assert_eq!(
+            minimized("c:/synthetichome/Work/A.JSONL").expect("case"),
+            "~/Work/A.JSONL"
+        );
+        assert_eq!(
+            minimized("C:/SyntheticHome/work/../a.jsonl").expect("lexical dotdot"),
+            "~/work/../a.jsonl"
+        );
+        assert_eq!(
+            minimized("C:/Other/../SyntheticHome/a.jsonl").expect("resolved"),
+            "~/a.jsonl"
+        );
+        assert_eq!(hinted("C:/Other/../SyntheticHome/a.jsonl"), "~/a.jsonl");
+        assert_eq!(
+            minimized("C:/Other/../SyntheticHome").expect("resolved home"),
+            "~"
+        );
+        assert_eq!(hinted("C:/Other/../SyntheticHome"), "~/.");
+        assert_eq!(
+            minimized("C:/SyntheticHome/foo/../../SyntheticHome/a.jsonl").expect("prefix wins"),
+            "~/foo/../../SyntheticHome/a.jsonl"
+        );
+        assert_eq!(
+            minimized("C:/SyntheticHome/thư mục/a.jsonl").expect("unicode"),
+            "~/thư mục/a.jsonl"
+        );
+        assert_eq!(minimized("C:/SyntheticHome/").expect("trailing"), "~");
+        assert_eq!(hinted("C:/SyntheticHome/"), "~/.");
+        assert_eq!(minimized("file.jsonl").expect("name"), "file.jsonl");
+        assert_eq!(hinted("file.jsonl"), "file.jsonl");
+        assert_eq!(minimized(".").expect("dot"), "");
+        assert_eq!(hinted("."), ".");
+        assert_eq!(minimized("..").expect("dotdot"), "..");
+        assert_eq!(minimized("").expect("empty"), "");
+        assert_eq!(hinted(""), "");
+        assert_eq!(minimized("foo/.").expect("trailing dot"), "foo");
+        assert_eq!(hinted("foo/."), "foo/.");
+        assert_eq!(minimized("~").expect("tilde"), "~");
+        assert_eq!(
+            minimized("~/already/x").expect("tilde slash"),
+            "~/already/x"
+        );
+        assert_eq!(
+            minimized(".._abcd1234/x").expect("already hashed form"),
+            ".._abcd1234/x"
+        );
+        assert_eq!(minimized(".._ab\\x").expect("raw prefix"), ".._ab\\x");
+        assert_eq!(hinted(".._ab\\x"), ".._ab/x");
+        let outside = minimized("C:/Other/dir/file.jsonl").expect_err("outside");
+        assert_eq!(
+            outside.to_string(),
+            format!("{HASHLIB_SHA1} is not available")
+        );
+        assert!(!outside.to_string().contains(".._"));
+        assert_eq!(hinted("C:/Other/dir/file.jsonl"), "C:/Other/dir/file.jsonl");
+        assert!(matches!(
+            minimized("dir/file.jsonl"),
+            Err(MinimizePathError::Sha1)
+        ));
+        assert_eq!(hinted("dir/file.jsonl"), "dir/file.jsonl");
+        assert!(matches!(minimized("foo/.."), Err(MinimizePathError::Sha1)));
+        assert_eq!(hinted("foo/.."), "foo/..");
+        assert!(matches!(
+            minimized("C:relative/file"),
+            Err(MinimizePathError::Sha1)
+        ));
+        assert_eq!(hinted("C:relative/file"), "C:relative/file");
+        assert!(matches!(
+            minimized("//server/share/file"),
+            Err(MinimizePathError::Sha1)
+        ));
+        assert_eq!(hinted("//server/share/file"), "//server/share/file");
+        assert_eq!(
+            hinted("C:/nope/../nope2/a.jsonl"),
+            "C:/nope/../nope2/a.jsonl"
+        );
+        let path_form = Path::new("~/already/x");
+        assert!(matches!(
+            minimize_path(PathInput::Path(path_form), Some(HOME)),
+            Err(MinimizePathError::Sha1)
+        ));
+        assert_eq!(
+            hint_path(PathInput::Path(path_form), Some(HOME)).expect("path hint"),
+            "~/already/x"
+        );
+        let absolute = Path::new("C:/SyntheticHome/work/a.jsonl");
+        assert_eq!(
+            minimize_path(PathInput::Path(absolute), Some(HOME)).expect("path under"),
+            "~/work/a.jsonl"
+        );
+    }
+
+    #[test]
+    fn provided_home_is_not_replaced_by_the_process_home() {
+        assert_eq!(
+            minimize_path(PathInput::Text("~/kept"), None).expect("prefix skips home"),
+            "~/kept"
+        );
+        let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let Ok(real_home) = std::env::var(key) else {
+            return;
+        };
+        if real_home.is_empty() {
+            return;
+        }
+        let under_real = format!("{real_home}/sesslint-explicit-home.jsonl");
+        let error = minimize_path(PathInput::Text(&under_real), Some(HOME))
+            .expect_err("explicit home must win");
+        assert_eq!(
+            error.to_string(),
+            format!("{HASHLIB_SHA1} is not available")
+        );
+        let hint = hint_path(PathInput::Text(&under_real), Some(HOME)).expect("hint outside");
+        assert!(!hint.starts_with('~'), "{hint}");
+        let under_explicit = format!("{real_home}/sesslint-process-home.jsonl");
+        let rendered = minimize_path(PathInput::Text(&under_explicit), None).expect("process home");
+        assert_eq!(rendered, "~/sesslint-process-home.jsonl");
+        let again = minimize_path(PathInput::Text(&under_explicit), None).expect("second read");
+        assert_eq!(again, rendered);
+    }
+
+    #[test]
+    fn human_bytes_matches_python_boundaries() {
+        assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(1023), "1023 B");
+        assert_eq!(human_bytes(1024), "1.0 KiB");
+        assert_eq!(human_bytes(1024 * 1024), "1.0 MiB");
+        assert_eq!(human_bytes(1024 * 1024 * 1024), "1.0 GiB");
+        assert_eq!(human_bytes(-1), "-1 B");
+        assert_eq!(human_bytes(-1024), "-1024 B");
+        assert_eq!(human_bytes(410), "410 B");
+        assert_eq!(human_bytes(1280), "1.2 KiB");
+        assert_eq!(human_bytes(1536), "1.5 KiB");
+        assert_eq!(human_bytes(2048), "2.0 KiB");
+        assert_eq!(human_bytes(11 * 1024 * 1024), "11.0 MiB");
+        assert_eq!(human_bytes(1024 * 1024 - 1), "1024.0 KiB");
+        assert_eq!(human_bytes(1024 * 1024 * 1024 - 1), "1024.0 MiB");
+    }
+
+    #[test]
+    fn short_hash_and_minimize_id_keep_dict_order() {
+        assert_eq!(SHORT_HASH_DEFAULT_LENGTH, 8);
+        assert_eq!(short_hash("abc", 0), "");
+        assert_eq!(short_hash("abc", 8), "ba7816bf");
+        assert_eq!(short_hash("abc", 64), ABC_SHA256);
+        assert_eq!(short_hash("abc", 65), ABC_SHA256);
+        let identifier = "550e8400-e29b-41d4-a716-446655440000";
+        let short = short_hash(identifier, 8);
+        assert_eq!(
+            minimize_id(identifier, None, false, false),
+            MinimizedId::Text(short.clone())
+        );
+        let ordinal = InputValue::int(3);
+        assert_eq!(
+            minimize_id(identifier, Some(&ordinal), false, false),
+            MinimizedId::Text("#3".to_owned())
+        );
+        let zero = InputValue::int(0);
+        assert_eq!(
+            minimize_id(identifier, Some(&zero), false, false),
+            MinimizedId::Text("#0".to_owned())
+        );
+        assert_eq!(
+            minimize_id(identifier, Some(&ordinal), true, false),
+            MinimizedId::Text(identifier.to_owned())
+        );
+        let flag = InputValue::bool_value(true);
+        assert_eq!(
+            minimize_id(identifier, Some(&flag), false, false),
+            MinimizedId::Text(short.clone())
+        );
+        let false_flag = InputValue::bool_value(false);
+        assert_eq!(
+            minimize_id(identifier, Some(&false_flag), false, false),
+            MinimizedId::Text(short.clone())
+        );
+        match minimize_id(identifier, Some(&ordinal), true, true) {
+            MinimizedId::Map(map) => {
+                assert_eq!(
+                    map.entries(),
+                    vec![
+                        ("short", MinimizedField::Text(short.clone())),
+                        ("ordinal", MinimizedField::Int(3)),
+                        ("full", MinimizedField::Text(identifier.to_owned())),
+                    ]
+                );
+            }
+            MinimizedId::Text(text) => panic!("dict mode returned {text}"),
+        }
+        match minimize_id(identifier, Some(&flag), true, true) {
+            MinimizedId::Map(map) => {
+                let keys: Vec<&str> = map.entries().iter().map(|(key, _)| *key).collect();
+                assert_eq!(keys, vec!["short", "full"]);
+            }
+            MinimizedId::Text(text) => panic!("bool ordinal returned {text}"),
+        }
+    }
+
+    #[test]
+    fn repro_metadata_keeps_insertion_order_and_build_stops_at_version() {
+        let metadata = ReproMetadata {
+            cli_version: "test-cli".to_owned(),
+            schema_versions: vec![
+                ("z".to_owned(), "later".to_owned()),
+                ("a".to_owned(), "earlier".to_owned()),
+            ],
+            adapter: vec![
+                ("name".to_owned(), "canonical".to_owned()),
+                ("version".to_owned(), "1.0.0".to_owned()),
+            ],
+            profile: vec![
+                ("name".to_owned(), "neutral".to_owned()),
+                ("version".to_owned(), "unknown".to_owned()),
+            ],
+            detection: vec![
+                ("confidence".to_owned(), ReproValue::Null),
+                ("method".to_owned(), ReproValue::Text("unknown".to_owned())),
+            ],
+            platform: vec![
+                ("architecture".to_owned(), "synthetic".to_owned()),
+                ("os".to_owned(), "synthetic".to_owned()),
+                ("python".to_owned(), "synthetic".to_owned()),
+            ],
+        };
+        let dict = metadata.to_dict();
+        let keys: Vec<&str> = dict.entries().iter().map(|(key, _)| *key).collect();
+        assert_eq!(
+            keys,
+            vec![
+                "adapter",
+                "cli_version",
+                "detection",
+                "platform",
+                "profile",
+                "schema_versions",
+            ]
+        );
+        assert_eq!(
+            dict.schema_versions,
+            vec![
+                ("z".to_owned(), "later".to_owned()),
+                ("a".to_owned(), "earlier".to_owned()),
+            ]
+        );
+        match dict.entries().iter().find(|(key, _)| *key == "detection") {
+            Some((_, ReproEntry::Any(entries))) => {
+                assert_eq!(entries[0].0, "confidence");
+                assert_eq!(entries[0].1, ReproValue::Null);
+                assert_eq!(entries[1].0, "method");
+            }
+            other => panic!("detection order lost: {other:?}"),
+        }
+        let explicit = ReproMetadata {
+            detection: vec![
+                ("confidence".to_owned(), ReproValue::Float(0.87)),
+                ("method".to_owned(), ReproValue::Text("auto".to_owned())),
+            ],
+            ..metadata
+        };
+        assert_eq!(explicit.to_dict().detection[0].1, ReproValue::Float(0.87));
+        let request = ReproRequest {
+            adapter_name: "canonical",
+            adapter_version: "1.0.0",
+            profile_name: "neutral",
+            profile_version: "1.0.0",
+            detection_method: "auto",
+            detection_confidence: Some(0.87),
+        };
+        match build_repro_metadata(request) {
+            Ok(built) => panic!("invented repro metadata {built:?}"),
+            Err(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    format!("{SESSLINT_VERSION} is not available")
+                );
+                assert_eq!(SesslintVersionUnavailable.to_string(), error.to_string());
+                let rendered = error.to_string();
+                assert!(!rendered.contains("0.0.0"));
+                assert!(!rendered.contains("windows"));
+                assert!(!rendered.contains("x86_64"));
+            }
+        }
+    }
+
+    #[test]
+    fn home_directory_error_names_the_python_message() {
+        assert_eq!(
+            HomeDirectoryError.to_string(),
+            "Could not determine home directory."
+        );
+    }
+}
