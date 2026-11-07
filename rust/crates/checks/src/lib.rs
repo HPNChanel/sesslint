@@ -73,6 +73,80 @@ pub const PROFILES_ALL: [&str; 14] = [
     "stamp_source_profile",
 ];
 
+pub use accounting::check_accounting;
+pub use checkpoint::{
+    MAX_CHECKPOINT_FINDINGS,
+    cap_checkpoint_findings,
+    check_checkpoint,
+    check_checkpoint_divergence,
+    check_checkpoint_gap,
+    check_compaction_coverage,
+    check_sl201,
+    check_sl202,
+    check_sl203,
+    check_sl205,
+    check_unsafe_continuation,
+    compute_checkpoint_fingerprint,
+};
+pub use graph::{
+    MAX_GRAPH_FINDINGS,
+    MAX_MEMBER_SAMPLE_SIZE,
+    cap_graph_findings,
+    check_components,
+    check_cycles,
+    check_graph,
+    check_heads,
+    check_missing_parent,
+    compute_graph_fingerprint,
+};
+pub use hygiene::{
+    MAX_DIGESTS_PER_FINDING,
+    MAX_SECRET_FINDINGS_PER_FILE,
+    SECRET_FAMILY_IDS,
+    SECRET_FAMILY_SET_VERSION,
+    SecretScanTracker,
+};
+pub use identity::{
+    MAX_IDENTITY_FINDINGS,
+    MAX_RECORD_INDEXES_IN_EVIDENCE,
+    cap_findings,
+    check_identities,
+    compute_identity_fingerprint,
+    diff_field_names,
+};
+pub use ordering::check_ordering;
+pub use size::check_size_anomaly;
+pub use tool_pairing_1::{
+    CALL_KINDS,
+    MAX_PAIRING_FINDINGS,
+    MAX_PAIRING_SAMPLE_SIZE,
+    RESULT_KINDS,
+    cap_pairing_findings,
+    check_dangling_calls,
+    check_multiple_results,
+    check_orphan_results,
+    check_reused_ids,
+    check_sl101,
+    check_sl102,
+    check_sl103,
+    check_sl104,
+    check_tool_pairing_1,
+    compute_pairing_fingerprint,
+};
+pub use tool_pairing_2::{
+    COMPACTION_KINDS,
+    check_adjacency,
+    check_compaction_split,
+    check_cross_branch,
+    check_reversed_order,
+    check_sl105,
+    check_sl106,
+    check_sl107,
+    check_sl108,
+    check_tool_pairing_2,
+};
+pub use context::CheckContext;
+
 #[cfg(test)]
 mod tests {
     #[test]
