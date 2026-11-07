@@ -1,8 +1,8 @@
 //! OpenAI Agents SDK run-state projection, detection, payload assembly, and load gates.
 //!
 //! Port of `src/sesslint/adapters/openai_agents.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–904.
-//! Stops before `_load_openai_agents_jsonl` (line 907).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–1201.
+//! Stops before `_check_version` (line 1204).
 //!
 //! Lines 1–313 port [`safe_type_value`] (Python `_safe_type_value`),
 //! [`project_run_state`], and [`SourceMetadata`]. [`SourceMetadata`] is the
@@ -58,6 +58,27 @@
 //! bytes are not checked for NUL, decoded as UTF-8, parsed as JSON, or walked
 //! as items. No [`EventList`] is returned. SL001, SL009, SL301, and SL302 are
 //! not produced. [`load_openai_agents`] does not call this function.
+//!
+//! [`load_openai_agents_jsonl`] ports `_load_openai_agents_jsonl` (lines
+//! 907–1016). Before the line loop it builds a
+//! [`crate::synthetic::SyntheticIdCollisionGuard`] and a
+//! [`crate::drift::DriftTracker`], then `sesslint.io.MalformedTailTracker`.
+//! That type is not in this crate. This crate does not depend on scan.
+//! The display is [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`]. The bytes are not
+//! split. [`process_jsonl_line`] is not called. `feed` is not called. No
+//! [`EventList`] is returned. Empty input, whitespace, a NUL byte, and a JSON
+//! object all stop at that display. [`load_openai_agents`] and
+//! [`load_openai_agents_json`] do not call this function.
+//!
+//! [`process_jsonl_line`] ports `_process_jsonl_line` (lines 1019–1201).
+//! A supplied tracker stops at [`SECRET_SCAN_FEED_UNAVAILABLE`] before the
+//! line bytes are read. An absent tracker does not call `feed`. When
+//! `record_sizes` is a list, the next step appends `byte_end - byte_offset`.
+//! A truncated line, a NUL line, and invalid UTF-8 then stop at
+//! [`EXTRACT_RECORD_ID_UNAVAILABLE`], before [`model::finding::make_finding`].
+//! A decodable line stops at [`DECODE_JSON_DUPAWARE_UNAVAILABLE`]. JSON is not
+//! parsed. SL001, SL002, SL009, and SL011 are not produced. `_check_version`
+//! is not ported.
 //!
 //! `limits is None` uses [`DEFAULT_MAX_FILE_BYTES`] from `src/sesslint/io.py`
 //! at this pin (`100 * 1024 * 1024`). A provided integer is that cap.
@@ -130,6 +151,18 @@
 //!   [`SuppliedSecretScanTracker`] has no scan state.
 //!   [`crate::source::SuppliedReaderLimits`] is the `sesslint.io` limits
 //!   witness, unread here.
+//! - [`load_openai_agents_jsonl`] builds the collision guard and the drift
+//!   tracker, then stops. `MalformedTailTracker` is not built. The buffer is
+//!   not split into lines. [`process_jsonl_line`] and `feed` are not called.
+//!   The result is not an [`EventList`].
+//! - A supplied [`SuppliedSecretScanTracker`] has no `feed`. That path does
+//!   not read the line. `record_sizes` grows only when the value is a list.
+//!   The appended value is `byte_end - byte_offset` as [`MetaValue::Int`].
+//!   A tuple is not a list. A bool coordinate is not representable.
+//! - `extract_record_id` and `decode_json_dupaware` are not called. No record
+//!   id, fingerprint, or SL001/SL002/SL009/SL011 is produced. Python
+//!   `str.strip` runs before the decoder. Strip cannot fail, and the stripped
+//!   text is not kept.
 
 use std::error::Error;
 use std::fmt;
@@ -142,9 +175,11 @@ use model::codes::{Repairability, Severity, SL001};
 use model::finding::PyValue as FindingValue;
 use model::finding::{make_finding, Finding, MakeFindingInput, SourceLine, SourceRef};
 
+use crate::drift::DriftTracker;
 use crate::safe_value::safe_discriminator;
 use crate::safe_value::PyValue;
 use crate::source::SuppliedReaderLimits;
+use crate::synthetic::SyntheticIdCollisionGuard;
 
 /// Python: `MAX_PROJECTED_RUN_STATE_KEYS`.
 pub const MAX_PROJECTED_RUN_STATE_KEYS: usize = 32;
@@ -428,6 +463,18 @@ impl SourceMetadata {
     pub fn get(&self, key: &str) -> Option<&MetaValue> {
         self.entries
             .iter()
+            .rev()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value)
+    }
+
+    /// Mutable `dict.get` without a default. A missing key is `None`.
+    ///
+    /// The last inserted entry wins, matching [`Self::get`].
+    #[must_use]
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut MetaValue> {
+        self.entries
+            .iter_mut()
             .rev()
             .find(|(name, _)| name == key)
             .map(|(_, value)| value)
@@ -1574,6 +1621,21 @@ pub const SECRET_SCAN_TRACKER_UNAVAILABLE: &str =
 pub const SECRET_SCAN_FEED_BLOB_UNAVAILABLE: &str =
     "sesslint.checks.hygiene.SecretScanTracker.feed_blob is not available";
 
+/// `sesslint.checks.hygiene.SecretScanTracker.feed` is not in this crate.
+pub const SECRET_SCAN_FEED_UNAVAILABLE: &str =
+    "sesslint.checks.hygiene.SecretScanTracker.feed is not available";
+
+/// `sesslint.io.MalformedTailTracker` is not in this crate.
+pub const MALFORMED_TAIL_TRACKER_UNAVAILABLE: &str =
+    "sesslint.io.MalformedTailTracker is not available";
+
+/// `sesslint.io.extract_record_id` is not in this crate.
+pub const EXTRACT_RECORD_ID_UNAVAILABLE: &str = "sesslint.io.extract_record_id is not available";
+
+/// `sesslint.io.decode_json_dupaware` is not in this crate.
+pub const DECODE_JSON_DUPAWARE_UNAVAILABLE: &str =
+    "sesslint.io.decode_json_dupaware is not available";
+
 const SIZE_LIMIT_TEMPLATE: &str = "File size exceeds maximum limit [detail: LIMIT]";
 
 const SQLITE_REFUSAL_TEMPLATE: &str = "Refused live SQLite database; SessLint requires exported items or checkpoints [detail: refused_live_db]";
@@ -2098,23 +2160,370 @@ pub fn load_openai_agents_json(
     Err(LoadOpenAiAgentsJsonError)
 }
 
+/// Rejected `byte_offset`, `byte_end`, or `record_ordinal` on a [`RawLine`].
+///
+/// Python `ValueError` from `_validate_stream_coordinates`. [`Display`] is
+/// that message. A bool is not an [`i64`], so `True` and `False` are not
+/// representable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawLineError {
+    message: String,
+}
+
+impl RawLineError {
+    fn new(message: String) -> Self {
+        Self { message }
+    }
+
+    /// The Python exception text.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for RawLineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for RawLineError {}
+
+/// One non-empty physical line and its stream coordinates.
+///
+/// Python: `_RawLine` in `sesslint.io`. This is not the scan crate's line.
+/// This crate does not depend on scan. Construction checks the coordinates.
+/// `byte_offset` defaults to 0, `byte_end` to 0, and `record_ordinal` to 1
+/// through [`RawLine::from_parts`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawLine {
+    line_number: i64,
+    raw_bytes: Vec<u8>,
+    truncated_limit: bool,
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+}
+
+impl RawLine {
+    /// Python: `_RawLine(line_number, raw_bytes, truncated_limit)`.
+    ///
+    /// # Errors
+    ///
+    /// The default coordinates are valid. This still returns [`RawLineError`]
+    /// when a future change breaks that.
+    #[must_use = "a rejected coordinate is the result"]
+    pub fn from_parts(
+        line_number: i64,
+        raw_bytes: Vec<u8>,
+        truncated_limit: bool,
+    ) -> Result<Self, RawLineError> {
+        Self::try_new(line_number, raw_bytes, truncated_limit, 0, 0, 1)
+    }
+
+    /// Python: `_RawLine` with explicit coordinates.
+    ///
+    /// # Errors
+    ///
+    /// `byte_offset < 0`, `byte_end < byte_offset`, or `record_ordinal < 1`.
+    #[must_use = "a rejected coordinate is the result"]
+    pub fn try_new(
+        line_number: i64,
+        raw_bytes: Vec<u8>,
+        truncated_limit: bool,
+        byte_offset: i64,
+        byte_end: i64,
+        record_ordinal: i64,
+    ) -> Result<Self, RawLineError> {
+        reject_bad_coordinates(byte_offset, byte_end, record_ordinal)?;
+        Ok(Self {
+            line_number,
+            raw_bytes,
+            truncated_limit,
+            byte_offset,
+            byte_end,
+            record_ordinal,
+        })
+    }
+
+    /// Python field `line_number`.
+    #[must_use]
+    pub const fn line_number(&self) -> i64 {
+        self.line_number
+    }
+
+    /// Persisted line bytes.
+    #[must_use]
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+
+    /// The line was longer than the reader line cap.
+    #[must_use]
+    pub const fn truncated_limit(&self) -> bool {
+        self.truncated_limit
+    }
+
+    /// Python field `byte_offset`.
+    #[must_use]
+    pub const fn byte_offset(&self) -> i64 {
+        self.byte_offset
+    }
+
+    /// Python field `byte_end`.
+    #[must_use]
+    pub const fn byte_end(&self) -> i64 {
+        self.byte_end
+    }
+
+    /// Python field `record_ordinal`.
+    #[must_use]
+    pub const fn record_ordinal(&self) -> i64 {
+        self.record_ordinal
+    }
+}
+
+/// Failure from [`load_openai_agents_jsonl`].
+///
+/// [`Display`](std::fmt::Display) is [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`].
+/// The buffer is not part of that text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadOpenAiAgentsJsonlError;
+
+impl LoadOpenAiAgentsJsonlError {
+    /// [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`].
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        MALFORMED_TAIL_TRACKER_UNAVAILABLE
+    }
+}
+
+impl fmt::Display for LoadOpenAiAgentsJsonlError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for LoadOpenAiAgentsJsonlError {}
+
+/// Stream a JSONL export, stopping at `MalformedTailTracker`.
+///
+/// Python: `_load_openai_agents_jsonl` lines 907–1016. The statements before
+/// the line loop build the event list, the finding list, [`SourceMetadata`],
+/// [`SyntheticIdCollisionGuard`], and [`DriftTracker`]. The next statement
+/// is `MalformedTailTracker()`. That type is not in this crate, so this
+/// returns [`LoadOpenAiAgentsJsonlError`] and does not enter the loop.
+///
+/// `data` is not split. `secret_tracker` is not asked to `feed`. No
+/// [`EventList`] is returned. [`process_jsonl_line`] is not called.
+/// [`load_openai_agents`] and [`load_openai_agents_json`] do not call this
+/// function.
+///
+/// # Errors
+///
+/// [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`] for every buffer. Empty input,
+/// whitespace, NUL, and a JSON object all use that display.
+#[must_use = "the tail tracker seam is the result"]
+pub fn load_openai_agents_jsonl(
+    data: &[u8],
+    path_str: &str,
+    limits: SuppliedReaderLimits,
+    secret_tracker: SuppliedSecretScanTracker,
+) -> Result<(), LoadOpenAiAgentsJsonlError> {
+    let _events: Vec<SessionEvent> = Vec::new();
+    let _findings: Vec<Finding> = Vec::new();
+    let mut source_metadata = SourceMetadata::from_entries([
+        ("format", MetaValue::Str("openai-agents".to_owned())),
+        ("checkpoints", MetaValue::List(Vec::new())),
+    ]);
+    source_metadata.insert("record_sizes", MetaValue::List(Vec::new()));
+    let _guard = SyntheticIdCollisionGuard::new();
+    let _seen_version_sl301 = false;
+    let _drift = DriftTracker::new("openai-agents");
+    let _current_offset = 0i64;
+    let _line_number = 0i64;
+    let _record_count = 0i64;
+    let _total_len = data.len();
+    let _pending_raw: Option<RawLine> = None;
+    let _ = (path_str, limits, secret_tracker, source_metadata);
+    Err(LoadOpenAiAgentsJsonlError)
+}
+
+/// Failure from [`process_jsonl_line`].
+///
+/// [`Display`](std::fmt::Display) is one unavailable call. It is not an SL
+/// code, a record id, or a fingerprint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessJsonlLineError {
+    /// [`SECRET_SCAN_FEED_UNAVAILABLE`].
+    Feed,
+    /// [`EXTRACT_RECORD_ID_UNAVAILABLE`].
+    ExtractRecordId,
+    /// [`DECODE_JSON_DUPAWARE_UNAVAILABLE`].
+    DecodeJsonDupaware,
+}
+
+impl ProcessJsonlLineError {
+    /// The missing call.
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::Feed => SECRET_SCAN_FEED_UNAVAILABLE,
+            Self::ExtractRecordId => EXTRACT_RECORD_ID_UNAVAILABLE,
+            Self::DecodeJsonDupaware => DECODE_JSON_DUPAWARE_UNAVAILABLE,
+        }
+    }
+}
+
+impl fmt::Display for ProcessJsonlLineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for ProcessJsonlLineError {}
+
+/// Process one JSONL line, stopping at `feed`, `extract_record_id`, or
+/// `decode_json_dupaware`.
+///
+/// Python: `_process_jsonl_line` lines 1019–1201. When `secret_tracker` is
+/// supplied, the first action is `secret_tracker.feed(...)`. That method is
+/// not in this crate. The display is [`SECRET_SCAN_FEED_UNAVAILABLE`]. The
+/// line bytes are not read, and validation does not run.
+///
+/// When the tracker is absent, `feed` is not called. If `record_sizes` is a
+/// list, `byte_end - byte_offset` is appended. A truncated line, a line that
+/// contains NUL, and a line that is not strict UTF-8 then stop at
+/// [`EXTRACT_RECORD_ID_UNAVAILABLE`] before [`model::finding::make_finding`].
+/// No record id is chosen and no fingerprint is hashed. A strict UTF-8 line
+/// stops at [`DECODE_JSON_DUPAWARE_UNAVAILABLE`]. JSON is not parsed.
+///
+/// `limits` is the keyword argument. Its fields are not read. Truncation is
+/// the flag already stored on [`RawLine`]. `is_terminal`, `path_str`,
+/// `events`, `findings`, `seen_version_sl301`, `guard`, and `drift` are the
+/// later keyword arguments. They are not used before these seams.
+/// [`load_openai_agents`] and [`load_openai_agents_json`] do not call this
+/// function. [`load_openai_agents_jsonl`] does not call it either.
+///
+/// # Errors
+///
+/// [`ProcessJsonlLineError::Feed`] when a tracker is supplied.
+/// [`ProcessJsonlLineError::ExtractRecordId`] for a truncated line, a NUL
+/// line, or invalid UTF-8. [`ProcessJsonlLineError::DecodeJsonDupaware`] for
+/// a decodable line. SL001, SL002, SL009, and SL011 are not produced.
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+#[must_use = "the jsonl line seam is the result"]
+pub fn process_jsonl_line(
+    raw: &RawLine,
+    is_terminal: bool,
+    path_str: &str,
+    limits: SuppliedReaderLimits,
+    events: &[SessionEvent],
+    findings: &[Finding],
+    source_metadata: &mut SourceMetadata,
+    seen_version_sl301: bool,
+    guard: Option<&SyntheticIdCollisionGuard>,
+    drift: Option<&DriftTracker>,
+    secret_tracker: Option<SuppliedSecretScanTracker>,
+) -> Result<(), ProcessJsonlLineError> {
+    if secret_tracker.is_some() {
+        return Err(ProcessJsonlLineError::Feed);
+    }
+    let _ = (
+        is_terminal,
+        path_str,
+        limits,
+        events,
+        findings,
+        seen_version_sl301,
+        guard,
+        drift,
+    );
+    append_record_size(source_metadata, raw);
+    if raw.truncated_limit {
+        return Err(ProcessJsonlLineError::ExtractRecordId);
+    }
+    if raw.raw_bytes.contains(&0) {
+        return Err(ProcessJsonlLineError::ExtractRecordId);
+    }
+    if std::str::from_utf8(strict_decode_bytes(raw)).is_err() {
+        return Err(ProcessJsonlLineError::ExtractRecordId);
+    }
+    Err(ProcessJsonlLineError::DecodeJsonDupaware)
+}
+
+fn reject_bad_coordinates(
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+) -> Result<(), RawLineError> {
+    if byte_offset < 0 {
+        return Err(RawLineError::new(format!(
+            "Invalid byte_offset: {byte_offset} (must be integer >= 0)"
+        )));
+    }
+    if byte_end < byte_offset {
+        return Err(RawLineError::new(format!(
+            "Invalid byte_end: {byte_end} (must be integer >= byte_offset={byte_offset})"
+        )));
+    }
+    if record_ordinal < 1 {
+        return Err(RawLineError::new(format!(
+            "Invalid record_ordinal: {record_ordinal} (must be integer >= 1)"
+        )));
+    }
+    Ok(())
+}
+
+/// Python: append `byte_end - byte_offset` when `record_sizes` is a list.
+///
+/// The integer is the coordinate span. The line bytes are not hashed and are
+/// not stored on the list.
+fn append_record_size(source_metadata: &mut SourceMetadata, raw: &RawLine) {
+    let Some(MetaValue::List(sizes)) = source_metadata.get_mut("record_sizes") else {
+        return;
+    };
+    let Some(size) = raw.byte_end.checked_sub(raw.byte_offset) else {
+        return;
+    };
+    sizes.push(MetaValue::Int(size));
+}
+
+/// Bytes passed to the strict UTF-8 check.
+///
+/// Line 1 drops a leading UTF-8 BOM. Python then `str.strip`s a successful
+/// decode. Strip cannot fail, and the stripped text is not kept.
+fn strict_decode_bytes(raw: &RawLine) -> &[u8] {
+    if raw.line_number == 1 {
+        raw.raw_bytes
+            .strip_prefix(UTF8_BOM)
+            .unwrap_or(raw.raw_bytes.as_slice())
+    } else {
+        raw.raw_bytes.as_slice()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         build_payload, detect_openai_agents, load_openai_agents, load_openai_agents_json,
-        normalize_timestamp, normalize_version, project_run_state, python_path_text,
-        safe_type_value, AgentsDocumentKind, AttrObject, BuildPayloadError, EventList, FindingGate,
-        LoadOpenAiAgentsError, LoadOpenAiAgentsJsonError, MapKey, MapValue, MaxFileBytes,
-        MetaValue, OpenAiAgentsSource, ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata,
-        SuppliedSecretScanTracker, TruncationTotals, DEFAULT_MAX_FILE_BYTES,
-        MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS, SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
-        SECRET_SCAN_TRACKER_UNAVAILABLE, SQLITE_MAGIC, STRICT_JSON_DECODE_UNAVAILABLE,
-        STR_UNRENDERED,
+        load_openai_agents_jsonl, normalize_timestamp, normalize_version, process_jsonl_line,
+        project_run_state, python_path_text, safe_type_value, AgentsDocumentKind, AttrObject,
+        BuildPayloadError, EventList, FindingGate, LoadOpenAiAgentsError,
+        LoadOpenAiAgentsJsonError, LoadOpenAiAgentsJsonlError, MapKey, MapValue, MaxFileBytes,
+        MetaValue, OpenAiAgentsSource, ProcessJsonlLineError, ProjectedCheckpoint, RawLine,
+        RunSource, SeqNumber, SourceMetadata, SuppliedSecretScanTracker, TruncationTotals,
+        DECODE_JSON_DUPAWARE_UNAVAILABLE, DEFAULT_MAX_FILE_BYTES, EXTRACT_RECORD_ID_UNAVAILABLE,
+        MALFORMED_TAIL_TRACKER_UNAVAILABLE, MAX_PROJECTED_CHECKPOINTS,
+        MAX_PROJECTED_RUN_STATE_KEYS, SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
+        SECRET_SCAN_FEED_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE, SQLITE_MAGIC,
+        STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
     };
     use crate::safe_value::{safe_discriminator, PyValue};
     use crate::source::SuppliedReaderLimits;
     use model::canonical::SessionEvent;
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
+    use model::finding::{Finding, FINGERPRINT_CODEC_UNAVAILABLE};
     use std::fs;
     use std::io::{self, Read};
     use std::path::{Path, PathBuf};
@@ -3731,5 +4140,309 @@ mod tests {
         assert_eq!(gated.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
         assert_ne!(gated.to_string(), SECRET_SCAN_FEED_BLOB_UNAVAILABLE);
         assert_eq!(gated.document_kind(), Some(AgentsDocumentKind::Json));
+    }
+
+    fn size_list(values: &[i64]) -> SourceMetadata {
+        let mut meta = SourceMetadata::new();
+        meta.insert(
+            "record_sizes",
+            MetaValue::List(values.iter().copied().map(MetaValue::Int).collect()),
+        );
+        meta
+    }
+
+    fn sizes(meta: &SourceMetadata) -> Vec<i64> {
+        let Some(MetaValue::List(items)) = meta.get("record_sizes") else {
+            return Vec::new();
+        };
+        items
+            .iter()
+            .map(|item| match item {
+                MetaValue::Int(value) => *value,
+                _ => panic!("record size"),
+            })
+            .collect()
+    }
+
+    #[allow(clippy::too_many_arguments)] // one field per pinned coordinate
+    fn run_line(
+        bytes: &[u8],
+        truncated: bool,
+        line_number: i64,
+        byte_offset: i64,
+        byte_end: i64,
+        is_terminal: bool,
+        tracker: Option<SuppliedSecretScanTracker>,
+        meta: &mut SourceMetadata,
+    ) -> ProcessJsonlLineError {
+        let raw = RawLine::try_new(
+            line_number,
+            bytes.to_vec(),
+            truncated,
+            byte_offset,
+            byte_end,
+            3,
+        )
+        .expect("coordinates");
+        let events = Vec::<SessionEvent>::new();
+        let findings = Vec::<Finding>::new();
+        let err = process_jsonl_line(
+            &raw,
+            is_terminal,
+            "synthetic-jsonl.jsonl",
+            SuppliedReaderLimits,
+            &events,
+            &findings,
+            meta,
+            false,
+            None,
+            None,
+            tracker,
+        )
+        .expect_err("line seam");
+        let text = err.to_string();
+        assert_eq!(text, err.message());
+        assert!(!text.contains("synthetic-jsonl.jsonl"));
+        assert!(!text.contains("evt_"));
+        assert!(!text.contains("SL001"));
+        assert!(!text.contains("SL002"));
+        assert!(!text.contains("SL009"));
+        assert!(!text.contains("SL011"));
+        assert_ne!(text, FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+        err
+    }
+
+    #[test]
+    fn jsonl_loader_stops_at_the_tail_tracker() {
+        let samples: [&[u8]; 6] = [
+            b"",
+            b" \t\r\n",
+            b"\x00",
+            b"{}",
+            b"{\"items\":[]}",
+            b"{}\n{\"id\":\"evt_hidden\"}\n",
+        ];
+        for data in samples {
+            let err = load_openai_agents_jsonl(
+                data,
+                "synthetic-jsonl.jsonl",
+                SuppliedReaderLimits,
+                SuppliedSecretScanTracker,
+            )
+            .expect_err("tail tracker");
+            assert_eq!(err, LoadOpenAiAgentsJsonlError);
+            assert_eq!(err.message(), MALFORMED_TAIL_TRACKER_UNAVAILABLE);
+            assert_eq!(
+                err.to_string(),
+                "sesslint.io.MalformedTailTracker is not available"
+            );
+            assert!(!err.to_string().contains("synthetic-jsonl.jsonl"));
+            assert!(!err.to_string().contains("evt_"));
+            assert!(!err.to_string().contains("feed"));
+            assert!(!err.to_string().contains("SL001"));
+            assert!(!err.to_string().contains("SL002"));
+            assert!(!err.to_string().contains("SL009"));
+            assert!(!err.to_string().contains("SL011"));
+            assert_ne!(err.to_string(), SECRET_SCAN_FEED_UNAVAILABLE);
+            assert_ne!(err.to_string(), EXTRACT_RECORD_ID_UNAVAILABLE);
+            assert_ne!(err.to_string(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+            assert_ne!(err.to_string(), SECRET_SCAN_FEED_BLOB_UNAVAILABLE);
+            assert_ne!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        }
+
+        let outer = load_openai_agents(OpenAiAgentsSource::Bytes(b"{}\n{\"id\":1}\n"), None)
+            .expect_err("outer gate");
+        assert_eq!(outer.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert_ne!(outer.to_string(), MALFORMED_TAIL_TRACKER_UNAVAILABLE);
+
+        let document = load_openai_agents_json(
+            b"{}",
+            "synthetic-export.json",
+            SuppliedReaderLimits,
+            SuppliedSecretScanTracker,
+        )
+        .expect_err("document");
+        assert_eq!(document.to_string(), SECRET_SCAN_FEED_BLOB_UNAVAILABLE);
+        assert_ne!(document.to_string(), MALFORMED_TAIL_TRACKER_UNAVAILABLE);
+    }
+
+    #[test]
+    fn supplied_tracker_stops_at_feed_before_validation() {
+        let samples: [(&[u8], bool); 6] = [
+            (b"", false),
+            (b" \t", false),
+            (b"\x00", false),
+            (b"\xff", false),
+            (b"{", false),
+            (b"{\"id\":\"evt_hidden\"}", true),
+        ];
+        for (bytes, truncated) in samples {
+            let mut meta = size_list(&[11]);
+            let err = run_line(
+                bytes,
+                truncated,
+                1,
+                2,
+                9,
+                true,
+                Some(SuppliedSecretScanTracker),
+                &mut meta,
+            );
+            assert_eq!(err, ProcessJsonlLineError::Feed);
+            assert_eq!(
+                err.to_string(),
+                "sesslint.checks.hygiene.SecretScanTracker.feed is not available"
+            );
+            assert_eq!(sizes(&meta), vec![11]);
+        }
+    }
+
+    #[test]
+    fn jsonl_line_appends_span_then_stops() {
+        let mut meta = size_list(&[9]);
+        let decoded = run_line(b"{", false, 1, 4, 5, false, None, &mut meta);
+        assert_eq!(decoded, ProcessJsonlLineError::DecodeJsonDupaware);
+        assert_eq!(
+            decoded.to_string(),
+            "sesslint.io.decode_json_dupaware is not available"
+        );
+        assert_eq!(decoded.message(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+        assert_eq!(sizes(&meta), vec![9, 1]);
+
+        let nul = run_line(b"\x00", false, 2, 5, 8, true, None, &mut meta);
+        assert_eq!(nul, ProcessJsonlLineError::ExtractRecordId);
+        assert_eq!(
+            nul.to_string(),
+            "sesslint.io.extract_record_id is not available"
+        );
+        assert_eq!(sizes(&meta), vec![9, 1, 3]);
+
+        let mut other = size_list(&[]);
+        let not_terminal = run_line(b"a\x00b", false, 1, 0, 3, false, None, &mut other);
+        assert_eq!(not_terminal, nul);
+        assert_eq!(sizes(&other), vec![3]);
+
+        let mut bad = size_list(&[]);
+        let invalid = run_line(b"\xff", false, 1, 3, 4, true, None, &mut bad);
+        assert_eq!(invalid, ProcessJsonlLineError::ExtractRecordId);
+        assert_eq!(invalid.message(), EXTRACT_RECORD_ID_UNAVAILABLE);
+        assert_eq!(sizes(&bad), vec![1]);
+
+        let mut torn = size_list(&[]);
+        let bom_bad = run_line(b"\xef\xbb\xbf\xff", false, 1, 0, 4, false, None, &mut torn);
+        assert_eq!(bom_bad, ProcessJsonlLineError::ExtractRecordId);
+        assert_eq!(sizes(&torn), vec![4]);
+
+        let mut cut = size_list(&[]);
+        let truncated = run_line(
+            b"{\"id\":\"evt_hidden\"}",
+            true,
+            1,
+            0,
+            40,
+            true,
+            None,
+            &mut cut,
+        );
+        assert_eq!(truncated, ProcessJsonlLineError::ExtractRecordId);
+        assert_eq!(sizes(&cut), vec![40]);
+        assert_ne!(
+            sizes(&cut),
+            vec![i64::try_from(b"{\"id\":\"evt_hidden\"}".len()).expect("len")]
+        );
+    }
+
+    #[test]
+    fn decodable_line_stops_at_decode_without_parsing() {
+        let mut text = size_list(&[]);
+        for (bytes, line_number) in [
+            (b"".as_slice(), 1),
+            (b" \t\n".as_slice(), 4),
+            (b"{}".as_slice(), 2),
+            (b"{\"id\":\"evt_hidden\"}".as_slice(), 8),
+            (b"\xef\xbb\xbf{".as_slice(), 1),
+            (b"\xef\xbb\xbf".as_slice(), 1),
+        ] {
+            let err = run_line(bytes, false, line_number, 1, 4, false, None, &mut text);
+            assert_eq!(err, ProcessJsonlLineError::DecodeJsonDupaware);
+            assert_eq!(err.message(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+        }
+        assert_eq!(sizes(&text), vec![3, 3, 3, 3, 3, 3]);
+    }
+
+    #[test]
+    fn record_sizes_append_skips_a_non_list_and_ignores_guard_drift() {
+        let mut missing = SourceMetadata::new();
+        let err = run_line(b"{}", false, 1, 0, 2, false, None, &mut missing);
+        assert_eq!(err, ProcessJsonlLineError::DecodeJsonDupaware);
+        assert!(missing.get("record_sizes").is_none());
+
+        let mut tuple_meta = SourceMetadata::new();
+        tuple_meta.insert("record_sizes", MetaValue::Tuple(vec![MetaValue::Int(4)]));
+        let err = run_line(b"\xff", false, 1, 0, 1, true, None, &mut tuple_meta);
+        assert_eq!(err, ProcessJsonlLineError::ExtractRecordId);
+        assert_eq!(
+            tuple_meta.get("record_sizes"),
+            Some(&MetaValue::Tuple(vec![MetaValue::Int(4)]))
+        );
+
+        let guard = crate::synthetic::SyntheticIdCollisionGuard::new();
+        let drift = crate::drift::DriftTracker::new("openai-agents");
+        let raw = RawLine::try_new(1, b"{}".to_vec(), false, 2, 6, 3).expect("line");
+        assert_eq!(raw.line_number(), 1);
+        assert_eq!(raw.raw_bytes(), b"{}");
+        assert!(!raw.truncated_limit());
+        assert_eq!(raw.byte_offset(), 2);
+        assert_eq!(raw.byte_end(), 6);
+        assert_eq!(raw.record_ordinal(), 3);
+        let mut held = size_list(&[]);
+        let events = Vec::<SessionEvent>::new();
+        let findings = Vec::<Finding>::new();
+        let err = process_jsonl_line(
+            &raw,
+            true,
+            "synthetic-jsonl.jsonl",
+            SuppliedReaderLimits,
+            &events,
+            &findings,
+            &mut held,
+            true,
+            Some(&guard),
+            Some(&drift),
+            None,
+        )
+        .expect_err("decode");
+        assert_eq!(err, ProcessJsonlLineError::DecodeJsonDupaware);
+        assert_eq!(err.to_string(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+        assert_ne!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(sizes(&held), vec![4]);
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn raw_line_rejects_invalid_coordinates() {
+        let offset = RawLine::try_new(1, Vec::new(), false, -1, 0, 1).expect_err("offset");
+        assert_eq!(
+            offset.to_string(),
+            "Invalid byte_offset: -1 (must be integer >= 0)"
+        );
+        let end = RawLine::try_new(1, Vec::new(), false, 2, 1, 1).expect_err("end");
+        assert_eq!(
+            end.to_string(),
+            "Invalid byte_end: 1 (must be integer >= byte_offset=2)"
+        );
+        let ordinal = RawLine::try_new(1, Vec::new(), false, 0, 0, 0).expect_err("ordinal");
+        assert_eq!(
+            ordinal.to_string(),
+            "Invalid record_ordinal: 0 (must be integer >= 1)"
+        );
+        let defaults = RawLine::from_parts(7, b"{}".to_vec(), false).expect("defaults");
+        assert_eq!(defaults.byte_offset(), 0);
+        assert_eq!(defaults.byte_end(), 0);
+        assert_eq!(defaults.record_ordinal(), 1);
+        assert_eq!(defaults.line_number(), 7);
     }
 }
