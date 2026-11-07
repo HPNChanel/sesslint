@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.recipes_salvage module parity vectors.",
+  "generator": "rust/parity/vectors/repair.recipes_salvage/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-recipes-salvage-affected-region-orphan: Python affected_region_orphan_result_drop returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts Rust Display only."
+  ]
+}
