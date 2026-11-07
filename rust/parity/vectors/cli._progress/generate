@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._progress parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROGRESS_PY_SHA256 = (
+    "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572"
+)
+PROGRESS_PY_SHA256_CLI = (
+    "59a2ce2f34ec951d9404867a333a990eb646ba61dd9d5baa7defc0e6a2a7f1c3"
+)
+PROGRESS_RS_SHA256 = (
+    "c897bc8314c7eb4ccda6834399ba4f101bac2816b2aecf1191f64a2855db04ec"
+)
+MODULE = "sesslint.cli._progress"
+
+SYNTHETIC_PHASE = "scan"
+SYNTHETIC_ITEM = "synthetic-item.jsonl"
+SYNTHETIC_PHASE_LOAD = "check:load"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-cli-progress-tty-default-clock: Python TtyProgress() binds time.monotonic "
+        "at construction; Rust MonotonicClock injects a floor so the first incomplete "
+        "event always renders without wall-clock delay (not byte-compared here)."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_progress_dependency() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/progress.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != PROGRESS_PY_SHA256:
+        raise SystemExit(
+            f"progress.py pin sha256 mismatch: expected {PROGRESS_PY_SHA256}, got {digest}"
+        )
+
+
+def pinned_cli_progress_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_progress.py")
+
+
+def verify_cli_progress_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != PROGRESS_PY_SHA256_CLI:
+        raise SystemExit(
+            f"cli/_progress.py pin sha256 mismatch: expected "
+            f"{PROGRESS_PY_SHA256_CLI}, got {digest}"
+        )
+
+
+def load_cli_progress_module() -> Any:
+    verify_progress_dependency()
+    blob = pinned_cli_progress_source()
+    verify_cli_progress_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "_progress.py"
+    if module_path.read_bytes() != blob:
+        raise SystemExit("worktree cli/_progress.py does not match pinned blob")
+    src = root / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    import importlib
+
+    return importlib.import_module("sesslint.cli._progress")
+
+
+def build_event(progress: Any, spec: dict[str, Any]) -> Any:
+    total = spec.get("total")
+    item = spec.get("item")
+    return progress.ProgressEvent(
+        phase=spec["phase"],
+        completed=spec["completed"],
+        total=total if "total" in spec else None,
+        item=item if "item" in spec else None,
+    )
+
+
+def run_ndjson(progress: Any, events: list[dict[str, Any]]) -> str:
+    buf = io.StringIO()
+    cb = progress.ndjson_progress_cb(buf)
+    for event_spec in events:
+        cb(build_event(progress, event_spec))
+    return buf.getvalue()
+
+
+def run_tty(
+    progress: Any,
+    steps: list[dict[str, Any]],
+    *,
+    finish: bool,
+    clock_times: list[float],
+) -> str:
+    if len(clock_times) < 1:
+        raise ValueError("clock_times required")
+    call_idx = [0]
+
+    def fake_monotonic() -> float:
+        idx = min(call_idx[0], len(clock_times) - 1)
+        call_idx[0] += 1
+        return clock_times[idx]
+
+    buf = io.StringIO()
+    with patch.object(time, "monotonic", side_effect=fake_monotonic):
+        tty = progress.TtyProgress(buf)
+        for step in steps:
+            tty(build_event(progress, step["event"]))
+        if finish:
+            tty.finish()
+    return buf.getvalue()
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "ndjson_full_event",
+            "construct": {
+                "type": "ndjson_emit",
+                "events": [
+                    {
+                        "phase": SYNTHETIC_PHASE,
+                        "completed": 3,
+                        "total": 7,
+                        "item": SYNTHETIC_ITEM,
+                    }
+                ],
+            },
+        },
+        {
+            "id": "ndjson_omit_none_and_zero_total",
+            "construct": {
+                "type": "ndjson_emit",
+                "events": [
+                    {"phase": SYNTHETIC_PHASE, "completed": 1},
+                    {
+                        "phase": SYNTHETIC_PHASE,
+                        "completed": -1,
+                        "total": 0,
+                        "item": "",
+                    },
+                ],
+            },
+        },
+        {
+            "id": "ndjson_non_ascii_item",
+            "construct": {
+                "type": "ndjson_emit",
+                "events": [
+                    {
+                        "phase": SYNTHETIC_PHASE,
+                        "completed": 1,
+                        "item": "caf\u00e9",
+                    }
+                ],
+            },
+        },
+        {
+            "id": "tty_renders_phase_counts_never_item",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.1],
+                "steps": [
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 3,
+                            "total": 7,
+                            "item": SYNTHETIC_ITEM,
+                        }
+                    }
+                ],
+                "finish": False,
+            },
+        },
+        {
+            "id": "tty_completed_only_when_total_absent",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.1],
+                "steps": [
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE_LOAD,
+                            "completed": 4,
+                            "item": SYNTHETIC_ITEM,
+                        }
+                    }
+                ],
+                "finish": False,
+            },
+        },
+        {
+            "id": "tty_pads_then_finish_clears",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.1, 0.3, 0.3],
+                "steps": [
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 10,
+                            "total": 10,
+                        }
+                    },
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 1,
+                            "total": 10,
+                        }
+                    },
+                ],
+                "finish": True,
+            },
+        },
+        {
+            "id": "tty_throttles_but_completing_renders",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.1, 0.15, 0.15],
+                "steps": [
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 1,
+                            "total": 3,
+                        }
+                    },
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 2,
+                            "total": 3,
+                        }
+                    },
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 3,
+                            "total": 3,
+                        }
+                    },
+                ],
+                "finish": False,
+            },
+        },
+        {
+            "id": "tty_zero_monotonic_skips_until_interval",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.0, 0.1, 0.2],
+                "steps": [
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 1,
+                            "total": 2,
+                        }
+                    },
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 1,
+                            "total": 2,
+                        }
+                    },
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 2,
+                            "total": 2,
+                        }
+                    },
+                ],
+                "finish": False,
+            },
+        },
+        {
+            "id": "tty_complete_when_completed_exceeds_total",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.0],
+                "steps": [
+                    {
+                        "event": {
+                            "phase": SYNTHETIC_PHASE,
+                            "completed": 5,
+                            "total": 3,
+                        }
+                    }
+                ],
+                "finish": False,
+            },
+        },
+        {
+            "id": "tty_finish_noop_when_nothing_rendered",
+            "construct": {
+                "type": "tty_emit",
+                "clock_times": [0.0],
+                "steps": [],
+                "finish": True,
+            },
+        },
+    ]
+
+
+def build_expected(progress: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "ndjson_emit":
+        stderr = run_ndjson(progress, spec["events"])
+        return {"stderr": stderr}
+    if kind == "tty_emit":
+        stderr = run_tty(
+            progress,
+            spec["steps"],
+            finish=bool(spec.get("finish")),
+            clock_times=list(spec["clock_times"]),
+        )
+        return {"stderr": stderr}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "progress_py_sha256": PROGRESS_PY_SHA256,
+        "cli_progress_py_sha256": PROGRESS_PY_SHA256_CLI,
+        "progress_rs_sha256": PROGRESS_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "progress_py_sha256": PROGRESS_PY_SHA256,
+        "cli_progress_py_sha256": PROGRESS_PY_SHA256_CLI,
+        "progress_rs_sha256": PROGRESS_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._progress/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic NDJSON and TTY stderr bytes from pinned cli._progress with "
+            "injected monotonic clock for TtyProgress (default ctor documented gap)."
+        ),
+        "generator": "rust/parity/vectors/cli._progress/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    progress = load_cli_progress_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = {k: v for k, v in row["construct"].items()}
+        expected = build_expected(progress, construct)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
