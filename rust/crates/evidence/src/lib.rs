@@ -9,7 +9,7 @@ pub use error::EvidenceError;
 pub mod stats {}
 pub mod bundle {}
 pub mod diff {}
-pub mod doctor {}
+pub mod doctor;
 pub mod precheck;
 pub mod seal {}
 pub mod verify {}
