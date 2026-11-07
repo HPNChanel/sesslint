@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks package barrel parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+import subprocess
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CHECKS_INIT_PATH = "src/sesslint/checks/__init__.py"
+CHECKS_INIT_PY_SHA256 = (
+    "2d5002bd4de0c5a47ac56541b61f408a4b75dd7cfca8865c31b7fbf5abd583cf"
+)
+CHECKS_LIB_RS_SHA256 = (
+    "a20f22c41d82e59efc05a8db597566873a273aa30d4bad36a33bb0f3414f69e6"
+)
+MODULE = "sesslint.checks"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    (
+        "GAP-checks-submodule-apis: accounting, checkpoint, graph, hygiene, identity, "
+        "ordering, size, tool_pairing_1, and tool_pairing_2 have dedicated module "
+        "parity vectors; exercising those entry points is not barrel coverage."
+    ),
+    (
+        "GAP-checks-compute-finding-fingerprint: Python checks.__all__ re-exports "
+        "compute_finding_fingerprint from sesslint.finding; the Rust checks crate "
+        "barrel does not surface that name."
+    ),
+    (
+        "GAP-checks-tool-kinds: Python checks.__all__ lists TOOL_KINDS from "
+        "tool_pairing_2; the Rust checks crate barrel omits TOOL_KINDS."
+    ),
+    (
+        "GAP-checks-export-order: Rust lib.rs groups re-exports by submodule; "
+        "Python __all__ uses a different name order (vectors record the Python order)."
+    ),
+)
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_text(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_init_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != CHECKS_INIT_PY_SHA256:
+        raise SystemExit(
+            "checks/__init__.py pin sha256 mismatch: "
+            f"expected {CHECKS_INIT_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_checks_lib_rs_sha256() -> None:
+    lib_rs = repo_root() / "rust" / "crates" / "checks" / "src" / "lib.rs"
+    digest = hashlib.sha256(lib_rs.read_bytes()).hexdigest()
+    if digest != CHECKS_LIB_RS_SHA256:
+        raise SystemExit(
+            "checks/src/lib.rs sha256 mismatch: "
+            f"expected {CHECKS_LIB_RS_SHA256}, got {digest}"
+        )
+
+
+def load_python_all() -> list[str]:
+    """`__all__` from pinned `sesslint.checks` package (`checks/__init__.py`)."""
+    text = git_show_text(f"{PYTHON_COMMIT}:{CHECKS_INIT_PATH}")
+    verify_init_pin_digest(text.encode("utf-8"))
+    verify_checks_lib_rs_sha256()
+    tree = ast.parse(text)
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    seq = node.value
+                    if not isinstance(seq, ast.List):
+                        raise SystemExit("__all__ must be a list literal")
+                    names: list[str] = []
+                    for elt in seq.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            names.append(elt.value)
+                        else:
+                            raise SystemExit("__all__ entries must be string literals")
+                    expected_len = 63
+                    if len(names) != expected_len:
+                        raise SystemExit(f"unexpected __all__ length: {len(names)}")
+                    return names
+    raise SystemExit("missing __all__ in checks/__init__.py")
+
+
+def vectors_from_python_all(py_all: list[str]) -> list[dict[str, Any]]:
+    if py_all[0] != "CheckContext":
+        raise SystemExit(f"unexpected __all__[0]: {py_all[0]!r}")
+    if "compute_finding_fingerprint" not in py_all:
+        raise SystemExit("missing compute_finding_fingerprint in __all__")
+    if "TOOL_KINDS" not in py_all:
+        raise SystemExit("missing TOOL_KINDS in __all__")
+    return [
+        {
+            "id": "python_dunder_all",
+            "construct": {"type": "public_name_list"},
+            "expected": {"names": py_all},
+        }
+    ]
+
+
+def assert_payload_safe(payload: bytes) -> None:
+    if _BANNED_SUPABASE_PAT.search(payload):
+        raise SystemExit("vectors.json contains forbidden sbp_ token pattern")
+
+
+def main() -> int:
+    py_all = load_python_all()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vectors_from_python_all(py_all)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_init_py_sha256": CHECKS_INIT_PY_SHA256,
+        "checks_lib_rs_sha256": CHECKS_LIB_RS_SHA256,
+        "python_all": py_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_safe(payload_bytes)
+    if b"\r" in payload_bytes:
+        raise SystemExit("vectors.json payload must use LF only")
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks package barrel parity (__all__ name list and "
+            "order from the pinned checks/__init__.py; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

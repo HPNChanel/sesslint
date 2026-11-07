@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks package barrel parity (__all__ name list and order from the pinned checks/__init__.py; no session payload text).",
+  "generator": "rust/parity/vectors/checks/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-checks-submodule-apis: accounting, checkpoint, graph, hygiene, identity, ordering, size, tool_pairing_1, and tool_pairing_2 have dedicated module parity vectors; exercising those entry points is not barrel coverage.",
+    "GAP-checks-compute-finding-fingerprint: Python checks.__all__ re-exports compute_finding_fingerprint from sesslint.finding; the Rust checks crate barrel does not surface that name.",
+    "GAP-checks-tool-kinds: Python checks.__all__ lists TOOL_KINDS from tool_pairing_2; the Rust checks crate barrel omits TOOL_KINDS.",
+    "GAP-checks-export-order: Rust lib.rs groups re-exports by submodule; Python __all__ uses a different name order (vectors record the Python order)."
+  ]
+}
