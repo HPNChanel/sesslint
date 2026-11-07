@@ -1,4 +1,5 @@
 //! Byte-exact parity for `sesslint.progress` against pinned Python vectors.
+#![allow(clippy::manual_strip)]
 
 use report::progress::{
     check_token, CancellationToken, OperationCancelled, ProgressEvent, ProgressValue,
