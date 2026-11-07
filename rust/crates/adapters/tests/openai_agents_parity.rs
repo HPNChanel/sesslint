@@ -3,8 +3,7 @@
 use adapters::openai_agents::{
     detect_openai_agents, load_openai_agents, load_openai_agents_json,
     load_openai_agents_jsonl, load_openai_agents_session, normalize_version, process_openai_item,
-    project_run_state, safe_type_value, AgentsDocumentKind, FindingGate, LoadOpenAiAgentsError,
-    LoadOpenAiAgentsJsonError, LoadOpenAiAgentsJsonlError, LoadOpenAiAgentsSessionError, MapKey,
+    project_run_state, safe_type_value, AgentsDocumentKind, FindingGate, MapKey,
     MapValue, MaxFileBytes, MetaValue, OpenAiAgentsSource, ProcessOpenAiItemError, RunProjection,
     RunSource, SourceMetadata, SuppliedSecretScanTracker, ALL, CRITICAL_KEYS, ITEM_TYPE_MAP,
     KNOWN_RECORD_KEYS,
@@ -668,19 +667,6 @@ fn i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<i64, ParseError> 
         }),
         _ => Err(ParseError {
             message: format!("{key} must be number"),
-        }),
-    }
-}
-
-fn optional_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Option<String>, ParseError> {
-    match obj.iter().find(|(k, _)| k == key) {
-        None | Some((_, JsonValue::Null)) => Ok(None),
-        Some((_, JsonValue::Str(s))) => Ok(Some(s.clone())),
-        _ => Err(ParseError {
-            message: format!("{key} must be string or null"),
         }),
     }
 }
