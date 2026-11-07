@@ -16,7 +16,7 @@ pub mod seal;
 pub mod version;
 pub mod api {}
 pub mod common;
-pub mod render {}
+pub mod render;
 pub mod scan_args {}
 pub mod check {}
 pub mod triage {}
