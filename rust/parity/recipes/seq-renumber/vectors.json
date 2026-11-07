@@ -1,0 +1,317 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "seq-renumber",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
+  "recipes_conservative_rs_sha256": "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8",
+  "known_parity_gaps": [
+    "GAP-seq-renumber-affected-region: Python affected_region_seq_renumber returns an empty sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
+    "GAP-seq-renumber-planner: the planner seam blocks a full plan. Vendor input stays skipped and is not renumbered. fixtures/repair/t04_seq_renumber/source.jsonl is not applied."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_seq_renumber",
+      "construct": {
+        "type": "recipe_constant"
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "seq-renumber",
+        "handles": [],
+        "preconditions": [],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": true,
+        "apply_present": true,
+        "affected_region_present": true
+      }
+    },
+    {
+      "id": "seq_renumber_step_idempotent",
+      "construct": {
+        "type": "apply_idempotent",
+        "fn": "apply_seq_renumber",
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 5
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "seq": {
+            "t": "int",
+            "v": 0
+          },
+          "recipe": "seq-renumber",
+          "target_finding_fp": "-",
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "equal": true,
+        "seqs": [
+          {
+            "t": "int",
+            "v": 0
+          },
+          {
+            "t": "int",
+            "v": 1
+          }
+        ],
+        "once": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          }
+        ],
+        "twice": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "affected_region_seq_renumber",
+      "construct": {
+        "type": "affected_region",
+        "fn": "affected_region_seq_renumber",
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 5
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "seq": {
+            "t": "int",
+            "v": 0
+          },
+          "recipe": "seq-renumber",
+          "target_finding_fp": "-",
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "python_region",
+        "gap_id": "GAP-seq-renumber-affected-region",
+        "region": {
+          "unproven": false,
+          "indices": [],
+          "ids": [],
+          "ranges": []
+        }
+      }
+    }
+  ]
+}

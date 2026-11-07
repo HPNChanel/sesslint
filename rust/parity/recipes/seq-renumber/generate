@@ -1,0 +1,492 @@
+#!/usr/bin/env python3
+"""Generate seq-renumber parity vectors from the pinned blob (stdlib only).
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. The blob is executed
+from a temporary file. This script does not import the checkout package.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "seq-renumber"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PY_SHA = "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0"
+RS_SHA = "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8"
+MODULE = "sesslint.repair.recipes_conservative"
+RECIPE = "seq-renumber"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_t04_recipes.py"
+GAP_REGION = "GAP-seq-renumber-affected-region"
+GAP_PLANNER = "GAP-seq-renumber-planner"
+FIXTURE = "fixtures/repair/t04_seq_renumber/source.jsonl"
+COVERED_TEST = "test_seq_renumber_step_idempotent"
+COVERED_VECTOR = "seq_renumber_step_idempotent"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    f"{GAP_REGION}: Python affected_region_seq_renumber returns an empty "
+    "sesslint.policy.abstention.AffectedRegion. Rust does not construct that "
+    "type. The seam is not covered.",
+    f"{GAP_PLANNER}: the planner seam blocks a full plan. Vendor input stays "
+    f"skipped and is not renumbered. {FIXTURE} is not applied.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"spec failed {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    sys.meta_path.insert(0, _PinOnly())
+    rs = ROOT / "rust" / "crates" / "repair" / "src" / "recipes_conservative.rs"
+    if hashlib.sha256(rs.read_bytes()).hexdigest() != RS_SHA:
+        raise SystemExit("rs sha mismatch")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    if hashlib.sha256(py_blob).hexdigest() != PY_SHA:
+        raise SystemExit("py pin sha mismatch")
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_conservative.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    mod = exec_blob(py_blob, "sesslint.repair.recipes_conservative")
+    assert_pin_modules()
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        return {"t": "bool", "v": value}
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        return {"t": "map", "entries": [[key, tagged(inner)] for key, inner in value.items()]}
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def call_names(fn: ast.FunctionDef) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def is_full_idempotent(fn: ast.FunctionDef) -> bool:
+    names = call_names(fn)
+    return names.count("apply_seq_renumber") == 2 and set(names) == {
+        "PlanStep",
+        "apply_seq_renumber",
+    }
+
+
+def idempotent_inputs(fn: ast.FunctionDef) -> tuple[list[Any], dict[str, Any]]:
+    events: list[Any] | None = None
+    kwargs: dict[str, Any] | None = None
+    for node in fn.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        if target.id == "evs":
+            events = ast.literal_eval(node.value)
+        elif target.id == "step" and isinstance(node.value, ast.Call):
+            kwargs = {}
+            for keyword in node.value.keywords:
+                if keyword.arg is None:
+                    raise SystemExit("step keywords must be explicit")
+                kwargs[keyword.arg] = ast.literal_eval(keyword.value)
+    if not isinstance(events, list) or not isinstance(kwargs, dict):
+        raise SystemExit("idempotent inputs missing")
+    return events, kwargs
+
+
+def seq_literal(fn: ast.FunctionDef) -> list[Any]:
+    found: list[Any] | None = None
+    for node in fn.body:
+        if not isinstance(node, ast.Assert) or not isinstance(node.test, ast.Compare):
+            continue
+        if len(node.test.comparators) != 1:
+            continue
+        comparator = node.test.comparators[0]
+        if isinstance(comparator, ast.List):
+            found = ast.literal_eval(comparator)
+    if found is None:
+        raise SystemExit("missing seq list assert")
+    return found
+
+
+def assert_count(fn: ast.FunctionDef) -> int:
+    return sum(isinstance(node, ast.Assert) for node in fn.body)
+
+
+def coverage_note(name: str, fn: ast.FunctionDef) -> str:
+    if name == "test_no_renumber_on_vendor_input":
+        return (
+            f"{GAP_PLANNER} blocks a full plan; vendor input stays skipped "
+            "and is not renumbered"
+        )
+    names = set(call_names(fn))
+    planner = bool(names & {"plan", "repair", "plan_repair", "planner_plan"})
+    if planner:
+        note = f"{GAP_PLANNER} blocks a full plan"
+        if assert_count(fn) > 1:
+            note += "; one assertion inside a multi-assert sweep is not the whole test"
+        return note
+    return "different function from apply_seq_renumber"
+
+
+def discover_coverage(text: str, vector_ids: set[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for fn in test_functions(text):
+        covered = fn.name == COVERED_TEST and is_full_idempotent(fn)
+        vid = COVERED_VECTOR if covered else None
+        status = "covered" if vid and vid in vector_ids else "not_applicable"
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": status,
+                "vector_id": vid if status == "covered" else None,
+                "note": "" if status == "covered" else coverage_note(fn.name, fn),
+            }
+        )
+    if sum(row["status"] == "covered" for row in rows) != 1:
+        raise SystemExit("expected exactly one covered row")
+    return rows
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def recipe_expected(recipe: Any) -> dict[str, Any]:
+    if tuple(recipe.preconditions) != ():
+        raise SystemExit("seq-renumber preconditions are not empty")
+    if tuple(recipe.handles) != ():
+        raise SystemExit("seq-renumber handles are not empty")
+    return {
+        "mode": "recipe",
+        "name": recipe.name,
+        "handles": list(recipe.handles),
+        "preconditions": list(recipe.preconditions),
+        "lossy": require_bool("lossy", recipe.lossy),
+        "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+        "min_policy": recipe.min_policy,
+        "version": recipe.version,
+        "excludes_execution_dependence": require_bool(
+            "excludes_execution_dependence",
+            recipe.excludes_execution_dependence,
+        ),
+        "apply_present": require_bool("apply_present", recipe.apply is not None),
+        "affected_region_present": require_bool(
+            "affected_region_present",
+            recipe.affected_region is not None,
+        ),
+    }
+
+
+def region_snapshot(region: Any) -> dict[str, Any]:
+    unproven = require_bool("unproven", region.unproven)
+    indices = sorted(region.indices)
+    if any(type(index) is not int for index in indices):
+        raise SystemExit("region index is not an int")
+    return {
+        "unproven": unproven,
+        "indices": indices,
+        "ids": sorted(region.ids),
+        "ranges": [list(pair) for pair in region.ranges],
+    }
+
+
+def step_spec(step: Any) -> dict[str, Any]:
+    return {
+        "seq": tagged(step.seq),
+        "recipe": step.recipe,
+        "target_finding_fp": step.target_finding_fp,
+        "target_index": tagged(step.target_index),
+        "params": tagged(dict(step.params)),
+    }
+
+
+def build_vectors(mod: Any, test_text: str) -> list[dict[str, Any]]:
+    fn = next(item for item in test_functions(test_text) if item.name == COVERED_TEST)
+    if not is_full_idempotent(fn):
+        raise SystemExit("refusing to cover a partial idempotent test")
+    events, kwargs = idempotent_inputs(fn)
+    planner = sys.modules["sesslint.repair.planner"]
+    step = planner.PlanStep(**kwargs)
+    once = mod.apply_seq_renumber(events, step)
+    twice = mod.apply_seq_renumber(once, step)
+    if once != twice:
+        raise SystemExit("pin apply did not converge")
+    seqs = [row["seq"] for row in once]
+    if seqs != seq_literal(fn):
+        raise SystemExit("pin seqs differ from the assert literal")
+    if any(type(item) is not int for item in seqs):
+        raise SystemExit("seq is not an int")
+    region = mod.affected_region_seq_renumber(step, events)
+    recipe = mod.RECIPE_SEQ_RENUMBER
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    spec = step_spec(step)
+    tagged_events = [tagged(row) for row in events]
+    return [
+        {
+            "id": "recipe_seq_renumber",
+            "construct": {"type": "recipe_constant"},
+            "expected": recipe_expected(recipe),
+        },
+        {
+            "id": COVERED_VECTOR,
+            "construct": {
+                "type": "apply_idempotent",
+                "fn": "apply_seq_renumber",
+                "events": tagged_events,
+                "step": spec,
+            },
+            "expected": {
+                "mode": "ok",
+                "equal": True,
+                "seqs": [tagged(item) for item in seqs],
+                "once": [tagged(row) for row in once],
+                "twice": [tagged(row) for row in twice],
+            },
+        },
+        {
+            "id": "affected_region_seq_renumber",
+            "construct": {
+                "type": "affected_region",
+                "fn": "affected_region_seq_renumber",
+                "events": tagged_events,
+                "step": spec,
+            },
+            "expected": {
+                "mode": "python_region",
+                "gap_id": GAP_REGION,
+                "region": region_snapshot(region),
+            },
+        },
+    ]
+
+
+def dump(doc: Any) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit(f"refusing path fragment in JSON: {banned}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    mod = load_mod()
+    vectors = build_vectors(mod, test_text)
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": PY_SHA,
+        "recipes_conservative_rs_sha256": RS_SHA,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage(test_text, {item["id"] for item in vectors})
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    write_text(OUT / "coverage.json", dump(coverage))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic seq-renumber parity. Apply expected values come from the "
+            "pinned blob. The planner seam stays uncovered."
+        ),
+        "generator": "rust/parity/recipes/seq-renumber/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_rs_sha256": RS_SHA,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/recipes/seq-renumber/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest))
+    covered = coverage["covered_count"]
+    skipped = coverage["not_applicable_count"]
+    print(f"{len(vectors)} {digest} covered={covered} not_applicable={skipped}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

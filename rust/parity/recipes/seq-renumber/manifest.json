@@ -1,0 +1,14 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "seq-renumber",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_rs_sha256": "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8",
+  "vector_count": 3,
+  "vectors_sha256": "b60a764ad25f9ee837771d13c7cb1f2b2746cbab2d6b69cf1617dacaf66eef99",
+  "generator": "rust/parity/recipes/seq-renumber/generate",
+  "known_parity_gaps": [
+    "GAP-seq-renumber-affected-region: Python affected_region_seq_renumber returns an empty sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
+    "GAP-seq-renumber-planner: the planner seam blocks a full plan. Vendor input stays skipped and is not renumbered. fixtures/repair/t04_seq_renumber/source.jsonl is not applied."
+  ]
+}
