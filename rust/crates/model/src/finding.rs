@@ -3386,7 +3386,7 @@ impl FindingFingerprintPreimage {
 /// Other keys are walked in lexicographic order. A key is kept only when it is
 /// in [`CANONICAL_EVIDENCE_KEYS`]. Values are the stored evidence values.
 /// Nested maps keep their own key order. Non-string keys are dropped.
-fn canonical_evidence_for_fingerprint(evidence: Option<&Evidence>) -> Vec<(String, Evidence)> {
+pub fn canonical_evidence_for_fingerprint(evidence: Option<&Evidence>) -> Vec<(String, Evidence)> {
     let Some(evidence) = evidence else {
         return Vec::new();
     };

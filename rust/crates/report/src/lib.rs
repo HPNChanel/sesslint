@@ -6,7 +6,7 @@ mod error;
 
 pub use error::ReportError;
 
-pub mod baseline {}
+pub mod baseline;
 pub mod progress;
 pub mod report {}
 pub mod html_report {}
