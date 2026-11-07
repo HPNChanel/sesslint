@@ -1,8 +1,10 @@
 //! OpenAI Agents SDK run-state projection, detection, payload assembly, and load gates.
 //!
 //! Port of `src/sesslint/adapters/openai_agents.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–1300.
-//! Stops before `_process_openai_item` (line 1303).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–1580.
+//! [`process_openai_item`] ports `_process_openai_item` through
+//! `compute_content_hash`. [`load_openai_agents_session`] stops on the
+//! tail-tracker display. `CanonicalEvent` is not ported.
 //!
 //! Lines 1–313 port [`safe_type_value`] (Python `_safe_type_value`),
 //! [`project_run_state`], and [`SourceMetadata`]. [`SourceMetadata`] is the
@@ -124,6 +126,65 @@
 //! [`load_openai_agents_jsonl`], [`process_jsonl_line`], and [`build_payload`]
 //! do not call [`check_version`] or [`openai_version_field`].
 //!
+//! [`process_openai_item`] ports `_process_openai_item` (lines 1303–1561)
+//! through `compute_content_hash`. `seq` is `len(events)` as `i64`. A length
+//! that does not fit is an error. Both byte offsets use their difference,
+//! including a negative difference that fits in `i64`. A wider span is an
+//! error and does not call [`model::canonical::canonical_bytes`]. One missing
+//! offset calls that function. `Err` keeps payload length `0` and continues.
+//! `Ok` uses the byte length when it fits in `i64`. No digest is invented.
+//!
+//! A non-empty stripped `str(id)` is the record id and `original_id`. The
+//! guard's `register_real` error is returned. Otherwise [`synthetic_event_id`]
+//! uses adapter `openai_agents`, ordinal `seq`, `path_str`, and that payload
+//! length. `register_synthetic` is returned the same way. `str()` of bytes,
+//! a set, or an object is [`STR_UNRENDERED`]. Parent is `parent_id`, else
+//! `prev_id`, stripped, or `None`.
+//!
+//! The version candidate is the first truthy of `sdk_version`,
+//! `export_version`, `agent_sdk_version`, and `version`. [`check_version`]
+//! receives `Some(record id)`. Its [`CheckVersionError`] is returned and the
+//! type map does not run. `Ok(true)` calls
+//! [`DriftTracker::note_unsupported_version`] when drift is present.
+//! `Ok(false)` on a `str`, `int`, `float`, or `bool` calls
+//! [`DriftTracker::observe_version`]. A non-scalar with `Ok(false)` does not.
+//! Drift then receives [`DriftTracker::observe_signature`]. A string becomes
+//! [`PyValue::Str`]. Any other value is passed through and does not fire.
+//!
+//! [`ITEM_TYPE_MAP`] classifies a string `type`. Role `user`, `assistant`,
+//! `system`, or `tool` is string equality. A missing `type` with a string
+//! role uses that same role map, and any other role is `system` / `unknown`,
+//! without [`make_finding`]. Every other type calls [`safe_discriminator`],
+//! [`SourceRef`], and [`make_finding`] with [`SL302`], severity error,
+//! repairability manual, the unknown-critical template, and
+//! [`FindingValue::None`]. Evidence order is `field_path`, `type_value`,
+//! `record_id`, then coordinates. `type_truncated` is added only when the
+//! discriminator bool is true. The [`FindingError`] is returned. The finding
+//! is not appended and no [`SessionEvent`] is built.
+//!
+//! If that arm did not run, keys are walked in Python sorted order. A key
+//! set that is not all `str` is an error and is not stringified. The first
+//! key outside [`KNOWN_RECORD_KEYS`] that is in [`CRITICAL_KEYS`] or starts
+//! with `critical_` or `unknown_critical` uses the same SL302 template.
+//! Evidence `type_value` is [`safe_type_value`]. The walk stops. No event is
+//! built.
+//!
+//! Correlation runs only for `tool_call` and `tool_result`. Timestamp is the
+//! first present of `timestamp`, `ts`, and `created_at`, then
+//! [`normalize_timestamp`]. [`build_payload`] is next and its error is
+//! returned. [`model::canonical::compute_content_hash`] then returns
+//! [`CanonicalUnavailable`]. That error is returned. No event is appended,
+//! `check_event` is not called, and no sha256 is invented. Tool-name side
+//! effects are not reached.
+//!
+//! [`load_openai_agents_session`] ports the wrapper at lines 1547–1561. Its
+//! first statement is [`load_openai_agents`]. The display is
+//! [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`]. Events are not indexed. No
+//! [`model::canonical::Session`] or [`model::canonical::SessionHeader`] is
+//! built, and the id `openai-agents-session` is not constructed. A missing
+//! file and empty bytes share that display. The loaders do not call
+//! [`process_openai_item`] or [`load_openai_agents_session`].
+//!
 //! `limits is None` uses [`DEFAULT_MAX_FILE_BYTES`] from `src/sesslint/io.py`
 //! at this pin (`100 * 1024 * 1024`). A provided integer is that cap.
 //! [`MaxFileBytes::Bool`] is not an integer and is not used as `0` or `1`.
@@ -146,11 +207,23 @@
 //! `str(key)`, project at most 32 keys, then project at most 8 checkpoints.
 //!
 //! Gaps vs Python (recorded, not papered over):
-//! - `CRITICAL_KEYS`, `KNOWN_RECORD_KEYS`, `ITEM_TYPE_MAP`, and
-//!   `CanonicalEvent` are not read by the functions in this file. They are
-//!   not ported. [`build_payload`] does not apply `ITEM_TYPE_MAP`; `kind` is
-//!   already classified. [`SUPPORTED_OPENAI_AGENTS_VERSIONS`] is ported.
-//!   [`check_version`] tests membership after [`normalize_version`].
+//! - [`CRITICAL_KEYS`], [`KNOWN_RECORD_KEYS`], and [`ITEM_TYPE_MAP`] are the
+//!   pin sets. [`build_payload`] does not apply [`ITEM_TYPE_MAP`]; `kind` is
+//!   already classified. `CanonicalEvent` is not ported. [`ALL`] names it
+//!   because the module `__all__` does. [`SUPPORTED_OPENAI_AGENTS_VERSIONS`]
+//!   is ported. [`check_version`] tests membership after [`normalize_version`].
+//! - [`process_openai_item`] returns [`model::canonical::compute_content_hash`]'s
+//!   [`CanonicalUnavailable`] and does not build a [`SessionEvent`].
+//!   [`MetaValue::Bytes`], [`MetaValue::Set`], and [`MetaValue::Object`] have
+//!   no [`Payload`] variant, so those nodes are [`Payload::null`] on the value
+//!   passed into that call. The call still runs. It is not a digest.
+//!   `READ_ONLY_TOOL_NAMES` and `MUTATING_TOOL_NAMES` are not read.
+//! - Key order is Python `sorted` only when every key is a `str`. Any other
+//!   key type is an error. Keys are not sorted by `str(key)`.
+//! - [`load_openai_agents_session`] calls [`load_openai_agents`] and then
+//!   returns [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`] without reading the event
+//!   list. The loader's own not-found and empty-success results are not the
+//!   wrapper display.
 //! - [`MetaValue::Bytes`], [`MetaValue::Set`], and [`MetaValue::Object`] do
 //!   not compare equal in [`openai_version_field`], except empty `bytes` and
 //!   an empty `set`. Their content and identity are not stored. A Python
@@ -217,14 +290,17 @@
 //!   `str.strip` runs before the decoder. Strip cannot fail, and the stripped
 //!   text is not kept.
 
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Component, Path, PrefixComponent};
 
-use model::canonical::SessionEvent;
-use model::codes::{Repairability, Severity, SL001, SL301};
+use model::canonical::{
+    canonical_bytes, compute_content_hash, CanonicalUnavailable, Payload, SessionEvent,
+};
+use model::codes::{Repairability, Severity, SL001, SL301, SL302};
 use model::errors::{AdapterError, FindingError};
 use model::finding::PyValue as FindingValue;
 use model::finding::{
@@ -3021,31 +3097,846 @@ fn int_eq_float(value: i64, float_value: f64) -> bool {
     value == (float_value as i64)
 }
 
+/// Python: `CRITICAL_KEYS`.
+pub const CRITICAL_KEYS: &[&str] = &[
+    "type",
+    "parent_id",
+    "prev_id",
+    "call_id",
+    "tool_call_id",
+    "unknown_critical_field",
+];
+
+/// Python: `KNOWN_RECORD_KEYS`.
+pub const KNOWN_RECORD_KEYS: &[&str] = &[
+    "id",
+    "item_id",
+    "parent_id",
+    "prev_id",
+    "type",
+    "role",
+    "timestamp",
+    "ts",
+    "created_at",
+    "name",
+    "tool_name",
+    "function",
+    "call_id",
+    "tool_call_id",
+    "input",
+    "args",
+    "arguments",
+    "output",
+    "content",
+    "result",
+    "is_error",
+    "error",
+    "target",
+    "agent",
+    "handoff_to",
+    "reason",
+    "checkpoint_id",
+    "state",
+    "run_state",
+    "checkpoints",
+    "items",
+    "sdk_version",
+    "export_version",
+    "agent_sdk_version",
+    "metadata",
+    "model",
+    "usage",
+    "thread_id",
+    "user",
+];
+
+/// Python: `ITEM_TYPE_MAP`. Each row is `(type, actor, kind)`.
+///
+/// `message` stays `assistant` until a string role replaces the actor.
+pub const ITEM_TYPE_MAP: &[(&str, &str, &str)] = &[
+    ("message", "assistant", "message"),
+    ("user", "user", "message"),
+    ("assistant", "assistant", "message"),
+    ("system", "system", "message"),
+    ("tool_call", "assistant", "tool_call"),
+    ("function_call", "assistant", "tool_call"),
+    ("tool_result", "tool", "tool_result"),
+    ("function_call_output", "tool", "tool_result"),
+    ("handoff", "assistant", "handoff"),
+    ("checkpoint", "system", "checkpoint"),
+    ("compaction", "system", "compaction_boundary"),
+    ("compaction_boundary", "system", "compaction_boundary"),
+];
+
+/// Python module `__all__`, in that order.
+///
+/// `CanonicalEvent` is named here and is not a type in this module.
+pub const ALL: [&str; 15] = [
+    "CRITICAL_KEYS",
+    "CanonicalEvent",
+    "EventList",
+    "ITEM_TYPE_MAP",
+    "KNOWN_RECORD_KEYS",
+    "MAX_PROJECTED_CHECKPOINTS",
+    "MAX_PROJECTED_RUN_STATE_KEYS",
+    "SQLITE_MAGIC",
+    "SUPPORTED_OPENAI_AGENTS_VERSIONS",
+    "SourceMetadata",
+    "detect_openai_agents",
+    "load_openai_agents",
+    "load_openai_agents_session",
+    "normalize_version",
+    "project_run_state",
+];
+
+const UNKNOWN_CRITICAL_TEMPLATE: &str =
+    "Unknown critical record on line {line} for record {record_id}";
+
+const EVENTS_LEN_OUTSIDE_I64: &str = "len(events) does not fit in i64";
+
+const CANONICAL_LEN_OUTSIDE_I64: &str = "canonical byte length does not fit in i64";
+
+const KEY_ORDER_UNSUPPORTED: &str = "sorted() cannot order these key types";
+
+const KEY_STARTSWITH_UNSUPPORTED: &str = "str.startswith is not available for this key";
+
+/// Failure from [`process_openai_item`].
+///
+/// [`Display`](std::fmt::Display) is the inner message. [`Self::Finding`] is
+/// the omitted-fingerprint seam. [`Self::ContentHash`] is
+/// [`compute_content_hash`]. Neither variant appends a finding or an event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessOpenAiItemError {
+    /// `len(events)` does not fit in `i64`.
+    SeqIndex,
+    /// `byte_end - byte_offset` does not fit in `i64`.
+    Span,
+    /// A successful canonical encoding whose length does not fit in `i64`.
+    CanonicalLen,
+    /// [`STR_UNRENDERED`].
+    Unrendered,
+    /// `register_real` or `register_synthetic`.
+    Collision(AdapterError),
+    /// [`check_version`] failed.
+    Version(CheckVersionError),
+    /// `sorted()` cannot order these keys.
+    KeyOrder,
+    /// A non-`str` key has no `startswith`.
+    KeyStartswith,
+    /// [`SourceRef`] or [`make_finding`] failed.
+    Finding(FindingError),
+    /// [`build_payload`] failed.
+    Payload(BuildPayloadError),
+    /// [`compute_content_hash`] failed.
+    ContentHash(CanonicalUnavailable),
+}
+
+impl ProcessOpenAiItemError {
+    /// The Python exception text, or the missing-codec seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::SeqIndex => EVENTS_LEN_OUTSIDE_I64,
+            Self::Span => SPAN_OUTSIDE_I64,
+            Self::CanonicalLen => CANONICAL_LEN_OUTSIDE_I64,
+            Self::Unrendered => STR_UNRENDERED,
+            Self::Collision(error) => error.message(),
+            Self::Version(error) => error.message(),
+            Self::KeyOrder => KEY_ORDER_UNSUPPORTED,
+            Self::KeyStartswith => KEY_STARTSWITH_UNSUPPORTED,
+            Self::Finding(error) => error.message(),
+            Self::Payload(error) => error.message(),
+            Self::ContentHash(error) => error.message(),
+        }
+    }
+}
+
+impl fmt::Display for ProcessOpenAiItemError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for ProcessOpenAiItemError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Collision(error) => Some(error),
+            Self::Version(error) => Some(error),
+            Self::Finding(error) => Some(error),
+            Self::Payload(error) => Some(error),
+            Self::ContentHash(error) => Some(error),
+            Self::SeqIndex
+            | Self::Span
+            | Self::CanonicalLen
+            | Self::Unrendered
+            | Self::KeyOrder
+            | Self::KeyStartswith => None,
+        }
+    }
+}
+
+struct ClassifiedItem {
+    actor: &'static str,
+    kind: &'static str,
+}
+
+/// Canonicalize one item through the content-hash seam.
+///
+/// Python: `_process_openai_item`. Stops at
+/// [`model::canonical::compute_content_hash`]. The finding list and the event
+/// list are not extended. [`load_openai_agents`], [`load_openai_agents_json`],
+/// [`load_openai_agents_jsonl`], [`process_jsonl_line`], [`build_payload`],
+/// and [`check_version`] do not call this function.
+///
+/// # Errors
+///
+/// A sequence length or byte span that does not fit in `i64`, an
+/// unrenderable `str()`, a guard collision, [`check_version`], unordered
+/// keys, [`make_finding`], [`build_payload`], or the content-hash seam.
+/// After the other SL302 checks, that display is
+/// `sesslint.determinism.canonical_json_bytes is not available`.
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+#[must_use = "the content-hash seam is the result"]
+pub fn process_openai_item(
+    obj: &MapValue,
+    line_number: i64,
+    path_str: &str,
+    events: &[SessionEvent],
+    findings: &[Finding],
+    source_metadata: &mut SourceMetadata,
+    seen_version_sl301: bool,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+    mut guard: Option<&mut SyntheticIdCollisionGuard>,
+    mut drift: Option<&mut DriftTracker>,
+) -> Result<(), ProcessOpenAiItemError> {
+    let seq_index = seq_index_of(events)?;
+    let payload_len = item_payload_len(obj, byte_offset, byte_end)?;
+    let (rec_id, original_id) = record_identity(
+        first_present(obj, "id", "item_id"),
+        seq_index,
+        path_str,
+        payload_len,
+        guard.as_deref_mut(),
+    )?;
+    let parent_id = optional_stripped_id(first_present(obj, "parent_id", "prev_id"))?;
+    apply_item_version(
+        obj,
+        path_str,
+        line_number,
+        &rec_id,
+        findings,
+        source_metadata,
+        seen_version_sl301,
+        byte_offset,
+        byte_end,
+        record_ordinal,
+        guard,
+        drift.as_deref_mut(),
+    )?;
+    let raw_type = map_get(obj, "type").cloned().unwrap_or(MetaValue::Null);
+    observe_item_signature(
+        drift,
+        &raw_type,
+        line_number,
+        &rec_id,
+        record_ordinal,
+        byte_offset,
+        byte_end,
+    );
+    let coordinates = coordinate_pairs(byte_offset, byte_end, record_ordinal);
+    let classified = classify_item(obj, path_str, line_number, &rec_id, &coordinates)?;
+    reject_unknown_critical_key(obj, path_str, line_number, &rec_id, &coordinates)?;
+    let correlation_id = correlation_for(obj, classified.kind, &rec_id)?;
+    let raw_ts = first_non_null(obj, &["timestamp", "ts", "created_at"])
+        .cloned()
+        .unwrap_or(MetaValue::Null);
+    let ts = normalize_timestamp(&raw_ts);
+    let payload = build_payload(obj, classified.actor, classified.kind, &rec_id, &raw_type)
+        .map_err(ProcessOpenAiItemError::Payload)?;
+    let _computed = (original_id, parent_id, correlation_id, ts);
+    finish_at_content_hash(payload)
+}
+
+/// Failure from [`load_openai_agents_session`].
+///
+/// [`Display`](std::fmt::Display) is [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`].
+/// The path is not part of that text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadOpenAiAgentsSessionError;
+
+impl LoadOpenAiAgentsSessionError {
+    /// [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`].
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        MALFORMED_TAIL_TRACKER_UNAVAILABLE
+    }
+}
+
+impl fmt::Display for LoadOpenAiAgentsSessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for LoadOpenAiAgentsSessionError {}
+
+/// Stream a session and stop before the envelope is built.
+///
+/// Python: `load_openai_agents_session`. The first statement is
+/// [`load_openai_agents`]. This port does not index events and does not build
+/// a [`model::canonical::Session`] or [`model::canonical::SessionHeader`].
+/// The id `openai-agents-session` is not constructed. The display is
+/// [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`] for every input, including a missing
+/// file and empty bytes.
+///
+/// [`load_openai_agents`], [`load_openai_agents_json`],
+/// [`load_openai_agents_jsonl`], and [`process_jsonl_line`] do not call this
+/// function.
+///
+/// # Errors
+///
+/// [`MALFORMED_TAIL_TRACKER_UNAVAILABLE`].
+#[must_use = "the tail tracker seam is the result"]
+pub fn load_openai_agents_session(
+    path: OpenAiAgentsSource<'_>,
+    limits: Option<MaxFileBytes>,
+) -> Result<(), LoadOpenAiAgentsSessionError> {
+    let _loaded = load_openai_agents(path, limits);
+    Err(LoadOpenAiAgentsSessionError)
+}
+
+fn seq_index_of(events: &[SessionEvent]) -> Result<i64, ProcessOpenAiItemError> {
+    i64::try_from(events.len()).map_err(|_| ProcessOpenAiItemError::SeqIndex)
+}
+
+fn item_payload_len(
+    obj: &MapValue,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+) -> Result<i64, ProcessOpenAiItemError> {
+    match (byte_offset, byte_end) {
+        (Some(start), Some(end)) => i64_span(start, end).map_err(|_| ProcessOpenAiItemError::Span),
+        _ => canonical_payload_len(obj),
+    }
+}
+
+fn canonical_payload_len(obj: &MapValue) -> Result<i64, ProcessOpenAiItemError> {
+    match canonical_bytes(obj) {
+        Err(_unavailable) => Ok(0),
+        Ok(bytes) => i64::try_from(bytes.len()).map_err(|_| ProcessOpenAiItemError::CanonicalLen),
+    }
+}
+
+fn record_identity(
+    raw_id: Option<&MetaValue>,
+    seq_index: i64,
+    path_str: &str,
+    payload_len: i64,
+    guard: Option<&mut SyntheticIdCollisionGuard>,
+) -> Result<(String, Option<String>), ProcessOpenAiItemError> {
+    if let Some(real_id) = real_record_id(raw_id)? {
+        if let Some(guard) = guard {
+            guard
+                .register_real(&real_id)
+                .map_err(ProcessOpenAiItemError::Collision)?;
+        }
+        return Ok((real_id.clone(), Some(real_id)));
+    }
+    let minted = synthetic_event_id("openai_agents", seq_index, path_str, payload_len);
+    if let Some(guard) = guard {
+        guard
+            .register_synthetic(&minted)
+            .map_err(ProcessOpenAiItemError::Collision)?;
+    }
+    Ok((minted, None))
+}
+
+fn real_record_id(raw_id: Option<&MetaValue>) -> Result<Option<String>, ProcessOpenAiItemError> {
+    let Some(raw_id) = raw_id else {
+        return Ok(None);
+    };
+    let stripped = stripped_text(raw_id)?;
+    if stripped.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(stripped))
+    }
+}
+
+fn optional_stripped_id(
+    value: Option<&MetaValue>,
+) -> Result<Option<String>, ProcessOpenAiItemError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let stripped = stripped_text(value)?;
+    if stripped.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(stripped))
+    }
+}
+
+fn stripped_text(value: &MetaValue) -> Result<String, ProcessOpenAiItemError> {
+    let rendered = python_meta_str(value).ok_or(ProcessOpenAiItemError::Unrendered)?;
+    Ok(python_strip(&rendered).to_owned())
+}
+
+fn rendered_text(value: &MetaValue) -> Result<String, ProcessOpenAiItemError> {
+    python_meta_str(value).ok_or(ProcessOpenAiItemError::Unrendered)
+}
+
+fn first_present<'a>(obj: &'a MapValue, primary: &str, secondary: &str) -> Option<&'a MetaValue> {
+    non_null_field(obj, primary).or_else(|| non_null_field(obj, secondary))
+}
+
+fn non_null_field<'a>(obj: &'a MapValue, key: &str) -> Option<&'a MetaValue> {
+    match map_get(obj, key) {
+        Some(value) if !value.is_null() => Some(value),
+        _ => None,
+    }
+}
+
+fn version_candidate(obj: &MapValue) -> Option<&MetaValue> {
+    OPENAI_VERSION_KEYS
+        .iter()
+        .find_map(|key| non_null_field(obj, key).filter(|value| is_truthy(value)))
+}
+
+#[allow(clippy::too_many_arguments)] // same keyword list as check_version, plus drift
+fn apply_item_version(
+    obj: &MapValue,
+    path_str: &str,
+    line_number: i64,
+    record_id: &str,
+    findings: &[Finding],
+    source_metadata: &mut SourceMetadata,
+    seen_version_sl301: bool,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+    guard: Option<&mut SyntheticIdCollisionGuard>,
+    drift: Option<&mut DriftTracker>,
+) -> Result<(), ProcessOpenAiItemError> {
+    let Some(candidate) = version_candidate(obj) else {
+        return Ok(());
+    };
+    let item_sl301 = check_version(
+        candidate,
+        path_str,
+        line_number,
+        Some(record_id),
+        findings,
+        source_metadata,
+        seen_version_sl301,
+        byte_offset,
+        byte_end,
+        record_ordinal,
+        guard,
+    )
+    .map_err(ProcessOpenAiItemError::Version)?;
+    if let Some(drift) = drift {
+        if item_sl301 {
+            drift.note_unsupported_version();
+        } else if let Some(rendered) = version_scalar_text(candidate) {
+            let normalized = normalize_version(python_strip(&rendered));
+            let field = openai_version_field(obj, candidate);
+            drift.observe_version(
+                &normalized,
+                supported_version(&normalized),
+                &field,
+                Some(line_number),
+                Some(record_id),
+                record_ordinal,
+                byte_offset,
+                byte_end,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn observe_item_signature(
+    drift: Option<&mut DriftTracker>,
+    raw_type: &MetaValue,
+    line_number: i64,
+    record_id: &str,
+    record_ordinal: Option<i64>,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+) {
+    let Some(drift) = drift else {
+        return;
+    };
+    drift.observe_signature(
+        py_of(raw_type),
+        Some(line_number),
+        Some(record_id),
+        record_ordinal,
+        byte_offset,
+        byte_end,
+    );
+}
+
+fn classify_item(
+    obj: &MapValue,
+    path_str: &str,
+    line_number: i64,
+    record_id: &str,
+    coordinates: &[(FindingValue, FindingValue)],
+) -> Result<ClassifiedItem, ProcessOpenAiItemError> {
+    if let Some(classified) = classified_item(obj) {
+        return Ok(classified);
+    }
+    let raw_type = map_get(obj, "type").cloned().unwrap_or(MetaValue::Null);
+    Err(sl302(
+        path_str,
+        line_number,
+        record_id,
+        type_evidence(&raw_type, record_id, coordinates),
+    ))
+}
+
+fn classified_item(obj: &MapValue) -> Option<ClassifiedItem> {
+    if let Some(MetaValue::Str(type_name)) = map_get(obj, "type") {
+        if let Some((actor, kind)) = item_type(type_name) {
+            return Some(disambiguate_message(actor, kind, map_get(obj, "role")));
+        }
+        return None;
+    }
+    if type_is_absent(obj) {
+        if let Some(MetaValue::Str(role)) = map_get(obj, "role") {
+            return Some(role_only(role));
+        }
+    }
+    None
+}
+
+fn type_is_absent(obj: &MapValue) -> bool {
+    match map_get(obj, "type") {
+        None => true,
+        Some(value) => value.is_null(),
+    }
+}
+
+fn item_type(raw_type: &str) -> Option<(&'static str, &'static str)> {
+    for &(key, actor, kind) in ITEM_TYPE_MAP {
+        if key == raw_type {
+            return Some((actor, kind));
+        }
+    }
+    None
+}
+
+fn disambiguate_message(
+    actor: &'static str,
+    kind: &'static str,
+    role: Option<&MetaValue>,
+) -> ClassifiedItem {
+    if kind != "message" {
+        return ClassifiedItem { actor, kind };
+    }
+    match role {
+        Some(MetaValue::Str(text)) if text == "user" => ClassifiedItem {
+            actor: "user",
+            kind,
+        },
+        Some(MetaValue::Str(text)) if text == "assistant" => ClassifiedItem {
+            actor: "assistant",
+            kind,
+        },
+        Some(MetaValue::Str(text)) if text == "system" => ClassifiedItem {
+            actor: "system",
+            kind,
+        },
+        Some(MetaValue::Str(text)) if text == "tool" => ClassifiedItem {
+            actor: "tool",
+            kind: "tool_result",
+        },
+        _ => ClassifiedItem { actor, kind },
+    }
+}
+
+fn role_only(role: &str) -> ClassifiedItem {
+    match role {
+        "user" => ClassifiedItem {
+            actor: "user",
+            kind: "message",
+        },
+        "assistant" => ClassifiedItem {
+            actor: "assistant",
+            kind: "message",
+        },
+        "system" => ClassifiedItem {
+            actor: "system",
+            kind: "message",
+        },
+        "tool" => ClassifiedItem {
+            actor: "tool",
+            kind: "tool_result",
+        },
+        _ => ClassifiedItem {
+            actor: "system",
+            kind: "unknown",
+        },
+    }
+}
+
+fn reject_unknown_critical_key(
+    obj: &MapValue,
+    path_str: &str,
+    line_number: i64,
+    record_id: &str,
+    coordinates: &[(FindingValue, FindingValue)],
+) -> Result<(), ProcessOpenAiItemError> {
+    let order = sorted_entry_indexes(&obj.entries)?;
+    for index in order {
+        let Some((key, value)) = obj.entries.get(index) else {
+            continue;
+        };
+        if !is_unknown_critical(key)? {
+            continue;
+        }
+        let MapKey::Str(text) = key else {
+            return Err(ProcessOpenAiItemError::KeyStartswith);
+        };
+        let (safe_key, _truncated) = safe_discriminator(PyValue::Str(text));
+        return Err(sl302(
+            path_str,
+            line_number,
+            record_id,
+            key_evidence(&safe_key, value, record_id, coordinates),
+        ));
+    }
+    Ok(())
+}
+
+fn sorted_entry_indexes(
+    entries: &[(MapKey, MetaValue)],
+) -> Result<Vec<usize>, ProcessOpenAiItemError> {
+    let mut indexes: Vec<usize> = (0..entries.len()).collect();
+    if indexes.len() <= 1 {
+        return Ok(indexes);
+    }
+    if !entries.iter().all(|(key, _)| matches!(key, MapKey::Str(_))) {
+        return Err(ProcessOpenAiItemError::KeyOrder);
+    }
+    indexes.sort_by(
+        |&left, &right| match (&entries[left].0, &entries[right].0) {
+            (MapKey::Str(left_text), MapKey::Str(right_text)) => left_text.cmp(right_text),
+            _ => Ordering::Equal,
+        },
+    );
+    Ok(indexes)
+}
+
+fn is_known_record_key(key: &MapKey) -> bool {
+    match key {
+        MapKey::Str(text) => KNOWN_RECORD_KEYS.contains(&text.as_str()),
+        _ => false,
+    }
+}
+
+fn is_critical_key(key: &MapKey) -> bool {
+    match key {
+        MapKey::Str(text) => CRITICAL_KEYS.contains(&text.as_str()),
+        _ => false,
+    }
+}
+
+fn is_unknown_critical(key: &MapKey) -> Result<bool, ProcessOpenAiItemError> {
+    if is_known_record_key(key) {
+        return Ok(false);
+    }
+    if is_critical_key(key) {
+        return Ok(true);
+    }
+    match key {
+        MapKey::Str(text) => {
+            Ok(text.starts_with("critical_") || text.starts_with("unknown_critical"))
+        }
+        _ => Err(ProcessOpenAiItemError::KeyStartswith),
+    }
+}
+
+fn correlation_for(
+    obj: &MapValue,
+    kind: &str,
+    record_id: &str,
+) -> Result<Option<String>, ProcessOpenAiItemError> {
+    if kind != "tool_call" && kind != "tool_result" {
+        return Ok(None);
+    }
+    if let Some(raw_call) = first_present(obj, "call_id", "tool_call_id") {
+        return Ok(Some(rendered_text(raw_call)?));
+    }
+    if kind == "tool_call" {
+        Ok(Some(record_id.to_owned()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn finish_at_content_hash(payload: MapValue) -> Result<(), ProcessOpenAiItemError> {
+    let content = meta_to_payload(&MetaValue::Map(payload));
+    match compute_content_hash(&content) {
+        Err(error) => Err(ProcessOpenAiItemError::ContentHash(error)),
+        Ok(_digest) => Err(ProcessOpenAiItemError::ContentHash(
+            CanonicalUnavailable::payload_content_hash(),
+        )),
+    }
+}
+
+fn meta_to_payload(value: &MetaValue) -> Payload {
+    match value {
+        MetaValue::Null => Payload::null(),
+        MetaValue::Bool(flag) => Payload::bool_value(*flag),
+        MetaValue::Int(number) => Payload::int(*number),
+        MetaValue::Float(bits) => Payload::float(f64::from_bits(*bits)),
+        MetaValue::Str(text) => Payload::string(text.clone()),
+        MetaValue::List(items) => Payload::list(items.iter().map(meta_to_payload).collect()),
+        MetaValue::Tuple(items) => Payload::tuple(items.iter().map(meta_to_payload).collect()),
+        MetaValue::Map(map) => Payload::map(
+            map.entries
+                .iter()
+                .map(|(key, item)| (map_key_payload(key), meta_to_payload(item)))
+                .collect(),
+        ),
+        MetaValue::Bytes(_) | MetaValue::Set(_) | MetaValue::Object(_) => Payload::null(),
+    }
+}
+
+fn map_key_payload(key: &MapKey) -> Payload {
+    match key {
+        MapKey::Str(text) | MapKey::Rendered(text) => Payload::string(text.clone()),
+        MapKey::Int(number) => Payload::int(*number),
+        MapKey::Bool(flag) => Payload::bool_value(*flag),
+        MapKey::Null => Payload::null(),
+        MapKey::Float(bits) => Payload::float(f64::from_bits(*bits)),
+    }
+}
+
+fn type_evidence(
+    raw_type: &MetaValue,
+    record_id: &str,
+    coordinates: &[(FindingValue, FindingValue)],
+) -> FindingValue {
+    let (type_value, type_truncated) = safe_discriminator(py_of(raw_type));
+    let mut entries = vec![
+        (
+            FindingValue::string("field_path"),
+            FindingValue::string("type"),
+        ),
+        (
+            FindingValue::string("type_value"),
+            FindingValue::string(type_value),
+        ),
+        (
+            FindingValue::string("record_id"),
+            FindingValue::string(record_id),
+        ),
+    ];
+    entries.extend_from_slice(coordinates);
+    if type_truncated {
+        entries.push((
+            FindingValue::string("type_truncated"),
+            FindingValue::bool_value(true),
+        ));
+    }
+    FindingValue::map(entries)
+}
+
+fn key_evidence(
+    safe_key: &str,
+    value: &MetaValue,
+    record_id: &str,
+    coordinates: &[(FindingValue, FindingValue)],
+) -> FindingValue {
+    let mut entries = vec![
+        (
+            FindingValue::string("field_path"),
+            FindingValue::string(safe_key),
+        ),
+        (
+            FindingValue::string("type_value"),
+            FindingValue::string(safe_type_value(py_of(value))),
+        ),
+        (
+            FindingValue::string("record_id"),
+            FindingValue::string(record_id),
+        ),
+    ];
+    entries.extend_from_slice(coordinates);
+    FindingValue::map(entries)
+}
+
+fn sl302(
+    path_str: &str,
+    line_number: i64,
+    record_id: &str,
+    evidence: FindingValue,
+) -> ProcessOpenAiItemError {
+    let source = match SourceRef::try_new(
+        path_str,
+        Some(SourceLine::Int(line_number)),
+        Some(record_id),
+    ) {
+        Ok(source) => source,
+        Err(error) => return ProcessOpenAiItemError::Finding(error),
+    };
+    match make_finding(&MakeFindingInput {
+        code: FindingValue::string(SL302),
+        severity: FindingValue::severity(Severity::Error),
+        repairability: FindingValue::repairability(Repairability::Manual),
+        message_template: FindingValue::string(UNKNOWN_CRITICAL_TEMPLATE),
+        template_args: FindingValue::None,
+        source: FindingValue::source(source),
+        related_ids: FindingValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: FindingValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    }) {
+        Err(error) => ProcessOpenAiItemError::Finding(error),
+        Ok(_finding) => {
+            ProcessOpenAiItemError::Finding(FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         build_payload, check_version, detect_openai_agents, discriminated_version_evidence,
         invalid_type_evidence, load_openai_agents, load_openai_agents_json,
-        load_openai_agents_jsonl, normalize_timestamp, normalize_version, openai_version_field,
-        process_jsonl_line, project_run_state, python_path_text, safe_type_value,
-        AgentsDocumentKind, AttrObject, BuildPayloadError, CheckVersionError, EventList,
-        FindingGate, LoadOpenAiAgentsError, LoadOpenAiAgentsJsonError, LoadOpenAiAgentsJsonlError,
+        load_openai_agents_jsonl, load_openai_agents_session, normalize_timestamp,
+        normalize_version, openai_version_field, process_jsonl_line, process_openai_item,
+        project_run_state, python_path_text, safe_type_value, AgentsDocumentKind, AttrObject,
+        BuildPayloadError, CheckVersionError, EventList, FindingGate, LoadOpenAiAgentsError,
+        LoadOpenAiAgentsJsonError, LoadOpenAiAgentsJsonlError, LoadOpenAiAgentsSessionError,
         MapKey, MapValue, MaxFileBytes, MetaValue, OpenAiAgentsSource, ProcessJsonlLineError,
-        ProjectedCheckpoint, RawLine, RunSource, SeqNumber, SourceMetadata,
-        SuppliedSecretScanTracker, TruncationTotals, DECODE_JSON_DUPAWARE_UNAVAILABLE,
-        DEFAULT_MAX_FILE_BYTES, EXTRACT_RECORD_ID_UNAVAILABLE, INVALID_VERSION_TYPE,
-        MALFORMED_TAIL_TRACKER_UNAVAILABLE, MAX_PROJECTED_CHECKPOINTS,
-        MAX_PROJECTED_RUN_STATE_KEYS, SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
+        ProcessOpenAiItemError, ProjectedCheckpoint, RawLine, RunSource, SeqNumber, SourceMetadata,
+        SuppliedSecretScanTracker, TruncationTotals, ALL, CRITICAL_KEYS,
+        DECODE_JSON_DUPAWARE_UNAVAILABLE, DEFAULT_MAX_FILE_BYTES, EXTRACT_RECORD_ID_UNAVAILABLE,
+        INVALID_VERSION_TYPE, ITEM_TYPE_MAP, KNOWN_RECORD_KEYS, MALFORMED_TAIL_TRACKER_UNAVAILABLE,
+        MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS, SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
         SECRET_SCAN_FEED_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE, SPAN_OUTSIDE_I64,
         SQLITE_MAGIC, STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
         SUPPORTED_OPENAI_AGENTS_VERSIONS,
     };
+    use crate::drift::DriftTracker;
     use crate::safe_value::{safe_discriminator, PyValue};
     use crate::source::SuppliedReaderLimits;
     use crate::synthetic::{synthetic_event_id, SyntheticIdCollisionGuard};
     use std::error::Error;
 
-    use model::canonical::SessionEvent;
+    use model::canonical::{canonical_bytes, CanonicalUnavailable, SessionEvent};
     use model::finding::PyValue as FindingValue;
     use model::finding::{Finding, FINGERPRINT_CODEC_UNAVAILABLE};
     use std::fs;
@@ -5640,5 +6531,532 @@ mod tests {
             ),
             "version"
         );
+    }
+
+    fn text_record(fields: &[(&str, &str)]) -> MapValue {
+        record(
+            fields
+                .iter()
+                .map(|(key, value)| (*key, MetaValue::Str((*value).to_owned())))
+                .collect(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_record(
+        obj: &MapValue,
+        events: &[SessionEvent],
+        findings: &[Finding],
+        guard: Option<&mut SyntheticIdCollisionGuard>,
+        drift: Option<&mut DriftTracker>,
+        meta: &mut SourceMetadata,
+        seen: bool,
+        byte_offset: Option<i64>,
+        byte_end: Option<i64>,
+        record_ordinal: Option<i64>,
+    ) -> ProcessOpenAiItemError {
+        process_openai_item(
+            obj,
+            1,
+            "items.json",
+            events,
+            findings,
+            meta,
+            seen,
+            byte_offset,
+            byte_end,
+            record_ordinal,
+            guard,
+            drift,
+        )
+        .expect_err("item seam")
+    }
+
+    #[test]
+    fn unknown_type_stops_at_the_codec_and_appends_nothing() {
+        let obj = text_record(&[("type", "widget"), ("role", "user"), ("id", "item-1")]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            None,
+            None,
+            &mut meta,
+            false,
+            Some(2),
+            Some(8),
+            Some(1),
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::Finding(_)));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+        assert!(!err.to_string().contains("sha256"));
+    }
+
+    #[test]
+    fn unknown_critical_key_stops_at_the_codec_and_appends_nothing() {
+        let obj = record(vec![
+            ("type", MetaValue::Str("message".to_owned())),
+            ("id", MetaValue::Str("item-1".to_owned())),
+            ("name", MetaValue::Str("kept".to_owned())),
+            ("critical_extra", MetaValue::Int(1)),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj, &events, &findings, None, None, &mut meta, false, None, None, None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::Finding(_)));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn known_message_reaches_the_content_hash_and_appends_nothing() {
+        let obj = record(vec![
+            ("type", MetaValue::Str("message".to_owned())),
+            ("role", MetaValue::Str("user".to_owned())),
+            ("id", MetaValue::Str("item-1".to_owned())),
+            ("content", MetaValue::Str("note".to_owned())),
+            ("parent_id", MetaValue::Str("  ".to_owned())),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            Some(&mut guard),
+            None,
+            &mut meta,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            err,
+            ProcessOpenAiItemError::ContentHash(CanonicalUnavailable::payload_content_hash())
+        );
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+        assert!(guard.seen_real_ids().contains("item-1"));
+        assert!(guard.seen_synthetic_ids().is_empty());
+        assert!(!err.to_string().contains("sha256"));
+    }
+
+    #[test]
+    fn missing_offset_mints_with_payload_len_zero() {
+        let obj = text_record(&[("type", "message"), ("role", "user"), ("content", "note")]);
+        assert!(canonical_bytes(&obj).is_err());
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            Some(&mut guard),
+            None,
+            &mut meta,
+            false,
+            None,
+            None,
+            Some(9),
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+        let expected = synthetic_event_id("openai_agents", 0, "items.json", 0);
+        assert!(guard.seen_synthetic_ids().contains(&expected));
+        assert!(!guard.seen_synthetic_ids().contains(&synthetic_event_id(
+            "openai_agents",
+            9,
+            "items.json",
+            0
+        )));
+        assert!(!guard.seen_synthetic_ids().contains(&synthetic_event_id(
+            "openai_agents",
+            0,
+            "items.json",
+            1
+        )));
+
+        let events = vec![SessionEvent::new(
+            "prior",
+            None,
+            0,
+            "1970-01-01T00:00:00Z",
+            "user",
+            "message",
+        )];
+        let findings = Vec::new();
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            Some(&mut guard),
+            None,
+            &mut meta,
+            false,
+            Some(3),
+            None,
+            Some(9),
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        assert_eq!(events.len(), 1);
+        assert!(findings.is_empty());
+        assert!(guard.seen_synthetic_ids().contains(&synthetic_event_id(
+            "openai_agents",
+            1,
+            "items.json",
+            0
+        )));
+    }
+
+    #[test]
+    fn span_keeps_a_fitting_difference_and_rejects_a_wide_one() {
+        let obj = text_record(&[("type", "message"), ("role", "assistant")]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            Some(&mut guard),
+            None,
+            &mut meta,
+            false,
+            Some(4),
+            Some(9),
+            None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        assert!(guard.seen_synthetic_ids().contains(&synthetic_event_id(
+            "openai_agents",
+            0,
+            "items.json",
+            5
+        )));
+        assert!(events.is_empty());
+
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            Some(&mut guard),
+            None,
+            &mut meta,
+            false,
+            Some(10),
+            Some(4),
+            None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        assert!(guard.seen_synthetic_ids().contains(&synthetic_event_id(
+            "openai_agents",
+            0,
+            "items.json",
+            -6
+        )));
+
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut guard = SyntheticIdCollisionGuard::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            Some(&mut guard),
+            None,
+            &mut meta,
+            false,
+            Some(i64::MIN),
+            Some(i64::MAX),
+            None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::Span));
+        assert_eq!(err.to_string(), SPAN_OUTSIDE_I64);
+        assert!(guard.seen_synthetic_ids().is_empty());
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn mixed_keys_are_not_string_sorted() {
+        let obj = MapValue::new(vec![
+            (
+                MapKey::Str("type".to_owned()),
+                MetaValue::Str("message".to_owned()),
+            ),
+            (
+                MapKey::Str("id".to_owned()),
+                MetaValue::Str("item-1".to_owned()),
+            ),
+            (MapKey::Int(1), MetaValue::Int(2)),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj, &events, &findings, None, None, &mut meta, false, None, None, None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::KeyOrder));
+        assert_eq!(err.to_string(), "sorted() cannot order these key types");
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn version_truthiness_skips_empty_and_keeps_true() {
+        let zero = record(vec![
+            ("type", MetaValue::Str("message".to_owned())),
+            ("id", MetaValue::Str("item-1".to_owned())),
+            ("sdk_version", MetaValue::float(0.0)),
+            ("export_version", MetaValue::Str(String::new())),
+            ("agent_sdk_version", MetaValue::Bool(false)),
+            ("version", MetaValue::Int(0)),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &zero, &events, &findings, None, None, &mut meta, false, None, None, None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        assert!(meta.get("version_raw").is_none());
+        assert!(events.is_empty());
+
+        let truthy = record(vec![
+            ("type", MetaValue::Str("message".to_owned())),
+            ("id", MetaValue::Str("item-1".to_owned())),
+            ("sdk_version", MetaValue::Bool(true)),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &truthy, &events, &findings, None, None, &mut meta, false, None, None, None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::Version(_)));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(
+            meta.get("version_raw"),
+            Some(&MetaValue::Str("True".to_owned()))
+        );
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn unsupported_version_does_not_reach_the_type_map() {
+        let obj = text_record(&[
+            ("type", "session_meta"),
+            ("id", "item-1"),
+            ("sdk_version", "9.9.9"),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut drift = DriftTracker::new("openai-agents");
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj,
+            &events,
+            &findings,
+            None,
+            Some(&mut drift),
+            &mut meta,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::Version(_)));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(drift.into_findings("items.json").expect("empty").is_empty());
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn supported_version_is_observed_before_the_hash() {
+        let mut drift = DriftTracker::new("openai-agents");
+        let mut meta = SourceMetadata::new();
+        let first = text_record(&[
+            ("type", "message"),
+            ("id", "item-1"),
+            ("sdk_version", "1.0.0"),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let err = run_record(
+            &first,
+            &events,
+            &findings,
+            None,
+            Some(&mut drift),
+            &mut meta,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        let second = text_record(&[
+            ("type", "message"),
+            ("id", "item-2"),
+            ("sdk_version", "0.1.0"),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let err = run_record(
+            &second,
+            &events,
+            &findings,
+            None,
+            Some(&mut drift),
+            &mut meta,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        let flushed = drift.into_findings("items.json").expect_err("transition");
+        assert_eq!(flushed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn unrenderable_id_does_not_use_debug() {
+        let obj = record(vec![
+            ("type", MetaValue::Str("message".to_owned())),
+            ("id", MetaValue::Bytes(2)),
+        ]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj, &events, &findings, None, None, &mut meta, false, None, None, None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::Unrendered));
+        assert_eq!(err.to_string(), STR_UNRENDERED);
+        assert!(!err.to_string().contains("Bytes"));
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn role_only_unknown_role_reaches_the_content_hash() {
+        let obj = text_record(&[("role", "other"), ("id", "item-1")]);
+        let events = Vec::new();
+        let findings = Vec::new();
+        let mut meta = SourceMetadata::new();
+        let err = run_record(
+            &obj, &events, &findings, None, None, &mut meta, false, None, None, None,
+        );
+        assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn session_wrapper_displays_the_tail_tracker_sentence() {
+        let missing = Path::new("sesslint-missing/openai-session.json");
+        let missing_err = load_openai_agents_session(OpenAiAgentsSource::Path(missing), None)
+            .expect_err("missing");
+        assert!(matches!(missing_err, LoadOpenAiAgentsSessionError));
+        assert_eq!(missing_err.to_string(), MALFORMED_TAIL_TRACKER_UNAVAILABLE);
+        assert!(!missing_err.to_string().contains("Session file not found"));
+        assert!(!missing_err.to_string().contains("openai-agents-session"));
+
+        let empty_err =
+            load_openai_agents_session(OpenAiAgentsSource::Bytes(b""), None).expect_err("empty");
+        assert_eq!(empty_err.to_string(), missing_err.to_string());
+
+        let doc_err = load_openai_agents_session(
+            OpenAiAgentsSource::Bytes(b"{\"type\":\"message\"}\n"),
+            None,
+        )
+        .expect_err("doc");
+        assert_eq!(doc_err.to_string(), MALFORMED_TAIL_TRACKER_UNAVAILABLE);
+        assert!(!doc_err.to_string().contains("SecretScanTracker"));
+    }
+
+    #[test]
+    fn module_all_and_record_tables_match_the_pin() {
+        assert_eq!(
+            ALL,
+            [
+                "CRITICAL_KEYS",
+                "CanonicalEvent",
+                "EventList",
+                "ITEM_TYPE_MAP",
+                "KNOWN_RECORD_KEYS",
+                "MAX_PROJECTED_CHECKPOINTS",
+                "MAX_PROJECTED_RUN_STATE_KEYS",
+                "SQLITE_MAGIC",
+                "SUPPORTED_OPENAI_AGENTS_VERSIONS",
+                "SourceMetadata",
+                "detect_openai_agents",
+                "load_openai_agents",
+                "load_openai_agents_session",
+                "normalize_version",
+                "project_run_state",
+            ]
+        );
+        assert_eq!(
+            CRITICAL_KEYS,
+            [
+                "type",
+                "parent_id",
+                "prev_id",
+                "call_id",
+                "tool_call_id",
+                "unknown_critical_field",
+            ]
+        );
+        assert_eq!(
+            ITEM_TYPE_MAP,
+            [
+                ("message", "assistant", "message"),
+                ("user", "user", "message"),
+                ("assistant", "assistant", "message"),
+                ("system", "system", "message"),
+                ("tool_call", "assistant", "tool_call"),
+                ("function_call", "assistant", "tool_call"),
+                ("tool_result", "tool", "tool_result"),
+                ("function_call_output", "tool", "tool_result"),
+                ("handoff", "assistant", "handoff"),
+                ("checkpoint", "system", "checkpoint"),
+                ("compaction", "system", "compaction_boundary"),
+                ("compaction_boundary", "system", "compaction_boundary"),
+            ]
+        );
+        assert_eq!(KNOWN_RECORD_KEYS.len(), 39);
+        assert!(KNOWN_RECORD_KEYS.contains(&"user"));
+        assert!(KNOWN_RECORD_KEYS.contains(&"thread_id"));
+        assert!(!KNOWN_RECORD_KEYS.contains(&"version"));
+        assert!(!KNOWN_RECORD_KEYS.contains(&"critical_extra"));
+        assert!(!CRITICAL_KEYS.contains(&"id"));
     }
 }
