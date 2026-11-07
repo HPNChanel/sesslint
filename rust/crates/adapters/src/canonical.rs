@@ -10,6 +10,9 @@
 //! [`load_canonical`]'s first statement is `SecretScanTracker()`. That
 //! call is not available in this crate. [`load_canonical`] does not call
 //! [`load_canonical_body`].
+//! [`load_canonical_session`]'s first statement is [`load_canonical`].
+//! That error is returned. The header lines after the call are not
+//! reached.
 //!
 //! This slice declares the key sets, [`SourceMetadata`], [`EventList`],
 //! [`normalize_version`], [`detect_canonical`], [`event_to_dict`],
@@ -90,6 +93,12 @@
 //!   `into_findings`, or `sort_findings`, and it does not return an
 //!   [`EventList`] or an SL009 finding. [`canonical_source_label`] stays
 //!   callable on its own. `load_canonical` does not call it.
+//! - [`load_canonical_session`] calls [`load_canonical`] and propagates
+//!   [`SECRET_SCAN_TRACKER_UNAVAILABLE`]. It does not read `path`, call
+//!   [`load_canonical_body`], or build a `Session`, `SessionHeader`, or
+//!   [`EventList`]. A missing file, a directory, empty bytes, and `{}`
+//!   share that display. The text is not `Session file not found` and
+//!   not `decode_json_dupaware`.
 //! - [`load_canonical_body`] copies `DEFAULT_READER_LIMITS.max_file_bytes`
 //!   as `100 * 1024 * 1024`. A provided cap is that `i64`. Finding labels
 //!   come from [`canonical_source_label`]. Missing paths and directories
@@ -2866,6 +2875,46 @@ fn secret_scan_tracker(
     LoadCanonicalError
 }
 
+/// Stream a canonical session file and wrap canonical events in a `Session` envelope.
+///
+/// Python: `load_canonical_session`. The first statement is
+/// `load_canonical(path, limits=limits)`. That call returns
+/// [`SECRET_SCAN_TRACKER_UNAVAILABLE`] and does not return events, so
+/// this propagates [`LoadCanonicalError`]. `path` is not read.
+/// [`load_canonical_body`] is not called. No `Session`, `SessionHeader`,
+/// or [`EventList`] is built. The header lines after the call are not
+/// reached.
+///
+/// # Errors
+///
+/// [`LoadCanonicalError`] from [`load_canonical`]. Success is
+/// [`std::convert::Infallible`].
+pub fn load_canonical_session(
+    path: CanonicalSource<'_>,
+    limits: Option<crate::source::SuppliedReaderLimits>,
+) -> Result<std::convert::Infallible, LoadCanonicalError> {
+    load_canonical(path, limits)
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 15] = [
+    "CRITICAL_KEYS",
+    "CRITICAL_TOP_KEYS",
+    "CanonicalEvent",
+    "EventList",
+    "KNOWN_EVENT_KEYS",
+    "KNOWN_TOP_KEYS",
+    "REQUIRED_EVENT_KEYS",
+    "SUPPORTED_CANONICAL_VERSIONS",
+    "SourceMetadata",
+    "detect_canonical",
+    "dump_canonical",
+    "event_to_dict",
+    "load_canonical",
+    "load_canonical_session",
+    "normalize_version",
+];
+
 /// `DEFAULT_READER_LIMITS.max_file_bytes` from `src/sesslint/io.py` at the pin.
 ///
 /// `100 * 1024 * 1024`. Copied locally. This crate does not depend on `scan`.
@@ -3429,12 +3478,12 @@ mod tests {
 
     use super::{
         canonical_source_label, classify_session_doc, common_event, detect_canonical,
-        dump_canonical, event_to_dict, load_canonical, load_canonical_body, normalize_version,
-        parse_canonical_event_record, safe_evidence_val, safe_rec_id, safe_type_value,
-        session_path_text, AttrSource, Attribute, CanonicalFileLimit, CanonicalLoadSource,
-        CanonicalReadGate, CanonicalSource, DumpInput, EventList, EventObject, EventSequence,
-        LoadCanonicalBodyError, MetaValue, ParseCanonicalEventError, ProvidedSource,
-        SourceMetadata, CRITICAL_KEYS, CRITICAL_TOP_KEYS, DECODE_JSON_DUPAWARE_UNAVAILABLE,
+        dump_canonical, event_to_dict, load_canonical, load_canonical_body, load_canonical_session,
+        normalize_version, parse_canonical_event_record, safe_evidence_val, safe_rec_id,
+        safe_type_value, session_path_text, AttrSource, Attribute, CanonicalFileLimit,
+        CanonicalLoadSource, CanonicalReadGate, CanonicalSource, DumpInput, EventList, EventObject,
+        EventSequence, LoadCanonicalBodyError, MetaValue, ParseCanonicalEventError, ProvidedSource,
+        SourceMetadata, ALL, CRITICAL_KEYS, CRITICAL_TOP_KEYS, DECODE_JSON_DUPAWARE_UNAVAILABLE,
         DEFAULT_MAX_FILE_BYTES, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS, KNOWN_TOP_KEYS,
         REQUIRED_EVENT_KEYS, SECRET_SCAN_TRACKER_UNAVAILABLE, SUPPORTED_CANONICAL_VERSIONS,
     };
@@ -5221,5 +5270,77 @@ mod tests {
         );
         assert!(!empty.to_string().contains("canonical_json_bytes"));
         assert!(!empty.to_string().contains("decode_json_dupaware"));
+    }
+
+    #[test]
+    fn load_canonical_session_stops_at_the_tracker() {
+        assert_eq!(
+            ALL,
+            [
+                "CRITICAL_KEYS",
+                "CRITICAL_TOP_KEYS",
+                "CanonicalEvent",
+                "EventList",
+                "KNOWN_EVENT_KEYS",
+                "KNOWN_TOP_KEYS",
+                "REQUIRED_EVENT_KEYS",
+                "SUPPORTED_CANONICAL_VERSIONS",
+                "SourceMetadata",
+                "detect_canonical",
+                "dump_canonical",
+                "event_to_dict",
+                "load_canonical",
+                "load_canonical_session",
+                "normalize_version",
+            ]
+        );
+        let tracker = SECRET_SCAN_TRACKER_UNAVAILABLE;
+        let scratch = Scratch::new("session");
+        let missing = scratch.child("missing.json");
+        let missing_text = missing.to_str().expect("utf8");
+        let missing_err =
+            load_canonical_session(CanonicalSource::Str(missing_text), None).expect_err("missing");
+        assert_eq!(missing_err.to_string(), tracker);
+        assert_eq!(missing_err.message(), tracker);
+        assert!(!missing_err.to_string().contains("Session file not found"));
+        assert!(!missing_err.to_string().contains("decode_json_dupaware"));
+        assert!(!missing_err.to_string().contains("canonical-session"));
+        assert!(!missing_err.to_string().contains("1970-01-01"));
+
+        let dir_text = scratch.dir.to_str().expect("utf8");
+        let dir_err = load_canonical_session(CanonicalSource::PathLike(dir_text), None)
+            .expect_err("directory");
+        assert_eq!(dir_err.to_string(), tracker);
+
+        let empty = load_canonical_session(CanonicalSource::Bytes(b""), None).expect_err("empty");
+        assert_eq!(empty.to_string(), tracker);
+        let object = load_canonical_session(
+            CanonicalSource::Bytes(b"{}"),
+            Some(crate::source::SuppliedReaderLimits),
+        )
+        .expect_err("object");
+        assert_eq!(object.to_string(), tracker);
+        assert_eq!(object, missing_err);
+        assert_eq!(object, empty);
+        assert_eq!(object, dir_err);
+
+        let direct = load_canonical(
+            CanonicalSource::Bytes(b"{}"),
+            Some(crate::source::SuppliedReaderLimits),
+        )
+        .expect_err("direct");
+        assert_eq!(object, direct);
+
+        let body_missing =
+            load_canonical_body(CanonicalLoadSource::Str(missing_text), None).expect_err("body");
+        assert!(body_missing.to_string().contains("Session file not found"));
+        assert_ne!(missing_err.to_string(), body_missing.to_string());
+        let body_empty =
+            load_canonical_body(CanonicalLoadSource::Bytes(b""), None).expect_err("body empty");
+        assert_ne!(empty.to_string(), body_empty.to_string());
+        let body_object =
+            load_canonical_body(CanonicalLoadSource::Bytes(b"{}"), None).expect_err("body object");
+        assert!(body_object.to_string().contains("decode_json_dupaware"));
+        assert!(!object.to_string().contains("decode_json_dupaware"));
     }
 }
