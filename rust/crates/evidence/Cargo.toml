@@ -3,3 +3,7 @@ name = "evidence"
 version = "0.0.0"
 edition = "2021"
 publish = false
+
+[dependencies]
+sha2 = "=0.10.9"
+codec = { path = "../codec" }

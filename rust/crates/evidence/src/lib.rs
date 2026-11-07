@@ -11,7 +11,7 @@ pub mod bundle {}
 pub mod diff {}
 pub mod doctor;
 pub mod precheck;
-pub mod seal {}
+pub mod seal;
 pub mod verify {}
 pub mod exporter {}
 pub mod preview;
