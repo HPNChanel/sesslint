@@ -10,10 +10,11 @@
 //! mmap line cursor implemented as a byte-slice cursor with the same
 //! `readline` rules. This process never maps the file.
 //!
-//! The record-id pattern and the strict JSON decoder are defined here. The
-//! streaming reader that follows `decode_error_message_template` in the pin
-//! is not part of this slice. OS errors propagate as `std::io::Error` and
-//! are not turned into findings here.
+//! The record-id pattern and the strict JSON decoder are defined here.
+//! Duplicate-key decoding from lines 347–667 of the same pin is appended
+//! below. The recovery parser after line 667, and the streaming reader, are
+//! not part of this file. OS errors propagate as `std::io::Error` and are
+//! not turned into findings here.
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -21,6 +22,12 @@ use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::Path;
 
+use model::codes::{Repairability, Severity, SL303};
+use model::errors::FindingError;
+use model::finding::{
+    enforce_content_free_text, make_finding, Finding, MakeFindingInput, PyValue, SourceLine,
+    SourceRef,
+};
 use sha2::{Digest, Sha256};
 
 /// Python: `DEFAULT_MAX_LINE_BYTES = 8 * 1024 * 1024`.
@@ -888,6 +895,1556 @@ pub fn decode_error_message_template(err: &(dyn Error + 'static), terminal: bool
     }
 }
 
+/// Cap on duplicate key paths collected for one record.
+///
+/// Python: `_MAX_DUP_KEYS_PER_RECORD`.
+pub const MAX_DUP_KEYS_PER_RECORD: i64 = 16;
+
+/// Stand-in for CPython's recursion limit while decoding one JSON value.
+///
+/// Depth above this returns [`JsonNestingLimitError`]. The bound is not raised.
+const JSON_NESTING_LIMIT: u32 = 1000;
+
+const DUP_KEY_MESSAGE: &str = "Duplicate JSON key on line {line} for record {record_id}";
+
+const UTF8_BOM_ERROR: &str = "Unexpected UTF-8 BOM (decode using utf-8-sig)";
+
+/// `skip_string` reached the end inside a still-viable token.
+const SKIP_CUT: i64 = -1;
+
+/// `skip_string` found a byte no continuation can turn into a JSON string.
+const SKIP_BAD: i64 = -2;
+
+const RECORD_ID_CONTEXT: &str = "extracted record_id";
+
+/// Syntax failure from the hand JSON parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsonSyntaxError {
+    message: &'static str,
+}
+
+impl JsonSyntaxError {
+    const fn new(message: &'static str) -> Self {
+        Self { message }
+    }
+
+    pub const fn message(self) -> &'static str {
+        self.message
+    }
+}
+
+impl std::fmt::Display for JsonSyntaxError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message)
+    }
+}
+
+impl Error for JsonSyntaxError {}
+
+/// Nesting deeper than [`JSON_NESTING_LIMIT`] during JSON decode.
+///
+/// This is the typed stand-in for CPython `RecursionError`. It is returned.
+/// It is not a panic and the limit is not raised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsonNestingLimitError;
+
+impl std::fmt::Display for JsonNestingLimitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("JSON nesting depth exceeds 1000")
+    }
+}
+
+impl Error for JsonNestingLimitError {}
+
+/// Failure from [`decode_json_dupaware`] or [`DuplicateAwareDecoder::decode`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JsonDecodeError {
+    /// Unpaired surrogate after a successful structural parse.
+    LoneSurrogate(LoneSurrogateError),
+    /// [`strict_parse_float`] or [`reject_constant`] refused a literal.
+    Numeric(NumericLiteralError),
+    /// Container depth is above 1000.
+    Nesting(JsonNestingLimitError),
+    /// The text is not one strict JSON value.
+    Syntax(JsonSyntaxError),
+}
+
+impl JsonDecodeError {
+    pub fn lone_surrogate(&self) -> Option<&LoneSurrogateError> {
+        match self {
+            Self::LoneSurrogate(err) => Some(err),
+            _ => None,
+        }
+    }
+
+    fn syntax(message: &'static str) -> Self {
+        Self::Syntax(JsonSyntaxError::new(message))
+    }
+
+    fn numeric_constant(token: &str) -> Self {
+        match reject_constant(token) {
+            Err(err) => Self::Numeric(err),
+            Ok(()) => Self::syntax("Expecting value"),
+        }
+    }
+}
+
+impl std::fmt::Display for JsonDecodeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LoneSurrogate(err) => err.fmt(formatter),
+            Self::Numeric(err) => err.fmt(formatter),
+            Self::Nesting(err) => err.fmt(formatter),
+            Self::Syntax(err) => err.fmt(formatter),
+        }
+    }
+}
+
+impl Error for JsonDecodeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::LoneSurrogate(err) => Some(err),
+            Self::Numeric(err) => Some(err),
+            Self::Nesting(err) => Some(err),
+            Self::Syntax(err) => Some(err),
+        }
+    }
+}
+
+fn syntax(message: &'static str) -> JsonDecodeError {
+    JsonDecodeError::syntax(message)
+}
+
+impl From<LoneSurrogateError> for JsonDecodeError {
+    fn from(err: LoneSurrogateError) -> Self {
+        Self::LoneSurrogate(err)
+    }
+}
+
+/// One duplicated JSON object key (SL303).
+///
+/// `key_path` is a schema position such as `$.a.b[0].id`. `occurrence_count`
+/// is how many times that key appeared. `critical` is true when the key name
+/// is in the caller's critical set. The path is not the membership test.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateKey {
+    key_path: String,
+    occurrence_count: i64,
+    critical: bool,
+}
+
+impl DuplicateKey {
+    pub fn key_path(&self) -> &str {
+        &self.key_path
+    }
+
+    pub fn occurrence_count(&self) -> i64 {
+        self.occurrence_count
+    }
+
+    pub fn critical(&self) -> bool {
+        self.critical
+    }
+}
+
+/// Which nodes in a decoded tree carried duplicate keys.
+///
+/// Built by the hand parser. [`collect_duplicate_keys`] walks it with the
+/// value. An [`DuplicateMark::Empty`] subtree has no duplicate key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DuplicateMark {
+    /// No duplicate key in this subtree.
+    Empty,
+    /// Array. Children align with the array values.
+    Array(Vec<DuplicateMark>),
+    /// Object. `duplicates` is first-seen keys whose count is greater than 1.
+    /// `children` aligns with the object's values.
+    Object {
+        duplicates: Vec<(String, i64)>,
+        children: Vec<DuplicateMark>,
+    },
+}
+
+impl DuplicateMark {
+    fn is_interesting(&self) -> bool {
+        !matches!(self, Self::Empty)
+    }
+}
+
+impl Drop for JsonValue {
+    fn drop(&mut self) {
+        // Derived drop walks containers recursively. A depth-1000 document
+        // would overflow that chain. Empty containers return immediately, so
+        // this loop is the only deep walk.
+        if !json_has_children(self) {
+            return;
+        }
+        let mut stack = Vec::new();
+        detach_json_children(self, &mut stack);
+        while let Some(mut child) = stack.pop() {
+            if json_has_children(&child) {
+                detach_json_children(&mut child, &mut stack);
+            }
+        }
+    }
+}
+
+fn json_has_children(value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Array(items) => !items.is_empty(),
+        JsonValue::Object(pairs) => !pairs.is_empty(),
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => false,
+    }
+}
+
+fn detach_json_children(value: &mut JsonValue, stack: &mut Vec<JsonValue>) {
+    match value {
+        JsonValue::Array(items) => stack.append(items),
+        JsonValue::Object(pairs) => {
+            for (_, child) in pairs.iter_mut() {
+                stack.push(std::mem::replace(child, JsonValue::Null));
+            }
+            pairs.clear();
+        }
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => {}
+    }
+}
+
+impl Drop for DuplicateMark {
+    fn drop(&mut self) {
+        if !mark_has_children(self) {
+            return;
+        }
+        let mut stack = Vec::new();
+        detach_mark_children(self, &mut stack);
+        while let Some(mut child) = stack.pop() {
+            if mark_has_children(&child) {
+                detach_mark_children(&mut child, &mut stack);
+            }
+        }
+    }
+}
+
+fn mark_has_children(mark: &DuplicateMark) -> bool {
+    match mark {
+        DuplicateMark::Empty => false,
+        DuplicateMark::Array(items) => !items.is_empty(),
+        DuplicateMark::Object {
+            duplicates,
+            children,
+        } => !duplicates.is_empty() || !children.is_empty(),
+    }
+}
+
+fn detach_mark_children(mark: &mut DuplicateMark, stack: &mut Vec<DuplicateMark>) {
+    match mark {
+        DuplicateMark::Array(items) => stack.append(items),
+        DuplicateMark::Object {
+            duplicates,
+            children,
+        } => {
+            stack.append(children);
+            duplicates.clear();
+        }
+        DuplicateMark::Empty => {}
+    }
+}
+
+/// Reject unpaired UTF-16 surrogates when `text` contains a `\u` or `\U` escape.
+///
+/// Text with neither backslash-u nor backslash-U returns `Ok` without walking.
+/// A well-formed pair is one supplementary code point in `obj` and is not an
+/// error. A non-empty [`lone_surrogate_escapes`] list becomes
+/// [`LoneSurrogateError`].
+pub fn reject_lone_surrogates(text: &str, obj: &JsonValue) -> Result<(), LoneSurrogateError> {
+    if !text.contains("\\u") && !text.contains("\\U") {
+        return Ok(());
+    }
+    let escapes = lone_surrogate_escapes(obj);
+    if escapes.is_empty() {
+        Ok(())
+    } else {
+        Err(LoneSurrogateError::new(escapes))
+    }
+}
+
+/// Iteratively verify that container nesting does not exceed `max_depth`.
+///
+/// A non-container returns true. JSON objects and arrays are containers.
+/// The pin also treats tuples as containers. JSON has no tuple, so a tuple
+/// is not a third container kind on [`JsonValue`]. The root container starts
+/// at depth 1. Object walks visit values, not keys. Returns false when a
+/// container's depth is greater than `max_depth`.
+pub fn check_nesting_depth(obj: &JsonValue, max_depth: i64) -> bool {
+    if !is_json_container(obj) {
+        return true;
+    }
+    let mut stack = vec![(obj, 1_i64)];
+    while let Some((current, depth)) = stack.pop() {
+        if depth > max_depth {
+            return false;
+        }
+        let next_depth = depth.saturating_add(1);
+        match current {
+            JsonValue::Object(pairs) => {
+                push_container_values(&mut stack, pairs_values(pairs), next_depth)
+            }
+            JsonValue::Array(items) => push_container_values(&mut stack, items, next_depth),
+            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => {}
+        }
+    }
+    true
+}
+
+fn pairs_values(pairs: &[(Vec<u32>, JsonValue)]) -> impl Iterator<Item = &JsonValue> {
+    pairs.iter().map(|(_, value)| value)
+}
+
+fn push_container_values<'a>(
+    stack: &mut Vec<(&'a JsonValue, i64)>,
+    values: impl IntoIterator<Item = &'a JsonValue>,
+    depth: i64,
+) {
+    for value in values {
+        if is_json_container(value) {
+            stack.push((value, depth));
+        }
+    }
+}
+
+fn is_json_container(value: &JsonValue) -> bool {
+    matches!(value, JsonValue::Object(_) | JsonValue::Array(_))
+}
+
+enum RecordIdScreen {
+    Found(String),
+    Rejected,
+    Empty,
+}
+
+/// Extract a record id from an object `id` string, then from the raw text.
+///
+/// A non-empty stripped id longer than 200 code points is cut to 200. It must
+/// pass [`enforce_content_free_text`] with context `extracted record_id`.
+/// [`FindingError`] returns `None` and does not fall through. An empty strip,
+/// a missing id, or a non-string id falls through to
+/// [`search_record_id_pattern`] when `raw_text` is present. A lone surrogate
+/// in the object id cannot be a Rust string and returns `None`.
+pub fn extract_record_id(raw_text: Option<&str>, obj: Option<&JsonValue>) -> Option<String> {
+    if let Some(JsonValue::Object(pairs)) = obj {
+        if let Some(chars) = object_id_string(pairs) {
+            match scalar_string(chars) {
+                Some(text) => match screen_record_id(&text) {
+                    RecordIdScreen::Found(id) => return Some(id),
+                    RecordIdScreen::Rejected => return None,
+                    RecordIdScreen::Empty => {}
+                },
+                None => return None,
+            }
+        }
+    }
+    if let Some(raw) = raw_text {
+        if let Some(capture) = search_record_id_pattern(raw) {
+            return match screen_record_id(capture) {
+                RecordIdScreen::Found(id) => Some(id),
+                RecordIdScreen::Rejected | RecordIdScreen::Empty => None,
+            };
+        }
+    }
+    None
+}
+
+fn object_id_string(pairs: &[(Vec<u32>, JsonValue)]) -> Option<&[u32]> {
+    const ID: [u32; 2] = [b'i' as u32, b'd' as u32];
+    for (key, value) in pairs {
+        if key.as_slice() == ID {
+            return match value {
+                JsonValue::String(chars) => Some(chars.as_slice()),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+fn screen_record_id(text: &str) -> RecordIdScreen {
+    let stripped = text.trim_matches(is_python_space_char);
+    if stripped.is_empty() {
+        return RecordIdScreen::Empty;
+    }
+    let candidate: String = stripped.chars().take(200).collect();
+    match enforce_content_free_text(&candidate, RECORD_ID_CONTEXT) {
+        Ok(()) => RecordIdScreen::Found(candidate),
+        Err(_) => RecordIdScreen::Rejected,
+    }
+}
+
+fn scalar_string(codes: &[u32]) -> Option<String> {
+    let mut out = String::with_capacity(codes.len());
+    for &code in codes {
+        out.push(char::from_u32(code)?);
+    }
+    Some(out)
+}
+
+fn render_codes(codes: &[u32]) -> String {
+    let mut out = String::with_capacity(codes.len());
+    for &code in codes {
+        match char::from_u32(code) {
+            Some(ch) => out.push(ch),
+            None => out.push_str(&format!("\\u{code:04x}")),
+        }
+    }
+    out
+}
+
+/// Strict-decode `text` and collect duplicated object keys.
+///
+/// Rejects a leading U+FEFF, trailing commas, and trailing junk. `NaN`,
+/// `Infinity`, and `-Infinity` go through [`reject_constant`]. JSON number
+/// tokens go through [`strict_parse_float`]. Duplicate keys keep the last
+/// value and count every appearance, in first-seen key order. When nothing
+/// was duplicated the tree is not walked. After a successful parse,
+/// [`reject_lone_surrogates`] runs. Strings are [`Vec<u32>`] so a lone
+/// surrogate can exist. Parsing uses an explicit stack. Nesting above 1000
+/// returns [`JsonNestingLimitError`] and does not panic.
+///
+/// `critical_keys` `None` is the empty set. `max_dup_keys` defaults to
+/// [`MAX_DUP_KEYS_PER_RECORD`] at the call site. Rust has no default arguments.
+pub fn decode_json_dupaware(
+    text: &str,
+    critical_keys: Option<&BTreeSet<String>>,
+    max_dup_keys: i64,
+) -> Result<(JsonValue, Vec<DuplicateKey>, bool), JsonDecodeError> {
+    let mut parser = HandJsonParser::new();
+    let owned_empty;
+    let keys = match critical_keys {
+        Some(keys) => keys,
+        None => {
+            owned_empty = BTreeSet::new();
+            &owned_empty
+        }
+    };
+    let result = decode_with_parser(&mut parser, text, keys, max_dup_keys);
+    parser.clear_marks();
+    result
+}
+
+/// One strict parser reused across records.
+///
+/// The mark table is cleared after every [`DuplicateAwareDecoder::decode`],
+/// including when decode returns an error.
+#[derive(Debug)]
+pub struct DuplicateAwareDecoder {
+    critical_keys: BTreeSet<String>,
+    max_dup_keys: i64,
+    parser: HandJsonParser,
+}
+
+impl DuplicateAwareDecoder {
+    pub fn new(critical_keys: BTreeSet<String>, max_dup_keys: i64) -> Self {
+        Self {
+            critical_keys,
+            max_dup_keys,
+            parser: HandJsonParser::new(),
+        }
+    }
+
+    /// Decode one record. A leading U+FEFF returns
+    /// `Unexpected UTF-8 BOM (decode using utf-8-sig)`. Trailing junk is
+    /// rejected. Marks are cleared on the way out.
+    pub fn decode(
+        &mut self,
+        text: &str,
+    ) -> Result<(JsonValue, Vec<DuplicateKey>, bool), JsonDecodeError> {
+        let result = decode_with_parser(
+            &mut self.parser,
+            text,
+            &self.critical_keys,
+            self.max_dup_keys,
+        );
+        self.parser.clear_marks();
+        result
+    }
+
+    #[cfg(test)]
+    fn mark_table_is_clear(&self) -> bool {
+        self.parser.orphaned_marked == 0 && self.parser.dup_objects == 0
+    }
+}
+
+fn decode_with_parser(
+    parser: &mut HandJsonParser,
+    text: &str,
+    critical_keys: &BTreeSet<String>,
+    max_dup_keys: i64,
+) -> Result<(JsonValue, Vec<DuplicateKey>, bool), JsonDecodeError> {
+    if text.starts_with('\u{feff}') {
+        return Err(syntax(UTF8_BOM_ERROR));
+    }
+    let outcome = parser.parse(text)?;
+    reject_lone_surrogates(text, &outcome.value)?;
+    if outcome.dup_objects == 0 {
+        return Ok((outcome.value, Vec::new(), false));
+    }
+    let (dups, truncated) = collect_duplicate_keys(
+        &outcome.value,
+        &outcome.mark,
+        critical_keys,
+        max_dup_keys,
+        outcome.orphaned_marked,
+    );
+    Ok((outcome.value, dups, truncated))
+}
+
+/// Walk `obj` from `$` and emit duplicate key paths.
+///
+/// A child key path is `{path}.{key}`. A child index path is `{path}[{index}]`.
+/// The first key and the first index are visited first. `critical` is true
+/// when the key name is in `critical_keys`. Output is a [`Vec`] in that visit
+/// order. `orphaned_marked` counts marked objects overwritten by a later
+/// value of the same key; those are unvisited, so `truncated` is true.
+pub fn collect_duplicate_keys(
+    obj: &JsonValue,
+    mark: &DuplicateMark,
+    critical_keys: &BTreeSet<String>,
+    max_dup_keys: i64,
+    orphaned_marked: usize,
+) -> (Vec<DuplicateKey>, bool) {
+    let mut dups = Vec::new();
+    let mut truncated = false;
+    let mut remaining = count_marked(mark);
+    let mut stack = vec![WalkFrame {
+        value: obj,
+        mark,
+        path: String::from("$"),
+    }];
+    while remaining > 0 {
+        let Some(frame) = stack.pop() else {
+            break;
+        };
+        match (frame.value, frame.mark) {
+            (
+                JsonValue::Object(pairs),
+                DuplicateMark::Object {
+                    duplicates,
+                    children,
+                },
+            ) => {
+                if !duplicates.is_empty() {
+                    remaining = remaining.saturating_sub(1);
+                    if push_duplicate_keys(
+                        &mut dups,
+                        &mut truncated,
+                        duplicates,
+                        &frame.path,
+                        critical_keys,
+                        max_dup_keys,
+                    ) {
+                        break;
+                    }
+                }
+                if children.len() == pairs.len() {
+                    push_object_children(&mut stack, pairs, children, &frame.path);
+                }
+            }
+            (JsonValue::Array(items), DuplicateMark::Array(children)) => {
+                if children.len() == items.len() {
+                    push_array_children(&mut stack, items, children, &frame.path);
+                }
+            }
+            _ => {}
+        }
+    }
+    if remaining > 0 || orphaned_marked > 0 {
+        truncated = true;
+    }
+    (dups, truncated)
+}
+
+struct WalkFrame<'a> {
+    value: &'a JsonValue,
+    mark: &'a DuplicateMark,
+    path: String,
+}
+
+fn push_duplicate_keys(
+    dups: &mut Vec<DuplicateKey>,
+    truncated: &mut bool,
+    duplicates: &[(String, i64)],
+    path: &str,
+    critical_keys: &BTreeSet<String>,
+    max_dup_keys: i64,
+) -> bool {
+    for (key, count) in duplicates {
+        if len_as_i64(dups.len()) >= max_dup_keys {
+            *truncated = true;
+            return true;
+        }
+        dups.push(DuplicateKey {
+            key_path: format!("{path}.{key}"),
+            occurrence_count: *count,
+            critical: critical_keys.contains(key),
+        });
+    }
+    false
+}
+
+fn push_object_children<'a>(
+    stack: &mut Vec<WalkFrame<'a>>,
+    pairs: &'a [(Vec<u32>, JsonValue)],
+    children: &'a [DuplicateMark],
+    path: &str,
+) {
+    for ((key, child), child_mark) in pairs.iter().zip(children.iter()).rev() {
+        if !child_mark.is_interesting() {
+            continue;
+        }
+        stack.push(WalkFrame {
+            value: child,
+            mark: child_mark,
+            path: format!("{path}.{}", render_codes(key)),
+        });
+    }
+}
+
+fn push_array_children<'a>(
+    stack: &mut Vec<WalkFrame<'a>>,
+    items: &'a [JsonValue],
+    children: &'a [DuplicateMark],
+    path: &str,
+) {
+    for (index, (child, child_mark)) in items.iter().zip(children.iter()).enumerate().rev() {
+        if !child_mark.is_interesting() {
+            continue;
+        }
+        stack.push(WalkFrame {
+            value: child,
+            mark: child_mark,
+            path: format!("{path}[{index}]"),
+        });
+    }
+}
+
+fn count_marked(mark: &DuplicateMark) -> usize {
+    let mut total = 0_usize;
+    let mut stack = vec![mark];
+    while let Some(node) = stack.pop() {
+        match node {
+            DuplicateMark::Empty => {}
+            DuplicateMark::Array(items) => stack.extend(items.iter()),
+            DuplicateMark::Object {
+                duplicates,
+                children,
+            } => {
+                if !duplicates.is_empty() {
+                    total += 1;
+                }
+                stack.extend(children.iter());
+            }
+        }
+    }
+    total
+}
+
+fn len_as_i64(len: usize) -> i64 {
+    i64::try_from(len).unwrap_or(i64::MAX)
+}
+
+fn dup_finding_severity(critical: bool) -> Severity {
+    if critical {
+        Severity::Error
+    } else {
+        Severity::Warning
+    }
+}
+
+fn duplicate_key_evidence(
+    dup: &DuplicateKey,
+    truncated: bool,
+    record_ordinal: Option<i64>,
+) -> PyValue {
+    let mut entries = vec![
+        (
+            PyValue::string("key_path"),
+            PyValue::string(dup.key_path.clone()),
+        ),
+        (
+            PyValue::string("occurrence_count"),
+            PyValue::int(dup.occurrence_count),
+        ),
+        (
+            PyValue::string("critical"),
+            PyValue::bool_value(dup.critical),
+        ),
+    ];
+    if let Some(ordinal) = record_ordinal {
+        entries.push((PyValue::string("record_index"), PyValue::int(ordinal)));
+    }
+    if truncated {
+        entries.push((PyValue::string("truncated"), PyValue::bool_value(true)));
+    }
+    PyValue::map(entries)
+}
+
+/// Build SL303 findings for duplicate key paths.
+///
+/// An empty list returns `Ok(Vec::new())` and does not call [`make_finding`].
+/// Otherwise each duplicate calls [`make_finding`] with fingerprint
+/// [`PyValue::None`], code SL303, repairability manual, and severity error
+/// when `critical` else warning. The message is
+/// `Duplicate JSON key on line {line} for record {record_id}`. Evidence keys
+/// are `key_path`, `occurrence_count`, `critical`, then `record_index` when
+/// `record_ordinal` is present, then `truncated` when `truncated` is true.
+/// The fingerprint codec error is propagated. This function does not invent a
+/// fingerprint, a digest, or a [`Finding`]. The duplicated value is not
+/// evidence.
+pub fn dup_key_findings(
+    dups: &[DuplicateKey],
+    truncated: bool,
+    path_str: &str,
+    line: Option<i64>,
+    record_id: Option<&str>,
+    record_ordinal: Option<i64>,
+) -> Result<Vec<Finding>, FindingError> {
+    if dups.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut findings = Vec::with_capacity(dups.len());
+    for dup in dups {
+        let source = SourceRef::try_new(path_str, line.map(SourceLine::Int), record_id)?;
+        findings.push(make_finding(&MakeFindingInput {
+            code: PyValue::string(SL303),
+            severity: PyValue::severity(dup_finding_severity(dup.critical)),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message_template: PyValue::string(DUP_KEY_MESSAGE),
+            template_args: PyValue::None,
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            evidence: duplicate_key_evidence(dup, truncated, record_ordinal),
+            fingerprint: PyValue::None,
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            context: None,
+        })?);
+    }
+    Ok(findings)
+}
+
+/// Validate physical stream coordinates.
+///
+/// `byte_offset >= 0`, `byte_end >= byte_offset`, and `record_ordinal >= 1`.
+/// Rust `i64` has no `bool`, so this does not invent a boolean input.
+pub fn validate_stream_coordinates(
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+) -> Result<(), StreamCoordinateError> {
+    if byte_offset < 0 {
+        return Err(StreamCoordinateError::new(format!(
+            "Invalid byte_offset: {byte_offset} (must be integer >= 0)"
+        )));
+    }
+    if byte_end < byte_offset {
+        return Err(StreamCoordinateError::new(format!(
+            "Invalid byte_end: {byte_end} (must be integer >= byte_offset={byte_offset})"
+        )));
+    }
+    if record_ordinal < 1 {
+        return Err(StreamCoordinateError::new(format!(
+            "Invalid record_ordinal: {record_ordinal} (must be integer >= 1)"
+        )));
+    }
+    Ok(())
+}
+
+/// Invalid `byte_offset`, `byte_end`, or `record_ordinal`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamCoordinateError {
+    message: String,
+}
+
+impl StreamCoordinateError {
+    fn new(message: String) -> Self {
+        Self { message }
+    }
+}
+
+impl std::fmt::Display for StreamCoordinateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for StreamCoordinateError {}
+
+/// One non-empty physical line and its stream coordinates.
+///
+/// `byte_offset` defaults to 0, `byte_end` to 0, and `record_ordinal` to 1
+/// through [`RawLine::from_parts`]. Construction validates those coordinates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawLine {
+    line_number: i64,
+    raw_bytes: Vec<u8>,
+    truncated_limit: bool,
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+}
+
+impl RawLine {
+    pub fn from_parts(
+        line_number: i64,
+        raw_bytes: Vec<u8>,
+        truncated_limit: bool,
+    ) -> Result<Self, StreamCoordinateError> {
+        Self::try_new(line_number, raw_bytes, truncated_limit, 0, 0, 1)
+    }
+
+    pub fn try_new(
+        line_number: i64,
+        raw_bytes: Vec<u8>,
+        truncated_limit: bool,
+        byte_offset: i64,
+        byte_end: i64,
+        record_ordinal: i64,
+    ) -> Result<Self, StreamCoordinateError> {
+        validate_stream_coordinates(byte_offset, byte_end, record_ordinal)?;
+        Ok(Self {
+            line_number,
+            raw_bytes,
+            truncated_limit,
+            byte_offset,
+            byte_end,
+            record_ordinal,
+        })
+    }
+
+    pub fn line_number(&self) -> i64 {
+        self.line_number
+    }
+
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+
+    pub fn truncated_limit(&self) -> bool {
+        self.truncated_limit
+    }
+
+    pub fn byte_offset(&self) -> i64 {
+        self.byte_offset
+    }
+
+    pub fn byte_end(&self) -> i64 {
+        self.byte_end
+    }
+
+    pub fn record_ordinal(&self) -> i64 {
+        self.record_ordinal
+    }
+}
+
+/// Index just past the string that opens at `pos`, or [`SKIP_CUT`] / [`SKIP_BAD`].
+///
+/// `pos` is the opening quote, as a byte offset. The scan starts at `pos + 1`
+/// and uses no regex. A run is bytes other than quote, backslash, or ASCII
+/// `0x00`–`0x1F`, or an escape of quote, backslash, slash, `b`, `f`, `n`,
+/// `r`, `t`, or backslash-u plus exactly four hex digits. End of text returns
+/// -1. A quote returns the byte index after it. A partial trailing escape
+/// (backslash, optional `u`, at most three hex digits, then end) returns -1.
+/// Anything else returns -2.
+///
+/// The pin's number, literal, and cut-number patterns belong to the recovery
+/// parser after line 667. They are not ported and do not scan a file.
+pub fn skip_string(text: &str, pos: i64) -> i64 {
+    if pos < 0 {
+        return SKIP_BAD;
+    }
+    let Some(start) = usize::try_from(pos)
+        .ok()
+        .and_then(|value| value.checked_add(1))
+    else {
+        return SKIP_BAD;
+    };
+    let bytes = text.as_bytes();
+    if start > bytes.len() {
+        return SKIP_BAD;
+    }
+    if start == bytes.len() {
+        return SKIP_CUT;
+    }
+    match scan_string_run(bytes, start) {
+        StringScan::Closed(end) => i64::try_from(end).unwrap_or(SKIP_BAD),
+        StringScan::Cut => SKIP_CUT,
+        StringScan::Bad => SKIP_BAD,
+    }
+}
+
+enum StringScan {
+    Closed(usize),
+    Cut,
+    Bad,
+}
+
+fn scan_string_run(bytes: &[u8], mut index: usize) -> StringScan {
+    loop {
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if byte == b'"' || byte == b'\\' || byte <= 0x1F {
+                break;
+            }
+            index += 1;
+        }
+        if index >= bytes.len() {
+            return StringScan::Cut;
+        }
+        if bytes[index] == b'"' {
+            return StringScan::Closed(index + 1);
+        }
+        if bytes[index] != b'\\' {
+            return StringScan::Bad;
+        }
+        let next = index + 1;
+        if next >= bytes.len() {
+            return StringScan::Cut;
+        }
+        let escaped = bytes[next];
+        if matches!(
+            escaped,
+            b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
+        ) {
+            index = next + 1;
+            continue;
+        }
+        if escaped == b'u' {
+            let hex_at = next + 1;
+            let hex_end = hex_at + 4;
+            if hex_end <= bytes.len() && bytes[hex_at..hex_end].iter().all(u8::is_ascii_hexdigit) {
+                index = hex_end;
+                continue;
+            }
+        }
+        return if is_partial_trailing_escape(&bytes[index..]) {
+            StringScan::Cut
+        } else {
+            StringScan::Bad
+        };
+    }
+}
+
+fn is_partial_trailing_escape(rest: &[u8]) -> bool {
+    if rest.first() != Some(&b'\\') {
+        return false;
+    }
+    if rest.len() == 1 {
+        return true;
+    }
+    if rest[1] != b'u' {
+        return false;
+    }
+    let hex = &rest[2..];
+    hex.len() <= 3 && hex.iter().all(u8::is_ascii_hexdigit)
+}
+
+#[derive(Debug)]
+struct HandJsonParser {
+    orphaned_marked: usize,
+    dup_objects: usize,
+}
+
+struct ParseOutcome {
+    value: JsonValue,
+    mark: DuplicateMark,
+    dup_objects: usize,
+    orphaned_marked: usize,
+}
+
+struct ArrayFrame {
+    items: Vec<JsonValue>,
+    marks: Vec<DuplicateMark>,
+    state: ArrayState,
+    depth: u32,
+}
+
+struct ObjectFrame {
+    pairs: Vec<(Vec<u32>, JsonValue)>,
+    counts: Vec<i64>,
+    marks: Vec<DuplicateMark>,
+    pending_key: Vec<u32>,
+    state: ObjectState,
+    depth: u32,
+}
+
+enum Frame {
+    Array(ArrayFrame),
+    Object(ObjectFrame),
+}
+
+impl Frame {
+    fn depth(&self) -> u32 {
+        match self {
+            Self::Array(frame) => frame.depth,
+            Self::Object(frame) => frame.depth,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArrayState {
+    Value { first: bool },
+    CommaOrEnd,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ObjectState {
+    Key,
+    Colon,
+    Value,
+    CommaOrEnd,
+}
+
+impl HandJsonParser {
+    fn new() -> Self {
+        Self {
+            orphaned_marked: 0,
+            dup_objects: 0,
+        }
+    }
+
+    fn clear_marks(&mut self) {
+        self.orphaned_marked = 0;
+        self.dup_objects = 0;
+    }
+
+    fn parse(&mut self, text: &str) -> Result<ParseOutcome, JsonDecodeError> {
+        self.orphaned_marked = 0;
+        self.dup_objects = 0;
+        let bytes = text.as_bytes();
+        let mut index = 0_usize;
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut produced: Option<(JsonValue, DuplicateMark)> = None;
+        loop {
+            if let Some((value, mark)) = produced.take() {
+                if frames.is_empty() {
+                    skip_json_ws(bytes, &mut index);
+                    if index != bytes.len() {
+                        return Err(syntax("Extra data"));
+                    }
+                    return Ok(ParseOutcome {
+                        value,
+                        mark,
+                        dup_objects: self.dup_objects,
+                        orphaned_marked: self.orphaned_marked,
+                    });
+                }
+                self.deliver(&mut frames, value, mark)?;
+                continue;
+            }
+            skip_json_ws(bytes, &mut index);
+            if index >= bytes.len() {
+                return Err(syntax("Expecting value"));
+            }
+            if let Some(pair) = self.step(&mut frames, text, &mut index)? {
+                produced = Some(pair);
+            }
+        }
+    }
+
+    fn step(
+        &mut self,
+        frames: &mut Vec<Frame>,
+        text: &str,
+        index: &mut usize,
+    ) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+        let bytes = text.as_bytes();
+        match bytes[*index] {
+            b'[' => {
+                push_array(frames, index)?;
+                Ok(None)
+            }
+            b'{' => {
+                push_object(frames, index)?;
+                Ok(None)
+            }
+            b']' | b'}' | b',' | b':' => self.structural(frames, bytes[*index], index),
+            b'"' => step_string(frames, text, index),
+            b't' => {
+                consume_literal(bytes, index, b"true")?;
+                Ok(Some((JsonValue::Bool(true), DuplicateMark::Empty)))
+            }
+            b'f' => {
+                consume_literal(bytes, index, b"false")?;
+                Ok(Some((JsonValue::Bool(false), DuplicateMark::Empty)))
+            }
+            b'n' => step_n(bytes, index),
+            b'N' => step_nan(bytes, index),
+            b'I' => step_infinity(bytes, index),
+            b'-' => step_minus(text, index),
+            b'0'..=b'9' => {
+                parse_json_number(text, index)?;
+                Ok(Some((JsonValue::Number, DuplicateMark::Empty)))
+            }
+            _ => Err(syntax("Expecting value")),
+        }
+    }
+
+    fn structural(
+        &mut self,
+        frames: &mut Vec<Frame>,
+        byte: u8,
+        index: &mut usize,
+    ) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+        if frames.is_empty() {
+            return Err(syntax("Expecting value"));
+        }
+        let closing = match byte {
+            b',' => {
+                on_comma(frames)?;
+                false
+            }
+            b':' => {
+                on_colon(frames)?;
+                false
+            }
+            b']' => {
+                prepare_close_array(frames)?;
+                true
+            }
+            b'}' => {
+                prepare_close_object(frames)?;
+                true
+            }
+            _ => return Err(syntax("Expecting value")),
+        };
+        *index += 1;
+        if !closing {
+            return Ok(None);
+        }
+        match frames.pop() {
+            Some(Frame::Array(frame)) => Ok(Some(finish_array(frame))),
+            Some(Frame::Object(frame)) => Ok(Some(self.finish_object(frame))),
+            None => Err(syntax("Expecting value")),
+        }
+    }
+
+    fn deliver(
+        &mut self,
+        frames: &mut [Frame],
+        value: JsonValue,
+        mark: DuplicateMark,
+    ) -> Result<(), JsonDecodeError> {
+        let Some(frame) = frames.last_mut() else {
+            return Err(syntax("Expecting value"));
+        };
+        match frame {
+            Frame::Array(array) => match array.state {
+                ArrayState::Value { .. } => {
+                    array.items.push(value);
+                    array.marks.push(mark);
+                    array.state = ArrayState::CommaOrEnd;
+                    Ok(())
+                }
+                ArrayState::CommaOrEnd => Err(syntax("Expecting comma or end")),
+            },
+            Frame::Object(object) => {
+                if object.state != ObjectState::Value {
+                    return Err(syntax("Expecting property name"));
+                }
+                let key = std::mem::take(&mut object.pending_key);
+                if let Some(found) = object
+                    .pairs
+                    .iter()
+                    .position(|(existing, _)| existing == &key)
+                {
+                    let orphaned = count_marked(&object.marks[found]);
+                    self.orphaned_marked += orphaned;
+                    object.pairs[found].1 = value;
+                    object.counts[found] = object.counts[found].saturating_add(1);
+                    object.marks[found] = mark;
+                } else {
+                    object.pairs.push((key, value));
+                    object.counts.push(1);
+                    object.marks.push(mark);
+                }
+                object.state = ObjectState::CommaOrEnd;
+                Ok(())
+            }
+        }
+    }
+
+    fn finish_object(&mut self, frame: ObjectFrame) -> (JsonValue, DuplicateMark) {
+        let ObjectFrame {
+            pairs,
+            counts,
+            marks,
+            ..
+        } = frame;
+        let mut duplicates = Vec::new();
+        for (index, count) in counts.into_iter().enumerate() {
+            if count > 1 {
+                duplicates.push((render_codes(&pairs[index].0), count));
+            }
+        }
+        if !duplicates.is_empty() {
+            self.dup_objects += 1;
+        }
+        let interesting = !duplicates.is_empty() || marks.iter().any(DuplicateMark::is_interesting);
+        let mark = if interesting {
+            DuplicateMark::Object {
+                duplicates,
+                children: marks,
+            }
+        } else {
+            DuplicateMark::Empty
+        };
+        (JsonValue::Object(pairs), mark)
+    }
+}
+
+fn finish_array(frame: ArrayFrame) -> (JsonValue, DuplicateMark) {
+    let interesting = frame.marks.iter().any(DuplicateMark::is_interesting);
+    let mark = if interesting {
+        DuplicateMark::Array(frame.marks)
+    } else {
+        DuplicateMark::Empty
+    };
+    (JsonValue::Array(frame.items), mark)
+}
+
+fn push_array(frames: &mut Vec<Frame>, index: &mut usize) -> Result<(), JsonDecodeError> {
+    let depth = container_depth(frames)?;
+    *index += 1;
+    frames.push(Frame::Array(ArrayFrame {
+        items: Vec::new(),
+        marks: Vec::new(),
+        state: ArrayState::Value { first: true },
+        depth,
+    }));
+    Ok(())
+}
+
+fn push_object(frames: &mut Vec<Frame>, index: &mut usize) -> Result<(), JsonDecodeError> {
+    let depth = container_depth(frames)?;
+    *index += 1;
+    frames.push(Frame::Object(ObjectFrame {
+        pairs: Vec::new(),
+        counts: Vec::new(),
+        marks: Vec::new(),
+        pending_key: Vec::new(),
+        state: ObjectState::Key,
+        depth,
+    }));
+    Ok(())
+}
+
+fn container_depth(frames: &[Frame]) -> Result<u32, JsonDecodeError> {
+    let depth = match frames.last() {
+        Some(frame) => frame.depth().saturating_add(1),
+        None => 1,
+    };
+    if depth > JSON_NESTING_LIMIT {
+        Err(JsonDecodeError::Nesting(JsonNestingLimitError))
+    } else {
+        Ok(depth)
+    }
+}
+
+fn on_comma(frames: &mut [Frame]) -> Result<(), JsonDecodeError> {
+    match frames.last_mut() {
+        Some(Frame::Array(frame)) => match frame.state {
+            ArrayState::CommaOrEnd => {
+                frame.state = ArrayState::Value { first: false };
+                Ok(())
+            }
+            ArrayState::Value { .. } => Err(syntax("Expecting value")),
+        },
+        Some(Frame::Object(frame)) => match frame.state {
+            ObjectState::CommaOrEnd => {
+                frame.state = ObjectState::Key;
+                Ok(())
+            }
+            ObjectState::Key | ObjectState::Colon | ObjectState::Value => {
+                Err(syntax("Expecting value"))
+            }
+        },
+        None => Err(syntax("Expecting value")),
+    }
+}
+
+fn on_colon(frames: &mut [Frame]) -> Result<(), JsonDecodeError> {
+    match frames.last_mut() {
+        Some(Frame::Object(frame)) if frame.state == ObjectState::Colon => {
+            frame.state = ObjectState::Value;
+            Ok(())
+        }
+        Some(Frame::Object(_)) => Err(syntax("Expecting colon")),
+        _ => Err(syntax("Expecting value")),
+    }
+}
+
+fn prepare_close_array(frames: &[Frame]) -> Result<(), JsonDecodeError> {
+    match frames.last() {
+        Some(Frame::Array(frame)) => match frame.state {
+            ArrayState::Value { first: true } | ArrayState::CommaOrEnd => Ok(()),
+            ArrayState::Value { first: false } => Err(syntax("Expecting value")),
+        },
+        _ => Err(syntax("Expecting value")),
+    }
+}
+
+fn prepare_close_object(frames: &[Frame]) -> Result<(), JsonDecodeError> {
+    match frames.last() {
+        Some(Frame::Object(frame)) => match frame.state {
+            ObjectState::Key if frame.pairs.is_empty() => Ok(()),
+            ObjectState::CommaOrEnd => Ok(()),
+            ObjectState::Key => Err(syntax("Expecting property name")),
+            ObjectState::Colon => Err(syntax("Expecting colon")),
+            ObjectState::Value => Err(syntax("Expecting value")),
+        },
+        _ => Err(syntax("Expecting value")),
+    }
+}
+
+fn step_string(
+    frames: &mut [Frame],
+    text: &str,
+    index: &mut usize,
+) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+    let parsed = parse_json_string(text, index)?;
+    if let Some(Frame::Object(frame)) = frames.last_mut() {
+        if frame.state == ObjectState::Key {
+            frame.pending_key = parsed;
+            frame.state = ObjectState::Colon;
+            return Ok(None);
+        }
+    }
+    Ok(Some((JsonValue::String(parsed), DuplicateMark::Empty)))
+}
+
+fn step_n(
+    bytes: &[u8],
+    index: &mut usize,
+) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+    if bytes[*index..].starts_with(b"null") {
+        *index += 4;
+        return Ok(Some((JsonValue::Null, DuplicateMark::Empty)));
+    }
+    Err(syntax("Expecting value"))
+}
+
+fn step_nan(
+    bytes: &[u8],
+    index: &mut usize,
+) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+    if bytes[*index..].starts_with(b"NaN") {
+        *index += 3;
+        return Err(JsonDecodeError::numeric_constant("NaN"));
+    }
+    Err(syntax("Expecting value"))
+}
+
+fn step_infinity(
+    bytes: &[u8],
+    index: &mut usize,
+) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+    if bytes[*index..].starts_with(b"Infinity") {
+        *index += 8;
+        return Err(JsonDecodeError::numeric_constant("Infinity"));
+    }
+    Err(syntax("Expecting value"))
+}
+
+fn step_minus(
+    text: &str,
+    index: &mut usize,
+) -> Result<Option<(JsonValue, DuplicateMark)>, JsonDecodeError> {
+    let bytes = text.as_bytes();
+    if bytes[*index..].starts_with(b"-Infinity") {
+        *index += "-Infinity".len();
+        return Err(JsonDecodeError::numeric_constant("-Infinity"));
+    }
+    parse_json_number(text, index)?;
+    Ok(Some((JsonValue::Number, DuplicateMark::Empty)))
+}
+
+fn consume_literal(bytes: &[u8], index: &mut usize, literal: &[u8]) -> Result<(), JsonDecodeError> {
+    if bytes[*index..].starts_with(literal) {
+        *index += literal.len();
+        Ok(())
+    } else {
+        Err(syntax("Expecting value"))
+    }
+}
+
+fn skip_json_ws(bytes: &[u8], index: &mut usize) {
+    while *index < bytes.len() && matches!(bytes[*index], b' ' | b'\t' | b'\n' | b'\r') {
+        *index += 1;
+    }
+}
+
+fn parse_json_number(text: &str, index: &mut usize) -> Result<(), JsonDecodeError> {
+    let bytes = text.as_bytes();
+    let start = *index;
+    if bytes.get(*index) == Some(&b'-') {
+        *index += 1;
+    }
+    if *index >= bytes.len() || !bytes[*index].is_ascii_digit() {
+        return Err(syntax("Expecting value"));
+    }
+    if bytes[*index] == b'0' {
+        *index += 1;
+    } else {
+        while *index < bytes.len() && bytes[*index].is_ascii_digit() {
+            *index += 1;
+        }
+    }
+    if *index < bytes.len() && bytes[*index] == b'.' {
+        let next = *index + 1;
+        if next < bytes.len() && bytes[next].is_ascii_digit() {
+            *index = next + 1;
+            while *index < bytes.len() && bytes[*index].is_ascii_digit() {
+                *index += 1;
+            }
+        }
+    }
+    if *index < bytes.len() && matches!(bytes[*index], b'e' | b'E') {
+        let save = *index;
+        let mut probe = *index + 1;
+        if probe < bytes.len() && matches!(bytes[probe], b'+' | b'-') {
+            probe += 1;
+        }
+        if probe < bytes.len() && bytes[probe].is_ascii_digit() {
+            probe += 1;
+            while probe < bytes.len() && bytes[probe].is_ascii_digit() {
+                probe += 1;
+            }
+            *index = probe;
+        } else {
+            *index = save;
+        }
+    }
+    let Some(token) = text.get(start..*index) else {
+        return Err(syntax("Expecting value"));
+    };
+    strict_parse_float(token).map_err(JsonDecodeError::Numeric)?;
+    Ok(())
+}
+
+fn parse_json_string(text: &str, index: &mut usize) -> Result<Vec<u32>, JsonDecodeError> {
+    let bytes = text.as_bytes();
+    if bytes.get(*index) != Some(&b'"') {
+        return Err(syntax("Expecting value"));
+    }
+    *index += 1;
+    let mut out = Vec::new();
+    let mut pending: Option<u32> = None;
+    loop {
+        if *index >= bytes.len() {
+            return Err(syntax("Unterminated string"));
+        }
+        let byte = bytes[*index];
+        if byte == b'"' {
+            if let Some(high) = pending.take() {
+                out.push(high);
+            }
+            *index += 1;
+            return Ok(out);
+        }
+        if byte == b'\\' {
+            *index += 1;
+            if *index >= bytes.len() {
+                return Err(syntax("Unterminated string"));
+            }
+            match bytes[*index] {
+                b'"' | b'\\' | b'/' => push_ascii(&mut out, &mut pending, u32::from(bytes[*index])),
+                b'b' => push_ascii(&mut out, &mut pending, 0x08),
+                b'f' => push_ascii(&mut out, &mut pending, 0x0C),
+                b'n' => push_ascii(&mut out, &mut pending, 0x0A),
+                b'r' => push_ascii(&mut out, &mut pending, 0x0D),
+                b't' => push_ascii(&mut out, &mut pending, 0x09),
+                b'u' => {
+                    let code = read_hex4(bytes, *index)?;
+                    *index += 4;
+                    push_unicode_code(&mut out, &mut pending, code);
+                }
+                _ => return Err(syntax("Invalid string escape")),
+            }
+            *index += 1;
+            continue;
+        }
+        if byte < 0x20 {
+            return Err(syntax("Invalid control character in string"));
+        }
+        let Some(rest) = text.get(*index..) else {
+            return Err(syntax("Unterminated string"));
+        };
+        let Some(ch) = rest.chars().next() else {
+            return Err(syntax("Unterminated string"));
+        };
+        if let Some(high) = pending.take() {
+            out.push(high);
+        }
+        out.push(u32::from(ch));
+        *index += ch.len_utf8();
+    }
+}
+
+fn push_ascii(out: &mut Vec<u32>, pending: &mut Option<u32>, code: u32) {
+    if let Some(high) = pending.take() {
+        out.push(high);
+    }
+    out.push(code);
+}
+
+fn push_unicode_code(out: &mut Vec<u32>, pending: &mut Option<u32>, code: u32) {
+    if (0xDC00..=0xDFFF).contains(&code) {
+        if let Some(high) = pending.take() {
+            let combined = 0x1_0000 + (((high - 0xD800) << 10) | (code - 0xDC00));
+            out.push(combined);
+            return;
+        }
+        out.push(code);
+        return;
+    }
+    if let Some(high) = pending.take() {
+        out.push(high);
+    }
+    if (0xD800..=0xDBFF).contains(&code) {
+        *pending = Some(code);
+    } else {
+        out.push(code);
+    }
+}
+
+fn read_hex4(bytes: &[u8], u_index: usize) -> Result<u32, JsonDecodeError> {
+    let start = u_index + 1;
+    let end = start + 4;
+    if end > bytes.len() {
+        return Err(syntax("Invalid \\u escape"));
+    }
+    let mut code = 0_u32;
+    for byte in &bytes[start..end] {
+        let Some(digit) = hex_value(*byte) else {
+            return Err(syntax("Invalid \\u escape"));
+        };
+        code = (code << 4) | digit;
+    }
+    Ok(code)
+}
+
+fn hex_value(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some(u32::from(byte - b'0')),
+        b'a'..=b'f' => Some(u32::from(byte - b'a') + 10),
+        b'A'..=b'F' => Some(u32::from(byte - b'A') + 10),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1689,5 +3246,710 @@ mod tests {
             decode_error_message_template(&other, false),
             "Malformed record on line {line} for record {record_id}"
         );
+    }
+}
+
+#[cfg(test)]
+mod duplicate_key_tests {
+    use super::{
+        check_nesting_depth, collect_duplicate_keys, decode_json_dupaware, dup_finding_severity,
+        dup_key_findings, duplicate_key_evidence, extract_record_id, reject_lone_surrogates,
+        skip_string, validate_stream_coordinates, DuplicateAwareDecoder, DuplicateKey,
+        DuplicateMark, JsonDecodeError, JsonValue, RawLine, MAX_DUP_KEYS_PER_RECORD, SKIP_BAD,
+        SKIP_CUT,
+    };
+    use model::codes::Severity;
+    use model::finding::{PyValue, FINGERPRINT_CODEC_UNAVAILABLE};
+    use std::collections::BTreeSet;
+
+    fn codes(text: &str) -> Vec<u32> {
+        text.chars().map(u32::from).collect()
+    }
+
+    fn key_set(keys: &[&str]) -> BTreeSet<String> {
+        keys.iter().map(|key| (*key).to_owned()).collect()
+    }
+
+    fn paths(dups: &[DuplicateKey]) -> Vec<&str> {
+        dups.iter().map(DuplicateKey::key_path).collect()
+    }
+
+    fn chain_depth(value: &JsonValue) -> i64 {
+        let mut depth = 0_i64;
+        let mut current = value;
+        loop {
+            match current {
+                JsonValue::Array(items) => {
+                    depth += 1;
+                    match items.first() {
+                        Some(child) => current = child,
+                        None => return depth,
+                    }
+                }
+                JsonValue::Object(pairs) => {
+                    depth += 1;
+                    match pairs.first() {
+                        Some((_, child)) => current = child,
+                        None => return depth,
+                    }
+                }
+                JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number | JsonValue::String(_) => {
+                    return depth
+                }
+            }
+        }
+    }
+
+    fn object_string<'a>(value: &'a JsonValue, key: &str) -> &'a [u32] {
+        let JsonValue::Object(pairs) = value else {
+            panic!("object");
+        };
+        let (_, child) = pairs
+            .iter()
+            .find(|(found, _)| found.as_slice() == codes(key).as_slice())
+            .expect(key);
+        match child {
+            JsonValue::String(chars) => chars.as_slice(),
+            _ => panic!("string"),
+        }
+    }
+
+    #[test]
+    fn reject_lone_surrogates_checks_only_when_text_has_a_u_escape() {
+        let lone = JsonValue::String(vec![0xD800]);
+        assert!(reject_lone_surrogates("{}", &lone).is_ok());
+        assert!(reject_lone_surrogates("plain", &lone).is_ok());
+        let err = reject_lone_surrogates(r"\u", &lone).expect_err("lone");
+        assert_eq!(err.escapes(), ["\\ud800".to_string()]);
+        assert_eq!(err.to_string(), "lone surrogate in JSON string");
+        let err = reject_lone_surrogates("\\U", &lone).expect_err("capital u");
+        assert_eq!(err.escapes(), ["\\ud800".to_string()]);
+        let combined = JsonValue::String(vec![0x1_0000]);
+        assert!(reject_lone_surrogates(r"\u", &combined).is_ok());
+        let split_units = JsonValue::String(vec![0xD800, 0xDC00]);
+        assert!(reject_lone_surrogates(r"\u", &split_units).is_err());
+    }
+
+    #[test]
+    fn check_nesting_depth_starts_at_one_and_ignores_non_containers() {
+        // The pin also treats tuples as containers. JSON has no tuple, so only
+        // objects and arrays count.
+        assert!(check_nesting_depth(&JsonValue::Number, 0));
+        assert!(check_nesting_depth(&JsonValue::Bool(false), 0));
+        assert!(check_nesting_depth(&JsonValue::Null, 0));
+        assert!(check_nesting_depth(
+            &JsonValue::String(codes("not-a-tuple")),
+            0
+        ));
+        let flat = JsonValue::Object(vec![(codes("key"), JsonValue::String(codes("val")))]);
+        assert!(check_nesting_depth(&flat, 1));
+        assert!(!check_nesting_depth(&flat, 0));
+        let deep = JsonValue::Object(vec![(
+            codes("a"),
+            JsonValue::Object(vec![(
+                codes("b"),
+                JsonValue::Object(vec![(codes("c"), JsonValue::Number)]),
+            )]),
+        )]);
+        assert!(check_nesting_depth(&deep, 3));
+        assert!(!check_nesting_depth(&deep, 2));
+        let empty_nested = JsonValue::Object(vec![(
+            codes("a"),
+            JsonValue::Array(vec![JsonValue::Object(vec![(
+                codes("b"),
+                JsonValue::Array(vec![]),
+            )])]),
+        )]);
+        assert!(check_nesting_depth(&empty_nested, 4));
+        assert!(!check_nesting_depth(&empty_nested, 3));
+        let long_key = JsonValue::Object(vec![(codes(&"k".repeat(80)), JsonValue::Number)]);
+        assert!(check_nesting_depth(&long_key, 1));
+    }
+
+    #[test]
+    fn extract_record_id_screens_the_object_then_the_hand_scan() {
+        let obj = JsonValue::Object(vec![(
+            codes("id"),
+            JsonValue::String(codes("  evt_test  ")),
+        )]);
+        assert_eq!(
+            extract_record_id(Some(r#"{"id":"evt_raw"}"#), Some(&obj)).as_deref(),
+            Some("evt_test")
+        );
+        let blank = JsonValue::Object(vec![(codes("id"), JsonValue::String(codes("   ")))]);
+        assert_eq!(
+            extract_record_id(Some(r#"{"id":"evt_raw"}"#), Some(&blank)).as_deref(),
+            Some("evt_raw")
+        );
+        let number = JsonValue::Object(vec![(codes("id"), JsonValue::Number)]);
+        assert_eq!(
+            extract_record_id(Some(r#"{"id":"evt_num"}"#), Some(&number)).as_deref(),
+            Some("evt_num")
+        );
+        let padded = JsonValue::Object(vec![(
+            codes("id"),
+            JsonValue::String(codes("\u{00a0}evt_pad\u{00a0}")),
+        )]);
+        assert_eq!(
+            extract_record_id(None, Some(&padded)).as_deref(),
+            Some("evt_pad")
+        );
+        let long = "a".repeat(201);
+        let cut = JsonValue::Object(vec![(codes("id"), JsonValue::String(codes(&long)))]);
+        let got = extract_record_id(None, Some(&cut)).expect("cut");
+        assert_eq!(got.chars().count(), 200);
+        assert_eq!(got, "a".repeat(200));
+        let newline = JsonValue::Object(vec![(codes("id"), JsonValue::String(codes("bad\nid")))]);
+        assert_eq!(
+            extract_record_id(Some(r#"{"id":"evt_ok"}"#), Some(&newline)),
+            None
+        );
+        assert_eq!(extract_record_id(Some("{\"id\":\"bad\nid\"}"), None), None);
+        assert_eq!(
+            extract_record_id(Some(r#"{"id":"   ","id":"evt_later"}"#), None),
+            None
+        );
+        assert_eq!(
+            extract_record_id(Some(r#"{"some":"prefix","id":"evt_regex","broken":"#), None)
+                .as_deref(),
+            Some("evt_regex")
+        );
+        assert_eq!(extract_record_id(None, None), None);
+        assert_eq!(
+            extract_record_id(Some(r#"{"id":"evt_arr"}"#), Some(&JsonValue::Array(vec![])))
+                .as_deref(),
+            Some("evt_arr")
+        );
+    }
+
+    #[test]
+    fn decode_without_duplicates_returns_the_tree() {
+        let (value, dups, truncated) = decode_json_dupaware(
+            r#"{"a": 1, "b": {"c": 2}, "d": [3, 4]}"#,
+            None,
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("clean");
+        assert!(dups.is_empty());
+        assert!(!truncated);
+        let JsonValue::Object(pairs) = &value else {
+            panic!("object");
+        };
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs[0].1, JsonValue::Number);
+        assert!(matches!(pairs[1].1, JsonValue::Object(_)));
+        assert!(matches!(pairs[2].1, JsonValue::Array(_)));
+        assert_eq!(
+            decode_json_dupaware("true", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("true")
+                .0,
+            JsonValue::Bool(true)
+        );
+        assert_eq!(
+            decode_json_dupaware("null", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("null")
+                .0,
+            JsonValue::Null
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_keep_the_last_value_in_first_seen_order() {
+        let keys = key_set(&["id"]);
+        let (value, dups, truncated) = decode_json_dupaware(
+            r#"{"id":"a","id":"b","x":1}"#,
+            Some(&keys),
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("id");
+        assert!(!truncated);
+        assert_eq!(paths(&dups), ["$.id"]);
+        assert_eq!(dups[0].occurrence_count(), 2);
+        assert!(dups[0].critical());
+        assert_eq!(object_string(&value, "id"), codes("b").as_slice());
+        let (value, dups, _) = decode_json_dupaware(
+            r#"{"b":1,"a":1,"b":2,"a":2}"#,
+            Some(&keys),
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("order");
+        assert_eq!(paths(&dups), ["$.b", "$.a"]);
+        assert!(!dups[0].critical());
+        let JsonValue::Object(pairs) = &value else {
+            panic!("object");
+        };
+        assert_eq!(pairs[0].0, codes("b"));
+        assert_eq!(pairs[1].0, codes("a"));
+        let (_, dups, truncated) =
+            decode_json_dupaware(r#"{"k":1,"k":2,"k":3}"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("three");
+        assert!(!truncated);
+        assert_eq!(dups[0].occurrence_count(), 3);
+        let (_, dups, _) =
+            decode_json_dupaware(r#"{"a":1,"\u0061":2}"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("escaped same key");
+        assert_eq!(paths(&dups), ["$.a"]);
+        assert_eq!(dups[0].occurrence_count(), 2);
+        let (_, dups, _) = decode_json_dupaware(r#"{"":1,"":2}"#, None, MAX_DUP_KEYS_PER_RECORD)
+            .expect("empty key");
+        assert_eq!(paths(&dups), ["$."]);
+        let nested_keys = key_set(&["b"]);
+        let (_, dups, _) = decode_json_dupaware(
+            r#"{"a":{"b":1,"b":2}}"#,
+            Some(&nested_keys),
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("name");
+        assert_eq!(paths(&dups), ["$.a.b"]);
+        assert!(dups[0].critical());
+        let path_set = key_set(&["$.a.b"]);
+        let (_, dups, _) = decode_json_dupaware(
+            r#"{"a":{"b":1,"b":2}}"#,
+            Some(&path_set),
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("path is not the name");
+        assert!(!dups[0].critical());
+    }
+
+    #[test]
+    fn nested_paths_and_orphaned_objects_match_the_pin() {
+        let (_, dups, truncated) = decode_json_dupaware(
+            r#"{"a": {"b": [{"k": 1, "k": 2}]}, "c": {"d": {"e": 1, "e": 2}}}"#,
+            None,
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("nested");
+        assert!(!truncated);
+        assert_eq!(paths(&dups), ["$.a.b[0].k", "$.c.d.e"]);
+        let (_, dups, truncated) = decode_json_dupaware(
+            r#"{"a": {"k": 1, "k": 2}, "a": 1}"#,
+            None,
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("orphan scalar");
+        assert!(truncated);
+        assert_eq!(paths(&dups), ["$.a"]);
+        let (_, dups, truncated) = decode_json_dupaware(
+            r#"{"a": {"k": 1, "k": 2}, "a": {"m": 3, "m": 4}}"#,
+            None,
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("orphan object");
+        assert!(truncated);
+        assert_eq!(paths(&dups), ["$.a", "$.a.m"]);
+        let (_, dups, truncated) = decode_json_dupaware(
+            r#"{"a": {"k": 1, "k": 2}, "a": {"k": 3}}"#,
+            None,
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("replaced dup");
+        assert!(truncated);
+        assert_eq!(paths(&dups), ["$.a"]);
+        let (_, dups, _) =
+            decode_json_dupaware(r#"[0, {"k":1,"k":2}]"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("index");
+        assert_eq!(paths(&dups), ["$[1].k"]);
+        let (direct, direct_truncated) = collect_duplicate_keys(
+            &JsonValue::Object(vec![(codes("a"), JsonValue::Number)]),
+            &DuplicateMark::Object {
+                duplicates: vec![("a".to_owned(), 2)],
+                children: vec![DuplicateMark::Empty],
+            },
+            &BTreeSet::new(),
+            1,
+            1,
+        );
+        assert!(direct_truncated);
+        assert_eq!(paths(&direct), ["$.a"]);
+    }
+
+    #[test]
+    fn duplicate_collection_stops_at_the_cap() {
+        let mut parts = Vec::new();
+        for index in 0..17 {
+            parts.push(format!(r#""f{index}":0,"f{index}":1"#));
+        }
+        let text = format!("{{{}}}", parts.join(","));
+        let (_, dups, truncated) =
+            decode_json_dupaware(&text, None, MAX_DUP_KEYS_PER_RECORD).expect("cap");
+        assert!(truncated);
+        assert_eq!(dups.len(), 16);
+        assert_eq!(dups[0].key_path(), "$.f0");
+        assert_eq!(dups[15].key_path(), "$.f15");
+        let (_, dups, truncated) = decode_json_dupaware(&text, None, 0).expect("zero cap");
+        assert!(truncated);
+        assert!(dups.is_empty());
+    }
+
+    #[test]
+    fn numbers_use_strict_float_and_constants_use_reject_constant() {
+        for token in ["NaN", "Infinity", "-Infinity"] {
+            let text = format!(r#"{{"a": {token}}}"#);
+            let err = decode_json_dupaware(&text, None, MAX_DUP_KEYS_PER_RECORD).expect_err(token);
+            assert_eq!(
+                err.to_string(),
+                format!("Out-of-range or non-standard numeric constant: {token}")
+            );
+            assert!(matches!(err, JsonDecodeError::Numeric(_)));
+        }
+        let err = decode_json_dupaware(r#"{"a":1e999}"#, None, MAX_DUP_KEYS_PER_RECORD)
+            .expect_err("overflow");
+        assert_eq!(err.to_string(), "Out-of-range float: 1e999");
+        assert!(decode_json_dupaware(r#"{"a":1e309}"#, None, MAX_DUP_KEYS_PER_RECORD).is_err());
+        assert!(decode_json_dupaware(r#"{"a":1e308}"#, None, MAX_DUP_KEYS_PER_RECORD).is_ok());
+        assert!(decode_json_dupaware(r#"{"a":1}"#, None, MAX_DUP_KEYS_PER_RECORD).is_ok());
+        assert!(decode_json_dupaware(r#"{"a":-0}"#, None, MAX_DUP_KEYS_PER_RECORD).is_ok());
+        assert!(decode_json_dupaware(r#"{"a":1.5}"#, None, MAX_DUP_KEYS_PER_RECORD).is_ok());
+        assert!(decode_json_dupaware(r#"{"a":1e2}"#, None, MAX_DUP_KEYS_PER_RECORD).is_ok());
+    }
+
+    #[test]
+    fn decode_rejects_bom_trailing_comma_and_trailing_junk() {
+        let bom =
+            decode_json_dupaware("\u{feff}{}", None, MAX_DUP_KEYS_PER_RECORD).expect_err("bom");
+        assert_eq!(
+            bom.to_string(),
+            "Unexpected UTF-8 BOM (decode using utf-8-sig)"
+        );
+        let spaced = decode_json_dupaware(" \u{feff}{}", None, MAX_DUP_KEYS_PER_RECORD)
+            .expect_err("spaced bom");
+        assert_eq!(spaced.to_string(), "Expecting value");
+        assert_eq!(
+            decode_json_dupaware("", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect_err("empty")
+                .to_string(),
+            "Expecting value"
+        );
+        assert_eq!(
+            decode_json_dupaware("01", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect_err("leading zero")
+                .to_string(),
+            "Extra data"
+        );
+        assert_eq!(
+            decode_json_dupaware("1 2", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect_err("two values")
+                .to_string(),
+            "Extra data"
+        );
+        assert_eq!(
+            decode_json_dupaware("{}{}", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect_err("two objects")
+                .to_string(),
+            "Extra data"
+        );
+        assert_eq!(
+            decode_json_dupaware("[1,]", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect_err("trailing comma")
+                .to_string(),
+            "Expecting value"
+        );
+        assert_eq!(
+            decode_json_dupaware(r#"{"a":1,}"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect_err("object comma")
+                .to_string(),
+            "Expecting property name"
+        );
+        assert!(decode_json_dupaware("-", None, MAX_DUP_KEYS_PER_RECORD).is_err());
+        assert!(decode_json_dupaware(r#"{"a":01}"#, None, MAX_DUP_KEYS_PER_RECORD).is_err());
+        let (value, _, _) =
+            decode_json_dupaware("  { \"a\" : \"\\n\" }  ", None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("whitespace");
+        assert_eq!(object_string(&value, "a"), &[0x0A]);
+        let (value, _, _) =
+            decode_json_dupaware(r#"{"a":"\u0041"}"#, None, MAX_DUP_KEYS_PER_RECORD).expect("hex");
+        assert_eq!(object_string(&value, "a"), codes("A").as_slice());
+        let (value, _, _) =
+            decode_json_dupaware(r#"{"a":"\/"}"#, None, MAX_DUP_KEYS_PER_RECORD).expect("slash");
+        assert_eq!(object_string(&value, "a"), codes("/").as_slice());
+        let (value, _, _) =
+            decode_json_dupaware(r#"{"é":"é"}"#, None, MAX_DUP_KEYS_PER_RECORD).expect("unicode");
+        assert_eq!(object_string(&value, "é"), codes("é").as_slice());
+    }
+
+    #[test]
+    fn well_formed_surrogate_pairs_are_one_code_point() {
+        let (value, dups, truncated) =
+            decode_json_dupaware(r#"{"text":"\ud83d\ude00"}"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("pair");
+        assert!(dups.is_empty());
+        assert!(!truncated);
+        assert_eq!(object_string(&value, "text"), &[0x1F600]);
+        let (value, _, _) =
+            decode_json_dupaware(r#"{"text":"\ud800\udc00"}"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("supplementary");
+        assert_eq!(object_string(&value, "text"), &[0x1_0000]);
+        let (value, _, _) =
+            decode_json_dupaware(r#"{"text":"\\ud800"}"#, None, MAX_DUP_KEYS_PER_RECORD)
+                .expect("literal");
+        assert_eq!(object_string(&value, "text"), codes(r"\ud800").as_slice());
+        let err = decode_json_dupaware(r#"{"text":"\ud800"}"#, None, MAX_DUP_KEYS_PER_RECORD)
+            .expect_err("high");
+        let lone = err.lone_surrogate().expect("lone");
+        assert_eq!(lone.escapes(), ["\\ud800".to_string()]);
+        assert_eq!(
+            super::decode_error_message_template(lone, true),
+            super::decode_error_message_template(lone, false)
+        );
+        let err = decode_json_dupaware(r#"{"text":"\udfff\ud800"}"#, None, MAX_DUP_KEYS_PER_RECORD)
+            .expect_err("both");
+        assert_eq!(
+            err.lone_surrogate().expect("both").escapes(),
+            ["\\ud800".to_string(), "\\udfff".to_string()]
+        );
+        assert!(decode_json_dupaware(r#"{"\ud800":1}"#, None, MAX_DUP_KEYS_PER_RECORD).is_err());
+    }
+
+    #[test]
+    fn nesting_above_1000_returns_the_typed_limit() {
+        let arrays = format!("{}{}", "[".repeat(1000), "]".repeat(1000));
+        let value = decode_json_dupaware(&arrays, None, MAX_DUP_KEYS_PER_RECORD)
+            .expect("depth 1000")
+            .0;
+        assert_eq!(chain_depth(&value), 1000);
+        let too_deep = format!("{}{}", "[".repeat(1001), "]".repeat(1001));
+        let err = decode_json_dupaware(&too_deep, None, MAX_DUP_KEYS_PER_RECORD).expect_err("1001");
+        assert!(matches!(err, JsonDecodeError::Nesting(_)));
+        assert_eq!(err.to_string(), "JSON nesting depth exceeds 1000");
+        let mut objects = String::new();
+        for _ in 0..1000 {
+            objects.push_str(r#"{"a":"#);
+        }
+        objects.push('1');
+        objects.push_str(&"}".repeat(1000));
+        let value = decode_json_dupaware(&objects, None, MAX_DUP_KEYS_PER_RECORD)
+            .expect("object depth")
+            .0;
+        assert_eq!(chain_depth(&value), 1000);
+    }
+
+    #[test]
+    fn reused_decoder_clears_marks_after_success_and_error() {
+        let records = [
+            "{}",
+            r#"{"a":[{"x":1,"x":2}],"a":{"b":1,"b":2}}"#,
+            "[{},[1,2]]",
+        ];
+        for cap in [0_i64, 1, 10] {
+            let keys = key_set(&["b"]);
+            let mut decoder = DuplicateAwareDecoder::new(keys.clone(), cap);
+            for text in records {
+                let once = decode_json_dupaware(text, Some(&keys), cap).expect(text);
+                let again = decoder.decode(text).expect(text);
+                assert_eq!(once.1, again.1);
+                assert_eq!(once.2, again.2);
+                assert_eq!(once.0, again.0);
+                assert!(decoder.mark_table_is_clear());
+            }
+        }
+        let mut decoder = DuplicateAwareDecoder::new(key_set(&["a"]), MAX_DUP_KEYS_PER_RECORD);
+        let (_, dups, _) = decoder.decode(r#"{"a":1,"a":2}"#).expect("dup");
+        assert!(dups[0].critical());
+        assert!(decoder.mark_table_is_clear());
+        let bom = decoder.decode("\u{feff}{}").expect_err("bom");
+        assert_eq!(
+            bom.to_string(),
+            "Unexpected UTF-8 BOM (decode using utf-8-sig)"
+        );
+        assert!(decoder.mark_table_is_clear());
+        for bad in [
+            r#"{"a":1,"a":2,"#,
+            r#"{"a":NaN}"#,
+            "[Infinity]",
+            "[1e400]",
+            r#"{"a":1,"a":2,"t":"\ud800"}"#,
+        ] {
+            assert!(decoder.decode(bad).is_err(), "{bad}");
+            assert!(decoder.mark_table_is_clear(), "{bad}");
+        }
+        let (value, dups, truncated) = decoder.decode(r#"{"a":3}"#).expect("clean after error");
+        assert!(dups.is_empty());
+        assert!(!truncated);
+        assert!(decoder.mark_table_is_clear());
+        assert!(matches!(value, JsonValue::Object(_)));
+    }
+
+    #[test]
+    fn dup_key_findings_propagates_the_fingerprint_codec_gap() {
+        assert_eq!(dup_finding_severity(true), Severity::Error);
+        assert_eq!(dup_finding_severity(false), Severity::Warning);
+        assert!(dup_key_findings(&[], true, "", None, None, None)
+            .expect("empty")
+            .is_empty());
+        let dup = DuplicateKey {
+            key_path: "$.k".to_owned(),
+            occurrence_count: 2,
+            critical: true,
+        };
+        let source_err =
+            dup_key_findings(std::slice::from_ref(&dup), false, "  ", None, None, None)
+                .expect_err("blank path");
+        assert!(source_err.to_string().contains("SourceRef.path"));
+        assert_ne!(source_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let err = dup_key_findings(&[dup], true, "f.jsonl", Some(2), Some("evt_b"), Some(4))
+            .expect_err("codec");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_ne!(err.to_string().len(), 16);
+        let (_, dups, _) = decode_json_dupaware(
+            r#"{"k":"payload-alpha","k":"payload-beta"}"#,
+            None,
+            MAX_DUP_KEYS_PER_RECORD,
+        )
+        .expect("values");
+        let err = dup_key_findings(&dups, false, "f.jsonl", Some(1), None, None).expect_err("gap");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("payload-alpha"));
+        assert!(!err.to_string().contains("payload-beta"));
+    }
+
+    #[test]
+    fn duplicate_evidence_keeps_key_order_and_omits_the_value() {
+        let dup = DuplicateKey {
+            key_path: "$.note".to_owned(),
+            occurrence_count: 3,
+            critical: false,
+        };
+        match duplicate_key_evidence(&dup, false, None) {
+            PyValue::Map(entries) => {
+                assert_eq!(
+                    entries
+                        .iter()
+                        .map(|(key, _)| match key {
+                            PyValue::Str(text) => text.as_str(),
+                            _ => "",
+                        })
+                        .collect::<Vec<_>>(),
+                    ["key_path", "occurrence_count", "critical"]
+                );
+                assert_eq!(entries[1].1, PyValue::int(3));
+                assert_eq!(entries[2].1, PyValue::bool_value(false));
+            }
+            _ => panic!("map"),
+        }
+        match duplicate_key_evidence(&dup, true, Some(4)) {
+            PyValue::Map(entries) => {
+                assert_eq!(
+                    entries
+                        .iter()
+                        .map(|(key, _)| match key {
+                            PyValue::Str(text) => text.as_str(),
+                            _ => "",
+                        })
+                        .collect::<Vec<_>>(),
+                    [
+                        "key_path",
+                        "occurrence_count",
+                        "critical",
+                        "record_index",
+                        "truncated"
+                    ]
+                );
+                assert_eq!(entries[3].1, PyValue::int(4));
+                assert_eq!(entries[4].1, PyValue::bool_value(true));
+                let rendered = format!("{entries:?}");
+                assert!(!rendered.contains("payload-alpha"));
+            }
+            _ => panic!("map"),
+        }
+    }
+
+    #[test]
+    fn stream_coordinates_use_the_pin_messages() {
+        assert_eq!(
+            validate_stream_coordinates(-1, 0, 1)
+                .expect_err("offset")
+                .to_string(),
+            "Invalid byte_offset: -1 (must be integer >= 0)"
+        );
+        assert_eq!(
+            validate_stream_coordinates(2, 1, 1)
+                .expect_err("end")
+                .to_string(),
+            "Invalid byte_end: 1 (must be integer >= byte_offset=2)"
+        );
+        assert_eq!(
+            validate_stream_coordinates(0, 0, 0)
+                .expect_err("ordinal")
+                .to_string(),
+            "Invalid record_ordinal: 0 (must be integer >= 1)"
+        );
+        assert!(validate_stream_coordinates(0, 0, 1).is_ok());
+        let line = RawLine::from_parts(3, b"{}".to_vec(), false).expect("defaults");
+        assert_eq!(line.line_number(), 3);
+        assert_eq!(line.raw_bytes(), b"{}");
+        assert!(!line.truncated_limit());
+        assert_eq!(line.byte_offset(), 0);
+        assert_eq!(line.byte_end(), 0);
+        assert_eq!(line.record_ordinal(), 1);
+        assert!(RawLine::try_new(1, vec![], false, 0, 0, 0).is_err());
+        let explicit = RawLine::try_new(1, b"ab".to_vec(), true, 4, 6, 2).expect("explicit");
+        assert!(explicit.truncated_limit());
+        assert_eq!(explicit.byte_offset(), 4);
+        assert_eq!(explicit.byte_end(), 6);
+        assert_eq!(explicit.record_ordinal(), 2);
+    }
+
+    #[test]
+    fn skip_string_scans_bytes_and_does_not_open_a_file() {
+        let samples = [
+            (r#""hello""#, 0, 7),
+            (r#""hello"#, 0, SKIP_CUT),
+            ("\"hello\\", 0, SKIP_CUT),
+            ("\"hello\\u12", 0, SKIP_CUT),
+            (r#""hello\u12xx""#, 0, SKIP_BAD),
+            (r#""hello\q""#, 0, SKIP_BAD),
+            (r#""\uD800""#, 0, 8),
+            ("\"a\u{0001}b\"", 0, SKIP_BAD),
+            (r#""\n\n""#, 0, 6),
+            ("\"", 0, SKIP_CUT),
+            ("\"\\u1234", 0, SKIP_CUT),
+            ("\"\\u12345", 0, SKIP_CUT),
+            (r#""ok\u12""#, 0, SKIP_BAD),
+            (r#""\u0041""#, 0, 8),
+            ("x\"ab\"y", 1, 5),
+        ];
+        for (text, pos, expected) in samples {
+            assert_eq!(skip_string(text, pos), expected, "{text:?} @ {pos}");
+        }
+        assert_eq!(skip_string("\"é\"", 0), 4);
+        assert_eq!(skip_string("x", -1), SKIP_BAD);
+        assert_eq!(skip_string("x", i64::MAX), SKIP_BAD);
+    }
+
+    #[test]
+    fn hostile_text_returns_an_error_instead_of_panicking() {
+        let mut samples = vec![
+            String::new(),
+            " ".to_owned(),
+            "{".to_owned(),
+            "}".to_owned(),
+            "[".to_owned(),
+            "]".to_owned(),
+            "\"".to_owned(),
+            "\\".to_owned(),
+            "\u{feff}{}".to_owned(),
+            " \u{feff}{}".to_owned(),
+            "nul\0".to_owned(),
+            "-".to_owned(),
+            "01".to_owned(),
+            "1e".to_owned(),
+            "1.".to_owned(),
+            "+1".to_owned(),
+            "trueX".to_owned(),
+            "[1,]".to_owned(),
+            "{\"a\":1,}".to_owned(),
+            "{}{}".to_owned(),
+            "1 2".to_owned(),
+            "{\"a\":NaN}".to_owned(),
+            "{\"a\":Infinity}".to_owned(),
+            "{\"a\":-Infinity}".to_owned(),
+            "{\"a\":1e999}".to_owned(),
+            format!("{}{}", "[".repeat(1001), "]".repeat(1001)),
+        ];
+        samples.push(format!(r#"{{"k":{}}}"#, "1,".repeat(64)));
+        for text in samples {
+            let _ = decode_json_dupaware(&text, None, MAX_DUP_KEYS_PER_RECORD);
+        }
     }
 }
