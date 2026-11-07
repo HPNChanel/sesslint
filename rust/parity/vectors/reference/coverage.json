@@ -1,0 +1,44 @@
+{
+  "rows": [
+    {
+      "test": "tests/test_reference.py::test_clean_healthy_fixture_reaches_a4",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_reference.py::test_loader_skipped_on_warning_or_error",
+      "vector_ids": [
+        "ref_if_clean_blocking_warning",
+        "ref_if_clean_blocking_error"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/test_reference.py::test_flag_cannot_launder_errors_or_warnings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_reference.py::test_divergent_reconstruction_caps_at_a3",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_reference.py::test_empty_and_foreign_inputs_refuse",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_reference.py::test_scale_bound_skips_loader",
+      "vector_ids": [
+        "ref_equiv_over_cap",
+        "ref_if_clean_over_cap"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/test_reference.py::test_reconstruction_with_findings_refuses_a4",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_reference.py::test_reordered_reconstruction_refuses_a4",
+      "status": "not_applicable"
+    }
+  ]
+}
