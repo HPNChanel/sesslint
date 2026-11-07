@@ -1,0 +1,12 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_rs_sha256": "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8",
+  "vector_count": 12,
+  "vectors_sha256": "56d83b9843c19d8a11a75c1167918d66d870e3f534af6e1569b876957cd36b40",
+  "generator": "rust/parity/vectors/repair.recipes_conservative/generate",
+  "known_parity_gaps": [
+    "GAP-recipes-conservative-affected-region: Python affected_region_* returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts the seam only."
+  ]
+}

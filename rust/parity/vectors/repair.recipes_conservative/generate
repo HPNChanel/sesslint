@@ -1,0 +1,591 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.recipes_conservative parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "vectors" / "repair.recipes_conservative"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PY_SHA = "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0"
+RS_SHA = "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8"
+MODULE = "sesslint.repair.recipes_conservative"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+GAP = "GAP-recipes-conservative-affected-region"
+TEST_FILE = "tests/repair/test_recipes_conservative.py"
+
+COVERED: Final[dict[str, str]] = {
+    "test_conservative_recipes_registration_and_handles": "registration_handles_matrix",
+    "test_register_all_idempotent": "register_all_idempotent",
+    "test_terminal_suffix_discard_fixture": "fixture_terminal_suffix_discard",
+    "test_suffix_discard_refusal_empty_session": "suffix_discard_refusal_empty_session",
+    "test_suffix_discard_refusal_out_of_bounds": "suffix_discard_refusal_out_of_bounds",
+    "test_suffix_discard_refusal_checkpoint_in_suffix": "suffix_discard_refusal_checkpoint_in_suffix",
+    "test_reunion_refusal_zero_boundaries": "reunion_refusal_zero_boundaries",
+    "test_reunion_refusal_multiple_boundaries": "reunion_refusal_multiple_boundaries",
+    "test_reunion_refusal_boundary_at_endpoint": "reunion_refusal_boundary_at_endpoint",
+    "test_duplicate_collapse_refusal_checkpoint_or_boundary": "duplicate_collapse_refusal_checkpoint_or_boundary",
+    "test_duplicate_collapse_refusal_mixed_kinds": "duplicate_collapse_refusal_mixed_kinds",
+}
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"spec failed {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def load_mod() -> Any:
+    rs = ROOT / "rust/crates/repair/src/recipes_conservative.rs"
+    if hashlib.sha256(rs.read_bytes()).hexdigest() != RS_SHA:
+        raise SystemExit("rs sha mismatch")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    if hashlib.sha256(py_blob).hexdigest() != PY_SHA:
+        raise SystemExit("py pin sha mismatch")
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_conservative.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for i in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:i]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    return exec_blob(py_blob, "sesslint.repair.recipes_conservative")
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        return {"t": "map", "entries": [[k, tagged(v)] for k, v in value.items()]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(v) for v in value]}
+    return {"t": "other", "v": repr(value)}
+
+
+def ev_dict(entries: dict[str, Any]) -> dict[str, Any]:
+    return {"t": "mapping", "entries": [[k, tagged(v)] for k, v in entries.items()]}
+
+
+def step_dict(*, recipe: str, target_index: Any, params: Any, seq: int = 0, fp: str = "f0") -> dict[str, Any]:
+    if isinstance(target_index, int):
+        ti = tagged(target_index)
+    elif target_index is None:
+        ti = {"t": "null"}
+    else:
+        ti = tagged(target_index)
+    if params == "not_mapping":
+        pm = {"t": "not_mapping"}
+    elif isinstance(params, dict):
+        pm = {"t": "map", "entries": [[k, tagged(v)] for k, v in params.items()]}
+    else:
+        pm = {"t": "map", "entries": []}
+    return {
+        "seq": seq,
+        "recipe": recipe,
+        "target_finding_fp": fp,
+        "target_index": ti,
+        "params": pm,
+    }
+
+
+def load_fixture(rel: str) -> Any:
+    raw = git_show_bytes(f"{PYTHON_COMMIT}:{rel}")
+    return json.loads(raw.decode("utf-8"))
+
+
+def events_from_json(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(e) for e in events]
+
+
+def plan_step_from(spec: dict[str, Any]) -> Any:
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+
+    ti = spec["target_index"]
+    if ti.get("t") == "int":
+        target = ti["v"]
+    elif ti.get("t") == "null":
+        target = None
+    elif ti.get("t") == "bool":
+        target = ti["v"]
+    else:
+        target = None
+    params: Any = {}
+    pm = spec["params"]
+    if pm.get("t") == "map":
+        params = {k: _decode(v) for k, v in pm["entries"]}
+    elif pm.get("t") == "not_mapping":
+        params = "not-a-mapping"
+    return PlanStep(
+        seq=spec.get("seq", 0),
+        recipe=spec["recipe"],
+        target_finding_fp=spec.get("target_finding_fp", "f0"),
+        target_index=target,
+        params=params,
+    )
+
+
+def _decode(node: Any) -> Any:
+    if not isinstance(node, dict) or "t" not in node:
+        return node
+    k = node["t"]
+    if k == "null":
+        return None
+    if k == "bool":
+        return node["v"]
+    if k == "int":
+        return node["v"]
+    if k == "str":
+        return node["v"]
+    if k == "map":
+        return {a: _decode(b) for a, b in node["entries"]}
+    return node.get("v")
+
+
+def snap_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "ids": [e.get("id") for e in events],
+        "len": len(events),
+        "parents": {e.get("id"): e.get("parent_id") for e in events if e.get("id")},
+    }
+
+
+def run_apply(cons: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    fn = getattr(cons, spec["fn"])
+    events = events_from_json(spec["events"])
+    step = plan_step_from(spec["step"])
+    try:
+        out = fn(events, step)
+        pin: dict[str, Any] = {"mode": "ok", **snap_events(out)}
+        if "extra" in spec:
+            for key, expr in spec["extra"].items():
+                if key == "loss_count":
+                    pin[key] = len(events) - len(out)
+                elif key == "child_parent":
+                    cid, pid = expr
+                    child = next(e for e in out if e.get("id") == cid)
+                    pin["child_parent"] = {"id": cid, "parent_id": child.get("parent_id")}
+                elif key == "ids_exact":
+                    pin["ids"] = [e["id"] for e in out]
+        return {"mode": "comparable", "pin": pin}
+    except cons.PreconditionFailed as exc:
+        return {
+            "mode": "comparable",
+            "pin": {
+                "mode": "precondition",
+                "error_type": "PreconditionFailed",
+                "message": str(exc),
+            },
+        }
+
+
+def run_registration(cons: Any, reg: Any) -> dict[str, Any]:
+    from sesslint.codes import SL003, SL004, SL005, SL101, SL104, SL108, SL203  # noqa: WPS433
+
+    reg.clear_registry()
+    cons.register_all()
+    recipes = reg.list_recipes()
+    names = [r.name for r in recipes]
+    snap: dict[str, Any] = {"recipe_count": len(recipes), "names": names, "recipes": {}}
+    for name in (
+        "terminal-suffix-discard",
+        "identical-duplicate-collapse",
+        "proven-unique-parent-restore",
+        "compaction-projection-reunion",
+        "duplicate-projection-removal",
+        "identical-duplicate-drop",
+        "seq-renumber",
+    ):
+        r = reg.get_recipe(name)
+        assert r is not None
+        snap["recipes"][name] = {
+            "handles": list(r.handles),
+            "preconditions": list(r.preconditions),
+            "lossy": r.lossy,
+            "salvage_only": r.salvage_only,
+        }
+    suffix_r = reg.get_recipe("terminal-suffix-discard")
+    collapse_r = reg.get_recipe("identical-duplicate-collapse")
+    restore_r = reg.get_recipe("proven-unique-parent-restore")
+    reunion_r = reg.get_recipe("compaction-projection-reunion")
+    removal_r = reg.get_recipe("duplicate-projection-removal")
+    drop_r = reg.get_recipe("identical-duplicate-drop")
+    renum_r = reg.get_recipe("seq-renumber")
+    snap["recipes_for"] = {
+        "SL003": [r.name for r in reg.recipes_for(SL003)],
+        "SL004": [r.name for r in reg.recipes_for(SL004)],
+        "SL005": [r.name for r in reg.recipes_for(SL005)],
+        "SL104": [r.name for r in reg.recipes_for(SL104)],
+        "SL108": [r.name for r in reg.recipes_for(SL108)],
+        "SL203": [r.name for r in reg.recipes_for(SL203)],
+        "SL101": [r.name for r in reg.recipes_for(SL101)],
+    }
+    assert len(recipes) == 7
+    assert suffix_r and collapse_r and restore_r and reunion_r and removal_r and drop_r and renum_r
+    return {"mode": "comparable", "pin": snap}
+
+
+def run_register_all(cons: Any, reg: Any) -> dict[str, Any]:
+    reg.clear_registry()
+    cons.register_all()
+    cons.register_all()
+    return {
+        "mode": "comparable",
+        "pin": {"recipe_count": len(reg.list_recipes())},
+    }
+
+
+def run_fixture_parent(cons: Any, rel: str) -> dict[str, Any]:
+    data = load_fixture(rel)
+    pin: dict[str, Any] = {}
+    happy = data["happy_path"]
+    step_h = plan_step_from(step_dict(**_step_from_fixture(happy["step"])))
+    out_h = cons.apply_proven_unique_parent_restore(happy["input_events"], step_h)
+    pin["happy"] = snap_events(out_h)
+    ambig = data["refusal_ambiguous"]
+    step_a = plan_step_from(step_dict(**_step_from_fixture(ambig["step"])))
+    try:
+        cons.apply_proven_unique_parent_restore(ambig["input_events"], step_a)
+        raise SystemExit("expected ambiguous refusal")
+    except cons.PreconditionFailed as exc:
+        pin["ambiguous"] = {"message": str(exc)}
+    return {"mode": "comparable", "pin": pin}
+
+
+def _step_from_fixture(step: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "recipe": step["recipe"],
+        "target_index": step["target_index"],
+        "params": step.get("params", {}),
+        "seq": step.get("seq", 0),
+        "fp": step.get("target_finding_fp", "f0"),
+    }
+
+
+def run_fixture_apply(cons: Any, rel: str, fn_name: str, *, loss: bool = False) -> dict[str, Any]:
+    data = load_fixture(rel)
+    step = plan_step_from(step_dict(**_step_from_fixture(data["step"])))
+    fn = getattr(cons, fn_name)
+    out = fn(data["input_events"], step)
+    pin = snap_events(out)
+    if loss:
+        pin["loss_count"] = len(data["input_events"]) - len(out)
+    return {"mode": "comparable", "pin": pin}
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = [
+        {"id": "module_all_export_order", "construct": {"type": "module_all"}},
+    ]
+    specs.append({"id": "registration_handles_matrix", "construct": {"type": "registration_matrix"}})
+    specs.append({"id": "register_all_idempotent", "construct": {"type": "register_all"}})
+    fx = [
+        (
+            "fixture_terminal_suffix_discard",
+            "fixtures/repair/recipe_suffix_discard.json",
+            "apply_terminal_suffix_discard",
+            True,
+        ),
+    ]
+    for vid, rel, fn, loss in fx:
+        specs.append(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "fixture_apply",
+                    "fixture": rel,
+                    "fn": fn,
+                    "loss": loss,
+                },
+            }
+        )
+    inline_cases = [
+        (
+            "suffix_discard_refusal_empty_session",
+            "apply_terminal_suffix_discard",
+            [
+                {"id": "e0", "kind": "message", "actor": "user", "seq": 0, "parent_id": None},
+                {"id": "e1", "kind": "message", "actor": "assistant", "seq": 1, "parent_id": "e0"},
+            ],
+            step_dict(recipe="terminal-suffix-discard", target_index=0, params={}),
+        ),
+        (
+            "suffix_discard_refusal_out_of_bounds",
+            "apply_terminal_suffix_discard",
+            [{"id": "e0", "kind": "message", "actor": "user", "seq": 0, "parent_id": None}],
+            step_dict(recipe="terminal-suffix-discard", target_index=5, params={}),
+        ),
+        (
+            "suffix_discard_refusal_checkpoint_in_suffix",
+            "apply_terminal_suffix_discard",
+            [
+                {"id": "e0", "kind": "message", "actor": "user", "seq": 0, "parent_id": None},
+                {"id": "e1", "kind": "message", "actor": "assistant", "seq": 1, "parent_id": "e0"},
+                {
+                    "id": "chk",
+                    "kind": "checkpoint",
+                    "actor": "system",
+                    "seq": 2,
+                    "parent_id": "e1",
+                    "payload": {},
+                },
+            ],
+            step_dict(recipe="terminal-suffix-discard", target_index=1, params={}),
+        ),
+    ]
+    for vid, fn, evs, st in inline_cases:
+        specs.append(
+            {
+                "id": vid,
+                "construct": {"type": "apply", "fn": fn, "events": evs, "step": st},
+            }
+        )
+    more = [
+        (
+            "reunion_refusal_zero_boundaries",
+            "apply_compaction_projection_reunion",
+            [
+                {"id": "c1", "kind": "tool_call", "correlation_id": "c1", "seq": 0, "parent_id": None},
+                {"id": "r1", "kind": "tool_result", "correlation_id": "c1", "seq": 1, "parent_id": "c1"},
+            ],
+            step_dict(
+                recipe="compaction-projection-reunion",
+                target_index=0,
+                params={"correlation_id": "c1"},
+            ),
+        ),
+        (
+            "reunion_refusal_multiple_boundaries",
+            "apply_compaction_projection_reunion",
+            [
+                {"id": "c1", "kind": "tool_call", "correlation_id": "c1", "seq": 0, "parent_id": None},
+                {"id": "b1", "kind": "compaction_boundary", "seq": 1, "parent_id": "c1"},
+                {"id": "b2", "kind": "compaction_boundary", "seq": 2, "parent_id": "b1"},
+                {"id": "r1", "kind": "tool_result", "correlation_id": "c1", "seq": 3, "parent_id": "b2"},
+            ],
+            step_dict(
+                recipe="compaction-projection-reunion",
+                target_index=0,
+                params={"correlation_id": "c1"},
+            ),
+        ),
+        (
+            "reunion_refusal_boundary_at_endpoint",
+            "apply_compaction_projection_reunion",
+            [
+                {"id": "c1", "kind": "tool_call", "correlation_id": "c1", "seq": 0, "parent_id": None},
+                {"id": "b1", "kind": "compaction_boundary", "seq": 1, "parent_id": "c1"},
+                {"id": "r1", "kind": "tool_result", "correlation_id": "c1", "seq": 2, "parent_id": "b1"},
+            ],
+            step_dict(
+                recipe="compaction-projection-reunion",
+                target_index=0,
+                params={"correlation_id": "c1", "boundary_index": 0},
+            ),
+        ),
+        (
+            "duplicate_collapse_refusal_checkpoint_or_boundary",
+            "apply_identical_duplicate_collapse",
+            [
+                {"id": "chk1", "kind": "checkpoint", "seq": 0, "payload": {"hash": "h1"}},
+                {"id": "chk2", "kind": "checkpoint", "seq": 1, "payload": {"hash": "h1"}},
+            ],
+            step_dict(recipe="identical-duplicate-collapse", target_index=0, params={}),
+        ),
+        (
+            "duplicate_collapse_refusal_mixed_kinds",
+            "apply_identical_duplicate_collapse",
+            [
+                {"id": "e0", "kind": "tool_call", "seq": 0, "payload": {"data": "shared"}},
+                {"id": "e1", "kind": "tool_result", "seq": 1, "payload": {"data": "shared"}},
+            ],
+            step_dict(recipe="identical-duplicate-collapse", target_index=0, params={}),
+        ),
+    ]
+    for vid, fn, evs, st in more:
+        specs.append({"id": vid, "construct": {"type": "apply", "fn": fn, "events": evs, "step": st}})
+    return specs
+
+
+def run_expected(cons: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    import sesslint.repair.registry as reg  # noqa: WPS433
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"mode": "comparable", "pin": {"names": list(cons.__all__)}}
+    if kind == "registration_matrix":
+        return run_registration(cons, reg)
+    if kind == "register_all":
+        return run_register_all(cons, reg)
+    if kind == "fixture_apply":
+        return run_fixture_apply(
+            cons,
+            construct["fixture"],
+            construct["fn"],
+            loss=construct.get("loss", False),
+        )
+    if kind == "fixture_parent_restore":
+        return run_fixture_parent(cons, construct["fixture"])
+    if kind == "apply":
+        spec = dict(construct)
+        return run_apply(cons, spec)
+    raise SystemExit(f"unknown {kind}")
+
+
+def discover_coverage(vector_ids: set[str]) -> list[dict[str, Any]]:
+    text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    rows: list[dict[str, Any]] = []
+    col0 = re.compile(r"^def (test_\w+)")
+    for line in text.splitlines():
+        m = col0.match(line)
+        if not m:
+            continue
+        name = m.group(1)
+        key = f"{TEST_FILE}::{name}"
+        vid = COVERED.get(name)
+        status = "covered" if vid and vid in vector_ids else "not_applicable"
+        row: dict[str, Any] = {
+            "test": key,
+            "column": "column_0",
+            "status": status,
+            "vector_id": vid if status == "covered" else None,
+            "note": "",
+        }
+        rows.append(row)
+    return rows
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    cons = load_mod()
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        expected = run_expected(cons, spec["construct"])
+        vectors.append({"id": spec["id"], "construct": spec["construct"], "expected": expected})
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": PY_SHA,
+        "recipes_conservative_rs_sha256": RS_SHA,
+        "known_parity_gaps": [
+            f"{GAP}: Python affected_region_* returns sesslint.policy.abstention.AffectedRegion. "
+            "Rust returns AffectedRegionUnavailable; parity asserts the seam only.",
+        ],
+        "vectors": vectors,
+    }
+    payload = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    path = OUT / "vectors.json"
+    path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    vids = {v["id"] for v in vectors}
+    cov = discover_coverage(vids)
+    cov_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": sum(1 for r in cov if r["status"] == "covered"),
+        "not_applicable_count": sum(1 for r in cov if r["status"] == "not_applicable"),
+        "rows": cov,
+    }
+    (OUT / "coverage.json").write_text(json.dumps(cov_doc, indent=2) + "\n", encoding="utf-8", newline="\n")
+    prov = {
+        "contains_real_data": False,
+        "description": "Synthetic sesslint.repair.recipes_conservative parity vectors.",
+        "generator": "rust/parity/vectors/repair.recipes_conservative/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": doc["known_parity_gaps"],
+    }
+    (OUT / "PROVENANCE.json").write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8", newline="\n")
+    man = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_rs_sha256": RS_SHA,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.recipes_conservative/generate",
+        "known_parity_gaps": doc["known_parity_gaps"],
+    }
+    (OUT / "manifest.json").write_text(json.dumps(man, indent=2) + "\n", encoding="utf-8", newline="\n")
+    print(len(vectors), digest)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
