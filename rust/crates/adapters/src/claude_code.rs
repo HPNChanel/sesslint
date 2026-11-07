@@ -2575,3 +2575,3041 @@ mod claude_loader_tests {
         assert!(matches!(plain, LoadClaudeCodeError::SecretScanTracker));
     }
 }
+
+use std::collections::BTreeMap;
+
+use model::canonical::{canonical_bytes, CanonicalUnavailable};
+use model::codes::{Repairability, Severity, SL001, SL002, SL301, SL302, SL303};
+use model::errors::{AdapterError, FindingError};
+use model::finding::{
+    enforce_content_free_text, make_finding, MakeFindingInput, SourceLine, SourceRef,
+    FINGERPRINT_CODEC_UNAVAILABLE, PyValue as FindingValue,
+};
+
+use crate::links::{extract_links, Link, ObjectValue};
+use crate::metadata::{has_semantic_fields, MetadataKey, MetadataValue, UnknownMetadataTracker};
+use crate::safe_value::safe_discriminator;
+use crate::synthetic::synthetic_event_id;
+
+/// Python: `KNOWN_RECORD_KEYS`. Membership is exact. Order is the set literal.
+pub const KNOWN_RECORD_KEYS: &[&str] = &[
+    "id",
+    "uuid",
+    "record_id",
+    "message_id",
+    "parentId",
+    "parent_id",
+    "parentUuid",
+    "parent_uuid",
+    "logicalParentUuid",
+    "subtype",
+    "isCompactSummary",
+    "toolUseResult",
+    "type",
+    "timestamp",
+    "ts",
+    "created_at",
+    "message",
+    "role",
+    "content",
+    "text",
+    "toolUse",
+    "tool_use",
+    "toolUseId",
+    "tool_use_id",
+    "tool_call_id",
+    "name",
+    "tool_name",
+    "input",
+    "args",
+    "arguments",
+    "toolResult",
+    "tool_result",
+    "output",
+    "result",
+    "is_error",
+    "error",
+    "version",
+    "agentVersion",
+    "schemaVersion",
+    "appVersion",
+    "claude_code_version",
+    "sessionId",
+    "session_id",
+    "summary",
+    "compaction",
+    "agentId",
+    "agent_id",
+    "branchId",
+    "branch_id",
+    "interactionId",
+    "interaction_id",
+    "agent",
+    "subagent",
+    "is_subagent",
+    "isSidechain",
+    "is_sidechain",
+    "theme",
+    "extra_debug",
+    "cost",
+    "costUSD",
+    "durationMs",
+    "slug",
+    "thinking",
+    "channel",
+    "leafUuid",
+    "tokens",
+    "model",
+    "metadata",
+    "prompt_tokens",
+    "completion_tokens",
+    "cwd",
+    "git_branch",
+    "duration_ms",
+    "user",
+];
+
+/// `ReaderLimits.max_depth` default from `src/sesslint/io.py` at the pin.
+pub const DEFAULT_MAX_DEPTH: i64 = 100;
+
+/// Stand-in for CPython's recursion limit while decoding one JSON value.
+const JSON_NESTING_LIMIT: u32 = 1000;
+
+const MAX_DUP_KEYS_PER_RECORD: i64 = 16;
+
+const RECORD_ID_MAX_CHARS: usize = 200;
+
+const RECORD_ID_CONTEXT: &str = "extracted record_id";
+
+const CUT_MARK: i64 = -1;
+
+const CUT_BAD: i64 = -2;
+
+const VERSION_FIELDS: [&str; 5] = [
+    "version",
+    "agentVersion",
+    "schemaVersion",
+    "appVersion",
+    "claude_code_version",
+];
+
+const ID_FIELDS: [&str; 4] = ["uuid", "id", "record_id", "message_id"];
+
+const LIMIT_TEMPLATE: &str =
+    "Line {line} exceeds maximum line byte limit [detail: LIMIT] for record {record_id}";
+
+const NUL_TEMPLATE: &str = "Forbidden NUL byte on line {line} for record {record_id}";
+
+const UTF8_TEMPLATE: &str =
+    "Invalid UTF-8 encoding on line {line} [detail: ENCODING] for record {record_id}";
+
+const NESTING_TEMPLATE: &str =
+    "Nesting depth exceeds maximum limit on line {line} [detail: LIMIT] for record {record_id}";
+
+const MALFORMED_TEMPLATE: &str = "Malformed record on line {line} for record {record_id}";
+
+const TORN_TEMPLATE: &str = "Torn terminal record on line {line} for record {record_id}";
+
+const LONE_SURROGATE_WHY: &str = "line {line} contains an invalid Unicode character (lone surrogate, e.g. \\ud800), so it cannot be parsed as a session record. The file was not truncated.";
+
+const VERSION_TEMPLATE: &str =
+    "Unsupported format version on line {line} for record {record_id}";
+
+const UNKNOWN_CRITICAL_TEMPLATE: &str =
+    "Unknown critical record on line {line} for record {record_id}";
+
+const DUP_TEMPLATE: &str = "Duplicate JSON key on line {line} for record {record_id}";
+
+const INVALID_VERSION_TYPE: &str = "<invalid_version_type>";
+
+const SPAN_OUTSIDE_I64: &str = "byte_end - byte_offset is outside i64";
+
+const EVENTS_LEN_OUTSIDE_I64: &str = "len(events) does not fit in i64";
+
+const PAYLOAD_LEN_OUTSIDE_I64: &str = "len(raw_bytes) does not fit in i64";
+
+/// Witness that the caller already holds a `SecretScanTracker`.
+///
+/// This is not a tracker. It has no `feed` and it stores no scan result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuppliedSecretScanTracker;
+
+/// `max_depth` from a provided `ReaderLimits`.
+///
+/// The field is an `i64`. [`ClaudeValue::Bool`] is not an [`ClaudeValue::Int`],
+/// and a bool cannot be stored here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaudeLineLimits {
+    /// Python: `ReaderLimits.max_depth`.
+    pub max_depth: i64,
+}
+
+/// Mutable adapter context for one [`_process_claude_line`] call.
+///
+/// Missing optional fields are the pin's `dict.get` misses. A bool is not an
+/// int: [`seen_version_sl301`](Self::seen_version_sl301) is a `bool`.
+#[derive(Debug, Default)]
+pub struct ClaudeLineContext {
+    /// `SecretScanTracker` when the caller already holds one.
+    pub secret_tracker: Option<SuppliedSecretScanTracker>,
+    /// `record_sizes` when that value is a list. `None` is not a list.
+    pub record_sizes: Option<Vec<i64>>,
+    /// `session_id`. `None` means missing, so a later string may fill it.
+    pub session_id: Option<String>,
+    /// `collision_guard`. `None` is created on the identity step.
+    pub collision_guard: Option<SyntheticIdCollisionGuard>,
+    /// `links` when that value is a list.
+    pub links: Option<Vec<Link>>,
+    /// `drift` when that value is a `DriftTracker`.
+    pub drift: Option<DriftTracker>,
+    /// `seen_version_sl301`. Missing in Python is false.
+    pub seen_version_sl301: bool,
+    /// `unknown_metadata` when that value is an `UnknownMetadataTracker`.
+    pub unknown_metadata: Option<UnknownMetadataTracker>,
+}
+
+/// One physical Claude JSONL line.
+///
+/// Python: `_RawLine`. Coordinates are `i64`. A bool is not an int, so this
+/// constructor cannot take one. `line_number` is not a coordinate check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaudeRawLine {
+    line_number: i64,
+    raw_bytes: Vec<u8>,
+    truncated_limit: bool,
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+}
+
+impl ClaudeRawLine {
+    /// Validate coordinates, then store the line.
+    ///
+    /// # Errors
+    ///
+    /// `byte_offset < 0`, `byte_end < byte_offset`, or `record_ordinal < 1`.
+    pub fn try_new(
+        line_number: i64,
+        raw_bytes: Vec<u8>,
+        truncated_limit: bool,
+        byte_offset: i64,
+        byte_end: i64,
+        record_ordinal: i64,
+    ) -> Result<Self, ClaudeRawLineError> {
+        validate_coordinates(byte_offset, byte_end, record_ordinal)?;
+        Ok(Self {
+            line_number,
+            raw_bytes,
+            truncated_limit,
+            byte_offset,
+            byte_end,
+            record_ordinal,
+        })
+    }
+
+    /// Python: `line_number`.
+    #[must_use]
+    pub const fn line_number(&self) -> i64 {
+        self.line_number
+    }
+
+    /// Python: `raw_bytes`.
+    #[must_use]
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+
+    /// Python: `truncated_limit`.
+    #[must_use]
+    pub const fn truncated_limit(&self) -> bool {
+        self.truncated_limit
+    }
+
+    /// Python: `byte_offset`.
+    #[must_use]
+    pub const fn byte_offset(&self) -> i64 {
+        self.byte_offset
+    }
+
+    /// Python: `byte_end`.
+    #[must_use]
+    pub const fn byte_end(&self) -> i64 {
+        self.byte_end
+    }
+
+    /// Python: `record_ordinal`.
+    #[must_use]
+    pub const fn record_ordinal(&self) -> i64 {
+        self.record_ordinal
+    }
+}
+
+/// `ValueError` from `_RawLine` coordinate checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaudeRawLineError {
+    message: String,
+}
+
+impl ClaudeRawLineError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The Python `ValueError` text.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for ClaudeRawLineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for ClaudeRawLineError {}
+
+/// Failure from [`_process_claude_line`].
+///
+/// [`Display`](fmt::Display) is one seam. A finding is not appended. An event
+/// is not appended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessClaudeLineError {
+    /// [`SECRET_SCAN_TRACKER_UNAVAILABLE`].
+    SecretScanTracker,
+    /// `byte_end - byte_offset` does not fit in `i64`.
+    Span,
+    /// `len(events)` does not fit in `i64`.
+    SeqIndex,
+    /// `len(raw_bytes)` does not fit in `i64`.
+    PayloadLen,
+    /// `register_real` or `register_synthetic`.
+    Collision(AdapterError),
+    /// [`SourceRef`] or [`make_finding`] failed.
+    Finding(FindingError),
+    /// [`canonical_bytes`] failed. No digest is computed.
+    Canonical(CanonicalUnavailable),
+}
+
+impl ProcessClaudeLineError {
+    /// The Python exception text, or the missing-codec seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::SecretScanTracker => SECRET_SCAN_TRACKER_UNAVAILABLE,
+            Self::Span => SPAN_OUTSIDE_I64,
+            Self::SeqIndex => EVENTS_LEN_OUTSIDE_I64,
+            Self::PayloadLen => PAYLOAD_LEN_OUTSIDE_I64,
+            Self::Collision(error) => error.message(),
+            Self::Finding(error) => error.message(),
+            Self::Canonical(error) => error.message(),
+        }
+    }
+}
+
+impl fmt::Display for ProcessClaudeLineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for ProcessClaudeLineError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Collision(error) => Some(error),
+            Self::Finding(error) => Some(error),
+            Self::Canonical(error) => Some(error),
+            Self::SecretScanTracker | Self::Span | Self::SeqIndex | Self::PayloadLen => None,
+        }
+    }
+}
+
+/// Process one Claude Code JSONL line.
+///
+/// Python: `_process_claude_line` lines 633–1310 at
+/// `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+/// [`load_claude_code`] and [`_load_claude_code_internal`] do not call this
+/// function. The loader already stops earlier.
+///
+/// When `secret_tracker` is [`Some`](Option::Some), the first action would be
+/// `secret_tracker.feed(...)`. `SecretScanTracker` is not constructed and no
+/// scan result is invented. Display is
+/// `sesslint.checks.hygiene.SecretScanTracker is not available`. Record sizes,
+/// events, and findings are left untouched.
+///
+/// Otherwise the line is decoded by hand. There is no `serde_json` and no
+/// `regex` crate. A bool is not an int: JSON `true` is [`ClaudeValue::Bool`],
+/// `str(True)` is `True`, and `True` is not `1`.
+///
+/// Every [`make_finding`] call omits the fingerprint. That returns
+/// [`FINGERPRINT_CODEC_UNAVAILABLE`]. The finding is not appended. Events the
+/// pin would append only after that finding succeeds are not appended, and
+/// `seen_version_sl301` is not set on that arm.
+///
+/// A record that would reach `sha256(canonical_bytes(obj))` calls
+/// [`canonical_bytes`] and returns that error. It does not hash with `sha2`
+/// and does not append an event.
+///
+/// # Errors
+///
+/// The secret-tracker seam, a coordinate span that does not fit in `i64`, a
+/// sequence or payload length that does not fit in `i64`, a guard collision,
+/// [`SourceRef`], [`make_finding`], or [`canonical_bytes`].
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+pub fn _process_claude_line(
+    raw: &ClaudeRawLine,
+    is_terminal: bool,
+    path_str: &str,
+    limits: ClaudeLineLimits,
+    events: &[SessionEvent],
+    findings: &[Finding],
+    context: &mut ClaudeLineContext,
+) -> Result<(), ProcessClaudeLineError> {
+    let _kept = (events.len(), findings.len());
+    if context.secret_tracker.is_some() {
+        return Err(ProcessClaudeLineError::SecretScanTracker);
+    }
+    append_record_size(context, raw)?;
+    if raw.truncated_limit() {
+        return Err(refuse_truncated(raw, path_str));
+    }
+    if raw.raw_bytes().contains(&0) {
+        return Err(refuse_nul(raw, is_terminal, path_str));
+    }
+    let decoded = match strict_line_text(raw) {
+        Ok(text) => text,
+        Err(()) => return Err(refuse_utf8(raw, is_terminal, path_str)),
+    };
+    let parsed = match parse_json_document(&decoded) {
+        Ok(value) => value,
+        Err(fail) => return Err(refuse_decode(raw, is_terminal, path_str, &decoded, fail)),
+    };
+    let (dups, dups_truncated) = collect_duplicate_keys(&parsed);
+    if !dups.is_empty() {
+        return Err(refuse_duplicate(
+            raw,
+            path_str,
+            &decoded,
+            &parsed,
+            &dups,
+            dups_truncated,
+        ));
+    }
+    let value = to_claude(&parsed);
+    let Some(obj) = claude_map(&value) else {
+        return Err(refuse_not_object(raw, path_str));
+    };
+    if !map_within_depth(obj, limits.max_depth) {
+        return Err(refuse_depth(raw, path_str, &decoded, obj));
+    }
+    let obj = match value {
+        ClaudeValue::Map(map) => map,
+        _ => return Err(refuse_not_object(raw, path_str)),
+    };
+    capture_session_id(context, &obj);
+    let rec_id = register_identity(context, &obj, events, path_str, raw)?;
+    if let Some(links) = context.links.as_mut() {
+        take_links(links, &obj, &rec_id, raw.line_number());
+    }
+    if let Some(drift) = context.drift.as_mut() {
+        observe_type(drift, &obj, raw, &rec_id);
+    }
+    apply_version(context, &obj, raw, path_str, &rec_id)?;
+    apply_drift_version(context, &obj, raw, &rec_id);
+    match classify(&obj, raw, path_str, &rec_id, context)? {
+        LineClass::Stop => Ok(()),
+        LineClass::Continue { actor, kind } => {
+            if let Some(error) = refuse_unknown_field(&obj, raw, path_str, &rec_id) {
+                return Err(error);
+            }
+            Err(stop_at_record_hash(&obj, &actor, kind))
+        }
+    }
+}
+
+fn validate_coordinates(
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+) -> Result<(), ClaudeRawLineError> {
+    if byte_offset < 0 {
+        return Err(ClaudeRawLineError::new(format!(
+            "Invalid byte_offset: {byte_offset} (must be integer >= 0)"
+        )));
+    }
+    if byte_end < byte_offset {
+        return Err(ClaudeRawLineError::new(format!(
+            "Invalid byte_end: {byte_end} (must be integer >= byte_offset={byte_offset})"
+        )));
+    }
+    if record_ordinal < 1 {
+        return Err(ClaudeRawLineError::new(format!(
+            "Invalid record_ordinal: {record_ordinal} (must be integer >= 1)"
+        )));
+    }
+    Ok(())
+}
+
+fn append_record_size(
+    context: &mut ClaudeLineContext,
+    raw: &ClaudeRawLine,
+) -> Result<(), ProcessClaudeLineError> {
+    let Some(sizes) = context.record_sizes.as_mut() else {
+        return Ok(());
+    };
+    if raw.byte_end() < raw.byte_offset() {
+        return Ok(());
+    }
+    let Some(size) = raw.byte_end().checked_sub(raw.byte_offset()) else {
+        return Err(ProcessClaudeLineError::Span);
+    };
+    sizes.push(size);
+    Ok(())
+}
+
+fn strict_line_text(raw: &ClaudeRawLine) -> Result<String, ()> {
+    let mut bytes = raw.raw_bytes();
+    if raw.line_number() == 1 {
+        bytes = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| ())?;
+    Ok(python_strip(text).to_owned())
+}
+
+fn lossy_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+fn refuse_truncated(raw: &ClaudeRawLine, path_str: &str) -> ProcessClaudeLineError {
+    let rec_id = extract_record_id(Some(&lossy_text(raw.raw_bytes())), None);
+    refuse_plain(
+        SL001,
+        LIMIT_TEMPLATE,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        coord_map(raw),
+    )
+}
+
+fn refuse_nul(raw: &ClaudeRawLine, is_terminal: bool, path_str: &str) -> ProcessClaudeLineError {
+    let code = line_defect_code(raw, is_terminal);
+    let rec_id = extract_record_id(Some(&lossy_text(raw.raw_bytes())), None);
+    refuse_plain(
+        code,
+        NUL_TEMPLATE,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        defect_map(code, raw),
+    )
+}
+
+fn refuse_utf8(raw: &ClaudeRawLine, is_terminal: bool, path_str: &str) -> ProcessClaudeLineError {
+    let code = line_defect_code(raw, is_terminal);
+    let rec_id = extract_record_id(Some(&lossy_text(raw.raw_bytes())), None);
+    refuse_plain(
+        code,
+        UTF8_TEMPLATE,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        defect_map(code, raw),
+    )
+}
+
+fn refuse_decode(
+    raw: &ClaudeRawLine,
+    is_terminal: bool,
+    path_str: &str,
+    decoded: &str,
+    fail: JsonFail,
+) -> ProcessClaudeLineError {
+    if matches!(fail, JsonFail::Nesting) {
+        let rec_id = extract_record_id(Some(decoded), None);
+        return refuse_plain(
+            SL001,
+            NESTING_TEMPLATE,
+            path_str,
+            raw,
+            rec_id.as_deref(),
+            coord_map(raw),
+        );
+    }
+    let code = line_defect_code(raw, is_terminal);
+    let template = if matches!(fail, JsonFail::LoneSurrogate) {
+        LONE_SURROGATE_WHY
+    } else if code == SL002 {
+        TORN_TEMPLATE
+    } else {
+        MALFORMED_TEMPLATE
+    };
+    let rec_id = extract_record_id(Some(decoded), None);
+    refuse_plain(
+        code,
+        template,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        defect_map(code, raw),
+    )
+}
+
+fn refuse_duplicate(
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    decoded: &str,
+    parsed: &Parsed,
+    dups: &[DuplicateKey],
+    truncated: bool,
+) -> ProcessClaudeLineError {
+    let value = to_claude(parsed);
+    let rec_id = extract_record_id(Some(decoded), claude_map(&value));
+    let Some(dup) = dups.first() else {
+        return refuse_not_object(raw, path_str);
+    };
+    let mut entries = vec![
+        (
+            FindingValue::string("key_path"),
+            FindingValue::string(dup.key_path.clone()),
+        ),
+        (
+            FindingValue::string("occurrence_count"),
+            FindingValue::int(dup.occurrence_count),
+        ),
+        (
+            FindingValue::string("critical"),
+            FindingValue::bool_value(dup.critical),
+        ),
+        (
+            FindingValue::string("record_index"),
+            FindingValue::int(raw.record_ordinal()),
+        ),
+    ];
+    if truncated {
+        entries.push((
+            FindingValue::string("truncated"),
+            FindingValue::bool_value(true),
+        ));
+    }
+    let severity = if dup.critical {
+        Severity::Error
+    } else {
+        Severity::Warning
+    };
+    refuse_explicit(
+        SL303,
+        severity,
+        Repairability::Manual,
+        DUP_TEMPLATE,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        FindingValue::map(entries),
+    )
+}
+
+fn refuse_not_object(raw: &ClaudeRawLine, path_str: &str) -> ProcessClaudeLineError {
+    refuse_plain(
+        SL001,
+        MALFORMED_TEMPLATE,
+        path_str,
+        raw,
+        None,
+        coord_map(raw),
+    )
+}
+
+fn refuse_depth(
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    decoded: &str,
+    obj: &ClaudeMap,
+) -> ProcessClaudeLineError {
+    let rec_id = extract_record_id(Some(decoded), Some(obj));
+    refuse_plain(
+        SL001,
+        NESTING_TEMPLATE,
+        path_str,
+        raw,
+        rec_id.as_deref(),
+        coord_map(raw),
+    )
+}
+
+fn refuse_plain(
+    code: &str,
+    template: &str,
+    path_str: &str,
+    raw: &ClaudeRawLine,
+    record_id: Option<&str>,
+    evidence: FindingValue,
+) -> ProcessClaudeLineError {
+    refuse_with(
+        code,
+        FindingValue::None,
+        FindingValue::None,
+        template,
+        path_str,
+        raw.line_number(),
+        record_id,
+        evidence,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // same finding fields as make_finding
+fn refuse_explicit(
+    code: &str,
+    severity: Severity,
+    repairability: Repairability,
+    template: &str,
+    path_str: &str,
+    raw: &ClaudeRawLine,
+    record_id: Option<&str>,
+    evidence: FindingValue,
+) -> ProcessClaudeLineError {
+    refuse_with(
+        code,
+        FindingValue::severity(severity),
+        FindingValue::repairability(repairability),
+        template,
+        path_str,
+        raw.line_number(),
+        record_id,
+        evidence,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // same finding fields as make_finding
+fn refuse_with(
+    code: &str,
+    severity: FindingValue,
+    repairability: FindingValue,
+    template: &str,
+    path_str: &str,
+    line: i64,
+    record_id: Option<&str>,
+    evidence: FindingValue,
+) -> ProcessClaudeLineError {
+    let source = match SourceRef::try_new(path_str, Some(SourceLine::Int(line)), record_id) {
+        Ok(source) => source,
+        Err(error) => return ProcessClaudeLineError::Finding(error),
+    };
+    match make_finding(&MakeFindingInput {
+        code: FindingValue::string(code),
+        severity,
+        repairability,
+        message_template: FindingValue::string(template),
+        template_args: FindingValue::None,
+        source: FindingValue::source(source),
+        related_ids: FindingValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: FindingValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    }) {
+        Err(error) => ProcessClaudeLineError::Finding(error),
+        Ok(_finding) => {
+            ProcessClaudeLineError::Finding(FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE))
+        }
+    }
+}
+
+fn coord_entries(raw: &ClaudeRawLine) -> Vec<(FindingValue, FindingValue)> {
+    vec![
+        (
+            FindingValue::string("byte_offset"),
+            FindingValue::int(raw.byte_offset()),
+        ),
+        (
+            FindingValue::string("byte_end"),
+            FindingValue::int(raw.byte_end()),
+        ),
+        (
+            FindingValue::string("record_ordinal"),
+            FindingValue::int(raw.record_ordinal()),
+        ),
+    ]
+}
+
+fn coord_map(raw: &ClaudeRawLine) -> FindingValue {
+    FindingValue::map(coord_entries(raw))
+}
+
+fn defect_map(code: &str, raw: &ClaudeRawLine) -> FindingValue {
+    let mut entries = coord_entries(raw);
+    if code == SL002 {
+        entries.push((
+            FindingValue::string("unterminated"),
+            FindingValue::bool_value(true),
+        ));
+    }
+    FindingValue::map(entries)
+}
+
+fn capture_session_id(context: &mut ClaudeLineContext, obj: &ClaudeMap) {
+    if context.session_id.is_some() {
+        return;
+    }
+    let Some(ClaudeValue::Str(text)) = chained_get(obj, &["sessionId", "session_id"]) else {
+        return;
+    };
+    let stripped = python_strip(text);
+    if stripped.is_empty() {
+        return;
+    }
+    context.session_id = Some(stripped.to_owned());
+}
+
+fn register_identity(
+    context: &mut ClaudeLineContext,
+    obj: &ClaudeMap,
+    events: &[SessionEvent],
+    path_str: &str,
+    raw: &ClaudeRawLine,
+) -> Result<String, ProcessClaudeLineError> {
+    let seq = i64::try_from(events.len()).map_err(|_| ProcessClaudeLineError::SeqIndex)?;
+    let payload = i64::try_from(raw.raw_bytes().len()).map_err(|_| ProcessClaudeLineError::PayloadLen)?;
+    let real = chained_get(obj, &ID_FIELDS).and_then(identity_text);
+    let guard = context
+        .collision_guard
+        .get_or_insert_with(SyntheticIdCollisionGuard::new);
+    match real {
+        Some(id) => {
+            guard
+                .register_real(&id)
+                .map_err(ProcessClaudeLineError::Collision)?;
+            Ok(id)
+        }
+        None => {
+            let id = synthetic_event_id("claude_code", seq, path_str, payload);
+            guard
+                .register_synthetic(&id)
+                .map_err(ProcessClaudeLineError::Collision)?;
+            Ok(id)
+        }
+    }
+}
+
+fn identity_text(value: &ClaudeValue) -> Option<String> {
+    let rendered = python_str(value);
+    let text = python_strip(&rendered);
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_owned())
+    }
+}
+
+fn take_links(links: &mut Vec<Link>, obj: &ClaudeMap, rec_id: &str, line: i64) {
+    let mut object = BTreeMap::new();
+    for (key, value) in &obj.entries {
+        let ClaudeKey::Str(name) = key else {
+            continue;
+        };
+        object.insert(name.clone(), link_value(value));
+    }
+    extract_links(&object, links, Some(rec_id), Some(line));
+}
+
+fn link_value(value: &ClaudeValue) -> ObjectValue {
+    match value {
+        ClaudeValue::Str(text) => ObjectValue::Str(text.clone()),
+        ClaudeValue::Int(number) => ObjectValue::Int(*number),
+        ClaudeValue::Bool(flag) => ObjectValue::Bool(*flag),
+        ClaudeValue::Null
+        | ClaudeValue::Float(_)
+        | ClaudeValue::Bytes(_)
+        | ClaudeValue::List(_)
+        | ClaudeValue::Tuple(_)
+        | ClaudeValue::Map(_) => ObjectValue::Other,
+    }
+}
+
+fn observe_type(drift: &mut DriftTracker, obj: &ClaudeMap, raw: &ClaudeRawLine, rec_id: &str) {
+    drift.observe_signature(
+        type_py(obj),
+        Some(raw.line_number()),
+        Some(rec_id),
+        Some(raw.record_ordinal()),
+        Some(raw.byte_offset()),
+        Some(raw.byte_end()),
+    );
+}
+
+fn type_py(obj: &ClaudeMap) -> PyValue<'_> {
+    match obj.get("type") {
+        Some(ClaudeValue::Str(text)) => PyValue::Str(text),
+        Some(value) => discriminator_input(value),
+        None => PyValue::None,
+    }
+}
+
+fn apply_version(
+    context: &ClaudeLineContext,
+    obj: &ClaudeMap,
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+) -> Result<(), ProcessClaudeLineError> {
+    let Some(hit) = version_hit(obj) else {
+        return Ok(());
+    };
+    let seen = context.seen_version_sl301;
+    if let Some(rendered) = version_scalar_text(hit.value) {
+        let version_raw = python_strip(&rendered);
+        let version_norm = normalize_version(version_raw);
+        let schema = hit.field == "schemaVersion";
+        if !is_supported_claude_version(&version_norm, schema) && !seen {
+            return Err(refuse_version_text(raw, path_str, rec_id, version_raw));
+        }
+    } else if !seen {
+        return Err(refuse_version_invalid(raw, path_str, rec_id));
+    }
+    Ok(())
+}
+
+fn refuse_version_text(
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+    version_raw: &str,
+) -> ProcessClaudeLineError {
+    let (safe_version, _truncated) = safe_discriminator(PyValue::Str(version_raw));
+    refuse_explicit(
+        SL301,
+        Severity::Error,
+        Repairability::Unsupported,
+        VERSION_TEMPLATE,
+        path_str,
+        raw,
+        Some(rec_id),
+        version_evidence(&safe_version, raw),
+    )
+}
+
+fn refuse_version_invalid(
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+) -> ProcessClaudeLineError {
+    refuse_explicit(
+        SL301,
+        Severity::Error,
+        Repairability::Unsupported,
+        VERSION_TEMPLATE,
+        path_str,
+        raw,
+        Some(rec_id),
+        version_evidence(INVALID_VERSION_TYPE, raw),
+    )
+}
+
+fn version_evidence(version_raw: &str, raw: &ClaudeRawLine) -> FindingValue {
+    let mut entries = coord_entries(raw);
+    entries.push((
+        FindingValue::string("version_raw"),
+        FindingValue::string(version_raw),
+    ));
+    entries.push((
+        FindingValue::string("supported_set"),
+        sorted_versions(),
+    ));
+    entries.push((
+        FindingValue::string("supported_app_major_versions"),
+        sorted_majors(),
+    ));
+    FindingValue::map(entries)
+}
+
+fn sorted_versions() -> FindingValue {
+    let mut versions = SUPPORTED_CLAUDE_VERSIONS.to_vec();
+    versions.sort_unstable();
+    FindingValue::tuple(versions.into_iter().map(FindingValue::string).collect())
+}
+
+fn sorted_majors() -> FindingValue {
+    let mut majors = SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS.to_vec();
+    majors.sort_unstable();
+    FindingValue::tuple(majors.into_iter().map(FindingValue::int).collect())
+}
+
+fn version_hit<'a>(obj: &'a ClaudeMap) -> Option<VersionHit<'a>> {
+    for field in VERSION_FIELDS {
+        if let Some(value) = obj.get(field) {
+            if !matches!(value, ClaudeValue::Null) {
+                return Some(VersionHit { field, value });
+            }
+        }
+    }
+    None
+}
+
+struct VersionHit<'a> {
+    field: &'a str,
+    value: &'a ClaudeValue,
+}
+
+fn version_scalar_text(value: &ClaudeValue) -> Option<String> {
+    match value {
+        ClaudeValue::Str(text) => Some(text.clone()),
+        ClaudeValue::Int(number) => Some(number.to_string()),
+        ClaudeValue::Bool(true) => Some("True".to_owned()),
+        ClaudeValue::Bool(false) => Some("False".to_owned()),
+        ClaudeValue::Float(bits) => Some(python_float_str(f64::from_bits(*bits))),
+        ClaudeValue::Null
+        | ClaudeValue::Bytes(_)
+        | ClaudeValue::List(_)
+        | ClaudeValue::Tuple(_)
+        | ClaudeValue::Map(_) => None,
+    }
+}
+
+fn apply_drift_version(
+    context: &mut ClaudeLineContext,
+    obj: &ClaudeMap,
+    raw: &ClaudeRawLine,
+    rec_id: &str,
+) {
+    let seen = context.seen_version_sl301;
+    let Some(drift) = context.drift.as_mut() else {
+        return;
+    };
+    if seen {
+        drift.note_unsupported_version();
+        return;
+    }
+    let Some(hit) = version_hit(obj) else {
+        return;
+    };
+    if hit.field != "schemaVersion" {
+        return;
+    }
+    let Some(rendered) = version_scalar_text(hit.value) else {
+        return;
+    };
+    let version_norm = normalize_version(python_strip(&rendered));
+    drift.observe_version(
+        &version_norm,
+        true,
+        "schemaVersion",
+        Some(raw.line_number()),
+        Some(rec_id),
+        Some(raw.record_ordinal()),
+        Some(raw.byte_offset()),
+        Some(raw.byte_end()),
+    );
+}
+
+enum LineClass {
+    Stop,
+    Continue { actor: String, kind: &'static str },
+}
+
+fn classify(
+    obj: &ClaudeMap,
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+    context: &mut ClaudeLineContext,
+) -> Result<LineClass, ProcessClaudeLineError> {
+    let raw_type = obj.get("type");
+    if let Some(name) = as_text(raw_type) {
+        if SESSION_METADATA_TYPES.contains(&name) {
+            if !truthy_key(obj, "uuid") && !has_critical_prefix(obj) {
+                return Ok(LineClass::Stop);
+            }
+            return Ok(LineClass::Continue {
+                actor: "system".to_owned(),
+                kind: "opaque",
+            });
+        }
+        if let Some((actor, mut kind)) = mapped_type(name) {
+            if name == "system" && subtype_is(obj, "compact_boundary") {
+                kind = "compaction_boundary";
+            } else if name == "system"
+                && (subtype_is(obj, "stop_hook_summary") || subtype_is(obj, "local_command"))
+            {
+                kind = "opaque";
+            }
+            let mut actor = actor.to_owned();
+            if name == "message" {
+                if let Some(role) = role_name(resolved_role(obj)) {
+                    actor = role.to_owned();
+                }
+            }
+            return Ok(LineClass::Continue { actor, kind });
+        }
+        if !name.is_empty() && !has_semantic_fields(&metadata_from_map(obj)) {
+            if let Some(tracker) = context.unknown_metadata.as_mut() {
+                tracker.note(name, raw.line_number());
+            }
+            return Ok(LineClass::Stop);
+        }
+    } else if is_py_none(raw_type) {
+        if let Some(role) = role_name(resolved_role(obj)) {
+            return Ok(LineClass::Continue {
+                actor: role.to_owned(),
+                kind: "message",
+            });
+        }
+    }
+    Err(refuse_unknown_type(obj, raw, path_str, rec_id))
+}
+
+fn refuse_unknown_type(
+    obj: &ClaudeMap,
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+) -> ProcessClaudeLineError {
+    let raw_type = obj.get("type").unwrap_or(&ClaudeValue::Null);
+    let (type_val, type_truncated) = safe_discriminator(discriminator_input(raw_type));
+    let mut entries = coord_entries(raw);
+    entries.push((
+        FindingValue::string("field_path"),
+        FindingValue::string("type"),
+    ));
+    entries.push((
+        FindingValue::string("type_value"),
+        FindingValue::string(type_val),
+    ));
+    entries.push((
+        FindingValue::string("record_id"),
+        FindingValue::string(rec_id),
+    ));
+    if type_truncated {
+        entries.push((
+            FindingValue::string("type_truncated"),
+            FindingValue::bool_value(true),
+        ));
+    }
+    refuse_explicit(
+        SL302,
+        Severity::Error,
+        Repairability::Manual,
+        UNKNOWN_CRITICAL_TEMPLATE,
+        path_str,
+        raw,
+        Some(rec_id),
+        FindingValue::map(entries),
+    )
+}
+
+fn refuse_unknown_field(
+    obj: &ClaudeMap,
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+) -> Option<ProcessClaudeLineError> {
+    let mut names: Vec<&str> = obj
+        .entries
+        .iter()
+        .filter_map(|(key, _)| match key {
+            ClaudeKey::Str(text) => Some(text.as_str()),
+            ClaudeKey::Bool(_) | ClaudeKey::Int(_) | ClaudeKey::Float(_) | ClaudeKey::Null => None,
+        })
+        .collect();
+    names.sort_unstable();
+    for name in names {
+        if KNOWN_RECORD_KEYS.contains(&name) || !is_unknown_critical(name) {
+            continue;
+        }
+        return Some(refuse_field(obj, raw, path_str, rec_id, name));
+    }
+    None
+}
+
+fn refuse_field(
+    obj: &ClaudeMap,
+    raw: &ClaudeRawLine,
+    path_str: &str,
+    rec_id: &str,
+    name: &str,
+) -> ProcessClaudeLineError {
+    let (safe_key, _truncated) = safe_discriminator(PyValue::Str(name));
+    let type_value = match obj.get(name) {
+        Some(value) => _safe_type_value(discriminator_input(value)),
+        None => _safe_type_value(PyValue::None),
+    };
+    let mut entries = coord_entries(raw);
+    entries.push((
+        FindingValue::string("field_path"),
+        FindingValue::string(safe_key),
+    ));
+    entries.push((
+        FindingValue::string("type_value"),
+        FindingValue::string(type_value),
+    ));
+    entries.push((
+        FindingValue::string("record_id"),
+        FindingValue::string(rec_id),
+    ));
+    refuse_explicit(
+        SL302,
+        Severity::Error,
+        Repairability::Manual,
+        UNKNOWN_CRITICAL_TEMPLATE,
+        path_str,
+        raw,
+        Some(rec_id),
+        FindingValue::map(entries),
+    )
+}
+
+fn is_unknown_critical(name: &str) -> bool {
+    CRITICAL_KEYS.contains(&name)
+        || name.starts_with("critical_")
+        || name.starts_with("unknown_critical")
+}
+
+fn has_critical_prefix(map: &ClaudeMap) -> bool {
+    map.entries.iter().any(|(key, _)| match key {
+        ClaudeKey::Str(name) => {
+            name.starts_with("critical_") || name.starts_with("unknown_critical")
+        }
+        ClaudeKey::Bool(_) | ClaudeKey::Int(_) | ClaudeKey::Float(_) | ClaudeKey::Null => false,
+    })
+}
+
+fn mapped_type(raw_type: &str) -> Option<(&'static str, &'static str)> {
+    TYPE_MAP
+        .iter()
+        .find(|(name, _, _)| *name == raw_type)
+        .map(|(_, actor, kind)| (*actor, *kind))
+}
+
+fn subtype_is(obj: &ClaudeMap, expected: &str) -> bool {
+    matches!(obj.get("subtype"), Some(ClaudeValue::Str(text)) if text == expected)
+}
+
+fn resolved_role(obj: &ClaudeMap) -> Option<&ClaudeValue> {
+    let role = obj.get("role");
+    if !is_py_none(role) {
+        return role;
+    }
+    match obj.get("message") {
+        Some(ClaudeValue::Map(message)) => message.get("role"),
+        _ => None,
+    }
+}
+
+fn role_name(value: Option<&ClaudeValue>) -> Option<&'static str> {
+    let Some(ClaudeValue::Str(text)) = value else {
+        return None;
+    };
+    match text.as_str() {
+        "user" => Some("user"),
+        "assistant" => Some("assistant"),
+        "system" => Some("system"),
+        _ => None,
+    }
+}
+
+fn as_text(value: Option<&ClaudeValue>) -> Option<&str> {
+    match value {
+        Some(ClaudeValue::Str(text)) => Some(text.as_str()),
+        _ => None,
+    }
+}
+
+fn is_py_none(value: Option<&ClaudeValue>) -> bool {
+    matches!(value, None | Some(ClaudeValue::Null))
+}
+
+fn truthy_key(map: &ClaudeMap, key: &str) -> bool {
+    map.get(key).is_some_and(is_truthy)
+}
+
+fn chained_get<'a>(map: &'a ClaudeMap, keys: &[&str]) -> Option<&'a ClaudeValue> {
+    let mut selected: Option<&ClaudeValue> = None;
+    for key in keys {
+        if selected.is_some_and(is_truthy) {
+            break;
+        }
+        selected = match map.get(key) {
+            Some(ClaudeValue::Null) | None => None,
+            Some(value) => Some(value),
+        };
+    }
+    selected
+}
+
+fn discriminator_input(value: &ClaudeValue) -> PyValue<'_> {
+    match value {
+        ClaudeValue::Null => PyValue::None,
+        ClaudeValue::Bool(_) => PyValue::Bool,
+        ClaudeValue::Int(_) => PyValue::Int,
+        ClaudeValue::Float(_) => PyValue::Float,
+        ClaudeValue::Str(text) => PyValue::Str(text),
+        ClaudeValue::Bytes(data) => PyValue::Bytes(data.len()),
+        ClaudeValue::List(items) => PyValue::List(items.len()),
+        ClaudeValue::Tuple(items) => PyValue::Tuple(items.len()),
+        ClaudeValue::Map(map) => PyValue::Dict(map.entries.len()),
+    }
+}
+
+fn metadata_from_map(map: &ClaudeMap) -> MetadataValue {
+    MetadataValue::Map(
+        map.entries
+            .iter()
+            .map(|(key, child)| (metadata_key(key), metadata_value(child)))
+            .collect(),
+    )
+}
+
+fn metadata_key(key: &ClaudeKey) -> MetadataKey {
+    match key {
+        ClaudeKey::Str(text) => MetadataKey::Str(text.clone()),
+        ClaudeKey::Bool(_) | ClaudeKey::Int(_) | ClaudeKey::Float(_) | ClaudeKey::Null => {
+            MetadataKey::NonStr
+        }
+    }
+}
+
+fn metadata_value(value: &ClaudeValue) -> MetadataValue {
+    match value {
+        ClaudeValue::Null => MetadataValue::NoneValue,
+        ClaudeValue::List(items) => {
+            MetadataValue::List(items.iter().map(metadata_value).collect())
+        }
+        ClaudeValue::Map(map) => metadata_from_map(map),
+        ClaudeValue::Bool(_)
+        | ClaudeValue::Int(_)
+        | ClaudeValue::Float(_)
+        | ClaudeValue::Str(_)
+        | ClaudeValue::Bytes(_)
+        | ClaudeValue::Tuple(_) => MetadataValue::Scalar,
+    }
+}
+
+fn stop_at_record_hash(obj: &ClaudeMap, actor: &str, kind: &str) -> ProcessClaudeLineError {
+    let _classified = (actor.len(), kind.len());
+    let _ts = _normalize_timestamp(timestamp_of(obj));
+    match canonical_bytes(obj) {
+        Ok(_encoded) => {
+            ProcessClaudeLineError::Canonical(CanonicalUnavailable::canonical_json_bytes())
+        }
+        Err(error) => ProcessClaudeLineError::Canonical(error),
+    }
+}
+
+fn timestamp_of(obj: &ClaudeMap) -> PyValue<'_> {
+    match chained_get(obj, &["timestamp", "ts", "created_at"]) {
+        Some(ClaudeValue::Str(text)) => PyValue::Str(text),
+        _ => PyValue::None,
+    }
+}
+
+fn claude_map(value: &ClaudeValue) -> Option<&ClaudeMap> {
+    match value {
+        ClaudeValue::Map(map) => Some(map),
+        _ => None,
+    }
+}
+
+enum Node<'a> {
+    Map(&'a ClaudeMap),
+    List(&'a [ClaudeValue]),
+}
+
+fn map_within_depth(map: &ClaudeMap, max_depth: i64) -> bool {
+    let mut stack = vec![(Node::Map(map), 1_i64)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > max_depth {
+            return false;
+        }
+        let Some(next) = depth.checked_add(1) else {
+            return false;
+        };
+        match node {
+            Node::Map(current) => {
+                for (_, child) in &current.entries {
+                    push_depth_child(&mut stack, child, next);
+                }
+            }
+            Node::List(items) => {
+                for child in items {
+                    push_depth_child(&mut stack, child, next);
+                }
+            }
+        }
+    }
+    true
+}
+
+fn push_depth_child<'a>(stack: &mut Vec<(Node<'a>, i64)>, child: &'a ClaudeValue, depth: i64) {
+    match child {
+        ClaudeValue::Map(map) => stack.push((Node::Map(map), depth)),
+        ClaudeValue::List(items) | ClaudeValue::Tuple(items) => {
+            stack.push((Node::List(items), depth));
+        }
+        ClaudeValue::Null
+        | ClaudeValue::Bool(_)
+        | ClaudeValue::Int(_)
+        | ClaudeValue::Float(_)
+        | ClaudeValue::Str(_)
+        | ClaudeValue::Bytes(_) => {}
+    }
+}
+
+enum RecordScreen {
+    Found(String),
+    Rejected,
+    Miss,
+}
+
+fn extract_record_id(raw_text: Option<&str>, obj: Option<&ClaudeMap>) -> Option<String> {
+    if let Some(map) = obj {
+        if let Some(ClaudeValue::Str(text)) = map.get("id") {
+            match screen_record_id(text) {
+                RecordScreen::Found(id) => return Some(id),
+                RecordScreen::Rejected => return None,
+                RecordScreen::Miss => {}
+            }
+        }
+    }
+    let raw = raw_text?;
+    let capture = search_record_id(raw)?;
+    match screen_record_id(capture) {
+        RecordScreen::Found(id) => Some(id),
+        RecordScreen::Rejected | RecordScreen::Miss => None,
+    }
+}
+
+fn screen_record_id(text: &str) -> RecordScreen {
+    let stripped = python_strip(text);
+    if stripped.is_empty() {
+        return RecordScreen::Miss;
+    }
+    let candidate: String = stripped.chars().take(RECORD_ID_MAX_CHARS).collect();
+    match enforce_content_free_text(&candidate, RECORD_ID_CONTEXT) {
+        Ok(()) => RecordScreen::Found(candidate),
+        Err(_) => RecordScreen::Rejected,
+    }
+}
+
+fn search_record_id(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut start = 0usize;
+    while let Some(end) = start.checked_add(4) {
+        if end > bytes.len() {
+            break;
+        }
+        if bytes.get(start..end) == Some(b"\"id\"".as_slice()) {
+            if let Some(rest) = text.get(start..) {
+                if let Some(id) = capture_record_id(rest) {
+                    return Some(id);
+                }
+            }
+        }
+        start = start.saturating_add(1);
+    }
+    None
+}
+
+fn capture_record_id(text: &str) -> Option<&str> {
+    let rest = text.get(4..)?;
+    let after_key = trim_python_start(rest);
+    let after_colon = after_key.strip_prefix(':')?;
+    let content = trim_python_start(after_colon).strip_prefix('"')?;
+    let mut count = 0usize;
+    let mut end = 0usize;
+    for ch in content.chars() {
+        if ch == '"' {
+            if count == 0 {
+                return None;
+            }
+            return content.get(..end);
+        }
+        if count == RECORD_ID_MAX_CHARS {
+            return None;
+        }
+        count = count.saturating_add(1);
+        end = end.checked_add(ch.len_utf8())?;
+    }
+    None
+}
+
+fn trim_python_start(text: &str) -> &str {
+    let mut start = 0usize;
+    for ch in text.chars() {
+        if !is_python_space(ch) {
+            break;
+        }
+        start = match start.checked_add(ch.len_utf8()) {
+            Some(next) => next,
+            None => return "",
+        };
+    }
+    text.get(start..).unwrap_or("")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DuplicateKey {
+    key_path: String,
+    occurrence_count: i64,
+    critical: bool,
+}
+
+#[derive(Debug, PartialEq)]
+enum Parsed {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(u64),
+    Str(String),
+    Arr(Vec<Parsed>),
+    Obj(Vec<(String, Parsed)>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonFail {
+    Syntax,
+    Nesting,
+    LoneSurrogate,
+}
+
+fn parse_json_document(text: &str) -> Result<Parsed, JsonFail> {
+    if text.starts_with('\u{feff}') {
+        return Err(JsonFail::Syntax);
+    }
+    let mut parser = DocParser::new(text);
+    let value = parser.parse_value()?;
+    parser.skip_ws();
+    if parser.index != parser.bytes.len() {
+        return Err(JsonFail::Syntax);
+    }
+    if parser.lone && (text.contains("\\u") || text.contains("\\U")) {
+        return Err(JsonFail::LoneSurrogate);
+    }
+    Ok(value)
+}
+
+struct DocParser<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    index: usize,
+    depth: u32,
+    lone: bool,
+}
+
+impl<'a> DocParser<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            bytes: text.as_bytes(),
+            index: 0,
+            depth: 0,
+            lone: false,
+        }
+    }
+
+    fn parse_value(&mut self) -> Result<Parsed, JsonFail> {
+        self.skip_ws();
+        match self.peek() {
+            Some(b'{') => self.parse_object(),
+            Some(b'[') => self.parse_array(),
+            Some(b'"') => Ok(Parsed::Str(self.parse_string()?)),
+            Some(b't') => self.consume_lit(b"true", Parsed::Bool(true)),
+            Some(b'f') => self.consume_lit(b"false", Parsed::Bool(false)),
+            Some(b'n') => self.consume_lit(b"null", Parsed::Null),
+            Some(b'-' | b'0'..=b'9') => self.parse_number(),
+            _ => Err(JsonFail::Syntax),
+        }
+    }
+
+    fn parse_object(&mut self) -> Result<Parsed, JsonFail> {
+        self.bump().ok_or(JsonFail::Syntax)?;
+        self.enter()?;
+        self.skip_ws();
+        let mut pairs = Vec::new();
+        if self.peek() == Some(b'}') {
+            self.bump();
+            self.leave();
+            return Ok(Parsed::Obj(pairs));
+        }
+        loop {
+            if self.peek() != Some(b'"') {
+                return Err(JsonFail::Syntax);
+            }
+            let key = self.parse_string()?;
+            self.skip_ws();
+            if self.bump() != Some(b':') {
+                return Err(JsonFail::Syntax);
+            }
+            let value = self.parse_value()?;
+            pairs.push((key, value));
+            self.skip_ws();
+            match self.peek() {
+                Some(b',') => {
+                    self.bump();
+                    self.skip_ws();
+                }
+                Some(b'}') => {
+                    self.bump();
+                    self.leave();
+                    return Ok(Parsed::Obj(pairs));
+                }
+                _ => return Err(JsonFail::Syntax),
+            }
+        }
+    }
+
+    fn parse_array(&mut self) -> Result<Parsed, JsonFail> {
+        self.bump().ok_or(JsonFail::Syntax)?;
+        self.enter()?;
+        self.skip_ws();
+        let mut items = Vec::new();
+        if self.peek() == Some(b']') {
+            self.bump();
+            self.leave();
+            return Ok(Parsed::Arr(items));
+        }
+        loop {
+            items.push(self.parse_value()?);
+            self.skip_ws();
+            match self.peek() {
+                Some(b',') => {
+                    self.bump();
+                    self.skip_ws();
+                }
+                Some(b']') => {
+                    self.bump();
+                    self.leave();
+                    return Ok(Parsed::Arr(items));
+                }
+                _ => return Err(JsonFail::Syntax),
+            }
+        }
+    }
+
+    fn parse_string(&mut self) -> Result<String, JsonFail> {
+        self.bump().ok_or(JsonFail::Syntax)?;
+        let mut out = String::new();
+        loop {
+            let start = self.index;
+            while let Some(byte) = self.peek() {
+                if byte == b'"' || byte == b'\\' || byte < 0x20 {
+                    break;
+                }
+                self.bump();
+            }
+            if self.index > start {
+                let slice = self.text.get(start..self.index).ok_or(JsonFail::Syntax)?;
+                out.push_str(slice);
+            }
+            match self.peek() {
+                Some(b'"') => {
+                    self.bump();
+                    return Ok(out);
+                }
+                Some(b'\\') => {
+                    self.bump();
+                    self.push_escape(&mut out)?;
+                }
+                _ => return Err(JsonFail::Syntax),
+            }
+        }
+    }
+
+    fn push_escape(&mut self, out: &mut String) -> Result<(), JsonFail> {
+        match self.bump() {
+            Some(b'"') => out.push('"'),
+            Some(b'\\') => out.push('\\'),
+            Some(b'/') => out.push('/'),
+            Some(b'b') => out.push('\u{0008}'),
+            Some(b'f') => out.push('\u{000c}'),
+            Some(b'n') => out.push('\n'),
+            Some(b'r') => out.push('\r'),
+            Some(b't') => out.push('\t'),
+            Some(b'u') => self.push_unicode(out)?,
+            _ => return Err(JsonFail::Syntax),
+        }
+        Ok(())
+    }
+
+    fn push_unicode(&mut self, out: &mut String) -> Result<(), JsonFail> {
+        let unit = self.read_hex4()?;
+        if is_high_surrogate(unit) {
+            if self.starts_with(b"\\u") {
+                self.bump();
+                self.bump();
+                let low = self.read_hex4()?;
+                if is_low_surrogate(low) {
+                    match decode_surrogate_pair(unit, low) {
+                        Some(ch) => out.push(ch),
+                        None => self.lone = true,
+                    }
+                    return Ok(());
+                }
+                self.lone = true;
+                return self.push_unit(out, low);
+            }
+            self.lone = true;
+            return Ok(());
+        }
+        if is_low_surrogate(unit) {
+            self.lone = true;
+            return Ok(());
+        }
+        self.push_unit(out, unit)
+    }
+
+    fn push_unit(&mut self, out: &mut String, unit: u32) -> Result<(), JsonFail> {
+        match char::from_u32(unit) {
+            Some(ch) => {
+                out.push(ch);
+                Ok(())
+            }
+            None => Err(JsonFail::Syntax),
+        }
+    }
+
+    fn read_hex4(&mut self) -> Result<u32, JsonFail> {
+        let mut value = 0u32;
+        for _ in 0..4 {
+            let Some(byte) = self.bump() else {
+                return Err(JsonFail::Syntax);
+            };
+            let Some(digit) = hex_digit(char::from(byte)) else {
+                return Err(JsonFail::Syntax);
+            };
+            value = value
+                .checked_mul(16)
+                .and_then(|next| next.checked_add(digit))
+                .ok_or(JsonFail::Syntax)?;
+        }
+        Ok(value)
+    }
+
+    fn parse_number(&mut self) -> Result<Parsed, JsonFail> {
+        let start = self.index;
+        if self.peek() == Some(b'-') {
+            self.bump();
+        }
+        if !self.consume_int() {
+            return Err(JsonFail::Syntax);
+        }
+        let mut is_float = false;
+        if self.peek() == Some(b'.') {
+            is_float = true;
+            self.bump();
+            if !self.consume_digits() {
+                return Err(JsonFail::Syntax);
+            }
+        }
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            is_float = true;
+            self.bump();
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                self.bump();
+            }
+            if !self.consume_digits() {
+                return Err(JsonFail::Syntax);
+            }
+        }
+        let token = self.text.get(start..self.index).ok_or(JsonFail::Syntax)?;
+        if is_float {
+            let value: f64 = token.parse().map_err(|_| JsonFail::Syntax)?;
+            if !value.is_finite() {
+                return Err(JsonFail::Syntax);
+            }
+            return Ok(Parsed::Float(value.to_bits()));
+        }
+        let value: i64 = token.parse().map_err(|_| JsonFail::Syntax)?;
+        Ok(Parsed::Int(value))
+    }
+
+    fn consume_int(&mut self) -> bool {
+        match self.peek() {
+            Some(b'0') => {
+                self.bump();
+                true
+            }
+            Some(b'1'..=b'9') => self.consume_digits(),
+            _ => false,
+        }
+    }
+
+    fn consume_digits(&mut self) -> bool {
+        if !matches!(self.peek(), Some(b'0'..=b'9')) {
+            return false;
+        }
+        while matches!(self.peek(), Some(b'0'..=b'9')) {
+            self.bump();
+        }
+        true
+    }
+
+    fn consume_lit(&mut self, literal: &[u8], value: Parsed) -> Result<Parsed, JsonFail> {
+        if self.starts_with(literal) {
+            self.index = self.index.saturating_add(literal.len());
+            Ok(value)
+        } else {
+            Err(JsonFail::Syntax)
+        }
+    }
+
+    fn enter(&mut self) -> Result<(), JsonFail> {
+        self.depth = self.depth.saturating_add(1);
+        if self.depth > JSON_NESTING_LIMIT {
+            Err(JsonFail::Nesting)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn leave(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+    }
+
+    fn skip_ws(&mut self) {
+        while matches!(self.peek(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+            self.bump();
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.index).copied()
+    }
+
+    fn bump(&mut self) -> Option<u8> {
+        let byte = self.peek()?;
+        self.index = self.index.checked_add(1)?;
+        Some(byte)
+    }
+
+    fn starts_with(&self, prefix: &[u8]) -> bool {
+        self.bytes
+            .get(self.index..)
+            .is_some_and(|rest| rest.starts_with(prefix))
+    }
+}
+
+fn to_claude(parsed: &Parsed) -> ClaudeValue {
+    match parsed {
+        Parsed::Null => ClaudeValue::Null,
+        Parsed::Bool(flag) => ClaudeValue::Bool(*flag),
+        Parsed::Int(number) => ClaudeValue::Int(*number),
+        Parsed::Float(bits) => ClaudeValue::Float(*bits),
+        Parsed::Str(text) => ClaudeValue::Str(text.clone()),
+        Parsed::Arr(items) => ClaudeValue::List(items.iter().map(to_claude).collect()),
+        Parsed::Obj(pairs) => ClaudeValue::Map(collapsed_map(pairs)),
+    }
+}
+
+fn collapsed_map(pairs: &[(String, Parsed)]) -> ClaudeMap {
+    let mut entries = Vec::new();
+    for (key, value) in pairs {
+        let stored = to_claude(value);
+        if let Some((_, slot)) = entries.iter_mut().find(|(name, _)| name == key) {
+            *slot = stored;
+        } else {
+            entries.push((key.clone(), stored));
+        }
+    }
+    ClaudeMap::new(
+        entries
+            .into_iter()
+            .map(|(key, value)| (ClaudeKey::Str(key), value))
+            .collect(),
+    )
+}
+
+struct DupFrame<'a> {
+    node: &'a Parsed,
+    path: String,
+}
+
+fn collect_duplicate_keys(root: &Parsed) -> (Vec<DuplicateKey>, bool) {
+    let marked = count_marked(root);
+    let mut dups = Vec::new();
+    let mut visited = 0usize;
+    let mut truncated = false;
+    let mut stack = vec![DupFrame {
+        node: root,
+        path: String::from("$"),
+    }];
+    while let Some(frame) = stack.pop() {
+        match frame.node {
+            Parsed::Obj(pairs) => {
+                let counts = duplicate_counts(pairs);
+                if !counts.is_empty() {
+                    visited = visited.saturating_add(1);
+                    for (key, count) in counts {
+                        if len_i64(dups.len()) >= MAX_DUP_KEYS_PER_RECORD {
+                            return (dups, true);
+                        }
+                        dups.push(DuplicateKey {
+                            key_path: format!("{}.{key}", frame.path),
+                            occurrence_count: count,
+                            critical: CRITICAL_KEYS.contains(&key.as_str()),
+                        });
+                    }
+                }
+                for (key, child) in collapsed_refs(pairs).into_iter().rev() {
+                    stack.push(DupFrame {
+                        node: child,
+                        path: format!("{}.{key}", frame.path),
+                    });
+                }
+            }
+            Parsed::Arr(items) => {
+                for (index, child) in items.iter().enumerate().rev() {
+                    stack.push(DupFrame {
+                        node: child,
+                        path: format!("{}[{index}]", frame.path),
+                    });
+                }
+            }
+            Parsed::Null | Parsed::Bool(_) | Parsed::Int(_) | Parsed::Float(_) | Parsed::Str(_) => {
+            }
+        }
+    }
+    if visited < marked {
+        truncated = true;
+    }
+    (dups, truncated)
+}
+
+fn len_i64(len: usize) -> i64 {
+    i64::try_from(len).unwrap_or(i64::MAX)
+}
+
+fn duplicate_counts(pairs: &[(String, Parsed)]) -> Vec<(String, i64)> {
+    let mut counts: Vec<(String, i64)> = Vec::new();
+    for (key, _) in pairs {
+        if let Some((_, count)) = counts.iter_mut().find(|(name, _)| name == key) {
+            *count = count.saturating_add(1);
+        } else {
+            counts.push((key.clone(), 1));
+        }
+    }
+    counts.retain(|(_, count)| *count > 1);
+    counts
+}
+
+fn collapsed_refs(pairs: &[(String, Parsed)]) -> Vec<(&str, &Parsed)> {
+    let mut collapsed: Vec<(&str, &Parsed)> = Vec::new();
+    for (key, value) in pairs {
+        if let Some((_, slot)) = collapsed.iter_mut().find(|(name, _)| *name == key) {
+            *slot = value;
+        } else {
+            collapsed.push((key, value));
+        }
+    }
+    collapsed
+}
+
+fn count_marked(root: &Parsed) -> usize {
+    let mut total = 0usize;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node {
+            Parsed::Obj(pairs) => {
+                if pairs.len() != collapsed_refs(pairs).len() {
+                    total = total.saturating_add(1);
+                }
+                for (_, child) in pairs {
+                    stack.push(child);
+                }
+            }
+            Parsed::Arr(items) => {
+                for child in items {
+                    stack.push(child);
+                }
+            }
+            Parsed::Null | Parsed::Bool(_) | Parsed::Int(_) | Parsed::Float(_) | Parsed::Str(_) => {
+            }
+        }
+    }
+    total
+}
+
+fn line_defect_code(raw: &ClaudeRawLine, is_terminal: bool) -> &'static str {
+    if is_terminal && !raw.truncated_limit() && line_is_torn(raw.raw_bytes(), raw.line_number() == 1)
+    {
+        SL002
+    } else {
+        SL001
+    }
+}
+
+fn line_is_torn(line: &[u8], strip_bom: bool) -> bool {
+    if line.ends_with(b"\n") {
+        return false;
+    }
+    let mut body = line;
+    if strip_bom && body.starts_with(UTF8_BOM) {
+        body = &body[UTF8_BOM.len()..];
+    }
+    body = strip_trailing_nuls(body);
+    if body.contains(&0) {
+        return false;
+    }
+    let Some(text) = torn_text(body) else {
+        return false;
+    };
+    if text.bytes().all(byte_is_json_ws) {
+        return true;
+    }
+    cut_is_json_object(text)
+}
+
+fn strip_trailing_nuls(body: &[u8]) -> &[u8] {
+    let end = body
+        .iter()
+        .rposition(|byte| *byte != 0)
+        .map_or(0, |index| index.saturating_add(1));
+    body.get(..end).unwrap_or(body)
+}
+
+fn torn_text(body: &[u8]) -> Option<&str> {
+    match std::str::from_utf8(body) {
+        Ok(text) => Some(text),
+        Err(err) if err.error_len().is_none() && err.valid_up_to() < body.len() => {
+            std::str::from_utf8(body.get(..err.valid_up_to())?).ok()
+        }
+        Err(_) => None,
+    }
+}
+
+fn byte_is_json_ws(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+#[derive(Clone, Copy)]
+enum CutExpect {
+    Object,
+    KeyOrClose,
+    Key,
+    Colon,
+    Value,
+    ValueOrClose,
+    After,
+}
+
+enum CutControl {
+    Continue { pos: usize, expect: CutExpect },
+    Stop(bool),
+}
+
+fn cut_is_json_object(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut closers: Vec<u8> = Vec::new();
+    let mut expect = CutExpect::Object;
+    let mut pos = 0usize;
+    loop {
+        pos = skip_json_ws(bytes, pos);
+        if pos == bytes.len() {
+            return !closers.is_empty();
+        }
+        match cut_step(text, pos, expect, &mut closers) {
+            CutControl::Continue {
+                pos: next,
+                expect: next_expect,
+            } => {
+                pos = next;
+                expect = next_expect;
+            }
+            CutControl::Stop(torn) => return torn,
+        }
+    }
+}
+
+fn skip_json_ws(bytes: &[u8], mut pos: usize) -> usize {
+    while pos < bytes.len() && byte_is_json_ws(bytes[pos]) {
+        pos = pos.saturating_add(1);
+    }
+    pos
+}
+
+fn cut_step(text: &str, pos: usize, expect: CutExpect, closers: &mut Vec<u8>) -> CutControl {
+    let bytes = text.as_bytes();
+    let Some(ch) = bytes.get(pos).copied() else {
+        return CutControl::Stop(false);
+    };
+    match expect {
+        CutExpect::Object => {
+            if ch != b'{' {
+                return CutControl::Stop(false);
+            }
+            closers.push(b'}');
+            cut_continue(pos.saturating_add(1), CutExpect::KeyOrClose)
+        }
+        CutExpect::KeyOrClose => cut_key(text, pos, true, closers),
+        CutExpect::Key => cut_key(text, pos, false, closers),
+        CutExpect::Colon => {
+            if ch != b':' {
+                return CutControl::Stop(false);
+            }
+            cut_continue(pos.saturating_add(1), CutExpect::Value)
+        }
+        CutExpect::Value => cut_value(text, pos, false, closers),
+        CutExpect::ValueOrClose => cut_value(text, pos, true, closers),
+        CutExpect::After => cut_after(bytes, pos, closers),
+    }
+}
+
+fn cut_continue(pos: usize, expect: CutExpect) -> CutControl {
+    CutControl::Continue { pos, expect }
+}
+
+fn cut_key(text: &str, pos: usize, allow_close: bool, closers: &mut Vec<u8>) -> CutControl {
+    let Some(ch) = text.as_bytes().get(pos).copied() else {
+        return CutControl::Stop(false);
+    };
+    if allow_close && ch == b'}' {
+        if closers.pop().is_none() {
+            return CutControl::Stop(false);
+        }
+        return cut_continue(pos.saturating_add(1), CutExpect::After);
+    }
+    if ch == b'"' {
+        return cut_token(text, pos, CutExpect::Colon, true);
+    }
+    CutControl::Stop(false)
+}
+
+fn cut_value(text: &str, pos: usize, allow_close: bool, closers: &mut Vec<u8>) -> CutControl {
+    let Some(ch) = text.as_bytes().get(pos).copied() else {
+        return CutControl::Stop(false);
+    };
+    if allow_close && ch == b']' {
+        if closers.pop().is_none() {
+            return CutControl::Stop(false);
+        }
+        return cut_continue(pos.saturating_add(1), CutExpect::After);
+    }
+    if ch == b'{' || ch == b'[' {
+        closers.push(if ch == b'{' { b'}' } else { b']' });
+        let expect = if ch == b'{' {
+            CutExpect::KeyOrClose
+        } else {
+            CutExpect::ValueOrClose
+        };
+        return cut_continue(pos.saturating_add(1), expect);
+    }
+    if ch == b'"' {
+        return cut_token(text, pos, CutExpect::After, true);
+    }
+    cut_token(text, pos, CutExpect::After, false)
+}
+
+fn cut_after(bytes: &[u8], pos: usize, closers: &mut Vec<u8>) -> CutControl {
+    let Some(closer) = closers.last().copied() else {
+        return CutControl::Stop(false);
+    };
+    let Some(ch) = bytes.get(pos).copied() else {
+        return CutControl::Stop(false);
+    };
+    if ch == b',' {
+        let expect = if closer == b'}' {
+            CutExpect::Key
+        } else {
+            CutExpect::Value
+        };
+        return cut_continue(pos.saturating_add(1), expect);
+    }
+    if ch == closer {
+        closers.pop();
+        return cut_continue(pos.saturating_add(1), CutExpect::After);
+    }
+    CutControl::Stop(false)
+}
+
+fn cut_token(text: &str, pos: usize, expect: CutExpect, string: bool) -> CutControl {
+    let Some(index) = i64::try_from(pos).ok() else {
+        return CutControl::Stop(false);
+    };
+    let next = if string {
+        cut_skip_string(text, index)
+    } else {
+        cut_skip_scalar(text, index)
+    };
+    if next < 0 {
+        return CutControl::Stop(next == CUT_MARK);
+    }
+    match usize::try_from(next) {
+        Ok(advanced) if advanced <= text.len() => cut_continue(advanced, expect),
+        _ => CutControl::Stop(false),
+    }
+}
+
+fn cut_skip_string(text: &str, pos: i64) -> i64 {
+    if pos < 0 {
+        return CUT_BAD;
+    }
+    let Some(start) = usize::try_from(pos).ok().and_then(|value| value.checked_add(1)) else {
+        return CUT_BAD;
+    };
+    let bytes = text.as_bytes();
+    if start > bytes.len() {
+        return CUT_BAD;
+    }
+    if start == bytes.len() {
+        return CUT_MARK;
+    }
+    match scan_string_run(bytes, start) {
+        StringScan::Closed(end) => i64::try_from(end).unwrap_or(CUT_BAD),
+        StringScan::Cut => CUT_MARK,
+        StringScan::Bad => CUT_BAD,
+    }
+}
+
+enum StringScan {
+    Closed(usize),
+    Cut,
+    Bad,
+}
+
+fn scan_string_run(bytes: &[u8], mut index: usize) -> StringScan {
+    loop {
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if byte == b'"' || byte == b'\\' || byte <= 0x1F {
+                break;
+            }
+            index = index.saturating_add(1);
+        }
+        if index >= bytes.len() {
+            return StringScan::Cut;
+        }
+        if bytes[index] == b'"' {
+            return StringScan::Closed(index.saturating_add(1));
+        }
+        if bytes[index] != b'\\' {
+            return StringScan::Bad;
+        }
+        let next = index.saturating_add(1);
+        if next >= bytes.len() {
+            return StringScan::Cut;
+        }
+        let Some(escaped) = bytes.get(next).copied() else {
+            return StringScan::Cut;
+        };
+        if matches!(
+            escaped,
+            b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
+        ) {
+            index = next.saturating_add(1);
+            continue;
+        }
+        if escaped == b'u' {
+            let hex_at = next.saturating_add(1);
+            let hex_end = hex_at.saturating_add(4);
+            if hex_end <= bytes.len()
+                && bytes
+                    .get(hex_at..hex_end)
+                    .is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit))
+            {
+                index = hex_end;
+                continue;
+            }
+        }
+        let rest = bytes.get(index..).unwrap_or(&[]);
+        if partial_escape(rest) {
+            return StringScan::Cut;
+        }
+        return StringScan::Bad;
+    }
+}
+
+fn partial_escape(rest: &[u8]) -> bool {
+    if rest.first() != Some(&b'\\') {
+        return false;
+    }
+    if rest.len() == 1 {
+        return true;
+    }
+    if rest.get(1) != Some(&b'u') {
+        return false;
+    }
+    let hex = rest.get(2..).unwrap_or(&[]);
+    hex.len() <= 3 && hex.iter().all(u8::is_ascii_hexdigit)
+}
+
+fn cut_skip_scalar(text: &str, pos: i64) -> i64 {
+    if pos < 0 {
+        return CUT_BAD;
+    }
+    let Some(start) = usize::try_from(pos).ok() else {
+        return CUT_MARK;
+    };
+    let bytes = text.as_bytes();
+    if start >= bytes.len() {
+        return CUT_MARK;
+    }
+    let Some(head) = bytes.get(start).copied() else {
+        return CUT_BAD;
+    };
+    if is_number_byte(head) {
+        return skip_number_run(bytes, start);
+    }
+    skip_literal(bytes, start)
+}
+
+fn is_number_byte(byte: u8) -> bool {
+    matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+}
+
+fn skip_number_run(bytes: &[u8], start: usize) -> i64 {
+    let mut end = start;
+    while end < bytes.len() && bytes.get(end).is_some_and(|byte| is_number_byte(*byte)) {
+        end = end.saturating_add(1);
+    }
+    let Some(run) = bytes.get(start..end) else {
+        return CUT_BAD;
+    };
+    if end == bytes.len() {
+        if viable_number_prefix(run) {
+            CUT_MARK
+        } else {
+            CUT_BAD
+        }
+    } else if complete_json_number(run) {
+        i64::try_from(end).unwrap_or(CUT_BAD)
+    } else {
+        CUT_BAD
+    }
+}
+
+fn skip_literal(bytes: &[u8], start: usize) -> i64 {
+    let Some(rest) = bytes.get(start..) else {
+        return CUT_BAD;
+    };
+    for literal in [b"true".as_slice(), b"false".as_slice(), b"null".as_slice()] {
+        if rest.starts_with(literal) {
+            return i64::try_from(start.saturating_add(literal.len())).unwrap_or(CUT_BAD);
+        }
+        if rest.len() < literal.len() && literal.starts_with(rest) {
+            return CUT_MARK;
+        }
+    }
+    CUT_BAD
+}
+
+fn viable_number_prefix(run: &[u8]) -> bool {
+    let mut index = 0usize;
+    if run.first() == Some(&b'-') {
+        index = 1;
+    }
+    if index == run.len() {
+        return true;
+    }
+    cut_number_body(run, &mut index) && index == run.len()
+}
+
+fn cut_number_body(run: &[u8], index: &mut usize) -> bool {
+    if !cut_integer(run, index) {
+        return false;
+    }
+    if *index == run.len() {
+        return true;
+    }
+    match run.get(*index) {
+        Some(b'.') => cut_fraction(run, index),
+        Some(b'e' | b'E') => cut_exponent(run, index),
+        _ => false,
+    }
+}
+
+fn cut_fraction(run: &[u8], index: &mut usize) -> bool {
+    *index = index.saturating_add(1);
+    if *index == run.len() {
+        return true;
+    }
+    if !run.get(*index).is_some_and(u8::is_ascii_digit) {
+        return false;
+    }
+    while run.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index = index.saturating_add(1);
+    }
+    if *index == run.len() {
+        return true;
+    }
+    cut_exponent(run, index)
+}
+
+fn cut_exponent(run: &[u8], index: &mut usize) -> bool {
+    if !matches!(run.get(*index), Some(b'e' | b'E')) {
+        return false;
+    }
+    *index = index.saturating_add(1);
+    if matches!(run.get(*index), Some(b'+' | b'-')) {
+        *index = index.saturating_add(1);
+    }
+    while run.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index = index.saturating_add(1);
+    }
+    *index == run.len()
+}
+
+fn cut_integer(run: &[u8], index: &mut usize) -> bool {
+    let Some(digit) = run.get(*index) else {
+        return false;
+    };
+    if !digit.is_ascii_digit() {
+        return false;
+    }
+    if *digit == b'0' {
+        *index = index.saturating_add(1);
+        return true;
+    }
+    *index = index.saturating_add(1);
+    while run.get(*index).is_some_and(u8::is_ascii_digit) {
+        *index = index.saturating_add(1);
+    }
+    true
+}
+
+fn complete_json_number(run: &[u8]) -> bool {
+    let mut index = 0usize;
+    if run.first() == Some(&b'-') {
+        index = 1;
+    }
+    if !cut_integer(run, &mut index) {
+        return false;
+    }
+    if run.get(index) == Some(&b'.') {
+        let next = index.saturating_add(1);
+        if !run.get(next).is_some_and(u8::is_ascii_digit) {
+            return false;
+        }
+        index = next.saturating_add(1);
+        while run.get(index).is_some_and(u8::is_ascii_digit) {
+            index = index.saturating_add(1);
+        }
+    }
+    if matches!(run.get(index), Some(b'e' | b'E')) {
+        index = index.saturating_add(1);
+        if matches!(run.get(index), Some(b'+' | b'-')) {
+            index = index.saturating_add(1);
+        }
+        if !run.get(index).is_some_and(u8::is_ascii_digit) {
+            return false;
+        }
+        index = index.saturating_add(1);
+        while run.get(index).is_some_and(u8::is_ascii_digit) {
+            index = index.saturating_add(1);
+        }
+    }
+    index == run.len()
+}
+
+#[cfg(test)]
+mod process_line_tests {
+    use model::canonical::{SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE};
+    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
+
+    use super::{
+        _process_claude_line, collect_duplicate_keys, line_defect_code, parse_json_document,
+        python_str, ClaudeLineContext, ClaudeLineLimits, ClaudeLoadSource, ClaudeRawLine,
+        ClaudeValue, DriftTracker, JsonFail, Link, LoadClaudeCodeError, ProcessClaudeLineError,
+        SuppliedSecretScanTracker, UnknownMetadataTracker, DEFAULT_MAX_DEPTH,
+        SECRET_SCAN_TRACKER_UNAVAILABLE, SL001, SL002,
+    };
+    use crate::claude_code::load_claude_code;
+
+    const PATH: &str = "synth.jsonl";
+
+    fn line_at(
+        number: i64,
+        bytes: &[u8],
+        truncated: bool,
+        start: i64,
+        end: i64,
+    ) -> ClaudeRawLine {
+        ClaudeRawLine::try_new(number, bytes.to_vec(), truncated, start, end, 1)
+            .expect("coordinates")
+    }
+
+    fn line(bytes: &[u8]) -> ClaudeRawLine {
+        let end = i64::try_from(bytes.len()).expect("length");
+        line_at(1, bytes, false, 0, end)
+    }
+
+    fn limits(max_depth: i64) -> ClaudeLineLimits {
+        ClaudeLineLimits { max_depth }
+    }
+
+    fn process(
+        raw: &ClaudeRawLine,
+        terminal: bool,
+        max_depth: i64,
+        events: &[SessionEvent],
+        context: &mut ClaudeLineContext,
+    ) -> Result<(), ProcessClaudeLineError> {
+        let findings = Vec::new();
+        let before = findings.len();
+        let result = _process_claude_line(
+            raw,
+            terminal,
+            PATH,
+            limits(max_depth),
+            events,
+            &findings,
+            context,
+        );
+        assert_eq!(findings.len(), before);
+        result
+    }
+
+    fn fail(bytes: &[u8], context: &mut ClaudeLineContext) -> ProcessClaudeLineError {
+        let events = Vec::new();
+        process(&line(bytes), true, DEFAULT_MAX_DEPTH, &events, context).expect_err("seam")
+    }
+
+    fn codec(err: &ProcessClaudeLineError) {
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("_canonical_codec"));
+        assert!(!err.to_string().contains("sha256"));
+    }
+
+    fn hash_seam(err: &ProcessClaudeLineError) {
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert!(!err.to_string().contains("determinism"));
+        assert!(!err.to_string().contains("sha256"));
+    }
+
+    fn real_ids(context: &ClaudeLineContext) -> Vec<String> {
+        context
+            .collision_guard
+            .as_ref()
+            .map(|guard| guard.seen_real_ids().iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn synthetic_ids(context: &ClaudeLineContext) -> Vec<String> {
+        context
+            .collision_guard
+            .as_ref()
+            .map(|guard| guard.seen_synthetic_ids().iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn secret_witness_stops_before_the_line_is_read() {
+        let marker = b"syn-secret-marker";
+        let mut context = ClaudeLineContext {
+            secret_tracker: Some(SuppliedSecretScanTracker),
+            record_sizes: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        let events = vec![SessionEvent::new(
+            "syn-pre",
+            None,
+            0,
+            "1970-01-01T00:00:00Z",
+            "user",
+            "message",
+        )];
+        let err = process(&line(marker), true, DEFAULT_MAX_DEPTH, &events, &mut context)
+            .expect_err("tracker");
+        assert!(matches!(err, ProcessClaudeLineError::SecretScanTracker));
+        assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert!(!err.to_string().contains("feed"));
+        assert!(!err.to_string().contains("syn-secret-marker"));
+        assert_eq!(context.record_sizes.as_ref().map(Vec::len), Some(0));
+        assert!(context.collision_guard.is_none());
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn loader_still_stops_at_the_tracker() {
+        let err = load_claude_code(
+            ClaudeLoadSource::Bytes(br#"{"type":"user","uuid":"r1"}"#),
+            None,
+        )
+        .expect_err("loader");
+        assert!(matches!(err, LoadClaudeCodeError::SecretScanTracker));
+        assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert!(!err.to_string().contains("canonical_json_bytes"));
+    }
+
+    #[test]
+    fn bool_text_is_not_the_integer_text() {
+        assert_eq!(python_str(&ClaudeValue::Bool(true)), "True");
+        assert_eq!(python_str(&ClaudeValue::Bool(false)), "False");
+        assert_eq!(python_str(&ClaudeValue::Int(1)), "1");
+        assert_eq!(python_str(&ClaudeValue::Int(0)), "0");
+    }
+
+    #[test]
+    fn coordinates_reject_a_negative_offset_and_a_short_end() {
+        let offset = ClaudeRawLine::try_new(1, Vec::new(), false, -1, 0, 1).expect_err("offset");
+        assert_eq!(
+            offset.to_string(),
+            "Invalid byte_offset: -1 (must be integer >= 0)"
+        );
+        let end = ClaudeRawLine::try_new(1, Vec::new(), false, 2, 1, 1).expect_err("end");
+        assert_eq!(
+            end.to_string(),
+            "Invalid byte_end: 1 (must be integer >= byte_offset=2)"
+        );
+        let ordinal =
+            ClaudeRawLine::try_new(1, Vec::new(), false, 0, 0, 0).expect_err("ordinal");
+        assert_eq!(
+            ordinal.to_string(),
+            "Invalid record_ordinal: 0 (must be integer >= 1)"
+        );
+    }
+
+    #[test]
+    fn truncated_line_appends_the_span_and_stops_at_the_fingerprint() {
+        let mut context = ClaudeLineContext {
+            record_sizes: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        let events = Vec::new();
+        let raw = line_at(2, b"syn-marker-qq", true, 4, 10);
+        let err = process(&raw, true, DEFAULT_MAX_DEPTH, &events, &mut context)
+            .expect_err("limit");
+        codec(&err);
+        assert!(!err.to_string().contains("syn-marker-qq"));
+        assert_eq!(context.record_sizes.as_deref(), Some(&[6][..]));
+        assert!(events.is_empty());
+        assert!(context.collision_guard.is_none());
+    }
+
+    #[test]
+    fn line_zero_fails_at_the_source_ref_before_the_codec() {
+        let mut context = ClaudeLineContext::default();
+        let events = Vec::new();
+        let raw = line_at(0, b"x", true, 0, 1);
+        let err = process(&raw, true, DEFAULT_MAX_DEPTH, &events, &mut context)
+            .expect_err("line");
+        assert!(err.to_string().contains("SourceRef.line"));
+        assert!(!err.to_string().contains("canonical_json_bytes"));
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn nul_and_bad_utf8_stop_at_the_fingerprint() {
+        let mut context = ClaudeLineContext {
+            record_sizes: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        let nul = fail(b"{\"a\":1}\x00", &mut context);
+        codec(&nul);
+        assert_eq!(context.record_sizes.as_deref(), Some(&[8][..]));
+        let bad = fail(&[0xFF], &mut context);
+        codec(&bad);
+        assert_eq!(context.record_sizes.as_deref(), Some(&[8, 1][..]));
+        assert!(context.collision_guard.is_none());
+    }
+
+    #[test]
+    fn defect_code_matches_a_torn_terminal_prefix() {
+        let torn = line(b"{");
+        assert_eq!(line_defect_code(&torn, true), SL002);
+        assert_eq!(line_defect_code(&torn, false), SL001);
+        assert_eq!(line_defect_code(&line(b"{\n"), true), SL001);
+        assert_eq!(line_defect_code(&line(b"{}"), true), SL001);
+        assert_eq!(line_defect_code(&line(b"nope"), true), SL001);
+        let truncated = line_at(1, b"{", true, 0, 1);
+        assert_eq!(line_defect_code(&truncated, true), SL001);
+        let mut bom = b"\xEF\xBB\xBF".to_vec();
+        bom.push(b'{');
+        assert_eq!(line_defect_code(&line(&bom), true), SL002);
+        assert_eq!(line_defect_code(&line(b"{\x00"), true), SL002);
+        assert_eq!(line_defect_code(&line(b"{\x00a"), true), SL001);
+        assert_eq!(line_defect_code(&line(b"   "), true), SL002);
+        assert_eq!(line_defect_code(&line(b"{\"a\":"), true), SL002);
+    }
+
+    #[test]
+    fn duplicate_keys_stop_before_identity() {
+        let mut context = ClaudeLineContext::default();
+        let err = fail(br#"{"id":"syn-a","id":"syn-b"}"#, &mut context);
+        codec(&err);
+        assert!(context.collision_guard.is_none());
+        let parsed = parse_json_document(r#"{"id":"a","id":"b"}"#).expect("json");
+        let (dups, truncated) = collect_duplicate_keys(&parsed);
+        assert_eq!(dups.len(), 1);
+        assert_eq!(dups[0].key_path, "$.id");
+        assert_eq!(dups[0].occurrence_count, 2);
+        assert!(!dups[0].critical);
+        assert!(!truncated);
+        let parsed = parse_json_document(r#"{"type":1,"type":2}"#).expect("json");
+        let (dups, _) = collect_duplicate_keys(&parsed);
+        assert!(dups[0].critical);
+        assert_eq!(dups[0].key_path, "$.type");
+        let parsed = parse_json_document(r#"{"a":[{"b":1,"b":2}]}"#).expect("json");
+        let (dups, truncated) = collect_duplicate_keys(&parsed);
+        assert_eq!(dups[0].key_path, "$.a[0].b");
+        assert!(!truncated);
+        let parsed = parse_json_document(r#"{"a":{"b":1,"b":2},"a":1}"#).expect("json");
+        let (dups, truncated) = collect_duplicate_keys(&parsed);
+        assert_eq!(dups.len(), 1);
+        assert_eq!(dups[0].key_path, "$.a");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn a_non_object_stops_before_identity() {
+        for bytes in [b"[1]".as_slice(), b"true".as_slice(), b"1".as_slice()] {
+            let mut context = ClaudeLineContext::default();
+            codec(&fail(bytes, &mut context));
+            assert!(context.collision_guard.is_none());
+        }
+    }
+
+    #[test]
+    fn nesting_above_the_reader_limit_stops_before_identity() {
+        let mut context = ClaudeLineContext::default();
+        let events = Vec::new();
+        let raw = line(br#"{"type":"user","message":{"role":"user"}}"#);
+        let err = process(&raw, true, 1, &events, &mut context).expect_err("depth");
+        codec(&err);
+        assert!(context.collision_guard.is_none());
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn a_flat_user_record_reaches_the_record_hash() {
+        let mut context = ClaudeLineContext::default();
+        let events = vec![SessionEvent::new(
+            "syn-pre",
+            None,
+            0,
+            "1970-01-01T00:00:00Z",
+            "user",
+            "message",
+        )];
+        let err = process(
+            &line(br#"{"type":"user","uuid":"r1"}"#),
+            true,
+            1,
+            &events,
+            &mut context,
+        )
+        .expect_err("hash");
+        hash_seam(&err);
+        assert_eq!(events.len(), 1);
+        assert_eq!(real_ids(&context), vec!["r1".to_owned()]);
+    }
+
+    #[test]
+    fn json_nesting_above_one_thousand_is_a_nesting_failure() {
+        let mut text = String::new();
+        for _ in 0..1001 {
+            text.push_str(r#"{"a":"#);
+        }
+        text.push('1');
+        for _ in 0..1001 {
+            text.push('}');
+        }
+        assert!(matches!(
+            parse_json_document(&text),
+            Err(JsonFail::Nesting)
+        ));
+        let mut context = ClaudeLineContext::default();
+        codec(&fail(text.as_bytes(), &mut context));
+        assert!(context.collision_guard.is_none());
+    }
+
+    #[test]
+    fn metadata_without_identity_returns_before_the_hash() {
+        let mut context = ClaudeLineContext::default();
+        let events = Vec::new();
+        process(
+            &line(br#"{"type":"mode"}"#),
+            true,
+            DEFAULT_MAX_DEPTH,
+            &events,
+            &mut context,
+        )
+        .expect("metadata");
+        assert!(events.is_empty());
+        assert_eq!(synthetic_ids(&context).len(), 1);
+        assert!(synthetic_ids(&context)[0].starts_with("sesslint:synthetic:claude_code:0:"));
+    }
+
+    #[test]
+    fn an_unsupported_version_stops_before_metadata_can_return() {
+        let mut context = ClaudeLineContext::default();
+        codec(&fail(br#"{"type":"mode","version":"9"}"#, &mut context));
+        assert!(!context.seen_version_sl301);
+        assert_eq!(synthetic_ids(&context).len(), 1);
+    }
+
+    #[test]
+    fn a_supported_metadata_version_returns_ok() {
+        let mut context = ClaudeLineContext::default();
+        let events = Vec::new();
+        process(
+            &line(br#"{"type":"mode","version":"1"}"#),
+            true,
+            DEFAULT_MAX_DEPTH,
+            &events,
+            &mut context,
+        )
+        .expect("supported");
+        assert!(!context.seen_version_sl301);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn metadata_with_a_real_id_reaches_the_hash() {
+        let mut context = ClaudeLineContext::default();
+        hash_seam(&fail(br#"{"type":"mode","uuid":"syn-1"}"#, &mut context));
+        assert_eq!(real_ids(&context), vec!["syn-1".to_owned()]);
+    }
+
+    #[test]
+    fn a_critical_prefix_on_metadata_is_one_finding() {
+        let mut context = ClaudeLineContext::default();
+        codec(&fail(
+            br#"{"type":"mode","critical_x":1}"#,
+            &mut context,
+        ));
+        assert!(!context.seen_version_sl301);
+    }
+
+    #[test]
+    fn unknown_metadata_is_noted_and_a_semantic_record_is_not() {
+        let mut context = ClaudeLineContext {
+            unknown_metadata: Some(UnknownMetadataTracker::new()),
+            ..ClaudeLineContext::default()
+        };
+        let events = Vec::new();
+        process(
+            &line(br#"{"type":"syn-widget"}"#),
+            true,
+            DEFAULT_MAX_DEPTH,
+            &events,
+            &mut context,
+        )
+        .expect("noted");
+        let noted = context
+            .unknown_metadata
+            .as_ref()
+            .expect("tracker")
+            .findings(PATH)
+            .expect_err("sl306");
+        assert_eq!(noted.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let mut plain = ClaudeLineContext {
+            unknown_metadata: Some(UnknownMetadataTracker::new()),
+            ..ClaudeLineContext::default()
+        };
+        codec(&fail(br#"{"type":"syn-widget","uuid":"r1"}"#, &mut plain));
+        assert!(plain
+            .unknown_metadata
+            .as_ref()
+            .expect("tracker")
+            .findings(PATH)
+            .expect("empty")
+            .is_empty());
+    }
+
+    #[test]
+    fn json_true_is_an_unsupported_version_and_json_one_is_hashed() {
+        let mut as_bool = ClaudeLineContext::default();
+        codec(&fail(
+            br#"{"type":"user","uuid":"r1","version":true}"#,
+            &mut as_bool,
+        ));
+        assert!(!as_bool.seen_version_sl301);
+        let mut as_int = ClaudeLineContext::default();
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","version":1}"#,
+            &mut as_int,
+        ));
+        let mut schema_bool = ClaudeLineContext::default();
+        codec(&fail(
+            br#"{"type":"user","uuid":"r1","schemaVersion":true}"#,
+            &mut schema_bool,
+        ));
+        let mut schema_int = ClaudeLineContext::default();
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","schemaVersion":1}"#,
+            &mut schema_int,
+        ));
+    }
+
+    #[test]
+    fn bool_identity_is_not_the_integer_text() {
+        let mut as_bool = ClaudeLineContext::default();
+        hash_seam(&fail(br#"{"type":"user","uuid":true}"#, &mut as_bool));
+        assert_eq!(real_ids(&as_bool), vec!["True".to_owned()]);
+        let mut as_int = ClaudeLineContext::default();
+        hash_seam(&fail(br#"{"type":"user","uuid":1}"#, &mut as_int));
+        assert_eq!(real_ids(&as_int), vec!["1".to_owned()]);
+        let mut last_bool = ClaudeLineContext::default();
+        hash_seam(&fail(
+            br#"{"type":"user","message_id":false}"#,
+            &mut last_bool,
+        ));
+        assert_eq!(real_ids(&last_bool), vec!["False".to_owned()]);
+        let mut last_int = ClaudeLineContext::default();
+        hash_seam(&fail(br#"{"type":"user","message_id":0}"#, &mut last_int));
+        assert_eq!(real_ids(&last_int), vec!["0".to_owned()]);
+        let mut skipped = ClaudeLineContext::default();
+        hash_seam(&fail(br#"{"type":"user","uuid":false}"#, &mut skipped));
+        assert!(real_ids(&skipped).is_empty());
+        assert!(synthetic_ids(&skipped)[0].starts_with("sesslint:synthetic:claude_code:"));
+    }
+
+    #[test]
+    fn a_bool_link_is_not_an_integer_link() {
+        let mut as_bool = ClaudeLineContext {
+            links: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","parentSessionId":true}"#,
+            &mut as_bool,
+        ));
+        assert_eq!(as_bool.links.as_ref().map(Vec::len), Some(0));
+        let mut as_int = ClaudeLineContext {
+            links: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","parentSessionId":1}"#,
+            &mut as_int,
+        ));
+        let links: &[Link] = as_int.links.as_deref().expect("links");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].target, "1");
+        assert_eq!(links[0].kind, "session_ref");
+        let mut zero = ClaudeLineContext {
+            links: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","parentSessionId":0}"#,
+            &mut zero,
+        ));
+        assert_eq!(
+            zero.links.as_ref().expect("links")[0].target,
+            "0"
+        );
+        let mut flag = ClaudeLineContext {
+            links: Some(Vec::new()),
+            ..ClaudeLineContext::default()
+        };
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","parentSessionId":false}"#,
+            &mut flag,
+        ));
+        assert!(flag.links.as_ref().expect("links").is_empty());
+    }
+
+    #[test]
+    fn session_id_keeps_a_stripped_string_and_ignores_a_bool() {
+        let mut context = ClaudeLineContext::default();
+        codec(&fail(
+            br#"{"type":"user","uuid":"r1","sessionId":" syn-sess ","version":"nope"}"#,
+            &mut context,
+        ));
+        assert_eq!(context.session_id.as_deref(), Some("syn-sess"));
+        assert!(!context.seen_version_sl301);
+        let mut flagged = ClaudeLineContext::default();
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"r1","sessionId":true}"#,
+            &mut flagged,
+        ));
+        assert!(flagged.session_id.is_none());
+    }
+
+    #[test]
+    fn a_seen_version_notes_drift_and_a_bad_marker_does_not() {
+        let mut noted = ClaudeLineContext {
+            drift: Some(DriftTracker::new("claude-code-jsonl")),
+            seen_version_sl301: true,
+            ..ClaudeLineContext::default()
+        };
+        noted
+            .drift
+            .as_mut()
+            .expect("drift")
+            .observe_version("1", true, "schemaVersion", None, None, None, None, None);
+        noted
+            .drift
+            .as_mut()
+            .expect("drift")
+            .observe_version("1.0", true, "schemaVersion", None, None, None, None, None);
+        let events = Vec::new();
+        process(
+            &line(br#"{"type":"mode","version":"9"}"#),
+            true,
+            DEFAULT_MAX_DEPTH,
+            &events,
+            &mut noted,
+        )
+        .expect("noted");
+        assert!(noted
+            .drift
+            .as_ref()
+            .expect("drift")
+            .into_findings(PATH)
+            .expect("suppressed")
+            .is_empty());
+        let mut first = ClaudeLineContext {
+            drift: Some(DriftTracker::new("claude-code-jsonl")),
+            ..ClaudeLineContext::default()
+        };
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"a","schemaVersion":"1"}"#,
+            &mut first,
+        ));
+        codec(&fail(
+            br#"{"type":"user","uuid":"b","schemaVersion":"9"}"#,
+            &mut first,
+        ));
+        assert!(first
+            .drift
+            .as_ref()
+            .expect("drift")
+            .into_findings(PATH)
+            .expect("no transition")
+            .is_empty());
+        let mut chain = ClaudeLineContext {
+            drift: Some(DriftTracker::new("claude-code-jsonl")),
+            ..ClaudeLineContext::default()
+        };
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"a","schemaVersion":"1"}"#,
+            &mut chain,
+        ));
+        hash_seam(&fail(
+            br#"{"type":"user","uuid":"b","schemaVersion":"1.0"}"#,
+            &mut chain,
+        ));
+        let drifted = chain
+            .drift
+            .as_ref()
+            .expect("drift")
+            .into_findings(PATH)
+            .expect_err("transition");
+        assert_eq!(drifted.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+    }
+
+    #[test]
+    fn absent_record_sizes_are_left_alone() {
+        let mut context = ClaudeLineContext::default();
+        hash_seam(&fail(br#"{"type":"user","uuid":"r1"}"#, &mut context));
+        assert!(context.record_sizes.is_none());
+    }
+
+    #[test]
+    fn a_lone_surrogate_stops_at_the_fingerprint() {
+        let mut context = ClaudeLineContext::default();
+        let err = fail(
+            br#"{"type":"user","uuid":"r1","text":"\uD800"}"#,
+            &mut context,
+        );
+        codec(&err);
+        assert!(context.collision_guard.is_none());
+    }
+}
