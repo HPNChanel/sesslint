@@ -1,10 +1,12 @@
 //! Scan summary types for one file and for aggregated rows (TASK-024, T-08).
 //!
-//! Port of `src/sesslint/scan.py` lines 1–436
+//! Port of `src/sesslint/scan.py` lines 1–436 and `_scan_single_source`
+//! lines 439–749
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
-//! Stops before `_scan_single_source`. This module does not walk a directory,
-//! does not open sqlite, and does not link the report crate.
+//! [`scan_single_file`] stops before [`scan_single_source`]. This module does
+//! not walk a directory, does not open sqlite, and does not link the report
+//! crate.
 //!
 //! # Recorded gaps
 //!
@@ -27,7 +29,28 @@
 //!   the pin `FileNotFoundError` sentence. A file that exists stops with
 //!   `json.loads is not available` and is not parsed.
 //! * [`scan_single_file`] stops at [`MINIMIZE_PATH_UNAVAILABLE`] before
-//!   `_scan_single_source`. It does not return a [`FileResult`].
+//!   [`scan_single_source`]. It does not call that function and it does not
+//!   return a [`FileResult`].
+//! * [`scan_single_source`] is `_scan_single_source`. `max_file_bytes` is
+//!   `i64`. A bool is not that int. The file-too-large skip, an undetected
+//!   file, a loaded size-limit skip, and `except FileTooLargeError` return
+//!   [`FileResult`] without [`model::finding::make_finding`].
+//! * An omitted fingerprint makes [`model::finding::make_finding`] return
+//!   [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. That error is
+//!   propagated. The finding is not appended, and a [`FileResult`] that
+//!   required it is not returned.
+//! * `sesslint.adapters.detect.resolve_format` and
+//!   `sesslint.adapters.detect.resolve_format_bytes` are not in this crate,
+//!   `model`, or `checks`. A clean probe stops at that call. An empty finding
+//!   list is not returned in its place.
+//! * `sesslint.adapters.load.profile_key_for_format`,
+//!   `sesslint.adapters.load.load_events_for_format`, and
+//!   `sesslint.baseline.filter_findings` stop the same way when the pin
+//!   reaches them. [`checks::CheckContext::from_profile_and_adapter`] is
+//!   called.
+//! * When the pin would call `run_all_checks`, display is
+//!   `sesslint.checks.runner.run_all_checks is not available`. Findings and
+//!   events are not invented. The pin `except TypeError` retry is not taken.
 //! * Bucket counts are `i64`. [`ScanTotals::total`] uses the mathematical sum.
 //!   A sum outside `i64` is [`TotalOverflow`] and is not wrapped. Finding and
 //!   skipped-reason counts that do not fit in `i64` are refused and are not
@@ -39,8 +62,13 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use model::canonical::SessionEvent;
+use model::codes::{Repairability, SL001, SL301, SL302};
 use model::errors::FindingError;
-use model::finding::{DictValue, Finding, Severity, SEVERITY_ORDER};
+use model::finding::{
+    make_finding, DictValue, EvidenceLookup, Finding, MakeFindingInput, PyValue, Severity,
+    SourceRef, SEVERITY_ORDER,
+};
 
 /// Python: `DEFAULT_MAX_FILES = 10000`.
 pub const DEFAULT_MAX_FILES: i64 = 10_000;
@@ -853,7 +881,7 @@ pub fn aggregate_scan(
 /// The pin calls `minimize_path` before `_scan_single_source`. That helper
 /// lives in the report crate, which this crate does not depend on. Display is
 /// [`MINIMIZE_PATH_UNAVAILABLE`]. No [`FileResult`] is returned.
-/// `_scan_single_source` is not called and is not defined. The pin default
+/// [`scan_single_source`] is not called from this function. The pin default
 /// for `max_file_bytes` is [`crate::io::DEFAULT_MAX_FILE_BYTES`]. A bool is
 /// not that int.
 pub fn scan_single_file(
@@ -875,6 +903,866 @@ pub fn scan_single_file(
         max_file_bytes,
     );
     Err(MinimizePathUnavailable)
+}
+
+/// Failure from [`scan_single_source`].
+///
+/// [`Display`](fmt::Display) for [`Self::Unavailable`] is `{name} is not available`.
+/// [`Self::Finding`] forwards [`FindingError`]. [`Self::Checks`] forwards
+/// [`checks::ChecksError`].
+#[derive(Debug)]
+pub enum ScanSourceError {
+    /// [`model::finding::make_finding`] or [`SourceRef::try_new`] failed.
+    Finding(FindingError),
+    /// A pin call whose function is not in this crate, `model`, or `checks`.
+    Unavailable(&'static str),
+    /// [`checks::CheckContext::from_profile_and_adapter`] failed.
+    Checks(checks::ChecksError),
+    /// Python `except FileTooLargeError`.
+    ///
+    /// The arm returns the skipped [`FileResult`] and does not call
+    /// [`make_finding`]. No ported callee raises this variant; loaders are
+    /// unavailable before they could.
+    FileTooLarge,
+    /// Python `except (MaxRecordsExceededError, OSError)`.
+    ///
+    /// `type_name` is `type(err).__name__`. The handler calls [`make_finding`].
+    LimitOrIo {
+        /// Python exception class name.
+        type_name: &'static str,
+    },
+    /// Python `except Exception` after the more specific handlers.
+    ///
+    /// `type_name` is `type(err).__name__`. The handler calls [`make_finding`].
+    Unhandled {
+        /// Python exception class name.
+        type_name: String,
+    },
+    /// An `i64` finding count would wrap. It is not wrapped.
+    CountOverflow,
+    /// A link field cannot be stored without treating a bool as an int, or
+    /// without stringifying a non-string `record_id`.
+    Link(&'static str),
+}
+
+impl fmt::Display for ScanSourceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Finding(err) => write!(formatter, "{err}"),
+            Self::Unavailable(name) => write!(formatter, "{name} is not available"),
+            Self::Checks(err) => write!(formatter, "{err}"),
+            Self::FileTooLarge => formatter.write_str("FileTooLargeError"),
+            Self::LimitOrIo { type_name } => formatter.write_str(type_name),
+            Self::Unhandled { type_name } => formatter.write_str(type_name),
+            Self::CountOverflow => formatter.write_str("finding count exceeds i64"),
+            Self::Link(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl Error for ScanSourceError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Finding(err) => Some(err),
+            Self::Checks(err) => Some(err),
+            Self::Unavailable(_)
+            | Self::FileTooLarge
+            | Self::LimitOrIo { .. }
+            | Self::Unhandled { .. }
+            | Self::CountOverflow
+            | Self::Link(_) => None,
+        }
+    }
+}
+
+/// Python: `_scan_single_source` (ux T-06).
+///
+/// `data: Some` is byte mode. `display_path` is stored verbatim and the
+/// filesystem is not touched. `data: None` reads `file_path`.
+///
+/// `max_file_bytes` is an `i64`. A bool is not that int.
+/// [`crate::io::probe_bytes_encoding`] and [`crate::io::probe_text_encoding`]
+/// classify the bytes. A size skip, an undetected file, a loaded size-limit
+/// skip, and [`ScanSourceError::FileTooLarge`] return [`FileResult`] without
+/// [`make_finding`].
+///
+/// [`make_finding`] is called with an omitted fingerprint. That returns
+/// [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. The error is propagated.
+/// The finding is not appended, and a [`FileResult`] that required it is not
+/// returned.
+///
+/// A clean probe calls `sesslint.adapters.detect.resolve_format` or
+/// `resolve_format_bytes`. Those functions are not in this crate. Display is
+/// `{name} is not available`. The call is not skipped and an empty finding
+/// list is not invented.
+///
+/// The same stop is used for `sesslint.adapters.load.profile_key_for_format`,
+/// `sesslint.adapters.load.load_events_for_format`, and
+/// `sesslint.baseline.filter_findings` when the pin reaches them.
+/// [`checks::CheckContext::from_profile_and_adapter`] is called.
+/// When the pin would call `run_all_checks`, display is
+/// `sesslint.checks.runner.run_all_checks is not available`. The `except
+/// TypeError` retry is not taken: this error is not a `TypeError`. No
+/// findings and no events are invented.
+///
+/// This function does not walk a directory, does not open sqlite, and does
+/// not read a clock.
+#[allow(clippy::too_many_arguments)]
+pub fn scan_single_source(
+    file_path: &Path,
+    display_path: &str,
+    data: Option<&[u8]>,
+    format: Option<&str>,
+    effective_cfg: &checks::EffectiveConfig,
+    skip_undetected: bool,
+    resolved_profile: Option<&checks::Profile>,
+    baseline: Option<&[String]>,
+    max_file_bytes: i64,
+) -> Result<FileResult, ScanSourceError> {
+    SourceRequest {
+        file_path,
+        display_path,
+        data,
+        format,
+        effective_cfg,
+        skip_undetected,
+        resolved_profile,
+        baseline,
+        max_file_bytes,
+    }
+    .run()
+}
+
+struct SourceRequest<'a> {
+    file_path: &'a Path,
+    display_path: &'a str,
+    data: Option<&'a [u8]>,
+    format: Option<&'a str>,
+    effective_cfg: &'a checks::EffectiveConfig,
+    skip_undetected: bool,
+    resolved_profile: Option<&'a checks::Profile>,
+    baseline: Option<&'a [String]>,
+    max_file_bytes: i64,
+}
+
+impl<'a> SourceRequest<'a> {
+    fn run(&self) -> Result<FileResult, ScanSourceError> {
+        if self.is_oversize() {
+            return Ok(skipped_result(self.display_path, "file-too-large"));
+        }
+        match self.classify_probe() {
+            ProbeClass::Io => {
+                let finding = scan_finding(
+                    SL001,
+                    "Unreadable file or I/O error",
+                    self.display_path,
+                    evidence_pairs(&[("reason", "os_error"), ("detail", "io_error")]),
+                )?;
+                Ok(unreadable_with(self.display_path, finding))
+            }
+            ProbeClass::Nul => {
+                let finding = scan_finding(
+                    SL001,
+                    "File contains forbidden NUL byte or binary data",
+                    self.display_path,
+                    PyValue::None,
+                )?;
+                Ok(unreadable_with(self.display_path, finding))
+            }
+            ProbeClass::Utf8 => {
+                let finding = scan_finding(
+                    SL001,
+                    "File encoding error non-UTF-8",
+                    self.display_path,
+                    evidence_pairs(&[("reason", "encoding_error"), ("detail", "invalid_utf8")]),
+                )?;
+                Ok(unreadable_with(self.display_path, finding))
+            }
+            ProbeClass::Clean => finish_try(self.evaluate(), self.display_path),
+        }
+    }
+
+    /// `len > max_file_bytes`. A negative max is greater than every size,
+    /// including zero. A failed `stat` leaves the flag false (`except OSError: pass`).
+    /// Directory metadata is one `stat`. Children are not listed.
+    fn is_oversize(&self) -> bool {
+        if let Some(data) = self.data {
+            return exceeds_limit(
+                u64::try_from(data.len()).unwrap_or(u64::MAX),
+                self.max_file_bytes,
+            );
+        }
+        match std::fs::metadata(self.file_path) {
+            Ok(meta) => exceeds_limit(meta.len(), self.max_file_bytes),
+            Err(_) => false,
+        }
+    }
+
+    fn classify_probe(&self) -> ProbeClass {
+        if let Some(data) = self.data {
+            return match crate::io::probe_bytes_encoding(data) {
+                None => ProbeClass::Clean,
+                Some(crate::io::EncodingProbe::Nul) => ProbeClass::Nul,
+                Some(crate::io::EncodingProbe::Utf8) => ProbeClass::Utf8,
+            };
+        }
+        match crate::io::probe_text_encoding(self.file_path) {
+            Ok(None) => ProbeClass::Clean,
+            Ok(Some(crate::io::EncodingProbe::Nul)) => ProbeClass::Nul,
+            Ok(Some(crate::io::EncodingProbe::Utf8)) => ProbeClass::Utf8,
+            Err(_) => ProbeClass::Io,
+        }
+    }
+
+    fn evaluate(&self) -> Result<FileResult, ScanSourceError> {
+        match self.resolve_stage()? {
+            ResolvedSource::File(file) => Ok(file),
+            ResolvedSource::Open {
+                resolved_fmt,
+                findings,
+            } => self.finish_open(resolved_fmt, findings),
+        }
+    }
+
+    fn resolve_stage(&self) -> Result<ResolvedSource, ScanSourceError> {
+        let resolution = self.resolve()?;
+        let enabled = self.enabled_rules();
+        let Some(resolved_fmt) = resolution.resolved_fmt else {
+            let defects = detection_defects(resolution.findings, enabled);
+            return Ok(ResolvedSource::File(undetected_file(
+                self.display_path,
+                defects,
+                self.skip_undetected,
+            )?));
+        };
+        let fmt_key = profile_key_for_format(&resolved_fmt)?;
+        if adapter_rejected(
+            fmt_key.as_deref(),
+            &resolved_fmt,
+            &self.effective_cfg.allowed_adapters,
+        ) {
+            let finding = scan_finding(
+                SL302,
+                "Format is not permitted by profile",
+                self.display_path,
+                evidence_pairs(&[
+                    ("format", resolved_fmt.as_str()),
+                    ("profile", self.effective_cfg.profile.as_str()),
+                ]),
+            )?;
+            return Ok(ResolvedSource::File(invalid_with(
+                self.display_path,
+                finding,
+            )));
+        }
+        Ok(ResolvedSource::Open {
+            resolved_fmt,
+            findings: resolution.findings,
+        })
+    }
+
+    /// The pin binds `detection_res` and does not read it. It is not stored.
+    fn resolve(&self) -> Result<FormatResolution, ScanSourceError> {
+        let confidence_min = self.effective_cfg.confidence_min;
+        let margin_min = self.effective_cfg.margin_min;
+        if let Some(data) = self.data {
+            resolve_format_bytes(
+                self.format,
+                data,
+                "stdin.jsonl",
+                self.display_path,
+                confidence_min,
+                margin_min,
+            )
+        } else {
+            resolve_format(self.format, self.file_path, confidence_min, margin_min)
+        }
+    }
+
+    fn finish_open(
+        &self,
+        resolved_fmt: String,
+        mut adapter_findings: Vec<Finding>,
+    ) -> Result<FileResult, ScanSourceError> {
+        let limits = reader_limits(self.max_file_bytes)?;
+        let load_source = match self.data {
+            Some(bytes) => LoadSource::Bytes(bytes),
+            None => LoadSource::Path(self.file_path),
+        };
+        let loaded = load_events_for_format(load_source, &resolved_fmt, &limits)?;
+        let LoadedSource {
+            events,
+            findings: loaded_findings,
+            source,
+        } = loaded;
+        if any_too_large(&loaded_findings)? {
+            return Ok(skipped_result(self.display_path, "file-too-large"));
+        }
+        adapter_findings.extend(loaded_findings);
+        if events.is_empty() && self.input_is_empty()? {
+            adapter_findings.push(scan_finding(
+                SL001,
+                "Empty input: file contains no session records",
+                self.display_path,
+                evidence_pairs(&[("detail", "empty-or-whitespace-only input")]),
+            )?);
+        }
+        let enabled = self.enabled_rules();
+        adapter_findings.retain(|finding| rule_enabled(enabled, finding.code()));
+        self.checks(resolved_fmt, adapter_findings, &events, source.as_deref())
+    }
+
+    fn input_is_empty(&self) -> Result<bool, ScanSourceError> {
+        if let Some(data) = self.data {
+            return Ok(bytes_are_whitespace(data));
+        }
+        path_is_whitespace_file(self.file_path)
+    }
+
+    fn enabled_rules(&self) -> &'a [String] {
+        match self.resolved_profile {
+            Some(profile) => profile.enabled_rules.as_slice(),
+            None => self.effective_cfg.enabled_rules.as_slice(),
+        }
+    }
+
+    fn check_profile(&self) -> CheckProfile<'a> {
+        match self.resolved_profile {
+            Some(profile) => CheckProfile::Profile(profile),
+            None => CheckProfile::Name(self.effective_cfg.profile.as_str()),
+        }
+    }
+
+    fn source_path_str(&self) -> String {
+        match self.data {
+            Some(_) => self.display_path.to_owned(),
+            None => self.file_path.display().to_string(),
+        }
+    }
+
+    fn checks(
+        &self,
+        resolved_fmt: String,
+        mut all_findings: Vec<Finding>,
+        events: &[SessionEvent],
+        source: Option<&[(String, DictValue)]>,
+    ) -> Result<FileResult, ScanSourceError> {
+        let context = load_check_context(self.check_profile(), &resolved_fmt, source)?;
+        let check_findings = run_all_checks(
+            events,
+            self.check_profile(),
+            &self.source_path_str(),
+            &context,
+            &resolved_fmt,
+        )?;
+        all_findings.extend(check_findings);
+        if let Some(baseline) = self.baseline {
+            all_findings = filter_findings(all_findings, baseline)?;
+        }
+        let error_count = count_severity(&all_findings, SeverityCount::ErrorOrFatal)?;
+        let warning_count = count_severity(&all_findings, SeverityCount::Warning)?;
+        let verdict = classify_verdict(&all_findings, error_count);
+        let (links, session_id) = links_and_session(source)?;
+        let tip_id = events.last().map(|event| event.id.clone());
+        let mut file = FileResult::new(self.display_path, verdict);
+        file.findings = all_findings;
+        file.error_count = error_count;
+        file.warning_count = warning_count;
+        file.links = links;
+        file.session_id = session_id;
+        file.tip_id = tip_id;
+        file.detected_format = Some(resolved_fmt);
+        Ok(file)
+    }
+}
+
+enum ProbeClass {
+    Clean,
+    Nul,
+    Utf8,
+    Io,
+}
+
+enum ResolvedSource {
+    File(FileResult),
+    Open {
+        resolved_fmt: String,
+        findings: Vec<Finding>,
+    },
+}
+
+enum CheckProfile<'a> {
+    Profile(&'a checks::Profile),
+    Name(&'a str),
+}
+
+enum LoadSource<'a> {
+    Bytes(&'a [u8]),
+    Path(&'a Path),
+}
+
+enum SeverityCount {
+    ErrorOrFatal,
+    Warning,
+}
+
+/// Success value of the format seam. The seam returns before this is built.
+#[allow(dead_code)]
+struct FormatResolution {
+    resolved_fmt: Option<String>,
+    findings: Vec<Finding>,
+}
+
+/// Success value of the loader seam. The seam returns before this is built.
+#[allow(dead_code)]
+struct LoadedSource {
+    events: Vec<SessionEvent>,
+    findings: Vec<Finding>,
+    source: Option<Vec<(String, DictValue)>>,
+}
+
+fn exceeds_limit(size: u64, max_file_bytes: i64) -> bool {
+    match u64::try_from(max_file_bytes) {
+        Ok(limit) => size > limit,
+        Err(_) => true,
+    }
+}
+
+fn skipped_result(display_path: &str, reason: &str) -> FileResult {
+    let mut file = FileResult::new(display_path, Verdict::Skipped);
+    file.skipped_reason = Some(reason.to_owned());
+    file
+}
+
+fn unreadable_with(display_path: &str, finding: Finding) -> FileResult {
+    let mut file = FileResult::new(display_path, Verdict::Unreadable);
+    file.findings = vec![finding];
+    file.error_count = 1;
+    file.warning_count = 0;
+    file
+}
+
+fn invalid_with(display_path: &str, finding: Finding) -> FileResult {
+    let mut file = FileResult::new(display_path, Verdict::Invalid);
+    file.findings = vec![finding];
+    file.error_count = 1;
+    file.warning_count = 0;
+    file
+}
+
+/// Python `try` / `except` around format resolution through the file result.
+///
+/// [`ScanSourceError::Unavailable`], [`ScanSourceError::Finding`],
+/// [`ScanSourceError::Checks`], [`ScanSourceError::CountOverflow`], and
+/// [`ScanSourceError::Link`] propagate. They are not turned into a finding.
+fn finish_try(
+    result: Result<FileResult, ScanSourceError>,
+    display_path: &str,
+) -> Result<FileResult, ScanSourceError> {
+    match result {
+        Ok(file) => Ok(file),
+        Err(ScanSourceError::FileTooLarge) => Ok(skipped_result(display_path, "file-too-large")),
+        Err(ScanSourceError::LimitOrIo { type_name }) => {
+            let finding = scan_finding(
+                SL001,
+                "Unreadable file [detail: LIMIT_OR_IO]",
+                display_path,
+                evidence_pairs(&[("reason", "limit_or_io_error"), ("detail", type_name)]),
+            )?;
+            Ok(unreadable_with(display_path, finding))
+        }
+        Err(ScanSourceError::Unhandled { type_name }) => {
+            let detail = type_name.as_str();
+            let finding = scan_finding(
+                SL001,
+                "Failed to process file [detail: INTERNAL_ERROR]",
+                display_path,
+                evidence_pairs(&[("reason", "unhandled_exception"), ("detail", detail)]),
+            )?;
+            Ok(invalid_with(display_path, finding))
+        }
+        Err(other) => Err(other),
+    }
+}
+
+fn scan_finding(
+    code: &str,
+    message_template: &str,
+    display_path: &str,
+    evidence: PyValue,
+) -> Result<Finding, ScanSourceError> {
+    let source = SourceRef::try_new(display_path, None, None).map_err(ScanSourceError::Finding)?;
+    make_finding(&MakeFindingInput {
+        code: PyValue::string(code),
+        severity: PyValue::severity(Severity::Error),
+        repairability: PyValue::repairability(Repairability::Manual),
+        message_template: PyValue::string(message_template),
+        template_args: PyValue::None,
+        source: PyValue::source(source),
+        related_ids: PyValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: PyValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    })
+    .map_err(ScanSourceError::Finding)
+}
+
+fn evidence_pairs(pairs: &[(&str, &str)]) -> PyValue {
+    PyValue::map(
+        pairs
+            .iter()
+            .map(|(key, value)| (PyValue::string(*key), PyValue::string(*value)))
+            .collect(),
+    )
+}
+
+fn detection_defects(findings: Vec<Finding>, enabled: &[String]) -> Vec<Finding> {
+    findings
+        .into_iter()
+        .filter(|finding| finding.code() != SL302 && rule_enabled(enabled, finding.code()))
+        .collect()
+}
+
+fn undetected_file(
+    display_path: &str,
+    findings: Vec<Finding>,
+    skip_undetected: bool,
+) -> Result<FileResult, ScanSourceError> {
+    if !findings.is_empty() {
+        let error_count = count_severity(&findings, SeverityCount::ErrorOrFatal)?;
+        let warning_count = count_severity(&findings, SeverityCount::Warning)?;
+        let mut file = FileResult::new(display_path, Verdict::Invalid);
+        file.findings = findings;
+        file.error_count = error_count;
+        file.warning_count = warning_count;
+        return Ok(file);
+    }
+    if skip_undetected {
+        return Ok(skipped_result(display_path, "format-undetected"));
+    }
+    let mut file = FileResult::new(display_path, Verdict::Unsupported);
+    file.skipped_reason = Some("format-undetected".to_owned());
+    Ok(file)
+}
+
+fn rule_enabled(rules: &[String], code: &str) -> bool {
+    rules.iter().any(|rule| rule == code)
+}
+
+fn adapter_rejected(fmt_key: Option<&str>, resolved_fmt: &str, allowed: &[String]) -> bool {
+    let key_absent = match fmt_key {
+        Some(key) => !allowed.iter().any(|item| item == key),
+        None => true,
+    };
+    let format_absent = !allowed.iter().any(|item| item == resolved_fmt);
+    key_absent && format_absent
+}
+
+/// A severity match increments an `i64`. The match is not added as a bool.
+fn count_severity(findings: &[Finding], kind: SeverityCount) -> Result<i64, ScanSourceError> {
+    let mut count: i64 = 0;
+    for finding in findings {
+        let matched = match kind {
+            SeverityCount::ErrorOrFatal => {
+                matches!(finding.severity(), Severity::Error | Severity::Fatal)
+            }
+            SeverityCount::Warning => finding.severity() == Severity::Warning,
+        };
+        if matched {
+            count = count.checked_add(1).ok_or(ScanSourceError::CountOverflow)?;
+        }
+    }
+    Ok(count)
+}
+
+fn classify_verdict(findings: &[Finding], error_count: i64) -> Verdict {
+    if findings.iter().any(|finding| finding.code() == SL301) {
+        Verdict::Unsupported
+    } else if error_count > 0 {
+        Verdict::Invalid
+    } else {
+        Verdict::Healthy
+    }
+}
+
+fn reader_limits(max_file_bytes: i64) -> Result<crate::io::ReaderLimits, ScanSourceError> {
+    crate::io::ReaderLimits::try_new(
+        crate::io::DEFAULT_MAX_LINE_BYTES,
+        crate::io::DEFAULT_MAX_DEPTH,
+        max_file_bytes,
+        None,
+    )
+    .map_err(|_| ScanSourceError::Unhandled {
+        type_name: "ValueError".to_owned(),
+    })
+}
+
+/// Python `bytes.strip()` with no argument: ASCII whitespace only.
+fn bytes_are_whitespace(data: &[u8]) -> bool {
+    data.iter()
+        .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+}
+
+fn path_is_whitespace_file(path: &Path) -> Result<bool, ScanSourceError> {
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(err) => {
+            return Err(ScanSourceError::LimitOrIo {
+                type_name: os_error_type_name(&err),
+            });
+        }
+    };
+    if meta.len() == 0 {
+        return Ok(true);
+    }
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(bytes_are_whitespace(&bytes)),
+        Err(err) => Err(ScanSourceError::LimitOrIo {
+            type_name: os_error_type_name(&err),
+        }),
+    }
+}
+
+fn os_error_type_name(err: &std::io::Error) -> &'static str {
+    match err.kind() {
+        std::io::ErrorKind::NotFound => "FileNotFoundError",
+        std::io::ErrorKind::PermissionDenied => "PermissionError",
+        std::io::ErrorKind::AlreadyExists => "FileExistsError",
+        std::io::ErrorKind::IsADirectory => "IsADirectoryError",
+        std::io::ErrorKind::NotADirectory => "NotADirectoryError",
+        std::io::ErrorKind::Interrupted => "InterruptedError",
+        std::io::ErrorKind::TimedOut => "TimeoutError",
+        _ => "OSError",
+    }
+}
+
+fn any_too_large(findings: &[Finding]) -> Result<bool, ScanSourceError> {
+    for finding in findings {
+        if signals_file_too_large(finding)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn signals_file_too_large(finding: &Finding) -> Result<bool, ScanSourceError> {
+    let Some(evidence) = finding.evidence() else {
+        return Ok(false);
+    };
+    Ok(evidence_equals(evidence, "reason", "size_limit_exceeded")?
+        || evidence_equals(evidence, "detail", "FileTooLargeError")?)
+}
+
+/// `map_string` returns an owned [`EvidenceLookup::Present`]. Compare here so
+/// the string is not borrowed from that temporary.
+fn evidence_equals(
+    evidence: &model::finding::Evidence,
+    key: &str,
+    expected: &str,
+) -> Result<bool, ScanSourceError> {
+    match evidence.map_string(key) {
+        EvidenceLookup::Present(value) => Ok(value.as_str() == Some(expected)),
+        EvidenceLookup::Absent | EvidenceLookup::NotAMap => Ok(false),
+        EvidenceLookup::Borrowed => Err(ScanSourceError::Unhandled {
+            type_name: "RuntimeError".to_owned(),
+        }),
+    }
+}
+
+fn links_and_session(
+    source: Option<&[(String, DictValue)]>,
+) -> Result<(Vec<SessionLink>, Option<String>), ScanSourceError> {
+    let Some(entries) = source else {
+        return Ok((Vec::new(), None));
+    };
+    let links = match lookup(entries, "links") {
+        Some(DictValue::List(items)) => links_from_list(items)?,
+        _ => Vec::new(),
+    };
+    let session_id = match lookup(entries, "session_id") {
+        Some(DictValue::Str(text)) => {
+            let stripped = python_space_strip(text);
+            if stripped.is_empty() {
+                None
+            } else {
+                Some(stripped.to_owned())
+            }
+        }
+        _ => None,
+    };
+    Ok((links, session_id))
+}
+
+fn links_from_list(items: &[DictValue]) -> Result<Vec<SessionLink>, ScanSourceError> {
+    let mut links = Vec::new();
+    for item in items {
+        let DictValue::Map(entries) = item else {
+            continue;
+        };
+        let Some(kind_value) = lookup(entries, "kind") else {
+            continue;
+        };
+        let Some(target_value) = lookup(entries, "target") else {
+            continue;
+        };
+        let kind = scalar_text(kind_value)?;
+        let target = scalar_text(target_value)?;
+        let mut link = SessionLink::new(kind, target);
+        link.record_id = optional_link_record(lookup(entries, "record_id"))?;
+        link.line = optional_link_line(lookup(entries, "line"))?;
+        links.push(link);
+    }
+    Ok(links)
+}
+
+fn scalar_text(value: &DictValue) -> Result<String, ScanSourceError> {
+    python_str_scalar(value).ok_or(ScanSourceError::Link(
+        "SessionLink kind and target must be a str, int, bool, or None",
+    ))
+}
+
+fn optional_link_record(value: Option<&DictValue>) -> Result<Option<String>, ScanSourceError> {
+    match value {
+        None | Some(DictValue::None) => Ok(None),
+        Some(DictValue::Str(text)) => Ok(Some(text.clone())),
+        Some(_) => Err(ScanSourceError::Link(
+            "SessionLink.record_id must be a str or None",
+        )),
+    }
+}
+
+fn optional_link_line(value: Option<&DictValue>) -> Result<Option<i64>, ScanSourceError> {
+    match value {
+        None | Some(DictValue::None) => Ok(None),
+        Some(DictValue::Int(number)) => Ok(Some(*number)),
+        Some(DictValue::Bool(_)) => {
+            Err(ScanSourceError::Link("SessionLink.line bool is not an int"))
+        }
+        Some(_) => Err(ScanSourceError::Link(
+            "SessionLink.line must be an int or None",
+        )),
+    }
+}
+
+/// Python `str.strip` / `str.isspace` for a session id.
+fn python_space_strip(text: &str) -> &str {
+    text.trim_matches(python_str_isspace)
+}
+
+fn python_str_isspace(ch: char) -> bool {
+    matches!(ch, '\u{001c}' | '\u{001d}' | '\u{001e}' | '\u{001f}') || ch.is_whitespace()
+}
+
+fn resolve_format(
+    format: Option<&str>,
+    file_path: &Path,
+    confidence_min: f64,
+    margin_min: f64,
+) -> Result<FormatResolution, ScanSourceError> {
+    let _bound = (format, file_path, confidence_min, margin_min);
+    Err(ScanSourceError::Unavailable(
+        "sesslint.adapters.detect.resolve_format",
+    ))
+}
+
+fn resolve_format_bytes(
+    format: Option<&str>,
+    data: &[u8],
+    filename: &str,
+    display_path: &str,
+    confidence_min: f64,
+    margin_min: f64,
+) -> Result<FormatResolution, ScanSourceError> {
+    let _bound = (
+        format,
+        data.len(),
+        filename,
+        display_path,
+        confidence_min,
+        margin_min,
+    );
+    Err(ScanSourceError::Unavailable(
+        "sesslint.adapters.detect.resolve_format_bytes",
+    ))
+}
+
+fn profile_key_for_format(format: &str) -> Result<Option<String>, ScanSourceError> {
+    let _bound = format;
+    Err(ScanSourceError::Unavailable(
+        "sesslint.adapters.load.profile_key_for_format",
+    ))
+}
+
+fn load_events_for_format(
+    source: LoadSource<'_>,
+    format: &str,
+    limits: &crate::io::ReaderLimits,
+) -> Result<LoadedSource, ScanSourceError> {
+    let source_len = match source {
+        LoadSource::Bytes(bytes) => bytes.len(),
+        LoadSource::Path(path) => path.as_os_str().len(),
+    };
+    let _bound = (source_len, format, limits.max_file_bytes());
+    Err(ScanSourceError::Unavailable(
+        "sesslint.adapters.load.load_events_for_format",
+    ))
+}
+
+fn load_check_context(
+    profile: CheckProfile<'_>,
+    adapter: &str,
+    source: Option<&[(String, DictValue)]>,
+) -> Result<checks::CheckContext, ScanSourceError> {
+    let _bound = (
+        profile_label(profile),
+        adapter,
+        source.map(|entries| entries.len()),
+    );
+    checks::CheckContext::from_profile_and_adapter().map_err(ScanSourceError::Checks)
+}
+
+fn profile_label(profile: CheckProfile<'_>) -> &str {
+    match profile {
+        CheckProfile::Profile(profile) => profile.name.as_str(),
+        CheckProfile::Name(name) => name,
+    }
+}
+
+/// The pin retries with `profile=effective_cfg.profile` and `source_path` on
+/// `TypeError`. This seam is not a `TypeError`, so that second call is not made.
+fn run_all_checks(
+    events: &[SessionEvent],
+    profile: CheckProfile<'_>,
+    source_path: &str,
+    context: &checks::CheckContext,
+    adapter: &str,
+) -> Result<Vec<Finding>, ScanSourceError> {
+    let _bound = (
+        events.len(),
+        profile_label(profile),
+        source_path,
+        context.adapter_id(),
+        context.profile_id(),
+        adapter,
+    );
+    Err(ScanSourceError::Unavailable(
+        "sesslint.checks.runner.run_all_checks",
+    ))
+}
+
+fn filter_findings(
+    findings: Vec<Finding>,
+    baseline: &[String],
+) -> Result<Vec<Finding>, ScanSourceError> {
+    let _bound = (findings.len(), baseline.len());
+    Err(ScanSourceError::Unavailable(
+        "sesslint.baseline.filter_findings",
+    ))
 }
 
 fn scan_report_schema_development_path() -> PathBuf {
@@ -1228,18 +2116,20 @@ fn expect_map<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        aggregate_scan, get_scan_schema_path, load_scan_schema, scan_single_file, ByCodeRow,
-        FileResult, MinimizePathUnavailable, ScanDictError, ScanReport, ScanSummary, ScanTotals,
-        SessionLink, TotalOverflow, UnknownVerdict, Verdict, WorstFileRow, DEFAULT_MAX_BYTES,
-        DEFAULT_MAX_FILES, JSON_DUMPS_UNAVAILABLE, JSON_LOADS_UNAVAILABLE,
-        MINIMIZE_PATH_UNAVAILABLE, SCAN_SCHEMA_VERSION,
+        aggregate_scan, get_scan_schema_path, load_scan_schema, scan_single_file,
+        scan_single_source, ByCodeRow, FileResult, MinimizePathUnavailable, ScanDictError,
+        ScanReport, ScanSourceError, ScanSummary, ScanTotals, SessionLink, TotalOverflow,
+        UnknownVerdict, Verdict, WorstFileRow, DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES,
+        JSON_DUMPS_UNAVAILABLE, JSON_LOADS_UNAVAILABLE, MINIMIZE_PATH_UNAVAILABLE,
+        SCAN_SCHEMA_VERSION,
     };
     use model::codes::{Repairability, Severity, SL001, SL006, SL007, SL101, SL203, SL302};
     use model::finding::{
-        DictValue, Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION,
+        DictValue, Finding, FindingInput, PyValue, SourceLine, SourceRef,
+        FINGERPRINT_CODEC_UNAVAILABLE, SCHEMA_VERSION,
     };
     use std::error::Error;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     fn keys(dict: &super::ScanDict) -> Vec<&str> {
         dict.iter().map(|(key, _)| *key).collect()
@@ -2274,5 +3164,388 @@ mod tests {
 
         let err = scan_single_file(path, None, &config, false, None, None, -1).expect_err("still");
         assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+    }
+
+    fn source_config() -> checks::EffectiveConfig {
+        effective_config()
+    }
+
+    fn scan_bytes(data: &[u8], max_file_bytes: i64) -> Result<FileResult, ScanSourceError> {
+        scan_single_source(
+            Path::new("not-opened.jsonl"),
+            "session.jsonl",
+            Some(data),
+            None,
+            &source_config(),
+            false,
+            None,
+            None,
+            max_file_bytes,
+        )
+    }
+
+    fn assert_skipped(file: &FileResult, reason: &str) {
+        assert_eq!(file.path, "session.jsonl");
+        assert_eq!(file.verdict, Verdict::Skipped);
+        assert_eq!(file.skipped_reason.as_deref(), Some(reason));
+        assert!(file.findings.is_empty());
+        assert_eq!(file.error_count, 0);
+        assert_eq!(file.warning_count, 0);
+        assert!(!file.cache_hit);
+        assert!(file.links.is_empty());
+        assert_eq!(file.detected_format, None);
+    }
+
+    #[test]
+    fn oversize_bytes_return_a_skipped_file_result_without_a_finding() {
+        let file = scan_bytes(b"abcd", 3).expect("skipped");
+        assert_skipped(&file, "file-too-large");
+        let file = scan_bytes(b"", -1).expect("negative max");
+        assert_skipped(&file, "file-too-large");
+        let file = scan_bytes(b" ", 0).expect("zero max");
+        assert_skipped(&file, "file-too-large");
+    }
+
+    #[test]
+    fn equal_size_and_empty_at_zero_stop_at_resolve_format_bytes() {
+        let err = scan_bytes(b"abc", 3).expect_err("equal");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.detect.resolve_format_bytes is not available"
+        );
+        let err = scan_bytes(b"", 0).expect_err("empty at zero");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.detect.resolve_format_bytes is not available"
+        );
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn byte_mode_does_not_open_the_path() {
+        let missing = Path::new("C:/no/such/sesslint-scan-03-byte-mode.jsonl");
+        assert!(!missing.exists());
+        let baseline = [String::from("SL001")];
+        let err = scan_single_source(
+            missing,
+            "session.jsonl",
+            Some(b"{}\n"),
+            Some("not-a-format"),
+            &source_config(),
+            true,
+            None,
+            Some(&baseline),
+            crate::io::DEFAULT_MAX_FILE_BYTES,
+        )
+        .expect_err("bytes");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.detect.resolve_format_bytes is not available"
+        );
+        assert!(!err.to_string().contains("canonical_json"));
+        assert!(!err.to_string().contains("SL001"));
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn whitespace_bytes_stop_before_an_empty_input_finding() {
+        let err = scan_bytes(b" \n\t", 100).expect_err("whitespace");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.detect.resolve_format_bytes is not available"
+        );
+        assert!(!err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn nul_and_non_utf8_propagate_the_omitted_fingerprint_error() {
+        for data in [b"\0".as_slice(), b"ab\0c".as_slice(), b"\xff".as_slice()] {
+            let err = scan_bytes(data, 100).expect_err("probe");
+            assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+            assert_eq!(
+                err.to_string(),
+                "sesslint.determinism.canonical_json_bytes is not available"
+            );
+            assert!(err.source().is_some());
+            assert!(!err.to_string().contains("SL001"));
+        }
+    }
+
+    #[test]
+    fn a_missing_file_swallows_stat_then_stops_at_make_finding() {
+        let missing =
+            std::env::temp_dir().join(format!("sesslint-scan-03-missing-{}", std::process::id()));
+        assert!(!missing.exists());
+        let err = scan_single_source(
+            &missing,
+            "session.jsonl",
+            None,
+            None,
+            &source_config(),
+            false,
+            None,
+            None,
+            crate::io::DEFAULT_MAX_FILE_BYTES,
+        )
+        .expect_err("missing");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("resolve_format"));
+    }
+
+    #[test]
+    fn a_clean_file_stops_at_resolve_format_and_a_nul_file_does_not() {
+        let scratch = Scratch::new("file");
+        let clean = scratch.path().join("clean.jsonl");
+        std::fs::write(&clean, b"{}\n").expect("write");
+        let err = scan_single_source(
+            &clean,
+            "shown.jsonl",
+            None,
+            Some("canonical"),
+            &source_config(),
+            false,
+            None,
+            None,
+            4,
+        )
+        .expect_err("clean");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.detect.resolve_format is not available"
+        );
+        assert!(!err.to_string().contains("shown"));
+
+        let nul = scratch.path().join("nul.jsonl");
+        std::fs::write(&nul, b"a\0b").expect("write");
+        let err = scan_single_source(
+            &nul,
+            "shown.jsonl",
+            None,
+            None,
+            &source_config(),
+            false,
+            None,
+            None,
+            100,
+        )
+        .expect_err("nul");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+
+        let over = scratch.path().join("over.jsonl");
+        std::fs::write(&over, b"abcd").expect("write");
+        let file = scan_single_source(
+            &over,
+            "shown.jsonl",
+            None,
+            None,
+            &source_config(),
+            false,
+            None,
+            None,
+            3,
+        )
+        .expect("oversize");
+        assert_eq!(file.path, "shown.jsonl");
+        assert_eq!(file.verdict, Verdict::Skipped);
+        assert_eq!(file.skipped_reason.as_deref(), Some("file-too-large"));
+        assert!(file.findings.is_empty());
+    }
+
+    #[test]
+    fn a_directory_is_not_listed() {
+        let scratch = Scratch::new("dir");
+        std::fs::write(scratch.path().join("child.jsonl"), b"child-marker").expect("child");
+        let skipped = scan_single_source(
+            scratch.path(),
+            "shown",
+            None,
+            None,
+            &source_config(),
+            false,
+            None,
+            None,
+            -1,
+        )
+        .expect("cap");
+        assert_eq!(skipped.verdict, Verdict::Skipped);
+        assert_eq!(skipped.skipped_reason.as_deref(), Some("file-too-large"));
+        assert!(skipped.findings.is_empty());
+        assert!(!skipped.path.contains("child"));
+
+        let err = scan_single_source(
+            scratch.path(),
+            "shown",
+            None,
+            None,
+            &source_config(),
+            false,
+            None,
+            None,
+            10_000_000,
+        )
+        .expect_err("open dir");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("child-marker"));
+        assert!(!err.to_string().contains("child.jsonl"));
+    }
+
+    #[test]
+    fn scan_single_file_does_not_call_scan_single_source() {
+        let path = Path::new("C:/synthetic/not-opened.jsonl");
+        let err = scan_single_file(path, None, &source_config(), false, None, None, -1)
+            .expect_err("minimize");
+        assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        let source_err = scan_bytes(b"", -1).expect("source skipped");
+        assert_eq!(source_err.verdict, Verdict::Skipped);
+    }
+
+    #[test]
+    fn file_too_large_exception_returns_a_file_result_without_make_finding() {
+        let file = super::finish_try(Err(ScanSourceError::FileTooLarge), "session.jsonl")
+            .expect("skipped");
+        assert_skipped(&file, "file-too-large");
+    }
+
+    #[test]
+    fn limit_or_io_and_unhandled_propagate_the_fingerprint_error() {
+        let err = super::finish_try(
+            Err(ScanSourceError::LimitOrIo {
+                type_name: "OSError",
+            }),
+            "session.jsonl",
+        )
+        .expect_err("limit");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let err = super::finish_try(
+            Err(ScanSourceError::Unhandled {
+                type_name: "ValueError".to_owned(),
+            }),
+            "session.jsonl",
+        )
+        .expect_err("unhandled");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("ValueError"));
+    }
+
+    #[test]
+    fn an_unavailable_call_is_not_rewritten_as_a_file_result() {
+        let err = super::finish_try(
+            Err(ScanSourceError::Unavailable(
+                "sesslint.adapters.detect.resolve_format",
+            )),
+            "session.jsonl",
+        )
+        .expect_err("seam");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.adapters.detect.resolve_format is not available"
+        );
+    }
+
+    #[test]
+    fn run_all_checks_stop_does_not_invent_findings() {
+        let context = checks::CheckContext::default();
+        let err = super::run_all_checks(
+            &[],
+            super::CheckProfile::Name("neutral"),
+            "session.jsonl",
+            &context,
+            "canonical",
+        )
+        .expect_err("checks");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.checks.runner.run_all_checks is not available"
+        );
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn filter_findings_stop_does_not_return_an_empty_list() {
+        let err =
+            super::filter_findings(vec![synthetic_finding()], &["0123456789abcdef".to_owned()])
+                .expect_err("baseline");
+        assert_eq!(
+            err.to_string(),
+            "sesslint.baseline.filter_findings is not available"
+        );
+    }
+
+    #[test]
+    fn check_context_calls_the_ported_constructor() {
+        let err =
+            super::load_check_context(super::CheckProfile::Name("neutral"), "canonical", None)
+                .expect_err("context");
+        assert_eq!(err.to_string(), "checks error");
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn source_link_line_bool_is_not_an_int() {
+        let err = super::optional_link_line(Some(&DictValue::Bool(true))).expect_err("true");
+        assert_eq!(err.to_string(), "SessionLink.line bool is not an int");
+        let err = super::optional_link_line(Some(&DictValue::Bool(false))).expect_err("false");
+        assert_eq!(err.to_string(), "SessionLink.line bool is not an int");
+        assert_eq!(
+            super::optional_link_line(Some(&DictValue::Int(0))).expect("zero"),
+            Some(0)
+        );
+        assert_eq!(
+            super::optional_link_line(Some(&DictValue::Int(1))).expect("one"),
+            Some(1)
+        );
+        assert_eq!(super::optional_link_line(None).expect("missing"), None);
+        assert_eq!(
+            super::optional_link_line(Some(&DictValue::None)).expect("none"),
+            None
+        );
+        let err = super::optional_link_record(Some(&DictValue::Bool(true))).expect_err("record");
+        assert_eq!(
+            err.to_string(),
+            "SessionLink.record_id must be a str or None"
+        );
+        let err = super::optional_link_record(Some(&DictValue::Int(1))).expect_err("int record");
+        assert_eq!(
+            err.to_string(),
+            "SessionLink.record_id must be a str or None"
+        );
+        assert_eq!(
+            super::scalar_text(&DictValue::Bool(true)).expect("true text"),
+            "True"
+        );
+        assert_eq!(
+            super::scalar_text(&DictValue::Bool(false)).expect("false text"),
+            "False"
+        );
+        assert_eq!(
+            super::scalar_text(&DictValue::Int(3)).expect("int text"),
+            "3"
+        );
+        assert_eq!(
+            super::scalar_text(&DictValue::None).expect("none text"),
+            "None"
+        );
+    }
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("sesslint-scan-03-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("scratch");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 }
