@@ -2360,3 +2360,2662 @@ mod rollout_record_tests {
         assert_eq!(_version_field_name(&empty_map, &payload), "payload.rollout_version");
     }
 }
+
+// Port of `src/sesslint/adapters/codex_rollout.py`
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 545–1126.
+// `_process_rollout_record` only. `_process_jsonl_line` starts at line 1129.
+//
+// Gaps vs Python (recorded, not papered over):
+// - The first `canonical_bytes(envelope)` failure sets the synthetic payload
+//   length to 0 and continues. A successful encoding whose length does not
+//   fit in `i64` is [`ProcessRolloutRecordError::CanonicalLen`].
+// - [`compute_content_hash`] is called before [`SessionEvent`] is built. Its
+//   Display is `sesslint._canonical_codec.payload_content_hash is not available`.
+//   No digest is invented.
+// - The later `canonical_bytes` that would build `source_record_hash` is not
+//   caught. Its Display is
+//   `sesslint._canonical_codec.canonical_json_bytes is not available`.
+//   No sha256 is invented. The event is not appended. `check_event` is not
+//   called on that arm.
+// - [`_check_version`], [`_emit_sl302`], and
+//   [`UnknownMetadataTracker::findings`] stop at the omitted fingerprint.
+//   That error is propagated. A finding is not appended, and an event is not
+//   appended after it. This file does not hash a fingerprint.
+// - A string tool input stays at
+//   `sesslint.io._STRICT_JSON_DECODER.decode is not available`.
+// - `bool` is not an `int`. Ordinal continuity, the returned envelope
+//   ordinal, usage counters, context pressure, and
+//   `subagent_history_start_ordinal` exclude `bool`.
+// - `str()` of a list, tuple, dict, bytes, set, or other object is
+//   [`ProcessRolloutRecordError::Unrendered`].
+// - `byte_end - byte_offset` is stored only when the difference fits in
+//   `i64`. `len(guardian_history)` that does not fit is
+//   [`ProcessRolloutRecordError::Count`].
+// - A non-`str` mapping key stops with
+//   [`ProcessRolloutRecordError::KeyOrder`] before a finding is emitted.
+
+use std::collections::BTreeMap;
+
+use model::canonical::{
+    canonical_bytes, compute_content_hash, CanonicalUnavailable, Payload, SessionEvent,
+    MUTATING_TOOL_NAMES, READ_ONLY_TOOL_NAMES,
+};
+
+use crate::drift::DriftTracker;
+use crate::links::{extract_links, Link, ObjectValue};
+use crate::metadata::{has_semantic_fields, MetadataKey, MetadataValue, UnknownMetadataTracker};
+use crate::openai_agents::STR_UNRENDERED;
+use crate::synthetic::CheckEventError;
+
+const EVENTS_LEN_OUTSIDE_I64: &str = "len(events) does not fit in i64";
+
+const CANONICAL_LEN_OUTSIDE_I64: &str = "canonical byte length does not fit in i64";
+
+const KEY_ORDER_UNSUPPORTED: &str = "sorted() cannot order these key types";
+
+const GUARDIAN_LEN_OUTSIDE_I64: &str = "len(guardian_history) does not fit in i64";
+
+const LINK_SHAPE: &str = "links entry is missing kind or target";
+
+/// Failure from [`_process_rollout_record`].
+///
+/// [`Display`] is the inner message. [`Self::ContentHash`] is
+/// [`compute_content_hash`]. [`Self::RecordHash`] is the uncaught
+/// `canonical_bytes` call that would have built `source_record_hash`.
+/// Neither arm appends a finding or an event. [`Self::RecordHash`] does not
+/// call `check_event`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessRolloutRecordError {
+    /// `len(events)` does not fit in `i64`.
+    SeqIndex,
+    /// A successful canonical encoding whose length does not fit in `i64`.
+    CanonicalLen,
+    /// `str()` is not available for this value.
+    Unrendered,
+    /// `register_real` or `register_synthetic`.
+    Collision(AdapterError),
+    /// [`_check_version`] failed.
+    Version(CheckVersionError),
+    /// [`_emit_sl302`] or [`UnknownMetadataTracker::findings`] failed.
+    Finding(FindingError),
+    /// [`_tool_input_payload`] failed, or `items()` raised.
+    ToolInput(ToolInputError),
+    /// `sorted()` cannot order these keys. `bool` is not an `int`.
+    KeyOrder,
+    /// `len(guardian_history)` does not fit in `i64`.
+    Count,
+    /// An existing `links` entry is not a `{kind, target}` dict.
+    LinkShape,
+    /// [`compute_content_hash`] failed. [`SessionEvent`] was not built.
+    ContentHash(CanonicalUnavailable),
+    /// `canonical_bytes` for `source_record_hash` failed.
+    RecordHash(CanonicalUnavailable),
+    /// `check_event` failed after a record hash was actually produced.
+    CheckEvent(CheckEventError),
+}
+
+impl ProcessRolloutRecordError {
+    /// The Python exception text, or the missing-codec seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::SeqIndex => EVENTS_LEN_OUTSIDE_I64,
+            Self::CanonicalLen => CANONICAL_LEN_OUTSIDE_I64,
+            Self::Unrendered => STR_UNRENDERED,
+            Self::Collision(error) => error.message(),
+            Self::Version(error) => error.message(),
+            Self::Finding(error) => error.message(),
+            Self::ToolInput(error) => error.message(),
+            Self::KeyOrder => KEY_ORDER_UNSUPPORTED,
+            Self::Count => GUARDIAN_LEN_OUTSIDE_I64,
+            Self::LinkShape => LINK_SHAPE,
+            Self::ContentHash(error) | Self::RecordHash(error) => error.message(),
+            Self::CheckEvent(error) => error.message(),
+        }
+    }
+}
+
+impl fmt::Display for ProcessRolloutRecordError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for ProcessRolloutRecordError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Collision(error) => Some(error),
+            Self::Version(error) => Some(error),
+            Self::Finding(error) => Some(error),
+            Self::ToolInput(error) => Some(error),
+            Self::ContentHash(error) | Self::RecordHash(error) => Some(error),
+            Self::CheckEvent(error) => Some(error),
+            Self::SeqIndex
+            | Self::CanonicalLen
+            | Self::Unrendered
+            | Self::KeyOrder
+            | Self::Count
+            | Self::LinkShape => None,
+        }
+    }
+}
+
+struct RecordLoc<'a> {
+    path_str: &'a str,
+    line_number: i64,
+    rec_id: &'a str,
+    coord: &'a [(&'static str, FindingValue)],
+}
+
+struct ProjectCtx<'a> {
+    loc: &'a RecordLoc<'a>,
+    findings: &'a mut Vec<Finding>,
+    source_metadata: &'a mut SourceMetadata,
+    unknown_metadata: Option<&'a mut UnknownMetadataTracker>,
+}
+
+struct Projection {
+    actor: String,
+    kind: String,
+    correlation_id: Option<String>,
+    execution_state: Option<String>,
+    side_effects: Option<String>,
+    payload: MapValue,
+    codex: MapValue,
+    extra: MapValue,
+}
+
+impl Projection {
+    fn new(codex: MapValue) -> Self {
+        Self {
+            actor: "system".to_owned(),
+            kind: "unknown".to_owned(),
+            correlation_id: None,
+            execution_state: None,
+            side_effects: None,
+            payload: MapValue::new(Vec::new()),
+            codex,
+            extra: MapValue::new(Vec::new()),
+        }
+    }
+}
+
+struct FinishInput {
+    seq_index: i64,
+    line_number: i64,
+    seen: bool,
+    ordinal_out: Option<i64>,
+    ts: String,
+    parent_id: Option<String>,
+    original_id: Option<String>,
+    rec_id: String,
+    projected: Projection,
+}
+
+struct GuardianMark {
+    items: MetaValue,
+    total: i64,
+    truncated: bool,
+}
+
+/// Canonicalize one rollout envelope and stop at the content-hash seam.
+///
+/// Python: `_process_rollout_record`. The first [`canonical_bytes`] call is
+/// caught: a failure uses payload length 0 and the function continues. A
+/// real id is `payload.id` after `str` and `str.strip` when that text is
+/// non-empty. Otherwise [`synthetic_event_id`] uses adapter `codex_rollout`,
+/// `record_ordinal` or `len(events)`, and that length.
+///
+/// [`_check_version`], [`_emit_sl302`], [`_tool_input_payload`],
+/// [`_normalize_timestamp`], and [`_version_field_name`] are the existing
+/// helpers. Their errors are returned. A finding is not appended, and an
+/// event is not appended after those errors. No fingerprint is hashed here.
+///
+/// `bool` is not an `int`. A boolean envelope ordinal does not have to equal
+/// the previous ordinal plus one, and it is not returned as the envelope
+/// ordinal. The same exclusion applies to usage counters, context pressure,
+/// and `subagent_history_start_ordinal`.
+///
+/// [`compute_content_hash`] runs before [`SessionEvent`] is built. Its
+/// Display is `sesslint._canonical_codec.payload_content_hash is not available`.
+/// The later [`canonical_bytes`] call that builds `source_record_hash` is not
+/// caught. Its Display is
+/// `sesslint._canonical_codec.canonical_json_bytes is not available`. That arm
+/// does not invent a sha256, does not append the event, and does not call
+/// `check_event`.
+///
+/// # Errors
+///
+/// A sequence length or canonical length outside `i64`, an unrenderable
+/// `str()`, a guard collision, [`_check_version`], [`_emit_sl302`],
+/// [`_tool_input_payload`], unordered keys, a guardian length outside `i64`,
+/// a malformed links entry, the content-hash seam, or the record-hash seam.
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+#[must_use = "the codec seam or the seen flag is the result"]
+pub fn _process_rollout_record(
+    envelope: &MapValue,
+    line_number: i64,
+    path_str: &str,
+    events: &mut Vec<SessionEvent>,
+    findings: &mut Vec<Finding>,
+    source_metadata: &mut SourceMetadata,
+    seen_version_sl301: bool,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+    mut guard: Option<&mut SyntheticIdCollisionGuard>,
+    last_event_id: Option<&str>,
+    last_envelope_ordinal: Option<i64>,
+    gap_after_drop: bool,
+    mut drift: Option<&mut DriftTracker>,
+    unknown_metadata: Option<&mut UnknownMetadataTracker>,
+) -> Result<(bool, Option<i64>), ProcessRolloutRecordError> {
+    let seq_index = i64::try_from(events.len()).map_err(|_| ProcessRolloutRecordError::SeqIndex)?;
+    let payload_len = canonical_payload_len(envelope)?;
+    let env_type = owned_present(envelope, "type");
+    let payload = owned_present(envelope, "payload");
+    let (rec_id, original_id) = record_identity(
+        &payload,
+        seq_index,
+        record_ordinal,
+        path_str,
+        payload_len,
+        guard.as_deref_mut(),
+    )?;
+    if let Some(tracker) = drift.as_deref_mut() {
+        observe_envelope(
+            tracker,
+            &env_type,
+            line_number,
+            &rec_id,
+            record_ordinal,
+            byte_offset,
+            byte_end,
+        );
+    }
+    let candidate = version_candidate(envelope, &payload);
+    let seen = _check_version(
+        &candidate,
+        path_str,
+        line_number,
+        Some(&rec_id),
+        findings,
+        source_metadata,
+        seen_version_sl301,
+        byte_offset,
+        byte_end,
+        record_ordinal,
+        guard.as_deref_mut(),
+    )
+    .map_err(ProcessRolloutRecordError::Version)?;
+    note_drift_version(
+        drift,
+        seen,
+        &candidate,
+        envelope,
+        &payload,
+        line_number,
+        &rec_id,
+        record_ordinal,
+        byte_offset,
+        byte_end,
+    );
+    if let MetaValue::Map(map) = &payload {
+        append_links(source_metadata, map, &rec_id, line_number)?;
+    }
+    append_record_size(source_metadata, byte_offset, byte_end);
+    let coord = coordinate_pairs(byte_offset, byte_end, record_ordinal);
+    let loc = RecordLoc {
+        path_str,
+        line_number,
+        rec_id: &rec_id,
+        coord: &coord,
+    };
+    let ordinal_value = owned_present(envelope, "ordinal");
+    let mut projected = Projection::new(initial_codex(&env_type, &ordinal_value));
+    {
+        let mut ctx = ProjectCtx {
+            loc: &loc,
+            findings,
+            source_metadata,
+            unknown_metadata,
+        };
+        dispatch_envelope(&mut ctx, &mut projected, envelope, &env_type, &payload)?;
+    }
+    reject_unknown_critical(envelope, KNOWN_ENVELOPE_KEYS.as_slice(), &loc, findings)?;
+    reject_payload_critical(&payload, &loc, findings)?;
+    finish_record(
+        events,
+        guard,
+        envelope,
+        FinishInput {
+            seq_index,
+            line_number,
+            seen,
+            ordinal_out: envelope_ordinal(&ordinal_value),
+            ts: record_timestamp(envelope),
+            parent_id: contiguous_parent(
+                last_event_id,
+                gap_after_drop,
+                last_envelope_ordinal,
+                &ordinal_value,
+            ),
+            original_id,
+            rec_id,
+            projected,
+        },
+    )
+}
+
+fn canonical_payload_len(envelope: &MapValue) -> Result<i64, ProcessRolloutRecordError> {
+    match canonical_bytes(envelope) {
+        Err(_unavailable) => Ok(0),
+        Ok(bytes) => i64::try_from(bytes.len()).map_err(|_| ProcessRolloutRecordError::CanonicalLen),
+    }
+}
+
+/// `source_record_hash` from the uncaught [`canonical_bytes`] call.
+///
+/// Both arms return [`ProcessRolloutRecordError::RecordHash`]. The Display is
+/// `sesslint._canonical_codec.canonical_json_bytes is not available`. The
+/// bytes are not passed to sha256.
+fn source_record_hash(envelope: &MapValue) -> Result<String, ProcessRolloutRecordError> {
+    match canonical_bytes(envelope) {
+        Err(error) => Err(ProcessRolloutRecordError::RecordHash(error)),
+        Ok(_bytes) => Err(ProcessRolloutRecordError::RecordHash(
+            CanonicalUnavailable::canonical_json_bytes(),
+        )),
+    }
+}
+
+fn finish_record(
+    events: &mut Vec<SessionEvent>,
+    guard: Option<&mut SyntheticIdCollisionGuard>,
+    envelope: &MapValue,
+    input: FinishInput,
+) -> Result<(bool, Option<i64>), ProcessRolloutRecordError> {
+    let FinishInput {
+        seq_index,
+        line_number,
+        seen,
+        ordinal_out,
+        ts,
+        parent_id,
+        original_id,
+        rec_id,
+        projected,
+    } = input;
+    let Projection {
+        actor,
+        kind,
+        correlation_id,
+        execution_state,
+        side_effects,
+        payload,
+        codex,
+        mut extra,
+    } = projected;
+    push_entry(&mut extra, "codex", MetaValue::Map(codex));
+    let payload_node = meta_to_payload(&MetaValue::Map(payload))?;
+    let content_hash = match compute_content_hash(&payload_node) {
+        Err(error) => return Err(ProcessRolloutRecordError::ContentHash(error)),
+        Ok(digest) => digest,
+    };
+    let record_hash = source_record_hash(envelope)?;
+    let extra_node = meta_to_payload(&MetaValue::Map(extra))?;
+    let mut event = SessionEvent::new(rec_id, parent_id, seq_index, ts, actor, kind);
+    event.payload = payload_node;
+    event.content_hash = Some(content_hash);
+    event.correlation_id = correlation_id;
+    event.execution_state = execution_state;
+    event.source_line = Some(line_number);
+    event.source_record_hash = Some(record_hash);
+    event.original_id = original_id;
+    event.source_adapter = Some("codex-rollout".to_owned());
+    event.side_effects = side_effects;
+    event.extra_fields = extra_node;
+    events.push(event);
+    if let Some(guard) = guard {
+        guard
+            .check_event()
+            .map_err(ProcessRolloutRecordError::CheckEvent)?;
+    }
+    Ok((seen, ordinal_out))
+}
+
+fn record_identity(
+    payload: &MetaValue,
+    seq_index: i64,
+    record_ordinal: Option<i64>,
+    path_str: &str,
+    payload_len: i64,
+    guard: Option<&mut SyntheticIdCollisionGuard>,
+) -> Result<(String, Option<String>), ProcessRolloutRecordError> {
+    if let Some(real_id) = real_payload_id(payload)? {
+        if let Some(guard) = guard {
+            guard
+                .register_real(&real_id)
+                .map_err(ProcessRolloutRecordError::Collision)?;
+        }
+        return Ok((real_id.clone(), Some(real_id)));
+    }
+    let ordinal = record_ordinal.unwrap_or(seq_index);
+    let minted = synthetic_event_id("codex_rollout", ordinal, path_str, payload_len);
+    if let Some(guard) = guard {
+        guard
+            .register_synthetic(&minted)
+            .map_err(ProcessRolloutRecordError::Collision)?;
+    }
+    Ok((minted, None))
+}
+
+fn real_payload_id(payload: &MetaValue) -> Result<Option<String>, ProcessRolloutRecordError> {
+    let MetaValue::Map(map) = payload else {
+        return Ok(None);
+    };
+    let Some(raw) = present(map, "id") else {
+        return Ok(None);
+    };
+    let rendered = meta_str(raw)?;
+    let stripped = python_strip(&rendered);
+    if stripped.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(stripped.to_owned()))
+    }
+}
+
+fn observe_envelope(
+    drift: &mut DriftTracker,
+    env_type: &MetaValue,
+    line: i64,
+    record_id: &str,
+    record_ordinal: Option<i64>,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+) {
+    let raw = match env_type {
+        MetaValue::Str(text) => PyValue::Str(text),
+        _ => PyValue::None,
+    };
+    drift.observe_signature(
+        raw,
+        Some(line),
+        Some(record_id),
+        record_ordinal,
+        byte_offset,
+        byte_end,
+    );
+}
+
+fn version_candidate(envelope: &MapValue, payload: &MetaValue) -> MetaValue {
+    if let Some(value) = or_chain(envelope, ENVELOPE_VERSION_KEYS.as_slice()) {
+        return value.clone();
+    }
+    if let MetaValue::Map(map) = payload {
+        if let Some(value) = or_chain(map, PAYLOAD_VERSION_KEYS.as_slice()) {
+            return value.clone();
+        }
+    }
+    MetaValue::Null
+}
+
+/// Python `or` across `dict.get`. A missing key is `None` and replaces a
+/// previous falsy operand. `None` is not a stored falsy value.
+fn or_chain<'a>(map: &'a MapValue, keys: &[&str]) -> Option<&'a MetaValue> {
+    let mut current: Option<&'a MetaValue> = None;
+    for key in keys {
+        if current.is_some_and(is_truthy) {
+            break;
+        }
+        current = last_string_value(map, key);
+    }
+    match current {
+        Some(MetaValue::Null) | None => None,
+        Some(value) => Some(value),
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // same coordinate list as observe_version
+fn note_drift_version(
+    drift: Option<&mut DriftTracker>,
+    seen: bool,
+    candidate: &MetaValue,
+    envelope: &MapValue,
+    payload: &MetaValue,
+    line: i64,
+    record_id: &str,
+    record_ordinal: Option<i64>,
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+) {
+    let Some(drift) = drift else {
+        return;
+    };
+    if seen {
+        drift.note_unsupported_version();
+        return;
+    }
+    let Some(rendered) = version_scalar_text(candidate) else {
+        return;
+    };
+    let normalized = normalize_version(python_strip(&rendered));
+    let field = _version_field_name(envelope, payload);
+    drift.observe_version(
+        &normalized,
+        supported_version(&normalized),
+        &field,
+        Some(line),
+        Some(record_id),
+        record_ordinal,
+        byte_offset,
+        byte_end,
+    );
+}
+
+fn append_links(
+    source_metadata: &mut SourceMetadata,
+    payload: &MapValue,
+    record_id: &str,
+    line: i64,
+) -> Result<(), ProcessRolloutRecordError> {
+    let existing = match source_metadata.get("links") {
+        Some(MetaValue::List(items)) => items.clone(),
+        _ => return Ok(()),
+    };
+    let mut links = Vec::with_capacity(existing.len());
+    for item in &existing {
+        links.push(link_from_meta(item)?);
+    }
+    extract_links(
+        &payload_objects(payload),
+        &mut links,
+        Some(record_id),
+        Some(line),
+    );
+    let stored = links.into_iter().map(link_to_meta).collect();
+    source_metadata.insert("links", MetaValue::List(stored));
+    Ok(())
+}
+
+fn link_from_meta(value: &MetaValue) -> Result<Link, ProcessRolloutRecordError> {
+    let MetaValue::Map(map) = value else {
+        return Err(ProcessRolloutRecordError::LinkShape);
+    };
+    let Some(kind) = cloned_str(present(map, "kind")) else {
+        return Err(ProcessRolloutRecordError::LinkShape);
+    };
+    let Some(target) = cloned_str(present(map, "target")) else {
+        return Err(ProcessRolloutRecordError::LinkShape);
+    };
+    let record_id = match present(map, "record_id") {
+        Some(MetaValue::Str(text)) => Some(text.clone()),
+        None => None,
+        Some(_) => return Err(ProcessRolloutRecordError::LinkShape),
+    };
+    let line = match present(map, "line") {
+        Some(MetaValue::Int(number)) => Some(*number),
+        None => None,
+        Some(_) => return Err(ProcessRolloutRecordError::LinkShape),
+    };
+    Ok(Link {
+        kind,
+        target,
+        record_id,
+        line,
+    })
+}
+
+fn link_to_meta(link: Link) -> MetaValue {
+    MetaValue::Map(map_value([
+        ("kind", MetaValue::Str(link.kind)),
+        ("target", MetaValue::Str(link.target)),
+        (
+            "record_id",
+            match link.record_id {
+                Some(text) => MetaValue::Str(text),
+                None => MetaValue::Null,
+            },
+        ),
+        (
+            "line",
+            match link.line {
+                Some(number) => MetaValue::Int(number),
+                None => MetaValue::Null,
+            },
+        ),
+    ]))
+}
+
+fn payload_objects(map: &MapValue) -> BTreeMap<String, ObjectValue> {
+    let mut objects = BTreeMap::new();
+    for (key, value) in &map.entries {
+        let MapKey::Str(text) = key else {
+            continue;
+        };
+        objects.insert(text.clone(), object_value(value));
+    }
+    objects
+}
+
+fn object_value(value: &MetaValue) -> ObjectValue {
+    match value {
+        MetaValue::Str(text) => ObjectValue::Str(text.clone()),
+        MetaValue::Int(number) => ObjectValue::Int(*number),
+        MetaValue::Bool(flag) => ObjectValue::Bool(*flag),
+        _ => ObjectValue::Other,
+    }
+}
+
+fn append_record_size(source_metadata: &mut SourceMetadata, start: Option<i64>, end: Option<i64>) {
+    let (Some(start), Some(end)) = (start, end) else {
+        return;
+    };
+    if end < start {
+        return;
+    }
+    let Some(size) = end.checked_sub(start) else {
+        return;
+    };
+    let Some(MetaValue::List(items)) = source_metadata.get_mut("record_sizes") else {
+        return;
+    };
+    items.push(MetaValue::Int(size));
+}
+
+fn dispatch_envelope(
+    ctx: &mut ProjectCtx<'_>,
+    projected: &mut Projection,
+    envelope: &MapValue,
+    env_type: &MetaValue,
+    payload: &MetaValue,
+) -> Result<(), ProcessRolloutRecordError> {
+    match env_type {
+        MetaValue::Str(text) if text == "response_item" => {
+            project_response_item(ctx, projected, payload)
+        }
+        MetaValue::Str(text) if text == "compacted" => project_compacted(projected, payload),
+        MetaValue::Str(text) if ENVELOPE_OPAQUE_TYPES.contains(&text.as_str()) => {
+            project_opaque(ctx, projected, text, payload)
+        }
+        MetaValue::Str(text) if !text.is_empty() && !envelope_is_semantic(envelope) => {
+            note_unknown(ctx, text)?;
+            projected.actor = "system".to_owned();
+            projected.kind = "opaque".to_owned();
+            projected.payload = map_value([("type", MetaValue::Str(text.clone()))]);
+            Ok(())
+        }
+        other => {
+            emit_at(ctx.loc, "type", other, ctx.findings)?;
+            projected.actor = "system".to_owned();
+            projected.kind = "unknown".to_owned();
+            projected.payload = map_value([("type", MetaValue::Str(type_label(other)?))]);
+            Ok(())
+        }
+    }
+}
+
+fn project_response_item(
+    ctx: &mut ProjectCtx<'_>,
+    projected: &mut Projection,
+    payload: &MetaValue,
+) -> Result<(), ProcessRolloutRecordError> {
+    let MetaValue::Map(payload_map) = payload else {
+        emit_at(ctx.loc, "payload", payload, ctx.findings)?;
+        projected.payload = map_value([("type", MetaValue::Str("<invalid>".to_owned()))]);
+        return Ok(());
+    };
+    let item_type = owned_present(payload_map, "type");
+    if let MetaValue::Str(text) = &item_type {
+        push_entry(
+            &mut projected.codex,
+            "item_type",
+            MetaValue::Str(text.clone()),
+        );
+        if text == "reasoning" {
+            mark_reasoning(&mut projected.codex, payload_map);
+        }
+    }
+    classify_item(ctx, projected, payload_map, &item_type)?;
+    match projected.kind.as_str() {
+        "message" => project_message(payload_map, &item_type, projected)?,
+        "tool_call" => project_tool_call(payload_map, ctx.loc.rec_id, projected)?,
+        "tool_result" => project_tool_result(payload_map, projected)?,
+        "opaque" => {
+            let label = match &item_type {
+                MetaValue::Str(text) => text.clone(),
+                other => meta_str(other)?,
+            };
+            projected.payload = map_value([("type", MetaValue::Str(label))]);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn classify_item(
+    ctx: &mut ProjectCtx<'_>,
+    projected: &mut Projection,
+    payload: &MapValue,
+    item_type: &MetaValue,
+) -> Result<(), ProcessRolloutRecordError> {
+    if let Some((actor, kind)) = mapped_item(item_type) {
+        projected.actor = actor.to_owned();
+        projected.kind = kind.to_owned();
+        return Ok(());
+    }
+    if let MetaValue::Str(text) = item_type {
+        if !text.is_empty() && !map_is_semantic(payload) {
+            projected.actor = "system".to_owned();
+            projected.kind = "opaque".to_owned();
+            note_unknown(ctx, text)?;
+            projected.payload = map_value([("type", MetaValue::Str(text.clone()))]);
+            return Ok(());
+        }
+    }
+    emit_at(ctx.loc, "type", item_type, ctx.findings)?;
+    projected.payload = map_value([("type", MetaValue::Str(type_label(item_type)?))]);
+    Ok(())
+}
+
+fn mapped_item(item_type: &MetaValue) -> Option<(&'static str, &'static str)> {
+    let MetaValue::Str(text) = item_type else {
+        return None;
+    };
+    RESPONSE_ITEM_TYPE_MAP
+        .iter()
+        .find(|(name, _, _)| *name == text)
+        .map(|(_, actor, kind)| (*actor, *kind))
+}
+
+fn project_message(
+    payload: &MapValue,
+    item_type: &MetaValue,
+    projected: &mut Projection,
+) -> Result<(), ProcessRolloutRecordError> {
+    assign_message_actor(payload, item_type, &mut projected.actor);
+    let mut out = map_value([
+        ("content", owned_present(payload, "content")),
+        ("role", MetaValue::Str(projected.actor.clone())),
+    ]);
+    if let Some(phase) = present(payload, "phase") {
+        push_entry(&mut out, "phase", phase.clone());
+    }
+    if is_text(item_type, "agent_message") {
+        if let Some(author) = present(payload, "author") {
+            push_entry(&mut out, "author", MetaValue::Str(meta_str(author)?));
+        }
+        if let Some(recipient) = present(payload, "recipient") {
+            push_entry(&mut out, "recipient", MetaValue::Str(meta_str(recipient)?));
+        }
+    }
+    projected.payload = out;
+    Ok(())
+}
+
+fn assign_message_actor(payload: &MapValue, item_type: &MetaValue, actor: &mut String) {
+    if is_text(item_type, "agent_message") {
+        *actor = "assistant".to_owned();
+        return;
+    }
+    match present(payload, "role") {
+        Some(MetaValue::Str(role)) if role == "user" => *actor = "user".to_owned(),
+        Some(MetaValue::Str(role)) if role == "assistant" => *actor = "assistant".to_owned(),
+        Some(MetaValue::Str(role)) if role == "developer" => *actor = "system".to_owned(),
+        Some(_) => *actor = "system".to_owned(),
+        None => {}
+    }
+}
+
+fn project_tool_call(
+    payload: &MapValue,
+    rec_id: &str,
+    projected: &mut Projection,
+) -> Result<(), ProcessRolloutRecordError> {
+    let raw = call_raw(payload);
+    let call_id = match raw {
+        Some(value) => meta_str(value)?,
+        None => rec_id.to_owned(),
+    };
+    projected.correlation_id = Some(call_id.clone());
+    push_entry(&mut projected.codex, "call_id", declared_call_id(raw));
+    let tool_name = tool_name_of(payload)?;
+    let absent = MetaValue::Null;
+    let raw_input = first_present(payload, &["arguments", "args", "input"]).unwrap_or(&absent);
+    let input = _tool_input_payload(raw_input).map_err(ProcessRolloutRecordError::ToolInput)?;
+    projected.payload = map_value([
+        ("call_id", MetaValue::Str(call_id.clone())),
+        ("input", input),
+        ("name", MetaValue::Str(tool_name.clone())),
+        ("tool_name", MetaValue::Str(tool_name.clone())),
+        ("tool_use_id", MetaValue::Str(call_id)),
+    ]);
+    if let Some(status) = present(payload, "status") {
+        projected.execution_state = Some(execution_state_of(&meta_str(status)?));
+    }
+    projected.side_effects = Some(side_effects_for(&tool_name).to_owned());
+    Ok(())
+}
+
+fn project_tool_result(
+    payload: &MapValue,
+    projected: &mut Projection,
+) -> Result<(), ProcessRolloutRecordError> {
+    let raw = call_raw(payload);
+    let call_id = match raw {
+        Some(value) => meta_str(value)?,
+        None => String::new(),
+    };
+    projected.correlation_id = if call_id.is_empty() {
+        None
+    } else {
+        Some(call_id.clone())
+    };
+    push_entry(&mut projected.codex, "call_id", declared_call_id(raw));
+    let content = match first_present(payload, &["output", "content", "result", "tools"]) {
+        Some(value) => value.clone(),
+        None => MetaValue::Str(String::new()),
+    };
+    let is_err = error_flag(payload);
+    projected.payload = map_value([
+        ("call_id", MetaValue::Str(call_id.clone())),
+        ("content", content),
+        ("is_error", MetaValue::Bool(is_err)),
+        ("tool_use_id", MetaValue::Str(call_id)),
+    ]);
+    projected.execution_state = Some(if is_err { "failure" } else { "success" }.to_owned());
+    projected.side_effects = Some("none".to_owned());
+    Ok(())
+}
+
+fn project_compacted(
+    projected: &mut Projection,
+    payload: &MetaValue,
+) -> Result<(), ProcessRolloutRecordError> {
+    projected.actor = "system".to_owned();
+    projected.kind = "compaction_boundary".to_owned();
+    let MetaValue::Map(payload_map) = payload else {
+        projected.payload = map_value([("summary", MetaValue::Str(String::new()))]);
+        return Ok(());
+    };
+    let summary = match present(payload_map, "message").or_else(|| present(payload_map, "summary"))
+    {
+        Some(raw) => meta_str(raw)?,
+        None => String::new(),
+    };
+    let mut out = map_value([("summary", MetaValue::Str(summary))]);
+    for key in [
+        "window_id",
+        "window_number",
+        "first_window_id",
+        "previous_window_id",
+    ] {
+        if let Some(value) = present(payload_map, key) {
+            push_entry(&mut out, key, value.clone());
+        }
+    }
+    projected.payload = out;
+    if let Some(mark) = guardian_mark(present(payload_map, "guardian_history"))? {
+        push_entry(&mut projected.codex, "guardian_items", mark.items);
+        push_entry(
+            &mut projected.codex,
+            "guardian_items_total",
+            MetaValue::Int(mark.total),
+        );
+        if mark.truncated {
+            push_entry(
+                &mut projected.codex,
+                "guardian_items_truncated",
+                MetaValue::Bool(true),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn project_opaque(
+    ctx: &mut ProjectCtx<'_>,
+    projected: &mut Projection,
+    env_type: &str,
+    payload: &MetaValue,
+) -> Result<(), ProcessRolloutRecordError> {
+    projected.actor = "system".to_owned();
+    projected.kind = "opaque".to_owned();
+    projected.payload = map_value([("type", MetaValue::Str(env_type.to_owned()))]);
+    let MetaValue::Map(payload_map) = payload else {
+        return Ok(());
+    };
+    if env_type == "token_usage_record" {
+        if let Some(slot) = usage_slot(payload_map)? {
+            push_entry(&mut projected.extra, "usage", MetaValue::Map(slot));
+        }
+    }
+    if env_type == "session_meta" {
+        apply_session_meta(ctx.source_metadata, payload_map, projected)?;
+    } else if env_type == "retained_context" {
+        apply_retained(payload_map, &mut projected.payload);
+    } else if env_type == "turn_context" {
+        apply_turn(payload_map, &mut projected.payload)?;
+    } else if env_type == "event_msg" {
+        apply_event_msg(payload_map, projected)?;
+    }
+    Ok(())
+}
+
+fn apply_session_meta(
+    source_metadata: &mut SourceMetadata,
+    payload: &MapValue,
+    projected: &mut Projection,
+) -> Result<(), ProcessRolloutRecordError> {
+    let mut meta = MapValue::new(Vec::new());
+    for key in ["session_id", "cli_version", "model_provider", "originator"] {
+        if let Some(value) = present(payload, key) {
+            push_entry(&mut meta, key, value.clone());
+        }
+    }
+    source_metadata.set_attribute("session_meta", MetaValue::Map(meta));
+    if let Some(session_id) = present(payload, "session_id") {
+        push_entry(
+            &mut projected.payload,
+            "session_id",
+            MetaValue::Str(meta_str(session_id)?),
+        );
+    }
+    if source_metadata.get("session_id").is_none() {
+        if let Some(stored) = thread_session_id(payload)? {
+            source_metadata.insert("session_id", MetaValue::Str(stored));
+        }
+    }
+    if let Some(number) = subagent_ordinal(payload) {
+        push_entry(
+            &mut projected.codex,
+            "subagent_history_start_ordinal",
+            MetaValue::Int(number),
+        );
+    }
+    Ok(())
+}
+
+fn thread_session_id(payload: &MapValue) -> Result<Option<String>, ProcessRolloutRecordError> {
+    if let Some(raw) = present(payload, "id") {
+        if let Some(text) = str_or_int(raw) {
+            let stripped = python_strip(&text);
+            if !stripped.is_empty() {
+                return Ok(Some(stripped.to_owned()));
+            }
+        }
+    }
+    if let Some(raw) = present(payload, "session_id") {
+        return Ok(Some(python_strip(&meta_str(raw)?).to_owned()));
+    }
+    Ok(None)
+}
+
+/// `str` or `int`, with `bool` excluded.
+fn str_or_int(value: &MetaValue) -> Option<String> {
+    match value {
+        MetaValue::Str(text) => Some(text.clone()),
+        MetaValue::Int(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+/// Inherited-prefix ordinal. `bool` is not an `int`.
+fn subagent_ordinal(payload: &MapValue) -> Option<i64> {
+    match present(payload, "subagent_history_start_ordinal") {
+        Some(MetaValue::Int(number)) => Some(*number),
+        _ => None,
+    }
+}
+
+fn apply_retained(payload: &MapValue, out_payload: &mut MapValue) {
+    if let Some(text) = cloned_str(present(payload, "type")) {
+        push_entry(out_payload, "subtype", MetaValue::Str(text));
+    }
+    if let Some(text) = cloned_str(present(payload, "turn_id")) {
+        push_entry(out_payload, "turn_id", MetaValue::Str(text));
+    }
+}
+
+fn apply_turn(
+    payload: &MapValue,
+    out_payload: &mut MapValue,
+) -> Result<(), ProcessRolloutRecordError> {
+    if let Some(raw) = present(payload, "turn_id") {
+        push_entry(out_payload, "turn_id", MetaValue::Str(meta_str(raw)?));
+    }
+    Ok(())
+}
+
+fn apply_event_msg(
+    payload: &MapValue,
+    projected: &mut Projection,
+) -> Result<(), ProcessRolloutRecordError> {
+    if let Some(raw) = present(payload, "type") {
+        push_entry(
+            &mut projected.payload,
+            "subtype",
+            MetaValue::Str(meta_str(raw)?),
+        );
+    }
+    if let Some(raw) = present(payload, "turn_id") {
+        push_entry(
+            &mut projected.payload,
+            "turn_id",
+            MetaValue::Str(meta_str(raw)?),
+        );
+    }
+    if is_text_at(payload, "type", "token_count") {
+        if let Some(pressure) = context_pressure(payload) {
+            push_entry(
+                &mut projected.codex,
+                "context_pressure",
+                MetaValue::Map(pressure),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn usage_slot(payload: &MapValue) -> Result<Option<MapValue>, ProcessRolloutRecordError> {
+    let Some(contribution_raw) = present(payload, "usage") else {
+        return Ok(None);
+    };
+    let mut slot = MapValue::new(Vec::new());
+    if let MetaValue::Map(map) = contribution_raw {
+        push_entry(
+            &mut slot,
+            "contribution",
+            MetaValue::Map(int_counter_map(map)?),
+        );
+    }
+    if let Some(MetaValue::Map(map)) = present(payload, "thread_token_usage") {
+        push_entry(&mut slot, "cumulative", MetaValue::Map(int_counter_map(map)?));
+    }
+    if slot.entries.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(slot))
+    }
+}
+
+/// Integer counters. `bool` values are skipped. A `bool` key is not an `int` key.
+fn int_counter_map(map: &MapValue) -> Result<MapValue, ProcessRolloutRecordError> {
+    if map.items_raise {
+        return Err(ProcessRolloutRecordError::ToolInput(ToolInputError::Items));
+    }
+    let mut entries = Vec::new();
+    for (key, value) in &map.entries {
+        let MetaValue::Int(number) = value else {
+            continue;
+        };
+        let text = key.text();
+        if let Some((_, stored)) = entries.iter_mut().find(|(name, _)| name == &text) {
+            *stored = *number;
+        } else {
+            entries.push((text, *number));
+        }
+    }
+    Ok(MapValue::new(
+        entries
+            .into_iter()
+            .map(|(key, number)| (MapKey::Str(key), MetaValue::Int(number)))
+            .collect(),
+    ))
+}
+
+/// Occupancy and window. Each must be an `int`. `bool` is excluded.
+fn context_pressure(payload: &MapValue) -> Option<MapValue> {
+    let MetaValue::Map(info) = present(payload, "info")? else {
+        return None;
+    };
+    let occupancy = match present(info, "last_token_usage") {
+        Some(MetaValue::Map(usage)) => match present(usage, "input_tokens") {
+            Some(MetaValue::Int(number)) => Some(*number),
+            _ => None,
+        },
+        _ => None,
+    };
+    let window = match present(info, "model_context_window") {
+        Some(MetaValue::Int(number)) => Some(*number),
+        _ => None,
+    };
+    match (occupancy, window) {
+        (Some(occupancy), Some(window)) => Some(map_value([
+            ("occupancy", MetaValue::Int(occupancy)),
+            ("window", MetaValue::Int(window)),
+        ])),
+        _ => None,
+    }
+}
+
+fn guardian_mark(
+    history: Option<&MetaValue>,
+) -> Result<Option<GuardianMark>, ProcessRolloutRecordError> {
+    let Some(MetaValue::List(items)) = history else {
+        return Ok(None);
+    };
+    let mut projected = Vec::new();
+    for item in items.iter().take(GUARDIAN_SNAPSHOT_ITEM_CAP) {
+        let MetaValue::Map(map) = item else {
+            continue;
+        };
+        projected.push(MetaValue::Map(map_value([
+            ("id", bounded_text(present(map, "id"), _GUARDIAN_ID_MAX)),
+            ("type", bounded_text(present(map, "type"), 64)),
+            (
+                "call_id",
+                bounded_text(present(map, "call_id"), _GUARDIAN_ID_MAX),
+            ),
+        ])));
+    }
+    let total = i64::try_from(items.len()).map_err(|_| ProcessRolloutRecordError::Count)?;
+    Ok(Some(GuardianMark {
+        items: MetaValue::List(projected),
+        total,
+        truncated: items.len() > GUARDIAN_SNAPSHOT_ITEM_CAP,
+    }))
+}
+
+fn bounded_text(value: Option<&MetaValue>, max: usize) -> MetaValue {
+    match value {
+        Some(MetaValue::Str(text)) if text.chars().count() <= max => MetaValue::Str(text.clone()),
+        _ => MetaValue::Null,
+    }
+}
+
+fn mark_reasoning(codex: &mut MapValue, payload: &MapValue) {
+    let encrypted = has_key(payload, "encrypted_content");
+    push_entry(
+        codex,
+        "has_encrypted_content",
+        MetaValue::Bool(encrypted),
+    );
+    let shape = if !has_key(payload, "content") {
+        "absent"
+    } else {
+        match last_string_value(payload, "content") {
+            Some(MetaValue::Null) | None => "null",
+            Some(MetaValue::List(_)) => "array",
+            _ => "other",
+        }
+    };
+    push_entry(
+        codex,
+        "reasoning_content_shape",
+        MetaValue::Str(shape.to_owned()),
+    );
+}
+
+fn reject_payload_critical(
+    payload: &MetaValue,
+    loc: &RecordLoc<'_>,
+    findings: &[Finding],
+) -> Result<(), ProcessRolloutRecordError> {
+    let MetaValue::Map(map) = payload else {
+        return Ok(());
+    };
+    reject_unknown_critical(map, KNOWN_PAYLOAD_KEYS.as_slice(), loc, findings)
+}
+
+fn reject_unknown_critical(
+    map: &MapValue,
+    known: &[&str],
+    loc: &RecordLoc<'_>,
+    findings: &[Finding],
+) -> Result<(), ProcessRolloutRecordError> {
+    for key in sorted_string_keys(map)? {
+        if !is_unknown_critical(&key, known) {
+            continue;
+        }
+        let absent = MetaValue::Null;
+        let value = last_string_value(map, &key).unwrap_or(&absent);
+        emit_at(loc, &key, value, findings)?;
+        break;
+    }
+    Ok(())
+}
+
+fn sorted_string_keys(map: &MapValue) -> Result<Vec<String>, ProcessRolloutRecordError> {
+    let mut keys = Vec::new();
+    for (key, _) in &map.entries {
+        let MapKey::Str(text) = key else {
+            return Err(ProcessRolloutRecordError::KeyOrder);
+        };
+        if !keys.iter().any(|existing| existing == text) {
+            keys.push(text.clone());
+        }
+    }
+    keys.sort_unstable();
+    Ok(keys)
+}
+
+fn is_unknown_critical(key: &str, known: &[&str]) -> bool {
+    if known.contains(&key) {
+        return false;
+    }
+    CRITICAL_KEYS.contains(&key)
+        || key.starts_with("critical_")
+        || key.starts_with("unknown_critical")
+}
+
+fn note_unknown(ctx: &mut ProjectCtx<'_>, raw_type: &str) -> Result<(), ProcessRolloutRecordError> {
+    if let Some(tracker) = ctx.unknown_metadata.as_deref_mut() {
+        tracker.note(raw_type, ctx.loc.line_number);
+        return Ok(());
+    }
+    let mut tracker = UnknownMetadataTracker::new();
+    tracker.note(raw_type, ctx.loc.line_number);
+    let extra = tracker
+        .findings(ctx.loc.path_str)
+        .map_err(ProcessRolloutRecordError::Finding)?;
+    ctx.findings.extend(extra);
+    Ok(())
+}
+
+fn emit_at(
+    loc: &RecordLoc<'_>,
+    field_path: &str,
+    type_value: &MetaValue,
+    findings: &[Finding],
+) -> Result<(), ProcessRolloutRecordError> {
+    _emit_sl302(
+        loc.path_str,
+        loc.line_number,
+        loc.rec_id,
+        field_path,
+        type_value,
+        loc.coord,
+        findings,
+    )
+    .map_err(ProcessRolloutRecordError::Finding)
+}
+
+/// Parent id when continuity is provable.
+///
+/// `bool` is not an `int`, so a boolean ordinal does not have to equal
+/// `previous + 1`.
+fn contiguous_parent(
+    last_event_id: Option<&str>,
+    gap_after_drop: bool,
+    last_envelope_ordinal: Option<i64>,
+    current: &MetaValue,
+) -> Option<String> {
+    if !ordinals_contiguous(
+        last_event_id.is_some(),
+        gap_after_drop,
+        last_envelope_ordinal,
+        current,
+    ) {
+        return None;
+    }
+    last_event_id.map(str::to_owned)
+}
+
+fn ordinals_contiguous(
+    has_last: bool,
+    gap_after_drop: bool,
+    last_envelope_ordinal: Option<i64>,
+    current: &MetaValue,
+) -> bool {
+    if !has_last || gap_after_drop {
+        return false;
+    }
+    let Some(previous) = last_envelope_ordinal else {
+        return true;
+    };
+    match current {
+        MetaValue::Int(number) => i128::from(*number) == i128::from(previous) + 1,
+        MetaValue::Bool(_)
+        | MetaValue::Null
+        | MetaValue::Float(_)
+        | MetaValue::Str(_)
+        | MetaValue::Bytes(_)
+        | MetaValue::List(_)
+        | MetaValue::Tuple(_)
+        | MetaValue::Map(_)
+        | MetaValue::Set(_)
+        | MetaValue::Object(_) => true,
+    }
+}
+
+/// Returned envelope ordinal. `bool` is not an `int`.
+fn envelope_ordinal(value: &MetaValue) -> Option<i64> {
+    match value {
+        MetaValue::Int(number) => Some(*number),
+        MetaValue::Bool(_)
+        | MetaValue::Null
+        | MetaValue::Float(_)
+        | MetaValue::Str(_)
+        | MetaValue::Bytes(_)
+        | MetaValue::List(_)
+        | MetaValue::Tuple(_)
+        | MetaValue::Map(_)
+        | MetaValue::Set(_)
+        | MetaValue::Object(_) => None,
+    }
+}
+
+fn record_timestamp(envelope: &MapValue) -> String {
+    let raw = present(envelope, "timestamp")
+        .or_else(|| present(envelope, "ts"))
+        .or_else(|| present(envelope, "created_at"));
+    match raw {
+        Some(value) => _normalize_timestamp(py_of(value)),
+        None => _normalize_timestamp(PyValue::None),
+    }
+}
+
+fn initial_codex(env_type: &MetaValue, ordinal: &MetaValue) -> MapValue {
+    map_value([
+        ("durable", MetaValue::Bool(is_durable(env_type))),
+        (
+            "ordinal",
+            match ordinal {
+                MetaValue::Int(number) => MetaValue::Int(*number),
+                _ => MetaValue::Null,
+            },
+        ),
+        (
+            "envelope_type",
+            match env_type {
+                MetaValue::Str(text) => MetaValue::Str(text.clone()),
+                _ => MetaValue::Null,
+            },
+        ),
+    ])
+}
+
+fn is_durable(env_type: &MetaValue) -> bool {
+    match env_type {
+        MetaValue::Str(text) => DURABLE_ENVELOPE_TYPES.contains(&text.as_str()),
+        _ => false,
+    }
+}
+
+fn call_raw(payload: &MapValue) -> Option<&MetaValue> {
+    present(payload, "call_id").or_else(|| present(payload, "tool_call_id"))
+}
+
+fn declared_call_id(raw: Option<&MetaValue>) -> MetaValue {
+    match raw {
+        Some(MetaValue::Str(text)) if text.chars().count() <= _GUARDIAN_ID_MAX => {
+            MetaValue::Str(text.clone())
+        }
+        _ => MetaValue::Null,
+    }
+}
+
+fn tool_name_of(payload: &MapValue) -> Result<String, ProcessRolloutRecordError> {
+    match present(payload, "name") {
+        Some(value) if is_truthy(value) => meta_str(value),
+        _ => Ok(String::new()),
+    }
+}
+
+fn execution_state_of(status: &str) -> String {
+    match status {
+        "completed" => "success".to_owned(),
+        "failed" => "failure".to_owned(),
+        _ => "unknown".to_owned(),
+    }
+}
+
+fn side_effects_for(tool_name: &str) -> &'static str {
+    let lower = tool_name.to_lowercase();
+    if READ_ONLY_TOOL_NAMES.contains(&lower.as_str()) {
+        "none"
+    } else if MUTATING_TOOL_NAMES.contains(&lower.as_str()) {
+        "possible"
+    } else {
+        "unknown"
+    }
+}
+
+fn error_flag(payload: &MapValue) -> bool {
+    if let Some(value) = present(payload, "is_error") {
+        return is_truthy(value);
+    }
+    if let Some(value) = present(payload, "error") {
+        return is_truthy(value);
+    }
+    false
+}
+
+fn coordinate_pairs(
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+) -> Vec<(&'static str, FindingValue)> {
+    let mut coord = Vec::new();
+    if let Some(offset) = byte_offset {
+        coord.push(("byte_offset", FindingValue::int(offset)));
+    }
+    if let Some(end) = byte_end {
+        coord.push(("byte_end", FindingValue::int(end)));
+    }
+    if let Some(ordinal) = record_ordinal {
+        coord.push(("record_ordinal", FindingValue::int(ordinal)));
+    }
+    coord
+}
+
+fn present<'a>(map: &'a MapValue, key: &str) -> Option<&'a MetaValue> {
+    match last_string_value(map, key) {
+        Some(value) if !matches!(value, MetaValue::Null) => Some(value),
+        _ => None,
+    }
+}
+
+fn owned_present(map: &MapValue, key: &str) -> MetaValue {
+    present(map, key).cloned().unwrap_or(MetaValue::Null)
+}
+
+fn first_present<'a>(map: &'a MapValue, keys: &[&str]) -> Option<&'a MetaValue> {
+    keys.iter().find_map(|key| present(map, key))
+}
+
+fn has_key(map: &MapValue, key: &str) -> bool {
+    map.entries
+        .iter()
+        .any(|(name, _)| matches!(name, MapKey::Str(text) if text == key))
+}
+
+fn is_text(value: &MetaValue, expected: &str) -> bool {
+    matches!(value, MetaValue::Str(text) if text == expected)
+}
+
+fn is_text_at(map: &MapValue, key: &str, expected: &str) -> bool {
+    present(map, key).is_some_and(|value| is_text(value, expected))
+}
+
+fn cloned_str(value: Option<&MetaValue>) -> Option<String> {
+    match value {
+        Some(MetaValue::Str(text)) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+fn type_label(value: &MetaValue) -> Result<String, ProcessRolloutRecordError> {
+    if matches!(value, MetaValue::Null) {
+        Ok("<missing>".to_owned())
+    } else {
+        meta_str(value)
+    }
+}
+
+fn meta_str(value: &MetaValue) -> Result<String, ProcessRolloutRecordError> {
+    match value {
+        MetaValue::Str(text) => Ok(text.clone()),
+        MetaValue::Null => Ok("None".to_owned()),
+        MetaValue::Bool(true) => Ok("True".to_owned()),
+        MetaValue::Bool(false) => Ok("False".to_owned()),
+        MetaValue::Int(number) => Ok(number.to_string()),
+        MetaValue::Float(bits) => Ok(python_float_str(f64::from_bits(*bits))),
+        MetaValue::List(_)
+        | MetaValue::Tuple(_)
+        | MetaValue::Map(_)
+        | MetaValue::Bytes(_)
+        | MetaValue::Set(_)
+        | MetaValue::Object(_) => Err(ProcessRolloutRecordError::Unrendered),
+    }
+}
+
+fn map_value<const N: usize>(entries: [(&str, MetaValue); N]) -> MapValue {
+    MapValue::new(
+        entries
+            .into_iter()
+            .map(|(key, value)| (MapKey::Str(key.to_owned()), value))
+            .collect(),
+    )
+}
+
+fn push_entry(map: &mut MapValue, key: &str, value: MetaValue) {
+    map.entries
+        .push((MapKey::Str(key.to_owned()), value));
+}
+
+fn envelope_is_semantic(envelope: &MapValue) -> bool {
+    has_semantic_fields(&MetadataValue::Map(metadata_entries(envelope)))
+}
+
+fn map_is_semantic(map: &MapValue) -> bool {
+    has_semantic_fields(&MetadataValue::Map(metadata_entries(map)))
+}
+
+fn metadata_entries(map: &MapValue) -> Vec<(MetadataKey, MetadataValue)> {
+    map.entries
+        .iter()
+        .map(|(key, value)| {
+            let name = match key {
+                MapKey::Str(text) => MetadataKey::Str(text.clone()),
+                _ => MetadataKey::NonStr,
+            };
+            (name, meta_to_metadata(value))
+        })
+        .collect()
+}
+
+fn meta_to_metadata(value: &MetaValue) -> MetadataValue {
+    match value {
+        MetaValue::Null => MetadataValue::NoneValue,
+        MetaValue::List(items) => {
+            MetadataValue::List(items.iter().map(meta_to_metadata).collect())
+        }
+        MetaValue::Map(map) => MetadataValue::Map(metadata_entries(map)),
+        _ => MetadataValue::Scalar,
+    }
+}
+
+fn meta_to_payload(value: &MetaValue) -> Result<Payload, ProcessRolloutRecordError> {
+    match value {
+        MetaValue::Null => Ok(Payload::null()),
+        MetaValue::Bool(flag) => Ok(Payload::bool_value(*flag)),
+        MetaValue::Int(number) => Ok(Payload::int(*number)),
+        MetaValue::Float(bits) => Ok(Payload::float(f64::from_bits(*bits))),
+        MetaValue::Str(text) => Ok(Payload::string(text.clone())),
+        MetaValue::List(items) => {
+            let mut converted = Vec::with_capacity(items.len());
+            for item in items {
+                converted.push(meta_to_payload(item)?);
+            }
+            Ok(Payload::list(converted))
+        }
+        MetaValue::Tuple(items) => {
+            let mut converted = Vec::with_capacity(items.len());
+            for item in items {
+                converted.push(meta_to_payload(item)?);
+            }
+            Ok(Payload::tuple(converted))
+        }
+        MetaValue::Map(map) => {
+            let mut converted = Vec::with_capacity(map.entries.len());
+            for (key, item) in &map.entries {
+                converted.push((map_key_payload(key), meta_to_payload(item)?));
+            }
+            Ok(Payload::map(converted))
+        }
+        MetaValue::Bytes(_) | MetaValue::Set(_) | MetaValue::Object(_) => {
+            Err(ProcessRolloutRecordError::Unrendered)
+        }
+    }
+}
+
+fn map_key_payload(key: &MapKey) -> Payload {
+    match key {
+        MapKey::Str(text) | MapKey::Rendered(text) => Payload::string(text.clone()),
+        MapKey::Int(number) => Payload::int(*number),
+        MapKey::Bool(flag) => Payload::bool_value(*flag),
+        MapKey::Null => Payload::null(),
+        MapKey::Float(bits) => Payload::float(f64::from_bits(*bits)),
+    }
+}
+
+fn py_of(value: &MetaValue) -> PyValue<'_> {
+    match value {
+        MetaValue::Null => PyValue::None,
+        MetaValue::Bool(_) => PyValue::Bool,
+        MetaValue::Int(_) => PyValue::Int,
+        MetaValue::Float(_) => PyValue::Float,
+        MetaValue::Str(text) => PyValue::Str(text),
+        MetaValue::Bytes(len) => PyValue::Bytes(*len),
+        MetaValue::List(items) => PyValue::List(items.len()),
+        MetaValue::Tuple(items) => PyValue::Tuple(items.len()),
+        MetaValue::Map(map) => PyValue::Dict(map.entries.len()),
+        MetaValue::Set(len) => PyValue::Set(*len),
+        MetaValue::Object(obj) => PyValue::Other(obj.type_name.as_str()),
+    }
+}
+
+/// Synthetic envelopes only. No session payload from a real transcript.
+#[cfg(test)]
+mod process_rollout_tests {
+    use super::{
+        _process_rollout_record, canonical_payload_len, context_pressure, contiguous_parent,
+        envelope_ordinal, guardian_mark, int_counter_map, ordinals_contiguous, record_timestamp,
+        side_effects_for, source_record_hash, subagent_ordinal, ProcessRolloutRecordError,
+        ToolInputError,
+    };
+    use crate::drift::DriftTracker;
+    use crate::metadata::UnknownMetadataTracker;
+    use crate::openai_agents::{
+        MapKey, MapValue, MetaValue, SourceMetadata, STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
+    };
+    use crate::synthetic::{synthetic_event_id, SyntheticIdCollisionGuard};
+    use model::canonical::{
+        SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+    };
+    use model::codes::{Repairability, Severity};
+    use model::finding::PyValue as FindingValue;
+    use model::finding::{
+        Finding, FindingInput, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE, SCHEMA_VERSION,
+    };
+
+    const PATH: &str = "synthetic.jsonl";
+    const LINE: i64 = 3;
+    const EPOCH: &str = "1970-01-01T00:00:00Z";
+    const KEPT: &str = "2020-01-01T00:00:00Z";
+
+    struct Bag {
+        meta: SourceMetadata,
+        events: Vec<SessionEvent>,
+        findings: Vec<Finding>,
+        guard: SyntheticIdCollisionGuard,
+    }
+
+    struct Input<'a> {
+        seen: bool,
+        start: Option<i64>,
+        end: Option<i64>,
+        ordinal: Option<i64>,
+        last_id: Option<&'a str>,
+        last_ordinal: Option<i64>,
+        gap: bool,
+    }
+
+    fn bag() -> Bag {
+        Bag {
+            meta: SourceMetadata::new(),
+            events: Vec::new(),
+            findings: Vec::new(),
+            guard: SyntheticIdCollisionGuard::new(),
+        }
+    }
+
+    fn input() -> Input<'static> {
+        Input {
+            seen: false,
+            start: None,
+            end: None,
+            ordinal: None,
+            last_id: None,
+            last_ordinal: None,
+            gap: false,
+        }
+    }
+
+    fn run(
+        bag: &mut Bag,
+        envelope: &MapValue,
+        input: Input<'_>,
+        drift: Option<&mut DriftTracker>,
+        unknown: Option<&mut UnknownMetadataTracker>,
+    ) -> Result<(bool, Option<i64>), ProcessRolloutRecordError> {
+        _process_rollout_record(
+            envelope,
+            LINE,
+            PATH,
+            &mut bag.events,
+            &mut bag.findings,
+            &mut bag.meta,
+            input.seen,
+            input.start,
+            input.end,
+            input.ordinal,
+            Some(&mut bag.guard),
+            input.last_id,
+            input.last_ordinal,
+            input.gap,
+            drift,
+            unknown,
+        )
+    }
+
+    fn s(text: &str) -> MetaValue {
+        MetaValue::Str(text.to_owned())
+    }
+
+    fn kv(key: &str, value: MetaValue) -> (MapKey, MetaValue) {
+        (MapKey::Str(key.to_owned()), value)
+    }
+
+    fn typed(kind: &str, payload: MapValue) -> MapValue {
+        MapValue::new(vec![
+            kv("type", s(kind)),
+            kv("payload", MetaValue::Map(payload)),
+        ])
+    }
+
+    fn empty_payload(kind: &str) -> MapValue {
+        typed(kind, MapValue::new(vec![]))
+    }
+
+    fn marker() -> Finding {
+        let source = SourceRef::try_new("a.jsonl", Some(SourceLine::Int(1)), None).expect("source");
+        Finding::try_new(FindingInput {
+            code: FindingValue::string("SL001"),
+            severity: FindingValue::severity(Severity::Error),
+            repairability: FindingValue::repairability(Repairability::Manual),
+            message: FindingValue::string("synthetic marker"),
+            source: FindingValue::source(source),
+            related_ids: FindingValue::tuple(Vec::new()),
+            fingerprint: FindingValue::string("0123456789abcdef"),
+            schema_version: FindingValue::string(SCHEMA_VERSION),
+            message_template: FindingValue::None,
+            evidence: FindingValue::None,
+        })
+        .expect("finding")
+    }
+
+    fn hash_seam(err: &ProcessRolloutRecordError) {
+        assert!(matches!(err, ProcessRolloutRecordError::ContentHash(_)));
+        assert_eq!(err.to_string(), PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+        assert!(!err.to_string().contains("sha256"));
+        assert_ne!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert_ne!(
+            err.to_string(),
+            "sesslint.canonical.SessionEvent is not available"
+        );
+    }
+
+    fn version_seam(err: &ProcessRolloutRecordError) {
+        assert!(matches!(err, ProcessRolloutRecordError::Version(_)));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("sha256"));
+    }
+
+    fn finding_seam(err: &ProcessRolloutRecordError) {
+        assert!(matches!(err, ProcessRolloutRecordError::Finding(_)));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("sha256"));
+    }
+
+    fn raw(meta: &SourceMetadata) -> Option<&str> {
+        match meta.get("version_raw") {
+            Some(MetaValue::Str(text)) => Some(text.as_str()),
+            Some(_) => panic!("version_raw is not a str"),
+            None => None,
+        }
+    }
+
+    fn entry<'a>(map: &'a MapValue, key: &str) -> &'a MetaValue {
+        map.entries
+            .iter()
+            .rev()
+            .find(|(name, _)| matches!(name, MapKey::Str(text) if text == key))
+            .map(|(_, value)| value)
+            .expect("entry")
+    }
+
+    fn text_at(map: &MapValue, key: &str) -> String {
+        match entry(map, key) {
+            MetaValue::Str(text) => text.clone(),
+            _ => panic!("expected str"),
+        }
+    }
+
+    fn stored_session(meta: &SourceMetadata) -> String {
+        match meta.get("session_id") {
+            Some(MetaValue::Str(text)) => text.clone(),
+            _ => panic!("session_id"),
+        }
+    }
+
+    fn sizes(meta: &SourceMetadata) -> Vec<i64> {
+        let Some(MetaValue::List(items)) = meta.get("record_sizes") else {
+            panic!("record_sizes");
+        };
+        items
+            .iter()
+            .map(|item| match item {
+                MetaValue::Int(number) => *number,
+                _ => panic!("size"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn first_canonical_failure_continues_until_the_content_hash() {
+        let envelope = empty_payload("event_msg");
+        let mut held = bag();
+        let err = run(&mut held, &envelope, input(), None, None).unwrap_err();
+        hash_seam(&err);
+        assert_eq!(canonical_payload_len(&envelope).expect("len"), 0);
+        let expected = synthetic_event_id("codex_rollout", 0, PATH, 0);
+        assert!(held.guard.seen_synthetic_ids().contains(&expected));
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn source_record_hash_propagates_the_uncaught_codec() {
+        let err = source_record_hash(&MapValue::new(vec![])).unwrap_err();
+        assert!(matches!(err, ProcessRolloutRecordError::RecordHash(_)));
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert!(!err.to_string().contains("sha256"));
+        assert_ne!(err.to_string(), PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+    }
+
+    #[test]
+    fn string_tool_input_stays_at_the_strict_decoder() {
+        let envelope = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("function_call")),
+                kv("name", s("read")),
+                kv("arguments", s("{}")),
+            ]),
+        );
+        let mut held = bag();
+        let err = run(&mut held, &envelope, input(), None, None).unwrap_err();
+        assert!(matches!(
+            err,
+            ProcessRolloutRecordError::ToolInput(ToolInputError::Unavailable)
+        ));
+        assert_eq!(err.to_string(), STRICT_JSON_DECODE_UNAVAILABLE);
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn bool_tool_input_is_not_sent_to_the_decoder() {
+        let envelope = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("function_call")),
+                kv("name", s("bash")),
+                kv("arguments", MetaValue::Bool(true)),
+            ]),
+        );
+        let mut held = bag();
+        hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn raising_tool_input_stops_before_the_event() {
+        let envelope = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("function_call")),
+                kv("arguments", MetaValue::Map(MapValue::raising(vec![]))),
+            ]),
+        );
+        let mut held = bag();
+        let err = run(&mut held, &envelope, input(), None, None).unwrap_err();
+        assert!(matches!(
+            err,
+            ProcessRolloutRecordError::ToolInput(ToolInputError::Items)
+        ));
+        assert_eq!(err.to_string(), "list(mapping.items()) raises");
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn ordinal_continuity_excludes_bool_from_int() {
+        let previous = Some(1);
+        assert!(ordinals_contiguous(
+            true,
+            false,
+            previous,
+            &MetaValue::Bool(true)
+        ));
+        assert!(ordinals_contiguous(
+            true,
+            false,
+            previous,
+            &MetaValue::Bool(false)
+        ));
+        assert!(ordinals_contiguous(
+            true,
+            false,
+            previous,
+            &MetaValue::Int(2)
+        ));
+        assert!(!ordinals_contiguous(
+            true,
+            false,
+            previous,
+            &MetaValue::Int(3)
+        ));
+        assert!(!ordinals_contiguous(
+            true,
+            true,
+            previous,
+            &MetaValue::Int(2)
+        ));
+        assert!(!ordinals_contiguous(
+            false,
+            false,
+            previous,
+            &MetaValue::Int(2)
+        ));
+        assert!(ordinals_contiguous(
+            true,
+            false,
+            None,
+            &MetaValue::Int(9)
+        ));
+        assert!(ordinals_contiguous(
+            true,
+            false,
+            previous,
+            &MetaValue::Str("2".to_owned())
+        ));
+        assert!(!ordinals_contiguous(
+            true,
+            false,
+            Some(i64::MAX),
+            &MetaValue::Int(i64::MAX)
+        ));
+        assert_eq!(envelope_ordinal(&MetaValue::Bool(true)), None);
+        assert_eq!(envelope_ordinal(&MetaValue::Bool(false)), None);
+        assert_eq!(envelope_ordinal(&MetaValue::Null), None);
+        assert_eq!(envelope_ordinal(&MetaValue::Int(4)), Some(4));
+        assert_eq!(
+            contiguous_parent(Some("prior"), false, previous, &MetaValue::Bool(true)),
+            Some("prior".to_owned())
+        );
+        assert_eq!(
+            contiguous_parent(Some("prior"), false, previous, &MetaValue::Int(4)),
+            None
+        );
+        assert_eq!(
+            contiguous_parent(Some("prior"), false, previous, &MetaValue::Int(2)),
+            Some("prior".to_owned())
+        );
+    }
+
+    #[test]
+    fn bool_and_max_ordinals_stop_at_the_content_hash() {
+        let bool_ordinal = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("ordinal", MetaValue::Bool(true)),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut held = bag();
+        let mut options = input();
+        options.last_id = Some("prior");
+        options.last_ordinal = Some(1);
+        hash_seam(&run(&mut held, &bool_ordinal, options, None, None).unwrap_err());
+        assert!(held.events.is_empty());
+
+        let max_ordinal = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("ordinal", MetaValue::Int(i64::MAX)),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut again = bag();
+        let mut max_options = input();
+        max_options.last_id = Some("prior");
+        max_options.last_ordinal = Some(i64::MAX);
+        hash_seam(&run(&mut again, &max_ordinal, max_options, None, None).unwrap_err());
+        assert!(again.events.is_empty());
+    }
+
+    #[test]
+    fn unsupported_version_stops_before_a_finding_or_a_size() {
+        let envelope = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("rollout_version", s("9")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut held = bag();
+        held.findings.push(marker());
+        held.meta
+            .insert("record_sizes", MetaValue::List(Vec::new()));
+        let mut options = input();
+        options.start = Some(10);
+        options.end = Some(18);
+        version_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
+        assert_eq!(raw(&held.meta), Some("9"));
+        assert_eq!(held.findings.len(), 1);
+        assert!(sizes(&held.meta).is_empty());
+        assert!(held.events.is_empty());
+    }
+
+    #[test]
+    fn seen_version_stores_the_raw_text_and_reaches_the_content_hash() {
+        let envelope = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("rollout_version", s("9")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut held = bag();
+        let mut drift = DriftTracker::new("codex-rollout");
+        let mut options = input();
+        options.seen = true;
+        hash_seam(&run(&mut held, &envelope, options, Some(&mut drift), None).unwrap_err());
+        assert_eq!(raw(&held.meta), Some("9"));
+        assert!(drift.into_findings(PATH).expect("suppressed").is_empty());
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn true_version_wins_the_chain_and_is_not_an_int() {
+        let envelope = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("rollout_version", MetaValue::Bool(true)),
+            kv("version", s("1")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut held = bag();
+        version_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        assert_eq!(raw(&held.meta), None);
+        assert!(held.findings.is_empty());
+        assert!(held.events.is_empty());
+    }
+
+    #[test]
+    fn false_version_is_replaced_and_the_payload_marker_is_kept() {
+        let envelope = typed(
+            "event_msg",
+            MapValue::new(vec![kv("rollout_version", s("1"))]),
+        );
+        let mut entries = envelope.entries;
+        entries.insert(1, kv("rollout_version", MetaValue::Bool(false)));
+        let envelope = MapValue::new(entries);
+        let mut held = bag();
+        hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        assert_eq!(raw(&held.meta), Some("1"));
+        assert!(held.events.is_empty());
+    }
+
+    #[test]
+    fn payload_version_is_used_when_the_envelope_has_none() {
+        let envelope = typed(
+            "event_msg",
+            MapValue::new(vec![kv("rollout_version", s("1"))]),
+        );
+        let mut held = bag();
+        hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        assert_eq!(raw(&held.meta), Some("1"));
+        assert!(held.events.is_empty());
+    }
+
+    #[test]
+    fn unknown_critical_field_does_not_append_a_finding() {
+        let envelope = typed(
+            "session_meta",
+            MapValue::new(vec![
+                kv("session_id", s("s")),
+                kv("unknown_critical_field", MetaValue::Int(1)),
+            ]),
+        );
+        let mut held = bag();
+        held.findings.push(marker());
+        finding_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        assert_eq!(held.findings.len(), 1);
+        assert!(held.events.is_empty());
+        match held.meta.attribute("session_meta").expect("attr") {
+            MetaValue::Map(map) => assert_eq!(text_at(map, "session_id"), "s"),
+            _ => panic!("session_meta"),
+        }
+    }
+
+    #[test]
+    fn session_meta_keeps_links_sizes_and_the_unstripped_copy() {
+        let envelope = typed(
+            "session_meta",
+            MapValue::new(vec![
+                kv("id", s(" thread-1 ")),
+                kv("session_id", s(" sess ")),
+                kv("cli_version", s("0")),
+                kv("parent_thread_id", s(" parent ")),
+                kv("subagent_history_start_ordinal", MetaValue::Int(4)),
+            ]),
+        );
+        let mut held = bag();
+        held.meta.insert("links", MetaValue::List(Vec::new()));
+        held.meta
+            .insert("record_sizes", MetaValue::List(Vec::new()));
+        let mut options = input();
+        options.start = Some(10);
+        options.end = Some(18);
+        hash_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
+        assert_eq!(stored_session(&held.meta), "thread-1");
+        assert!(held.guard.seen_real_ids().contains("thread-1"));
+        assert_eq!(sizes(&held.meta), vec![8]);
+        match held.meta.attribute("session_meta").expect("attr") {
+            MetaValue::Map(map) => {
+                assert_eq!(text_at(map, "session_id"), " sess ");
+                assert_eq!(text_at(map, "cli_version"), "0");
+            }
+            _ => panic!("session_meta"),
+        }
+        let Some(MetaValue::List(links)) = held.meta.get("links") else {
+            panic!("links");
+        };
+        assert_eq!(links.len(), 1);
+        let MetaValue::Map(link) = &links[0] else {
+            panic!("link");
+        };
+        assert_eq!(text_at(link, "kind"), "session_ref");
+        assert_eq!(text_at(link, "target"), "parent");
+        assert_eq!(text_at(link, "record_id"), "thread-1");
+        assert_eq!(entry(link, "line"), &MetaValue::Int(LINE));
+        assert!(held.events.is_empty());
+    }
+
+    #[test]
+    fn thread_session_id_excludes_bool_and_keeps_int() {
+        let bool_id = typed(
+            "session_meta",
+            MapValue::new(vec![
+                kv("id", MetaValue::Bool(true)),
+                kv("session_id", s("sess-9")),
+                kv("subagent_history_start_ordinal", MetaValue::Bool(false)),
+            ]),
+        );
+        let mut held = bag();
+        hash_seam(&run(&mut held, &bool_id, input(), None, None).unwrap_err());
+        assert_eq!(stored_session(&held.meta), "sess-9");
+        assert!(held.events.is_empty());
+
+        let int_id = typed(
+            "session_meta",
+            MapValue::new(vec![
+                kv("id", MetaValue::Int(42)),
+                kv("session_id", s("other")),
+                kv("subagent_history_start_ordinal", MetaValue::Int(4)),
+            ]),
+        );
+        let mut again = bag();
+        hash_seam(&run(&mut again, &int_id, input(), None, None).unwrap_err());
+        assert_eq!(stored_session(&again.meta), "42");
+        assert!(again.guard.seen_real_ids().contains("42"));
+        assert!(again.events.is_empty());
+    }
+
+    #[test]
+    fn parent_thread_link_excludes_bool() {
+        let bool_parent = typed(
+            "session_meta",
+            MapValue::new(vec![kv("parent_thread_id", MetaValue::Bool(true))]),
+        );
+        let mut held = bag();
+        held.meta.insert("links", MetaValue::List(Vec::new()));
+        hash_seam(&run(&mut held, &bool_parent, input(), None, None).unwrap_err());
+        assert_eq!(held.meta.get("links"), Some(&MetaValue::List(Vec::new())));
+
+        let int_parent = typed(
+            "session_meta",
+            MapValue::new(vec![kv("parent_thread_id", MetaValue::Int(15))]),
+        );
+        let mut again = bag();
+        again.meta.insert("links", MetaValue::List(Vec::new()));
+        hash_seam(&run(&mut again, &int_parent, input(), None, None).unwrap_err());
+        let Some(MetaValue::List(links)) = again.meta.get("links") else {
+            panic!("links");
+        };
+        let MetaValue::Map(link) = &links[0] else {
+            panic!("link");
+        };
+        assert_eq!(text_at(link, "target"), "15");
+        assert_eq!(text_at(link, "kind"), "session_ref");
+        let expected = synthetic_event_id("codex_rollout", 0, PATH, 0);
+        assert_eq!(text_at(link, "record_id"), expected);
+    }
+
+    #[test]
+    fn counters_pressure_guardian_and_side_effects_exclude_bool() {
+        let counters = MapValue::new(vec![
+            (MapKey::Bool(true), MetaValue::Int(1)),
+            (MapKey::Int(1), MetaValue::Int(2)),
+            (MapKey::Str("flag".to_owned()), MetaValue::Bool(true)),
+            (MapKey::Str("n".to_owned()), MetaValue::Int(3)),
+        ]);
+        let filtered = int_counter_map(&counters).expect("counters");
+        assert_eq!(entry(&filtered, "True"), &MetaValue::Int(1));
+        assert_eq!(entry(&filtered, "1"), &MetaValue::Int(2));
+        assert_eq!(entry(&filtered, "n"), &MetaValue::Int(3));
+        assert_eq!(filtered.entries.len(), 3);
+
+        assert!(context_pressure(&nested_info(MetaValue::Bool(true), MetaValue::Int(8))).is_none());
+        let pressure =
+            context_pressure(&nested_info(MetaValue::Int(3), MetaValue::Int(8))).expect("pressure");
+        assert_eq!(entry(&pressure, "occupancy"), &MetaValue::Int(3));
+        assert_eq!(entry(&pressure, "window"), &MetaValue::Int(8));
+
+        assert!(subagent_ordinal(&MapValue::new(vec![kv(
+            "subagent_history_start_ordinal",
+            MetaValue::Bool(true),
+        )]))
+        .is_none());
+        assert_eq!(
+            subagent_ordinal(&MapValue::new(vec![kv(
+                "subagent_history_start_ordinal",
+                MetaValue::Int(4),
+            )])),
+            Some(4)
+        );
+        assert_eq!(side_effects_for("read"), "none");
+        assert_eq!(side_effects_for("READ"), "none");
+        assert_eq!(side_effects_for("bash"), "possible");
+        assert_eq!(side_effects_for("other"), "unknown");
+    }
+
+    fn nested_info(tokens: MetaValue, window: MetaValue) -> MapValue {
+        MapValue::new(vec![kv(
+            "info",
+            MetaValue::Map(MapValue::new(vec![
+                kv(
+                    "last_token_usage",
+                    MetaValue::Map(MapValue::new(vec![kv("input_tokens", tokens)])),
+                ),
+                kv("model_context_window", window),
+            ])),
+        )])
+    }
+
+    #[test]
+    fn guardian_mark_skips_non_maps_and_caps_the_list() {
+        let bad = MapValue::new(vec![kv("id", MetaValue::Bool(true))]);
+        let good = MapValue::new(vec![
+            kv("id", s("kept")),
+            kv("type", s("tool")),
+            kv("call_id", s("c")),
+        ]);
+        let history = MetaValue::List(vec![
+            MetaValue::Int(1),
+            MetaValue::Map(bad),
+            MetaValue::Map(good),
+        ]);
+        let mark = guardian_mark(Some(&history)).expect("count").expect("mark");
+        assert_eq!(mark.total, 3);
+        assert!(!mark.truncated);
+        let MetaValue::List(items) = &mark.items else {
+            panic!("items");
+        };
+        assert_eq!(items.len(), 2);
+        let MetaValue::Map(first) = &items[0] else {
+            panic!("first");
+        };
+        assert_eq!(entry(first, "id"), &MetaValue::Null);
+        let MetaValue::Map(second) = &items[1] else {
+            panic!("second");
+        };
+        assert_eq!(text_at(second, "id"), "kept");
+
+        let long = MetaValue::List(vec![MetaValue::Null; 513]);
+        let capped = guardian_mark(Some(&long)).expect("count").expect("mark");
+        assert_eq!(capped.total, 513);
+        assert!(capped.truncated);
+        assert_eq!(capped.items, MetaValue::List(Vec::new()));
+    }
+
+    #[test]
+    fn token_usage_and_compacted_bools_reach_the_content_hash() {
+        let usage = typed(
+            "token_usage_record",
+            MapValue::new(vec![kv(
+                "usage",
+                MetaValue::Map(MapValue::new(vec![
+                    (MapKey::Bool(true), MetaValue::Int(1)),
+                    kv("n", MetaValue::Bool(false)),
+                    kv("kept", MetaValue::Int(4)),
+                ])),
+            )]),
+        );
+        let mut held = bag();
+        hash_seam(&run(&mut held, &usage, input(), None, None).unwrap_err());
+        assert!(held.events.is_empty());
+
+        let raising = typed(
+            "token_usage_record",
+            MapValue::new(vec![kv(
+                "usage",
+                MetaValue::Map(MapValue::raising(vec![])),
+            )]),
+        );
+        let mut blocked = bag();
+        let err = run(&mut blocked, &raising, input(), None, None).unwrap_err();
+        assert!(matches!(
+            err,
+            ProcessRolloutRecordError::ToolInput(ToolInputError::Items)
+        ));
+        assert!(blocked.events.is_empty());
+
+        let compacted = typed(
+            "compacted",
+            MapValue::new(vec![kv(
+                "guardian_history",
+                MetaValue::List(vec![MetaValue::Null; 513]),
+            )]),
+        );
+        let mut again = bag();
+        hash_seam(&run(&mut again, &compacted, input(), None, None).unwrap_err());
+        assert!(again.events.is_empty());
+    }
+
+    #[test]
+    fn unknown_item_and_envelope_stop_without_extending_findings() {
+        let item = typed(
+            "response_item",
+            MapValue::new(vec![kv("type", s("widget"))]),
+        );
+        let mut held = bag();
+        held.findings.push(marker());
+        finding_seam(&run(&mut held, &item, input(), None, None).unwrap_err());
+        assert_eq!(held.findings.len(), 1);
+        assert!(held.events.is_empty());
+
+        let mut tracker = UnknownMetadataTracker::new();
+        let mut noted = bag();
+        hash_seam(&run(&mut noted, &item, input(), None, Some(&mut tracker)).unwrap_err());
+        assert!(tracker.findings(PATH).is_err());
+        assert_eq!(
+            tracker.findings(PATH).unwrap_err().to_string(),
+            FINGERPRINT_CODEC_UNAVAILABLE
+        );
+        assert!(noted.events.is_empty());
+        assert!(noted.findings.is_empty());
+
+        let semantic = typed(
+            "widget",
+            MapValue::new(vec![kv("content", s("synthetic-body"))]),
+        );
+        let mut semantic_tracker = UnknownMetadataTracker::new();
+        let mut semantic_bag = bag();
+        finding_seam(
+            &run(
+                &mut semantic_bag,
+                &semantic,
+                input(),
+                None,
+                Some(&mut semantic_tracker),
+            )
+            .unwrap_err(),
+        );
+        assert!(semantic_tracker
+            .findings(PATH)
+            .expect("not noted")
+            .is_empty());
+        assert!(semantic_bag.events.is_empty());
+        assert!(semantic_bag.findings.is_empty());
+
+        let opaque = empty_payload("widget");
+        let mut opaque_tracker = UnknownMetadataTracker::new();
+        let mut opaque_bag = bag();
+        hash_seam(
+            &run(
+                &mut opaque_bag,
+                &opaque,
+                input(),
+                None,
+                Some(&mut opaque_tracker),
+            )
+            .unwrap_err(),
+        );
+        assert!(opaque_tracker.findings(PATH).is_err());
+        assert!(opaque_bag.events.is_empty());
+    }
+
+    #[test]
+    fn foreign_signature_and_version_transition_stop_at_the_fingerprint() {
+        let summary = empty_payload("summary");
+        let mut tracker = UnknownMetadataTracker::new();
+        let mut drift = DriftTracker::new("codex-rollout");
+        let mut held = bag();
+        hash_seam(
+            &run(
+                &mut held,
+                &summary,
+                input(),
+                Some(&mut drift),
+                Some(&mut tracker),
+            )
+            .unwrap_err(),
+        );
+        assert_eq!(
+            drift.into_findings(PATH).unwrap_err().to_string(),
+            FINGERPRINT_CODEC_UNAVAILABLE
+        );
+        assert!(held.events.is_empty());
+
+        let mut versions = DriftTracker::new("codex-rollout");
+        let first = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("rollout_version", s("1")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut first_bag = bag();
+        hash_seam(&run(&mut first_bag, &first, input(), Some(&mut versions), None).unwrap_err());
+        assert!(versions.into_findings(PATH).expect("baseline").is_empty());
+        let second = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("rollout_version", s("1.0")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut second_bag = bag();
+        hash_seam(&run(&mut second_bag, &second, input(), Some(&mut versions), None).unwrap_err());
+        assert_eq!(
+            versions.into_findings(PATH).unwrap_err().to_string(),
+            FINGERPRINT_CODEC_UNAVAILABLE
+        );
+        assert!(first_bag.events.is_empty());
+        assert!(second_bag.events.is_empty());
+    }
+
+    #[test]
+    fn real_id_collision_does_not_append_the_event() {
+        let envelope = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("message")),
+                kv("id", s("real-id")),
+                kv("role", s("user")),
+            ]),
+        );
+        let mut held = bag();
+        held.guard
+            .register_synthetic("real-id")
+            .expect("synthetic");
+        let err = run(&mut held, &envelope, input(), None, None).unwrap_err();
+        assert!(matches!(err, ProcessRolloutRecordError::Collision(_)));
+        assert!(err.to_string().contains("Synthetic ID collision"));
+        assert!(!held.guard.seen_real_ids().contains("real-id"));
+        assert!(held.guard.seen_synthetic_ids().contains("real-id"));
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn synthetic_ordinal_uses_the_record_ordinal_or_the_event_len() {
+        let envelope = empty_payload("event_msg");
+        let mut held = bag();
+        let mut options = input();
+        options.ordinal = Some(4);
+        hash_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
+        let used = synthetic_event_id("codex_rollout", 4, PATH, 0);
+        let unused = synthetic_event_id("codex_rollout", 0, PATH, 0);
+        assert!(held.guard.seen_synthetic_ids().contains(&used));
+        assert!(!held.guard.seen_synthetic_ids().contains(&unused));
+        assert!(held.events.is_empty());
+
+        let mut prior = bag();
+        prior.events.push(SessionEvent::new(
+            "a",
+            None,
+            0,
+            EPOCH,
+            "system",
+            "opaque",
+        ));
+        prior.events.push(SessionEvent::new(
+            "b",
+            None,
+            1,
+            EPOCH,
+            "system",
+            "opaque",
+        ));
+        hash_seam(&run(&mut prior, &envelope, input(), None, None).unwrap_err());
+        let from_len = synthetic_event_id("codex_rollout", 2, PATH, 0);
+        assert!(prior.guard.seen_synthetic_ids().contains(&from_len));
+        assert_eq!(prior.events.len(), 2);
+    }
+
+    #[test]
+    fn a_non_str_key_stops_before_a_finding() {
+        let envelope = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+            (MapKey::Int(1), MetaValue::Int(2)),
+        ]);
+        let mut held = bag();
+        let err = run(&mut held, &envelope, input(), None, None).unwrap_err();
+        assert!(matches!(err, ProcessRolloutRecordError::KeyOrder));
+        assert_eq!(err.to_string(), "sorted() cannot order these key types");
+        assert_ne!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+
+    #[test]
+    fn record_timestamp_falls_through_null_and_epochs_the_rest() {
+        let kept = MapValue::new(vec![kv("timestamp", s(KEPT))]);
+        assert_eq!(record_timestamp(&kept), KEPT);
+        let nope = MapValue::new(vec![kv("timestamp", s("nope"))]);
+        assert_eq!(record_timestamp(&nope), EPOCH);
+        let missing = MapValue::new(vec![
+            kv("timestamp", MetaValue::Null),
+            kv("ts", s(KEPT)),
+        ]);
+        assert_eq!(record_timestamp(&missing), KEPT);
+        let created = MapValue::new(vec![kv("created_at", s(KEPT))]);
+        assert_eq!(record_timestamp(&created), KEPT);
+        let flag = MapValue::new(vec![
+            kv("timestamp", MetaValue::Bool(true)),
+            kv("ts", s(KEPT)),
+        ]);
+        assert_eq!(record_timestamp(&flag), EPOCH);
+
+        let live = MapValue::new(vec![
+            kv("type", s("event_msg")),
+            kv("timestamp", s("nope")),
+            kv("payload", MetaValue::Map(MapValue::new(vec![]))),
+        ]);
+        let mut held = bag();
+        hash_seam(&run(&mut held, &live, input(), None, None).unwrap_err());
+        assert!(held.events.is_empty());
+    }
+
+    #[test]
+    fn message_id_is_real_and_an_invalid_payload_does_not_append() {
+        let message = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("message")),
+                kv("role", s("user")),
+                kv("id", s("m1")),
+                kv("content", s("synthetic")),
+            ]),
+        );
+        let mut held = bag();
+        hash_seam(&run(&mut held, &message, input(), None, None).unwrap_err());
+        assert!(held.guard.seen_real_ids().contains("m1"));
+        assert!(held.guard.seen_synthetic_ids().is_empty());
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+
+        let invalid = MapValue::new(vec![
+            kv("type", s("response_item")),
+            kv("payload", MetaValue::Int(1)),
+        ]);
+        let mut again = bag();
+        again.findings.push(marker());
+        finding_seam(&run(&mut again, &invalid, input(), None, None).unwrap_err());
+        assert_eq!(again.findings.len(), 1);
+        assert!(again.events.is_empty());
+    }
+
+    #[test]
+    fn critical_prefix_and_unrendered_id_stop_before_the_event() {
+        let critical = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("message")),
+                kv("role", s("user")),
+                kv("critical_extra", MetaValue::Int(1)),
+            ]),
+        );
+        let mut held = bag();
+        finding_seam(&run(&mut held, &critical, input(), None, None).unwrap_err());
+        assert!(held.findings.is_empty());
+        assert!(held.events.is_empty());
+
+        let unrendered = typed(
+            "response_item",
+            MapValue::new(vec![
+                kv("type", s("message")),
+                kv("id", MetaValue::List(Vec::new())),
+            ]),
+        );
+        let mut again = bag();
+        let err = run(&mut again, &unrendered, input(), None, None).unwrap_err();
+        assert!(matches!(err, ProcessRolloutRecordError::Unrendered));
+        assert_eq!(err.to_string(), STR_UNRENDERED);
+        assert!(again.events.is_empty());
+        assert!(again.findings.is_empty());
+    }
+
+    #[test]
+    fn record_sizes_append_only_a_fitting_list_span() {
+        let envelope = empty_payload("event_msg");
+        let mut zero = bag();
+        zero.meta
+            .insert("record_sizes", MetaValue::List(Vec::new()));
+        let mut zero_options = input();
+        zero_options.start = Some(4);
+        zero_options.end = Some(4);
+        hash_seam(&run(&mut zero, &envelope, zero_options, None, None).unwrap_err());
+        assert_eq!(sizes(&zero.meta), vec![0]);
+
+        let mut backwards = bag();
+        backwards
+            .meta
+            .insert("record_sizes", MetaValue::List(Vec::new()));
+        let mut back_options = input();
+        back_options.start = Some(5);
+        back_options.end = Some(4);
+        hash_seam(&run(&mut backwards, &envelope, back_options, None, None).unwrap_err());
+        assert!(sizes(&backwards.meta).is_empty());
+
+        let mut tuple = bag();
+        tuple
+            .meta
+            .insert("record_sizes", MetaValue::Tuple(vec![MetaValue::Int(4)]));
+        let mut tuple_options = input();
+        tuple_options.start = Some(1);
+        tuple_options.end = Some(2);
+        hash_seam(&run(&mut tuple, &envelope, tuple_options, None, None).unwrap_err());
+        assert_eq!(
+            tuple.meta.get("record_sizes"),
+            Some(&MetaValue::Tuple(vec![MetaValue::Int(4)]))
+        );
+
+        let mut overflow = bag();
+        overflow
+            .meta
+            .insert("record_sizes", MetaValue::List(Vec::new()));
+        let mut overflow_options = input();
+        overflow_options.start = Some(i64::MIN);
+        overflow_options.end = Some(i64::MAX);
+        hash_seam(&run(&mut overflow, &envelope, overflow_options, None, None).unwrap_err());
+        assert!(sizes(&overflow.meta).is_empty());
+        assert!(zero.events.is_empty());
+    }
+
+    #[test]
+    fn a_malformed_link_stops_before_the_event() {
+        let envelope = empty_payload("event_msg");
+        let mut held = bag();
+        held.meta
+            .insert("links", MetaValue::List(vec![MetaValue::Int(1)]));
+        held.meta
+            .insert("record_sizes", MetaValue::List(Vec::new()));
+        let mut options = input();
+        options.start = Some(1);
+        options.end = Some(2);
+        let err = run(&mut held, &envelope, options, None, None).unwrap_err();
+        assert!(matches!(err, ProcessRolloutRecordError::LinkShape));
+        assert_eq!(err.to_string(), "links entry is missing kind or target");
+        assert!(sizes(&held.meta).is_empty());
+        assert!(held.events.is_empty());
+        assert!(held.findings.is_empty());
+    }
+}
