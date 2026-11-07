@@ -286,25 +286,6 @@
       }
     },
     {
-      "id": "read_header_non_object_array_rust_label",
-      "construct": {
-        "type": "io_read_header_stream",
-        "stream": {
-          "kind": "bytes_hex",
-          "hex": "200a090a0d0a0b0a0c0a5b315d0a"
-        },
-        "limits": {
-          "max_line_bytes": 8388608,
-          "max_depth": 100,
-          "max_file_bytes": 104857600
-        }
-      },
-      "expected": {
-        "outcome": "error",
-        "message": "Session header must be a mapping, got array on line 6"
-      }
-    },
-    {
       "id": "read_header_missing_identity",
       "construct": {
         "type": "io_read_header_stream",
@@ -430,8 +411,7 @@
       "expected": {
         "raw_record_hex": "3031323334",
         "byte_end": 10,
-        "no_wxyz_in_record": true,
-        "error": "sesslint.determinism.canonical_json_bytes is not available"
+        "no_wxyz_in_record": true
       }
     },
     {

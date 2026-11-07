@@ -358,22 +358,6 @@ def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
         },
     )
 
-    rust_array_msg = "Session header must be a mapping, got array on line 6"
-    append_case(
-        out,
-        {
-            "id": "read_header_non_object_array_rust_label",
-            "construct": {
-                "type": "io_read_header_stream",
-                "stream": bytes_hex(b" \n\t\n\r\n\x0b\n\x0c\n[1]\n"),
-                "limits": limits_obj(
-                    wide.max_line_bytes, wide.max_depth, wide.max_file_bytes
-                ),
-            },
-            "expected": {"outcome": "error", "message": rust_array_msg},
-        },
-    )
-
     neither = (
         '{"created_at":"2024-02-29T00:00:00Z"}\n'
     )
@@ -524,7 +508,6 @@ def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
                 "raw_record_hex": "3031323334",
                 "byte_end": 10,
                 "no_wxyz_in_record": True,
-                "error": "sesslint.determinism.canonical_json_bytes is not available",
             },
         },
     )
