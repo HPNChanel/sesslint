@@ -1,0 +1,627 @@
+#!/usr/bin/env python3
+"""Generate sesslint.hook_event parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+HOOK_PY_SHA256 = (
+    "e8edbee94875815b747b77d4a62ac682c7492e90fa4ce4478fa18f4851437cd9"
+)
+HOOK_RS_SHA256 = (
+    "fc8d9a39675e377e1356da8afb4d6b18ed77035d371e4a22fe19bbd750e36fb9"
+)
+MODULE = "sesslint.hook_event"
+
+FAST_EVENTS = frozenset({"SessionStart"})
+EVENT_SELECT: dict[str, tuple[str, ...]] = {"SessionEnd": ("SL009",)}
+GENERIC_MAX_FILE_BYTES = 8 * 1024 * 1024
+SEVERITY_ORDER = {"fatal": 0, "error": 1, "warning": 2, "info": 3}
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-hook-event-short-hash: non-empty session_id invokes "
+        "sesslint.report.short_hash in Python; Rust returns "
+        "ShortHashUnavailable before later checks (not byte-compared here)."
+    ),
+    (
+        "GAP-hook-event-check-file: transcript paths that reach "
+        "sesslint.api.check_file in Python hit CheckFileUnavailable "
+        "in Rust; findings and ok paths are not byte-compared here."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_hook_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/hook_event.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != HOOK_PY_SHA256:
+        raise SystemExit(
+            f"hook_event.py pin sha256 mismatch: expected {HOOK_PY_SHA256}, got {digest}"
+        )
+
+
+def load_hook_module() -> types.ModuleType:
+    blob = pinned_hook_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "hook_event.py"
+    if module_path.read_bytes() == blob:
+        src = root / "src"
+        insert = str(src)
+        if insert not in sys.path:
+            sys.path.insert(0, insert)
+        import importlib
+
+        return importlib.import_module("sesslint.hook_event")
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_hook_event.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_hook_event_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned hook_event.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.relative_to(base).as_posix()
+
+
+def ensure_fixtures(out_dir: Path, hook: Any) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    missing_rel = "fixtures/absent_transcript.jsonl"
+
+    fast_over = fixtures / "fast_over_budget.jsonl"
+    if not fast_over.exists():
+        fast_over.write_bytes(b"x" * (hook.MAX_FAST_HOOK_TRANSCRIPT_BYTES + 1))
+
+    end_over = fixtures / "end_over_budget.jsonl"
+    if not end_over.exists():
+        end_over.write_bytes(b"y" * (hook.MAX_END_HOOK_TRANSCRIPT_BYTES + 1))
+
+    exact_fast = fixtures / "exact_fast_budget.jsonl"
+    if not exact_fast.exists():
+        exact_fast.write_bytes(b"z" * hook.MAX_FAST_HOOK_TRANSCRIPT_BYTES)
+
+    nested_dir = fixtures / "synthetic_dir"
+    nested_dir.mkdir(parents=True, exist_ok=True)
+    keep = nested_dir / ".keep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8", newline="\n")
+
+    tiny = fixtures / "tiny.jsonl"
+    if not tiny.exists():
+        tiny.write_text(
+            '{"schema_version":"sesslint.session/v1","session_id":"syn",'
+            '"created_at":"2026-10-08T00:00:00Z"}\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    _ = missing_rel
+
+
+def hook_result_expected(result: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "kind": "hook_result",
+        "event": result.event,
+        "verdict": result.verdict,
+        "reason": result.reason,
+        "findings_by_code": dict(result.findings_by_code),
+        "top_code": result.top_code,
+        "session_id": result.session_id,
+        "exit_code": result.exit_code,
+        "line": result.line(),
+        "to_json": result.to_json(),
+        "to_claude_json": result.to_claude_json(),
+        "system_message": result.system_message(),
+    }
+    return payload
+
+
+def planned_check_expected(
+    hook: Any, event: str, profile: str | None, fmt: str | None
+) -> dict[str, Any]:
+    effective = profile if profile not in (None, "") else "neutral"
+    select = EVENT_SELECT.get(event)
+    if event in FAST_EVENTS:
+        budget = hook.MAX_FAST_HOOK_TRANSCRIPT_BYTES
+    elif event == "SessionEnd":
+        budget = hook.MAX_END_HOOK_TRANSCRIPT_BYTES
+    else:
+        budget = GENERIC_MAX_FILE_BYTES
+    return {
+        "profile": effective,
+        "format": fmt,
+        "select": list(select) if select is not None else None,
+        "max_file_bytes": budget,
+    }
+
+
+def classify_checked_expected(
+    hook: Any,
+    event: str,
+    session_id: str | None,
+    fail_on: str | None,
+    limitation: str,
+    findings: list[dict[str, str]],
+) -> dict[str, Any]:
+    if limitation.startswith("Unsupported:"):
+        return hook_result_expected(
+            hook.HookResult(
+                event=event,
+                verdict="skipped",
+                reason="format-undetected",
+                findings_by_code={},
+                top_code=None,
+                session_id=session_id,
+                exit_code=0,
+            )
+        )
+    if limitation.startswith("Skipped:"):
+        return hook_result_expected(
+            hook.HookResult(
+                event=event,
+                verdict="skipped",
+                reason="budget-exceeded",
+                findings_by_code={},
+                top_code=None,
+                session_id=session_id,
+                exit_code=0,
+            )
+        )
+    by_code = dict(sorted(Counter(row["code"] for row in findings).items()))
+    if not by_code:
+        return hook_result_expected(
+            hook.HookResult(
+                event=event,
+                verdict="ok",
+                reason="clean",
+                findings_by_code={},
+                top_code=None,
+                session_id=session_id,
+                exit_code=0,
+            )
+        )
+    top_code = min(
+        findings,
+        key=lambda row: (SEVERITY_ORDER.get(row["severity"], 9), row["code"]),
+    )["code"]
+    gated = fail_on == "warning" or (
+        fail_on == "error"
+        and any(row["severity"] in ("error", "fatal") for row in findings)
+    )
+    reason = (
+        "detection-failed"
+        if any(row["code"] in ("SL301", "SL302") for row in findings)
+        else "findings-present"
+    )
+    return hook_result_expected(
+        hook.HookResult(
+            event=event,
+            verdict="findings",
+            reason=reason,
+            findings_by_code=by_code,
+            top_code=top_code,
+            session_id=session_id,
+            exit_code=1 if gated else 0,
+        )
+    )
+
+
+def payload_bytes(obj: dict[str, Any] | None, raw: bytes | None) -> bytes:
+    if raw is not None:
+        return raw
+    assert obj is not None
+    return json.dumps(obj, separators=(",", ":")).encode("utf-8")
+
+
+def build_vectors(hook: Any, out_dir: Path) -> list[dict[str, Any]]:
+    ensure_fixtures(out_dir, hook)
+    fixtures = out_dir / "fixtures"
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_constants",
+        {"type": "module_constants"},
+        {
+            "hook_result_schema": hook.HOOK_RESULT_SCHEMA,
+            "max_hook_payload_bytes": hook.MAX_HOOK_PAYLOAD_BYTES,
+            "max_fast_hook_transcript_bytes": hook.MAX_FAST_HOOK_TRANSCRIPT_BYTES,
+        },
+    )
+
+    add(
+        "planned_check_session_start",
+        {
+            "type": "planned_check",
+            "event": "SessionStart",
+            "profile": None,
+            "format": None,
+        },
+        planned_check_expected(hook, "SessionStart", None, None),
+    )
+    add(
+        "planned_check_session_end",
+        {
+            "type": "planned_check",
+            "event": "SessionEnd",
+            "profile": "",
+            "format": "claude-json",
+        },
+        planned_check_expected(hook, "SessionEnd", "", "claude-json"),
+    )
+    add(
+        "planned_check_generic_event",
+        {
+            "type": "planned_check",
+            "event": "UserPromptSubmit",
+            "profile": "strict",
+            "format": None,
+        },
+        planned_check_expected(hook, "UserPromptSubmit", "strict", None),
+    )
+    add(
+        "planned_check_lowercase_not_fast",
+        {
+            "type": "planned_check",
+            "event": "sessionstart",
+            "profile": "strict",
+            "format": None,
+        },
+        planned_check_expected(hook, "sessionstart", "strict", None),
+    )
+
+    add(
+        "classify_clean",
+        {
+            "type": "classify_checked",
+            "event": "SessionStart",
+            "session_id": None,
+            "fail_on": None,
+            "limitation": "",
+            "findings": [],
+        },
+        classify_checked_expected(hook, "SessionStart", None, None, "", []),
+    )
+    add(
+        "classify_findings_advisory",
+        {
+            "type": "classify_checked",
+            "event": "SessionEnd",
+            "session_id": "abcd1234",
+            "fail_on": None,
+            "limitation": "",
+            "findings": [
+                {"code": "SYN-B", "severity": "warning"},
+                {"code": "SYN-A", "severity": "warning"},
+                {"code": "SYN-A", "severity": "warning"},
+            ],
+        },
+        classify_checked_expected(
+            hook,
+            "SessionEnd",
+            "abcd1234",
+            None,
+            "",
+            [
+                {"code": "SYN-B", "severity": "warning"},
+                {"code": "SYN-A", "severity": "warning"},
+                {"code": "SYN-A", "severity": "warning"},
+            ],
+        ),
+    )
+    add(
+        "classify_fail_on_warning",
+        {
+            "type": "classify_checked",
+            "event": "SessionEnd",
+            "session_id": "",
+            "fail_on": "warning",
+            "limitation": "",
+            "findings": [{"code": "SYN-A", "severity": "warning"}],
+        },
+        classify_checked_expected(
+            hook,
+            "SessionEnd",
+            "",
+            "warning",
+            "",
+            [{"code": "SYN-A", "severity": "warning"}],
+        ),
+    )
+    add(
+        "classify_detection_failed",
+        {
+            "type": "classify_checked",
+            "event": "SessionStart",
+            "session_id": None,
+            "fail_on": "error",
+            "limitation": "",
+            "findings": [{"code": "SL301", "severity": "error"}],
+        },
+        classify_checked_expected(
+            hook,
+            "SessionStart",
+            None,
+            "error",
+            "",
+            [{"code": "SL301", "severity": "error"}],
+        ),
+    )
+    add(
+        "classify_limitation_skipped",
+        {
+            "type": "classify_checked",
+            "event": "SessionEnd",
+            "session_id": "kept",
+            "fail_on": "warning",
+            "limitation": "Skipped: over budget",
+            "findings": [{"code": "SL301", "severity": "error"}],
+        },
+        classify_checked_expected(
+            hook,
+            "SessionEnd",
+            "kept",
+            "warning",
+            "Skipped: over budget",
+            [{"code": "SL301", "severity": "error"}],
+        ),
+    )
+    add(
+        "classify_limitation_unsupported",
+        {
+            "type": "classify_checked",
+            "event": "SessionEnd",
+            "session_id": None,
+            "fail_on": None,
+            "limitation": "Unsupported: format",
+            "findings": [],
+        },
+        classify_checked_expected(
+            hook, "SessionEnd", None, None, "Unsupported: format", []
+        ),
+    )
+
+    fast_rel = rel_posix(out_dir, fixtures / "fast_over_budget.jsonl")
+    end_rel = rel_posix(out_dir, fixtures / "end_over_budget.jsonl")
+    dir_rel = rel_posix(out_dir, fixtures / "synthetic_dir")
+    missing_rel = "fixtures/absent_transcript.jsonl"
+
+    run_specs: list[tuple[str, str, dict[str, Any] | None, bytes | None, Any]] = [
+        (
+            "run_malformed_json",
+            "SessionStart",
+            None,
+            b"this is not json",
+            (None, None, None),
+        ),
+        (
+            "run_non_object_payload",
+            "SessionStart",
+            None,
+            b'["array","wrong"]',
+            (None, None, None),
+        ),
+        (
+            "run_empty_stdin",
+            "SessionStart",
+            None,
+            b"",
+            (None, None, None),
+        ),
+        (
+            "run_missing_transcript_path",
+            "SessionEnd",
+            {"cwd": "synthetic"},
+            None,
+            (None, None, None),
+        ),
+        (
+            "run_blank_transcript_path",
+            "SessionStart",
+            {"transcript_path": "  \t", "cwd": "synthetic"},
+            None,
+            (None, None, None),
+        ),
+        (
+            "run_transcript_not_found",
+            "SessionStart",
+            {"transcript_path": missing_rel, "cwd": "synthetic"},
+            None,
+            (None, None, None),
+        ),
+        (
+            "run_directory_transcript",
+            "SessionStart",
+            {"transcript_path": dir_rel, "cwd": "synthetic"},
+            None,
+            (None, None, None),
+        ),
+        (
+            "run_fast_budget_exceeded",
+            "SessionStart",
+            {"transcript_path": fast_rel, "hook_event_name": "SessionStart"},
+            None,
+            (None, None, None),
+        ),
+        (
+            "run_end_budget_exceeded",
+            "SessionEnd",
+            {"transcript_path": end_rel},
+            None,
+            (None, None, None),
+        ),
+        (
+            "run_bad_hook_event_name_type",
+            "SessionStart",
+            {"hook_event_name": 42, "transcript_path": missing_rel},
+            None,
+            (None, None, None),
+        ),
+    ]
+
+    oversize_data = b"{" * (hook.MAX_HOOK_PAYLOAD_BYTES + 1)
+    oversize = hook.run_hook(
+        "SessionStart",
+        oversize_data,
+        profile=None,
+        format=None,
+        fail_on=None,
+    )
+    add(
+        "run_oversized_payload",
+        {
+            "type": "run_hook",
+            "event": "SessionStart",
+            "payload_pattern": "oversized_open_brace",
+            "profile": None,
+            "format": None,
+            "fail_on": None,
+        },
+        hook_result_expected(oversize),
+    )
+
+    for vector_id, event, obj, raw, opts in run_specs:
+        profile, fmt, fail_on = opts
+        payload_obj: dict[str, Any] | None = None
+        if obj is not None:
+            payload_obj = dict(obj)
+            if "transcript_path" in payload_obj and isinstance(
+                payload_obj["transcript_path"], str
+            ):
+                rel = payload_obj["transcript_path"]
+                if rel.startswith("fixtures/"):
+                    path = out_dir / rel
+                    payload_obj["transcript_path"] = str(path.resolve())
+            construct = {
+                "type": "run_hook",
+                "event": event,
+                "payload_object": payload_obj,
+                "profile": profile,
+                "format": fmt,
+                "fail_on": fail_on,
+            }
+        else:
+            construct = {
+                "type": "run_hook",
+                "event": event,
+                "payload_raw_hex": raw.hex() if raw else "",
+                "profile": profile,
+                "format": fmt,
+                "fail_on": fail_on,
+            }
+        data = payload_bytes(payload_obj, raw)
+        got = hook.run_hook(
+            event,
+            data,
+            profile=profile,
+            format=fmt,
+            fail_on=fail_on,
+        )
+        add(vector_id, construct, hook_result_expected(got))
+
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "hook_event_py_sha256": HOOK_PY_SHA256,
+        "hook_event_rs_sha256": HOOK_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "hook_event_py_sha256": HOOK_PY_SHA256,
+        "hook_event_rs_sha256": HOOK_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/hook_event/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "hook_event outcomes from pinned sesslint.hook_event "
+            "(synthetic fixtures only; skip paths and pure logic)."
+        ),
+        "generator": "rust/parity/vectors/hook_event/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    hook = load_hook_module()
+    vectors = build_vectors(hook, out_dir)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,565 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.hook_event",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "hook_event_py_sha256": "e8edbee94875815b747b77d4a62ac682c7492e90fa4ce4478fa18f4851437cd9",
+  "hook_event_rs_sha256": "fc8d9a39675e377e1356da8afb4d6b18ed77035d371e4a22fe19bbd750e36fb9",
+  "known_parity_gaps": [
+    "GAP-hook-event-short-hash: non-empty session_id invokes sesslint.report.short_hash in Python; Rust returns ShortHashUnavailable before later checks (not byte-compared here).",
+    "GAP-hook-event-check-file: transcript paths that reach sesslint.api.check_file in Python hit CheckFileUnavailable in Rust; findings and ok paths are not byte-compared here."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "hook_result_schema": "sesslint.hook-result/v1",
+        "max_hook_payload_bytes": 1048576,
+        "max_fast_hook_transcript_bytes": 131072
+      }
+    },
+    {
+      "id": "planned_check_session_start",
+      "construct": {
+        "type": "planned_check",
+        "event": "SessionStart",
+        "profile": null,
+        "format": null
+      },
+      "expected": {
+        "profile": "neutral",
+        "format": null,
+        "select": null,
+        "max_file_bytes": 131072
+      }
+    },
+    {
+      "id": "planned_check_session_end",
+      "construct": {
+        "type": "planned_check",
+        "event": "SessionEnd",
+        "profile": "",
+        "format": "claude-json"
+      },
+      "expected": {
+        "profile": "neutral",
+        "format": "claude-json",
+        "select": [
+          "SL009"
+        ],
+        "max_file_bytes": 1048576
+      }
+    },
+    {
+      "id": "planned_check_generic_event",
+      "construct": {
+        "type": "planned_check",
+        "event": "UserPromptSubmit",
+        "profile": "strict",
+        "format": null
+      },
+      "expected": {
+        "profile": "strict",
+        "format": null,
+        "select": null,
+        "max_file_bytes": 8388608
+      }
+    },
+    {
+      "id": "planned_check_lowercase_not_fast",
+      "construct": {
+        "type": "planned_check",
+        "event": "sessionstart",
+        "profile": "strict",
+        "format": null
+      },
+      "expected": {
+        "profile": "strict",
+        "format": null,
+        "select": null,
+        "max_file_bytes": 8388608
+      }
+    },
+    {
+      "id": "classify_clean",
+      "construct": {
+        "type": "classify_checked",
+        "event": "SessionStart",
+        "session_id": null,
+        "fail_on": null,
+        "limitation": "",
+        "findings": []
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "ok",
+        "reason": "clean",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"ok\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: session integrity check passed.\"}",
+        "system_message": "SessLint: session integrity check passed."
+      }
+    },
+    {
+      "id": "classify_findings_advisory",
+      "construct": {
+        "type": "classify_checked",
+        "event": "SessionEnd",
+        "session_id": "abcd1234",
+        "fail_on": null,
+        "limitation": "",
+        "findings": [
+          {
+            "code": "SYN-B",
+            "severity": "warning"
+          },
+          {
+            "code": "SYN-A",
+            "severity": "warning"
+          },
+          {
+            "code": "SYN-A",
+            "severity": "warning"
+          }
+        ]
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionEnd",
+        "verdict": "findings",
+        "reason": "findings-present",
+        "findings_by_code": {
+          "SYN-A": 2,
+          "SYN-B": 1
+        },
+        "top_code": "SYN-A",
+        "session_id": "abcd1234",
+        "exit_code": 0,
+        "line": "sesslint hook[SessionEnd]: findings=3 top=SYN-A",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {\"SYN-A\": 2, \"SYN-B\": 1}, \"reason\": \"findings-present\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": \"abcd1234\", \"top_code\": \"SYN-A\", \"verdict\": \"findings\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: found 3 integrity finding(s); highest code SYN-A.\"}",
+        "system_message": "SessLint: found 3 integrity finding(s); highest code SYN-A."
+      }
+    },
+    {
+      "id": "classify_fail_on_warning",
+      "construct": {
+        "type": "classify_checked",
+        "event": "SessionEnd",
+        "session_id": "",
+        "fail_on": "warning",
+        "limitation": "",
+        "findings": [
+          {
+            "code": "SYN-A",
+            "severity": "warning"
+          }
+        ]
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionEnd",
+        "verdict": "findings",
+        "reason": "findings-present",
+        "findings_by_code": {
+          "SYN-A": 1
+        },
+        "top_code": "SYN-A",
+        "session_id": "",
+        "exit_code": 1,
+        "line": "sesslint hook[SessionEnd]: findings=1 top=SYN-A",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {\"SYN-A\": 1}, \"reason\": \"findings-present\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": \"\", \"top_code\": \"SYN-A\", \"verdict\": \"findings\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: found 1 integrity finding(s); highest code SYN-A.\"}",
+        "system_message": "SessLint: found 1 integrity finding(s); highest code SYN-A."
+      }
+    },
+    {
+      "id": "classify_detection_failed",
+      "construct": {
+        "type": "classify_checked",
+        "event": "SessionStart",
+        "session_id": null,
+        "fail_on": "error",
+        "limitation": "",
+        "findings": [
+          {
+            "code": "SL301",
+            "severity": "error"
+          }
+        ]
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "findings",
+        "reason": "detection-failed",
+        "findings_by_code": {
+          "SL301": 1
+        },
+        "top_code": "SL301",
+        "session_id": null,
+        "exit_code": 1,
+        "line": "sesslint hook[SessionStart]: findings=1 top=SL301",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 1}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: found 1 integrity finding(s); highest code SL301.\"}",
+        "system_message": "SessLint: found 1 integrity finding(s); highest code SL301."
+      }
+    },
+    {
+      "id": "classify_limitation_skipped",
+      "construct": {
+        "type": "classify_checked",
+        "event": "SessionEnd",
+        "session_id": "kept",
+        "fail_on": "warning",
+        "limitation": "Skipped: over budget",
+        "findings": [
+          {
+            "code": "SL301",
+            "severity": "error"
+          }
+        ]
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "budget-exceeded",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": "kept",
+        "exit_code": 0,
+        "line": "sesslint hook[SessionEnd]: skipped (budget-exceeded)",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {}, \"reason\": \"budget-exceeded\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": \"kept\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (budget-exceeded).\"}",
+        "system_message": "SessLint: check skipped (budget-exceeded)."
+      }
+    },
+    {
+      "id": "classify_limitation_unsupported",
+      "construct": {
+        "type": "classify_checked",
+        "event": "SessionEnd",
+        "session_id": null,
+        "fail_on": null,
+        "limitation": "Unsupported: format",
+        "findings": []
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "format-undetected",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionEnd]: skipped (format-undetected)",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {}, \"reason\": \"format-undetected\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (format-undetected).\"}",
+        "system_message": "SessLint: check skipped (format-undetected)."
+      }
+    },
+    {
+      "id": "run_oversized_payload",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_pattern": "oversized_open_brace",
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "payload-too-large",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (payload-too-large)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"payload-too-large\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (payload-too-large).\"}",
+        "system_message": "SessLint: check skipped (payload-too-large)."
+      }
+    },
+    {
+      "id": "run_malformed_json",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_raw_hex": "74686973206973206e6f74206a736f6e",
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (malformed-payload)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (malformed-payload).\"}",
+        "system_message": "SessLint: check skipped (malformed-payload)."
+      }
+    },
+    {
+      "id": "run_non_object_payload",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_raw_hex": "5b226172726179222c2277726f6e67225d",
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (malformed-payload)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (malformed-payload).\"}",
+        "system_message": "SessLint: check skipped (malformed-payload)."
+      }
+    },
+    {
+      "id": "run_empty_stdin",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_raw_hex": "",
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (malformed-payload)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (malformed-payload).\"}",
+        "system_message": "SessLint: check skipped (malformed-payload)."
+      }
+    },
+    {
+      "id": "run_missing_transcript_path",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionEnd",
+        "payload_object": {
+          "cwd": "synthetic"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "no-transcript-path",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionEnd]: skipped (no-transcript-path)",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {}, \"reason\": \"no-transcript-path\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (no-transcript-path).\"}",
+        "system_message": "SessLint: check skipped (no-transcript-path)."
+      }
+    },
+    {
+      "id": "run_blank_transcript_path",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_object": {
+          "transcript_path": "  \t",
+          "cwd": "synthetic"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "no-transcript-path",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (no-transcript-path)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"no-transcript-path\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (no-transcript-path).\"}",
+        "system_message": "SessLint: check skipped (no-transcript-path)."
+      }
+    },
+    {
+      "id": "run_transcript_not_found",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_object": {
+          "transcript_path": "D:\\FOR_WORK\\WORK_PROJECT\\sesslint\\rust\\parity\\vectors\\hook_event\\fixtures\\absent_transcript.jsonl",
+          "cwd": "synthetic"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "transcript-not-found",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (transcript-not-found)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"transcript-not-found\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (transcript-not-found).\"}",
+        "system_message": "SessLint: check skipped (transcript-not-found)."
+      }
+    },
+    {
+      "id": "run_directory_transcript",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_object": {
+          "transcript_path": "D:\\FOR_WORK\\WORK_PROJECT\\sesslint\\rust\\parity\\vectors\\hook_event\\fixtures\\synthetic_dir",
+          "cwd": "synthetic"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "transcript-not-found",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (transcript-not-found)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"transcript-not-found\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (transcript-not-found).\"}",
+        "system_message": "SessLint: check skipped (transcript-not-found)."
+      }
+    },
+    {
+      "id": "run_fast_budget_exceeded",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_object": {
+          "transcript_path": "D:\\FOR_WORK\\WORK_PROJECT\\sesslint\\rust\\parity\\vectors\\hook_event\\fixtures\\fast_over_budget.jsonl",
+          "hook_event_name": "SessionStart"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "budget-exceeded",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (budget-exceeded)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"budget-exceeded\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (budget-exceeded).\"}",
+        "system_message": "SessLint: check skipped (budget-exceeded)."
+      }
+    },
+    {
+      "id": "run_end_budget_exceeded",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionEnd",
+        "payload_object": {
+          "transcript_path": "D:\\FOR_WORK\\WORK_PROJECT\\sesslint\\rust\\parity\\vectors\\hook_event\\fixtures\\end_over_budget.jsonl"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "budget-exceeded",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionEnd]: skipped (budget-exceeded)",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {}, \"reason\": \"budget-exceeded\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (budget-exceeded).\"}",
+        "system_message": "SessLint: check skipped (budget-exceeded)."
+      }
+    },
+    {
+      "id": "run_bad_hook_event_name_type",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "payload_object": {
+          "hook_event_name": 42,
+          "transcript_path": "D:\\FOR_WORK\\WORK_PROJECT\\sesslint\\rust\\parity\\vectors\\hook_event\\fixtures\\absent_transcript.jsonl"
+        },
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "kind": "hook_result",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "findings_by_code": {},
+        "top_code": null,
+        "session_id": null,
+        "exit_code": 0,
+        "line": "sesslint hook[SessionStart]: skipped (malformed-payload)",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "to_claude_json": "{\"systemMessage\": \"SessLint: check skipped (malformed-payload).\"}",
+        "system_message": "SessLint: check skipped (malformed-payload)."
+      }
+    }
+  ]
+}
