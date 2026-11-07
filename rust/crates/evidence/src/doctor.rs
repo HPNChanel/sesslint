@@ -1,8 +1,12 @@
 //! Environment diagnostics for `sesslint doctor` (ux-reporting T-04).
 //!
-//! Port of `src/sesslint/doctor.py` lines 1–258
+//! Port of `src/sesslint/doctor.py` lines 1–507
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`,
 //! blob `b4bc93415d72096dcb62f0e57d668c879d0debfd`.
+//!
+//! Lines 1–258 are the report types and the bounded walk. Lines 261–507
+//! stop at the first unported import: [`index_health`], [`doctor_report`],
+//! [`get_doctor_schema_path`], and [`load_doctor_schema`].
 //!
 //! `sesslint.report.minimize_path` and `sesslint.api.check_file` are not
 //! ported. Calls that would reach them return a typed error. Classification
@@ -10,7 +14,7 @@
 //! `check_file`.
 
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -36,6 +40,17 @@ pub const MINIMIZE_PATH_UNAVAILABLE: &str = "sesslint.report.minimize_path is no
 /// `sesslint.api.check_file` is not ported.
 pub const CHECK_FILE_UNAVAILABLE: &str = "sesslint.api.check_file is not available";
 
+/// First name on `_index_health`'s `sesslint.indexes` import.
+pub const INDEXES_DISCOVER_UNAVAILABLE: &str =
+    "sesslint.indexes.discover_index_files is not available";
+
+/// First import in `doctor_report`: `sesslint.adapters.supported_adapters`.
+pub const SUPPORTED_ADAPTERS_UNAVAILABLE: &str =
+    "sesslint.adapters.supported_adapters is not available";
+
+/// `sesslint._resources.schema_path` is not ported.
+pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
 /// Python `ValueError` text for a NaN timestamp.
 pub const TIMESTAMP_NAN: &str = "Invalid value NaN (not a number)";
 
@@ -45,7 +60,7 @@ pub const TIMESTAMP_TIME_T: &str = "timestamp out of range for platform time_t";
 /// Python `OverflowError` text when the civil year is outside 1..=9999.
 pub const TIMESTAMP_DATE: &str = "date value out of range";
 
-/// Failure from the lines-1–258 port. Display text for a missing import is the
+/// Failure from the doctor port. Display text for a missing import is the
 /// `module.function is not available` sentence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DoctorError {
@@ -53,6 +68,12 @@ pub enum DoctorError {
     MinimizePathUnavailable,
     /// `sesslint.api.check_file`.
     CheckFileUnavailable,
+    /// `sesslint.indexes.discover_index_files`.
+    IndexesDiscoverUnavailable,
+    /// `sesslint.adapters.supported_adapters`.
+    SupportedAdaptersUnavailable,
+    /// `sesslint._resources.schema_path`.
+    SchemaPathUnavailable,
     /// Python `KeyError` while reading an adapter row. Display is `repr(key)`.
     AdapterKey(String),
     /// Python timestamp exception text, without the type name.
@@ -66,6 +87,11 @@ impl fmt::Display for DoctorError {
         match self {
             Self::MinimizePathUnavailable => formatter.write_str(MINIMIZE_PATH_UNAVAILABLE),
             Self::CheckFileUnavailable => formatter.write_str(CHECK_FILE_UNAVAILABLE),
+            Self::IndexesDiscoverUnavailable => formatter.write_str(INDEXES_DISCOVER_UNAVAILABLE),
+            Self::SupportedAdaptersUnavailable => {
+                formatter.write_str(SUPPORTED_ADAPTERS_UNAVAILABLE)
+            }
+            Self::SchemaPathUnavailable => formatter.write_str(SCHEMA_PATH_UNAVAILABLE),
             Self::AdapterKey(key) => formatter.write_str(&python_repr_str(key)),
             Self::Timestamp(text) => formatter.write_str(text),
             Self::Io(text) => formatter.write_str(text),
@@ -422,6 +448,64 @@ pub fn verdicts_from_outcomes(outcomes: &[CheckOutcome]) -> QuickVerdicts {
         verdicts,
         top_codes: code_counts,
     }
+}
+
+/// Python `_index_health`.
+///
+/// The body imports `discover_index_files`, `has_index_format`, and
+/// `read_index` from `sesslint.indexes` before it classifies candidates,
+/// then imports `sesslint.scan._walk_rollout_files` and
+/// `sesslint.state_db`. Those modules are not linked. The first import is
+/// [`DoctorError::IndexesDiscoverUnavailable`]. This does not read an index,
+/// walk a rollout tree, open a state database, or write a session file.
+pub fn index_health(
+    agent: &str,
+    root: &Path,
+    candidates: &[PathBuf],
+) -> Result<IndexDiag, DoctorError> {
+    let _ = (agent, root, candidates);
+    Err(DoctorError::IndexesDiscoverUnavailable)
+}
+
+/// Python `doctor_report`.
+///
+/// `agents`, `env`, and `home` use `None` for Python `None`. Python's
+/// `quick_checks` default is `true`; pass that when the caller omitted it.
+/// `env` is a [`BTreeMap`] so a later port cannot leak `HashMap` order.
+///
+/// The body imports, in order, `sesslint.adapters.supported_adapters`,
+/// `sesslint.api.discover_session_roots`, `sesslint.config.find_config_file`,
+/// and `sesslint.io.ReaderLimits`. The first import is not linked, so this
+/// returns [`DoctorError::SupportedAdaptersUnavailable`] before reader
+/// limits, config lookup, root discovery, [`count_files`], [`iso_utc`],
+/// [`quick_verdicts`], or [`index_health`]. It does not write a session file.
+pub fn doctor_report(
+    agents: Option<&[&str]>,
+    env: Option<&BTreeMap<String, String>>,
+    home: Option<&Path>,
+    quick_checks: bool,
+) -> Result<DoctorReport, DoctorError> {
+    let _ = (agents, env, home, quick_checks);
+    Err(DoctorError::SupportedAdaptersUnavailable)
+}
+
+/// Python `get_doctor_schema_path`.
+///
+/// The first statement imports `sesslint._resources.schema_path`. That
+/// function is not linked. This does not build a `schemas/` path, does not
+/// read a schema file, and does not consult an environment variable.
+pub fn get_doctor_schema_path() -> Result<PathBuf, DoctorError> {
+    Err(DoctorError::SchemaPathUnavailable)
+}
+
+/// Python `load_doctor_schema`.
+///
+/// Calls [`get_doctor_schema_path`] before the `is_file` check. The resource
+/// import fails there, which is the same seam. This does not raise
+/// `FileNotFoundError`, parse JSON, or read `schemas/`.
+pub fn load_doctor_schema() -> Result<DoctorJson, DoctorError> {
+    let _schema_path = get_doctor_schema_path()?;
+    Err(DoctorError::SchemaPathUnavailable)
 }
 
 struct WalkChild {
@@ -953,11 +1037,14 @@ fn push_unicode_escape(out: &mut String, code: u32) {
 #[cfg(test)]
 mod tests {
     use super::{
-        count_files, dumps_sorted, iso_utc, quick_verdicts, verdicts_from_outcomes, CheckOutcome,
-        CheckView, DoctorError, DoctorJson, DoctorReport, IndexDiag, RootDiag,
-        CHECK_FILE_UNAVAILABLE, MAX_FILE_COUNT, MINIMIZE_PATH_UNAVAILABLE, TIMESTAMP_NAN,
-        TIMESTAMP_TIME_T,
+        count_files, doctor_report, dumps_sorted, get_doctor_schema_path, index_health, iso_utc,
+        load_doctor_schema, quick_verdicts, verdicts_from_outcomes, CheckOutcome, CheckView,
+        DoctorError, DoctorJson, DoctorReport, IndexDiag, RootDiag, CHECK_FILE_UNAVAILABLE,
+        INDEXES_DISCOVER_UNAVAILABLE, MAX_FILE_COUNT, MINIMIZE_PATH_UNAVAILABLE,
+        SCHEMA_PATH_UNAVAILABLE, SUPPORTED_ADAPTERS_UNAVAILABLE, TIMESTAMP_NAN, TIMESTAMP_TIME_T,
     };
+    use std::collections::BTreeMap;
+    use std::error::Error;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1568,6 +1655,66 @@ mod tests {
                 ("SYN-E".to_owned(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn index_health_stops_at_the_indexes_import() {
+        let scratch = Scratch::new();
+        let root = scratch.path().join("index-root");
+        let missing = index_health("claude", &root, &[]).unwrap_err();
+        assert_eq!(missing, DoctorError::IndexesDiscoverUnavailable);
+        assert_eq!(missing.to_string(), INDEXES_DISCOVER_UNAVAILABLE);
+        assert!(!root.exists());
+
+        let rollout = root.join("sessions").join("rollout-a.jsonl");
+        let sidecar = root.join("agent-child.jsonl");
+        let codex = index_health("codex", &root, &[rollout.clone(), sidecar]).unwrap_err();
+        assert_eq!(codex.to_string(), INDEXES_DISCOVER_UNAVAILABLE);
+        assert!(!rollout.exists());
+        assert!(!root.exists());
+    }
+
+    #[test]
+    fn doctor_report_stops_at_supported_adapters() {
+        let scratch = Scratch::new();
+        let home = scratch.path().join("home");
+        let mut env = BTreeMap::new();
+        env.insert(
+            "CODEX_HOME".to_owned(),
+            scratch
+                .path()
+                .join("codex-home")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let skipped = doctor_report(Some(&["codex"]), Some(&env), Some(&home), false).unwrap_err();
+        assert_eq!(skipped, DoctorError::SupportedAdaptersUnavailable);
+        assert_eq!(skipped.to_string(), SUPPORTED_ADAPTERS_UNAVAILABLE);
+        assert_ne!(skipped.to_string(), CHECK_FILE_UNAVAILABLE);
+        assert!(!home.exists());
+        assert!(!scratch.path().join("codex-home").exists());
+
+        let defaults = doctor_report(None, None, None, true).unwrap_err();
+        assert_eq!(defaults.to_string(), SUPPORTED_ADAPTERS_UNAVAILABLE);
+        assert_ne!(defaults.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+    }
+
+    #[test]
+    fn get_doctor_schema_path_does_not_read_schemas() {
+        let error = get_doctor_schema_path().unwrap_err();
+        assert_eq!(error, DoctorError::SchemaPathUnavailable);
+        assert_eq!(error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert!(!error.to_string().contains("schemas"));
+        assert!(error.source().is_none());
+    }
+
+    #[test]
+    fn load_doctor_schema_returns_the_resources_seam() {
+        let error = load_doctor_schema().unwrap_err();
+        assert_eq!(error, DoctorError::SchemaPathUnavailable);
+        assert_eq!(error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert!(!error.to_string().contains("Doctor schema not found"));
+        assert!(error.source().is_none());
     }
 
     fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
