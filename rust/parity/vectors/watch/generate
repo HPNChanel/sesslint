@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""Generate sesslint.watch parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import types
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+WATCH_PY_SHA256 = (
+    "8329fffaf88e78b3d2881fef699fbc6a66b636180ee68034a6d8dc5de1113bb7"
+)
+WATCH_RS_SHA256 = (
+    "a9d4fd57c621b28951aa55765c39e1bc90c48efa6f3fa4903c9f7f290c3de55d"
+)
+MODULE = "sesslint.watch"
+
+FIXED_MTIME = 1_700_000_000.0
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-watch-check-file: omitted check_fn imports sesslint.api.check_file "
+        "in Python; Rust returns CheckFileUnavailable before walking (not "
+        "byte-compared here)."
+    ),
+    (
+        "GAP-watch-minimize-path: format_transition and WatchTransition.to_dict "
+        "import sesslint.report.minimize_path in Python; Rust returns "
+        "MinimizePathUnavailable at that import (not byte-compared here)."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_watch_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/watch.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != WATCH_PY_SHA256:
+        raise SystemExit(
+            f"watch.py pin sha256 mismatch: expected {WATCH_PY_SHA256}, got {digest}"
+        )
+
+
+def install_progress_stub() -> None:
+    progress = types.ModuleType("sesslint.progress")
+
+    class OperationCancelled(Exception):
+        """Stub matching sesslint.progress.OperationCancelled."""
+
+    class CancellationToken:
+        def __init__(self, *, cancelled: bool = False) -> None:
+            self._cancelled = cancelled
+
+        def throw_if_cancelled(self) -> None:
+            if self._cancelled:
+                raise OperationCancelled("operation cancelled")
+
+    progress.OperationCancelled = OperationCancelled
+    progress.CancellationToken = CancellationToken
+
+    package = types.ModuleType("sesslint")
+    package.progress = progress
+    sys.modules["sesslint"] = package
+    sys.modules["sesslint.progress"] = progress
+
+
+def load_watch_module() -> types.ModuleType:
+    install_progress_stub()
+    blob = pinned_watch_source()
+    verify_pin_digest(blob)
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_watch.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "sesslint.watch"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned watch.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.relative_to(base).as_posix()
+
+
+def write_fixture(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    os.utime(path, (FIXED_MTIME, FIXED_MTIME))
+
+
+def ensure_fixtures(out_dir: Path) -> Path:
+    fixtures = out_dir / "fixtures"
+    walk_root = fixtures / "synthetic_walk"
+    write_fixture(walk_root / "alpha.jsonl", b'{"kind":"synthetic-alpha"}\n')
+    write_fixture(walk_root / "beta.jsonl", b'{"kind":"synthetic-beta"}\n')
+    write_fixture(walk_root / ".sesslint.toml", b"# excluded\n")
+    write_fixture(walk_root / ".git" / "config", b"[core]\n")
+    write_fixture(walk_root / "nested" / "gamma.jsonl", b'{"kind":"synthetic-gamma"}\n')
+    single = fixtures / "synthetic_single.jsonl"
+    write_fixture(single, b'{"kind":"synthetic-single"}\n')
+    missing = fixtures / "synthetic_missing.jsonl"
+    if missing.exists():
+        missing.unlink()
+    return fixtures
+
+
+@dataclass
+class FakeFinding:
+    code: str
+
+
+@dataclass
+class FakeCounts:
+    by_severity: dict[str, int]
+
+
+@dataclass
+class FakeReport:
+    limitation: str = ""
+    counts: FakeCounts | None = None
+    findings: list[FakeFinding] | None = None
+
+    def __post_init__(self) -> None:
+        if self.counts is None:
+            self.counts = FakeCounts(by_severity={})
+        if self.findings is None:
+            self.findings = []
+
+
+def verdict_vectors(watch: Any) -> list[dict[str, Any]]:
+    rows = [
+        (
+            "verdict_unsupported",
+            FakeReport(limitation="Unsupported: synthetic"),
+            ("unsupported", ()),
+        ),
+        (
+            "verdict_skipped",
+            FakeReport(limitation="Skipped: synthetic"),
+            ("skipped", ()),
+        ),
+        (
+            "verdict_invalid",
+            FakeReport(
+                counts=FakeCounts(by_severity={"error": 1}),
+                findings=[FakeFinding("SL001"), FakeFinding("SL002")],
+            ),
+            ("invalid", ("SL001", "SL002")),
+        ),
+        (
+            "verdict_warnings_severity",
+            FakeReport(
+                counts=FakeCounts(by_severity={"warning": 1}),
+                findings=[FakeFinding("SL010")],
+            ),
+            ("warnings", ("SL010",)),
+        ),
+        (
+            "verdict_warnings_findings_only",
+            FakeReport(
+                counts=FakeCounts(by_severity={}),
+                findings=[FakeFinding("SL011")],
+            ),
+            ("warnings", ("SL011",)),
+        ),
+        (
+            "verdict_healthy",
+            FakeReport(),
+            ("healthy", ()),
+        ),
+    ]
+    out: list[dict[str, Any]] = []
+    for vector_id, report, _expected in rows:
+        got_verdict, got_codes = watch._verdict_of(report)
+        out.append(
+            {
+                "id": vector_id,
+                "construct": {
+                    "type": "verdict_of",
+                    "limitation": report.limitation,
+                    "by_severity": report.counts.by_severity if report.counts else {},
+                    "finding_codes": [f.code for f in (report.findings or [])],
+                },
+                "expected": {
+                    "verdict": got_verdict,
+                    "codes": list(got_codes),
+                },
+            }
+        )
+    return out
+
+
+def build_vectors(watch: Any, out_dir: Path) -> list[dict[str, Any]]:
+    fixtures = ensure_fixtures(out_dir)
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_constants",
+        {"type": "module_constants"},
+        {
+            "watch_event_schema": watch.WATCH_EVENT_SCHEMA,
+            "default_interval": watch.DEFAULT_INTERVAL,
+            "min_interval": watch.MIN_INTERVAL,
+            "max_tracked_files": watch.MAX_TRACKED_FILES,
+            "excluded_dirs": sorted(watch._EXCLUDED_DIRS),
+            "excluded_names": sorted(watch._EXCLUDED_NAMES),
+            "all_exports": list(watch.__all__),
+        },
+    )
+
+    interval = watch.MIN_INTERVAL - 0.01
+    try:
+        watch.watch([], interval=interval, check_fn=lambda _p: None, sleep_fn=lambda _s: None)
+        raise SystemExit("interval_below_min: expected ValueError")
+    except ValueError as exc:
+        interval_message = str(exc)
+
+    add(
+        "interval_below_min",
+        {"type": "interval_error", "interval": interval},
+        {"raises": "ValueError", "message": interval_message},
+    )
+
+    missing = fixtures / "synthetic_missing.jsonl"
+    snap_missing = watch._snapshot_file(missing)
+    add(
+        "snapshot_missing",
+        {"type": "snapshot_file", "path": "fixtures/synthetic_missing.jsonl"},
+        {"snapshot": None if snap_missing is None else list(snap_missing)},
+    )
+
+    single = fixtures / "synthetic_single.jsonl"
+    snap_single = watch._snapshot_file(single)
+    if snap_single is None:
+        raise SystemExit("snapshot_single: expected tuple")
+    add(
+        "snapshot_single",
+        {"type": "snapshot_file", "path": "fixtures/synthetic_single.jsonl"},
+        {"snapshot": [snap_single[0], snap_single[1]]},
+    )
+
+    walk_root = fixtures / "synthetic_walk"
+    walked = watch._walk_files(walk_root)
+    rel_paths = sorted(rel_posix(fixtures, path) for path in walked)
+    add(
+        "walk_synthetic_tree",
+        {"type": "walk_files", "root": "fixtures/synthetic_walk"},
+        {"paths": rel_paths},
+    )
+
+    vectors.extend(verdict_vectors(watch))
+
+    def healthy_check(_path: Path) -> FakeReport:
+        return FakeReport()
+
+    def invalid_check(_path: Path) -> FakeReport:
+        return FakeReport(
+            counts=FakeCounts(by_severity={"fatal": 1}),
+            findings=[FakeFinding("SL777")],
+        )
+
+    transitions: list[dict[str, Any]] = []
+
+    def capture(transition: Any) -> None:
+        transitions.append(
+            {
+                "path_suffix": Path(transition.path).name,
+                "from_state": transition.from_state,
+                "to_state": transition.to_state,
+                "codes": list(transition.codes),
+            }
+        )
+
+    emitted_zero = watch.watch(
+        [single],
+        interval=watch.MIN_INTERVAL,
+        check_fn=healthy_check,
+        sleep_fn=lambda _s: None,
+        on_transition=capture,
+        max_polls=1,
+    )
+    add(
+        "watch_max_polls_one_no_emit",
+        {
+            "type": "watch",
+            "roots": ["fixtures/synthetic_single.jsonl"],
+            "interval": watch.MIN_INTERVAL,
+            "max_polls": 1,
+            "check": "healthy",
+        },
+        {"emitted": emitted_zero, "transitions": [dict(row) for row in transitions]},
+    )
+
+    transitions.clear()
+    emitted_invalid = watch.watch(
+        [single],
+        interval=watch.MIN_INTERVAL,
+        check_fn=invalid_check,
+        sleep_fn=lambda _s: None,
+        on_transition=capture,
+        max_polls=2,
+    )
+    add(
+        "watch_invalid_transition",
+        {
+            "type": "watch",
+            "roots": ["fixtures/synthetic_single.jsonl"],
+            "interval": watch.MIN_INTERVAL,
+            "max_polls": 2,
+            "check": "invalid",
+        },
+        {"emitted": emitted_invalid, "transitions": [dict(row) for row in transitions]},
+    )
+
+    from sesslint.progress import CancellationToken, OperationCancelled
+
+    cancelled = CancellationToken(cancelled=True)
+    try:
+        watch.watch(
+            [single],
+            interval=watch.MIN_INTERVAL,
+            check_fn=healthy_check,
+            sleep_fn=lambda _s: None,
+            cancel_token=cancelled,
+            max_polls=1,
+        )
+        raise SystemExit("watch_cancel: expected OperationCancelled")
+    except OperationCancelled as exc:
+        cancel_message = str(exc)
+
+    add(
+        "watch_cancelled",
+        {"type": "watch_cancelled", "max_polls": 1},
+        {"raises": "OperationCancelled", "message": cancel_message},
+    )
+
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "watch_py_sha256": WATCH_PY_SHA256,
+        "watch_rs_sha256": WATCH_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.watch parity (module constants, interval error, "
+            "snapshot/walk helpers, verdict mapping, injected watch runs)."
+        ),
+        "generator": "rust/parity/vectors/watch/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        watch = load_watch_module()
+        vectors = build_vectors(watch, out_dir)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

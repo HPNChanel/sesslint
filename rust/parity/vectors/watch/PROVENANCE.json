@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.watch parity (module constants, interval error, snapshot/walk helpers, verdict mapping, injected watch runs).",
+  "generator": "rust/parity/vectors/watch/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-watch-check-file: omitted check_fn imports sesslint.api.check_file in Python; Rust returns CheckFileUnavailable before walking (not byte-compared here).",
+    "GAP-watch-minimize-path: format_transition and WatchTransition.to_dict import sesslint.report.minimize_path in Python; Rust returns MinimizePathUnavailable at that import (not byte-compared here)."
+  ]
+}
