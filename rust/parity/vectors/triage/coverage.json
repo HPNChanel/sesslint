@@ -1,0 +1,84 @@
+{
+  "module": "sesslint.triage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 0,
+  "not_applicable_count": 19,
+  "rows": [
+    {
+      "test": "tests/test_triage.py::test_healthy_pure_and_api_parity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_states_are_not_silently_healthy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_limit_and_unreadable_are_distinct",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_incomplete_coverage_never_checked",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_torn_preview_same_snapshot_and_explicit_comparison",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_only_one_decode_and_no_preview_reopen",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_source_changed_after_load_withholds_preview",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_graph_impact_and_private_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_unknown_side_effects_do_not_offer_execution",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_latest_excludes_auxiliary_and_subagents",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_copy_membership_no_writes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_live_registry_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_crosswired_registry_rows_do_not_match",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_hard_link_is_not_a_closed_copy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_query_work_is_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_incomplete_registry_copy_never_verified",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_auxiliary_tables_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_cli_usage_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_cli_json_parity",
+      "status": "not_applicable"
+    }
+  ]
+}
