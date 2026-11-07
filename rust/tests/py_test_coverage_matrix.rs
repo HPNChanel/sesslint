@@ -1,6 +1,6 @@
 //! Dispositions for the 2 `def test_` functions in pinned `tests/test_coverage_matrix.py`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` (349 lines). This integration
+//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` (364 lines). This integration
 //! test crate links `sesslint-rust-workspace`, whose library exports
 //! [`PACKAGE_NAME`] only.
 //!
