@@ -31,7 +31,7 @@ pub mod profile;
 pub mod config;
 pub mod builtin;
 pub mod assessment;
-pub mod runner {}
+pub mod runner;
 
 // `sesslint.profiles` package surface. Order is `profiles/__init__.py` `__all__`
 // @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
