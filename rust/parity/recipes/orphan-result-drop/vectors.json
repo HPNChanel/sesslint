@@ -1,0 +1,860 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "orphan-result-drop",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "known_parity_gaps": [
+    "GAP-orphan-result-drop-affected-region: Python affected_region_orphan_result_drop returns a sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
+    "GAP-orphan-result-drop-planner: plan is not executed. A missing canonical_json_bytes call is not a successful plan. No fingerprint is stored. Zero steps are not a diff."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_orphan_result_drop",
+      "construct": {
+        "type": "recipe_constant"
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "orphan-result-drop",
+        "handles": [
+          "SL101"
+        ],
+        "preconditions": [
+          "salvage_policy",
+          "acknowledge_side_effects",
+          "sl101_orphan_present"
+        ],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": true
+      }
+    },
+    {
+      "id": "orphan_result_drop_direct_apply_refusals",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_orphan_result_drop",
+        "recipe": "orphan-result-drop",
+        "cases": [
+          {
+            "label": "empty_session",
+            "events": [],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          },
+          {
+            "label": "invalid_index",
+            "events": [
+              {
+                "t": "session",
+                "id": "m0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tc1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 1
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "assistant",
+                "kind": "tool_call",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tc1"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr_orph",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-orphan"
+                }
+              }
+            ],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "int",
+                "v": 99
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          },
+          {
+            "label": "not_tool_result",
+            "events": [
+              {
+                "t": "session",
+                "id": "m0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tc1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 1
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "assistant",
+                "kind": "tool_call",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tc1"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr_orph",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-orphan"
+                }
+              }
+            ],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          },
+          {
+            "label": "not_orphan",
+            "events": [
+              {
+                "t": "session",
+                "id": "m0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tc1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 1
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "assistant",
+                "kind": "tool_call",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tc1"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr_orph",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-orphan"
+                }
+              }
+            ],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "int",
+                "v": 2
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          },
+          {
+            "label": "dependent_child",
+            "events": [
+              {
+                "t": "session",
+                "id": "m0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tc1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 1
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "assistant",
+                "kind": "tool_call",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tc1"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr_orph",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-orphan"
+                }
+              },
+              {
+                "t": "session",
+                "id": "ch1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tr_orph"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 4
+                },
+                "ts": "2026-09-05T12:00:04Z",
+                "actor": "assistant",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              }
+            ],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "int",
+                "v": 3
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "mode": "precondition",
+        "error_type": "PreconditionFailed",
+        "fn": "apply_orphan_result_drop",
+        "outcomes": [
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: cannot apply to an empty session"
+          },
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: invalid target index 99"
+          },
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: event at index 0 is not a tool_result"
+          },
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: result at index 2 is not an orphan (a matching tool call exists)"
+          },
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: result has dependent child events; dropping it would create missing parents"
+          }
+        ]
+      }
+    },
+    {
+      "id": "orphan_result_drop_bool_index_is_not_int",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_orphan_result_drop",
+        "recipe": "orphan-result-drop",
+        "cases": [
+          {
+            "label": "bool_true",
+            "events": [
+              {
+                "t": "session",
+                "id": "m0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tc1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 1
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "assistant",
+                "kind": "tool_call",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tc1"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr_orph",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-orphan"
+                }
+              }
+            ],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "bool",
+                "v": true
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          },
+          {
+            "label": "int_one",
+            "events": [
+              {
+                "t": "session",
+                "id": "m0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "correlation_id": {
+                  "t": "null"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tc1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 1
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "assistant",
+                "kind": "tool_call",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr1",
+                "parent_id": {
+                  "t": "str",
+                  "v": "tc1"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-ok"
+                }
+              },
+              {
+                "t": "session",
+                "id": "tr_orph",
+                "parent_id": {
+                  "t": "str",
+                  "v": "m0"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "tool",
+                "kind": "tool_result",
+                "correlation_id": {
+                  "t": "str",
+                  "v": "corr-orphan"
+                }
+              }
+            ],
+            "step": {
+              "seq": {
+                "t": "int",
+                "v": 0
+              },
+              "recipe": "orphan-result-drop",
+              "target_finding_fp": "fp",
+              "target_index": {
+                "t": "int",
+                "v": 1
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              },
+              "lossy": {
+                "t": "bool",
+                "v": true
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "mode": "precondition",
+        "error_type": "PreconditionFailed",
+        "fn": "apply_orphan_result_drop",
+        "outcomes": [
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: no unambiguous orphan result target could be resolved"
+          },
+          {
+            "mode": "precondition",
+            "error_type": "PreconditionFailed",
+            "message": "orphan-result-drop: event at index 1 is not a tool_result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "affected_region_orphan_result_drop",
+      "construct": {
+        "type": "affected_region",
+        "fn": "affected_region_orphan_result_drop",
+        "events": [
+          {
+            "t": "session",
+            "id": "m0",
+            "parent_id": {
+              "t": "null"
+            },
+            "seq": {
+              "t": "int",
+              "v": 0
+            },
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "user",
+            "kind": "message",
+            "correlation_id": {
+              "t": "null"
+            }
+          },
+          {
+            "t": "session",
+            "id": "tc1",
+            "parent_id": {
+              "t": "str",
+              "v": "m0"
+            },
+            "seq": {
+              "t": "int",
+              "v": 1
+            },
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "assistant",
+            "kind": "tool_call",
+            "correlation_id": {
+              "t": "str",
+              "v": "corr-ok"
+            }
+          },
+          {
+            "t": "session",
+            "id": "tr1",
+            "parent_id": {
+              "t": "str",
+              "v": "tc1"
+            },
+            "seq": {
+              "t": "int",
+              "v": 2
+            },
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "tool",
+            "kind": "tool_result",
+            "correlation_id": {
+              "t": "str",
+              "v": "corr-ok"
+            }
+          },
+          {
+            "t": "session",
+            "id": "tr_orph",
+            "parent_id": {
+              "t": "str",
+              "v": "m0"
+            },
+            "seq": {
+              "t": "int",
+              "v": 3
+            },
+            "ts": "2026-09-05T12:00:00Z",
+            "actor": "tool",
+            "kind": "tool_result",
+            "correlation_id": {
+              "t": "str",
+              "v": "corr-orphan"
+            }
+          }
+        ],
+        "step": {
+          "seq": {
+            "t": "int",
+            "v": 0
+          },
+          "recipe": "orphan-result-drop",
+          "target_finding_fp": "fp",
+          "target_index": {
+            "t": "int",
+            "v": 3
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          },
+          "lossy": {
+            "t": "bool",
+            "v": true
+          }
+        }
+      },
+      "expected": {
+        "mode": "python_region",
+        "gap_id": "GAP-orphan-result-drop-affected-region",
+        "region": {
+          "unproven": false,
+          "indices": [
+            3
+          ],
+          "ids": [
+            "tr_orph"
+          ],
+          "ranges": []
+        }
+      }
+    }
+  ]
+}

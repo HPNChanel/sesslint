@@ -1,0 +1,689 @@
+#!/usr/bin/env python3
+"""Generate orphan-result-drop parity vectors from the pinned blob (stdlib only).
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. The blob is executed
+from a temporary file. This script does not import the checkout package.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "orphan-result-drop"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PY_SHA = "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166"
+RS_SHA = "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a"
+MODULE = "sesslint.repair.recipes_salvage"
+RECIPE = "orphan-result-drop"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_recipes_salvage.py"
+GENERATOR = "rust/parity/recipes/orphan-result-drop/generate"
+GAP_REGION = "GAP-orphan-result-drop-affected-region"
+GAP_PLANNER = "GAP-orphan-result-drop-planner"
+COVERED_TEST = "test_orphan_result_drop_direct_apply_refusals"
+COVERED_VECTOR = "orphan_result_drop_direct_apply_refusals"
+BOOL_VECTOR = "orphan_result_drop_bool_index_is_not_int"
+REGION_VECTOR = "affected_region_orphan_result_drop"
+SEAM_SENTENCE = "sesslint.policy.abstention.AffectedRegion is not available"
+DETERMINISM_SENTENCE = "sesslint.determinism.canonical_json_bytes is not available"
+TS = "2026-09-05T12:00:00Z"
+CHILD_TS = "2026-09-05T12:00:04Z"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    f"{GAP_REGION}: Python affected_region_orphan_result_drop returns a "
+    "sesslint.policy.abstention.AffectedRegion. Rust does not construct that "
+    "type. The seam is not covered.",
+    f"{GAP_PLANNER}: plan is not executed. A missing canonical_json_bytes call "
+    "is not a successful plan. No fingerprint is stored. Zero steps are not a diff.",
+)
+
+PLAN_NOTE = (
+    "planner seam remains; a missing canonical_json_bytes call is not a "
+    "successful plan; no fingerprint is stored and zero steps are not a diff"
+)
+SWEEP_NOTE = "one example inside a sweep is not the entire test"
+DIFFERENT_FN = "different function from apply_orphan_result_drop"
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"spec failed {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def scrub_path() -> None:
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    scrub_path()
+    sys.meta_path.insert(0, _PinOnly())
+    rs = ROOT / "rust" / "crates" / "repair" / "src" / "recipes_salvage.rs"
+    if hashlib.sha256(rs.read_bytes()).hexdigest() != RS_SHA:
+        raise SystemExit("rs sha mismatch")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_salvage.py")
+    if hashlib.sha256(py_blob).hexdigest() != PY_SHA:
+        raise SystemExit("py pin sha mismatch")
+    for rel in PIN_CLOSURE:
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_orphan_result_drop.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        return {"t": "bool", "v": value}
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        return {"t": "map", "entries": [[key, tagged(inner)] for key, inner in value.items()]}
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def session_doc(ev: Any) -> dict[str, Any]:
+    if type(ev.seq) is not int:
+        raise SystemExit("session seq is not an int")
+    return {
+        "t": "session",
+        "id": ev.id,
+        "parent_id": tagged(ev.parent_id),
+        "seq": tagged(ev.seq),
+        "ts": ev.ts,
+        "actor": ev.actor,
+        "kind": ev.kind,
+        "correlation_id": tagged(ev.correlation_id),
+    }
+
+
+def make_event(canon: Any, **kwargs: Any) -> Any:
+    return canon.SessionEvent(**kwargs)
+
+
+def orphan_events(canon: Any) -> list[Any]:
+    return [
+        make_event(
+            canon, id="m0", parent_id=None, seq=0, ts=TS, actor="user", kind="message"
+        ),
+        make_event(
+            canon,
+            id="tc1",
+            parent_id="m0",
+            seq=1,
+            ts=TS,
+            actor="assistant",
+            kind="tool_call",
+            correlation_id="corr-ok",
+        ),
+        make_event(
+            canon,
+            id="tr1",
+            parent_id="tc1",
+            seq=2,
+            ts=TS,
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-ok",
+        ),
+        make_event(
+            canon,
+            id="tr_orph",
+            parent_id="m0",
+            seq=3,
+            ts=TS,
+            actor="tool",
+            kind="tool_result",
+            correlation_id="corr-orphan",
+        ),
+    ]
+
+
+def child_event(canon: Any) -> Any:
+    return make_event(
+        canon,
+        id="ch1",
+        parent_id="tr_orph",
+        seq=4,
+        ts=CHILD_TS,
+        actor="assistant",
+        kind="message",
+    )
+
+
+def make_step(planner: Any, target_index: Any) -> Any:
+    if type(target_index) is bool:
+        pass
+    elif target_index is not None and type(target_index) is not int:
+        raise SystemExit("target_index is not null, bool, or int")
+    return planner.PlanStep(
+        seq=0,
+        recipe=RECIPE,
+        target_finding_fp="fp",
+        target_index=target_index,
+        params={},
+        lossy=True,
+    )
+
+
+def step_spec(step: Any) -> dict[str, Any]:
+    return {
+        "seq": tagged(step.seq),
+        "recipe": step.recipe,
+        "target_finding_fp": step.target_finding_fp,
+        "target_index": tagged(step.target_index),
+        "params": tagged(dict(step.params)),
+        "lossy": tagged(require_bool("lossy", step.lossy)),
+    }
+
+
+def refuse(mod: Any, events: list[Any], step: Any) -> dict[str, Any]:
+    try:
+        mod.apply_orphan_result_drop(list(events), step)
+    except mod.PreconditionFailed as exc:
+        message = str(exc)
+        if not message or DETERMINISM_SENTENCE in message or SEAM_SENTENCE in message:
+            raise SystemExit("refusal message is not a precondition failure") from exc
+        return {
+            "mode": "precondition",
+            "error_type": type(exc).__name__,
+            "message": message,
+        }
+    raise SystemExit("apply returned Ok; refusing to store a successful plan")
+
+
+def apply_case(mod: Any, planner: Any, label: str, events: list[Any], target_index: Any) -> dict[str, Any]:
+    step = make_step(planner, target_index)
+    outcome = refuse(mod, events, step)
+    return {
+        "label": label,
+        "events": [session_doc(ev) for ev in events],
+        "step": step_spec(step),
+        "outcome": outcome,
+    }
+
+
+def split_cases(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    constructs: list[dict[str, Any]] = []
+    outcomes: list[dict[str, Any]] = []
+    for row in rows:
+        outcome = row["outcome"]
+        if outcome.get("mode") != "precondition":
+            raise SystemExit("refusal case is not a precondition failure")
+        constructs.append(
+            {"label": row["label"], "events": row["events"], "step": row["step"]}
+        )
+        outcomes.append(outcome)
+    return constructs, outcomes
+
+
+def recipe_expected(recipe: Any) -> dict[str, Any]:
+    return {
+        "mode": "recipe",
+        "name": recipe.name,
+        "handles": list(recipe.handles),
+        "preconditions": list(recipe.preconditions),
+        "lossy": require_bool("lossy", recipe.lossy),
+        "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+        "min_policy": recipe.min_policy,
+        "version": recipe.version,
+        "excludes_execution_dependence": require_bool(
+            "excludes_execution_dependence",
+            recipe.excludes_execution_dependence,
+        ),
+        "apply_present": require_bool("apply_present", recipe.apply is not None),
+        "affected_region_present": require_bool(
+            "affected_region_present",
+            recipe.affected_region is not None,
+        ),
+    }
+
+
+def region_snapshot(region: Any) -> dict[str, Any]:
+    unproven = require_bool("unproven", region.unproven)
+    indices = sorted(region.indices)
+    if any(type(index) is not int for index in indices):
+        raise SystemExit("region index is not an int")
+    return {
+        "unproven": unproven,
+        "indices": indices,
+        "ids": sorted(region.ids),
+        "ranges": [list(pair) for pair in region.ranges],
+    }
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def call_names(fn: ast.FunctionDef) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def function_source(text: str, fn: ast.FunctionDef) -> str:
+    lines = text.splitlines(keepends=True)
+    end = fn.end_lineno if fn.end_lineno is not None else fn.lineno
+    return "".join(lines[fn.lineno - 1 : end])
+
+
+def assertion_count(fn: ast.FunctionDef) -> int:
+    asserts = 0
+    raises = 0
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assert):
+            asserts += 1
+        elif isinstance(node, ast.With):
+            raises += 1
+    return asserts + raises
+
+
+def require_entire_refusal_test(fn: ast.FunctionDef, source: str, outcomes: int) -> None:
+    names = call_names(fn)
+    if names.count("apply_orphan_result_drop") != 5:
+        raise SystemExit("refusal test is not five apply_orphan_result_drop calls")
+    if "apply_orphan_result_drop_with_loss" in names or "plan" in names:
+        raise SystemExit("refusal test is not only apply_orphan_result_drop")
+    if sum(isinstance(node, ast.Assert) for node in ast.walk(fn)) != 0:
+        raise SystemExit("refusal test has an assert outside pytest.raises")
+    if sum(isinstance(node, ast.With) for node in ast.walk(fn)) != 5:
+        raise SystemExit("refusal test is not five raises")
+    if outcomes != 5:
+        raise SystemExit("vector does not contain the entire refusal sweep")
+    needles = (
+        'match="empty session"',
+        'match="invalid target index"',
+        'match="not a tool_result"',
+        'match="not an orphan"',
+        'match="dependent child"',
+        "target_index=None",
+        "target_index=99",
+        "target_index=0",
+        "target_index=2",
+        "target_index=3",
+        'id="ch1"',
+        'parent_id="tr_orph"',
+        "PreconditionFailed",
+    )
+    for needle in needles:
+        if needle not in source:
+            raise SystemExit(f"pinned refusal test missing {needle}")
+
+
+def coverage_note(fn: ast.FunctionDef) -> str:
+    names = set(call_names(fn))
+    parts: list[str] = []
+    if fn.name == "test_orphan_result_drop_plans_and_applies":
+        parts.append(
+            "plan plus apply_orphan_result_drop and "
+            "apply_orphan_result_drop_with_loss"
+        )
+    elif fn.name == "test_orphan_result_drop_resolves_by_params":
+        parts.append(
+            "apply_orphan_result_drop mixes a successful drop with a "
+            "PreconditionFailed refusal"
+        )
+    if "plan" in names or "compute_plan_fingerprint" in names:
+        parts.append(PLAN_NOTE)
+    apply_fns = sorted(name for name in names if name.startswith("apply_"))
+    orphan_apply = [name for name in apply_fns if name.startswith("apply_orphan_result_drop")]
+    if apply_fns and orphan_apply != apply_fns:
+        parts.append(DIFFERENT_FN)
+    elif not apply_fns and "plan" not in names and "compute_plan_fingerprint" not in names:
+        parts.append(DIFFERENT_FN)
+    if assertion_count(fn) > 1:
+        parts.append(SWEEP_NOTE)
+    if not parts:
+        raise SystemExit(f"unclassified pinned test {fn.name}")
+    unique: list[str] = []
+    for part in parts:
+        if part not in unique:
+            unique.append(part)
+    return "; ".join(unique)
+
+
+def discover_coverage(functions: list[ast.FunctionDef], text: str, outcomes: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for fn in functions:
+        covered = fn.name == COVERED_TEST
+        if covered:
+            require_entire_refusal_test(fn, function_source(text, fn), outcomes)
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": "covered" if covered else "not_applicable",
+                "vector_id": COVERED_VECTOR if covered else None,
+                "note": "" if covered else coverage_note(fn),
+            }
+        )
+    if sum(row["status"] == "covered" for row in rows) != 1:
+        raise SystemExit("expected exactly one covered row")
+    return rows
+
+
+def dump(doc: Any) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if SEAM_SENTENCE in text or DETERMINISM_SENTENCE in text:
+        raise SystemExit("refusing a rust seam sentence in JSON")
+    if "0 diff" in text:
+        raise SystemExit("refusing a zero-diff claim in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit(f"refusing path fragment in JSON: {banned}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def build_vectors(mod: Any) -> list[dict[str, Any]]:
+    canon = sys.modules["sesslint.canonical"]
+    planner = sys.modules["sesslint.repair.planner"]
+    events = orphan_events(canon)
+    child = child_event(canon)
+    refusal_rows = [
+        apply_case(mod, planner, "empty_session", [], None),
+        apply_case(mod, planner, "invalid_index", events, 99),
+        apply_case(mod, planner, "not_tool_result", events, 0),
+        apply_case(mod, planner, "not_orphan", events, 2),
+        apply_case(mod, planner, "dependent_child", events + [child], 3),
+    ]
+    constructs, outcomes = split_cases(refusal_rows)
+    if len({item["message"] for item in outcomes}) != len(outcomes):
+        raise SystemExit("refusal sweep collapsed two distinct failures")
+    bool_rows = [
+        apply_case(mod, planner, "bool_true", events, True),
+        apply_case(mod, planner, "int_one", events, 1),
+    ]
+    bool_constructs, bool_outcomes = split_cases(bool_rows)
+    if bool_outcomes[0]["message"] == bool_outcomes[1]["message"]:
+        raise SystemExit("bool target_index matched int 1")
+    if type(True) is int:
+        raise SystemExit("bool collapsed to int")
+    recipe = mod.RECIPE_ORPHAN_RESULT_DROP
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    region_step = make_step(planner, 3)
+    region = mod.affected_region_orphan_result_drop(region_step, events)
+    snapshot = region_snapshot(region)
+    if snapshot["unproven"] or snapshot["indices"] != [3] or snapshot["ids"] != ["tr_orph"]:
+        raise SystemExit("pin region did not name the orphan record")
+    tagged_events = [session_doc(ev) for ev in events]
+    return [
+        {
+            "id": "recipe_orphan_result_drop",
+            "construct": {"type": "recipe_constant"},
+            "expected": recipe_expected(recipe),
+        },
+        {
+            "id": COVERED_VECTOR,
+            "construct": {
+                "type": "apply_refusals",
+                "fn": "apply_orphan_result_drop",
+                "recipe": RECIPE,
+                "cases": constructs,
+            },
+            "expected": {
+                "mode": "precondition",
+                "error_type": "PreconditionFailed",
+                "fn": "apply_orphan_result_drop",
+                "outcomes": outcomes,
+            },
+        },
+        {
+            "id": BOOL_VECTOR,
+            "construct": {
+                "type": "apply_refusals",
+                "fn": "apply_orphan_result_drop",
+                "recipe": RECIPE,
+                "cases": bool_constructs,
+            },
+            "expected": {
+                "mode": "precondition",
+                "error_type": "PreconditionFailed",
+                "fn": "apply_orphan_result_drop",
+                "outcomes": bool_outcomes,
+            },
+        },
+        {
+            "id": REGION_VECTOR,
+            "construct": {
+                "type": "affected_region",
+                "fn": "affected_region_orphan_result_drop",
+                "events": tagged_events,
+                "step": step_spec(region_step),
+            },
+            "expected": {
+                "mode": "python_region",
+                "gap_id": GAP_REGION,
+                "region": snapshot,
+            },
+        },
+    ]
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    functions = test_functions(test_text)
+    if len(functions) != 24:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    mod = load_mod()
+    vectors = build_vectors(mod)
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_py_sha256": PY_SHA,
+        "recipes_salvage_rs_sha256": RS_SHA,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    covered_cases = vectors[1]["construct"]["cases"]
+    rows = discover_coverage(functions, test_text, len(covered_cases))
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    write_text(OUT / "coverage.json", dump(coverage))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic orphan-result-drop parity. Refusal messages come from "
+            "the pinned blob. The planner seam and the affected-region seam "
+            "stay uncovered."
+        ),
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_py_sha256": PY_SHA,
+        "recipes_salvage_rs_sha256": RS_SHA,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest))
+    covered = coverage["covered_count"]
+    skipped = coverage["not_applicable_count"]
+    print(f"{len(vectors)} {digest} covered={covered} not_applicable={skipped}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
