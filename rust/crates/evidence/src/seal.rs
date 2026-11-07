@@ -1,27 +1,38 @@
 //! Tamper-evident hash-chain ledger for SessLint verdicts (evidence-assurance T-01).
 //!
-//! Port of `src/sesslint/seal.py` lines 1–315
+//! Port of `src/sesslint/seal.py` lines 1–465
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`,
 //! blob `b25074ea2dbebe8bcf3359ec288bf08b80b0b9ed`.
 //!
-//! Line 315 is the closing `os.close` of [`ledger_lock`]. `append_seal` begins
-//! at line 318 and is not ported. Nothing after line 315 is ported: no ledger
-//! append, no directory fsync, and no schema loader.
+//! Lines 1–315 are the hash, verify, and [`ledger_lock`] behavior. Lines
+//! 318–465 are [`append_seal`], the locked append, directory sync, and the
+//! schema loaders. `__all__` is the public items already exported here.
 //!
-//! [`build_entry`] requires the caller to pass the instant. This module does
-//! not read the wall clock. The formatted instant is the pin's
+//! [`append_seal`] calls [`ledger_lock`] before it opens a ledger. The lock
+//! helper closes the sidecar and returns [`SealError::LockingUnavailable`].
+//! That error is propagated. On that path the ledger is not opened for append
+//! and no ledger bytes are written. The locked body runs only after the lock
+//! returns `Ok`.
+//!
+//! [`build_entry`] and [`append_seal`] require the caller to pass the instant.
+//! This module does not read the wall clock. The formatted instant is the pin's
 //! `datetime.isoformat(timespec="seconds").replace("+00:00", "Z")` and is
 //! inside the hashed entry.
 //!
-//! [`entry_hash`] calls [`codec::canonical_codec::canonical_json_bytes`] with
-//! `newline` false, which is the `_canonical_codec` default. Canonical JSON
-//! is not reimplemented here.
+//! The hash helper calls [`codec::canonical_codec::canonical_json_bytes`] with
+//! `newline` false, which is the `_canonical_codec` default. The appended line
+//! uses `newline` true. Canonical JSON is not reimplemented here.
 //!
 //! [`ledger_lock`] opens the lock file before the missing `msvcrt` / `fcntl`
 //! import. It then closes the descriptor and returns [`SealError::LockingUnavailable`].
 //! It does not hold the file open, append ledger bytes, or link `libc`.
 //! `O_NOFOLLOW` is not applied: this crate does not depend on `libc`. The
 //! symlink check still runs before the open, as in the pin.
+//!
+//! [`get_seal_schema_path`] checks the pure relative development path, then
+//! returns [`SealError::ResourcesUnavailable`]. `sesslint._resources` is not
+//! ported and is not invented. [`load_seal_schema`] stops at that error.
+//! Neither function reads `schemas/`.
 //!
 //! # Recorded gaps
 //!
@@ -40,11 +51,14 @@
 //! * JSON container nesting follows CPython 3.11.9's default `json.loads`:
 //!   995 nested arrays or objects parse, and 996 raises `RecursionError`,
 //!   which [`verify_lines`] reports as a malformed line.
+//! * Directory sync is a no-op on Windows, matching `os.name == "nt"`.
+//!   Closing the ledger file ignores a close error.
+//! * Pure-path text drops `.` components. Python `str(Path)` keeps them.
 
 use std::error::Error;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 
 use codec::canonical_codec::{canonical_json_bytes, ObjectKey, Value};
@@ -52,6 +66,12 @@ use sha2::{Digest, Sha256};
 
 /// Python `SEAL_SCHEMA_ID`.
 pub const SEAL_SCHEMA_ID: &str = "sesslint.seal-ledger/v1";
+
+/// Schema file name under `schemas/`, checked before the missing import.
+const SEAL_SCHEMA_FILE: &str = "sesslint.seal-ledger.v1.json";
+
+/// `sesslint._resources` is not ported.
+pub const RESOURCES_UNAVAILABLE: &str = "sesslint._resources is not available";
 
 /// Python `GENESIS`.
 pub const GENESIS: &str = "GENESIS";
@@ -81,16 +101,18 @@ const MAX_JSON_DEPTH: usize = 995;
 
 const DAY_MICROS: i128 = 86_400_000_000;
 
-/// Python `SealError`, plus the typed lock-import failure.
+/// Python `SealError`, plus the typed lock-import and resources failures.
 ///
-/// [`Display`](fmt::Display) is the Python message, or the lock sentence
-/// below. It does not include a Rust type name.
+/// [`Display`](fmt::Display) is the Python message, the lock sentence, or
+/// [`RESOURCES_UNAVAILABLE`]. It does not include a Rust type name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SealError {
     /// Python exception text (`SealError`, `ValueError`, `SchemaError`, or an OS message).
     Message(String),
     /// `msvcrt.locking` or `fcntl.flock` is not available. The lock file was closed.
     LockingUnavailable,
+    /// `sesslint._resources` is not ported. Schema bytes were not read.
+    ResourcesUnavailable,
 }
 
 impl SealError {
@@ -110,13 +132,14 @@ impl fmt::Display for SealError {
                     formatter.write_str("fcntl.flock is not available")
                 }
             }
+            Self::ResourcesUnavailable => formatter.write_str(RESOURCES_UNAVAILABLE),
         }
     }
 }
 
 impl Error for SealError {}
 
-/// Instant supplied to [`build_entry`].
+/// Instant supplied to [`build_entry`] and [`append_seal`].
 ///
 /// `offset_micros_east == None` is a naive datetime. `Some(0)` is UTC.
 /// The value is not read from the wall clock.
@@ -501,6 +524,263 @@ pub fn ledger_lock(path: &Path) -> Result<(), SealError> {
     };
     drop(file);
     Err(SealError::LockingUnavailable)
+}
+
+/// Keyword-only arguments of Python `append_seal`. `now` is required.
+///
+/// The instant is supplied by the caller. This module does not read the wall clock.
+#[derive(Clone, Copy, Debug)]
+pub struct AppendInput<'a> {
+    pub ledger: &'a Path,
+    pub tool: &'a str,
+    pub file_sha256: &'a str,
+    pub path: Option<&'a str>,
+    pub verdict: &'a str,
+    pub codes: &'a [(&'a str, i64)],
+    pub report_sha256: &'a str,
+    pub genesis_of: Option<&'a str>,
+    pub now: &'a SealInstant,
+}
+
+/// Append one sealed line after re-verifying the chain.
+///
+/// Python `append_seal`. [`ledger_lock`] runs before the ledger is opened.
+/// The lock closes its sidecar and returns [`SealError::LockingUnavailable`].
+/// This propagates that error. The ledger is not opened for append and no
+/// ledger bytes are written on that path.
+pub fn append_seal(input: AppendInput<'_>) -> Result<SealEntry, SealError> {
+    ledger_lock(input.ledger)?;
+    append_seal_locked(input)
+}
+
+/// Python `_append_seal_locked`. Runs only after [`ledger_lock`] returns `Ok`.
+fn append_seal_locked(input: AppendInput<'_>) -> Result<SealEntry, SealError> {
+    let path = input.ledger;
+    let (seq, prev) = if path.exists() {
+        let lines = iter_lines(path)?;
+        let borrowed: Vec<(i64, &str)> = lines
+            .iter()
+            .map(|(number, text)| (*number, text.as_str()))
+            .collect();
+        if let Some(found) = verify_lines(&borrowed)? {
+            return Err(SealError::message(format!(
+                "ledger {} is divergent at line {} ({}: {}) — refusing to extend",
+                path_text(path),
+                found.line,
+                found.kind,
+                found.detail
+            )));
+        }
+        next_link(&lines)?
+    } else {
+        (1, GENESIS.to_owned())
+    };
+    if input.genesis_of.is_some() && seq != 1 {
+        return Err(SealError::message(
+            "genesis_of binds only a ledger's first line (seq 1)",
+        ));
+    }
+    let entry = build_entry(EntryInput {
+        seq,
+        prev_sha256: &prev,
+        file_sha256: input.file_sha256,
+        path: input.path,
+        tool: input.tool,
+        verdict: input.verdict,
+        codes: input.codes,
+        report_sha256: input.report_sha256,
+        genesis_of: input.genesis_of,
+        now: input.now,
+    })?;
+    let line = entry_line_bytes(&entry)?;
+    append_line(path, line)?;
+    Ok(entry)
+}
+
+fn next_link(lines: &[(i64, String)]) -> Result<(i64, String), SealError> {
+    let Some((_, raw)) = lines.last() else {
+        return Ok((1, GENESIS.to_owned()));
+    };
+    let Ok(parsed) = parse_json(raw) else {
+        return Err(SealError::message(
+            "line is not valid JSON (edit or truncation)",
+        ));
+    };
+    let Json::Object(entries) = parsed else {
+        return Err(SealError::message("entry fields are malformed or missing"));
+    };
+    let next = {
+        let Some(Json::Int(seq)) = object_get(&entries, "seq") else {
+            return Err(SealError::message("entry fields are malformed or missing"));
+        };
+        let Some(value) = seq.to_i128() else {
+            return Err(SealError::message(
+                "canonical integer is outside the supported range",
+            ));
+        };
+        let seq = i64::try_from(value)
+            .map_err(|_| SealError::message("seal sequence is outside the supported range"))?;
+        seq.checked_add(1)
+            .ok_or_else(|| SealError::message("seal sequence is outside the supported range"))?
+    };
+    let Some(Json::String(prev)) = object_get(&entries, "entry_sha256") else {
+        return Err(SealError::message("entry fields are malformed or missing"));
+    };
+    Ok((next, prev.clone()))
+}
+
+fn entry_line_bytes(entry: &SealEntry) -> Result<Vec<u8>, SealError> {
+    let mut codes = Vec::with_capacity(entry.codes.len());
+    for (code, count) in &entry.codes {
+        codes.push((ObjectKey::string(code.clone()), Value::int(*count)));
+    }
+    let mut fields = vec![
+        (ObjectKey::string("schema"), Value::string(entry.schema)),
+        (ObjectKey::string("seq"), Value::int(entry.seq)),
+        (
+            ObjectKey::string("prev_sha256"),
+            Value::string(&entry.prev_sha256),
+        ),
+        (
+            ObjectKey::string("file_sha256"),
+            Value::string(&entry.file_sha256),
+        ),
+        (ObjectKey::string("tool"), Value::string(&entry.tool)),
+        (ObjectKey::string("verdict"), Value::string(&entry.verdict)),
+        (ObjectKey::string("codes"), Value::object(codes)),
+        (
+            ObjectKey::string("report_sha256"),
+            Value::string(&entry.report_sha256),
+        ),
+        (
+            ObjectKey::string("sealed_at"),
+            Value::string(&entry.sealed_at),
+        ),
+        (
+            ObjectKey::string("entry_sha256"),
+            Value::string(&entry.entry_sha256),
+        ),
+    ];
+    if let Some(path) = &entry.path {
+        fields.push((ObjectKey::string("path"), Value::string(path)));
+    }
+    if let Some(genesis) = &entry.genesis_of {
+        fields.push((ObjectKey::string("genesis_of"), Value::string(genesis)));
+    }
+    canonical_json_bytes(&Value::object(fields), true)
+        .map_err(|err| SealError::message(err.to_string()))
+}
+
+fn append_line(path: &Path, line: Vec<u8>) -> Result<(), SealError> {
+    let parent = ledger_parent(path);
+    if !parent.exists() {
+        return Err(SealError::message(format!(
+            "ledger directory does not exist: {}",
+            path_text(&parent)
+        )));
+    }
+    if let Err(err) = write_ledger_line(path, line) {
+        return Err(SealError::message(format!(
+            "cannot append to ledger {}: {}",
+            path_text(path),
+            os_error_text(&err, path)
+        )));
+    }
+    sync_dir(&parent);
+    Ok(())
+}
+
+fn write_ledger_line(path: &Path, mut line: Vec<u8>) -> io::Result<()> {
+    let mut file = open_append(path)?;
+    let len = file.metadata()?.len();
+    if len > 0 {
+        file.seek(SeekFrom::Start(len - 1))?;
+        let mut last = [0_u8; 1];
+        let read = read_retry(&mut file, &mut last)?;
+        if read != 1 || last[0] != b'\n' {
+            let mut joined = Vec::with_capacity(line.len().saturating_add(1));
+            joined.push(b'\n');
+            joined.append(&mut line);
+            line = joined;
+        }
+    }
+    file.write_all(&line)?;
+    file.flush()?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn open_append(path: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(path)
+}
+
+/// Python `_sync_dir`. Best-effort parent directory fsync. No-op on Windows.
+fn sync_dir(path: &Path) {
+    #[cfg(windows)]
+    {
+        let _ = path;
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(file) = File::open(path) {
+            let _ = file.sync_all();
+        }
+    }
+}
+
+fn ledger_parent(path: &Path) -> PathBuf {
+    let mut pure = pure_path(path);
+    if pure.parts.is_empty() {
+        if pure.rooted {
+            return PathBuf::from(pure.native());
+        }
+        return PathBuf::from(".");
+    }
+    pure.parts.pop();
+    if pure.parts.is_empty() && !pure.rooted && pure.anchor.is_empty() {
+        return PathBuf::from(".");
+    }
+    PathBuf::from(pure.native())
+}
+
+/// Python `get_seal_schema_path`.
+///
+/// Checks the pure relative development path, then stops because
+/// `sesslint._resources` is not ported. This does not call `schema_path`,
+/// does not resolve `__file__`, and does not read `schemas/`.
+pub fn get_seal_schema_path() -> Result<PathBuf, SealError> {
+    let _path = seal_schema_development_path()?;
+    Err(SealError::ResourcesUnavailable)
+}
+
+fn seal_schema_development_path() -> Result<PathBuf, SealError> {
+    let path = PathBuf::from("schemas").join(SEAL_SCHEMA_FILE);
+    let pure = pure_path(&path);
+    if !pure.rooted
+        && pure.anchor.is_empty()
+        && pure.parts.len() == 2
+        && pure.parts.first().map(String::as_str) == Some("schemas")
+        && pure.parts.get(1).map(String::as_str) == Some(SEAL_SCHEMA_FILE)
+    {
+        return Ok(PathBuf::from(pure.native()));
+    }
+    Err(SealError::message(format!(
+        "Invalid name {}",
+        python_repr(SEAL_SCHEMA_FILE)
+    )))
+}
+
+/// Python `load_seal_schema`.
+///
+/// Uses [`get_seal_schema_path`] and returns that failure. This does not test
+/// `Path.is_file`, parse JSON, or read `schemas/`.
+pub fn load_seal_schema() -> Result<Value, SealError> {
+    get_seal_schema_path()?;
+    Err(SealError::ResourcesUnavailable)
 }
 
 fn hash_built(
@@ -2291,5 +2571,327 @@ mod tests {
             .file_type()
             .is_symlink());
         assert!(!ledger.exists());
+    }
+
+    fn check_input<'a>(
+        ledger: &'a Path,
+        file_sha256: &'a str,
+        report_sha256: &'a str,
+        path: Option<&'a str>,
+        codes: &'a [(&'a str, i64)],
+        genesis_of: Option<&'a str>,
+        now: &'a SealInstant,
+    ) -> AppendInput<'a> {
+        AppendInput {
+            ledger,
+            tool: "check",
+            file_sha256,
+            path,
+            verdict: "healthy",
+            codes,
+            report_sha256,
+            genesis_of,
+            now,
+        }
+    }
+
+    #[test]
+    fn append_seal_propagates_lock_and_does_not_write() {
+        let scratch = Scratch::new();
+        let ledger = scratch.join("ledger.jsonl");
+        let now = fixed();
+        let report = "b".repeat(64);
+        let file = "a".repeat(64);
+        let err =
+            append_seal(check_input(&ledger, &file, &report, None, &[], None, &now)).unwrap_err();
+        assert_eq!(err.to_string(), locking_text());
+        assert!(!ledger.exists());
+        let lock = scratch.join("ledger.jsonl.lock");
+        assert!(lock.is_file());
+        assert_eq!(fs::read(&lock).unwrap(), b"");
+
+        fs::write(&ledger, b"synthetic-ledger-bytes").unwrap();
+        let err =
+            append_seal(check_input(&ledger, &file, &report, None, &[], None, &now)).unwrap_err();
+        assert_eq!(err.to_string(), locking_text());
+        assert_eq!(fs::read(&ledger).unwrap(), b"synthetic-ledger-bytes");
+
+        let missing = scratch.join("no-such-dir").join("ledger.jsonl");
+        let err =
+            append_seal(check_input(&missing, &file, &report, None, &[], None, &now)).unwrap_err();
+        assert_eq!(err.to_string(), "cannot open ledger lock");
+        assert!(!missing.exists());
+        assert!(!scratch.join("no-such-dir").exists());
+    }
+
+    #[test]
+    fn append_seal_locked_writes_canonical_line_for_fixed_instant() {
+        let scratch = Scratch::new();
+        let ledger = scratch.join("ledger.jsonl");
+        let now = fixed();
+        let file = "a".repeat(64);
+        let report = "b".repeat(64);
+        let codes = [("SL101", 2_i64)];
+        let entry = append_seal_locked(check_input(
+            &ledger,
+            &file,
+            &report,
+            Some("sess.jsonl"),
+            &codes,
+            None,
+            &now,
+        ))
+        .unwrap();
+        assert_eq!(entry.seq, 1);
+        assert_eq!(entry.prev_sha256, GENESIS);
+        assert_eq!(entry.sealed_at, "2026-01-01T00:00:00Z");
+        assert_eq!(entry.entry_sha256, GOLDEN_HASH);
+        let expected = format!(
+            "{{\"codes\":{{\"SL101\":2}},\"entry_sha256\":\"{GOLDEN_HASH}\",\"file_sha256\":\"{file}\",\"path\":\"sess.jsonl\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"{report}\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}}\n"
+        );
+        let bytes = fs::read(&ledger).unwrap();
+        assert_eq!(bytes, expected.as_bytes());
+        assert!(!bytes.contains(&b'\r'));
+        let again = append_seal_locked(check_input(
+            &scratch.join("other.jsonl"),
+            &file,
+            &report,
+            Some("sess.jsonl"),
+            &codes,
+            None,
+            &now,
+        ))
+        .unwrap();
+        assert_eq!(again, entry);
+    }
+
+    #[test]
+    fn append_seal_locked_chains_and_refuses_divergence() {
+        let scratch = Scratch::new();
+        let ledger = scratch.join("ledger.jsonl");
+        let now = fixed();
+        let report = "b".repeat(64);
+        let mut prev = GENESIS.to_owned();
+        for seq in 1..=3 {
+            let index = seq - 1;
+            let file = format!("{index:064x}");
+            let entry =
+                append_seal_locked(check_input(&ledger, &file, &report, None, &[], None, &now))
+                    .unwrap();
+            assert_eq!(entry.seq, seq);
+            assert_eq!(entry.prev_sha256, prev);
+            assert_eq!(entry.sealed_at, "2026-01-01T00:00:00Z");
+            prev = entry.entry_sha256;
+        }
+        let (count, divergence) = verify_ledger(&ledger).unwrap();
+        assert_eq!(count, 3);
+        assert!(divergence.is_none());
+        let bytes = fs::read(&ledger).unwrap();
+        assert!(bytes.ends_with(b"\n"));
+        assert!(!bytes.contains(&b'\r'));
+        assert!(!bytes.windows(2).any(|pair| pair == b"\n\n"));
+
+        let mut parts: Vec<String> = String::from_utf8(bytes.clone())
+            .unwrap()
+            .split('\n')
+            .map(str::to_owned)
+            .collect();
+        assert!(parts.len() > 2, "{}", parts.len());
+        parts[1] = parts[1].replace("healthy", "invalid");
+        let tampered = parts.join("\n");
+        fs::write(&ledger, tampered.as_bytes()).unwrap();
+        let before = fs::read(&ledger).unwrap();
+        let file = "c".repeat(64);
+        let err = append_seal_locked(check_input(&ledger, &file, &report, None, &[], None, &now))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "ledger {} is divergent at line 2 (hash-mismatch: entry_sha256 does not match the entry contents (line edited)) — refusing to extend",
+                path_text(&ledger)
+            )
+        );
+        assert_eq!(fs::read(&ledger).unwrap(), before);
+
+        let err =
+            append_seal(check_input(&ledger, &file, &report, None, &[], None, &now)).unwrap_err();
+        assert_eq!(err.to_string(), locking_text());
+        assert_eq!(fs::read(&ledger).unwrap(), before);
+    }
+
+    #[test]
+    fn append_seal_locked_genesis_and_missing_directory() {
+        let scratch = Scratch::new();
+        let ledger = scratch.join("ledger.jsonl");
+        let now = fixed();
+        let report = "b".repeat(64);
+        let file = "a".repeat(64);
+        let genesis = "f".repeat(64);
+        fs::write(&ledger, b"").unwrap();
+        let entry = append_seal_locked(check_input(
+            &ledger,
+            &file,
+            &report,
+            None,
+            &[],
+            Some(&genesis),
+            &now,
+        ))
+        .unwrap();
+        assert_eq!(entry.seq, 1);
+        assert_eq!(entry.genesis_of.as_deref(), Some(genesis.as_str()));
+        let err = append_seal_locked(check_input(
+            &ledger,
+            &file,
+            &report,
+            None,
+            &[],
+            Some(&genesis),
+            &now,
+        ))
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "genesis_of binds only a ledger's first line (seq 1)"
+        );
+        let kept = fs::read(&ledger).unwrap();
+        let bad = "z".repeat(64);
+        let err = append_seal_locked(check_input(&ledger, &bad, &report, None, &[], None, &now))
+            .unwrap_err();
+        assert_eq!(err.to_string(), "file_sha256 must be a sha256 hex digest");
+        assert_eq!(fs::read(&ledger).unwrap(), kept);
+
+        let missing = scratch.join("missing").join("ledger.jsonl");
+        let err = append_seal_locked(check_input(&missing, &file, &report, None, &[], None, &now))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "ledger directory does not exist: {}",
+                path_text(&ledger_parent(&missing))
+            )
+        );
+        assert!(!missing.exists());
+        assert!(!scratch.join("missing").exists());
+    }
+
+    #[test]
+    fn append_seal_locked_repairs_a_missing_trailing_newline() {
+        let scratch = Scratch::new();
+        let ledger = scratch.join("ledger.jsonl");
+        let now = fixed();
+        let report = "b".repeat(64);
+        let first_file = format!("{:064x}", 0);
+        let first = append_seal_locked(check_input(
+            &ledger,
+            &first_file,
+            &report,
+            None,
+            &[],
+            None,
+            &now,
+        ))
+        .unwrap();
+        let raw = fs::read(&ledger).unwrap();
+        assert!(raw.ends_with(b"\n"));
+        let stripped = raw[..raw.len() - 1].to_vec();
+        fs::write(&ledger, &stripped).unwrap();
+        let second_file = format!("{:064x}", 1);
+        let second = append_seal_locked(check_input(
+            &ledger,
+            &second_file,
+            &report,
+            None,
+            &[],
+            None,
+            &now,
+        ))
+        .unwrap();
+        assert_eq!(second.seq, 2);
+        assert_eq!(second.prev_sha256, first.entry_sha256);
+        let mut expected = stripped;
+        expected.push(b'\n');
+        expected.extend(entry_line_bytes(&second).unwrap());
+        assert_eq!(fs::read(&ledger).unwrap(), expected);
+        assert!(!expected.contains(&b'\r'));
+    }
+
+    #[test]
+    fn schema_loaders_stop_after_the_pure_path() {
+        let path = seal_schema_development_path().unwrap();
+        let expected = if cfg!(windows) {
+            "schemas\\sesslint.seal-ledger.v1.json"
+        } else {
+            "schemas/sesslint.seal-ledger.v1.json"
+        };
+        assert_eq!(path_text(&path), expected);
+        assert_eq!(
+            get_seal_schema_path().unwrap_err(),
+            SealError::ResourcesUnavailable
+        );
+        assert_eq!(
+            get_seal_schema_path().unwrap_err().to_string(),
+            "sesslint._resources is not available"
+        );
+        assert_eq!(
+            load_seal_schema().unwrap_err(),
+            SealError::ResourcesUnavailable
+        );
+        assert_eq!(
+            load_seal_schema().unwrap_err().to_string(),
+            "sesslint._resources is not available"
+        );
+    }
+
+    #[test]
+    fn ledger_parent_and_sync_dir_follow_the_pin() {
+        assert_eq!(ledger_parent(Path::new("ledger.jsonl")), PathBuf::from("."));
+        assert_eq!(ledger_parent(Path::new(".")), PathBuf::from("."));
+        assert_eq!(ledger_parent(Path::new("")), PathBuf::from("."));
+        assert_eq!(ledger_parent(Path::new("..")), PathBuf::from("."));
+        let nested = if cfg!(windows) { "dir\\sub" } else { "dir/sub" };
+        assert_eq!(
+            ledger_parent(Path::new("dir/sub/ledger.jsonl")),
+            PathBuf::from(nested)
+        );
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                ledger_parent(Path::new("C:/ledger.jsonl")),
+                PathBuf::from("C:\\")
+            );
+        }
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                ledger_parent(Path::new("/ledger.jsonl")),
+                PathBuf::from("/")
+            );
+        }
+        let scratch = Scratch::new();
+        sync_dir(&scratch.path);
+        sync_dir(&scratch.join("missing-dir"));
+        assert!(scratch.path.is_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn append_seal_refuses_lock_symlink_without_writing() {
+        let scratch = Scratch::new();
+        let target = scratch.join("target.bin");
+        fs::write(&target, b"synthetic-lock-target").unwrap();
+        let ledger = scratch.join("ledger.jsonl");
+        let link = scratch.join("ledger.jsonl.lock");
+        if std::os::windows::fs::symlink_file(&target, &link).is_err() {
+            return;
+        }
+        let now = fixed();
+        let report = "b".repeat(64);
+        let file = "a".repeat(64);
+        let err =
+            append_seal(check_input(&ledger, &file, &report, None, &[], None, &now)).unwrap_err();
+        assert_eq!(err.to_string(), "ledger lock must not be a symlink");
+        assert!(!ledger.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"synthetic-lock-target");
     }
 }
