@@ -1,0 +1,1965 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.preconditions",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "preconditions_py_sha256": "cb075b5296a1df4f980c4e82370b42eccbb7308f33f8409a0c497c038c2a2808",
+  "preconditions_rs_sha256": "4f4c83b974369cc68eec2ee12ca3e4b9c4b10bb1443d4e696f3c8e5175780431",
+  "known_parity_gaps": [
+    "GAP-preconditions-must-abstain: no_prior_safe_tool_after_cut would call sesslint.policy.abstention.must_abstain; Rust returns Unavailable instead of true.",
+    "GAP-preconditions-parent-candidates: unique_parent_candidate would call sesslint.checks.graph.find_qualifying_parent_candidates; Rust returns Unavailable.",
+    "GAP-preconditions-canonical-json-bytes: fingerprint comparison may call sesslint.determinism.canonical_json_bytes; Rust returns Unavailable where Python returns a bool.",
+    "GAP-preconditions-payload-content-hash: fingerprint comparison may call sesslint._canonical_codec.payload_content_hash; Rust returns Unavailable where Python returns a bool."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "mode": "names",
+        "names": [
+          "PRECONDITION_FUNCS",
+          "PreconditionContext",
+          "_find_component_indices",
+          "_find_torn_compaction_dropped_indices",
+          "acknowledge_side_effects",
+          "adjacent_identical_duplicate",
+          "branch_has_no_checkpoint",
+          "check_preconditions",
+          "duplicate_projection_identical",
+          "no_prior_safe_tool_after_cut",
+          "no_sl203",
+          "register_precondition",
+          "repairability_is_safe_auto",
+          "repairability_is_salvage",
+          "salvage_policy",
+          "side_effects_known",
+          "single_boundary_split",
+          "sl003_identical_duplicate",
+          "sl108_present",
+          "source_hash_pinned",
+          "torn_terminal_record",
+          "unique_parent_candidate"
+        ]
+      }
+    },
+    {
+      "id": "precondition_func_names_order",
+      "construct": {
+        "type": "precondition_func_names"
+      },
+      "expected": {
+        "mode": "names",
+        "names": [
+          "acknowledge_side_effects",
+          "adjacent_identical_duplicate",
+          "branch_has_no_checkpoint",
+          "duplicate_projection_identical",
+          "no_prior_safe_tool_after_cut",
+          "no_sl203",
+          "repairability_is_safe_auto",
+          "repairability_is_salvage",
+          "salvage_policy",
+          "side_effects_known",
+          "single_boundary_split",
+          "sl003_identical_duplicate",
+          "sl108_present",
+          "source_hash_pinned",
+          "torn_terminal_record",
+          "unique_parent_candidate"
+        ]
+      }
+    },
+    {
+      "id": "no_sl203_empty",
+      "construct": {
+        "type": "predicate",
+        "predicate": "no_sl203",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "no_sl203_present",
+      "construct": {
+        "type": "predicate",
+        "predicate": "no_sl203",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "side_effects_empty",
+      "construct": {
+        "type": "predicate",
+        "predicate": "side_effects_known",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "side_effects_tool_unknown",
+      "construct": {
+        "type": "predicate",
+        "predicate": "side_effects_known",
+        "context": {
+          "findings": [],
+          "events": [
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_call"
+                  }
+                ],
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "possible"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "side_effects_tool_none",
+      "construct": {
+        "type": "predicate",
+        "predicate": "side_effects_known",
+        "context": {
+          "findings": [],
+          "events": [
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_call"
+                  }
+                ],
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "none"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-synthetic"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "repairability_safe_auto",
+      "construct": {
+        "type": "predicate",
+        "predicate": "repairability_is_safe_auto",
+        "context": {
+          "findings": [
+            {
+              "code": "SL005",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "repairability_salvage",
+      "construct": {
+        "type": "predicate",
+        "predicate": "repairability_is_salvage",
+        "context": {
+          "findings": [
+            {
+              "code": "SL005",
+              "severity": "ERROR",
+              "repairability": "LOSSY_EXPLICIT",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "source_hash_unpinned",
+      "construct": {
+        "type": "predicate",
+        "predicate": "source_hash_pinned",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "source_hash_pinned_len64",
+      "construct": {
+        "type": "predicate",
+        "predicate": "source_hash_pinned",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "adjacent_scan_match",
+      "construct": {
+        "type": "predicate",
+        "predicate": "adjacent_identical_duplicate",
+        "context": {
+          "findings": [],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "adjacent_scan_no_match",
+      "construct": {
+        "type": "predicate",
+        "predicate": "adjacent_identical_duplicate",
+        "context": {
+          "findings": [],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abd"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "adjacent_fingerprint_seam",
+      "construct": {
+        "type": "predicate",
+        "predicate": "adjacent_identical_duplicate",
+        "context": {
+          "findings": [],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        },
+        "gap": "GAP-preconditions-canonical-json-bytes"
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-preconditions-canonical-json-bytes",
+        "python_bool": false
+      }
+    },
+    {
+      "id": "unique_parent_no_finding",
+      "construct": {
+        "type": "predicate",
+        "predicate": "unique_parent_candidate",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "unique_parent_orphan",
+      "construct": {
+        "type": "predicate",
+        "predicate": "unique_parent_candidate",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "index",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "unique_parent_graph_seam",
+      "construct": {
+        "type": "predicate",
+        "predicate": "unique_parent_candidate",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "index",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "parent_id",
+                  {
+                    "t": "str",
+                    "v": "parent-synthetic"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        },
+        "gap": "GAP-preconditions-parent-candidates"
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-preconditions-parent-candidates",
+        "python_bool": false
+      }
+    },
+    {
+      "id": "single_boundary_one",
+      "construct": {
+        "type": "predicate",
+        "predicate": "single_boundary_split",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "correlation_id",
+                    {
+                      "t": "str",
+                      "v": "corr-synthetic"
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_call"
+                  }
+                ],
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "none"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-synthetic"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "compaction_boundary"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_result"
+                  }
+                ],
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "none"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-synthetic"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "single_boundary_none",
+      "construct": {
+        "type": "predicate",
+        "predicate": "single_boundary_split",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "correlation_id",
+                    {
+                      "t": "str",
+                      "v": "corr-synthetic"
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_call"
+                  }
+                ],
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "none"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-synthetic"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_result"
+                  }
+                ],
+                [
+                  "side_effects",
+                  {
+                    "t": "str",
+                    "v": "none"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-synthetic"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "duplicate_projection_match",
+      "construct": {
+        "type": "predicate",
+        "predicate": "duplicate_projection_identical",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "correlation_id",
+                    {
+                      "t": "str",
+                      "v": "corr-b"
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_result"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-b"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "tool_result"
+                  }
+                ],
+                [
+                  "correlation_id",
+                  {
+                    "t": "str",
+                    "v": "corr-b"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "sl003_identical_duplicate_ok",
+      "construct": {
+        "type": "predicate",
+        "predicate": "sl003_identical_duplicate",
+        "context": {
+          "findings": [
+            {
+              "code": "SL003",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "variant",
+                    {
+                      "t": "str",
+                      "v": "identical-duplicate"
+                    }
+                  ],
+                  [
+                    "record_indexes",
+                    {
+                      "t": "list",
+                      "items": [
+                        {
+                          "t": "int",
+                          "v": 0
+                        },
+                        {
+                          "t": "int",
+                          "v": 1
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abd"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "sl003_identical_duplicate_no_evidence",
+      "construct": {
+        "type": "predicate",
+        "predicate": "sl003_identical_duplicate",
+        "context": {
+          "findings": [
+            {
+              "code": "SL003",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abd"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "salvage_policy_conservative",
+      "construct": {
+        "type": "predicate",
+        "predicate": "salvage_policy",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "salvage_policy_salvage",
+      "construct": {
+        "type": "predicate",
+        "predicate": "salvage_policy",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "salvage",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "acknowledge_side_effects_false",
+      "construct": {
+        "type": "predicate",
+        "predicate": "acknowledge_side_effects",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "acknowledge_side_effects_true",
+      "construct": {
+        "type": "predicate",
+        "predicate": "acknowledge_side_effects",
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": true
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "find_component_simple",
+      "construct": {
+        "type": "_find_component_indices",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-c"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "seed": 2
+      },
+      "expected": {
+        "mode": "indices",
+        "sorted": [
+          0,
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "id": "torn_compaction_drop",
+      "construct": {
+        "type": "_find_torn_compaction_dropped_indices",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "side_effects",
+                {
+                  "t": "str",
+                  "v": "none"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "side_effects",
+                {
+                  "t": "str",
+                  "v": "none"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        ],
+        "boundary_index": 1
+      },
+      "expected": {
+        "mode": "indices",
+        "sorted": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "id": "no_prior_safe_tool_gap",
+      "construct": {
+        "type": "predicate",
+        "predicate": "no_prior_safe_tool_after_cut",
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "at_index",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "index",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abd"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "hash",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        },
+        "gap": "GAP-preconditions-must-abstain"
+      },
+      "expected": {
+        "mode": "gap",
+        "gap_id": "GAP-preconditions-must-abstain",
+        "python_bool": true
+      }
+    },
+    {
+      "id": "no_prior_safe_tool_no_trigger",
+      "construct": {
+        "type": "predicate",
+        "predicate": "no_prior_safe_tool_after_cut",
+        "context": {
+          "findings": [
+            {
+              "code": "SL005",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abd"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "torn_terminal_record_target",
+      "construct": {
+        "type": "predicate",
+        "predicate": "torn_terminal_record",
+        "context": {
+          "findings": [
+            {
+              "code": "SL002",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "unterminated",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "branch_has_no_checkpoint_ok",
+      "construct": {
+        "type": "predicate",
+        "predicate": "branch_has_no_checkpoint",
+        "context": {
+          "findings": [
+            {
+              "code": "SL005",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": "evt-b"
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": {
+                "pairs": [
+                  [
+                    "at_index",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "events": [
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-a"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "message"
+                  }
+                ],
+                [
+                  "content_hash",
+                  {
+                    "t": "str",
+                    "v": "abc"
+                  }
+                ]
+              ]
+            },
+            {
+              "entries": [
+                [
+                  "id",
+                  {
+                    "t": "str",
+                    "v": "evt-b"
+                  }
+                ],
+                [
+                  "kind",
+                  {
+                    "t": "str",
+                    "v": "checkpoint"
+                  }
+                ]
+              ]
+            }
+          ],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": 0,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": true
+      }
+    },
+    {
+      "id": "sl108_present_marker",
+      "construct": {
+        "type": "predicate",
+        "predicate": "sl108_present",
+        "context": {
+          "findings": [
+            {
+              "code": "SL108",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "bool",
+        "value": false
+      }
+    },
+    {
+      "id": "register_precondition_empty_name",
+      "construct": {
+        "type": "register_precondition",
+        "name": ""
+      },
+      "expected": {
+        "mode": "value_error",
+        "message": "Precondition name must be a non-empty string"
+      }
+    },
+    {
+      "id": "check_preconditions_all_ok",
+      "construct": {
+        "type": "check_preconditions",
+        "names": [
+          "no_sl203",
+          "source_hash_pinned"
+        ],
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "check",
+        "ok": true,
+        "failed": null
+      }
+    },
+    {
+      "id": "check_preconditions_first_fail",
+      "construct": {
+        "type": "check_preconditions",
+        "names": [
+          "no_sl203",
+          "source_hash_pinned"
+        ],
+        "context": {
+          "findings": [
+            {
+              "code": "SL203",
+              "severity": "ERROR",
+              "repairability": "DETERMINISTIC",
+              "message": "synthetic precondition marker",
+              "source": {
+                "path": "<canonical>",
+                "line": null,
+                "record_id": null
+              },
+              "related_ids": [],
+              "fingerprint": "0123456789abcdef",
+              "schema_version": "1.0",
+              "message_template": null,
+              "evidence": null
+            }
+          ],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "check",
+        "ok": false,
+        "failed": "no_sl203"
+      }
+    },
+    {
+      "id": "check_preconditions_unknown",
+      "construct": {
+        "type": "check_preconditions",
+        "names": [
+          "missing_precondition"
+        ],
+        "context": {
+          "findings": [],
+          "events": [],
+          "profile": "neutral",
+          "source_hash": "",
+          "finding_index": null,
+          "policy": "conservative",
+          "acknowledge_side_effects": false
+        }
+      },
+      "expected": {
+        "mode": "value_error",
+        "message": "Unknown precondition: missing_precondition"
+      }
+    }
+  ]
+}

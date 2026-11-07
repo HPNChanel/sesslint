@@ -1,0 +1,762 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.preconditions parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PRECONDITIONS_PY_SHA256 = (
+    "cb075b5296a1df4f980c4e82370b42eccbb7308f33f8409a0c497c038c2a2808"
+)
+PRECONDITIONS_RS_SHA256 = (
+    "4f4c83b974369cc68eec2ee12ca3e4b9c4b10bb1443d4e696f3c8e5175780431"
+)
+MODULE = "sesslint.repair.preconditions"
+SYNTHETIC_FP = "0123456789abcdef"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-preconditions-must-abstain: no_prior_safe_tool_after_cut would call "
+    "sesslint.policy.abstention.must_abstain; Rust returns Unavailable instead of true.",
+    "GAP-preconditions-parent-candidates: unique_parent_candidate would call "
+    "sesslint.checks.graph.find_qualifying_parent_candidates; Rust returns Unavailable.",
+    "GAP-preconditions-canonical-json-bytes: fingerprint comparison may call "
+    "sesslint.determinism.canonical_json_bytes; Rust returns Unavailable where Python "
+    "returns a bool.",
+    "GAP-preconditions-payload-content-hash: fingerprint comparison may call "
+    "sesslint._canonical_codec.payload_content_hash; Rust returns Unavailable where "
+    "Python returns a bool.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def fullname_for(path: str) -> str:
+    rel = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    return rel
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"failed to create import spec for {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def verify_preconditions_rs() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "repair" / "src" / "preconditions.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != PRECONDITIONS_RS_SHA256:
+        raise SystemExit(
+            f"preconditions.rs sha256 mismatch: expected {PRECONDITIONS_RS_SHA256}, got {digest}"
+        )
+
+
+def load_preconditions_module() -> Any:
+    verify_preconditions_rs()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/preconditions.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != PRECONDITIONS_PY_SHA256:
+        raise SystemExit(
+            f"pinned preconditions.py sha256 mismatch: expected {PRECONDITIONS_PY_SHA256}, got {digest}"
+        )
+    for rel in PIN_CLOSURE:
+        if rel == "repair/preconditions.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for i in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:i]))
+        exec_blob(git_show_bytes(f"{PYTHON_COMMIT}:{path}"), fullname)
+    ensure_pkg("sesslint.repair")
+    return exec_blob(blob, "sesslint.repair.preconditions")
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, dict):
+        entries = [[k, tagged(v)] for k, v in value.items()]
+        return {"t": "map", "entries": entries}
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(v) for v in value]}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def event_mapping(entries: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in entries.items()]}
+
+
+def evidence_from_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    return {"pairs": [[k, tagged(v)] for k, v in pairs]}
+
+
+def ctx_spec(
+    *,
+    findings: list[dict[str, Any]] | None = None,
+    events: list[dict[str, Any]] | None = None,
+    profile: str = "neutral",
+    source_hash: str = "",
+    finding_index: int | None = None,
+    policy: str = "conservative",
+    acknowledge: bool = False,
+) -> dict[str, Any]:
+    return {
+        "findings": findings or [],
+        "events": events or [],
+        "profile": profile,
+        "source_hash": source_hash,
+        "finding_index": finding_index,
+        "policy": policy,
+        "acknowledge_side_effects": acknowledge,
+    }
+
+
+def finding_spec(
+    code: str,
+    *,
+    severity: str = "ERROR",
+    repairability: str = "DETERMINISTIC",
+    record_id: str | None = None,
+    evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "code": code,
+        "severity": severity,
+        "repairability": repairability,
+        "message": "synthetic precondition marker",
+        "source": {"path": "<canonical>", "line": None, "record_id": record_id},
+        "related_ids": [],
+        "fingerprint": SYNTHETIC_FP,
+        "schema_version": "1.0",
+        "message_template": None,
+    }
+    if evidence is not None:
+        row["evidence"] = evidence
+    else:
+        row["evidence"] = None
+    return row
+
+
+def build_py_context(pc: Any, spec: dict[str, Any]) -> Any:
+    from sesslint.codes import Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import Finding, SourceRef  # noqa: WPS433
+
+    findings: list[Any] = []
+    for raw in spec.get("findings", []):
+        src = raw["source"]
+        line = src.get("line")
+        source = SourceRef(src["path"], line, src.get("record_id"))
+        evidence = None
+        if raw.get("evidence") is not None:
+            ev = raw["evidence"]
+            if "pairs" in ev:
+                evidence = {k: _decode_tagged(v) for k, v in ev["pairs"]}
+            else:
+                evidence = _decode_tagged(ev)
+        findings.append(
+            Finding(
+                code=raw["code"],
+                severity=Severity[raw["severity"]],
+                repairability=Repairability[raw["repairability"]],
+                message=raw["message"],
+                source=source,
+                related_ids=tuple(raw.get("related_ids", [])),
+                fingerprint=raw["fingerprint"],
+                evidence=evidence,
+            )
+        )
+    events = [_decode_event(e) for e in spec.get("events", [])]
+    finding = None
+    idx = spec.get("finding_index")
+    if idx is not None:
+        finding = findings[idx]
+    return pc.PreconditionContext(
+        findings=findings,
+        events=events,
+        profile=spec.get("profile", "neutral"),
+        source_hash=spec.get("source_hash", ""),
+        finding=finding,
+        policy=spec.get("policy", "conservative"),
+        acknowledge_side_effects=spec.get("acknowledge_side_effects", False),
+    )
+
+
+def _decode_tagged(node: Any) -> Any:
+    if not isinstance(node, dict) or "t" not in node:
+        return node
+    kind = node["t"]
+    if kind == "null":
+        return None
+    if kind == "bool":
+        return node["v"]
+    if kind == "int":
+        return node["v"]
+    if kind == "str":
+        return node["v"]
+    if kind == "map":
+        out: dict[str, Any] = {}
+        for key, val in node["entries"]:
+            out[key] = _decode_tagged(val)
+        return out
+    if kind == "list":
+        return [_decode_tagged(item) for item in node["items"]]
+    raise ValueError(f"bad tagged node {node!r}")
+
+
+def _decode_event(spec: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, val in spec.get("entries", []):
+        tagged = val if isinstance(val, dict) and "t" in val else tagged(val)
+        out[key] = _decode_tagged(tagged)
+    return out
+
+
+def run_expected(pc: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"mode": "names", "names": list(pc.__all__)}
+    if kind == "precondition_func_names":
+        return {"mode": "names", "names": list(pc.PRECONDITION_FUNCS.keys())}
+    if kind == "register_precondition":
+        name = construct["name"]
+        try:
+            pc.register_precondition(name, lambda _ctx: True)
+        except ValueError as exc:
+            return {"mode": "value_error", "message": str(exc)}
+        return {"mode": "ok"}
+    if kind == "check_preconditions":
+        ctx = build_py_context(pc, construct["context"])
+        names = construct["names"]
+        try:
+            ok, failed = pc.check_preconditions(names, ctx)
+        except ValueError as exc:
+            return {"mode": "value_error", "message": str(exc)}
+        return {"mode": "check", "ok": ok, "failed": failed}
+    if kind == "_find_component_indices":
+        events = [_decode_event(e) for e in construct["events"]]
+        try:
+            got = pc._find_component_indices(events, construct["seed"])
+        except (TypeError, ValueError) as exc:
+            return {"mode": "value_error", "message": str(exc)}
+        return {"mode": "indices", "sorted": sorted(got)}
+    if kind == "_find_torn_compaction_dropped_indices":
+        events = [_decode_event(e) for e in construct["events"]]
+        got = pc._find_torn_compaction_dropped_indices(events, construct["boundary_index"])
+        return {"mode": "indices", "sorted": sorted(got)}
+    fn_name = construct["predicate"]
+    fn = getattr(pc, fn_name)
+    ctx = build_py_context(pc, construct["context"])
+    gap = construct.get("gap")
+    try:
+        got = fn(ctx)
+    except Exception as exc:  # noqa: BLE001
+        return {"mode": "python_error", "error_type": type(exc).__name__, "message": str(exc)}
+    if gap:
+        return {"mode": "gap", "gap_id": gap, "python_bool": bool(got)}
+    return {"mode": "bool", "value": bool(got)}
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    ev = lambda **kw: event_mapping(kw)
+    msg = ev(id="evt-a", kind="message", content_hash="abc")
+    msg_b = ev(id="evt-b", kind="message", content_hash="abd")
+    dup = ev(id="evt-a", kind="message", content_hash="abc")
+    chk = ev(id="evt-b", kind="checkpoint")
+    bnd = ev(id="evt-b", kind="compaction_boundary")
+    tool_call = ev(kind="tool_call", side_effects="none", correlation_id="corr-synthetic")
+    tool_res = ev(kind="tool_result", side_effects="none", correlation_id="corr-synthetic")
+    parent_ev = ev(
+        id="evt-a",
+        kind="message",
+        parent_id="parent-synthetic",
+        content_hash="abc",
+    )
+    no_hash = ev(id="evt-a", kind="message")
+    pinned = "g" * 64
+
+    def pred(vector_id: str, predicate: str, context: dict[str, Any], **extra: Any) -> dict[str, Any]:
+        row = {"id": vector_id, "construct": {"type": "predicate", "predicate": predicate, "context": context}}
+        row["construct"].update(extra)
+        return row
+
+    specs: list[dict[str, Any]] = []
+    specs.append({"id": "module_all_export_order", "construct": {"type": "module_all"}})
+    specs.append(
+        {"id": "precondition_func_names_order", "construct": {"type": "precondition_func_names"}}
+    )
+
+    specs.append(
+        pred(
+            "no_sl203_empty",
+            "no_sl203",
+            ctx_spec(),
+        )
+    )
+    specs.append(
+        pred(
+            "no_sl203_present",
+            "no_sl203",
+            ctx_spec(findings=[finding_spec("SL203")]),
+        )
+    )
+    specs.append(
+        pred(
+            "side_effects_empty",
+            "side_effects_known",
+            ctx_spec(),
+        )
+    )
+    specs.append(
+        pred(
+            "side_effects_tool_unknown",
+            "side_effects_known",
+            ctx_spec(events=[ev(kind="tool_call", side_effects="possible")]),
+        )
+    )
+    specs.append(
+        pred(
+            "side_effects_tool_none",
+            "side_effects_known",
+            ctx_spec(events=[tool_call]),
+        )
+    )
+    specs.append(
+        pred(
+            "repairability_safe_auto",
+            "repairability_is_safe_auto",
+            ctx_spec(
+                findings=[finding_spec("SL005", repairability="DETERMINISTIC")],
+                finding_index=0,
+            ),
+        )
+    )
+    specs.append(
+        pred(
+            "repairability_salvage",
+            "repairability_is_salvage",
+            ctx_spec(
+                findings=[finding_spec("SL005", repairability="LOSSY_EXPLICIT")],
+                finding_index=0,
+            ),
+        )
+    )
+    specs.append(
+        pred(
+            "source_hash_unpinned",
+            "source_hash_pinned",
+            ctx_spec(source_hash=""),
+        )
+    )
+    specs.append(
+        pred(
+            "source_hash_pinned_len64",
+            "source_hash_pinned",
+            ctx_spec(source_hash=pinned),
+        )
+    )
+
+    sl203_index = finding_spec(
+        "SL203",
+        evidence=evidence_from_pairs([("index", 0)]),
+    )
+    specs.append(
+        pred(
+            "adjacent_scan_match",
+            "adjacent_identical_duplicate",
+            ctx_spec(events=[msg, dup]),
+        )
+    )
+    specs.append(
+        pred(
+            "adjacent_scan_no_match",
+            "adjacent_identical_duplicate",
+            ctx_spec(events=[msg, msg_b]),
+        )
+    )
+    specs.append(
+        pred(
+            "adjacent_fingerprint_seam",
+            "adjacent_identical_duplicate",
+            ctx_spec(events=[msg, no_hash]),
+            gap="GAP-preconditions-canonical-json-bytes",
+        )
+    )
+
+    specs.append(
+        pred(
+            "unique_parent_no_finding",
+            "unique_parent_candidate",
+            ctx_spec(),
+        )
+    )
+    specs.append(
+        pred(
+            "unique_parent_orphan",
+            "unique_parent_candidate",
+            ctx_spec(
+                findings=[sl203_index],
+                events=[msg],
+                finding_index=0,
+            ),
+        )
+    )
+    specs.append(
+        pred(
+            "unique_parent_graph_seam",
+            "unique_parent_candidate",
+            ctx_spec(
+                findings=[sl203_index],
+                events=[parent_ev],
+                finding_index=0,
+            ),
+            gap="GAP-preconditions-parent-candidates",
+        )
+    )
+
+    corr_find = finding_spec(
+        "SL203",
+        evidence=evidence_from_pairs([("correlation_id", "corr-synthetic")]),
+    )
+    specs.append(
+        pred(
+            "single_boundary_one",
+            "single_boundary_split",
+            ctx_spec(
+                findings=[corr_find],
+                events=[tool_call, bnd, tool_res],
+                finding_index=0,
+            ),
+        )
+    )
+    specs.append(
+        pred(
+            "single_boundary_none",
+            "single_boundary_split",
+            ctx_spec(
+                findings=[corr_find],
+                events=[tool_call, tool_res],
+                finding_index=0,
+            ),
+        )
+    )
+
+    specs.append(
+        pred(
+            "duplicate_projection_match",
+            "duplicate_projection_identical",
+            ctx_spec(
+                findings=[
+                    finding_spec(
+                        "SL203",
+                        evidence=evidence_from_pairs([("correlation_id", "corr-b")]),
+                    )
+                ],
+                events=[
+                    ev(kind="tool_result", correlation_id="corr-b", content_hash="abc"),
+                    ev(kind="tool_result", correlation_id="corr-b", content_hash="abc"),
+                ],
+                finding_index=0,
+            ),
+        )
+    )
+
+    sl003_ok = finding_spec(
+        "SL003",
+        evidence=evidence_from_pairs(
+            [
+                ("variant", "identical-duplicate"),
+                ("record_indexes", [0, 1]),
+            ]
+        ),
+    )
+    specs.append(
+        pred(
+            "sl003_identical_duplicate_ok",
+            "sl003_identical_duplicate",
+            ctx_spec(findings=[sl003_ok], events=[msg, msg_b], finding_index=0),
+        )
+    )
+    specs.append(
+        pred(
+            "sl003_identical_duplicate_no_evidence",
+            "sl003_identical_duplicate",
+            ctx_spec(findings=[finding_spec("SL003")], events=[msg, msg_b], finding_index=0),
+        )
+    )
+
+    specs.append(
+        pred(
+            "salvage_policy_conservative",
+            "salvage_policy",
+            ctx_spec(policy="conservative"),
+        )
+    )
+    specs.append(
+        pred(
+            "salvage_policy_salvage",
+            "salvage_policy",
+            ctx_spec(policy="salvage"),
+        )
+    )
+    specs.append(
+        pred(
+            "acknowledge_side_effects_false",
+            "acknowledge_side_effects",
+            ctx_spec(),
+        )
+    )
+    specs.append(
+        pred(
+            "acknowledge_side_effects_true",
+            "acknowledge_side_effects",
+            ctx_spec(acknowledge=True),
+        )
+    )
+
+    specs.append(
+        {
+            "id": "find_component_simple",
+            "construct": {
+                "type": "_find_component_indices",
+                "events": [
+                    ev(id="evt-a", kind="message"),
+                    ev(id="evt-b", kind="message", parent_id="evt-a"),
+                    ev(id="evt-c", kind="message", parent_id="evt-b"),
+                ],
+                "seed": 2,
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "torn_compaction_drop",
+            "construct": {
+                "type": "_find_torn_compaction_dropped_indices",
+                "events": [
+                    tool_call,
+                    bnd,
+                    tool_res,
+                ],
+                "boundary_index": 1,
+            },
+        }
+    )
+
+    cut_trigger = finding_spec(
+        "SL203",
+        evidence=evidence_from_pairs([("at_index", 1), ("index", 2)]),
+    )
+    specs.append(
+        pred(
+            "no_prior_safe_tool_gap",
+            "no_prior_safe_tool_after_cut",
+            ctx_spec(
+                findings=[cut_trigger],
+                events=[msg, msg_b],
+                finding_index=0,
+                source_hash="hash",
+            ),
+            gap="GAP-preconditions-must-abstain",
+        )
+    )
+    specs.append(
+        pred(
+            "no_prior_safe_tool_no_trigger",
+            "no_prior_safe_tool_after_cut",
+            ctx_spec(
+                findings=[finding_spec("SL005")],
+                events=[msg, msg_b],
+                finding_index=0,
+            ),
+        )
+    )
+
+    unterminated = finding_spec(
+        "SL002",
+        evidence=evidence_from_pairs([("unterminated", True)]),
+    )
+    specs.append(
+        pred(
+            "torn_terminal_record_target",
+            "torn_terminal_record",
+            ctx_spec(findings=[unterminated], finding_index=0),
+        )
+    )
+    specs.append(
+        pred(
+            "branch_has_no_checkpoint_ok",
+            "branch_has_no_checkpoint",
+            ctx_spec(
+                findings=[
+                    finding_spec(
+                        "SL005",
+                        record_id="evt-b",
+                        evidence=evidence_from_pairs([("at_index", 0)]),
+                    )
+                ],
+                events=[msg, chk],
+                finding_index=0,
+            ),
+        )
+    )
+    specs.append(
+        pred(
+            "sl108_present_marker",
+            "sl108_present",
+            ctx_spec(findings=[finding_spec("SL108")]),
+        )
+    )
+
+    specs.append(
+        {
+            "id": "register_precondition_empty_name",
+            "construct": {"type": "register_precondition", "name": ""},
+        }
+    )
+    specs.append(
+        {
+            "id": "check_preconditions_all_ok",
+            "construct": {
+                "type": "check_preconditions",
+                "names": ["no_sl203", "source_hash_pinned"],
+                "context": ctx_spec(source_hash=pinned),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "check_preconditions_first_fail",
+            "construct": {
+                "type": "check_preconditions",
+                "names": ["no_sl203", "source_hash_pinned"],
+                "context": ctx_spec(findings=[finding_spec("SL203")], source_hash=pinned),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "check_preconditions_unknown",
+            "construct": {
+                "type": "check_preconditions",
+                "names": ["missing_precondition"],
+                "context": ctx_spec(),
+            },
+        }
+    )
+
+    return specs
+
+
+def main() -> int:
+    pc = load_preconditions_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        expected = run_expected(pc, spec["construct"])
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": expected,
+            }
+        )
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "preconditions_py_sha256": PRECONDITIONS_PY_SHA256,
+        "preconditions_rs_sha256": PRECONDITIONS_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.preconditions parity (module exports, registry "
+            "order, predicates, check_preconditions, component helpers)."
+        ),
+        "generator": "rust/parity/vectors/repair.preconditions/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

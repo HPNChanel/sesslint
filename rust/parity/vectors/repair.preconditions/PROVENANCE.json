@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.preconditions parity (module exports, registry order, predicates, check_preconditions, component helpers).",
+  "generator": "rust/parity/vectors/repair.preconditions/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-preconditions-must-abstain: no_prior_safe_tool_after_cut would call sesslint.policy.abstention.must_abstain; Rust returns Unavailable instead of true.",
+    "GAP-preconditions-parent-candidates: unique_parent_candidate would call sesslint.checks.graph.find_qualifying_parent_candidates; Rust returns Unavailable.",
+    "GAP-preconditions-canonical-json-bytes: fingerprint comparison may call sesslint.determinism.canonical_json_bytes; Rust returns Unavailable where Python returns a bool.",
+    "GAP-preconditions-payload-content-hash: fingerprint comparison may call sesslint._canonical_codec.payload_content_hash; Rust returns Unavailable where Python returns a bool."
+  ]
+}
