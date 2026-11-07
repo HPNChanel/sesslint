@@ -10,7 +10,7 @@ pub mod assurance;
 pub mod fingerprint;
 pub mod preconditions;
 pub mod refusals;
-pub mod registry {}
+pub mod registry;
 pub mod recipes_sl002 {}
 pub mod planner {}
 pub mod errors;
