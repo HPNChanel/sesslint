@@ -1,0 +1,500 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.safe_value parity vectors (stdlib only; pinned git blobs)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SAFE_VALUE_PY_SHA256 = (
+    "dd864071a538898e7eed4bf318edbf4a2169373e56557d44ccd7bdcf98d518ee"
+)
+SAFE_VALUE_RS_SHA256 = (
+    "178188f5f9ff93a9fb1a69a16608e78ec9e4875e3c3c661a8ad4071a53a720b3"
+)
+MODULE = "sesslint.adapters.safe_value"
+
+PIN_MODULES: Final[tuple[tuple[str, str], ...]] = (
+    ("sesslint.errors", "src/sesslint/errors.py"),
+    ("sesslint._version", "src/sesslint/_version.py"),
+    ("sesslint.context", "src/sesslint/context.py"),
+    ("sesslint.codes", "src/sesslint/codes.py"),
+    ("sesslint.secret_families", "src/sesslint/secret_families.py"),
+    ("sesslint.finding", "src/sesslint/finding.py"),
+    ("sesslint.adapters.safe_value", "src/sesslint/adapters/safe_value.py"),
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "str_subclass_type_name: a str subclass keeps its own __name__ in Python "
+    "safe_type_value; Rust PyValue::Str always reports as str — no required vector.",
+    "lone_surrogate_discriminator: a lone UTF-16 surrogate cannot be stored in Rust "
+    "str — no required vector.",
+)
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_safe_value_py_pin() -> None:
+    blob = git_show_blob(
+        f"{PYTHON_COMMIT}:src/sesslint/adapters/safe_value.py"
+    )
+    digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    if digest != SAFE_VALUE_PY_SHA256:
+        raise SystemExit(
+            f"safe_value.py pin sha256 mismatch: expected {SAFE_VALUE_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_safe_value_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "safe_value.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != SAFE_VALUE_RS_SHA256:
+        raise SystemExit(
+            "adapters/src/safe_value.rs sha256 mismatch: "
+            f"expected {SAFE_VALUE_RS_SHA256}, got {digest}"
+        )
+
+
+def load_pinned_safe_value() -> Any:
+    verify_safe_value_py_pin()
+    verify_safe_value_rs_sha256()
+    for pkg in ("sesslint", "sesslint.adapters"):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+    for mod_name, rel_path in PIN_MODULES:
+        source = git_show_blob(f"{PYTHON_COMMIT}:{rel_path}")
+        compiled = compile(source, f"<pinned {rel_path}>", "exec")
+        mod = types.ModuleType(mod_name)
+        mod.__file__ = f"<pinned {rel_path}>"
+        sys.modules[mod_name] = mod
+        exec(compiled, mod.__dict__)  # noqa: S102
+        parent_name, _, child = mod_name.rpartition(".")
+        if parent_name:
+            parent = sys.modules[parent_name]
+            setattr(parent, child, mod)
+    return sys.modules["sesslint.adapters.safe_value"]
+
+
+def filled(prefix: str, fill: str, count: int) -> str:
+    return prefix + fill * count
+
+
+def materialize_val(spec: dict[str, Any]) -> Any:
+    kind = spec["kind"]
+    if kind == "str":
+        if "fill" in spec:
+            fill = str(spec["fill"])
+            count = int(spec["count"])
+            return str(spec["prefix"]) + fill * count
+        return spec["text"]
+    if kind == "bytes_hex":
+        hx = str(spec["hex"])
+        return bytes.fromhex(hx) if hx else b""
+    if kind == "list":
+        return [materialize_val(item) for item in spec["items"]]
+    if kind == "dict":
+        return {
+            str(k): materialize_val(v)
+            for k, v in spec["entries"].items()
+        }
+    if kind == "set":
+        return {materialize_val(item) for item in spec["items"]}
+    if kind == "tuple":
+        return tuple(materialize_val(item) for item in spec["items"])
+    if kind == "none":
+        return None
+    if kind == "int":
+        return int(spec["value"])
+    if kind == "float":
+        return float(spec["value"])
+    if kind == "bool":
+        return bool(spec["value"])
+    if kind == "frozenset":
+        return frozenset(materialize_val(item) for item in spec["items"])
+    raise SystemExit(f"unknown val kind {kind!r}")
+
+
+def encode_val(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        split = encode_supabase_pat_parts(value)
+        if split is not None:
+            return split
+        return {"kind": "str", "text": value}
+    if isinstance(value, bytes):
+        return {"kind": "bytes_hex", "hex": value.hex()}
+    if isinstance(value, list):
+        return {"kind": "list", "items": [encode_val(v) for v in value]}
+    if isinstance(value, dict):
+        return {
+            "kind": "dict",
+            "entries": {k: encode_val(v) for k, v in value.items()},
+        }
+    if isinstance(value, tuple):
+        return {"kind": "tuple", "items": [encode_val(v) for v in value]}
+    if isinstance(value, set):
+        return {"kind": "set", "items": [encode_val(v) for v in value]}
+    if value is None:
+        return {"kind": "none"}
+    if isinstance(value, bool):
+        return {"kind": "bool", "value": value}
+    if isinstance(value, int):
+        return {"kind": "int", "value": value}
+    if isinstance(value, float):
+        return {"kind": "float", "value": value}
+    if isinstance(value, frozenset):
+        return {"kind": "frozenset", "items": [encode_val(v) for v in value]}
+    raise SystemExit(f"cannot encode value type {type(value)!r}")
+
+
+def encode_supabase_pat_parts(value: str) -> dict[str, Any] | None:
+    """Keep a 40-hex supabase sample from sitting in one committed string."""
+    body = value[4:]
+    if (
+        value.startswith("sbp_")
+        and len(body) == 40
+        and body == body[0] * 40
+        and all(ch in "0123456789abcdef" for ch in body)
+    ):
+        return {"kind": "str", "prefix": "sbp_", "fill": body[0], "count": 40}
+    return None
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def run_safe_type_value(mod: Any, val: Any) -> dict[str, Any]:
+    out = mod.safe_type_value(val)
+    return {"value": out}
+
+
+def run_safe_discriminator(mod: Any, val: Any) -> dict[str, Any]:
+    type_value, is_truncated = mod.safe_discriminator(val)
+    return {"type_value": type_value, "is_truncated": is_truncated}
+
+
+def vector_specs(mod: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add_type(vector_id: str, val: Any) -> None:
+        enc = encode_val(val)
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "safe_type_value", "val": enc},
+                "expected": run_safe_type_value(mod, val),
+            }
+        )
+
+    def add_disc(vector_id: str, val: Any) -> None:
+        enc = encode_val(val)
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "safe_discriminator", "val": enc},
+                "expected": run_safe_discriminator(mod, val),
+            }
+        )
+
+    add_type(
+        "module_all_order",
+        {"kind": "other", "type_name": "__all__probe"} if False else "__probe__",  # placeholder
+    )
+    # replace botched entry below
+    specs.pop()
+
+    specs.append(
+        {
+            "id": "module_python_all",
+            "construct": {"type": "module_exports"},
+            "expected": {"python_all": list(mod.__all__)},
+        }
+    )
+
+    add_type("safe_type_str", "hello")
+    add_type("safe_type_bytes", b"bytes")
+    add_type("safe_type_list", [1, 2, 3])
+    add_type("safe_type_dict", {"a": 1})
+    add_type("safe_type_set", {1, 2})
+    add_type("safe_type_tuple", (1,))
+    add_type("safe_type_none", None)
+    add_type("safe_type_int", 42)
+    add_type("safe_type_float", 3.14)
+    add_type("safe_type_bool", True)
+    add_type("safe_type_other", frozenset({1}))
+
+    non_strings = [
+        ("disc_non_string_none", None),
+        ("disc_non_string_int", 12345),
+        ("disc_non_string_float", 99.9),
+        ("disc_non_string_bool", True),
+        ("disc_non_string_list", [1, 2]),
+        ("disc_non_string_dict", {"key": "val"}),
+        ("disc_non_string_set", {1, 2}),
+        ("disc_non_string_tuple", (1,)),
+        ("disc_non_string_bytes", b"data"),
+        ("disc_non_string_bytes_empty", b""),
+        ("disc_non_string_list_empty", []),
+        ("disc_non_string_frozenset", frozenset({1})),
+    ]
+    for vid, val in non_strings:
+        add_disc(vid, val)
+
+    add_disc("allowlist_empty", "")
+    add_disc("allowlist_one_char", "a")
+    add_disc("allowlist_len_64", "a" * 64)
+    add_disc("allowlist_len_65", "a" * 65)
+    add_disc("allowlist_hyphen_len_64", "-" * 64)
+    add_disc("allowlist_hyphen_len_65", "-" * 65)
+
+    for sample in (
+        "message",
+        "futureWidget",
+        "custom_type",
+        "event-v2",
+        "dotted.name",
+        "mixed.type_name-123",
+        "UPPER_LOWER-123.test",
+        "npm_package_metadata",
+    ):
+        add_disc(f"allowlist_echo_{sample}", sample)
+
+    for invalid in (
+        "type with spaces",
+        "type:with:colons",
+        "type/with/slashes",
+        "type\\with\\backslashes",
+        "custom<xml>tag",
+        "custom;sql-inject",
+        "type@domain.com",
+        "type#anchor",
+        "type$var",
+        "type%percent",
+        "type!exclamation",
+        "type=assignment",
+        "type\nnewline",
+        "type\ttab",
+    ):
+        slug = re.sub(r"[^a-z0-9]+", "_", invalid[:20].lower()).strip("_")
+        add_disc(f"allowlist_reject_{slug}", invalid)
+
+    cafe = "caf\u00e9"
+    add_disc("allowlist_reject_cafe", cafe)
+    add_disc("allowlist_reject_emoji_suffix", "ab\U0001f389")
+    add_disc("allowlist_reject_accents_64", "\u00e9" * 64)
+    add_disc("allowlist_reject_sk_accent", "sk-\u00e9")
+
+    for byte in range(128):
+        ch = chr(byte)
+        vid = f"ascii_byte_{byte:03d}"
+        add_disc(vid, ch)
+
+    for prefix in (
+        "sk-",
+        "sk_",
+        "rk-",
+        "rk_",
+        "ghp_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "ghr_",
+        "glpat-",
+        "akia",
+        "asia",
+        "aiza",
+        "xoxb-",
+        "xoxp-",
+        "xapp-",
+        "xoxa-",
+        "xoxr-",
+        "slack_token_",
+        "bearer-",
+        "bearer_",
+    ):
+        slug = prefix.replace("-", "hyphen").replace("_", "us").strip(".")
+        add_disc(f"credential_prefix_{slug}", prefix)
+
+    for sample in ("GHP_", "SK-", "Rk_", "AKiA", "AiZa", "XOXB-", "BeArEr_"):
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", sample)
+        add_disc(f"credential_casefold_{slug}", sample)
+
+    for sample in (
+        "sk",
+        "rk",
+        "ghp",
+        "glpat",
+        "aiz",
+        "aki",
+        "xoxb",
+        "bearer",
+        "slack_token",
+    ):
+        add_disc(f"prefix_without_sep_echo_{sample}", sample)
+
+    add_disc("prefix_slack_token_hyphen_trunc", "slack_token-")
+    add_disc("prefix_slack_token_dhyphen_trunc", "slack-token-")
+    add_disc("prefix_slack_token_upper_trunc", "SLACK-TOKEN-")
+    add_disc("prefix_slack_token_echo", "slack-token")
+    add_disc("prefix_slack_token_dot_echo", "slack.token-")
+
+    for prefix, fill, enough, short, tag in (
+        ("whsec_", "a", 24, 23, "whsec"),
+        ("github_pat_", "a", 22, 21, "github_pat"),
+        ("sbp_", "a", 40, 39, "sbp"),
+    ):
+        add_disc(f"secret_family_hit_{tag}", filled(prefix, fill, enough))
+        add_disc(f"secret_family_miss_{tag}", filled(prefix, fill, short))
+
+    add_disc("shared_family_sk_dash_20", filled("sk-", "a", 20))
+    add_disc("shared_family_npm_20", filled("npm_", "a", 20))
+    add_disc("shared_family_hf_20", filled("hf_", "a", 20))
+    add_disc("shared_family_aiza_20", filled("AIza", "A", 20))
+    add_disc(
+        "shared_family_akia_embedded",
+        filled("foo.", "A", 0) + filled("AKIA", "A", 16),
+    )
+    add_disc("shared_family_npm_19_echo", filled("npm_", "a", 19))
+    add_disc("shared_family_hf_19_echo", filled("hf_", "a", 19))
+    add_disc("shared_family_npm_us_20_echo", filled("npm_", "_", 20))
+    add_disc("shared_family_hf_us_20_echo", filled("hf_", "_", 20))
+
+    add_disc("content_free_ghp_hit", filled("ghp-", "a", 16))
+    add_disc("content_free_gho_hit", filled("gho-", "a", 16))
+    add_disc("content_free_ghp_miss_echo", filled("ghp-", "a", 15))
+    add_disc("content_free_ghs_echo", filled("ghs-", "a", 16))
+    add_disc("content_free_ghu_echo", filled("ghu-", "a", 16))
+    add_disc("content_free_ghr_echo", filled("ghr-", "a", 16))
+
+    add_disc("sensitive_xoxc", "xoxc-a")
+    add_disc("sensitive_xoxc_upper", "XOXC-A")
+    add_disc("sensitive_xoxc_prefix_echo", "xoxc-")
+    add_disc("sensitive_xoxc_us_echo", "xoxc-_")
+    add_disc("sensitive_xox_digit_echo", "xox1-a")
+    add_disc("sensitive_ghp_delim", "foo.GHP_a")
+    add_disc("sensitive_ghp_mixed", "foo.ghP_Z")
+    add_disc("sensitive_ghpa_echo", "GHPa")
+    add_disc("sensitive_ghp_double_us_echo", "foo.ghp__")
+    add_disc("sensitive_ghq_echo", "foo.ghq_a")
+    add_disc("sensitive_glpat_delim", "foo.glpat-9")
+    add_disc("sensitive_glpat_upper", "foo.glpat-Z")
+    add_disc("sensitive_glpat_prefix_echo", "foo.glpat-")
+    add_disc("sensitive_glpat_us_echo", "foo.glpat-_")
+    add_disc("sensitive_akia_delim", filled("x-akia", "a", 16))
+    add_disc("sensitive_asia_delim", filled("foo.asia", "0", 16))
+    add_disc(
+        "sensitive_akia_us_prefix",
+        filled("foo_", "A", 0) + filled("AKIA", "A", 16),
+    )
+    add_disc("sensitive_akia_short_echo", filled("foo.akia", "a", 15) + "_")
+    add_disc("sensitive_aiza_us", filled("foo.aiza", "_", 20))
+    add_disc("sensitive_aiza_hyphen", filled("foo.aiza", "-", 20))
+    add_disc("sensitive_aiza_upper", filled("foo.AIZA", "A", 20))
+    add_disc("sensitive_aiza_us_19_echo", filled("foo.aiza", "_", 19))
+    add_disc("sensitive_aiza_dot_echo", filled("foo.aiza.", "a", 20))
+    add_disc("sensitive_bearer_prefix_echo", "xbearer-")
+    add_disc("sensitive_bearer_delim", "foo.bearer-")
+    add_disc("sensitive_sk_us_delim", filled("foo_sk-", "a", 20))
+    add_disc("sensitive_sk_dash_delim", filled("foo-sk-", "a", 15))
+    add_disc("sensitive_sk_xx_echo", filled("xxsk-", "a", 20))
+
+    add_disc("cloud_azure_client_secret_8", filled("azure-client-secret-", "a", 8))
+    add_disc("cloud_azure_client_secret_16", filled("azure-client-secret-", "a", 16))
+    add_disc("cloud_azure_client_secret_7_echo", filled("azure-client-secret-", "a", 7))
+    add_disc("cloud_azure_clientsecret_8", filled("azure-clientsecret-", "a", 8))
+    add_disc("cloud_azure_client_secret_us", filled("azure_client_secret_", "a", 8))
+    add_disc("cloud_azure_client_us_mixed", filled("azure-client_secret-", "a", 8))
+    add_disc("cloud_azure_upper", filled("AZURE-CLIENT-SECRET-", "A", 8))
+    add_disc("cloud_gcp_service_account_8", filled("gcp-service-account-", "a", 8))
+    add_disc("cloud_gcp_service_account_16", filled("gcp-service-account-", "a", 16))
+    add_disc("cloud_gcp_serviceaccount_8", filled("gcp-serviceaccount-", "a", 8))
+    add_disc("cloud_gcp_service_us", filled("gcp-service_account-", "a", 8))
+    add_disc("cloud_gcp_private_key_8", filled("gcp-private-key-", "a", 8))
+    add_disc("cloud_gcp_privatekey_8", filled("gcp-privatekey-", "a", 8))
+    add_disc("cloud_azure_privatekey_8", filled("azure-privatekey-", "a", 8))
+    add_disc("cloud_azure_privatekey_7_echo", filled("azure-privatekey-", "a", 7))
+    add_disc("cloud_gcp_client_secret_8", filled("gcp-client-secret-", "a", 8))
+    add_disc("cloud_azure_dot_echo", filled("azure.client-secret-", "a", 8))
+    add_disc("cloud_gcp_x_client_echo", filled("gcpx-client-secret-", "a", 8))
+    add_disc("cloud_azure_nested", filled("foo.azure-client-secret-", "a", 8))
+    add_disc("cloud_azure_double_sep_echo", filled("azure-client--secret-", "a", 8))
+    add_disc("cloud_azure_dup_tail_echo", filled("azure-clientsecretsecret-", "a", 8))
+    add_disc("cloud_azure_dup_secret_echo", filled("azure-client-secretsecret-", "a", 8))
+    add_disc("cloud_azure_long_suffix", filled("azure-client-secret-", "a", 50))
+
+    add_disc("echo_preserves_casing", "futureWidget")
+
+    return specs
+
+
+def main() -> int:
+    mod = load_pinned_safe_value()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "safe_value_py_sha256": SAFE_VALUE_PY_SHA256,
+        "safe_value_rs_sha256": SAFE_VALUE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.safe_value parity "
+            "(safe_type_value and safe_discriminator only)."
+        ),
+        "generator": "rust/parity/vectors/adapters.safe_value/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
