@@ -3549,3 +3549,141 @@ mod tests {
         }
     }
 }
+
+/// Python: `_WORKER_KWARGS`.
+///
+/// Pool workers would store resolved kwargs here. This port does not store
+/// them. The slot stays [`None`]. It is not a [`FileResult`].
+pub const WORKER_KWARGS: Option<ScanDict> = None;
+
+/// Python: `_init_scan_worker`.
+///
+/// Port of `src/sesslint/scan.py` lines 763–785
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+///
+/// The pin calls `apply_rule_selection` on the profile name before
+/// `resolve_effective_config`. This calls
+/// [`checks::profile::apply_rule_selection`] with
+/// [`checks::profile::ProfileInput::Name`]. A name returns
+/// [`checks::profile::ProfileError::BuiltinUnavailable`] before select and
+/// ignore are applied. That error is propagated. Display is
+/// `sesslint.profiles.builtin is not available`.
+///
+/// [`WORKER_KWARGS`] is not assigned. `resolve_effective_config` is not
+/// called. A resolved profile is not returned as success. `timestamp_skew_ms`
+/// and `max_file_bytes` are not read. A bool is not an int, and neither field
+/// is coerced from a bool. Success is [`Infallible`].
+///
+/// # Errors
+///
+/// [`checks::profile::ProfileError`] from the name path. This function does
+/// not panic.
+pub fn init_scan_worker(
+    profile: &str,
+    select: Option<&[&str]>,
+    ignore: Option<&[&str]>,
+) -> Result<Infallible, checks::profile::ProfileError> {
+    match checks::profile::apply_rule_selection(
+        checks::profile::ProfileInput::Name(profile),
+        select,
+        ignore,
+    ) {
+        Err(error) => Err(error),
+        Ok(_resolved) => Err(checks::profile::ProfileError::BuiltinUnavailable),
+    }
+}
+
+/// Python: `_scan_file_worker`.
+///
+/// Port of `src/sesslint/scan.py` lines 788–807
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+///
+/// The pin calls `minimize_path` before the `try`. That helper is not in this
+/// crate. Display is [`MINIMIZE_PATH_UNAVAILABLE`]. [`scan_single_file`] is
+/// not called. [`make_finding`] is not called. No [`FileResult`] is built.
+/// `to_wire` is not returned. The exception arm is not entered.
+/// [`WORKER_KWARGS`] is not read and is not written.
+///
+/// # Errors
+///
+/// Always [`MinimizePathUnavailable`]. Success is [`Infallible`]. This
+/// function does not panic.
+pub fn scan_file_worker(path_str: &str) -> Result<Infallible, MinimizePathUnavailable> {
+    let _ = path_str.len();
+    Err(MinimizePathUnavailable)
+}
+
+#[cfg(test)]
+mod worker_seam {
+    use std::any::TypeId;
+    use std::convert::Infallible;
+    use std::error::Error;
+
+    use super::{
+        init_scan_worker, scan_file_worker, FileResult, MinimizePathUnavailable, ScanDict,
+        MINIMIZE_PATH_UNAVAILABLE, WORKER_KWARGS,
+    };
+
+    fn assert_not_file_result<E: 'static>(result: Result<Infallible, E>) -> E {
+        assert_ne!(TypeId::of::<Infallible>(), TypeId::of::<FileResult>());
+        assert_ne!(
+            TypeId::of::<Result<Infallible, E>>(),
+            TypeId::of::<FileResult>()
+        );
+        match result {
+            Ok(never) => match never {},
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    fn init_scan_worker_propagates_builtin_and_leaves_kwargs_unset() {
+        assert!(WORKER_KWARGS.is_none());
+        assert_ne!(TypeId::of::<Option<ScanDict>>(), TypeId::of::<FileResult>());
+        let check = |select: Option<&[&str]>, ignore: Option<&[&str]>| {
+            let error = assert_not_file_result(init_scan_worker("neutral", select, ignore));
+            assert_eq!(error, checks::profile::ProfileError::BuiltinUnavailable);
+            assert_eq!(
+                error.to_string(),
+                "sesslint.profiles.builtin is not available"
+            );
+            assert!(error.source().is_none());
+            assert!(WORKER_KWARGS.is_none());
+        };
+        check(None, None);
+        check(Some(&["SL001"]), None);
+        check(None, Some(&["SL002"]));
+        check(Some(&["SL001"]), Some(&["SL002"]));
+        let error = assert_not_file_result(init_scan_worker("", Some(&[]), Some(&[])));
+        assert_eq!(
+            error.to_string(),
+            "sesslint.profiles.builtin is not available"
+        );
+        assert!(WORKER_KWARGS.is_none());
+    }
+
+    #[test]
+    fn scan_file_worker_stops_at_minimize_path_without_a_file_result() {
+        assert!(WORKER_KWARGS.is_none());
+        let path = "synthetic/session.jsonl";
+        let error = assert_not_file_result(scan_file_worker(path));
+        assert_eq!(error, MinimizePathUnavailable);
+        assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert_eq!(
+            error.to_string(),
+            "sesslint.report.minimize_path is not available"
+        );
+        assert!(error.source().is_none());
+        assert!(!error.to_string().contains(path));
+        assert!(!error.to_string().contains("unreadable"));
+        assert!(WORKER_KWARGS.is_none());
+        let again = assert_not_file_result(init_scan_worker("neutral", None, None));
+        assert_eq!(
+            again.to_string(),
+            "sesslint.profiles.builtin is not available"
+        );
+        let error = assert_not_file_result(scan_file_worker(path));
+        assert_eq!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert!(WORKER_KWARGS.is_none());
+    }
+}
