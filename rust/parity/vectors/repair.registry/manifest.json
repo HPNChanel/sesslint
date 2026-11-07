@@ -1,0 +1,13 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.registry",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "registry_rs_sha256": "7cd1985df01024b59df044c55bef79adffab0fe7e369ec55c08ce22a93ab8acb",
+  "vector_count": 16,
+  "vectors_sha256": "77b3a44aa1ec302fe6b91d3a531a7112b687f22a1e4143ada9ca734fce99d2a1",
+  "generator": "rust/parity/vectors/repair.registry/generate",
+  "known_parity_gaps": [
+    "GAP-registry-live-map: Python __all__ exports REGISTRY as a live dict alias of the in-process table. Rust exposes ALL and lookup via get_recipe and list_recipes instead of handing out the map.",
+    "GAP-registry-non-string-name: Python Recipe.__post_init__ raises ValueError when name is not a str. Rust Recipe::try_new takes &str and documents NON_STRING_NAME_UNREPRESENTABLE \u2014 parity not required on that branch."
+  ]
+}
