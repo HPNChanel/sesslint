@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "torn-record-excision",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "vector_count": 6,
+  "vectors_sha256": "1743e796cc6619f3fe5ecf1c60942cb4294ea11bb320751463c48cac6d391958",
+  "generator": "rust/parity/recipes/torn-record-excision/generate",
+  "known_parity_gaps": [
+    "GAP-torn-record-excision-affected-region: RECIPE_TORN_RECORD_EXCISION.affected_region is absent. This set does not construct sesslint.policy.abstention.AffectedRegion and does not cover a region row.",
+    "GAP-torn-record-excision-planner: planner.plan and api.repair are not executed. A missing canonical codec call is not a successful plan. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-torn-record-excision-session-copy: the apply validation test copies SessionEvent records inside a multi-assert sweep. That success is not replayed as Ok. One refusal inside the sweep is not the whole test."
+  ]
+}

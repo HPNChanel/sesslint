@@ -1,0 +1,59 @@
+{
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "torn-record-excision",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "test_file": "tests/repair/test_sl001_excision.py",
+  "covered_count": 1,
+  "not_applicable_count": 6,
+  "rows": [
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_sl001_excisable_precondition",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "sl001_excisable_precondition",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_salvage_emits_excision_step",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-record-excision-planner blocks planner.plan. It is not a successful plan. One example inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored."
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_conservative_and_noack_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-record-excision-planner blocks planner.plan. It is not a successful plan. One example inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored."
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_dependents_and_size_limit_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-record-excision-planner blocks planner.plan. It is not a successful plan. One example inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored."
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_multiple_torn_lines",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-record-excision-planner blocks planner.plan. It is not a successful plan. One example inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored."
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_apply_torn_record_excision_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-record-excision-session-copy. apply_torn_record_excision refusals are a different outcome from the SessionEvent success in the same test. One refusal inside the sweep is not the whole test."
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_repair_torn_record_end_to_end",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-record-excision-planner blocks api.repair. The test is a multi-assert sweep. No fingerprint is hashed and no fixture diff is stored."
+    }
+  ]
+}

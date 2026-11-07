@@ -1,0 +1,2274 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "torn-record-excision",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "known_parity_gaps": [
+    "GAP-torn-record-excision-affected-region: RECIPE_TORN_RECORD_EXCISION.affected_region is absent. This set does not construct sesslint.policy.abstention.AffectedRegion and does not cover a region row.",
+    "GAP-torn-record-excision-planner: planner.plan and api.repair are not executed. A missing canonical codec call is not a successful plan. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-torn-record-excision-session-copy: the apply validation test copies SessionEvent records inside a multi-assert sweep. That success is not replayed as Ok. One refusal inside the sweep is not the whole test."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_torn_record_excision",
+      "construct": {
+        "type": "recipe_constant"
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "torn-record-excision",
+        "handles": [
+          "SL001"
+        ],
+        "preconditions": [
+          "salvage_policy",
+          "acknowledge_side_effects",
+          "sl001_excisable"
+        ],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": false
+      }
+    },
+    {
+      "id": "sl001_excisable_precondition",
+      "construct": {
+        "type": "sl001_excisable",
+        "fn": "sl001_excisable",
+        "entire_test": true,
+        "assert_count": 10,
+        "checks": [
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 120
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 210
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "reason",
+                  {
+                    "t": "str",
+                    "v": "size_limit_exceeded"
+                  }
+                ],
+                [
+                  "limit",
+                  {
+                    "t": "int",
+                    "v": 10
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "null"
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 120
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 210
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 10
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 5
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 0
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 9
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 0
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 9
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 9
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "str",
+                    "v": "x"
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 9
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "str",
+              "v": "msg-torn"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 120
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 210
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-3",
+                "parent_id": {
+                  "t": "str",
+                  "v": "msg-torn"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:03Z",
+                "actor": "assistant",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m3"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL006",
+            "line": {
+              "t": "int",
+              "v": 3
+            },
+            "record_id": {
+              "t": "null"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 120
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 210
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ]
+              ]
+            },
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "bools",
+        "values": [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      }
+    },
+    {
+      "id": "apply_torn_record_excision_refusals",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_torn_record_excision",
+        "entire_test": false,
+        "calls": [
+          {
+            "events": [],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 3
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 120
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 210
+                    }
+                  ],
+                  [
+                    "record_id",
+                    {
+                      "t": "str",
+                      "v": "msg-torn"
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: cannot apply to an empty session"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 5
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line=None record_ordinal=2 byte_offset=1 byte_end=5"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 5
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params do not anchor a real torn record (line=0, record_ordinal=2, byte_offset=1, byte_end=5)"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 3
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 5
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params do not anchor a real torn record (line=3, record_ordinal=0, byte_offset=1, byte_end=5)"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 3
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 5
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 5
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params do not anchor a real torn record (line=3, record_ordinal=2, byte_offset=5, byte_end=5)"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "str",
+                      "v": "3"
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 5
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line='3' record_ordinal=2 byte_offset=1 byte_end=5"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-3",
+                "parent_id": {
+                  "t": "str",
+                  "v": "msg-torn"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 3
+                },
+                "ts": "2026-09-05T12:00:03Z",
+                "actor": "assistant",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m3"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 3
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 120
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 210
+                    }
+                  ],
+                  [
+                    "record_id",
+                    {
+                      "t": "str",
+                      "v": "msg-torn"
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: a parsed event parents to the torn record's id; excision would orphan a known dependent"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "refusals"
+      }
+    },
+    {
+      "id": "apply_bool_span_and_line",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_torn_record_excision",
+        "entire_test": false,
+        "calls": [
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line=True record_ordinal=None byte_offset=None byte_end=None"
+          },
+          {
+            "events": [
+              {
+                "t": "session",
+                "id": "msg-0",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 0
+                },
+                "ts": "2026-09-05T12:00:00Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m0"
+                      }
+                    ]
+                  ]
+                }
+              },
+              {
+                "t": "session",
+                "id": "msg-2",
+                "parent_id": {
+                  "t": "null"
+                },
+                "seq": {
+                  "t": "int",
+                  "v": 2
+                },
+                "ts": "2026-09-05T12:00:02Z",
+                "actor": "user",
+                "kind": "message",
+                "payload": {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "text",
+                      {
+                        "t": "str",
+                        "v": "m2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: step params 'line', 'record_ordinal', 'byte_offset', 'byte_end' must be integers, got line=1 record_ordinal=1 byte_offset=True byte_end=2"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "refusals"
+      }
+    },
+    {
+      "id": "apply_record_id_bool_is_not_int",
+      "construct": {
+        "type": "apply_mixed",
+        "fn": "apply_torn_record_excision",
+        "entire_test": false,
+        "calls": [
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "evt-keep"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "record_id",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ]
+                ]
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "torn-record-excision: a parsed event parents to the torn record's id; excision would orphan a known dependent"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "evt-keep"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "null"
+              },
+              "params": {
+                "t": "map",
+                "entries": [
+                  [
+                    "line",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "record_ordinal",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "byte_offset",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "byte_end",
+                    {
+                      "t": "int",
+                      "v": 2
+                    }
+                  ],
+                  [
+                    "record_id",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ]
+                ]
+              }
+            },
+            "mode": "ok",
+            "events_out": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "evt-keep"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "bool",
+                      "v": true
+                    }
+                  ]
+                ]
+              }
+            ],
+            "loss": {
+              "t": "map",
+              "entries": [
+                [
+                  "torn-record",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "mode": "mixed"
+      }
+    },
+    {
+      "id": "sl001_bool_span_is_not_an_int",
+      "construct": {
+        "type": "sl001_excisable",
+        "fn": "sl001_excisable",
+        "entire_test": false,
+        "assert_count": 4,
+        "checks": [
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 1
+            },
+            "record_id": {
+              "t": "null"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "bool",
+                    "v": true
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 1
+            },
+            "record_id": {
+              "t": "null"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 0
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "bool",
+                    "v": true
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 1
+            },
+            "record_id": {
+              "t": "null"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 0
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "bool",
+                    "v": true
+                  }
+                ]
+              ]
+            },
+            "events": [],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          },
+          {
+            "code": "SL001",
+            "line": {
+              "t": "int",
+              "v": 1
+            },
+            "record_id": {
+              "t": "null"
+            },
+            "evidence": {
+              "t": "map",
+              "entries": [
+                [
+                  "byte_offset",
+                  {
+                    "t": "int",
+                    "v": 0
+                  }
+                ],
+                [
+                  "byte_end",
+                  {
+                    "t": "int",
+                    "v": 2
+                  }
+                ],
+                [
+                  "record_ordinal",
+                  {
+                    "t": "int",
+                    "v": 1
+                  }
+                ]
+              ]
+            },
+            "events": [],
+            "policy": "salvage",
+            "acknowledge_side_effects": true,
+            "profile": "neutral",
+            "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "sess.jsonl"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "bools",
+        "values": [
+          false,
+          false,
+          false,
+          true
+        ]
+      }
+    }
+  ]
+}
