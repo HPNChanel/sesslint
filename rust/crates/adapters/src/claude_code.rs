@@ -5613,3 +5613,195 @@ mod process_line_tests {
         assert!(context.collision_guard.is_none());
     }
 }
+
+/// Stream a Claude Code JSONL file and wrap canonical events in a Session envelope.
+///
+/// Python: `load_claude_code_session` lines 1313–1327. The only statement that
+/// runs is [`_load_claude_code_internal`]. That function does not return
+/// events, so this propagates [`LoadClaudeCodeError`]. The lines that read
+/// `events[0].ts`, build `SessionHeader`, and return `Session` are not
+/// reached. No `Session`, `SessionHeader`, or event list is built. The id
+/// `claude-session` is not constructed. `1970-01-01T00:00:00Z` is not taken
+/// from an empty event list.
+///
+/// # Errors
+///
+/// The error from [`_load_claude_code_internal`]. Success is [`Infallible`].
+pub fn load_claude_code_session(
+    source: ClaudeLoadSource<'_>,
+    limits: Option<ClaudeFileLimit>,
+) -> Result<Infallible, LoadClaudeCodeError> {
+    _load_claude_code_internal(source, limits)
+}
+
+/// Python `__all__` lines 1330–1340, in that order.
+pub const ALL: [&str; 9] = [
+    "CRITICAL_KEYS",
+    "CanonicalEvent",
+    "KNOWN_RECORD_KEYS",
+    "SUPPORTED_CLAUDE_VERSIONS",
+    "TYPE_MAP",
+    "detect_claude_code",
+    "load_claude_code",
+    "load_claude_code_session",
+    "normalize_version",
+];
+
+#[cfg(test)]
+mod session_wrapper_tests {
+    use std::fs;
+    use std::io::{self, Read};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{
+        _load_claude_code_internal, load_claude_code_session, ClaudeFileLimit, ClaudeLoadSource,
+        LoadClaudeCodeError, ALL, OPEN_BYTE_SOURCE_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE,
+    };
+
+    fn loader_error(
+        source: ClaudeLoadSource<'_>,
+        limits: Option<ClaudeFileLimit>,
+    ) -> LoadClaudeCodeError {
+        match load_claude_code_session(source, limits) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        }
+    }
+
+    fn same_text(text: &str, limits: Option<ClaudeFileLimit>) -> LoadClaudeCodeError {
+        let wrapped = loader_error(ClaudeLoadSource::Str(text), limits);
+        let direct =
+            _load_claude_code_internal(ClaudeLoadSource::Str(text), limits).expect_err("internal");
+        assert_eq!(wrapped.to_string(), direct.to_string());
+        assert_stopped(&wrapped);
+        wrapped
+    }
+
+    fn assert_stopped(error: &LoadClaudeCodeError) {
+        let text = error.to_string();
+        assert!(!text.contains("claude-session"));
+        assert!(!text.contains("sesslint.session/v1"));
+        assert!(!text.contains("1970-01-01T00:00:00Z"));
+        assert!(!text.contains("claude-code-jsonl"));
+    }
+
+    struct Scratch {
+        path: PathBuf,
+    }
+
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+            let n = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!("sesslint-claude-04-{label}-{n}"));
+            fs::create_dir_all(&path).expect("scratch");
+            Self { path }
+        }
+
+        fn child(&self, name: &str) -> PathBuf {
+            self.path.join(name)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn all_is_the_pin_list() {
+        assert_eq!(
+            ALL,
+            [
+                "CRITICAL_KEYS",
+                "CanonicalEvent",
+                "KNOWN_RECORD_KEYS",
+                "SUPPORTED_CLAUDE_VERSIONS",
+                "TYPE_MAP",
+                "detect_claude_code",
+                "load_claude_code",
+                "load_claude_code_session",
+                "normalize_version",
+            ]
+        );
+    }
+
+    #[test]
+    fn load_claude_code_session_stops_at_the_loader() {
+        let scratch = Scratch::new("seam");
+        let missing = scratch.child("missing.jsonl");
+        let missing_text = missing.to_str().expect("utf8");
+        let not_found = same_text(missing_text, None);
+        assert!(matches!(not_found, LoadClaudeCodeError::NotFound(_)));
+        assert!(not_found.to_string().starts_with("Session file not found:"));
+
+        let dir = scratch.path.to_str().expect("utf8");
+        let directory = same_text(dir, None);
+        assert!(matches!(directory, LoadClaudeCodeError::IsADirectory(_)));
+        assert!(directory
+            .to_string()
+            .starts_with("Expected session file, got directory:"));
+
+        let over = scratch.child("over.jsonl");
+        fs::write(&over, b"abcde").expect("write");
+        let over_text = over.to_str().expect("utf8");
+        let limited = Some(ClaudeFileLimit { max_file_bytes: 4 });
+        let too_big = same_text(over_text, limited);
+        assert!(matches!(too_big, LoadClaudeCodeError::FileTooLarge(_)));
+        assert_eq!(
+            too_big.to_string(),
+            "File size 5 bytes exceeds maximum limit (4 bytes)"
+        );
+        assert!(!too_big.to_string().contains("abcde"));
+        assert!(!too_big.to_string().contains(OPEN_BYTE_SOURCE_UNAVAILABLE));
+
+        let leaf = scratch.child("leaf.jsonl");
+        let body = b"synthetic-claude-04\n";
+        fs::write(&leaf, body).expect("write");
+        let leaf_text = leaf.to_str().expect("utf8");
+        let opened = same_text(leaf_text, None);
+        assert!(matches!(opened, LoadClaudeCodeError::OpenByteSource));
+        assert_eq!(opened.to_string(), OPEN_BYTE_SOURCE_UNAVAILABLE);
+        assert_eq!(fs::read(&leaf).expect("unread"), body);
+
+        let like = loader_error(ClaudeLoadSource::PathLike(leaf_text), None);
+        let like_direct = _load_claude_code_internal(ClaudeLoadSource::PathLike(leaf_text), None)
+            .expect_err("pathlike");
+        assert_eq!(like.to_string(), like_direct.to_string());
+        assert!(matches!(like, LoadClaudeCodeError::OpenByteSource));
+        assert_stopped(&like);
+    }
+
+    #[test]
+    fn bytes_and_stream_stop_at_the_tracker_without_an_envelope() {
+        let marker = b"synthetic-marker-claude-04";
+        let limited = Some(ClaudeFileLimit { max_file_bytes: 1 });
+        let bytes_err = loader_error(ClaudeLoadSource::Bytes(marker), limited);
+        let bytes_direct = _load_claude_code_internal(ClaudeLoadSource::Bytes(marker), limited)
+            .expect_err("bytes");
+        assert_eq!(bytes_err.to_string(), bytes_direct.to_string());
+        assert!(matches!(bytes_err, LoadClaudeCodeError::SecretScanTracker));
+        assert_eq!(bytes_err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert_stopped(&bytes_err);
+        assert!(!bytes_err.to_string().contains("synthetic-marker"));
+
+        let mut cursor = io::Cursor::new(marker.to_vec());
+        let streamed = loader_error(
+            ClaudeLoadSource::Stream {
+                reader: &mut cursor,
+                name: Some(r"a\b"),
+            },
+            None,
+        );
+        assert!(matches!(streamed, LoadClaudeCodeError::SecretScanTracker));
+        assert_eq!(streamed.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert_eq!(cursor.position(), 0);
+        let mut buf = [0_u8; 4];
+        assert_eq!(cursor.read(&mut buf).expect("still open"), 4);
+        assert_stopped(&streamed);
+        assert!(!streamed.to_string().contains("a\\b"));
+        assert!(!streamed.to_string().contains("a/b"));
+    }
+}
