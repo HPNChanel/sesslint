@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""Generate sesslint.source parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SOURCE_PY_SHA256 = (
+    "e36431978607b259ad163006104daa0c52f313b4070b5fce885512ab8997bffc"
+)
+SOURCE_RS_SHA256 = (
+    "2920abfd27578be34a5289b58333962f6e4abeb8d88f92fa4fe4f6dce79ea7ce"
+)
+MODULE = "sesslint.source"
+
+SYNTHETIC_BYTES = b"synthetic-source-01\n"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-source-filesystem-snapshot: guard, verify, guarded, and successful "
+        "fingerprint_file paths that depend on stat metadata, realpaths, or host "
+        "paths are not pinned as vectors (mtime, size, and path text vary by machine)."
+    ),
+    (
+        "GAP-source-guarded-iter-events: guarded_iter_events imports "
+        "sesslint.io.ReaderLimits and sesslint.io.iter_events; parity vectors "
+        "do not exercise that integration in this crate."
+    ),
+]
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def verify_source_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "source.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != SOURCE_RS_SHA256:
+        raise SystemExit(
+            "adapters/src/source.rs sha256 mismatch: "
+            f"expected {SOURCE_RS_SHA256}, got {digest}"
+        )
+
+
+def exec_module_from_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    errors = types.ModuleType("sesslint.errors")
+
+    class SourceChangedError(Exception):
+        def __init__(self, message: str, code: str = "SOURCE_CHANGED") -> None:
+            super().__init__(message)
+            self.code = code
+
+    errors.SourceChangedError = SourceChangedError
+    sys.modules["sesslint.errors"] = errors
+    pkg.errors = errors
+
+    io_mod = types.ModuleType("sesslint.io")
+
+    class ReaderLimits:
+        pass
+
+    def iter_events(_path: Any, *, limits: Any | None = None) -> Any:
+        return iter(())
+
+    io_mod.ReaderLimits = ReaderLimits
+    io_mod.iter_events = iter_events
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+
+def load_source_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/source.py")
+    verify_digest(blob, SOURCE_PY_SHA256, "source.py")
+    verify_source_rs_sha256()
+    source = exec_module_from_blob(blob, "sesslint.source")
+    sys.modules["sesslint"].source = source
+    return source
+
+
+def large_payload() -> bytes:
+    payload = bytearray(b"A" * 150_000)
+    payload.extend(b"B" * 50_000)
+    return bytes(payload)
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    large = large_payload()
+    return [
+        {
+            "id": "fingerprint_bytes_empty",
+            "construct": {"type": "fingerprint_bytes", "data_hex": ""},
+        },
+        {
+            "id": "fingerprint_bytes_abc",
+            "construct": {"type": "fingerprint_bytes", "data_hex": "616263"},
+        },
+        {
+            "id": "fingerprint_bytes_synthetic_line",
+            "construct": {
+                "type": "fingerprint_bytes",
+                "data_hex": SYNTHETIC_BYTES.hex(),
+            },
+        },
+        {
+            "id": "fingerprint_bytes_nul_and_crlf",
+            "construct": {"type": "fingerprint_bytes", "data_hex": "6100620d0a63"},
+        },
+        {
+            "id": "fingerprint_file_chunk_size_zero",
+            "construct": {
+                "type": "fingerprint_file_chunk",
+                "path": "synthetic-missing-chunk.jsonl",
+                "chunk_size": 0,
+            },
+        },
+        {
+            "id": "fingerprint_file_chunk_size_negative_one",
+            "construct": {
+                "type": "fingerprint_file_chunk",
+                "path": "synthetic-missing-chunk.jsonl",
+                "chunk_size": -1,
+            },
+        },
+        {
+            "id": "fingerprint_file_chunk_size_negative_hundred",
+            "construct": {
+                "type": "fingerprint_file_chunk",
+                "path": "synthetic-missing-chunk.jsonl",
+                "chunk_size": -100,
+            },
+        },
+        {
+            "id": "fingerprint_file_empty_default_chunk",
+            "construct": {
+                "type": "fingerprint_file_bytes",
+                "data_hex": "",
+                "chunk_size": 65536,
+            },
+        },
+        {
+            "id": "fingerprint_file_synthetic_default_chunk",
+            "construct": {
+                "type": "fingerprint_file_bytes",
+                "data_hex": SYNTHETIC_BYTES.hex(),
+                "chunk_size": 65536,
+            },
+        },
+        {
+            "id": "fingerprint_file_synthetic_chunk_4096",
+            "construct": {
+                "type": "fingerprint_file_bytes",
+                "data_hex": SYNTHETIC_BYTES.hex(),
+                "chunk_size": 4096,
+            },
+        },
+        {
+            "id": "fingerprint_file_synthetic_chunk_one",
+            "construct": {
+                "type": "fingerprint_file_bytes",
+                "data_hex": SYNTHETIC_BYTES.hex(),
+                "chunk_size": 1,
+            },
+        },
+        {
+            "id": "fingerprint_file_large_payload_across_chunks",
+            "construct": {
+                "type": "fingerprint_file_bytes",
+                "data_hex": large.hex(),
+                "chunk_size": 4096,
+            },
+        },
+        {
+            "id": "fingerprint_file_large_payload_chunk_default",
+            "construct": {
+                "type": "fingerprint_file_bytes",
+                "data_hex": large.hex(),
+                "chunk_size": 65536,
+            },
+        },
+    ]
+
+
+def build_expected(source: types.ModuleType, spec: dict[str, Any]) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "fingerprint_bytes":
+        data = bytes.fromhex(spec["data_hex"]) if spec.get("data_hex") else b""
+        return {"sha256": source.fingerprint_bytes(data)}
+    if kind == "fingerprint_file_chunk":
+        try:
+            source.fingerprint_file(spec["path"], chunk_size=spec["chunk_size"])
+        except ValueError as err:
+            return {"raises": "ValueError", "message": str(err)}
+        raise SystemExit(f"expected ValueError for {spec}")
+    if kind == "fingerprint_file_bytes":
+        data = bytes.fromhex(spec["data_hex"]) if spec.get("data_hex") else b""
+        chunk_size = spec["chunk_size"]
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False) as handle:
+            handle.write(data)
+            tmp_path = handle.name
+        try:
+            digest = source.fingerprint_file(tmp_path, chunk_size=chunk_size)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+        return {"sha256": digest}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def assert_payload_safe(payload: bytes) -> None:
+    if _BANNED_SUPABASE_PAT.search(payload):
+        raise SystemExit("vectors.json contains forbidden sbp_ token pattern")
+
+
+def main() -> int:
+    source = load_source_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(source, construct)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "source_py_sha256": SOURCE_PY_SHA256,
+        "source_rs_sha256": SOURCE_RS_SHA256,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_safe(payload_bytes)
+    if b"\r" in payload_bytes:
+        raise SystemExit("vectors.json payload must use LF only")
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic byte fixtures for sesslint.source fingerprint helpers "
+            "(fingerprint_bytes and chunk_size ValueError parity)."
+        ),
+        "generator": "rust/parity/vectors/source/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
