@@ -12429,10 +12429,17 @@ mod port_1610 {
             minimized("C:\\SyntheticHome\\work\\a.jsonl").expect("slashes"),
             "~/work/a.jsonl"
         );
-        assert_eq!(
-            minimized("c:/synthetichome/Work/A.JSONL").expect("case"),
-            "~/Work/A.JSONL"
-        );
+        if cfg!(windows) {
+            assert_eq!(
+                minimized("c:/synthetichome/Work/A.JSONL").expect("case"),
+                "~/Work/A.JSONL"
+            );
+        } else {
+            assert!(matches!(
+                minimized("c:/synthetichome/Work/A.JSONL"),
+                Err(MinimizePathError::Sha1)
+            ));
+        }
         assert_eq!(
             minimized("C:/SyntheticHome/work/../a.jsonl").expect("lexical dotdot"),
             "~/work/../a.jsonl"
