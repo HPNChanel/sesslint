@@ -1,12 +1,15 @@
 //! Canonical session adapter prefix (`sesslint.session/v1`).
 //!
 //! Port of `src/sesslint/adapters/canonical.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–953.
-//! Stops before `_load_canonical` (line 956).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Lines 1–953 are the prefix helpers. [`load_canonical_body`] is
+//! `_load_canonical` from line 956 through the gates before
+//! `decode_json_dupaware` (line 1090).
 //!
 //! [`canonical_source_label`] is Python `_canonical_source_label`.
 //! [`load_canonical`]'s first statement is `SecretScanTracker()`. That
-//! call is not available in this crate.
+//! call is not available in this crate. [`load_canonical`] does not call
+//! [`load_canonical_body`].
 //!
 //! This slice declares the key sets, [`SourceMetadata`], [`EventList`],
 //! [`normalize_version`], [`detect_canonical`], [`event_to_dict`],
@@ -87,6 +90,17 @@
 //!   `into_findings`, or `sort_findings`, and it does not return an
 //!   [`EventList`] or an SL009 finding. [`canonical_source_label`] stays
 //!   callable on its own. `load_canonical` does not call it.
+//! - [`load_canonical_body`] copies `DEFAULT_READER_LIMITS.max_file_bytes`
+//!   as `100 * 1024 * 1024`. A provided cap is that `i64`. Finding labels
+//!   come from [`canonical_source_label`]. Missing paths and directories
+//!   use `str(Path)` and keep host separators. An owned file is closed on
+//!   every return. Size, NUL, and empty call [`make_finding`] with the
+//!   fingerprint omitted, so their [`Display`](std::fmt::Display) is
+//!   `sesslint.determinism.canonical_json_bytes is not available`. No
+//!   [`EventList`] is returned. The next call is
+//!   `sesslint.io.decode_json_dupaware`, whose Display is
+//!   `sesslint.io.decode_json_dupaware is not available`. JSON is not
+//!   parsed. `secret_tracker.feed_blob` is not called.
 //! - [`canonical_source_label`] renders `str(Path(...))` with host
 //!   `std::path` rules, then replaces every `\` with `/`. `..` is kept.
 //!   A stream `name` is only slash-replaced. A missing `name` is
@@ -97,6 +111,8 @@
 
 use std::error::Error;
 use std::fmt;
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::{Component, Path};
 
 use model::canonical::{
@@ -2850,6 +2866,508 @@ fn secret_scan_tracker(
     LoadCanonicalError
 }
 
+/// `DEFAULT_READER_LIMITS.max_file_bytes` from `src/sesslint/io.py` at the pin.
+///
+/// `100 * 1024 * 1024`. Copied locally. This crate does not depend on `scan`.
+pub const DEFAULT_MAX_FILE_BYTES: i64 = 100 * 1024 * 1024;
+
+/// `sesslint.io.decode_json_dupaware` is not in this crate.
+pub const DECODE_JSON_DUPAWARE_UNAVAILABLE: &str =
+    "sesslint.io.decode_json_dupaware is not available";
+
+const SIZE_LIMIT_TEMPLATE: &str = "File size exceeds maximum limit [detail: LIMIT]";
+
+const NUL_TEMPLATE: &str = "Forbidden NUL byte on line {line} for record {record_id}";
+
+const EMPTY_TEMPLATE: &str = "Session input is empty [detail: EMPTY]";
+
+/// `max_file_bytes` from a provided `ReaderLimits`.
+///
+/// The field is an `i64`. `ReaderLimits` rejects a `bool` before this
+/// function runs, so this slice does not invent that error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalFileLimit {
+    /// Python: `ReaderLimits.max_file_bytes`.
+    pub max_file_bytes: i64,
+}
+
+/// Input of [`load_canonical_body`].
+///
+/// Python: `Path | str | BinaryIO | bytes` for `_load_canonical`.
+pub enum CanonicalLoadSource<'a> {
+    /// `bytes`. The finding label is [`canonical_source_label`].
+    Bytes(&'a [u8]),
+    /// `str`.
+    Str(&'a str),
+    /// `os.PathLike` or `pathlib.Path`. The text is `os.fspath`.
+    PathLike(&'a str),
+    /// `BinaryIO`. This reader is not closed.
+    Stream {
+        /// Byte source.
+        reader: &'a mut dyn Read,
+        /// `getattr(stream, "name", ...)`. `None` is a missing attribute.
+        name: Option<&'a str>,
+    },
+}
+
+/// Which gate called [`make_finding`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalReadGate {
+    /// Stat size or a buffer longer than `max_file_bytes`.
+    Size,
+    /// A NUL byte in the capped read.
+    Nul,
+    /// Empty, or ASCII whitespace, after a leading UTF-8 BOM is removed.
+    Empty,
+}
+
+/// Failure from [`load_canonical_body`].
+///
+/// Size, NUL, and empty propagate [`make_finding`]'s omitted fingerprint.
+/// That [`Display`](std::fmt::Display) is
+/// `sesslint.determinism.canonical_json_bytes is not available`.
+/// The JSON decoder seam's Display is [`DECODE_JSON_DUPAWARE_UNAVAILABLE`].
+/// Neither path returns an [`EventList`].
+#[derive(Debug)]
+pub enum LoadCanonicalBodyError {
+    /// `FileNotFoundError`: `Session file not found: {path_obj}`.
+    NotFound(String),
+    /// `IsADirectoryError`: `Expected session file, got directory: {path_obj}`.
+    IsADirectory(String),
+    /// `open` or `read` failed, or `exists` raised.
+    Io(io::Error),
+    /// [`SourceRef`] or [`make_finding`] failed. `path` is the finding label.
+    Finding {
+        /// Size, NUL, or empty.
+        gate: CanonicalReadGate,
+        /// Label passed to [`make_finding`]. Not part of [`Display`].
+        path: String,
+        /// Codec seam, or an earlier rejection.
+        error: FindingError,
+    },
+    /// [`make_finding`] returned a finding. No [`EventList`] is built.
+    EventListOmitted {
+        /// Size, NUL, or empty.
+        gate: CanonicalReadGate,
+        /// Label passed to [`make_finding`]. Not part of [`Display`].
+        path: String,
+    },
+    /// `decode_json_dupaware` is not in this crate. `path` is not in [`Display`].
+    DecodeJsonDupaware {
+        /// Finding label that would have been used after a successful decode.
+        path: String,
+    },
+}
+
+impl LoadCanonicalBodyError {
+    /// Size, NUL, or empty when [`make_finding`] was called.
+    #[must_use]
+    pub fn finding_gate(&self) -> Option<CanonicalReadGate> {
+        match self {
+            Self::Finding { gate, .. } | Self::EventListOmitted { gate, .. } => Some(*gate),
+            _ => None,
+        }
+    }
+
+    /// Finding label. Absent from [`Display`](std::fmt::Display).
+    #[must_use]
+    pub fn source_path(&self) -> Option<&str> {
+        match self {
+            Self::Finding { path, .. }
+            | Self::EventListOmitted { path, .. }
+            | Self::DecodeJsonDupaware { path } => Some(path),
+            _ => None,
+        }
+    }
+
+    /// The read passed size, NUL, and empty, then stopped at the decoder.
+    #[must_use]
+    pub fn at_json_decoder(&self) -> bool {
+        matches!(self, Self::DecodeJsonDupaware { .. })
+    }
+}
+
+impl fmt::Display for LoadCanonicalBodyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound(message) | Self::IsADirectory(message) => formatter.write_str(message),
+            Self::Io(error) => fmt::Display::fmt(error, formatter),
+            Self::Finding { error, .. } => fmt::Display::fmt(error, formatter),
+            Self::EventListOmitted { .. } => {
+                formatter.write_str("make_finding returned a finding and no EventList is built")
+            }
+            Self::DecodeJsonDupaware { .. } => {
+                formatter.write_str(DECODE_JSON_DUPAWARE_UNAVAILABLE)
+            }
+        }
+    }
+}
+
+impl Error for LoadCanonicalBodyError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Finding { error, .. } => Some(error),
+            Self::NotFound(_)
+            | Self::IsADirectory(_)
+            | Self::EventListOmitted { .. }
+            | Self::DecodeJsonDupaware { .. } => None,
+        }
+    }
+}
+
+/// Read a canonical session through the gates before JSON decoding.
+///
+/// Python: `_load_canonical` lines 975–1072. `limits` `None` uses
+/// [`DEFAULT_MAX_FILE_BYTES`]. `Some` uses that `max_file_bytes` `i64`.
+///
+/// Finding labels come from [`canonical_source_label`]. A missing path is
+/// `Session file not found: {path_obj}` and a directory is
+/// `Expected session file, got directory: {path_obj}`. `{path_obj}` is
+/// `str(Path)` and keeps host separators. Those return before `open`.
+/// An `OSError` from the size stat is ignored and `open` still runs.
+/// An owned file is closed on every return.
+///
+/// A longer file or buffer, a NUL byte, or empty / ASCII whitespace calls
+/// [`make_finding`] with the fingerprint omitted and propagates that error.
+/// No [`EventList`] is returned. The next call would be
+/// `sesslint.io.decode_json_dupaware`. JSON is not parsed, and
+/// `secret_tracker.feed_blob` is not called.
+///
+/// # Errors
+///
+/// A missing path, a directory, I/O, a rejected finding, or the JSON
+/// decoder seam. Success is [`std::convert::Infallible`].
+pub fn load_canonical_body(
+    source: CanonicalLoadSource<'_>,
+    limits: Option<CanonicalFileLimit>,
+) -> Result<std::convert::Infallible, LoadCanonicalBodyError> {
+    let max_bytes = resolve_max_file_bytes(limits);
+    match source {
+        CanonicalLoadSource::Bytes(bytes) => load_bytes(bytes, max_bytes),
+        CanonicalLoadSource::Str(text) => load_path_text(text, PathForm::Str, max_bytes),
+        CanonicalLoadSource::PathLike(text) => load_path_text(text, PathForm::PathLike, max_bytes),
+        CanonicalLoadSource::Stream { reader, name } => load_stream(reader, name, max_bytes),
+    }
+}
+
+enum PathForm {
+    Str,
+    PathLike,
+}
+
+const fn resolve_max_file_bytes(limits: Option<CanonicalFileLimit>) -> i64 {
+    match limits {
+        None => DEFAULT_MAX_FILE_BYTES,
+        Some(limit) => limit.max_file_bytes,
+    }
+}
+
+fn load_bytes(
+    bytes: &[u8],
+    max_bytes: i64,
+) -> Result<std::convert::Infallible, LoadCanonicalBodyError> {
+    let label = canonical_source_label(CanonicalSource::Bytes(bytes));
+    let mut cursor = io::Cursor::new(bytes);
+    read_gates(&mut cursor, &label, max_bytes)
+}
+
+fn load_stream(
+    reader: &mut dyn Read,
+    name: Option<&str>,
+    max_bytes: i64,
+) -> Result<std::convert::Infallible, LoadCanonicalBodyError> {
+    let label = canonical_source_label(CanonicalSource::Stream { name });
+    read_gates(reader, &label, max_bytes)
+}
+
+fn load_path_text(
+    text: &str,
+    form: PathForm,
+    max_bytes: i64,
+) -> Result<std::convert::Infallible, LoadCanonicalBodyError> {
+    let label = match form {
+        PathForm::Str => canonical_source_label(CanonicalSource::Str(text)),
+        PathForm::PathLike => canonical_source_label(CanonicalSource::PathLike(text)),
+    };
+    let displayed = session_path_text(Path::new(text));
+    let path = session_fs_path(text);
+    match path.metadata() {
+        Ok(meta) if meta.is_dir() => {
+            return Err(LoadCanonicalBodyError::IsADirectory(format!(
+                "Expected session file, got directory: {displayed}"
+            )));
+        }
+        Ok(_) => {}
+        Err(error) if is_missing(&error) => {
+            return Err(LoadCanonicalBodyError::NotFound(format!(
+                "Session file not found: {displayed}"
+            )));
+        }
+        Err(error) => return Err(LoadCanonicalBodyError::Io(error)),
+    }
+    let oversized = match path.metadata() {
+        Ok(meta) if meta.is_file() => exceeds_limit(meta.len(), max_bytes),
+        Ok(_) | Err(_) => false,
+    };
+    if oversized {
+        return gate_finding(
+            CanonicalReadGate::Size,
+            &label,
+            SIZE_LIMIT_TEMPLATE,
+            size_evidence(max_bytes),
+        );
+    }
+    let mut file = File::open(path).map_err(LoadCanonicalBodyError::Io)?;
+    let outcome = read_gates(&mut file, &label, max_bytes);
+    drop(file);
+    outcome
+}
+
+fn session_fs_path(text: &str) -> &Path {
+    if text.is_empty() {
+        Path::new(".")
+    } else {
+        Path::new(text)
+    }
+}
+
+fn is_missing(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
+}
+
+fn read_gates(
+    reader: &mut dyn Read,
+    path_str: &str,
+    max_bytes: i64,
+) -> Result<std::convert::Infallible, LoadCanonicalBodyError> {
+    let data = read_prefix(reader, max_bytes).map_err(LoadCanonicalBodyError::Io)?;
+    if exceeds_limit(byte_len(&data), max_bytes) {
+        return gate_finding(
+            CanonicalReadGate::Size,
+            path_str,
+            SIZE_LIMIT_TEMPLATE,
+            size_evidence(max_bytes),
+        );
+    }
+    if data.contains(&0) {
+        return gate_finding(
+            CanonicalReadGate::Nul,
+            path_str,
+            NUL_TEMPLATE,
+            reason_evidence("forbidden_nul_byte"),
+        );
+    }
+    let stripped = strip_bom(&data);
+    if stripped.is_empty() || python_bytes_isspace(stripped) {
+        return gate_finding(
+            CanonicalReadGate::Empty,
+            path_str,
+            EMPTY_TEMPLATE,
+            reason_evidence("empty_input"),
+        );
+    }
+    Err(LoadCanonicalBodyError::DecodeJsonDupaware {
+        path: path_str.to_owned(),
+    })
+}
+
+fn gate_finding(
+    gate: CanonicalReadGate,
+    path_str: &str,
+    template: &str,
+    evidence: EvidenceValue,
+) -> Result<std::convert::Infallible, LoadCanonicalBodyError> {
+    let source = match SourceRef::try_new(path_str, Some(SourceLine::Int(1)), None) {
+        Ok(source) => source,
+        Err(error) => {
+            return Err(LoadCanonicalBodyError::Finding {
+                gate,
+                path: path_str.to_owned(),
+                error,
+            });
+        }
+    };
+    match make_finding(&MakeFindingInput {
+        code: EvidenceValue::string(SL001),
+        severity: EvidenceValue::severity(Severity::Error),
+        repairability: EvidenceValue::repairability(Repairability::Manual),
+        message_template: EvidenceValue::string(template),
+        template_args: EvidenceValue::None,
+        source: EvidenceValue::source(source),
+        related_ids: EvidenceValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: EvidenceValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    }) {
+        Err(error) => Err(LoadCanonicalBodyError::Finding {
+            gate,
+            path: path_str.to_owned(),
+            error,
+        }),
+        Ok(_finding) => Err(LoadCanonicalBodyError::EventListOmitted {
+            gate,
+            path: path_str.to_owned(),
+        }),
+    }
+}
+
+fn size_evidence(limit: i64) -> EvidenceValue {
+    EvidenceValue::map(vec![
+        evidence_pair("reason", EvidenceValue::string("size_limit_exceeded")),
+        evidence_pair("limit", EvidenceValue::int(limit)),
+    ])
+}
+
+fn reason_evidence(reason: &str) -> EvidenceValue {
+    EvidenceValue::map(vec![evidence_pair("reason", EvidenceValue::string(reason))])
+}
+
+fn exceeds_limit(len: u64, max_file_bytes: i64) -> bool {
+    match u64::try_from(max_file_bytes) {
+        Ok(max) => len > max,
+        Err(_) => true,
+    }
+}
+
+fn byte_len(data: &[u8]) -> u64 {
+    u64::try_from(data.len()).unwrap_or(u64::MAX)
+}
+
+fn strip_bom(data: &[u8]) -> &[u8] {
+    data.strip_prefix(UTF8_BOM).unwrap_or(data)
+}
+
+fn python_bytes_isspace(data: &[u8]) -> bool {
+    !data.is_empty()
+        && data
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+}
+
+fn read_prefix(reader: &mut dyn Read, max_file_bytes: i64) -> io::Result<Vec<u8>> {
+    match max_file_bytes.checked_add(1) {
+        Some(0) => Ok(Vec::new()),
+        Some(count) if count > 0 => {
+            let limit = u64::try_from(count).unwrap_or(u64::MAX);
+            read_limited(reader, limit)
+        }
+        Some(_) => read_until_eof(reader),
+        None => {
+            let limit = u64::try_from(i64::MAX).map_or(u64::MAX, |value| value.saturating_add(1));
+            read_limited(reader, limit)
+        }
+    }
+}
+
+fn read_limited(reader: &mut dyn Read, count: u64) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    if count == 0 {
+        return Ok(out);
+    }
+    let mut buf = [0u8; 8192];
+    loop {
+        let filled = u64::try_from(out.len()).unwrap_or(u64::MAX);
+        if filled >= count {
+            break;
+        }
+        let room = count - filled;
+        let chunk = u64::try_from(buf.len()).unwrap_or(u64::MAX);
+        let Ok(want) = usize::try_from(room.min(chunk)) else {
+            break;
+        };
+        if want == 0 {
+            break;
+        }
+        match reader.read(&mut buf[..want]) {
+            Ok(0) => break,
+            Ok(read_count) => out.extend_from_slice(read_chunk(&buf, read_count)?),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(out)
+}
+
+fn read_until_eof(reader: &mut dyn Read) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(read_count) => out.extend_from_slice(read_chunk(&buf, read_count)?),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(out)
+}
+
+fn read_chunk(buf: &[u8], count: usize) -> io::Result<&[u8]> {
+    buf.get(..count).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "read returned more bytes than the buffer",
+        )
+    })
+}
+
+/// `str(Path)` for the `FileNotFoundError` and `IsADirectoryError` text.
+///
+/// Host separators stay. This is not [`canonical_source_label`].
+fn session_path_text(path: &Path) -> String {
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            Component::ParentDir => parts.push(String::from("..")),
+            Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+            #[cfg(windows)]
+            Component::Prefix(value) => {
+                prefix = value.as_os_str().to_string_lossy().replace('/', "\\");
+            }
+        }
+    }
+    join_session_path(&prefix, rooted, &parts)
+}
+
+fn join_session_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
+    let sep = std::path::MAIN_SEPARATOR;
+    if prefix.is_empty() && !rooted && parts.is_empty() {
+        return String::from(".");
+    }
+    let mut out = String::new();
+    if !prefix.is_empty() {
+        out.push_str(prefix);
+    }
+    if rooted && !out.ends_with(sep) {
+        out.push(sep);
+    }
+    for (index, part) in parts.iter().enumerate() {
+        let drive_relative = index == 0 && !rooted && prefix.ends_with(':');
+        if !out.is_empty() && !out.ends_with(sep) && !drive_relative {
+            out.push(sep);
+        }
+        out.push_str(part);
+    }
+    if out.is_empty() {
+        String::from(".")
+    } else {
+        out
+    }
+}
+
 fn path_label(text: &str) -> String {
     let mut prefix = String::new();
     let mut rooted = false;
@@ -2917,11 +3435,13 @@ mod tests {
 
     use super::{
         canonical_source_label, classify_session_doc, common_event, detect_canonical,
-        dump_canonical, event_to_dict, load_canonical, normalize_version,
-        parse_canonical_event_record, safe_evidence_val, safe_rec_id, safe_type_value, AttrSource,
-        Attribute, CanonicalSource, DumpInput, EventList, EventObject, EventSequence, MetaValue,
-        ParseCanonicalEventError, ProvidedSource, SourceMetadata, CRITICAL_KEYS,
-        CRITICAL_TOP_KEYS, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS, KNOWN_TOP_KEYS,
+        dump_canonical, event_to_dict, load_canonical, load_canonical_body, normalize_version,
+        parse_canonical_event_record, safe_evidence_val, safe_rec_id, safe_type_value,
+        session_path_text, AttrSource, Attribute, CanonicalFileLimit, CanonicalLoadSource,
+        CanonicalReadGate, CanonicalSource, DumpInput, EventList, EventObject, EventSequence,
+        LoadCanonicalBodyError, MetaValue, ParseCanonicalEventError, ProvidedSource,
+        SourceMetadata, CRITICAL_KEYS, CRITICAL_TOP_KEYS, DECODE_JSON_DUPAWARE_UNAVAILABLE,
+        DEFAULT_MAX_FILE_BYTES, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS, KNOWN_TOP_KEYS,
         REQUIRED_EVENT_KEYS, SECRET_SCAN_TRACKER_UNAVAILABLE, SUPPORTED_CANONICAL_VERSIONS,
     };
     use crate::drift::DriftTracker;
@@ -4257,5 +4777,455 @@ mod tests {
         .expect_err("limits");
         assert_eq!(supplied, err);
         assert_eq!(supplied.to_string(), tracker);
+    }
+
+    fn limit(max_file_bytes: i64) -> Option<CanonicalFileLimit> {
+        Some(CanonicalFileLimit { max_file_bytes })
+    }
+
+    fn bytes_err(bytes: &[u8], max_file_bytes: Option<i64>) -> LoadCanonicalBodyError {
+        let cap = max_file_bytes.map(|max_file_bytes| CanonicalFileLimit { max_file_bytes });
+        load_canonical_body(CanonicalLoadSource::Bytes(bytes), cap).expect_err("bytes")
+    }
+
+    struct Scratch {
+        dir: std::path::PathBuf,
+    }
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0);
+            let dir = std::env::temp_dir().join(format!(
+                "sesslint-canon05-{name}-{}-{nanos}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("scratch");
+            Self { dir }
+        }
+
+        fn child(&self, name: &str) -> std::path::PathBuf {
+            self.dir.join(name)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    struct Slow {
+        data: Vec<u8>,
+        pos: usize,
+    }
+
+    impl std::io::Read for Slow {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos >= self.data.len() || buf.is_empty() {
+                return Ok(0);
+            }
+            buf[0] = self.data[self.pos];
+            self.pos += 1;
+            Ok(1)
+        }
+    }
+
+    #[test]
+    fn default_cap_is_the_pinned_reader_limit() {
+        assert_eq!(DEFAULT_MAX_FILE_BYTES, 100 * 1024 * 1024);
+        assert_eq!(DEFAULT_MAX_FILE_BYTES, 104_857_600);
+    }
+
+    #[test]
+    fn session_path_text_keeps_host_separators() {
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(session_path_text(std::path::Path::new("")), ".");
+        assert_eq!(session_path_text(std::path::Path::new(".")), ".");
+        assert_eq!(session_path_text(std::path::Path::new("./synth")), "synth");
+        assert_eq!(session_path_text(std::path::Path::new("synth/")), "synth");
+        assert_eq!(
+            session_path_text(std::path::Path::new("synth/../leaf")),
+            format!("synth{sep}..{sep}leaf")
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("synth//leaf")),
+            format!("synth{sep}leaf")
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("synth/./leaf")),
+            format!("synth{sep}leaf")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn session_path_text_matches_windows_pathlib() {
+        assert_eq!(
+            session_path_text(std::path::Path::new(r"synth\leaf")),
+            r"synth\leaf"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("synth/leaf")),
+            r"synth\leaf"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new(r"foo\bar/baz")),
+            r"foo\bar\baz"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("C:/synth/leaf")),
+            r"C:\synth\leaf"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("C:synth")),
+            "C:synth"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("C:synth/leaf")),
+            r"C:synth\leaf"
+        );
+        assert_eq!(session_path_text(std::path::Path::new(r"a\.\b")), r"a\b");
+        assert_eq!(session_path_text(std::path::Path::new(r".\synth")), "synth");
+        assert_eq!(session_path_text(std::path::Path::new("C:/")), r"C:\");
+        assert_eq!(session_path_text(std::path::Path::new("/")), r"\");
+        assert_eq!(
+            session_path_text(std::path::Path::new("/synth/leaf")),
+            r"\synth\leaf"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("//server/share")),
+            r"\\server\share\"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("//server/share/synth")),
+            r"\\server\share\synth"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new(r"\\server\share")),
+            r"\\server\share\"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new(r"\\?\C:\synth")),
+            r"\\?\C:\synth"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("//?/C:/synth")),
+            r"\\?\C:\synth"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new(r"\\.\NUL")),
+            r"\\.\NUL\"
+        );
+        assert_eq!(
+            session_path_text(std::path::Path::new("//./NUL")),
+            r"\\.\NUL\"
+        );
+    }
+
+    #[test]
+    fn missing_path_keeps_raw_path_text() {
+        let text = "synth/../missing.json";
+        let err = load_canonical_body(CanonicalLoadSource::Str(text), None).expect_err("missing");
+        let shown = session_path_text(std::path::Path::new(text));
+        assert_eq!(err.to_string(), format!("Session file not found: {shown}"));
+        assert!(matches!(err, LoadCanonicalBodyError::NotFound(_)));
+        assert!(err.finding_gate().is_none());
+        assert!(!err.at_json_decoder());
+        let label = canonical_source_label(CanonicalSource::Str(text));
+        assert_eq!(label, "synth/../missing.json");
+        if cfg!(windows) {
+            assert_eq!(shown, r"synth\..\missing.json");
+            assert_ne!(shown, label);
+            assert!(!err.to_string().contains("synth/../missing.json"));
+        }
+        let like =
+            load_canonical_body(CanonicalLoadSource::PathLike(text), None).expect_err("like");
+        assert_eq!(like.to_string(), err.to_string());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn missing_windows_path_keeps_backslashes() {
+        let err = load_canonical_body(CanonicalLoadSource::Str(r"synth\missing.json"), None)
+            .expect_err("missing");
+        assert_eq!(
+            err.to_string(),
+            r"Session file not found: synth\missing.json"
+        );
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Str(r"synth\missing.json")),
+            "synth/missing.json"
+        );
+        assert!(!err.to_string().contains("synth/missing.json"));
+        let slashed = load_canonical_body(CanonicalLoadSource::Str("synth/missing.json"), None)
+            .expect_err("slash");
+        assert_eq!(
+            slashed.to_string(),
+            r"Session file not found: synth\missing.json"
+        );
+    }
+
+    #[test]
+    fn empty_path_is_the_current_directory() {
+        let err = load_canonical_body(CanonicalLoadSource::Str(""), None).expect_err("empty");
+        assert_eq!(err.to_string(), "Expected session file, got directory: .");
+        assert!(matches!(err, LoadCanonicalBodyError::IsADirectory(_)));
+        let dotted =
+            load_canonical_body(CanonicalLoadSource::PathLike("."), None).expect_err("dot");
+        assert_eq!(dotted.to_string(), err.to_string());
+    }
+
+    #[test]
+    fn directory_uses_raw_path_text() {
+        let scratch = Scratch::new("dir");
+        let text = scratch.dir.to_str().expect("utf8");
+        let err = load_canonical_body(CanonicalLoadSource::Str(text), None).expect_err("dir");
+        let shown = session_path_text(std::path::Path::new(text));
+        assert_eq!(
+            err.to_string(),
+            format!("Expected session file, got directory: {shown}")
+        );
+        assert!(matches!(err, LoadCanonicalBodyError::IsADirectory(_)));
+        assert!(!err.at_json_decoder());
+    }
+
+    #[test]
+    fn file_as_parent_is_not_found() {
+        let scratch = Scratch::new("parent");
+        let file = scratch.child("leaf.json");
+        std::fs::write(&file, b"{}").expect("write");
+        let child = file.join("extra");
+        let text = child.to_str().expect("utf8");
+        let err = load_canonical_body(CanonicalLoadSource::Str(text), None).expect_err("child");
+        let shown = session_path_text(std::path::Path::new(text));
+        assert_eq!(err.to_string(), format!("Session file not found: {shown}"));
+        assert!(matches!(err, LoadCanonicalBodyError::NotFound(_)));
+    }
+
+    #[test]
+    fn load_canonical_does_not_call_the_body() {
+        let err =
+            load_canonical(CanonicalSource::Str(r"synth\missing.json"), None).expect_err("tracker");
+        assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        let body = load_canonical_body(CanonicalLoadSource::Str(r"synth\missing.json"), None)
+            .expect_err("missing");
+        assert!(matches!(body, LoadCanonicalBodyError::NotFound(_)));
+        assert_ne!(err.to_string(), body.to_string());
+    }
+
+    #[test]
+    fn bytes_stop_at_the_decoder_or_the_earlier_gate() {
+        let codec = FINGERPRINT_CODEC_UNAVAILABLE;
+        let decoder = DECODE_JSON_DUPAWARE_UNAVAILABLE;
+
+        let object = bytes_err(br#"{"a":1}"#, None);
+        assert_eq!(object.to_string(), decoder);
+        assert!(object.at_json_decoder());
+        assert_eq!(object.source_path(), Some("<bytes>"));
+        assert!(object.finding_gate().is_none());
+        assert!(!object.to_string().contains("canonical_json_bytes"));
+        assert!(!object.to_string().contains("SecretScanTracker"));
+        assert!(!object.to_string().contains("SL301"));
+        assert!(!object.to_string().contains("SL302"));
+        assert!(!object.to_string().contains("SL009"));
+
+        assert_eq!(bytes_err(b"{\n\"a\": 1\n}", None).to_string(), decoder);
+        assert_eq!(bytes_err(b"[]", None).to_string(), decoder);
+        assert_eq!(bytes_err(b"not-json", None).to_string(), decoder);
+        assert_eq!(bytes_err(b" a", None).to_string(), decoder);
+        let bom = bytes_err(b"\xef\xbb\xbf{}", None);
+        assert_eq!(bom.to_string(), decoder);
+        assert_eq!(bom.source_path(), Some("<bytes>"));
+
+        let size = bytes_err(b"\0\0\0\0", Some(1));
+        assert_eq!(size.to_string(), codec);
+        assert_eq!(size.finding_gate(), Some(CanonicalReadGate::Size));
+        assert!(!size.at_json_decoder());
+        assert!(!size.to_string().contains("decode_json_dupaware"));
+        assert_eq!(size.source_path(), Some("<bytes>"));
+
+        let nul = bytes_err(b"\0", Some(1));
+        assert_eq!(nul.to_string(), codec);
+        assert_eq!(nul.finding_gate(), Some(CanonicalReadGate::Nul));
+        let nul_in_object = bytes_err(b"{}\0", None);
+        assert_eq!(nul_in_object.finding_gate(), Some(CanonicalReadGate::Nul));
+        assert_eq!(nul_in_object.to_string(), codec);
+
+        assert_eq!(
+            bytes_err(b"", None).finding_gate(),
+            Some(CanonicalReadGate::Empty)
+        );
+        assert_eq!(bytes_err(b"", None).to_string(), codec);
+        assert_eq!(
+            bytes_err(b" \t\n\r\x0b\x0c", None).finding_gate(),
+            Some(CanonicalReadGate::Empty)
+        );
+        assert_eq!(
+            bytes_err(b"\xef\xbb\xbf", None).finding_gate(),
+            Some(CanonicalReadGate::Empty)
+        );
+        assert_eq!(
+            bytes_err(b"\xef\xbb\xbf \t", None).finding_gate(),
+            Some(CanonicalReadGate::Empty)
+        );
+        assert_eq!(bytes_err(b"\xc2\xa0", None).to_string(), decoder);
+        assert_eq!(bytes_err(b"{}", Some(2)).to_string(), decoder);
+        assert_eq!(
+            bytes_err(b"{}", Some(1)).finding_gate(),
+            Some(CanonicalReadGate::Size)
+        );
+        let zero = bytes_err(b"{}", Some(0));
+        assert_eq!(zero.finding_gate(), Some(CanonicalReadGate::Size));
+        assert!(!zero.to_string().contains("positive"));
+        assert!(!zero.to_string().contains("True"));
+        assert!(!zero.to_string().contains("False"));
+        let negative = bytes_err(b"{}", Some(-1));
+        assert_eq!(negative.finding_gate(), Some(CanonicalReadGate::Size));
+        assert!(!negative.at_json_decoder());
+        assert_eq!(
+            bytes_err(b"", Some(0)).finding_gate(),
+            Some(CanonicalReadGate::Empty)
+        );
+    }
+
+    #[test]
+    fn file_gates_close_the_owned_file() {
+        let scratch = Scratch::new("files");
+        let over = scratch.child("marker-over.bin");
+        std::fs::write(&over, b"\0\0\0\0").expect("write");
+        let over_text = over.to_str().expect("utf8");
+        let tracker = load_canonical(CanonicalSource::Str(over_text), None).expect_err("tracker");
+        assert_eq!(tracker.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert!(!tracker.to_string().contains("marker-over"));
+
+        let size =
+            load_canonical_body(CanonicalLoadSource::Str(over_text), limit(1)).expect_err("size");
+        assert_eq!(size.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(size.finding_gate(), Some(CanonicalReadGate::Size));
+        assert!(!size.at_json_decoder());
+        let label = canonical_source_label(CanonicalSource::Str(over_text));
+        assert_eq!(size.source_path(), Some(label.as_str()));
+        assert!(!size.to_string().contains("marker-over"));
+        assert!(!label.contains('\\'));
+        std::fs::remove_file(&over).expect("closed after size");
+
+        let exact = scratch.child("exact.json");
+        std::fs::write(&exact, b"{}").expect("write");
+        let exact_text = exact.to_str().expect("utf8");
+        let decoded = load_canonical_body(CanonicalLoadSource::PathLike(exact_text), limit(2))
+            .expect_err("decoder");
+        assert_eq!(decoded.to_string(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+        assert!(decoded.at_json_decoder());
+        assert_eq!(
+            decoded.source_path(),
+            Some(canonical_source_label(CanonicalSource::PathLike(exact_text)).as_str())
+        );
+        std::fs::remove_file(&exact).expect("closed after decoder");
+
+        let nul = scratch.child("nul.bin");
+        std::fs::write(&nul, b"\0").expect("write");
+        let nul_text = nul.to_str().expect("utf8");
+        let nul_err =
+            load_canonical_body(CanonicalLoadSource::Str(nul_text), limit(1)).expect_err("nul");
+        assert_eq!(nul_err.finding_gate(), Some(CanonicalReadGate::Nul));
+        assert_eq!(nul_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        std::fs::remove_file(&nul).expect("closed after nul");
+
+        let empty = scratch.child("empty.json");
+        std::fs::write(&empty, b"").expect("write");
+        let empty_text = empty.to_str().expect("utf8");
+        let empty_err =
+            load_canonical_body(CanonicalLoadSource::Str(empty_text), None).expect_err("empty");
+        assert_eq!(empty_err.finding_gate(), Some(CanonicalReadGate::Empty));
+        assert!(!empty_err.at_json_decoder());
+        std::fs::remove_file(&empty).expect("closed after empty");
+
+        let ws = scratch.child("ws.json");
+        std::fs::write(&ws, b" \r\n\t").expect("write");
+        let ws_text = ws.to_str().expect("utf8");
+        let ws_err = load_canonical_body(CanonicalLoadSource::Str(ws_text), None).expect_err("ws");
+        assert_eq!(ws_err.finding_gate(), Some(CanonicalReadGate::Empty));
+        std::fs::remove_file(&ws).expect("closed after whitespace");
+
+        let bom = scratch.child("bom.json");
+        std::fs::write(&bom, b"\xef\xbb\xbf{\"a\":1}").expect("write");
+        let bom_text = bom.to_str().expect("utf8");
+        let bom_err =
+            load_canonical_body(CanonicalLoadSource::Str(bom_text), None).expect_err("bom");
+        assert_eq!(bom_err.to_string(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+        std::fs::remove_file(&bom).expect("closed after bom");
+    }
+
+    #[test]
+    fn negative_cap_trips_the_stat_gate_before_empty() {
+        let scratch = Scratch::new("neg");
+        let file = scratch.child("empty.json");
+        std::fs::write(&file, b"").expect("write");
+        let text = file.to_str().expect("utf8");
+        let err = load_canonical_body(CanonicalLoadSource::Str(text), limit(-1)).expect_err("neg");
+        assert_eq!(err.finding_gate(), Some(CanonicalReadGate::Size));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        std::fs::remove_file(&file).expect("closed or unopened");
+    }
+
+    #[test]
+    fn stream_stops_at_the_read_cap_and_keeps_the_stream_label() {
+        let mut slow = Slow {
+            data: vec![b'{'; 20],
+            pos: 0,
+        };
+        let err = load_canonical_body(
+            CanonicalLoadSource::Stream {
+                reader: &mut slow,
+                name: Some(r"synth\leaf"),
+            },
+            limit(4),
+        )
+        .expect_err("size");
+        assert_eq!(err.finding_gate(), Some(CanonicalReadGate::Size));
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.source_path(), Some("synth/leaf"));
+        assert_eq!(slow.pos, 5);
+        assert!(!err.to_string().contains("synth"));
+
+        let mut small = Slow {
+            data: b"{}".to_vec(),
+            pos: 0,
+        };
+        let decoded = load_canonical_body(
+            CanonicalLoadSource::Stream {
+                reader: &mut small,
+                name: None,
+            },
+            None,
+        )
+        .expect_err("decoder");
+        assert_eq!(decoded.to_string(), DECODE_JSON_DUPAWARE_UNAVAILABLE);
+        assert_eq!(decoded.source_path(), Some("<stream>"));
+        assert_eq!(small.pos, 2);
+
+        let mut blank = Slow {
+            data: Vec::new(),
+            pos: 0,
+        };
+        let empty = load_canonical_body(
+            CanonicalLoadSource::Stream {
+                reader: &mut blank,
+                name: Some(""),
+            },
+            None,
+        )
+        .expect_err("blank name");
+        assert_eq!(empty.finding_gate(), Some(CanonicalReadGate::Empty));
+        assert_eq!(
+            empty.to_string(),
+            "SourceRef.path must be a non-empty string, got ''"
+        );
+        assert!(!empty.to_string().contains("canonical_json_bytes"));
+        assert!(!empty.to_string().contains("decode_json_dupaware"));
     }
 }
