@@ -1,0 +1,750 @@
+{
+  "rows": [
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_items_basic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_run_state_checkpoints_preserved",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_unknown_item_SL302",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_old_sdk_version_SL301",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_live_db_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_jsonl_stream",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_determinism",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_limit_gate",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_detect_openai_agents",
+      "status": "covered",
+      "vector_ids": [
+        "detect_export_json",
+        "detect_run_state_wrapper",
+        "detect_sqlite_sqlite_name",
+        "detect_sqlite_json_name",
+        "detect_unrelated_txt",
+        "detect_empty_json"
+      ]
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_normalize_version",
+      "status": "covered",
+      "vector_ids": [
+        "normalize_plain",
+        "normalize_v_prefix",
+        "normalize_whitespace_case",
+        "normalize_openai_label"
+      ]
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_load_openai_agents_session",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_adversarial_sqlite_magic_renamed_to_json",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_adversarial_items_as_dict",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_adversarial_handoff_missing_target",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_adversarial_nul_byte",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_adversarial_invalid_utf8",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_adversarial_version_type_confusion",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_deep_nesting_limit",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_file_not_found",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_directory_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_max_records_exceeded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_jsonl_torn_tail_delegates_SL002",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_jsonl_malformed_midstream_delegates_SL001",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_bytes_direct_input",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_source_metadata_attribute_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_detect_openai_agents_extended_signals",
+      "status": "covered",
+      "vector_ids": [
+        "detect_function_call_tokens"
+      ]
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_tool_call_json_string_input",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_checkpoint_and_compaction_items",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_json_doc_top_level_list_and_non_dict_items",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_role_dispatches_and_missing_type",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_critical_field_sl302",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_tool_result_failure_state",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_jsonl_hostile_limits_matrix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_project_run_state_empty_and_absent",
+      "status": "covered",
+      "vector_ids": [
+        "run_state_none",
+        "run_state_empty_dict",
+        "run_state_irrelevant"
+      ]
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_project_run_state_bounding_and_truncation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_project_run_state_content_redaction_and_shapes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_project_run_state_object_attributes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_project_run_state_non_string_keys_and_collisions",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_project_run_state_no_bypass_hostile_input",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_handoff_benign_reason_echoed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_handoff_secret_reason_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_handoff_hostile_prose_reason_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_naive_timestamp_preserves_naive",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_falsy_call_id_and_input_preserved",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_openai_agents.py::test_stream_read_bounded_refuses_oversized",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_threshold_constants_pinned",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_each_vendor_clear_winner",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_ambiguous_fail_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_low_confidence_fail_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_explicit_override_wins",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_explicit_invalid_exits",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_empty_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_live_db_short_circuit",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_detection_deterministic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_confidence_boundary_exact_055",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_margin_boundary_exact_015",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_epsilon_tie",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_lying_extension",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_whitespace_only_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_bom_only_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_bom_and_whitespace_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_giant_first_line_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_to_source_block_helper",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_detect_format_nonexistent_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_detect_format_directory_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_cli_smoke_invalid_format",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_cli_smoke_ambiguous_auto",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_cli_smoke_explicit_override_canonical",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_cli_smoke_explicit_override_before_check_honored",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_cli_smoke_explicit_override_after_path_honored",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_sniff_boundary_partial_utf8_sliced",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_defensive_detector_nan_and_out_of_bounds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_effective_confidence_threshold_changes_outcome",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_effective_thresholds_reported_in_sl302_evidence",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_effective_margin_threshold_changes_outcome",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_resolve_format_margin_override_reaches_arbitration",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_detect_format_rejects_invalid_thresholds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_resolve_format_rejects_invalid_thresholds_even_with_explicit",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_explicit_format_bypasses_arbitration_unchanged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_detect.py::test_default_thresholds_produce_identical_outcome",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_synthetic_event_id_format",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_synthetic_event_id_hash_exact",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_synthetic_event_id_determinism_and_differentiation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_synthetic_event_id_edge_cases",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_is_synthetic_id",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_collision_guard_clean_operation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_collision_guard_fires_on_synthetic_colliding_with_prior_real",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_collision_guard_fires_on_real_colliding_with_prior_synthetic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_collision_guard_check_event",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_namespace_squat_fixture_claude_code",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_namespace_squat_fixture_openai_agents",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_hostile_collision_claude_code_fails_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_hostile_collision_openai_agents_jsonl_fails_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_hostile_collision_openai_agents_json_fails_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_secondary_id_text_collision_claude_code_fails_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_secondary_id_call_collision_claude_code_fails_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_secondary_id_res_collision_claude_code_fails_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_synthetic_ids.py::test_advance_synthetic_id_helper",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_seeded_fixture_fires_all_families",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_aggregation_same_family_one_record",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_clean_and_near_miss_fixtures_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_malformed_line_still_scanned",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_secret_bytes_never_in_finding",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_digest_present_and_discriminates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_escaped_quote_assignment_fires",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_escaped_json_key_assignment_fires",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_placeholder_assignments_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_evidence_keys_bounded_to_allowlist",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_findings_deterministic_across_runs",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_digest_cap_marks_truncated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_finding_cap_marks_overflow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_findings_ordered_by_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_iter_events_emits_sl009",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_vendor_adapters_emit_sl009",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_openai_single_doc_coordinates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_check_file_report_is_secret_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_cli_default_exit_zero_and_select",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_cli_output_never_contains_secret",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_coverage_marks_sl009_performed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_bytes_stream_input",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_render_human_sl009_rollup_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_renderers_never_leak_secret",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_scan_human_summary_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_scan_json_by_code_lists_sl009",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_generic_assignment_no_catastrophic_backtracking",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/checks/test_hygiene.py::test_vendor_prefix_families_require_token_boundary",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_01_source_immutability",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_02_unknown_version_fail_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_03_parallel_tool_call_pairing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_04_default_report_privacy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_05_canonical_determinism",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_06_detection_confidence_sanity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_07_synthetic_id_namespace",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_08a_discriminator_shapes_safe",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_family_08b_discriminator_shapes_hostile",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_conforming_fourth_adapter_passes_conformance",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_non_conforming_adapter_immutability_violation_fails_loudly",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/conformance/test_adapter_suite.py::test_non_conforming_adapter_synthetic_id_leak_fails_loudly",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_exact_offsets_ascii",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_exact_offsets_multibyte_intact",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_exact_offsets_multibyte_split_eof",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_exact_offsets_crlf",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_exact_offsets_bom",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_exact_offsets_terminal_tear",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_overlong_line_truncation_offset",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_ordinal_continuity_with_blank_lines",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_all_four_stream_readers_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_slice_round_trip_property",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_byte_offsets.py::test_span_byte_renders_in_json_and_human",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_safe_type_value_shapes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_allowlist_exact_boundaries",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_allowlist_allowed_characters",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_allowlist_rejects_symbols_and_control_chars",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_non_string_discriminators_fallback_to_shape",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_secret_patterns_fallback_to_shape",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_hostile_static_fixture_loaded_via_claude_adapter",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_secret_seeded_type_not_echoed_verbatim",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_5kb_prose_type_bounded_to_shape",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_secret_seeded_type_not_echoed_verbatim",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_5kb_prose_type_bounded_to_shape",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_canonical_event_with_hostile_type_discriminator",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_claude_unknown_type_fixture_echoes_verbatim",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_openai_unknown_type_echoes_verbatim",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_canonical_unknown_type_echoes_verbatim",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/privacy/test_safe_discriminator.py::test_canonical_evidence_keys_includes_type_truncated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_mid_file_malformed_counts_tail",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_stream_order_unchanged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_clean_file_no_keys",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_malformed_then_only_torn_tail_omits_keys",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_multiple_malformed_only_first_enriched",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_torn_terminal_excluded_from_tail_bytes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_multibyte_and_crlf_byte_exactness",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_golden_fixture_pinned_counts",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_synthetic_mid_malformed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_codex_rollout_enriched",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_openai_agents_enriched",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_no_enrichment_without_sl001",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_finding_without_dict_evidence_ignored",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_human_render_suffix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_check_report_contains_suffix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_sl001_tail.py::test_determinism_replay",
+      "status": "not_applicable"
+    }
+  ]
+}
