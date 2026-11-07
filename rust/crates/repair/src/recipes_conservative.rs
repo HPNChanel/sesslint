@@ -2958,3 +2958,1407 @@ mod tests_recipes_02 {
         assert_seam(&none_step(), &others);
     }
 }
+
+// Port of `src/sesslint/repair/recipes_conservative.py` lines 531-773
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//
+// The three region functions run the pin's pure checks. Every return in the
+// pin constructs `sesslint.policy.abstention.AffectedRegion`. This crate
+// cannot construct that type and does not invent one. `register_all` is not
+// in this slice. `sesslint.checks` is not called.
+
+// Pure-check trace. Not `sesslint.policy.abstention.AffectedRegion`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CheckSpan {
+    indices: BTreeSet<usize>,
+    ids: BTreeSet<String>,
+    ranges: Vec<(usize, usize)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CheckFailure {
+    Unproven,
+    Exception(EventError),
+}
+
+/// Run the proven-unique-parent region checks, then stop.
+///
+/// Python: `affected_region_proven_unique_parent_restore`. Argument order is
+/// `step`, then `events`. Empty input is unproven before params are read.
+/// [`IndexValue::Bool`] is not an int. A falsy `index` param falls through to
+/// `at_index`. A truthy non-int does not. A truthy `parent_id` or
+/// `parent_fingerprint_prefix` wins; otherwise the target's parent id is
+/// used. One exact id match wins. A prefix match runs only when no id is
+/// equal. An event-helper error stops that walk.
+///
+/// Every return in the pin constructs
+/// `sesslint.policy.abstention.AffectedRegion`. This crate cannot construct
+/// that type and does not invent a region. Each of those returns is
+/// [`AffectedRegionUnavailable`]. Display is [`AFFECTED_REGION_UNAVAILABLE`].
+/// This is not `true`. `find_qualifying_parent_candidates` is not called.
+///
+/// # Errors
+///
+/// Always returns [`AffectedRegionUnavailable`] after the checks that apply.
+/// This function does not panic.
+pub fn affected_region_proven_unique_parent_restore(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<Infallible, AffectedRegionUnavailable> {
+    Err(refuse_check(proven_unique_parent_restore_check(
+        step, events,
+    )))
+}
+
+/// Run the compaction-projection region checks, then stop.
+///
+/// Python: `affected_region_compaction_projection_reunion`. Argument order is
+/// `step`, then `events`. A truthy `correlation_id` param is rendered with
+/// `str`. Falsy values fall through to an in-range int `target_index`.
+/// [`IndexValue::Bool`] is not that index. Calls are `tool_call` or
+/// `tool_use`. Results are `tool_result`. Both cardinalities must be 1.
+/// Exactly one `compaction_boundary` must sit strictly between the pair. Ids
+/// in that closed span keep an empty string. `None` is omitted.
+///
+/// Every return in the pin constructs
+/// `sesslint.policy.abstention.AffectedRegion`. This crate cannot construct
+/// that type and does not invent a region. Each of those returns is
+/// [`AffectedRegionUnavailable`]. Display is [`AFFECTED_REGION_UNAVAILABLE`].
+/// This is not `true`.
+///
+/// # Errors
+///
+/// Always returns [`AffectedRegionUnavailable`] after the checks that apply.
+/// This function does not panic.
+pub fn affected_region_compaction_projection_reunion(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<Infallible, AffectedRegionUnavailable> {
+    Err(refuse_check(compaction_projection_reunion_check(
+        step, events,
+    )))
+}
+
+/// Run the duplicate-projection region checks, then stop.
+///
+/// Python: `affected_region_duplicate_projection_removal`. Argument order is
+/// `step`, then `events`. Correlation resolution matches
+/// [`affected_region_compaction_projection_reunion`]. At least two
+/// `tool_result` rows must share that id. The kept fingerprint is the first
+/// result. [`IndexValue::Bool`] is not an int, so it does not select a later
+/// row. A selected row whose fingerprint differs is unproven and does not
+/// fall through. A fingerprint error stops that walk. Matching calls and
+/// children of the dropped id are included. Ranges stay empty.
+///
+/// Every return in the pin constructs
+/// `sesslint.policy.abstention.AffectedRegion`. This crate cannot construct
+/// that type and does not invent a region. Each of those returns is
+/// [`AffectedRegionUnavailable`]. Display is [`AFFECTED_REGION_UNAVAILABLE`].
+/// This is not `true`.
+///
+/// # Errors
+///
+/// Always returns [`AffectedRegionUnavailable`] after the checks that apply.
+/// This function does not panic.
+pub fn affected_region_duplicate_projection_removal(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<Infallible, AffectedRegionUnavailable> {
+    Err(refuse_check(duplicate_projection_removal_check(
+        step, events,
+    )))
+}
+
+fn refuse_check(outcome: Result<CheckSpan, CheckFailure>) -> AffectedRegionUnavailable {
+    match outcome {
+        Ok(span) => {
+            let _checked = (span.indices.len(), span.ids.len(), span.ranges.len());
+            AffectedRegionUnavailable
+        }
+        Err(CheckFailure::Exception(error)) => {
+            let _checked = error.message().len();
+            AffectedRegionUnavailable
+        }
+        Err(CheckFailure::Unproven) => AffectedRegionUnavailable,
+    }
+}
+
+fn proven_unique_parent_restore_check(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<CheckSpan, CheckFailure> {
+    if events.is_empty() {
+        return Err(CheckFailure::Unproven);
+    }
+    let Some(target_idx) = restore_region_index(step, events.len()) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(target_ev) = events.get(target_idx) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let parent_id = match restore_region_parent(step, target_ev).map_err(CheckFailure::Exception)?
+    {
+        Some(parent) if !parent.is_empty() => parent,
+        Some(_) | None => return Err(CheckFailure::Unproven),
+    };
+    let parent_indices = parent_indexes(events, &parent_id).map_err(CheckFailure::Exception)?;
+    let Some(parent_idx) = only_usize(&parent_indices) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(parent_ev) = events.get(parent_idx) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let child_id = event_id(target_ev).map_err(CheckFailure::Exception)?;
+    let parent_ev_id = event_id(parent_ev).map_err(CheckFailure::Exception)?;
+    let mut ids = BTreeSet::new();
+    insert_nonempty(&mut ids, child_id.as_deref());
+    insert_nonempty(&mut ids, parent_ev_id.as_deref());
+    ids.insert(parent_id);
+    Ok(CheckSpan {
+        indices: BTreeSet::from([target_idx, parent_idx]),
+        ids,
+        ranges: Vec::new(),
+    })
+}
+
+fn compaction_projection_reunion_check(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<CheckSpan, CheckFailure> {
+    if events.is_empty() {
+        return Err(CheckFailure::Unproven);
+    }
+    let corr = required_corr(events, step)?;
+    let calls =
+        indexes_where(events, |event| is_call(event, &corr)).map_err(CheckFailure::Exception)?;
+    let results =
+        indexes_where(events, |event| is_result(event, &corr)).map_err(CheckFailure::Exception)?;
+    let Some(call_index) = only_usize(&calls) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(result_index) = only_usize(&results) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let min_idx = call_index.min(result_index);
+    let max_idx = call_index.max(result_index);
+    let boundaries = match boundaries_between(events, min_idx, max_idx) {
+        Ok(found) => found,
+        Err(ConservativeError::Event(error)) => return Err(CheckFailure::Exception(error)),
+        Err(ConservativeError::Precondition(_) | ConservativeError::ParentCandidates(_)) => {
+            return Err(CheckFailure::Unproven);
+        }
+    };
+    if boundaries.len() != 1 {
+        return Err(CheckFailure::Unproven);
+    }
+    let indices = (min_idx..=max_idx).collect();
+    let ids = ids_present(events, &indices).map_err(CheckFailure::Exception)?;
+    Ok(CheckSpan {
+        indices,
+        ids,
+        ranges: vec![(min_idx, max_idx)],
+    })
+}
+
+fn duplicate_projection_removal_check(
+    step: &RecipeStep,
+    events: &[EventValue],
+) -> Result<CheckSpan, CheckFailure> {
+    if events.is_empty() {
+        return Err(CheckFailure::Unproven);
+    }
+    let corr = required_corr(events, step)?;
+    let results =
+        indexes_where(events, |event| is_result(event, &corr)).map_err(CheckFailure::Exception)?;
+    if results.len() < 2 {
+        return Err(CheckFailure::Unproven);
+    }
+    let Some(&keep_idx) = results.first() else {
+        return Err(CheckFailure::Unproven);
+    };
+    let Some(kept) = events.get(keep_idx) else {
+        return Err(CheckFailure::Unproven);
+    };
+    let kept_fingerprint = event_content_fingerprint(kept).map_err(CheckFailure::Exception)?;
+    let drop_idx = match chosen_drop(step.target_index, events, &results, &kept_fingerprint) {
+        Ok(Some(index)) => index,
+        Ok(None) => return Err(CheckFailure::Unproven),
+        Err(error) => return Err(CheckFailure::Exception(error)),
+    };
+    let Some(dropped) = events.get(drop_idx) else {
+        return Err(CheckFailure::Unproven);
+    };
+    finish_duplicate(events, &corr, keep_idx, kept, drop_idx, dropped)
+}
+
+fn finish_duplicate(
+    events: &[EventValue],
+    corr: &str,
+    keep_idx: usize,
+    kept: &EventValue,
+    drop_idx: usize,
+    dropped: &EventValue,
+) -> Result<CheckSpan, CheckFailure> {
+    let kept_id = event_id(kept).map_err(CheckFailure::Exception)?;
+    let dropped_id = event_id(dropped).map_err(CheckFailure::Exception)?;
+    let mut indices = BTreeSet::from([keep_idx, drop_idx]);
+    let mut ids = BTreeSet::new();
+    insert_nonempty(&mut ids, kept_id.as_deref());
+    insert_nonempty(&mut ids, dropped_id.as_deref());
+    add_matching_calls(events, corr, &mut indices, &mut ids).map_err(CheckFailure::Exception)?;
+    if let Some(dropped_text) = dropped_id.as_deref().filter(|text| !text.is_empty()) {
+        add_dropped_children(events, dropped_text, &mut indices, &mut ids)
+            .map_err(CheckFailure::Exception)?;
+    }
+    Ok(CheckSpan {
+        indices,
+        ids,
+        ranges: Vec::new(),
+    })
+}
+
+fn required_corr(events: &[EventValue], step: &RecipeStep) -> Result<String, CheckFailure> {
+    match region_correlation(events, step).map_err(CheckFailure::Exception)? {
+        Some(corr) if !corr.is_empty() => Ok(corr),
+        Some(_) | None => Err(CheckFailure::Unproven),
+    }
+}
+
+/// `target_index`, else a truthy `index` or `at_index` int.
+///
+/// [`IndexValue::Bool`] and [`EventField::Bool`] are not ints. `0`, `False`,
+/// and `""` are falsy, so `index` falls through to `at_index`.
+fn restore_region_index(step: &RecipeStep, len: usize) -> Option<usize> {
+    match step.target_index {
+        IndexValue::Int(value) => checked_index(value, len),
+        IndexValue::Bool(_) | IndexValue::Other => None,
+        IndexValue::None => restore_region_param_index(&step.params, len),
+    }
+}
+
+fn restore_region_param_index(params: &ParamMap, len: usize) -> Option<usize> {
+    let ParamMap::Mapping(mapping) = params else {
+        return None;
+    };
+    match param_or(mapping, "index", "at_index") {
+        Some(EventField::Int(value)) => checked_index(*value, len),
+        _ => None,
+    }
+}
+
+fn restore_region_parent(
+    step: &RecipeStep,
+    event: &EventValue,
+) -> Result<Option<String>, EventError> {
+    if let Some(value) = truthy_param_parent(&step.params) {
+        return render_parent(value).map(Some);
+    }
+    event_parent_id(event)
+}
+
+/// Exact `_event_id` equality, then `startswith` when that list is empty.
+fn parent_indexes(events: &[EventValue], parent_id: &str) -> Result<Vec<usize>, EventError> {
+    let exact = indexes_where(events, |event| {
+        Ok(event_id(event)?.as_deref() == Some(parent_id))
+    })?;
+    if !exact.is_empty() {
+        return Ok(exact);
+    }
+    indexes_where(events, |event| match event_id(event)? {
+        Some(id) => Ok(id.starts_with(parent_id)),
+        None => Ok(false),
+    })
+}
+
+fn indexes_where(
+    events: &[EventValue],
+    mut pred: impl FnMut(&EventValue) -> Result<bool, EventError>,
+) -> Result<Vec<usize>, EventError> {
+    let mut found = Vec::new();
+    for (index, event) in events.iter().enumerate() {
+        if pred(event)? {
+            found.push(index);
+        }
+    }
+    Ok(found)
+}
+
+/// Truthy `correlation_id`, else an in-range int target.
+///
+/// [`IndexValue::Bool`] is not an int. It does not select `events[0]` or
+/// `events[1]`.
+fn region_correlation(
+    events: &[EventValue],
+    step: &RecipeStep,
+) -> Result<Option<String>, EventError> {
+    if let Some(raw) = param_field(&step.params, "correlation_id") {
+        if field_truthy(Some(raw)) {
+            return render_parent(raw).map(Some);
+        }
+    }
+    let Some(index) = strict_index(step.target_index, events.len()) else {
+        return Ok(None);
+    };
+    let Some(event) = events.get(index) else {
+        return Ok(None);
+    };
+    event_corr_id(event)
+}
+
+/// Ids for which `_event_id` is not `None`, including `""`.
+fn ids_present(
+    events: &[EventValue],
+    indices: &BTreeSet<usize>,
+) -> Result<BTreeSet<String>, EventError> {
+    let mut ids = BTreeSet::new();
+    for index in indices {
+        if let Some(event) = events.get(*index) {
+            if let Some(id) = event_id(event)? {
+                ids.insert(id);
+            }
+        }
+    }
+    Ok(ids)
+}
+
+fn chosen_drop(
+    target: IndexValue,
+    events: &[EventValue],
+    results: &[usize],
+    kept_fingerprint: &str,
+) -> Result<Option<usize>, EventError> {
+    if let Some(target_int) = int_target(target) {
+        if let Some(drop_idx) = results
+            .iter()
+            .skip(1)
+            .copied()
+            .find(|&index| index_equals(target_int, index))
+        {
+            let Some(event) = events.get(drop_idx) else {
+                return Ok(None);
+            };
+            if event_content_fingerprint(event)? != kept_fingerprint {
+                return Ok(None);
+            }
+            return Ok(Some(drop_idx));
+        }
+    }
+    for index in results.iter().skip(1).copied() {
+        let Some(event) = events.get(index) else {
+            continue;
+        };
+        if event_content_fingerprint(event)? == kept_fingerprint {
+            return Ok(Some(index));
+        }
+    }
+    Ok(None)
+}
+
+/// [`IndexValue::Bool`] is not an int.
+fn int_target(index: IndexValue) -> Option<i64> {
+    match index {
+        IndexValue::Int(value) => Some(value),
+        IndexValue::None | IndexValue::Bool(_) | IndexValue::Other => None,
+    }
+}
+
+fn add_matching_calls(
+    events: &[EventValue],
+    corr: &str,
+    indices: &mut BTreeSet<usize>,
+    ids: &mut BTreeSet<String>,
+) -> Result<(), EventError> {
+    for (index, event) in events.iter().enumerate() {
+        if !is_call(event, corr)? {
+            continue;
+        }
+        indices.insert(index);
+        insert_nonempty(ids, event_id(event)?.as_deref());
+    }
+    Ok(())
+}
+
+fn add_dropped_children(
+    events: &[EventValue],
+    dropped_id: &str,
+    indices: &mut BTreeSet<usize>,
+    ids: &mut BTreeSet<String>,
+) -> Result<(), EventError> {
+    for (index, event) in events.iter().enumerate() {
+        if event_parent_id(event)?.as_deref() != Some(dropped_id) {
+            continue;
+        }
+        indices.insert(index);
+        insert_nonempty(ids, event_id(event)?.as_deref());
+    }
+    Ok(())
+}
+
+fn insert_nonempty(ids: &mut BTreeSet<String>, id: Option<&str>) {
+    if let Some(text) = id.filter(|text| !text.is_empty()) {
+        ids.insert(text.to_owned());
+    }
+}
+
+#[cfg(test)]
+mod tests_recipes_03 {
+    use std::error::Error;
+    use std::convert::Infallible;
+
+    use model::canonical::SessionEvent;
+    use model::events::{
+        EventError, EventField, EventMapping, EventValue, DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
+    };
+
+    use super::{
+        affected_region_compaction_projection_reunion,
+        affected_region_duplicate_projection_removal, affected_region_proven_unique_parent_restore,
+        compaction_projection_reunion_check, duplicate_projection_removal_check,
+        proven_unique_parent_restore_check, AffectedRegionUnavailable, CheckFailure, CheckSpan,
+        IndexValue, ParamMap, RecipeStep, AFFECTED_REGION_UNAVAILABLE,
+    };
+
+    fn bare(entries: Vec<(&str, EventField)>) -> EventMapping {
+        EventMapping::new(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
+    }
+
+    fn ev(entries: Vec<(&str, EventField)>) -> EventValue {
+        EventValue::Mapping(bare(entries))
+    }
+
+    fn text(value: &str) -> EventField {
+        EventField::Str(value.to_owned())
+    }
+
+    fn params_of(entries: Vec<(&str, EventField)>) -> ParamMap {
+        ParamMap::Mapping(bare(entries))
+    }
+
+    fn make_step(target_index: IndexValue, params: ParamMap) -> RecipeStep {
+        RecipeStep {
+            target_index,
+            params,
+        }
+    }
+
+    fn none_step() -> RecipeStep {
+        make_step(IndexValue::None, ParamMap::NotMapping)
+    }
+
+    fn target_step(index: i64) -> RecipeStep {
+        make_step(IndexValue::Int(index), ParamMap::NotMapping)
+    }
+
+    fn note(id: &str, parent: Option<&str>) -> EventValue {
+        let mut entries = vec![("kind", text("note")), ("id", text(id))];
+        if let Some(parent) = parent {
+            entries.push(("parent_id", text(parent)));
+        }
+        ev(entries)
+    }
+
+    fn row(kind: &str, id: &str, corr: Option<&str>, parent: Option<&str>) -> EventValue {
+        let mut entries = vec![("kind", text(kind)), ("id", text(id))];
+        if let Some(corr) = corr {
+            entries.push(("correlation_id", text(corr)));
+        }
+        if let Some(parent) = parent {
+            entries.push(("parent_id", text(parent)));
+        }
+        ev(entries)
+    }
+
+    fn tool_result(id: &str, hash: &str) -> EventValue {
+        ev(vec![
+            ("kind", text("tool_result")),
+            ("id", text(id)),
+            ("correlation_id", text("corr-synthetic")),
+            ("content_hash", text(hash)),
+        ])
+    }
+
+    fn proven(
+        indices: &[usize],
+        ids: &[&str],
+        ranges: &[(usize, usize)],
+    ) -> Result<CheckSpan, CheckFailure> {
+        Ok(CheckSpan {
+            indices: indices.iter().copied().collect(),
+            ids: ids.iter().map(|id| (*id).to_owned()).collect(),
+            ranges: ranges.to_vec(),
+        })
+    }
+
+    fn unproven() -> Result<CheckSpan, CheckFailure> {
+        Err(CheckFailure::Unproven)
+    }
+
+    fn stopped(error: EventError) -> Result<CheckSpan, CheckFailure> {
+        Err(CheckFailure::Exception(error))
+    }
+
+    fn snapshot(events: &[EventValue]) -> Vec<EventMapping> {
+        events
+            .iter()
+            .map(|event| match event {
+                EventValue::Mapping(mapping) => mapping.clone(),
+                EventValue::Session(_) | EventValue::Other => EventMapping::new(Vec::new()),
+            })
+            .collect()
+    }
+
+    fn assert_seam(
+        step: &RecipeStep,
+        events: &[EventValue],
+        call: fn(&RecipeStep, &[EventValue]) -> Result<Infallible, AffectedRegionUnavailable>,
+    ) {
+        let error = call(step, events).expect_err("AffectedRegion is not available");
+        let text = error.to_string();
+        assert_eq!(
+            text,
+            "sesslint.policy.abstention.AffectedRegion is not available"
+        );
+        assert_eq!(text, AFFECTED_REGION_UNAVAILABLE);
+        assert_eq!(error.message(), text);
+        assert_eq!(error, AffectedRegionUnavailable);
+        assert!(Error::source(&error).is_none());
+        assert_ne!(text, "true");
+        assert!(!text.contains("unproven"));
+        assert!(!text.contains("evt-"));
+        assert!(!text.contains("representable"));
+        assert!(!text.contains(DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE));
+    }
+
+    fn session(id: &str, parent: Option<&str>, kind: &str) -> SessionEvent {
+        SessionEvent::new(
+            id,
+            parent.map(str::to_owned),
+            0,
+            "2026-01-01T00:00:00Z",
+            "user",
+            kind,
+        )
+    }
+
+    #[test]
+    fn parent_restore_empty_index_and_bool_are_unproven() {
+        let events = vec![
+            note("evt-parent", None),
+            note("evt-child", Some("evt-parent")),
+        ];
+        let before = snapshot(&events);
+        assert_eq!(
+            proven_unique_parent_restore_check(&none_step(), &[]),
+            unproven()
+        );
+        assert_seam(
+            &none_step(),
+            &[],
+            affected_region_proven_unique_parent_restore,
+        );
+        let float_parent = make_step(
+            IndexValue::None,
+            params_of(vec![("parent_id", EventField::Float(1.5))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&float_parent, &[]),
+            unproven()
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&none_step(), &events),
+            unproven()
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(-1), &events),
+            unproven()
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(9), &events),
+            unproven()
+        );
+        let bool_target = make_step(
+            IndexValue::Bool(true),
+            params_of(vec![("index", EventField::Int(1))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&bool_target, &events),
+            unproven()
+        );
+        let other_target = make_step(
+            IndexValue::Other,
+            params_of(vec![("index", EventField::Int(1))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&other_target, &events),
+            unproven()
+        );
+        let bool_at = make_step(
+            IndexValue::None,
+            params_of(vec![("at_index", EventField::Bool(true))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&bool_at, &events),
+            unproven()
+        );
+        let only_first = make_step(
+            IndexValue::None,
+            params_of(vec![("first_index", EventField::Int(1))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&only_first, &events),
+            unproven()
+        );
+        let text_index = make_step(
+            IndexValue::None,
+            params_of(vec![
+                ("index", text("1")),
+                ("at_index", EventField::Int(1)),
+            ]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&text_index, &events),
+            unproven()
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(1), &[note("evt-child", None)]),
+            unproven()
+        );
+        assert_seam(&bool_target, &events, affected_region_proven_unique_parent_restore);
+        assert_seam(&text_index, &events, affected_region_proven_unique_parent_restore);
+        assert_eq!(before, snapshot(&events));
+    }
+
+    #[test]
+    fn parent_restore_param_or_is_truthiness() {
+        let events = vec![
+            note("evt-ignored", None),
+            note("evt-parent", None),
+            note("evt-child", Some("evt-parent")),
+        ];
+        let proved = proven(&[1, 2], &["evt-child", "evt-parent"], &[]);
+        let from_at = make_step(
+            IndexValue::None,
+            params_of(vec![
+                ("index", EventField::Int(0)),
+                ("at_index", EventField::Int(2)),
+            ]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&from_at, &events),
+            proved.clone()
+        );
+        let false_index = make_step(
+            IndexValue::None,
+            params_of(vec![
+                ("index", EventField::Bool(false)),
+                ("at_index", EventField::Int(2)),
+            ]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&false_index, &events),
+            proved.clone()
+        );
+        let true_hides = make_step(
+            IndexValue::None,
+            params_of(vec![
+                ("index", EventField::Bool(true)),
+                ("at_index", EventField::Int(2)),
+            ]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&true_hides, &events),
+            unproven()
+        );
+        let missing_index = make_step(
+            IndexValue::None,
+            params_of(vec![("at_index", EventField::Int(2))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&missing_index, &events),
+            proved
+        );
+        let high = make_step(
+            IndexValue::None,
+            params_of(vec![("at_index", EventField::Int(9))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&high, &events),
+            unproven()
+        );
+        assert_seam(&from_at, &events, affected_region_proven_unique_parent_restore);
+        assert_seam(&true_hides, &events, affected_region_proven_unique_parent_restore);
+    }
+
+    #[test]
+    fn parent_restore_exact_match_prefix_and_override() {
+        let pair = vec![
+            note("evt-parent", None),
+            note("evt-child", Some("evt-parent")),
+        ];
+        let before = snapshot(&pair);
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(1), &pair),
+            proven(&[0, 1], &["evt-child", "evt-parent"], &[])
+        );
+        let same = vec![note("evt-self", Some("evt-self"))];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(0), &same),
+            proven(&[0], &["evt-self"], &[])
+        );
+        let overridden = vec![
+            note("evt-parent", None),
+            note("evt-other", None),
+            note("evt-child", Some("evt-other")),
+        ];
+        let param_parent = make_step(
+            IndexValue::Int(2),
+            params_of(vec![("parent_id", text("evt-parent"))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&param_parent, &overridden),
+            proven(&[0, 2], &["evt-child", "evt-parent"], &[])
+        );
+        let prefixed = vec![
+            note("evt-parent-full", None),
+            note("evt-child", Some("evt-par")),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(1), &prefixed),
+            proven(
+                &[0, 1],
+                &["evt-child", "evt-par", "evt-parent-full"],
+                &[]
+            )
+        );
+        let exact_wins = vec![
+            note("evt-par", None),
+            note("evt-parent-extra", None),
+            note("evt-child", Some("evt-par")),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(2), &exact_wins),
+            proven(&[0, 2], &["evt-child", "evt-par"], &[])
+        );
+        let two_exact = vec![
+            note("evt-par", None),
+            note("evt-par", None),
+            note("evt-child", Some("evt-par")),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(2), &two_exact),
+            unproven()
+        );
+        let two_prefix = vec![
+            note("evt-parent-a", None),
+            note("evt-parent-b", None),
+            note("evt-child", Some("evt-par")),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(2), &two_prefix),
+            unproven()
+        );
+        let nameless_child = vec![
+            note("evt-parent", None),
+            ev(vec![
+                ("kind", text("note")),
+                ("id", text("")),
+                ("parent_id", text("evt-parent")),
+            ]),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(1), &nameless_child),
+            proven(&[0, 1], &["evt-parent"], &[])
+        );
+        let numeric = vec![
+            ev(vec![("kind", text("note")), ("id", EventField::Int(7))]),
+            note("evt-child", None),
+        ];
+        let int_parent = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("parent_id", EventField::Int(7))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&int_parent, &numeric),
+            proven(&[0, 1], &["7", "evt-child"], &[])
+        );
+        let true_parent = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("parent_id", EventField::Bool(true))]),
+        );
+        let true_ids = vec![note("True", None), note("evt-child", None)];
+        assert_eq!(
+            proven_unique_parent_restore_check(&true_parent, &true_ids),
+            proven(&[0, 1], &["True", "evt-child"], &[])
+        );
+        let false_falls = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("parent_id", EventField::Bool(false))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&false_falls, &pair),
+            proven(&[0, 1], &["evt-child", "evt-parent"], &[])
+        );
+        let prefix_key = make_step(
+            IndexValue::Int(1),
+            params_of(vec![
+                ("parent_id", EventField::Bool(false)),
+                ("parent_fingerprint_prefix", text("evt-parent")),
+            ]),
+        );
+        let bare_child = vec![note("evt-parent", None), note("evt-child", None)];
+        assert_eq!(
+            proven_unique_parent_restore_check(&prefix_key, &bare_child),
+            proven(&[0, 1], &["evt-child", "evt-parent"], &[])
+        );
+        let ignored_prefix = make_step(
+            IndexValue::Int(1),
+            params_of(vec![
+                ("parent_id", text("evt-parent")),
+                ("parent_fingerprint_prefix", text("evt-missing")),
+            ]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&ignored_prefix, &pair),
+            proven(&[0, 1], &["evt-child", "evt-parent"], &[])
+        );
+        assert_seam(&target_step(1), &pair, affected_region_proven_unique_parent_restore);
+        assert_seam(&param_parent, &overridden, affected_region_proven_unique_parent_restore);
+        assert_eq!(before, snapshot(&pair));
+
+        let parent = session("evt-parent", None, "message");
+        let child = session("evt-child", Some("evt-parent"), "message");
+        let sessions = vec![
+            EventValue::from_session(parent),
+            EventValue::from_session(child),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(1), &sessions),
+            proven(&[0, 1], &["evt-child", "evt-parent"], &[])
+        );
+        assert_seam(
+            &target_step(1),
+            &sessions,
+            affected_region_proven_unique_parent_restore,
+        );
+    }
+
+    #[test]
+    fn parent_restore_errors_stop_and_the_seam_hides_them() {
+        let events = vec![
+            ev(vec![("id", EventField::Float(1.5))]),
+            note("evt-parent", None),
+            note("evt-child", Some("evt-parent")),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&target_step(2), &events),
+            stopped(EventError::PythonFloatStr)
+        );
+        let float_param = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("parent_id", EventField::Float(1.5))]),
+        );
+        let pair = vec![
+            note("evt-parent", None),
+            note("evt-child", Some("evt-parent")),
+        ];
+        assert_eq!(
+            proven_unique_parent_restore_check(&float_param, &pair),
+            stopped(EventError::PythonFloatStr)
+        );
+        let list_param = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("parent_id", EventField::List(vec![text("evt-parent")]))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&list_param, &pair),
+            stopped(EventError::PythonStr)
+        );
+        let empty_list = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("parent_id", EventField::List(Vec::new()))]),
+        );
+        assert_eq!(
+            proven_unique_parent_restore_check(&empty_list, &pair),
+            proven(&[0, 1], &["evt-child", "evt-parent"], &[])
+        );
+        assert_seam(&float_param, &pair, affected_region_proven_unique_parent_restore);
+        assert_seam(&list_param, &pair, affected_region_proven_unique_parent_restore);
+        assert_seam(&target_step(2), &events, affected_region_proven_unique_parent_restore);
+    }
+
+    fn reunion() -> Vec<EventValue> {
+        vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            row("message", "evt-mid", None, None),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+            row("message", "evt-tail", None, None),
+        ]
+    }
+
+    fn corr_step(corr: &str) -> RecipeStep {
+        make_step(
+            IndexValue::None,
+            params_of(vec![("correlation_id", text(corr))]),
+        )
+    }
+
+    #[test]
+    fn reunion_region_correlation_bool_and_truthiness() {
+        let events = reunion();
+        let before = snapshot(&events);
+        assert_eq!(
+            compaction_projection_reunion_check(&none_step(), &[]),
+            unproven()
+        );
+        let float_corr = make_step(
+            IndexValue::None,
+            params_of(vec![("correlation_id", EventField::Float(1.5))]),
+        );
+        assert_eq!(
+            compaction_projection_reunion_check(&float_corr, &[]),
+            unproven()
+        );
+        assert_eq!(
+            compaction_projection_reunion_check(&none_step(), &events),
+            unproven()
+        );
+        let bool_target = make_step(IndexValue::Bool(true), ParamMap::NotMapping);
+        assert_eq!(
+            compaction_projection_reunion_check(&bool_target, &events),
+            unproven()
+        );
+        let false_target = make_step(IndexValue::Bool(false), ParamMap::NotMapping);
+        assert_eq!(
+            compaction_projection_reunion_check(&false_target, &events),
+            unproven()
+        );
+        assert_eq!(
+            compaction_projection_reunion_check(&target_step(0), &events),
+            proven(
+                &[0, 1, 2, 3],
+                &["evt-boundary", "evt-call", "evt-mid", "evt-result"],
+                &[(0, 3)]
+            )
+        );
+        let falsy = make_step(
+            IndexValue::Int(0),
+            params_of(vec![("correlation_id", EventField::Int(0))]),
+        );
+        assert_eq!(
+            compaction_projection_reunion_check(&falsy, &events),
+            compaction_projection_reunion_check(&target_step(0), &events)
+        );
+        let rendered_true = make_step(
+            IndexValue::Int(0),
+            params_of(vec![("correlation_id", EventField::Bool(true))]),
+        );
+        assert_eq!(
+            compaction_projection_reunion_check(&rendered_true, &events),
+            unproven()
+        );
+        let true_pair = vec![
+            row("tool_call", "evt-call", Some("True"), None),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("True"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&rendered_true, &true_pair),
+            proven(
+                &[0, 1, 2],
+                &["evt-boundary", "evt-call", "evt-result"],
+                &[(0, 2)]
+            )
+        );
+        assert_seam(&bool_target, &events, affected_region_compaction_projection_reunion);
+        assert_seam(&falsy, &events, affected_region_compaction_projection_reunion);
+        assert_eq!(before, snapshot(&events));
+    }
+
+    #[test]
+    fn reunion_region_span_cardinality_and_empty_id() {
+        let events = reunion();
+        let step = corr_step("corr-synthetic");
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &events),
+            proven(
+                &[0, 1, 2, 3],
+                &["evt-boundary", "evt-call", "evt-mid", "evt-result"],
+                &[(0, 3)]
+            )
+        );
+        let empty_mid = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            row("message", "", None, None),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &empty_mid),
+            proven(
+                &[0, 1, 2, 3],
+                &["", "evt-boundary", "evt-call", "evt-result"],
+                &[(0, 3)]
+            )
+        );
+        let missing_mid = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            ev(vec![("kind", text("message"))]),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &missing_mid),
+            proven(
+                &[0, 1, 2, 3],
+                &["evt-boundary", "evt-call", "evt-result"],
+                &[(0, 3)]
+            )
+        );
+        let reversed = vec![
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_use", "evt-call", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &reversed),
+            proven(
+                &[0, 1, 2],
+                &["evt-boundary", "evt-call", "evt-result"],
+                &[(0, 2)]
+            )
+        );
+        let adjacent = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &adjacent),
+            unproven()
+        );
+        let two_bounds = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            row("compaction_boundary", "evt-a", None, None),
+            row("compaction_boundary", "evt-b", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &two_bounds),
+            unproven()
+        );
+        let two_calls = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            row("tool_use", "evt-use", Some("corr-synthetic"), None),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &two_calls),
+            unproven()
+        );
+        assert_seam(&step, &events, affected_region_compaction_projection_reunion);
+        assert_seam(&step, &adjacent, affected_region_compaction_projection_reunion);
+    }
+
+    #[test]
+    fn reunion_region_short_circuit_session_and_errors() {
+        let step = corr_step("corr-synthetic");
+        let float_between = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            ev(vec![
+                ("kind", text("message")),
+                ("id", text("evt-mid")),
+                ("correlation_id", EventField::Float(1.5)),
+            ]),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &float_between),
+            proven(
+                &[0, 1, 2, 3],
+                &["evt-boundary", "evt-call", "evt-mid", "evt-result"],
+                &[(0, 3)]
+            )
+        );
+        let float_call = vec![
+            ev(vec![
+                ("kind", text("tool_call")),
+                ("id", text("evt-call")),
+                ("correlation_id", EventField::Float(1.5)),
+            ]),
+            row("compaction_boundary", "evt-boundary", None, None),
+            row("tool_result", "evt-result", Some("corr-synthetic"), None),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &float_call),
+            stopped(EventError::PythonFloatStr)
+        );
+        let float_param = make_step(
+            IndexValue::None,
+            params_of(vec![("correlation_id", EventField::Float(1.5))]),
+        );
+        assert_eq!(
+            compaction_projection_reunion_check(&float_param, &reunion()),
+            stopped(EventError::PythonFloatStr)
+        );
+        assert_seam(&float_param, &reunion(), affected_region_compaction_projection_reunion);
+        assert_seam(&step, &float_between, affected_region_compaction_projection_reunion);
+
+        let mut call = session("evt-call", None, "tool_call");
+        call.correlation_id = Some("corr-synthetic".to_owned());
+        let boundary = session("evt-boundary", Some("evt-call"), "compaction_boundary");
+        let mut result = session("evt-result", Some("evt-call"), "tool_result");
+        result.correlation_id = Some("corr-synthetic".to_owned());
+        let sessions = vec![
+            EventValue::from_session(call),
+            EventValue::from_session(boundary),
+            EventValue::from_session(result),
+        ];
+        assert_eq!(
+            compaction_projection_reunion_check(&step, &sessions),
+            proven(
+                &[0, 1, 2],
+                &["evt-boundary", "evt-call", "evt-result"],
+                &[(0, 2)]
+            )
+        );
+        assert_seam(&step, &sessions, affected_region_compaction_projection_reunion);
+    }
+
+    #[test]
+    fn removal_region_target_bool_is_not_an_int() {
+        let events = vec![
+            tool_result("evt-keep", "hash-a"),
+            tool_result("evt-differ", "hash-b"),
+            tool_result("evt-later", "hash-a"),
+        ];
+        let before = snapshot(&events);
+        let scanned = || proven(&[0, 2], &["evt-keep", "evt-later"], &[]);
+        assert_eq!(
+            duplicate_projection_removal_check(&none_step(), &[]),
+            unproven()
+        );
+        let float_corr = make_step(
+            IndexValue::None,
+            params_of(vec![("correlation_id", EventField::Float(1.5))]),
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(&float_corr, &[]),
+            unproven()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(&corr_step("corr-synthetic"), &events),
+            scanned()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(
+                &make_step(IndexValue::Bool(true), ParamMap::NotMapping),
+                &events
+            ),
+            unproven()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(&target_step(0), &events),
+            scanned()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(
+                &make_step(IndexValue::Other, ParamMap::NotMapping),
+                &events
+            ),
+            unproven()
+        );
+        let with_corr = params_of(vec![("correlation_id", text("corr-synthetic"))]);
+        assert_eq!(
+            duplicate_projection_removal_check(
+                &make_step(IndexValue::Bool(true), with_corr.clone()),
+                &events
+            ),
+            scanned()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(
+                &make_step(IndexValue::Int(1), with_corr.clone()),
+                &events
+            ),
+            unproven()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(
+                &make_step(IndexValue::Int(2), with_corr.clone()),
+                &events
+            ),
+            scanned()
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(&make_step(IndexValue::Int(-1), with_corr), &events),
+            scanned()
+        );
+        let one = vec![tool_result("evt-keep", "hash-a")];
+        assert_eq!(
+            duplicate_projection_removal_check(&corr_step("corr-synthetic"), &one),
+            unproven()
+        );
+        let differ = vec![
+            tool_result("evt-keep", "hash-a"),
+            tool_result("evt-other", "hash-b"),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&corr_step("corr-synthetic"), &differ),
+            unproven()
+        );
+        assert_seam(&corr_step("corr-synthetic"), &events, affected_region_duplicate_projection_removal);
+        assert_seam(
+            &make_step(IndexValue::Int(1), params_of(vec![("correlation_id", text("corr-synthetic"))])),
+            &events,
+            affected_region_duplicate_projection_removal,
+        );
+        assert_eq!(before, snapshot(&events));
+    }
+
+    #[test]
+    fn removal_region_calls_children_order_and_errors() {
+        let events = vec![
+            row("tool_call", "evt-call", Some("corr-synthetic"), None),
+            row("tool_use", "evt-use", Some("corr-synthetic"), None),
+            tool_result("evt-keep", "hash-a"),
+            row("message", "evt-child", None, Some("evt-drop")),
+            row("message", "evt-other", None, Some("evt-keep")),
+            tool_result("evt-drop", "hash-a"),
+            row("message", "evt-tail", None, None),
+        ];
+        let step = corr_step("corr-synthetic");
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &events),
+            proven(
+                &[0, 1, 2, 3, 5],
+                &[
+                    "evt-call",
+                    "evt-child",
+                    "evt-drop",
+                    "evt-keep",
+                    "evt-use",
+                ],
+                &[]
+            )
+        );
+        let bare = vec![
+            tool_result("evt-keep", "hash-a"),
+            ev(vec![
+                ("kind", text("tool_result")),
+                ("id", text("")),
+                ("correlation_id", text("corr-synthetic")),
+                ("content_hash", text("hash-a")),
+            ]),
+            row("message", "evt-child", None, Some("")),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &bare),
+            proven(&[0, 1], &["evt-keep"], &[])
+        );
+        let float_id_message = vec![
+            tool_result("evt-keep", "hash-a"),
+            ev(vec![
+                ("kind", text("message")),
+                ("id", EventField::Float(1.5)),
+            ]),
+            tool_result("evt-drop", "hash-a"),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &float_id_message),
+            proven(&[0, 2], &["evt-drop", "evt-keep"], &[])
+        );
+        let float_parent = vec![
+            tool_result("evt-keep", "hash-a"),
+            ev(vec![
+                ("kind", text("message")),
+                ("id", text("evt-child")),
+                ("parent_id", EventField::Float(1.5)),
+            ]),
+            tool_result("evt-drop", "hash-a"),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &float_parent),
+            stopped(EventError::PythonFloatStr)
+        );
+        let float_call = vec![
+            ev(vec![
+                ("kind", text("tool_call")),
+                ("id", EventField::Float(1.5)),
+                ("correlation_id", text("corr-synthetic")),
+            ]),
+            tool_result("evt-keep", "hash-a"),
+            tool_result("evt-drop", "hash-a"),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &float_call),
+            stopped(EventError::PythonFloatStr)
+        );
+        let blocked = vec![
+            tool_result("evt-keep", "hash-a"),
+            ev(vec![
+                ("kind", text("tool_result")),
+                ("id", text("evt-bad")),
+                ("correlation_id", text("corr-synthetic")),
+            ]),
+            tool_result("evt-later", "hash-a"),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &blocked),
+            stopped(EventError::DeterminismCanonicalJsonBytes)
+        );
+        let aimed = make_step(
+            IndexValue::Int(2),
+            params_of(vec![("correlation_id", text("corr-synthetic"))]),
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(&aimed, &blocked),
+            proven(&[0, 2], &["evt-keep", "evt-later"], &[])
+        );
+        let aimed_bad = make_step(
+            IndexValue::Int(1),
+            params_of(vec![("correlation_id", text("corr-synthetic"))]),
+        );
+        assert_eq!(
+            duplicate_projection_removal_check(&aimed_bad, &blocked),
+            stopped(EventError::DeterminismCanonicalJsonBytes)
+        );
+        let float_kind = vec![
+            ev(vec![("kind", EventField::Float(1.5))]),
+            tool_result("evt-keep", "hash-a"),
+            tool_result("evt-drop", "hash-a"),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &float_kind),
+            stopped(EventError::PythonFloatStr)
+        );
+        assert_seam(&step, &events, affected_region_duplicate_projection_removal);
+        assert_seam(&step, &blocked, affected_region_duplicate_projection_removal);
+        assert_seam(&aimed, &blocked, affected_region_duplicate_projection_removal);
+
+        let mut call = session("evt-call", None, "tool_call");
+        call.correlation_id = Some("corr-synthetic".to_owned());
+        let mut keep = session("evt-keep", Some("evt-call"), "tool_result");
+        keep.correlation_id = Some("corr-synthetic".to_owned());
+        keep.content_hash = Some("hash-a".to_owned());
+        let mut dropped = session("evt-drop", Some("evt-call"), "tool_result");
+        dropped.correlation_id = Some("corr-synthetic".to_owned());
+        dropped.content_hash = Some("hash-a".to_owned());
+        let sessions = vec![
+            EventValue::from_session(call),
+            EventValue::from_session(keep),
+            EventValue::from_session(dropped),
+        ];
+        assert_eq!(
+            duplicate_projection_removal_check(&step, &sessions),
+            proven(&[0, 1, 2], &["evt-call", "evt-drop", "evt-keep"], &[])
+        );
+        assert_seam(&step, &sessions, affected_region_duplicate_projection_removal);
+    }
+}
