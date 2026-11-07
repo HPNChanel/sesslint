@@ -36,6 +36,18 @@
 //! policy checks. That returns [`CanonicalUnavailable`]. This crate does
 //! not hash a substitute encoding.
 //!
+//! Lines 966–1128: [`build_manifest`] and [`dump_report`]. Fingerprints,
+//! raw policy, declared loss, the revalidate path, and revalidation run
+//! before `assurance_ceiling`. `None` there is
+//! [`COMPUTE_ASSURANCE_CEILING`] and does not run the later content checks
+//! or the idempotency call. A provided ceiling is an exact
+//! [`VALID_ASSURANCE_LEVELS`] member. Content checks call
+//! [`enforce_content_free_text`]. The idempotency call then returns
+//! [`CanonicalUnavailable`]. [`build_manifest`] does not build a
+//! [`RepairManifest`]. [`dump_report`] calls
+//! `model::canonical::to_canonical_json` on [`Report::to_dict`] and returns
+//! the same unavailable error. It does not emit JSON.
+//!
 //! The late import `sesslint.codes` (`SL001`, `SL002`, `Severity`) is the
 //! ported codes registry. `enforce_content_free_text` is the ported finding
 //! helper. No wall clock, randomness, or `HashMap` is used.
@@ -2975,17 +2987,514 @@ fn collapse_equal_keys(entries: Vec<(InputKey, InputValue)>) -> Vec<(InputKey, I
     collapsed
 }
 
+/// Late import. This crate does not depend on `sesslint.repair`.
+pub const COMPUTE_ASSURANCE_CEILING: &str = "sesslint.repair.assurance.compute_assurance_ceiling";
+
+/// `build_manifest` revalidation value.
+///
+/// [`Self::None`] is Python `None`. [`Self::Summary`] is kept as-is.
+/// [`Self::Mapping`] is a mapping. [`Self::Wrong`] is any other type, and
+/// `type_name` is `type(value).__name__`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildRevalidation<'a> {
+    None,
+    Summary(&'a RevalidationSummary),
+    Mapping(&'a [(InputKey, InputValue)]),
+    Wrong { type_name: &'a str },
+}
+
+/// Fields for [`build_manifest`].
+///
+/// Python defaults, which Rust does not infer: `actions` and `declared_loss`
+/// are empty, and `revalidate_report`, `assurance_ceiling`, `plan_fingerprint`,
+/// `assurance`, `profile_version`, `adapter_id`, and `adapter_version` are
+/// `None`. `revalidation` is [`BuildRevalidation::None`]. `recipe_versions`,
+/// `byte_counts`, and `record_counts` are empty mappings.
+///
+/// `plan_fingerprint`, `assurance`, `recipe_versions`, `profile_version`,
+/// `adapter_version`, `byte_counts`, and `record_counts` are applied only when
+/// a [`RepairManifest`] is built. This function does not build one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildManifestParts<'a> {
+    pub input_fingerprint: &'a InputValue,
+    pub output_fingerprint: &'a InputValue,
+    pub policy: &'a InputValue,
+    pub actions: &'a [RepairAction],
+    pub declared_loss: &'a [InputValue],
+    pub revalidate_report: &'a InputValue,
+    pub revalidation: BuildRevalidation<'a>,
+    pub assurance_ceiling: &'a InputValue,
+    pub plan_fingerprint: &'a InputValue,
+    pub assurance: &'a InputValue,
+    pub recipe_versions: &'a InputValue,
+    pub profile_version: &'a InputValue,
+    pub adapter_id: &'a InputValue,
+    pub adapter_version: &'a InputValue,
+    pub byte_counts: &'a InputValue,
+    pub record_counts: &'a InputValue,
+}
+
+/// Failure from [`build_manifest`].
+///
+/// [`Display`](fmt::Display) is the Python exception message.
+/// [`Self::Unavailable`] displays `{name} is not available`.
+/// [`Self::Idempotency`] displays the idempotency error. The canonical arm is
+/// `sesslint._canonical_codec.canonical_json_bytes is not available`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuildManifestError {
+    Schema(SchemaError),
+    Assurance(AssuranceError),
+    ContentLeak(ContentLeakError),
+    /// Python `TypeError`. The string is `str(exc)`.
+    Type(String),
+    /// Python `ValueError` from `int()`. The string is `str(exc)`.
+    Value(String),
+    /// Late import named by the string, without the ` is not available` suffix.
+    Unavailable(&'static str),
+    Idempotency(IdempotencyError),
+}
+
+impl fmt::Display for BuildManifestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schema(error) => write!(formatter, "{error}"),
+            Self::Assurance(error) => write!(formatter, "{error}"),
+            Self::ContentLeak(error) => write!(formatter, "{error}"),
+            Self::Type(message) | Self::Value(message) => formatter.write_str(message),
+            Self::Unavailable(name) => write!(formatter, "{name} is not available"),
+            Self::Idempotency(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for BuildManifestError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Schema(error) => Some(error),
+            Self::Assurance(error) => Some(error),
+            Self::ContentLeak(error) => Some(error),
+            Self::Idempotency(error) => Some(error),
+            Self::Type(_) | Self::Value(_) | Self::Unavailable(_) => None,
+        }
+    }
+}
+
+/// Argument for [`dump_report`].
+///
+/// [`Self::Wrong`] carries `type(value).__name__`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DumpReportInput<'a> {
+    Report(&'a Report),
+    Wrong { type_name: &'a str },
+}
+
+/// Failure from [`dump_report`].
+///
+/// [`Self::Type`] is Python `TypeError`. [`Self::Canonical`] displays
+/// `sesslint._canonical_codec.canonical_json_bytes is not available`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DumpReportError {
+    Type(String),
+    Canonical(CanonicalUnavailable),
+}
+
+impl fmt::Display for DumpReportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type(message) => formatter.write_str(message),
+            Self::Canonical(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for DumpReportError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Canonical(error) => Some(error),
+            Self::Type(_) => None,
+        }
+    }
+}
+
+/// Python: `build_manifest`.
+///
+/// The first failure wins. Actions are sorted with [`action_sort_key`].
+/// Declared loss is stripped in input order and is not sorted. `None` for
+/// `assurance_ceiling` returns [`BuildManifestError::Unavailable`] for
+/// [`COMPUTE_ASSURANCE_CEILING`] and does not run the metadata content checks
+/// or [`compute_manifest_idempotency_key`]. A provided ceiling must be an exact
+/// [`VALID_ASSURANCE_LEVELS`] member. Metadata checks call
+/// [`enforce_content_free_text`]. The idempotency call is then propagated.
+/// This function does not build a [`RepairManifest`], does not invent an
+/// idempotency key, and does not hash a substitute.
+pub fn build_manifest(parts: BuildManifestParts<'_>) -> Result<RepairManifest, BuildManifestError> {
+    let input_fingerprint = require_stripped(parts.input_fingerprint, "input_fingerprint")?;
+    let _output_fingerprint = require_stripped(parts.output_fingerprint, "output_fingerprint")?;
+    require_raw_policy(parts.policy)?;
+    let sorted_actions = sort_repair_actions(parts.actions);
+    // Pin name `sorted_loss`: stripped items in input order. Not sorted.
+    let _sorted_loss = normalize_declared_loss(parts.declared_loss)?;
+    let _revalidate_report = normalize_revalidate_report(parts.revalidate_report)?;
+    let revalidation = normalize_revalidation(parts.revalidation)?;
+    if matches!(parts.assurance_ceiling, InputValue::None) {
+        return Err(BuildManifestError::Unavailable(COMPUTE_ASSURANCE_CEILING));
+    }
+    let _assurance_ceiling = require_provided_ceiling(parts.assurance_ceiling)?;
+    check_manifest_metadata(&revalidation, parts.adapter_id)?;
+    let fingerprint = InputValue::str_value(input_fingerprint);
+    match compute_manifest_idempotency_key(&fingerprint, parts.policy, &sorted_actions) {
+        Err(error) => Err(BuildManifestError::Idempotency(error)),
+        Ok(_digest) => Err(BuildManifestError::Idempotency(
+            IdempotencyError::Canonical(CanonicalUnavailable::canonical_json_bytes()),
+        )),
+    }
+}
+
+/// Python: `dump_report`.
+///
+/// A value that is not a [`Report`] returns `TypeError` text
+/// `Expected Report instance, got {type}`. A [`Report`] calls
+/// `model::canonical::to_canonical_json` on [`Report::to_dict`] and returns
+/// [`CanonicalUnavailable`]. This function does not emit JSON.
+pub fn dump_report(report: DumpReportInput<'_>) -> Result<String, DumpReportError> {
+    let report = match report {
+        DumpReportInput::Report(report) => report,
+        DumpReportInput::Wrong { type_name } => {
+            return Err(DumpReportError::Type(format!(
+                "Expected Report instance, got {type_name}"
+            )));
+        }
+    };
+    let rendered = report.to_dict();
+    match model::canonical::to_canonical_json(&rendered) {
+        Err(error) => Err(DumpReportError::Canonical(error)),
+        Ok(_json) => Err(DumpReportError::Canonical(
+            CanonicalUnavailable::canonical_json_bytes(),
+        )),
+    }
+}
+
+fn require_stripped(value: &InputValue, label: &str) -> Result<String, BuildManifestError> {
+    if let InputValue::Str(text) = value {
+        let stripped = python_strip(text);
+        if !stripped.is_empty() {
+            return Ok(stripped.to_owned());
+        }
+    }
+    Err(BuildManifestError::Schema(schema(format!(
+        "{label} must be a non-empty string, got {}",
+        input_repr(value)
+    ))))
+}
+
+fn require_raw_policy(value: &InputValue) -> Result<(), BuildManifestError> {
+    if let InputValue::Str(text) = value {
+        if VALID_POLICIES.contains(&text.as_str()) {
+            return Ok(());
+        }
+    }
+    Err(BuildManifestError::Schema(schema(format!(
+        "policy must be one of {}, got {}",
+        sorted_policies_repr(),
+        input_repr(value)
+    ))))
+}
+
+fn normalize_declared_loss(items: &[InputValue]) -> Result<Vec<String>, BuildManifestError> {
+    let mut sorted_loss = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let InputValue::Str(text) = item else {
+            return Err(declared_loss_type(index, item));
+        };
+        let stripped = python_strip(text);
+        if stripped.is_empty() {
+            return Err(declared_loss_type(index, item));
+        }
+        match enforce_content_free_text(stripped, "declared_loss") {
+            Ok(()) => sorted_loss.push(stripped.to_owned()),
+            Err(error) => {
+                return Err(BuildManifestError::ContentLeak(ContentLeakError::new(
+                    format!("Content leak in declared_loss[{index}]: {error}"),
+                )));
+            }
+        }
+    }
+    Ok(sorted_loss)
+}
+
+fn declared_loss_type(index: usize, item: &InputValue) -> BuildManifestError {
+    BuildManifestError::Schema(schema(format!(
+        "declared_loss[{index}] must be a non-empty string, got {}",
+        input_repr(item)
+    )))
+}
+
+fn normalize_revalidate_report(value: &InputValue) -> Result<Option<String>, BuildManifestError> {
+    match value {
+        InputValue::None => Ok(None),
+        InputValue::Str(text) => {
+            let stripped = python_strip(text);
+            if stripped.is_empty() {
+                return Err(revalidate_type(value));
+            }
+            let normalized = stripped.replace('\\', "/");
+            match enforce_content_free_text(&normalized, "revalidate_report") {
+                Ok(()) => Ok(Some(normalized)),
+                Err(error) => Err(BuildManifestError::ContentLeak(ContentLeakError::new(
+                    format!("Content leak in revalidate_report: {error}"),
+                ))),
+            }
+        }
+        other => Err(revalidate_type(other)),
+    }
+}
+
+fn revalidate_type(value: &InputValue) -> BuildManifestError {
+    BuildManifestError::Schema(schema(format!(
+        "revalidate_report must be a non-empty string path or None, got {}",
+        input_repr(value)
+    )))
+}
+
+fn normalize_revalidation(
+    value: BuildRevalidation<'_>,
+) -> Result<RevalidationSummary, BuildManifestError> {
+    match value {
+        BuildRevalidation::None => default_revalidation(),
+        BuildRevalidation::Summary(summary) => Ok(summary.clone()),
+        BuildRevalidation::Mapping(entries) => summary_from_mapping(entries),
+        BuildRevalidation::Wrong { type_name } => Err(BuildManifestError::Schema(schema(format!(
+            "revalidation must be a RevalidationSummary or Mapping, got {type_name}"
+        )))),
+    }
+}
+
+fn default_revalidation() -> Result<RevalidationSummary, BuildManifestError> {
+    let assurance = InputValue::str_value("A3");
+    let error_count = InputValue::int(0);
+    let warning_count = InputValue::int(0);
+    let profile_id = InputValue::str_value("neutral");
+    let profile_version = InputValue::str_value("1.0.0");
+    let report_fingerprint = InputValue::None;
+    lift_summary(RevalidationSummary::try_new(
+        &assurance,
+        &error_count,
+        &warning_count,
+        &profile_id,
+        &profile_version,
+        &report_fingerprint,
+    ))
+}
+
+fn summary_from_mapping(
+    entries: &[(InputKey, InputValue)],
+) -> Result<RevalidationSummary, BuildManifestError> {
+    let assurance = require_mapping_field(entries, "assurance")?;
+    let error_raw = require_mapping_field(entries, "error_count")?;
+    let warning_raw = require_mapping_field(entries, "warning_count")?;
+    let profile_raw = require_mapping_field(entries, "profile_id")?;
+    let version_raw = require_mapping_field(entries, "profile_version")?;
+    let error_count = mapping_count(error_raw, "error_count")?;
+    let warning_count = mapping_count(warning_raw, "warning_count")?;
+    let profile_id = InputValue::str_value(python_str_value(profile_raw));
+    let profile_version = InputValue::str_value(python_str_value(version_raw));
+    let report_fingerprint = match mapping_last(entries, "report_fingerprint") {
+        None | Some(InputValue::None) => InputValue::None,
+        Some(value) => InputValue::str_value(python_str_value(value)),
+    };
+    lift_summary(RevalidationSummary::try_new(
+        assurance,
+        &error_count,
+        &warning_count,
+        &profile_id,
+        &profile_version,
+        &report_fingerprint,
+    ))
+}
+
+fn require_mapping_field<'a>(
+    entries: &'a [(InputKey, InputValue)],
+    field: &str,
+) -> Result<&'a InputValue, BuildManifestError> {
+    mapping_last(entries, field).ok_or_else(|| {
+        BuildManifestError::Schema(schema(format!(
+            "revalidation missing required field '{field}'"
+        )))
+    })
+}
+
+fn mapping_last<'a>(entries: &'a [(InputKey, InputValue)], name: &str) -> Option<&'a InputValue> {
+    entries.iter().rev().find_map(|(key, value)| match key {
+        InputKey::Str(text) if text == name => Some(value),
+        _ => None,
+    })
+}
+
+/// Python `int` is unbounded. [`RevalidationSummary`] stores `i64`.
+/// A mapping count outside that range is refused and is not truncated.
+fn mapping_count(value: &InputValue, field: &str) -> Result<InputValue, BuildManifestError> {
+    match python_int(value)? {
+        Some(number) => Ok(InputValue::int(number)),
+        None => Err(BuildManifestError::Schema(schema(format!(
+            "revalidation {field} does not fit in i64"
+        )))),
+    }
+}
+
+fn python_int(value: &InputValue) -> Result<Option<i64>, BuildManifestError> {
+    match value {
+        InputValue::Bool(false) => Ok(Some(0)),
+        InputValue::Bool(true) => Ok(Some(1)),
+        InputValue::Int(number) => Ok(Some(*number)),
+        InputValue::Str(text) => parse_int_literal(text),
+        other => Err(BuildManifestError::Type(format!(
+            "int() argument must be a string, a bytes-like object or a real number, not '{}'",
+            input_type_name(other)
+        ))),
+    }
+}
+
+fn parse_int_literal(original: &str) -> Result<Option<i64>, BuildManifestError> {
+    let stripped = python_strip(original);
+    if !is_python_int_literal(stripped) {
+        return Err(BuildManifestError::Value(format!(
+            "invalid literal for int() with base 10: {}",
+            python_str_repr(original)
+        )));
+    }
+    let negative = stripped.starts_with('-');
+    let digits = stripped
+        .strip_prefix(['+', '-'].as_slice())
+        .unwrap_or(stripped);
+    let mut normalized = String::new();
+    if negative {
+        normalized.push('-');
+    }
+    for ch in digits.chars() {
+        if ch != '_' {
+            normalized.push(ch);
+        }
+    }
+    match normalized.parse::<i64>() {
+        Ok(number) => Ok(Some(number)),
+        Err(_) => Ok(None),
+    }
+}
+
+fn is_python_int_literal(stripped: &str) -> bool {
+    let rest = stripped
+        .strip_prefix(['+', '-'].as_slice())
+        .unwrap_or(stripped);
+    if rest.is_empty() {
+        return false;
+    }
+    let mut previous_underscore = false;
+    let mut saw_digit = false;
+    for ch in rest.chars() {
+        if ch == '_' {
+            if !saw_digit || previous_underscore {
+                return false;
+            }
+            previous_underscore = true;
+        } else if ch.is_ascii_digit() {
+            saw_digit = true;
+            previous_underscore = false;
+        } else {
+            return false;
+        }
+    }
+    saw_digit && !previous_underscore
+}
+
+fn python_str_value(value: &InputValue) -> String {
+    match value {
+        InputValue::Str(text) => text.clone(),
+        InputValue::None => "None".to_owned(),
+        InputValue::Bool(true) => "True".to_owned(),
+        InputValue::Bool(false) => "False".to_owned(),
+        InputValue::Int(number) => number.to_string(),
+        InputValue::List(items) => input_sequence(items, 0, '[', ']', false),
+        InputValue::Tuple(items) => input_sequence(items, 0, '(', ')', true),
+        InputValue::Set(items) => input_braced("set", items, 0),
+        InputValue::FrozenSet(items) => {
+            if items.is_empty() {
+                "frozenset()".to_owned()
+            } else {
+                format!("frozenset({})", input_braced("frozenset", items, 0))
+            }
+        }
+        InputValue::Dict(entries) => input_dict(entries, 0),
+        InputValue::Other { rendered, .. } => rendered.clone(),
+    }
+}
+
+fn lift_summary(
+    result: Result<RevalidationSummary, EnvelopeError>,
+) -> Result<RevalidationSummary, BuildManifestError> {
+    result.map_err(|error| match error {
+        EnvelopeError::Schema(error) => BuildManifestError::Schema(error),
+        EnvelopeError::Version(error) => BuildManifestError::Schema(SchemaError::from(error)),
+        EnvelopeError::Assurance(error) => BuildManifestError::Assurance(error),
+        EnvelopeError::ContentLeak(error) => BuildManifestError::ContentLeak(error),
+        EnvelopeError::TypeMismatch(message) => BuildManifestError::Type(message),
+        EnvelopeError::Unavailable(name) => BuildManifestError::Unavailable(name),
+    })
+}
+
+fn require_provided_ceiling(value: &InputValue) -> Result<&str, BuildManifestError> {
+    match value {
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => {
+            Ok(text.as_str())
+        }
+        other => Err(BuildManifestError::Assurance(AssuranceError::new(format!(
+            "Invalid assurance_ceiling {}. Must be one of {}",
+            input_repr(other),
+            sorted_assurance_repr()
+        )))),
+    }
+}
+
+fn check_manifest_metadata(
+    summary: &RevalidationSummary,
+    adapter_id: &InputValue,
+) -> Result<(), BuildManifestError> {
+    metadata_leak(summary.profile_id(), "revalidation.profile_id")?;
+    metadata_leak(summary.profile_version(), "revalidation.profile_version")?;
+    if let Some(fingerprint) = summary.report_fingerprint() {
+        metadata_leak(fingerprint, "revalidation.report_fingerprint")?;
+    }
+    match adapter_id {
+        InputValue::None => Ok(()),
+        InputValue::Str(text) => metadata_leak(text, "adapter_id"),
+        other => Err(BuildManifestError::Type(format!(
+            "expected string or bytes-like object, got '{}'",
+            input_type_name(other)
+        ))),
+    }
+}
+
+fn metadata_leak(text: &str, context: &str) -> Result<(), BuildManifestError> {
+    match enforce_content_free_text(text, context) {
+        Ok(()) => Ok(()),
+        Err(error) => Err(BuildManifestError::ContentLeak(ContentLeakError::new(
+            format!("Content leak in manifest metadata: {error}"),
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        action_sort_key, build_report, compute_assurance, compute_manifest_idempotency_key,
-        default_coverage, skip_sort_key, ActionElem, ActionSeq, ActionSortFields, BuildCoverage,
-        BuildReportParts, CountKey, CountValue, Counts, CountsInput, Coverage, CoverageInput,
-        CoverageSkip, EnvelopeError, FindingElem, FindingsInput, IdempotencyError, InputKey,
-        InputValue, RepairAction, RepairManifest, RepairManifestParts, Report, ReportParts,
-        RevalidationInput, RevalidationSummary, SkipElem, SkipSeq, SkipSortFields,
-        ASSURANCE_LIMITATIONS, PROFILES_BUILTIN_ALL_RULES, REPORT_SCHEMA_VERSION,
-        REQUIRED_SEVERITIES, VALID_ASSURANCE_LEVELS, VALID_COVERAGE_SKIP_REASONS,
+        action_sort_key, build_manifest, build_report, compute_assurance,
+        compute_manifest_idempotency_key, default_coverage, dump_report, skip_sort_key, ActionElem,
+        ActionSeq, ActionSortFields, BuildCoverage, BuildManifestError, BuildManifestParts,
+        BuildReportParts, BuildRevalidation, CountKey, CountValue, Counts, CountsInput, Coverage,
+        CoverageInput, CoverageSkip, DumpReportError, DumpReportInput, EnvelopeError, FindingElem,
+        FindingsInput, IdempotencyError, InputKey, InputValue, RepairAction, RepairManifest,
+        RepairManifestParts, Report, ReportParts, RevalidationInput, RevalidationSummary, SkipElem,
+        SkipSeq, SkipSortFields, ASSURANCE_LIMITATIONS, COMPUTE_ASSURANCE_CEILING,
+        PROFILES_BUILTIN_ALL_RULES, REPORT_SCHEMA_VERSION, REQUIRED_SEVERITIES,
+        VALID_ASSURANCE_LEVELS, VALID_COVERAGE_SKIP_REASONS,
     };
     use model::codes::{Repairability, Severity, SL001, SL002, SL003, SL101};
     use model::errors::SchemaError;
@@ -5949,6 +6458,580 @@ mod tests {
                 }
                 IdempotencyError::Schema(error) => {
                     panic!("valid inputs must reach the codec, got {error}");
+                }
+            }
+        }
+    }
+
+    const CANONICAL_SEAM: &str = "sesslint._canonical_codec.canonical_json_bytes is not available";
+    const CEILING_SEAM: &str =
+        "sesslint.repair.assurance.compute_assurance_ceiling is not available";
+    const LEAK_TEXT: &str = "user@example.com";
+
+    struct BuildTail {
+        plan_fingerprint: InputValue,
+        assurance: InputValue,
+        recipe_versions: InputValue,
+        profile_version: InputValue,
+        adapter_version: InputValue,
+        byte_counts: InputValue,
+        record_counts: InputValue,
+    }
+
+    struct BuildCase {
+        input_fingerprint: InputValue,
+        output_fingerprint: InputValue,
+        policy: InputValue,
+        actions: Vec<RepairAction>,
+        declared_loss: Vec<InputValue>,
+        revalidate_report: InputValue,
+        assurance_ceiling: InputValue,
+        adapter_id: InputValue,
+        tail: BuildTail,
+    }
+
+    fn build_tail() -> BuildTail {
+        BuildTail {
+            plan_fingerprint: InputValue::None,
+            assurance: InputValue::None,
+            recipe_versions: InputValue::dict(Vec::new()),
+            profile_version: InputValue::None,
+            adapter_version: InputValue::None,
+            byte_counts: InputValue::dict(Vec::new()),
+            record_counts: InputValue::dict(Vec::new()),
+        }
+    }
+
+    fn clean_build() -> BuildCase {
+        BuildCase {
+            input_fingerprint: text(" in "),
+            output_fingerprint: text(" out "),
+            policy: text("conservative"),
+            actions: vec![
+                must_action("zeta", Some("b"), "z"),
+                must_action("alpha", None, "a"),
+            ],
+            declared_loss: vec![text(" z "), text(" a ")],
+            revalidate_report: InputValue::None,
+            assurance_ceiling: InputValue::None,
+            adapter_id: InputValue::None,
+            tail: build_tail(),
+        }
+    }
+
+    fn run_case(
+        case: &BuildCase,
+        revalidation: BuildRevalidation<'_>,
+    ) -> Result<RepairManifest, BuildManifestError> {
+        build_manifest(BuildManifestParts {
+            input_fingerprint: &case.input_fingerprint,
+            output_fingerprint: &case.output_fingerprint,
+            policy: &case.policy,
+            actions: &case.actions,
+            declared_loss: &case.declared_loss,
+            revalidate_report: &case.revalidate_report,
+            revalidation,
+            assurance_ceiling: &case.assurance_ceiling,
+            plan_fingerprint: &case.tail.plan_fingerprint,
+            assurance: &case.tail.assurance,
+            recipe_versions: &case.tail.recipe_versions,
+            profile_version: &case.tail.profile_version,
+            adapter_id: &case.adapter_id,
+            adapter_version: &case.tail.adapter_version,
+            byte_counts: &case.tail.byte_counts,
+            record_counts: &case.tail.record_counts,
+        })
+    }
+
+    fn case_err(case: &BuildCase, revalidation: BuildRevalidation<'_>) -> BuildManifestError {
+        match run_case(case, revalidation) {
+            Ok(manifest) => panic!(
+                "build_manifest built a RepairManifest with key {}",
+                manifest.idempotency_key()
+            ),
+            Err(error) => error,
+        }
+    }
+
+    fn assert_build_schema(error: BuildManifestError, message: &str) {
+        match error {
+            BuildManifestError::Schema(error) => {
+                assert_eq!(error.to_string(), message);
+                assert_eq!(error.code(), SchemaError::DEFAULT_CODE);
+            }
+            other => panic!("expected SchemaError, got {other:?}"),
+        }
+    }
+
+    fn assert_build_assurance(error: BuildManifestError, message: &str) {
+        match error {
+            BuildManifestError::Assurance(error) => {
+                assert_eq!(error.to_string(), message);
+                assert_eq!(error.code(), AssuranceError::DEFAULT_CODE);
+            }
+            other => panic!("expected AssuranceError, got {other:?}"),
+        }
+    }
+
+    fn assert_build_leak(error: BuildManifestError, message: &str) {
+        match error {
+            BuildManifestError::ContentLeak(error) => {
+                assert_eq!(error.to_string(), message);
+                assert_eq!(error.code(), ContentLeakError::DEFAULT_CODE);
+            }
+            other => panic!("expected ContentLeakError, got {other:?}"),
+        }
+    }
+
+    fn assert_ceiling(error: BuildManifestError) {
+        assert_eq!(error.to_string(), CEILING_SEAM);
+        assert!(std::error::Error::source(&error).is_none());
+        match error {
+            BuildManifestError::Unavailable(name) => assert_eq!(name, COMPUTE_ASSURANCE_CEILING),
+            other => panic!("expected ceiling unavailable, got {other:?}"),
+        }
+    }
+
+    fn assert_codec(error: BuildManifestError) {
+        match error {
+            BuildManifestError::Idempotency(error) => {
+                assert_eq!(error.to_string(), CANONICAL_SEAM);
+                match std::error::Error::source(&error) {
+                    Some(source) => assert_eq!(source.to_string(), CANONICAL_SEAM),
+                    None => panic!("canonical error must expose its source"),
+                }
+            }
+            other => panic!("expected canonical codec, got {other:?}"),
+        }
+    }
+
+    fn loss_leak(index: usize, value: &str) -> String {
+        format!(
+            "Content leak in declared_loss[{index}]: {}",
+            finding_leak(value, "declared_loss")
+        )
+    }
+
+    fn meta_leak(context: &str, value: &str) -> String {
+        format!(
+            "Content leak in manifest metadata: {}",
+            finding_leak(value, context)
+        )
+    }
+
+    fn field_map(pairs: &[(&str, InputValue)]) -> Vec<(InputKey, InputValue)> {
+        pairs
+            .iter()
+            .map(|(key, value)| (InputKey::str_key(*key), value.clone()))
+            .collect()
+    }
+
+    fn valid_map_pairs(
+        assurance: InputValue,
+        error_count: InputValue,
+    ) -> Vec<(InputKey, InputValue)> {
+        field_map(&[
+            ("assurance", assurance),
+            ("error_count", error_count),
+            ("warning_count", InputValue::int(0)),
+            ("profile_id", text("neutral")),
+            ("profile_version", text("1.0.0")),
+        ])
+    }
+
+    fn kept_summary(profile_id: &str, fingerprint: &InputValue) -> RevalidationSummary {
+        match RevalidationSummary::try_new(
+            &text("A2"),
+            &InputValue::int(0),
+            &InputValue::int(0),
+            &text(profile_id),
+            &text("1.0.0"),
+            fingerprint,
+        ) {
+            Ok(summary) => summary,
+            Err(err) => panic!("synthetic revalidation rejected: {err}"),
+        }
+    }
+
+    #[test]
+    fn default_revalidation_uses_the_pin_summary() {
+        let summary = match super::default_revalidation() {
+            Ok(summary) => summary,
+            Err(err) => panic!("default revalidation rejected: {err}"),
+        };
+        assert_eq!(summary.assurance(), "A3");
+        assert_eq!(summary.error_count(), 0);
+        assert_eq!(summary.warning_count(), 0);
+        assert_eq!(summary.profile_id(), "neutral");
+        assert_eq!(summary.profile_version(), "1.0.0");
+        assert_eq!(summary.report_fingerprint(), None);
+    }
+
+    #[test]
+    fn build_manifest_checks_fingerprints_then_raw_policy() {
+        let mut case = clean_build();
+        case.input_fingerprint = text("");
+        case.output_fingerprint = text("");
+        case.declared_loss = vec![text(LEAK_TEXT)];
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "input_fingerprint must be a non-empty string, got ''",
+        );
+        case.input_fingerprint = text("   ");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "input_fingerprint must be a non-empty string, got '   '",
+        );
+        case.input_fingerprint = text("\n");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "input_fingerprint must be a non-empty string, got '\\n'",
+        );
+        case.input_fingerprint = InputValue::int(7);
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "input_fingerprint must be a non-empty string, got 7",
+        );
+        case.input_fingerprint = InputValue::None;
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "input_fingerprint must be a non-empty string, got None",
+        );
+
+        case.input_fingerprint = text(" fp ");
+        case.output_fingerprint = text("");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "output_fingerprint must be a non-empty string, got ''",
+        );
+        case.output_fingerprint = text(" \n ");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "output_fingerprint must be a non-empty string, got ' \\n '",
+        );
+        case.output_fingerprint = InputValue::bool_value(true);
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "output_fingerprint must be a non-empty string, got True",
+        );
+
+        case.output_fingerprint = text(" out ");
+        case.policy = text(" salvage");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "policy must be one of ['conservative', 'salvage'], got ' salvage'",
+        );
+        case.policy = InputValue::None;
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "policy must be one of ['conservative', 'salvage'], got None",
+        );
+        case.policy = text("nope");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "policy must be one of ['conservative', 'salvage'], got 'nope'",
+        );
+    }
+
+    #[test]
+    fn build_manifest_keeps_declared_loss_order_before_ceiling() {
+        let mut case = clean_build();
+        case.declared_loss = vec![InputValue::int(1)];
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "declared_loss[0] must be a non-empty string, got 1",
+        );
+        case.declared_loss = vec![text(""), text(LEAK_TEXT)];
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "declared_loss[0] must be a non-empty string, got ''",
+        );
+        case.declared_loss = vec![text("   ")];
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "declared_loss[0] must be a non-empty string, got '   '",
+        );
+        case.declared_loss = vec![text("z"), text(LEAK_TEXT)];
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::Wrong { type_name: "dict" }),
+            &loss_leak(1, LEAK_TEXT),
+        );
+        case.declared_loss = vec![text(LEAK_TEXT), text("z")];
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::None),
+            &loss_leak(0, LEAK_TEXT),
+        );
+        case.declared_loss = vec![text("  kept  ")];
+        assert_ceiling(case_err(&case, BuildRevalidation::None));
+    }
+
+    #[test]
+    fn build_manifest_normalizes_revalidate_path_before_ceiling() {
+        let mut case = clean_build();
+        case.revalidate_report = InputValue::int(1);
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "revalidate_report must be a non-empty string path or None, got 1",
+        );
+        case.revalidate_report = text("");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "revalidate_report must be a non-empty string path or None, got ''",
+        );
+        case.revalidate_report = text("   ");
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::None),
+            "revalidate_report must be a non-empty string path or None, got '   '",
+        );
+        case.revalidate_report = text(" user@example.com\\x ");
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::Wrong { type_name: "int" }),
+            &format!(
+                "Content leak in revalidate_report: {}",
+                finding_leak("user@example.com/x", "revalidate_report")
+            ),
+        );
+        case.revalidate_report = text(" reports\\out.json ");
+        assert_ceiling(case_err(&case, BuildRevalidation::None));
+    }
+
+    #[test]
+    fn build_manifest_revalidation_runs_before_ceiling() {
+        let case = clean_build();
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Wrong { type_name: "list" }),
+            "revalidation must be a RevalidationSummary or Mapping, got list",
+        );
+        let missing_assurance = field_map(&[("error_count", InputValue::int(0))]);
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Mapping(&missing_assurance)),
+            "revalidation missing required field 'assurance'",
+        );
+        let missing_count = field_map(&[
+            ("assurance", text("nope")),
+            ("warning_count", InputValue::int(0)),
+            ("profile_id", text("neutral")),
+            ("profile_version", text("1.0.0")),
+        ]);
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Mapping(&missing_count)),
+            "revalidation missing required field 'error_count'",
+        );
+
+        let bad_assurance = valid_map_pairs(text("nope"), InputValue::int(1));
+        assert_build_assurance(
+            case_err(&case, BuildRevalidation::Mapping(&bad_assurance)),
+            "Invalid revalidation assurance 'nope'. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']",
+        );
+        let bad_literal = valid_map_pairs(text("nope"), text("nope"));
+        match case_err(&case, BuildRevalidation::Mapping(&bad_literal)) {
+            BuildManifestError::Value(message) => {
+                assert_eq!(message, "invalid literal for int() with base 10: 'nope'");
+            }
+            other => panic!("int() must fail before assurance, got {other:?}"),
+        }
+        let missing_number = valid_map_pairs(text("A1"), InputValue::None);
+        match case_err(&case, BuildRevalidation::Mapping(&missing_number)) {
+            BuildManifestError::Type(message) => {
+                assert_eq!(
+                    message,
+                    "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+                );
+            }
+            other => panic!("int(None) must be TypeError, got {other:?}"),
+        }
+
+        assert_ceiling(case_err(
+            &case,
+            BuildRevalidation::Mapping(&valid_map_pairs(text("A1"), InputValue::bool_value(true))),
+        ));
+        assert_ceiling(case_err(
+            &case,
+            BuildRevalidation::Mapping(&valid_map_pairs(text("A1"), text("  1_0 "))),
+        ));
+        let numeric_profile = field_map(&[
+            ("assurance", text("A1")),
+            ("error_count", InputValue::int(0)),
+            ("warning_count", InputValue::int(0)),
+            ("profile_id", InputValue::int(5)),
+            ("profile_version", text("1.0.0")),
+        ]);
+        assert_ceiling(case_err(
+            &case,
+            BuildRevalidation::Mapping(&numeric_profile),
+        ));
+        let none_profile = field_map(&[
+            ("assurance", text("A1")),
+            ("error_count", InputValue::int(0)),
+            ("warning_count", InputValue::int(0)),
+            ("profile_id", InputValue::None),
+            ("profile_version", text("1.0.0")),
+        ]);
+        assert_ceiling(case_err(&case, BuildRevalidation::Mapping(&none_profile)));
+        let duplicate = field_map(&[
+            ("assurance", text("nope")),
+            ("error_count", InputValue::int(0)),
+            ("warning_count", InputValue::int(0)),
+            ("profile_id", text("neutral")),
+            ("profile_version", text("1.0.0")),
+            ("assurance", text("A3")),
+        ]);
+        assert_ceiling(case_err(&case, BuildRevalidation::Mapping(&duplicate)));
+
+        let negative = valid_map_pairs(text("A1"), text("-1"));
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Mapping(&negative)),
+            "RevalidationSummary.error_count must be non-negative integer, got -1",
+        );
+        let huge_digits = "9".repeat(40);
+        let huge = valid_map_pairs(text("A1"), text(&huge_digits));
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Mapping(&huge)),
+            "revalidation error_count does not fit in i64",
+        );
+        let mut warning = valid_map_pairs(text("A1"), InputValue::int(1));
+        warning.push((InputKey::str_key("warning_count"), text(&huge_digits)));
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Mapping(&warning)),
+            "revalidation warning_count does not fit in i64",
+        );
+        let mut blank_fingerprint = valid_map_pairs(text("A1"), InputValue::int(0));
+        blank_fingerprint.push((InputKey::str_key("report_fingerprint"), text("")));
+        assert_build_schema(
+            case_err(&case, BuildRevalidation::Mapping(&blank_fingerprint)),
+            "RevalidationSummary.report_fingerprint must be a non-empty string or None",
+        );
+        let mut bool_fingerprint = valid_map_pairs(text("A1"), InputValue::int(0));
+        bool_fingerprint.push((
+            InputKey::str_key("report_fingerprint"),
+            InputValue::bool_value(true),
+        ));
+        assert_ceiling(case_err(
+            &case,
+            BuildRevalidation::Mapping(&bool_fingerprint),
+        ));
+    }
+
+    #[test]
+    fn build_manifest_ceiling_stops_before_metadata_and_codec() {
+        let mut case = clean_build();
+        let leaky = kept_summary(LEAK_TEXT, &InputValue::None);
+        assert_ceiling(case_err(&case, BuildRevalidation::Summary(&leaky)));
+        let clean = kept_summary("neutral", &InputValue::None);
+        case.adapter_id = text(LEAK_TEXT);
+        assert_ceiling(case_err(&case, BuildRevalidation::Summary(&clean)));
+
+        case.adapter_id = InputValue::None;
+        case.assurance_ceiling = text("A5");
+        assert_build_assurance(
+            case_err(&case, BuildRevalidation::Summary(&leaky)),
+            "Invalid assurance_ceiling 'A5'. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']",
+        );
+        case.assurance_ceiling = text(" A3 ");
+        assert_build_assurance(
+            case_err(&case, BuildRevalidation::None),
+            "Invalid assurance_ceiling ' A3 '. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']",
+        );
+        case.assurance_ceiling = InputValue::int(1);
+        assert_build_assurance(
+            case_err(&case, BuildRevalidation::None),
+            "Invalid assurance_ceiling 1. Must be one of ['A0', 'A1', 'A2', 'A3', 'A4']",
+        );
+
+        case.assurance_ceiling = text("A1");
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::Summary(&leaky)),
+            &meta_leak("revalidation.profile_id", LEAK_TEXT),
+        );
+        let version_leak = match RevalidationSummary::try_new(
+            &text("A2"),
+            &InputValue::int(0),
+            &InputValue::int(0),
+            &text("neutral"),
+            &text(LEAK_TEXT),
+            &InputValue::None,
+        ) {
+            Ok(summary) => summary,
+            Err(err) => panic!("synthetic revalidation rejected: {err}"),
+        };
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::Summary(&version_leak)),
+            &meta_leak("revalidation.profile_version", LEAK_TEXT),
+        );
+        let fingerprint = text(LEAK_TEXT);
+        let finger_leak = kept_summary("neutral", &fingerprint);
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::Summary(&finger_leak)),
+            &meta_leak("revalidation.report_fingerprint", LEAK_TEXT),
+        );
+        case.adapter_id = text(LEAK_TEXT);
+        assert_build_leak(
+            case_err(&case, BuildRevalidation::Summary(&clean)),
+            &meta_leak("adapter_id", LEAK_TEXT),
+        );
+        case.adapter_id = InputValue::int(3);
+        match case_err(&case, BuildRevalidation::Summary(&clean)) {
+            BuildManifestError::Type(message) => {
+                assert_eq!(message, "expected string or bytes-like object, got 'int'");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+
+        case.adapter_id = InputValue::None;
+        case.actions = vec![
+            must_action("alpha", None, "a"),
+            must_action("zeta", Some("b"), "z"),
+        ];
+        case.declared_loss = Vec::new();
+        for level in ["A0", "A1", "A2", "A3", "A4"] {
+            case.assurance_ceiling = text(level);
+            assert_codec(case_err(&case, BuildRevalidation::None));
+        }
+        case.policy = text("salvage");
+        case.assurance_ceiling = text("A4");
+        assert_codec(case_err(&case, BuildRevalidation::None));
+        case.policy = text("conservative");
+        assert_codec(case_err(&case, BuildRevalidation::Summary(&clean)));
+    }
+
+    #[test]
+    fn dump_report_refuses_non_reports_and_does_not_emit_json() {
+        match dump_report(DumpReportInput::Wrong { type_name: "list" }) {
+            Err(DumpReportError::Type(message)) => {
+                assert_eq!(message, "Expected Report instance, got list");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+        match dump_report(DumpReportInput::Wrong {
+            type_name: "NoneType",
+        }) {
+            Err(DumpReportError::Type(message)) => {
+                assert_eq!(message, "Expected Report instance, got NoneType");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+        let coverage = must_coverage(
+            &InputValue::tuple(Vec::new()),
+            &empty_skips(),
+            &canonical_adapter(),
+            &neutral_profile(),
+        );
+        let counts = counts_for(&[]);
+        let report = must_report(
+            &text("s"),
+            &[],
+            &counts,
+            &text("A1"),
+            &text("lim"),
+            &coverage,
+        );
+        match dump_report(DumpReportInput::Report(&report)) {
+            Ok(json) => panic!("dump_report emitted JSON: {json}"),
+            Err(error) => {
+                assert_eq!(error.to_string(), CANONICAL_SEAM);
+                match std::error::Error::source(&error) {
+                    Some(source) => assert_eq!(source.to_string(), CANONICAL_SEAM),
+                    None => panic!("dump_report must expose the codec error"),
                 }
             }
         }
