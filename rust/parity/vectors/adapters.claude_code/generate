@@ -1,0 +1,696 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.claude_code parity vectors (stdlib only; pinned git blobs)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import io
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CLAUDE_PY_SHA256 = (
+    "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1"
+)
+CLAUDE_RS_SHA256 = (
+    "801bee2f275c752a443201cd3b3fec8220133c95ccb2a40d578bce2ae5cfe456"
+)
+MODULE = "sesslint.adapters.claude_code"
+SYN_MISSING = "fixtures/syn-missing-session.jsonl"
+SYN_DIR = "fixtures/syn-dir-not-file"
+SYN_READABLE = "fixtures/syn-readable.jsonl"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-claude-secret-scan-tracker: _load_claude_code_internal stops at "
+    "sesslint.checks.hygiene.SecretScanTracker for bytes and streams. Rust "
+    "does not construct the tracker. The harness asserts that seam and does "
+    "not treat pin success as equal to the seam.",
+    "GAP-claude-open-byte-source: a path that passes stat checks stops at "
+    "sesslint.adapters.claude_code._open_byte_source. Rust does not read the "
+    "file or construct SecretScanTracker on that arm.",
+    "GAP-claude-session-envelope: load_claude_code_session calls "
+    "_load_claude_code_internal only. Rust does not build a Session envelope.",
+    "GAP-claude-line-fingerprint: _process_claude_line stops at the "
+    "fingerprint codec when make_finding would run in the pin. Findings are "
+    "not appended.",
+    "GAP-claude-line-canonical: a classified record that would reach "
+    "sha256(canonical_bytes(obj)) stops at sesslint._canonical_codec."
+    "canonical_json_bytes. Events the pin would append after that hash are "
+    "not appended.",
+    "GAP-claude-line-secret-feed: _process_claude_line with a supplied "
+    "secret_tracker stops at SecretScanTracker.feed. Rust returns the tracker "
+    "seam without scanning.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/adapters/test_claude_code.py",
+    "tests/adapters/test_modern_metadata.py",
+    "tests/adapters/test_synthetic_ids.py",
+    "tests/checks/test_hygiene.py",
+    "tests/checks/test_size_anomaly.py",
+    "tests/checks/test_writers.py",
+    "tests/conformance/test_adapter_suite.py",
+    "tests/io/test_byte_offsets.py",
+    "tests/privacy/test_safe_discriminator.py",
+    "tests/repair/test_writeback.py",
+    "tests/test_sl001_tail.py",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/adapters/test_claude_code.py::test_detect_claude_code": (
+        "detect_claude_session_jsonl",
+        "detect_claude_txt",
+        "detect_claude_csv",
+        "detect_empty_bytes",
+        "detect_irrelevant_jsonl",
+    ),
+    "tests/adapters/test_claude_code.py::test_normalize_version": (
+        "normalize_plain",
+        "normalize_v_prefix",
+        "normalize_whitespace_case",
+        "normalize_claude_label",
+    ),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/adapters/claude_code.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != CLAUDE_PY_SHA256:
+        raise SystemExit(
+            f"claude_code.py pin sha256 mismatch: expected {CLAUDE_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "claude_code.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != CLAUDE_RS_SHA256:
+        raise SystemExit(
+            "claude_code.rs sha256 mismatch: "
+            f"expected {CLAUDE_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"src/sesslint/{tail}.py", f"src/sesslint/{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.io",
+        "sesslint.scan",
+        "sesslint.repair",
+        "sesslint.profiles",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str, *, temp_main: bool = False) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    if temp_main and mod == "sesslint.adapters.claude_code":
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".py", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(source)
+            path = handle.name
+        code = compile(source, path, "exec")
+    else:
+        code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_pinned_claude() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    mods = [
+        m
+        for m in closure("sesslint.adapters.claude_code")
+        if m != "sesslint.adapters.claude_code"
+    ]
+    pending = list(mods)
+    for _ in range(80):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod, temp_main=False)
+                progress = True
+            except ModuleNotFoundError:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:8]}")
+    load_module("sesslint.adapters.claude_code", temp_main=True)
+    return sys.modules["sesslint.adapters.claude_code"]
+
+
+def encode_payload(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"kind": "null"}
+    if isinstance(value, bool):
+        return {"kind": "bool", "value": value}
+    if isinstance(value, int):
+        return {"kind": "int", "value": value}
+    if isinstance(value, float):
+        return {"kind": "float", "value": value}
+    if isinstance(value, str):
+        return {"kind": "str", "text": value}
+    if isinstance(value, list):
+        return {"kind": "list", "items": [encode_payload(v) for v in value]}
+    if isinstance(value, dict):
+        return {
+            "kind": "map",
+            "entries": [
+                {"key": encode_payload(k), "value": encode_payload(v)}
+                for k, v in value.items()
+            ],
+        }
+    raise SystemExit(f"cannot encode payload {type(value)!r}")
+
+
+def pin_load_summary_bytes(mod: Any, data: bytes) -> dict[str, Any]:
+    try:
+        events, findings = mod.load_claude_code(data)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    return {
+        "event_count": len(events),
+        "finding_count": len(findings),
+        "finding_codes": sorted(f.code for f in findings),
+    }
+
+
+def pin_load_summary_path(mod: Any, path: Path) -> dict[str, Any]:
+    try:
+        events, findings = mod.load_claude_code(path)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    return {
+        "event_count": len(events),
+        "finding_count": len(findings),
+        "finding_codes": sorted(f.code for f in findings),
+    }
+
+
+def pin_process_line(mod: Any, line_text: str) -> dict[str, Any]:
+    from sesslint.io import ReaderLimits, _RawLine  # type: ignore[import-untyped]
+
+    limits = ReaderLimits()
+    events: list[Any] = []
+    findings: list[Any] = []
+    context: dict[str, Any] = {"record_sizes": []}
+    raw_bytes = line_text.encode("utf-8")
+    raw = _RawLine(
+        line_number=1,
+        raw_bytes=raw_bytes,
+        truncated_limit=False,
+        byte_offset=0,
+        byte_end=len(raw_bytes),
+        record_ordinal=1,
+    )
+    try:
+        mod._process_claude_line(
+            raw,
+            is_terminal=True,
+            path_str="syn-process-path.jsonl",
+            limits=limits,
+            events=events,
+            findings=findings,
+            context=context,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+            "event_count": len(events),
+            "finding_count": len(findings),
+            "finding_codes": sorted(f.code for f in findings),
+        }
+    return {
+        "event_count": len(events),
+        "finding_count": len(findings),
+        "finding_codes": sorted(f.code for f in findings),
+    }
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def vector_specs(mod: Any, out_dir: Path) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    readable = out_dir / SYN_READABLE
+
+    def add(spec: dict[str, Any]) -> None:
+        specs.append(spec)
+
+    type_rows = [
+        {"key": key, "actor": actor, "kind": kind}
+        for key, (actor, kind) in mod.TYPE_MAP.items()
+    ]
+    add(
+        {
+            "id": "module_exports",
+            "construct": {"type": "module_exports"},
+            "expected": {"python_all": list(mod.__all__)},
+        }
+    )
+    add(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "supported_versions": sorted(mod.SUPPORTED_CLAUDE_VERSIONS),
+                "supported_app_major_versions": sorted(
+                    mod.SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS
+                ),
+                "critical_keys": sorted(mod.CRITICAL_KEYS),
+                "known_record_keys": sorted(mod.KNOWN_RECORD_KEYS),
+                "session_metadata_types": sorted(mod.SESSION_METADATA_TYPES),
+                "default_max_depth": 100,
+                "type_map": type_rows,
+            },
+        }
+    )
+
+    for vid, raw, want in (
+        ("normalize_plain", "1.0.0", "1.0.0"),
+        ("normalize_v_prefix", "v1.0.0", "1.0.0"),
+        ("normalize_whitespace_case", "  V0.1.0  ", "0.1.0"),
+        ("normalize_claude_label", "claude-code-v1", "claude-code-v1"),
+    ):
+        add(
+            {
+                "id": vid,
+                "construct": {"type": "normalize_version", "text": raw},
+                "expected": {"text": mod.normalize_version(raw)},
+            }
+        )
+
+    claude_bytes = (
+        b'{"id":"msg_01","type":"user_message","message":"Hello","timestamp":"2025-01-01T00:00:00Z"}\n'
+        b'{"id":"msg_02","parentId":"msg_01","type":"assistant_message","message":"Hi","timestamp":"2025-01-01T00:00:01Z"}\n'
+    )
+    other_bytes = b'{"number": 1, "value": "test"}\n'
+    detect_cases = [
+        ("detect_claude_session_jsonl", claude_bytes, "session.jsonl"),
+        ("detect_claude_txt", claude_bytes, "session.txt"),
+        ("detect_claude_csv", claude_bytes, "session.csv"),
+        ("detect_empty_bytes", b"", "session.jsonl"),
+        ("detect_irrelevant_jsonl", other_bytes, "test.jsonl"),
+    ]
+    for vid, data, name in detect_cases:
+        add(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "detect_claude_code",
+                    "bytes_hex": data.hex(),
+                    "filename": name,
+                },
+                "expected": {"score": mod.detect_claude_code(data, name)},
+            }
+        )
+
+    for vid, version, schema in (
+        ("is_supported_legacy", "1.0.0", False),
+        ("is_supported_schema_marker", "ledger-v9", True),
+        ("is_supported_app_2", "2.0.30", False),
+        ("is_supported_reject_9", "9.0.0", False),
+    ):
+        norm = mod.normalize_version(version)
+        add(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "is_supported_claude_version",
+                    "text": version,
+                    "is_schema_marker": schema,
+                },
+                "expected": {
+                    "supported": mod.is_supported_claude_version(
+                        norm, is_schema_marker=schema
+                    ),
+                },
+            }
+        )
+
+    for vid, val in (
+        ("safe_type_str", ("abc", mod._safe_type_value("abc"))),
+        ("safe_type_none", (None, mod._safe_type_value(None))),
+        ("safe_type_list", ([1, 2], mod._safe_type_value([1, 2]))),
+    ):
+        raw, want = val
+        add(
+            {
+                "id": vid,
+                "construct": {"type": "safe_type_value", "val": encode_payload(raw)},
+                "expected": {"text": want},
+            }
+        )
+
+    line_bytes = b'{"type":"user","uuid":"r1"}\n'
+    pin_bytes = pin_load_summary_bytes(mod, line_bytes)
+    add(
+        {
+            "id": "gap_load_bytes",
+            "construct": {
+                "type": "load_claude_code",
+                "source": {"kind": "bytes_hex", "hex": line_bytes.hex()},
+            },
+            "expected": {
+                "pin": pin_bytes,
+                "rust_assertion": {"mode": "gap_secret_scan_tracker"},
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "load_not_found",
+            "construct": {
+                "type": "load_claude_code",
+                "source": {"kind": "path_rel", "path": SYN_MISSING},
+            },
+            "expected": {
+                "pin": pin_load_summary_path(mod, out_dir / SYN_MISSING),
+                "message": f"Session file not found: {SYN_MISSING}",
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "load_is_directory",
+            "construct": {
+                "type": "load_claude_code",
+                "source": {"kind": "path_rel", "path": SYN_DIR},
+            },
+            "expected": {
+                "pin": pin_load_summary_path(mod, out_dir / SYN_DIR),
+                "message": f"Expected session file, got directory: {SYN_DIR}",
+            },
+        }
+    )
+
+    pin_readable = pin_load_summary_path(mod, readable)
+    add(
+        {
+            "id": "gap_load_readable_path",
+            "construct": {
+                "type": "load_claude_code",
+                "source": {"kind": "path_rel", "path": SYN_READABLE},
+            },
+            "expected": {
+                "pin": pin_readable,
+                "rust_assertion": {"mode": "gap_open_byte_source"},
+            },
+        }
+    )
+
+    pin_session = pin_load_summary_path(mod, readable)
+    add(
+        {
+            "id": "gap_session_envelope",
+            "construct": {
+                "type": "load_claude_code_session",
+                "source": {"kind": "path_rel", "path": SYN_READABLE},
+            },
+            "expected": {
+                "pin": pin_session,
+                "rust_assertion": {"mode": "gap_open_byte_source"},
+            },
+        }
+    )
+
+    nul_line = '{"id":"msg_01","type":"user_message","message":"hello \x00 world"}\n'
+    add(
+        {
+            "id": "gap_process_nul_fingerprint",
+            "construct": {
+                "type": "process_claude_line",
+                "line_text": nul_line,
+                "is_terminal": True,
+            },
+            "expected": {
+                "pin": pin_process_line(mod, nul_line),
+                "rust_assertion": {"mode": "gap_fingerprint"},
+            },
+        }
+    )
+
+    user_line = '{"type":"user","uuid":"r1"}\n'
+    add(
+        {
+            "id": "gap_process_user_canonical",
+            "construct": {
+                "type": "process_claude_line",
+                "line_text": user_line,
+                "is_terminal": True,
+            },
+            "expected": {
+                "pin": pin_process_line(mod, user_line),
+                "rust_assertion": {"mode": "gap_canonical_json_bytes"},
+            },
+        }
+    )
+
+    meta_line = '{"type":"mode"}\n'
+    add(
+        {
+            "id": "process_metadata_ok",
+            "construct": {
+                "type": "process_claude_line",
+                "line_text": meta_line,
+                "is_terminal": True,
+            },
+            "expected": {
+                "pin": pin_process_line(mod, meta_line),
+                "rust_assertion": {"mode": "ok_empty"},
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "gap_process_secret_tracker",
+            "construct": {
+                "type": "process_claude_line",
+                "line_text": user_line,
+                "is_terminal": True,
+                "secret_tracker": True,
+            },
+            "expected": {
+                "pin": {"skipped": True},
+                "rust_assertion": {"mode": "gap_secret_scan_tracker"},
+            },
+        }
+    )
+
+    return specs
+
+def imports_module(rel: str) -> bool:
+    try:
+        source = subprocess.check_output(
+            ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return "sesslint.adapters.claude_code" in source
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        if not imports_module(rel):
+            continue
+        tests = list_tests_in_file(rel)
+        for name in tests:
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(exist_ok=True)
+    readable = fixtures / "syn-readable.jsonl"
+    if not readable.exists():
+        readable.write_text(
+            '{"id":"msg_01","type":"user_message","message":"hi"}\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+    dir_path = fixtures / "syn-dir-not-file"
+    dir_path.mkdir(exist_ok=True)
+
+
+def main() -> int:
+    mod = load_pinned_claude()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir)
+    vectors = vector_specs(mod, out_dir)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "claude_code_py_sha256": CLAUDE_PY_SHA256,
+        "claude_code_rs_sha256": CLAUDE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.claude_code parity (prefix helpers, "
+            "detection, loader seams, and documented line-processor gaps)."
+        ),
+        "generator": "rust/parity/vectors/adapters.claude_code/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

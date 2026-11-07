@@ -1,0 +1,573 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.claude_code",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "claude_code_py_sha256": "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1",
+  "claude_code_rs_sha256": "801bee2f275c752a443201cd3b3fec8220133c95ccb2a40d578bce2ae5cfe456",
+  "known_parity_gaps": [
+    "GAP-claude-secret-scan-tracker: _load_claude_code_internal stops at sesslint.checks.hygiene.SecretScanTracker for bytes and streams. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
+    "GAP-claude-open-byte-source: a path that passes stat checks stops at sesslint.adapters.claude_code._open_byte_source. Rust does not read the file or construct SecretScanTracker on that arm.",
+    "GAP-claude-session-envelope: load_claude_code_session calls _load_claude_code_internal only. Rust does not build a Session envelope.",
+    "GAP-claude-line-fingerprint: _process_claude_line stops at the fingerprint codec when make_finding would run in the pin. Findings are not appended.",
+    "GAP-claude-line-canonical: a classified record that would reach sha256(canonical_bytes(obj)) stops at sesslint._canonical_codec.canonical_json_bytes. Events the pin would append after that hash are not appended.",
+    "GAP-claude-line-secret-feed: _process_claude_line with a supplied secret_tracker stops at SecretScanTracker.feed. Rust returns the tracker seam without scanning."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "CRITICAL_KEYS",
+          "CanonicalEvent",
+          "KNOWN_RECORD_KEYS",
+          "SUPPORTED_CLAUDE_VERSIONS",
+          "TYPE_MAP",
+          "detect_claude_code",
+          "load_claude_code",
+          "load_claude_code_session",
+          "normalize_version"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "supported_versions": [
+          "0.1",
+          "0.1.0",
+          "1",
+          "1.0",
+          "1.0.0",
+          "claude-code-v1"
+        ],
+        "supported_app_major_versions": [
+          1,
+          2
+        ],
+        "critical_keys": [
+          "logicalParentUuid",
+          "parentId",
+          "parentUuid",
+          "parent_id",
+          "parent_uuid",
+          "toolUseId",
+          "tool_call_id",
+          "tool_use_id",
+          "type",
+          "unknown_critical_field"
+        ],
+        "known_record_keys": [
+          "agent",
+          "agentId",
+          "agentVersion",
+          "agent_id",
+          "appVersion",
+          "args",
+          "arguments",
+          "branchId",
+          "branch_id",
+          "channel",
+          "claude_code_version",
+          "compaction",
+          "completion_tokens",
+          "content",
+          "cost",
+          "costUSD",
+          "created_at",
+          "cwd",
+          "durationMs",
+          "duration_ms",
+          "error",
+          "extra_debug",
+          "git_branch",
+          "id",
+          "input",
+          "interactionId",
+          "interaction_id",
+          "isCompactSummary",
+          "isSidechain",
+          "is_error",
+          "is_sidechain",
+          "is_subagent",
+          "leafUuid",
+          "logicalParentUuid",
+          "message",
+          "message_id",
+          "metadata",
+          "model",
+          "name",
+          "output",
+          "parentId",
+          "parentUuid",
+          "parent_id",
+          "parent_uuid",
+          "prompt_tokens",
+          "record_id",
+          "result",
+          "role",
+          "schemaVersion",
+          "sessionId",
+          "session_id",
+          "slug",
+          "subagent",
+          "subtype",
+          "summary",
+          "text",
+          "theme",
+          "thinking",
+          "timestamp",
+          "tokens",
+          "toolResult",
+          "toolUse",
+          "toolUseId",
+          "toolUseResult",
+          "tool_call_id",
+          "tool_name",
+          "tool_result",
+          "tool_use",
+          "tool_use_id",
+          "ts",
+          "type",
+          "user",
+          "uuid",
+          "version"
+        ],
+        "session_metadata_types": [
+          "agent-name",
+          "atis-latch",
+          "cost-state",
+          "custom-title",
+          "file-history-delta",
+          "file-history-snapshot",
+          "last-prompt",
+          "mode",
+          "permission-mode",
+          "pr-link",
+          "queue-operation"
+        ],
+        "default_max_depth": 100,
+        "type_map": [
+          {
+            "key": "user_message",
+            "actor": "user",
+            "kind": "message"
+          },
+          {
+            "key": "user",
+            "actor": "user",
+            "kind": "message"
+          },
+          {
+            "key": "assistant_message",
+            "actor": "assistant",
+            "kind": "message"
+          },
+          {
+            "key": "assistant",
+            "actor": "assistant",
+            "kind": "message"
+          },
+          {
+            "key": "tool_use",
+            "actor": "assistant",
+            "kind": "tool_call"
+          },
+          {
+            "key": "tool_result",
+            "actor": "tool",
+            "kind": "tool_result"
+          },
+          {
+            "key": "system",
+            "actor": "system",
+            "kind": "message"
+          },
+          {
+            "key": "attachment",
+            "actor": "system",
+            "kind": "opaque"
+          },
+          {
+            "key": "summary",
+            "actor": "system",
+            "kind": "compaction_boundary"
+          },
+          {
+            "key": "compaction",
+            "actor": "system",
+            "kind": "compaction_boundary"
+          },
+          {
+            "key": "compaction_boundary",
+            "actor": "system",
+            "kind": "compaction_boundary"
+          },
+          {
+            "key": "message",
+            "actor": "assistant",
+            "kind": "message"
+          }
+        ]
+      }
+    },
+    {
+      "id": "normalize_plain",
+      "construct": {
+        "type": "normalize_version",
+        "text": "1.0.0"
+      },
+      "expected": {
+        "text": "1.0.0"
+      }
+    },
+    {
+      "id": "normalize_v_prefix",
+      "construct": {
+        "type": "normalize_version",
+        "text": "v1.0.0"
+      },
+      "expected": {
+        "text": "1.0.0"
+      }
+    },
+    {
+      "id": "normalize_whitespace_case",
+      "construct": {
+        "type": "normalize_version",
+        "text": "  V0.1.0  "
+      },
+      "expected": {
+        "text": "0.1.0"
+      }
+    },
+    {
+      "id": "normalize_claude_label",
+      "construct": {
+        "type": "normalize_version",
+        "text": "claude-code-v1"
+      },
+      "expected": {
+        "text": "claude-code-v1"
+      }
+    },
+    {
+      "id": "detect_claude_session_jsonl",
+      "construct": {
+        "type": "detect_claude_code",
+        "bytes_hex": "7b226964223a226d73675f3031222c2274797065223a22757365725f6d657373616765222c226d657373616765223a2248656c6c6f222c2274696d657374616d70223a22323032352d30312d30315430303a30303a30305a227d0a7b226964223a226d73675f3032222c22706172656e744964223a226d73675f3031222c2274797065223a22617373697374616e745f6d657373616765222c226d657373616765223a224869222c2274696d657374616d70223a22323032352d30312d30315430303a30303a30315a227d0a",
+        "filename": "session.jsonl"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_claude_txt",
+      "construct": {
+        "type": "detect_claude_code",
+        "bytes_hex": "7b226964223a226d73675f3031222c2274797065223a22757365725f6d657373616765222c226d657373616765223a2248656c6c6f222c2274696d657374616d70223a22323032352d30312d30315430303a30303a30305a227d0a7b226964223a226d73675f3032222c22706172656e744964223a226d73675f3031222c2274797065223a22617373697374616e745f6d657373616765222c226d657373616765223a224869222c2274696d657374616d70223a22323032352d30312d30315430303a30303a30315a227d0a",
+        "filename": "session.txt"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_claude_csv",
+      "construct": {
+        "type": "detect_claude_code",
+        "bytes_hex": "7b226964223a226d73675f3031222c2274797065223a22757365725f6d657373616765222c226d657373616765223a2248656c6c6f222c2274696d657374616d70223a22323032352d30312d30315430303a30303a30305a227d0a7b226964223a226d73675f3032222c22706172656e744964223a226d73675f3031222c2274797065223a22617373697374616e745f6d657373616765222c226d657373616765223a224869222c2274696d657374616d70223a22323032352d30312d30315430303a30303a30315a227d0a",
+        "filename": "session.csv"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_empty_bytes",
+      "construct": {
+        "type": "detect_claude_code",
+        "bytes_hex": "",
+        "filename": "session.jsonl"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_irrelevant_jsonl",
+      "construct": {
+        "type": "detect_claude_code",
+        "bytes_hex": "7b226e756d626572223a20312c202276616c7565223a202274657374227d0a",
+        "filename": "test.jsonl"
+      },
+      "expected": {
+        "score": 0.2
+      }
+    },
+    {
+      "id": "is_supported_legacy",
+      "construct": {
+        "type": "is_supported_claude_version",
+        "text": "1.0.0",
+        "is_schema_marker": false
+      },
+      "expected": {
+        "supported": true
+      }
+    },
+    {
+      "id": "is_supported_schema_marker",
+      "construct": {
+        "type": "is_supported_claude_version",
+        "text": "ledger-v9",
+        "is_schema_marker": true
+      },
+      "expected": {
+        "supported": false
+      }
+    },
+    {
+      "id": "is_supported_app_2",
+      "construct": {
+        "type": "is_supported_claude_version",
+        "text": "2.0.30",
+        "is_schema_marker": false
+      },
+      "expected": {
+        "supported": true
+      }
+    },
+    {
+      "id": "is_supported_reject_9",
+      "construct": {
+        "type": "is_supported_claude_version",
+        "text": "9.0.0",
+        "is_schema_marker": false
+      },
+      "expected": {
+        "supported": false
+      }
+    },
+    {
+      "id": "safe_type_str",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "str",
+          "text": "abc"
+        }
+      },
+      "expected": {
+        "text": "<str:len=3>"
+      }
+    },
+    {
+      "id": "safe_type_none",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "null"
+        }
+      },
+      "expected": {
+        "text": "<NoneType>"
+      }
+    },
+    {
+      "id": "safe_type_list",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "<list:len=2>"
+      }
+    },
+    {
+      "id": "gap_load_bytes",
+      "construct": {
+        "type": "load_claude_code",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b2274797065223a2275736572222c2275756964223a227231227d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "load_not_found",
+      "construct": {
+        "type": "load_claude_code",
+        "source": {
+          "kind": "path_rel",
+          "path": "fixtures/syn-missing-session.jsonl"
+        }
+      },
+      "expected": {
+        "pin": {
+          "error_type": "FileNotFoundError",
+          "message": "Session file not found: D:\\FOR_WORK\\WORK_PROJECT\\sesslint-wt-claude-par\\rust\\parity\\vectors\\adapters.claude_code\\fixtures\\syn-missing-session.jsonl"
+        },
+        "message": "Session file not found: fixtures/syn-missing-session.jsonl"
+      }
+    },
+    {
+      "id": "load_is_directory",
+      "construct": {
+        "type": "load_claude_code",
+        "source": {
+          "kind": "path_rel",
+          "path": "fixtures/syn-dir-not-file"
+        }
+      },
+      "expected": {
+        "pin": {
+          "error_type": "IsADirectoryError",
+          "message": "Expected session file, got directory: D:\\FOR_WORK\\WORK_PROJECT\\sesslint-wt-claude-par\\rust\\parity\\vectors\\adapters.claude_code\\fixtures\\syn-dir-not-file"
+        },
+        "message": "Expected session file, got directory: fixtures/syn-dir-not-file"
+      }
+    },
+    {
+      "id": "gap_load_readable_path",
+      "construct": {
+        "type": "load_claude_code",
+        "source": {
+          "kind": "path_rel",
+          "path": "fixtures/syn-readable.jsonl"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_open_byte_source"
+        }
+      }
+    },
+    {
+      "id": "gap_session_envelope",
+      "construct": {
+        "type": "load_claude_code_session",
+        "source": {
+          "kind": "path_rel",
+          "path": "fixtures/syn-readable.jsonl"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_open_byte_source"
+        }
+      }
+    },
+    {
+      "id": "gap_process_nul_fingerprint",
+      "construct": {
+        "type": "process_claude_line",
+        "line_text": "{\"id\":\"msg_01\",\"type\":\"user_message\",\"message\":\"hello \u0000 world\"}\n",
+        "is_terminal": true
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_fingerprint"
+        }
+      }
+    },
+    {
+      "id": "gap_process_user_canonical",
+      "construct": {
+        "type": "process_claude_line",
+        "line_text": "{\"type\":\"user\",\"uuid\":\"r1\"}\n",
+        "is_terminal": true
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_canonical_json_bytes"
+        }
+      }
+    },
+    {
+      "id": "process_metadata_ok",
+      "construct": {
+        "type": "process_claude_line",
+        "line_text": "{\"type\":\"mode\"}\n",
+        "is_terminal": true
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "ok_empty"
+        }
+      }
+    },
+    {
+      "id": "gap_process_secret_tracker",
+      "construct": {
+        "type": "process_claude_line",
+        "line_text": "{\"type\":\"user\",\"uuid\":\"r1\"}\n",
+        "is_terminal": true,
+        "secret_tracker": true
+      },
+      "expected": {
+        "pin": {
+          "skipped": true
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    }
+  ]
+}
