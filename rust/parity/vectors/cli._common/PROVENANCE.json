@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic argparse and stdin fixtures for sesslint.cli._common helper parity.",
+  "generator": "rust/parity/vectors/cli._common/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-common-load-baseline-set: _load_baseline_arg imports sesslint.baseline.load_baseline when --baseline is set; Rust returns LOAD_BASELINE_UNAVAILABLE (not Python baseline I/O).",
+    "GAP-common-write-baseline-set: _write_baseline_arg imports sesslint.baseline.write_baseline and uses CliContext.info when --write-baseline is set; Rust returns WRITE_BASELINE_UNAVAILABLE.",
+    "GAP-common-internal-error-json: _handle_internal_error json mode prints build_internal_error_envelope to stdout; Rust returns BUILD_INTERNAL_ERROR_ENVELOPE_UNAVAILABLE."
+  ]
+}
