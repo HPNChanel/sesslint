@@ -1,0 +1,582 @@
+{
+  "known_parity_gaps": [
+    "GAP-identical-duplicate-drop-affected-region: affected_region_identical_duplicate_drop in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not cover a region result.",
+    "GAP-identical-duplicate-drop-planner: api.plan, api.repair, and planner.plan are not executed. No plan, fingerprint, or fixture diff is stored.",
+    "GAP-identical-duplicate-drop-payload-fingerprint: mappings without a non-empty content_hash string are not pinned. test_drop_fails_closed_on_content_drift and fixtures/repair/t04_identical_duplicate_drop/source.jsonl stay not_applicable."
+  ],
+  "module": "sesslint.repair.recipes_conservative",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipe": "identical-duplicate-drop",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "vectors": [
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "x"
+          },
+          {
+            "id": "x"
+          },
+          {
+            "id": "x"
+          },
+          {
+            "id": "x"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            1,
+            2
+          ],
+          "variant": "conflicting-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": 1,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: finding variant is not identical-duplicate",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_conflicting_variant"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": null,
+        "params_kind": "not_mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: finding variant is not identical-duplicate",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_params_not_mapping"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: record_indexes missing",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_record_indexes_missing"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": "01",
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: record_indexes missing",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_record_indexes_string"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": true,
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: record_indexes missing",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_record_indexes_bool"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            true,
+            false
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_bool_indexes"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            0
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_duplicate_index"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "a",
+            "kind": "message"
+          },
+          {
+            "id": "b",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            -1,
+            0
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: occurrence index out of bounds",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_negative_index"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "only",
+            "kind": "message"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            1
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: occurrence index out of bounds",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_out_of_bounds"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "c0",
+            "kind": "checkpoint"
+          },
+          {
+            "id": "c1",
+            "kind": "checkpoint"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            1
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: cannot drop boundary kind 'checkpoint'",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_boundary_checkpoint"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "id": "b0",
+            "kind": "compaction_boundary"
+          },
+          {
+            "id": "b1",
+            "kind": "compaction_boundary"
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            1
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: cannot drop boundary kind 'compaction_boundary'",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_boundary_compaction"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "content_hash": "hash-a",
+            "id": "e",
+            "kind": "message",
+            "parent_id": null,
+            "seq": 0
+          },
+          {
+            "content_hash": "hash-a",
+            "id": "e",
+            "kind": "checkpoint",
+            "parent_id": null,
+            "seq": 1
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            1
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: kind mismatch at occurrence 1 ('checkpoint' != 'message')",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_kind_mismatch"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "content_hash": "hash-a",
+            "id": "e",
+            "kind": "message",
+            "parent_id": null,
+            "seq": 0
+          },
+          {
+            "content_hash": "hash-b",
+            "id": "e",
+            "kind": "message",
+            "parent_id": null,
+            "seq": 1
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            1
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: content drift at occurrence 1",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_content_hash_drift"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "content_hash": "hash-a",
+            "id": "e",
+            "kind": "message",
+            "parent_id": null,
+            "seq": 0
+          },
+          {
+            "content_hash": "hash-a",
+            "id": "f",
+            "kind": "message",
+            "parent_id": null,
+            "seq": 1
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            0,
+            1
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "error_type": "PreconditionFailed",
+          "message": "identical-duplicate-drop: event id drift at occurrence 1",
+          "mode": "precondition"
+        }
+      },
+      "id": "drop_refusal_id_drift"
+    },
+    {
+      "construct": {
+        "events": [
+          {
+            "content_hash": "hash-a",
+            "id": "e",
+            "kind": "message",
+            "parent_id": null,
+            "seq": 0
+          },
+          {
+            "content_hash": "hash-m",
+            "id": "m",
+            "kind": "message",
+            "parent_id": "e",
+            "seq": 1
+          },
+          {
+            "content_hash": "hash-a",
+            "id": "e",
+            "kind": "message",
+            "parent_id": "e",
+            "seq": 3
+          }
+        ],
+        "fn": "apply_identical_duplicate_drop",
+        "params": {
+          "record_indexes": [
+            2,
+            0
+          ],
+          "variant": "identical-duplicate"
+        },
+        "params_kind": "mapping",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": null,
+        "type": "apply"
+      },
+      "expected": {
+        "mode": "comparable",
+        "pin": {
+          "events": [
+            {
+              "content_hash": "hash-a",
+              "id": "e",
+              "kind": "message",
+              "parent_id": null,
+              "seq": 0
+            },
+            {
+              "content_hash": "hash-m",
+              "id": "m",
+              "kind": "message",
+              "parent_id": "e",
+              "seq": 1
+            }
+          ],
+          "mode": "ok"
+        }
+      },
+      "id": "drop_keeps_earliest_identical"
+    }
+  ]
+}

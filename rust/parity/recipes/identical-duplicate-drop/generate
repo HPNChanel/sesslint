@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""Pin identical-duplicate-drop refusals from one git commit (stdlib only).
+
+Expected values are the return or PreconditionFailed of the pin blob.
+This script subprocesses only `git show` of that commit, writes each blob
+to a temp file, and execs it. It does not import the checkout package.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "identical-duplicate-drop"
+PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.repair.recipes_conservative"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_t04_recipes.py"
+GENERATOR = "rust/parity/recipes/identical-duplicate-drop/generate"
+FIXTURE = "fixtures/repair/t04_identical_duplicate_drop/source.jsonl"
+SEAM_SENTENCE = "sesslint.policy.abstention.AffectedRegion is not available"
+SBP = re.compile(r"sbp_[0-9a-f]{40}")
+PINNED_TEST_COUNT = 14
+
+GAPS = [
+    (
+        "GAP-identical-duplicate-drop-affected-region: "
+        "affected_region_identical_duplicate_drop in the pin returns "
+        "sesslint.policy.abstention.AffectedRegion. This set does not cover "
+        "a region result."
+    ),
+    (
+        "GAP-identical-duplicate-drop-planner: api.plan, api.repair, and "
+        "planner.plan are not executed. No plan, fingerprint, or fixture "
+        "diff is stored."
+    ),
+    (
+        "GAP-identical-duplicate-drop-payload-fingerprint: mappings without "
+        "a non-empty content_hash string are not pinned. "
+        "test_drop_fails_closed_on_content_drift and "
+        f"{FIXTURE} stay not_applicable."
+    ),
+]
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+
+class RefuseCheckout(importlib.abc.MetaPathFinder):
+    """Block every sesslint import that was not exec'd from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: Any,
+        target: Any = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise ModuleNotFoundError(f"refusing checkout import {fullname}")
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if not rev_path.startswith(f"{PIN}:") or "02694d5" in rev_path:
+        raise SystemExit(f"refusing git show {rev_path}")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def load_mod() -> Any:
+    sys.meta_path.insert(0, RefuseCheckout())
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_conservative.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PIN}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    blob = git_show_bytes(f"{PIN}:src/sesslint/repair/recipes_conservative.py")
+    mod = exec_blob(blob, MODULE)
+    if mod.apply_identical_duplicate_drop.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    return mod
+
+
+def message(kind: str, content_hash: str, event_id: str, seq: int, parent: str | None) -> dict[str, Any]:
+    return {
+        "id": event_id,
+        "kind": kind,
+        "content_hash": content_hash,
+        "parent_id": parent,
+        "seq": seq,
+    }
+
+
+def bare(event_id: str, kind: str = "message") -> dict[str, Any]:
+    return {"id": event_id, "kind": kind}
+
+
+CASES: list[dict[str, Any]] = [
+    {
+        "id": "drop_refusal_conflicting_variant",
+        "events": [{"id": "x"}, {"id": "x"}, {"id": "x"}, {"id": "x"}],
+        "target_index": 1,
+        "params_kind": "mapping",
+        "params": {
+            "variant": "conflicting-duplicate",
+            "record_indexes": [1, 2],
+        },
+    },
+    {
+        "id": "drop_refusal_params_not_mapping",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "not_mapping",
+        "params": None,
+    },
+    {
+        "id": "drop_refusal_record_indexes_missing",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate"},
+    },
+    {
+        "id": "drop_refusal_record_indexes_string",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": "01"},
+    },
+    {
+        "id": "drop_refusal_record_indexes_bool",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": True},
+    },
+    {
+        "id": "drop_refusal_bool_indexes",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {
+            "variant": "identical-duplicate",
+            "record_indexes": [True, False],
+        },
+    },
+    {
+        "id": "drop_refusal_duplicate_index",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 0]},
+    },
+    {
+        "id": "drop_refusal_negative_index",
+        "events": [bare("a"), bare("b")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [-1, 0]},
+    },
+    {
+        "id": "drop_refusal_out_of_bounds",
+        "events": [bare("only")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 1]},
+    },
+    {
+        "id": "drop_refusal_boundary_checkpoint",
+        "events": [bare("c0", "checkpoint"), bare("c1", "checkpoint")],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 1]},
+    },
+    {
+        "id": "drop_refusal_boundary_compaction",
+        "events": [
+            bare("b0", "compaction_boundary"),
+            bare("b1", "compaction_boundary"),
+        ],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 1]},
+    },
+    {
+        "id": "drop_refusal_kind_mismatch",
+        "events": [
+            message("message", "hash-a", "e", 0, None),
+            message("checkpoint", "hash-a", "e", 1, None),
+        ],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 1]},
+    },
+    {
+        "id": "drop_refusal_content_hash_drift",
+        "events": [
+            message("message", "hash-a", "e", 0, None),
+            message("message", "hash-b", "e", 1, None),
+        ],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 1]},
+    },
+    {
+        "id": "drop_refusal_id_drift",
+        "events": [
+            message("message", "hash-a", "e", 0, None),
+            message("message", "hash-a", "f", 1, None),
+        ],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [0, 1]},
+    },
+    {
+        "id": "drop_keeps_earliest_identical",
+        "events": [
+            message("message", "hash-a", "e", 0, None),
+            message("message", "hash-m", "m", 1, "e"),
+            message("message", "hash-a", "e", 3, "e"),
+        ],
+        "target_index": None,
+        "params_kind": "mapping",
+        "params": {"variant": "identical-duplicate", "record_indexes": [2, 0]},
+    },
+]
+
+
+def make_step(cons: Any, case: dict[str, Any]) -> Any:
+    if case["params_kind"] == "mapping":
+        params: Any = copy.deepcopy(case["params"])
+    elif case["params_kind"] == "not_mapping":
+        params = "not-a-mapping"
+    else:
+        raise SystemExit(f"bad params_kind {case['params_kind']}")
+    return cons.PlanStep(
+        seq=0,
+        recipe="identical-duplicate-drop",
+        target_finding_fp="fp",
+        target_index=case["target_index"],
+        params=params,
+    )
+
+
+def run_case(cons: Any, case: dict[str, Any]) -> dict[str, Any]:
+    events = copy.deepcopy(case["events"])
+    step = make_step(cons, case)
+    try:
+        out = cons.apply_identical_duplicate_drop(events, step)
+    except cons.PreconditionFailed as exc:
+        return {
+            "mode": "comparable",
+            "pin": {
+                "mode": "precondition",
+                "error_type": "PreconditionFailed",
+                "message": str(exc),
+            },
+        }
+    return {"mode": "comparable", "pin": {"mode": "ok", "events": out}}
+
+
+def construct_of(case: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "apply",
+        "fn": "apply_identical_duplicate_drop",
+        "recipe": "identical-duplicate-drop",
+        "target_finding_fp": "fp",
+        "target_index": case["target_index"],
+        "params_kind": case["params_kind"],
+        "params": case["params"],
+        "events": case["events"],
+    }
+
+
+def test_bodies(text: str) -> list[tuple[str, str]]:
+    matches = list(re.finditer(r"^def (test_\w+)\(", text, re.M))
+    found: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        found.append((match.group(1), text[start:end]))
+    return found
+
+
+def require_entire_conflicting_test(body: str) -> None:
+    if body.count("pytest.raises") != 1:
+        raise SystemExit("conflicting-variant test is not a single raises")
+    if re.search(r"^\s*assert ", body, re.M):
+        raise SystemExit("conflicting-variant test has another assert")
+    needles = (
+        "apply_identical_duplicate_drop",
+        "PreconditionFailed",
+        "conflicting-duplicate",
+        '[{"id": "x"}] * 4',
+        '"record_indexes": [1, 2]',
+        "target_index=1",
+        'target_finding_fp="fp"',
+        'recipe="identical-duplicate-drop"',
+    )
+    for needle in needles:
+        if needle not in body:
+            raise SystemExit(f"pinned test missing {needle}")
+    if "payload" in body or "api." in body:
+        raise SystemExit("conflicting-variant test is no longer one apply refusal")
+
+
+def assertion_count(body: str) -> int:
+    return body.count("pytest.raises") + len(re.findall(r"^\s*assert ", body, re.M))
+
+
+def classify(name: str, body: str, vector_ids: set[str]) -> dict[str, Any]:
+    key = f"{TEST_FILE}::{name}"
+    if name == "test_drop_fails_closed_on_conflicting_variant":
+        require_entire_conflicting_test(body)
+        vid = "drop_refusal_conflicting_variant"
+        if vid not in vector_ids:
+            raise SystemExit("missing covered vector")
+        return {
+            "test": key,
+            "column": "column_0",
+            "status": "covered",
+            "vector_id": vid,
+            "note": "",
+        }
+    if "payload" in body and "apply_identical_duplicate_drop" in body:
+        note = (
+            "single apply_identical_duplicate_drop refusal on payload events "
+            "without content_hash; that failure mode is not the content_hash "
+            "refusal in this set"
+        )
+    elif "apply_seq_renumber" in body and "apply_identical_duplicate_drop" not in body:
+        note = "apply_seq_renumber multi-assert sweep; different function"
+    elif "api.plan" in body or "api.repair" in body or "planner_plan(" in body:
+        if assertion_count(body) > 1:
+            note = "multi-assert planner or repair sweep; planner seam remains"
+        else:
+            note = (
+                "planner or repair entry point; seam remains, no plan or "
+                "fixture diff is stored"
+            )
+    else:
+        raise SystemExit(f"unclassified pinned test {name}")
+    return {
+        "test": key,
+        "column": "column_0",
+        "status": "not_applicable",
+        "vector_id": None,
+        "note": note,
+    }
+
+
+def dump(doc: Any) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    if "\r" in text:
+        raise SystemExit("CR in JSON")
+    if SEAM_SENTENCE in text:
+        raise SystemExit("rust seam sentence stored in JSON")
+    if SBP.search(text):
+        raise SystemExit("sbp_ token in JSON")
+    if "FOR_WORK" in text or "sesslint-wt" in text or re.search(r"[A-Za-z]:[\\/]", text):
+        raise SystemExit("absolute path in JSON")
+    return text
+
+
+def write(name: str, text: str) -> None:
+    path = OUT / name
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src")}
+    sys.path[:] = [item for item in sys.path if item not in blocked and item not in {"", "."}]
+    OUT.mkdir(parents=True, exist_ok=True)
+    cons = load_mod()
+    vectors: list[dict[str, Any]] = []
+    for case in CASES:
+        vectors.append(
+            {
+                "id": case["id"],
+                "construct": construct_of(case),
+                "expected": run_case(cons, case),
+            }
+        )
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PIN,
+        "recipe": "identical-duplicate-drop",
+        "known_parity_gaps": GAPS,
+        "vectors": vectors,
+    }
+    payload = dump(doc)
+    write("vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    ids = {item["id"] for item in vectors}
+    test_text = git_show_bytes(f"{PIN}:{TEST_FILE}").decode("utf-8")
+    bodies = test_bodies(test_text)
+    if len(bodies) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(bodies)}")
+    rows = [classify(name, body, ids) for name, body in bodies]
+    covered = sum(1 for row in rows if row["status"] == "covered")
+    skipped = sum(1 for row in rows if row["status"] == "not_applicable")
+    if covered + skipped != len(rows):
+        raise SystemExit("coverage status gap")
+    cov = {
+        "module": MODULE,
+        "python_commit": PIN,
+        "test_file": TEST_FILE,
+        "covered_count": covered,
+        "not_applicable_count": skipped,
+        "rows": rows,
+    }
+    write("coverage.json", dump(cov))
+    prov = {
+        "contains_real_data": False,
+        "description": "Synthetic identical-duplicate-drop refusal parity vectors.",
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PIN,
+        "known_parity_gaps": GAPS,
+    }
+    write("PROVENANCE.json", dump(prov))
+    man = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PIN,
+        "recipe": "identical-duplicate-drop",
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": GAPS,
+    }
+    write("manifest.json", dump(man))
+    print(len(vectors), digest, covered, skipped)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
