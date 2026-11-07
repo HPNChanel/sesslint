@@ -1,0 +1,796 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.canonical",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "canonical_py_sha256": "1b47487f9b63697087937c009c2222dccb9a9e3131f4e807733b30bac0bbe28e",
+  "canonical_rs_sha256": "5fdccf9ac434b2f5447573a858545f0bf97fa03a492fea5766b84932cdb06be5",
+  "known_parity_gaps": [
+    "GAP-canonical-secret-scan-tracker: load_canonical and load_canonical_session call SecretScanTracker first. Rust returns the hygiene seam and does not read path, limits, or bytes. The harness asserts that gap and does not treat pin success as equal to the seam.",
+    "GAP-canonical-decode-json: load_canonical_body stops at sesslint.io.decode_json_dupaware after size, NUL, and empty gates that need the fingerprint codec. When the pin reaches JSON decoding, expected records pin outcomes but rust_assertion is gap_decode_json.",
+    "GAP-canonical-event-to-dict: event_to_dict on values without to_dict needs sesslint._canonical_codec.normalize_canonical — not asserted in this card.",
+    "GAP-canonical-dump-events: dump_canonical for SessionEvent values without to_dict hits the same normalize seam before bytes are returned.",
+    "unicode_version_digits: Python str.isdigit accepts Unicode decimal digits; Rust normalize_version keeps a leading v before non-ASCII digits — documented, no required vector."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "CRITICAL_KEYS",
+          "CRITICAL_TOP_KEYS",
+          "CanonicalEvent",
+          "EventList",
+          "KNOWN_EVENT_KEYS",
+          "KNOWN_TOP_KEYS",
+          "REQUIRED_EVENT_KEYS",
+          "SUPPORTED_CANONICAL_VERSIONS",
+          "SourceMetadata",
+          "detect_canonical",
+          "dump_canonical",
+          "event_to_dict",
+          "load_canonical",
+          "load_canonical_session",
+          "normalize_version"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "supported_canonical_versions": [
+          "1",
+          "1.0",
+          "1.0.0"
+        ],
+        "required_event_keys": [
+          "id",
+          "parent_id",
+          "kind",
+          "ts"
+        ],
+        "known_top_keys": [
+          "created_at",
+          "events",
+          "header",
+          "metadata",
+          "schema",
+          "schema_version",
+          "session_id",
+          "source",
+          "title",
+          "version"
+        ],
+        "known_event_keys": [
+          "actor",
+          "agent_id",
+          "branch_id",
+          "content_hash",
+          "correlation_id",
+          "execution_state",
+          "id",
+          "interaction_id",
+          "kind",
+          "original_id",
+          "parent_id",
+          "payload",
+          "seq",
+          "side_effects",
+          "source_adapter",
+          "source_line",
+          "source_location",
+          "source_record_hash",
+          "ts"
+        ],
+        "critical_keys": [
+          "call_id",
+          "checkpoint",
+          "checkpoints",
+          "correlation_id",
+          "critical_checkpoint",
+          "critical_graph",
+          "critical_ordering",
+          "id",
+          "kind",
+          "linkage_override",
+          "parent_id",
+          "prev_id",
+          "replay_barrier",
+          "tool_call_id",
+          "tool_use_id",
+          "type",
+          "unknown_critical",
+          "unknown_critical_field"
+        ],
+        "critical_top_keys": [
+          "checkpoints",
+          "critical_checkpoint",
+          "critical_graph",
+          "critical_ordering",
+          "linkage_override",
+          "replay_barrier",
+          "unknown_critical",
+          "unknown_critical_field"
+        ],
+        "default_max_file_bytes": 104857600
+      }
+    },
+    {
+      "id": "normalize_trim",
+      "construct": {
+        "type": "normalize_version",
+        "text": "  1.0.0  "
+      },
+      "expected": {
+        "text": "1.0.0"
+      }
+    },
+    {
+      "id": "normalize_v_prefix",
+      "construct": {
+        "type": "normalize_version",
+        "text": "v1.2.3"
+      },
+      "expected": {
+        "text": "1.2.3"
+      }
+    },
+    {
+      "id": "normalize_nbsp_v",
+      "construct": {
+        "type": "normalize_version",
+        "text": "  V1\u001c "
+      },
+      "expected": {
+        "text": "1"
+      }
+    },
+    {
+      "id": "normalize_empty",
+      "construct": {
+        "type": "normalize_version",
+        "text": ""
+      },
+      "expected": {
+        "text": ""
+      }
+    },
+    {
+      "id": "normalize_v_alone",
+      "construct": {
+        "type": "normalize_version",
+        "text": "v"
+      },
+      "expected": {
+        "text": "v"
+      }
+    },
+    {
+      "id": "normalize_vx",
+      "construct": {
+        "type": "normalize_version",
+        "text": "VX"
+      },
+      "expected": {
+        "text": "vx"
+      }
+    },
+    {
+      "id": "normalize_version_word",
+      "construct": {
+        "type": "normalize_version",
+        "text": "version"
+      },
+      "expected": {
+        "text": "version"
+      }
+    },
+    {
+      "id": "detect_empty",
+      "construct": {
+        "type": "detect_canonical",
+        "bytes_hex": "",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_schema_v1",
+      "construct": {
+        "type": "detect_canonical",
+        "bytes_hex": "7b22736368656d61223a22736573736c696e742e73657373696f6e2f7631222c2276657273696f6e223a317d",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_schema_version_key",
+      "construct": {
+        "type": "detect_canonical",
+        "bytes_hex": "7b22736368656d615f76657273696f6e223a2022736573736c696e742e73657373696f6e2f7631222c20226576656e7473223a205b5d7d",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_partial_v2",
+      "construct": {
+        "type": "detect_canonical",
+        "bytes_hex": "7b22736368656d61223a2022736573736c696e742e73657373696f6e2f7632222c202276657273696f6e223a20327d",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 0.6
+      }
+    },
+    {
+      "id": "detect_unrelated",
+      "construct": {
+        "type": "detect_canonical",
+        "bytes_hex": "7b226974656d73223a205b7b226964223a202231222c2022726f6c65223a202275736572227d5d7d",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_substring",
+      "construct": {
+        "type": "detect_canonical",
+        "bytes_hex": "73656520736573736c696e742e73657373696f6e2068657265",
+        "filename": "x"
+      },
+      "expected": {
+        "score": 0.6
+      }
+    },
+    {
+      "id": "classify_events_null",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "events"
+              },
+              "value": {
+                "kind": "null"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "is_session_doc": true
+      }
+    },
+    {
+      "id": "classify_events_identity",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "events"
+              },
+              "value": {
+                "kind": "list",
+                "items": []
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "schema_version"
+              },
+              "value": {
+                "kind": "str",
+                "text": "x"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "session_id"
+              },
+              "value": {
+                "kind": "str",
+                "text": "s"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "is_session_doc": true
+      }
+    },
+    {
+      "id": "classify_schema_only",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "schema"
+              },
+              "value": {
+                "kind": "str",
+                "text": "s"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "is_session_doc": true
+      }
+    },
+    {
+      "id": "classify_version_only",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "version"
+              },
+              "value": {
+                "kind": "int",
+                "value": 1
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "is_session_doc": true
+      }
+    },
+    {
+      "id": "classify_schema_blocked",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "schema"
+              },
+              "value": {
+                "kind": "str",
+                "text": "s"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "schema_version"
+              },
+              "value": {
+                "kind": "str",
+                "text": "v"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "is_session_doc": false
+      }
+    },
+    {
+      "id": "classify_empty_map",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "map",
+          "entries": []
+        }
+      },
+      "expected": {
+        "is_session_doc": false
+      }
+    },
+    {
+      "id": "classify_list",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "list",
+          "items": []
+        }
+      },
+      "expected": {
+        "is_session_doc": true
+      }
+    },
+    {
+      "id": "classify_string",
+      "construct": {
+        "type": "classify_session_doc",
+        "doc": {
+          "kind": "str",
+          "text": "nope"
+        }
+      },
+      "expected": {
+        "is_session_doc": true
+      }
+    },
+    {
+      "id": "label_bytes",
+      "construct": {
+        "type": "canonical_source_label",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "label": "<bytes>"
+      }
+    },
+    {
+      "id": "label_str_dot",
+      "construct": {
+        "type": "canonical_source_label",
+        "source": {
+          "kind": "str",
+          "text": "."
+        }
+      },
+      "expected": {
+        "label": "."
+      }
+    },
+    {
+      "id": "label_str_slash",
+      "construct": {
+        "type": "canonical_source_label",
+        "source": {
+          "kind": "str",
+          "text": "synth/leaf"
+        }
+      },
+      "expected": {
+        "label": "synth/leaf"
+      }
+    },
+    {
+      "id": "label_str_backslash",
+      "construct": {
+        "type": "canonical_source_label",
+        "source": {
+          "kind": "str",
+          "text": "synth\\leaf"
+        }
+      },
+      "expected": {
+        "label": "synth/leaf"
+      }
+    },
+    {
+      "id": "label_stream_missing",
+      "construct": {
+        "type": "canonical_source_label",
+        "source": {
+          "kind": "stream_name"
+        }
+      },
+      "expected": {
+        "label": "<stream>"
+      }
+    },
+    {
+      "id": "label_stream_name",
+      "construct": {
+        "type": "canonical_source_label",
+        "source": {
+          "kind": "stream_name",
+          "text": "a\\.\\b"
+        }
+      },
+      "expected": {
+        "label": "a/./b"
+      }
+    },
+    {
+      "id": "safe_type_str",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "str",
+          "text": "abc"
+        }
+      },
+      "expected": {
+        "text": "<str:len=3>"
+      }
+    },
+    {
+      "id": "safe_type_none",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "null"
+        }
+      },
+      "expected": {
+        "text": "<NoneType>"
+      }
+    },
+    {
+      "id": "safe_type_list",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "<list:len=2>"
+      }
+    },
+    {
+      "id": "safe_type_dict",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "map",
+          "entries": []
+        }
+      },
+      "expected": {
+        "text": "<dict:len=0>"
+      }
+    },
+    {
+      "id": "gap_load_minimal_bytes",
+      "construct": {
+        "type": "load_canonical",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b0a202022637265617465645f6174223a2022323032362d30392d30355431323a30303a30305a222c0a2020226576656e7473223a205b0a202020207b0a202020202020226163746f72223a202275736572222c0a202020202020226964223a20226576745f303031222c0a202020202020226b696e64223a20226d657373616765222c0a20202020202022706172656e745f6964223a206e756c6c2c0a202020202020227061796c6f6164223a207b0a20202020202020202274657874223a202268656c6c6f220a2020202020207d2c0a20202020202022736571223a20302c0a202020202020227473223a2022323032362d30392d30355431323a30303a30305a220a202020207d2c0a202020207b0a202020202020226163746f72223a2022617373697374616e74222c0a202020202020226964223a20226576745f303032222c0a202020202020226b696e64223a20226d657373616765222c0a20202020202022706172656e745f6964223a20226576745f303031222c0a202020202020227061796c6f6164223a207b0a20202020202020202274657874223a2022776f726c64220a2020202020207d2c0a20202020202022736571223a20312c0a202020202020227473223a2022323032362d30392d30355431323a30303a30315a220a202020207d0a20205d2c0a202022736368656d615f76657273696f6e223a2022736573736c696e742e73657373696f6e2f7631222c0a20202273657373696f6e5f6964223a202263616e6f6e6963616c2d73657373696f6e222c0a202022736f75726365223a207b0a2020202022666f726d6174223a202263616e6f6e6963616c220a20207d2c0a20202276657273696f6e223a20310a7d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 2,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_load_empty_fixture",
+      "construct": {
+        "type": "load_canonical",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b0a202022637265617465645f6174223a2022323032362d30392d30355431323a30303a30305a222c0a2020226576656e7473223a205b5d2c0a202022736368656d615f76657273696f6e223a2022736573736c696e742e73657373696f6e2f7631222c0a20202273657373696f6e5f6964223a202263616e6f6e6963616c2d656d7074792d73657373696f6e222c0a202022736f75726365223a207b0a2020202022666f726d6174223a202263616e6f6e6963616c220a20207d2c0a20202276657273696f6e223a20310a7d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_load_bad_schema",
+      "construct": {
+        "type": "load_canonical",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d61223a202277726f6e672e736368656d612f7631222c202276657273696f6e223a20312c2022736f75726365223a207b22666f726d6174223a202263616e6f6e6963616c227d2c20226576656e7473223a205b5d7d"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_load_decorative",
+      "construct": {
+        "type": "load_canonical",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d61223a2022736573736c696e742e73657373696f6e2f7631222c202276657273696f6e223a20312c2022736f75726365223a207b22666f726d6174223a202263616e6f6e6963616c227d2c20226576656e7473223a205b7b226163746f72223a202275736572222c20226964223a20226576745f73796e5f303031222c20226b696e64223a20226d657373616765222c2022706172656e745f6964223a206e756c6c2c20227061796c6f6164223a207b2274657874223a202268656c6c6f227d2c2022736571223a20302c20227473223a2022323032362d30392d30355431323a30303a30305a227d5d7d"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_load_nul",
+      "construct": {
+        "type": "load_canonical",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d61223a22736573736c696e742e73657373696f6e2f7631222c2276657273696f6e223a312c226576656e7473223a5b5d7d00"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_session_minimal",
+      "construct": {
+        "type": "load_canonical_session",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b0a202022637265617465645f6174223a2022323032362d30392d30355431323a30303a30305a222c0a2020226576656e7473223a205b0a202020207b0a202020202020226163746f72223a202275736572222c0a202020202020226964223a20226576745f303031222c0a202020202020226b696e64223a20226d657373616765222c0a20202020202022706172656e745f6964223a206e756c6c2c0a202020202020227061796c6f6164223a207b0a20202020202020202274657874223a202268656c6c6f220a2020202020207d2c0a20202020202022736571223a20302c0a202020202020227473223a2022323032362d30392d30355431323a30303a30305a220a202020207d2c0a202020207b0a202020202020226163746f72223a2022617373697374616e74222c0a202020202020226964223a20226576745f303032222c0a202020202020226b696e64223a20226d657373616765222c0a20202020202022706172656e745f6964223a20226576745f303031222c0a202020202020227061796c6f6164223a207b0a20202020202020202274657874223a2022776f726c64220a2020202020207d2c0a20202020202022736571223a20312c0a202020202020227473223a2022323032362d30392d30355431323a30303a30315a220a202020207d0a20205d2c0a202022736368656d615f76657273696f6e223a2022736573736c696e742e73657373696f6e2f7631222c0a20202273657373696f6e5f6964223a202263616e6f6e6963616c2d73657373696f6e222c0a202022736f75726365223a207b0a2020202022666f726d6174223a202263616e6f6e6963616c220a20207d2c0a20202276657273696f6e223a20310a7d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 2,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_session_decorative",
+      "construct": {
+        "type": "load_canonical_session",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d61223a2022736573736c696e742e73657373696f6e2f7631222c202276657273696f6e223a20312c2022736f75726365223a207b22666f726d6174223a202263616e6f6e6963616c227d2c20226576656e7473223a205b7b226163746f72223a202275736572222c20226964223a20226576745f73796e5f303031222c20226b696e64223a20226d657373616765222c2022706172656e745f6964223a206e756c6c2c20227061796c6f6164223a207b2274657874223a202268656c6c6f227d2c2022736571223a20302c20227473223a2022323032362d30392d30355431323a30303a30305a227d5d7d"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "body_missing_path",
+      "construct": {
+        "type": "load_canonical_body",
+        "source": {
+          "kind": "str",
+          "text": "syn/parity-missing.json"
+        }
+      },
+      "expected": {
+        "message": "Session file not found: syn\\parity-missing.json"
+      }
+    },
+    {
+      "id": "body_whitespace_only",
+      "construct": {
+        "type": "load_canonical_body",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "202020"
+        }
+      },
+      "expected": {
+        "pin": {
+          "mode": "ok"
+        },
+        "rust_assertion": {
+          "mode": "gap_fingerprint_codec"
+        }
+      }
+    },
+    {
+      "id": "body_empty_object",
+      "construct": {
+        "type": "load_canonical_body",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b7d"
+        }
+      },
+      "expected": {
+        "pin": {
+          "mode": "ok"
+        },
+        "rust_assertion": {
+          "mode": "gap_decode_json"
+        }
+      }
+    },
+    {
+      "id": "body_nul_gate",
+      "construct": {
+        "type": "load_canonical_body",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b22736368656d61223a22736573736c696e742e73657373696f6e2f7631222c2276657273696f6e223a312c226576656e7473223a5b5d7d00"
+        }
+      },
+      "expected": {
+        "pin": {
+          "mode": "ok"
+        },
+        "rust_assertion": {
+          "mode": "gap_fingerprint_codec"
+        }
+      }
+    }
+  ]
+}
