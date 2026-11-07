@@ -1,18 +1,29 @@
-//! Deterministic repair-plan values through loss accounting (TASK-018).
+//! Deterministic repair-plan values through torn compaction loss (TASK-018).
 //!
-//! Port of `src/sesslint/repair/planner.py` lines 1–270
+//! Port of `src/sesslint/repair/planner.py` lines 1–420
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before `RepairPlan`. No I/O. Invalid input returns [`PlannerError`]
-//! and does not panic. Type errors do not echo the rejected value.
+//! Stops before `plan`. No I/O. Invalid input returns an error and does not
+//! panic. Type errors do not echo the rejected value.
 //!
 //! [`PlanStep::try_new`] checks loss-class names in insertion order.
 //! [`PlanStep::from_dict`], [`Blocked::from_dict`], and [`Loss::from_dict`]
 //! keep the pin's first-failure order. `params` and `loss` stay in insertion
 //! order. A `BTreeMap` would sort those keys, so they are `Vec` pairs.
+//!
+//! [`RepairPlan::from_dict`] recomputes a missing or empty fingerprint through
+//! [`compute_plan_fingerprint`] with `policy` `None`.
+//! [`compute_events_source_hash`] does not hash a non-empty sequence.
 
 use std::error::Error;
 use std::fmt;
 
+use codec::canonical_codec::{CanonicalError, ObjectKey, Value};
+use model::canonical::{canonical_bytes, CanonicalUnavailable, SessionEvent};
+use model::events::{event_id, EventError, EventMapping, EventValue, PYTHON_STR_UNREPRESENTABLE};
+use model::finding::{DictValue, Finding};
+
+use crate::fingerprint::compute_plan_fingerprint;
+use crate::preconditions::{PreconditionError, _find_torn_compaction_dropped_indices};
 use crate::refusals::{refusal_rationale_for, RefusalError, RefusalRationale};
 
 /// Python: `MAX_STEPS`.
@@ -666,6 +677,608 @@ impl Loss {
     }
 }
 
+/// `hashlib.sha256` is not linked in this crate.
+pub const HASHLIB_SHA256_UNAVAILABLE: &str = "hashlib.sha256 is not available";
+
+/// Failure from [`RepairPlan::from_dict`].
+///
+/// [`Display`](fmt::Display) is the inner message only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlanParseError {
+    /// Python `ValueError` from plan parsing.
+    Plan(PlannerError),
+    /// [`compute_plan_fingerprint`] failed. The codec error is unchanged.
+    Fingerprint(CanonicalError),
+}
+
+impl fmt::Display for PlanParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Plan(error) => error.fmt(formatter),
+            Self::Fingerprint(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for PlanParseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Plan(error) => Some(error),
+            Self::Fingerprint(error) => Some(error),
+        }
+    }
+}
+
+impl From<PlannerError> for PlanParseError {
+    fn from(error: PlannerError) -> Self {
+        Self::Plan(error)
+    }
+}
+
+impl From<CanonicalError> for PlanParseError {
+    fn from(error: CanonicalError) -> Self {
+        Self::Fingerprint(error)
+    }
+}
+
+/// Fields for [`RepairPlan::new`].
+///
+/// Python dataclass order: `source_hash`, `profile`, `steps`, `blocked`,
+/// `loss_accounting`, `fingerprint`, `version`, `policy`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairPlanFields {
+    pub source_hash: String,
+    pub profile: String,
+    pub steps: Vec<PlanStep>,
+    pub blocked: Vec<Blocked>,
+    pub loss_accounting: Loss,
+    pub fingerprint: String,
+    pub version: String,
+    pub policy: String,
+}
+
+/// Complete deterministic dry-run proposal for session repair.
+///
+/// Python: `RepairPlan`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairPlan {
+    source_hash: String,
+    profile: String,
+    steps: Vec<PlanStep>,
+    blocked: Vec<Blocked>,
+    loss_accounting: Loss,
+    fingerprint: String,
+    version: String,
+    policy: String,
+}
+
+impl RepairPlan {
+    /// Store the fields as given. This does not validate policy or profile.
+    pub fn new(fields: RepairPlanFields) -> Self {
+        Self {
+            source_hash: fields.source_hash,
+            profile: fields.profile,
+            steps: fields.steps,
+            blocked: fields.blocked,
+            loss_accounting: fields.loss_accounting,
+            fingerprint: fields.fingerprint,
+            version: fields.version,
+            policy: fields.policy,
+        }
+    }
+
+    pub fn source_hash(&self) -> &str {
+        &self.source_hash
+    }
+
+    pub fn profile(&self) -> &str {
+        &self.profile
+    }
+
+    pub fn steps(&self) -> &[PlanStep] {
+        &self.steps
+    }
+
+    pub fn blocked(&self) -> &[Blocked] {
+        &self.blocked
+    }
+
+    pub fn loss_accounting(&self) -> &Loss {
+        &self.loss_accounting
+    }
+
+    pub fn fingerprint(&self) -> &str {
+        &self.fingerprint
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub fn policy(&self) -> &str {
+        &self.policy
+    }
+
+    /// Python: `RepairPlan.total_lost`.
+    pub fn total_lost(&self) -> i128 {
+        self.loss_accounting.total_lost()
+    }
+
+    /// Python: `RepairPlan.total_kept`.
+    pub fn total_kept(&self) -> i128 {
+        self.loss_accounting.total_kept()
+    }
+
+    /// Python: `RepairPlan.to_dict`.
+    ///
+    /// Key order is `blocked`, `fingerprint`, `loss_accounting`, `profile`,
+    /// `source_hash`, `steps`, `version`. `loss_accounting` is
+    /// [`Loss::to_dict`], which stays preview-only. When `policy` is not
+    /// exactly `"conservative"`, `policy` is appended and `total_lost` /
+    /// `total_kept` are added on that loss-accounting map copy.
+    pub fn to_dict(&self) -> Vec<(String, PlanValue)> {
+        let reveal_totals = self.policy != "conservative";
+        let mut entries = vec![
+            (
+                "blocked".to_owned(),
+                dicts_as_list(self.blocked.iter().map(Blocked::to_dict)),
+            ),
+            (
+                "fingerprint".to_owned(),
+                PlanValue::str_value(&self.fingerprint),
+            ),
+            (
+                "loss_accounting".to_owned(),
+                PlanValue::map(loss_dict_pairs(&self.loss_accounting, reveal_totals)),
+            ),
+            ("profile".to_owned(), PlanValue::str_value(&self.profile)),
+            (
+                "source_hash".to_owned(),
+                PlanValue::str_value(&self.source_hash),
+            ),
+            (
+                "steps".to_owned(),
+                dicts_as_list(self.steps.iter().map(PlanStep::to_dict)),
+            ),
+            ("version".to_owned(), PlanValue::str_value(&self.version)),
+        ];
+        if reveal_totals {
+            entries.push(("policy".to_owned(), PlanValue::str_value(&self.policy)));
+        }
+        entries
+    }
+
+    /// Python: `RepairPlan.from_dict`.
+    ///
+    /// Check order: object `"Plan"`, one-level `expected_plan` unwrap when
+    /// that value is a mapping, [`_strings`] (`source_hash`, `profile`,
+    /// `version`, `policy`, `fingerprint`), policy allowlist, non-empty
+    /// profile, `steps` and `blocked` arrays, step and blocked parsers,
+    /// [`Loss::from_dict`], then fingerprint. A present non-empty string
+    /// fingerprint is stored as given. Missing, empty, or non-string calls
+    /// [`compute_plan_fingerprint`] on the unwrapped mapping with `policy`
+    /// `None` (the pin omits the argument). [`_strings`] rejects a present
+    /// non-string before that call. Whitespace is not stripped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PlanParseError`]. A fingerprint [`CanonicalError`] is
+    /// propagated. This function does not panic.
+    pub fn from_dict(raw_data: &PlanValue) -> Result<Self, PlanParseError> {
+        let outer = _object(raw_data, "Plan")?;
+        let entries = match lookup(outer, "expected_plan") {
+            Some(PlanValue::Map(inner)) => inner.clone(),
+            _ => outer.to_vec(),
+        };
+        _strings(
+            &entries,
+            &["source_hash", "profile", "version", "policy", "fingerprint"],
+            "Plan",
+        )?;
+        let policy = plan_text(&entries, "policy", "conservative")?;
+        if policy != "conservative" && policy != "salvage" {
+            return Err(PlannerError::new("Plan policy is unsupported").into());
+        }
+        let profile = plan_text(&entries, "profile", "neutral")?;
+        if profile.is_empty() {
+            return Err(PlannerError::new("Plan profile must not be empty").into());
+        }
+        let step_items = plan_array(&entries, "steps")?;
+        let blocked_items = plan_array(&entries, "blocked")?;
+        let steps = step_items
+            .iter()
+            .map(PlanStep::from_dict)
+            .collect::<Result<Vec<_>, _>>()?;
+        let blocked = blocked_items
+            .iter()
+            .map(Blocked::from_dict)
+            .collect::<Result<Vec<_>, _>>()?;
+        let loss_owned = match lookup(&entries, "loss_accounting") {
+            Some(value) => value.clone(),
+            None => PlanValue::map(Vec::new()),
+        };
+        let loss_accounting = Loss::from_dict(&loss_owned)?;
+        let fingerprint = plan_fingerprint(&entries)?;
+        Ok(Self::new(RepairPlanFields {
+            source_hash: plan_text(&entries, "source_hash", "")?,
+            profile,
+            steps,
+            blocked,
+            loss_accounting,
+            fingerprint,
+            version: plan_text(&entries, "version", PLAN_VERSION)?,
+            policy,
+        }))
+    }
+}
+
+/// One element of [`compute_events_source_hash`].
+///
+/// Python `Sequence[Any]`. A [`SessionEvent`] has `to_canonical_bytes` and is
+/// not a mapping. [`EventMapping`] is a mapping and does not have that
+/// method. [`SourceHashEvent::Rendered`] is a successful `str(event)`.
+/// [`SourceHashEvent::Unrenderable`] is a `str(event)` failure. This file has
+/// no separate unrenderable-string error; that failure uses
+/// [`PYTHON_STR_UNREPRESENTABLE`].
+#[derive(Debug, Clone)]
+pub enum SourceHashEvent {
+    Session(Box<SessionEvent>),
+    Mapping(EventMapping),
+    Rendered(String),
+    Unrenderable,
+}
+
+/// Failure from [`compute_events_source_hash`].
+///
+/// [`Display`](fmt::Display) is the seam message only. No digest is included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceHashError {
+    /// `sesslint._canonical_codec.canonical_json_bytes` failed.
+    Canonical(CanonicalUnavailable),
+    /// Bytes were available and `hashlib.sha256` is not linked.
+    Hashlib,
+    /// `str(event)` failed before the hash seam.
+    Unrenderable,
+}
+
+impl fmt::Display for SourceHashError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Canonical(error) => error.fmt(formatter),
+            Self::Hashlib => formatter.write_str(HASHLIB_SHA256_UNAVAILABLE),
+            Self::Unrenderable => formatter.write_str(PYTHON_STR_UNREPRESENTABLE),
+        }
+    }
+}
+
+impl Error for SourceHashError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Canonical(error) => Some(error),
+            Self::Hashlib | Self::Unrenderable => None,
+        }
+    }
+}
+
+/// Python: `compute_events_source_hash`.
+///
+/// An empty sequence returns [`EMPTY_EVENTS_HASH`] and does not hash. A
+/// non-empty sequence is walked in order and stops at the first event: every
+/// event is a seam, so later events are not hashed.
+/// A mapping calls [`canonical_bytes`] before any hash. `to_canonical_bytes`
+/// bytes, or UTF-8 of a successful `str(event)`, would be passed to
+/// `hashlib.sha256`; this crate returns [`HASHLIB_SHA256_UNAVAILABLE`] and
+/// does not hash them. A `str(event)` failure is returned before that seam.
+/// No non-empty input returns a digest.
+///
+/// # Errors
+///
+/// Returns [`SourceHashError`]. This function does not panic.
+pub fn compute_events_source_hash(events: &[SourceHashEvent]) -> Result<String, SourceHashError> {
+    let Some(event) = events.first() else {
+        return Ok(EMPTY_EVENTS_HASH.to_owned());
+    };
+    Err(source_hash_seam(event))
+}
+
+const EVIDENCE_INDEX_KEYS: [&str; 8] = [
+    "at_index",
+    "first_unsafe_index",
+    "index",
+    "first_index",
+    "cut_index",
+    "boundary_index",
+    "entry_index",
+    "use_index",
+];
+
+const EVIDENCE_INDEX_LIST_KEYS: [&str; 2] = ["record_indexes", "result_indexes"];
+
+/// Python: `_resolve_target_index`.
+///
+/// Evidence index keys are scanned in pin order. A bool is not an int.
+/// `record_indexes` and `result_indexes` must be a list or tuple. When
+/// `events` is present and `code` is not `SL001` or `SL002`, the id is
+/// `root_id`, else `event_id`, else `source.record_id`, compared with
+/// [`event_id`]. `SL001` and `SL002` never match an event id.
+///
+/// # Errors
+///
+/// Returns [`EventError`] from [`event_id`], or from an evidence id this
+/// crate cannot render. An error is not treated as no match. This function
+/// does not panic.
+pub fn _resolve_target_index(
+    finding: &Finding,
+    events: Option<&[EventValue]>,
+) -> Result<Option<i64>, EventError> {
+    let evidence = finding_evidence(finding);
+    if let Some(entries) = evidence.as_deref() {
+        if let Some(index) = explicit_index(entries) {
+            return Ok(Some(index));
+        }
+    }
+    let Some(events) = events else {
+        return Ok(None);
+    };
+    if UNDECODED_RECORD_CODES.contains(&finding.code()) {
+        return Ok(None);
+    }
+    let Some(needle) = record_needle(finding, evidence.as_deref())? else {
+        return Ok(None);
+    };
+    for (index, event) in events.iter().enumerate() {
+        let Some(id) = event_id(event)? else {
+            continue;
+        };
+        if id == needle {
+            if let Ok(found) = i64::try_from(index) {
+                return Ok(Some(found));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Python: `_compute_torn_compaction_loss`.
+///
+/// A boundary outside `0..events.len()` returns `1` and does not call
+/// [`_find_torn_compaction_dropped_indices`]. A `Value` error from that
+/// helper returns `1`. An `Event` error is propagated and is not turned
+/// into `1`. `Ok` returns the dropped set's length.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Event`] unchanged. This function does not panic.
+pub fn _compute_torn_compaction_loss(
+    events: &[EventValue],
+    boundary_idx: i64,
+) -> Result<i64, PreconditionError> {
+    let Ok(boundary) = usize::try_from(boundary_idx) else {
+        return Ok(1);
+    };
+    if boundary >= events.len() {
+        return Ok(1);
+    }
+    match _find_torn_compaction_dropped_indices(events, boundary_idx) {
+        Ok(dropped) => match i64::try_from(dropped.len()) {
+            Ok(count) => Ok(count),
+            Err(_) => Err(PreconditionError::Value(
+                "dropped index count exceeds i64".to_owned(),
+            )),
+        },
+        Err(PreconditionError::Value(_)) => Ok(1),
+        Err(error) => Err(error),
+    }
+}
+
+fn dicts_as_list(items: impl IntoIterator<Item = Vec<(String, PlanValue)>>) -> PlanValue {
+    PlanValue::list(items.into_iter().map(PlanValue::string_map).collect())
+}
+
+fn loss_dict_pairs(loss: &Loss, reveal_totals: bool) -> Vec<(PlanKey, PlanValue)> {
+    let mut pairs = loss
+        .to_dict()
+        .into_iter()
+        .map(|(key, value)| (PlanKey::Str(key), value))
+        .collect::<Vec<_>>();
+    if reveal_totals {
+        pairs.push((
+            PlanKey::str_key("total_lost"),
+            PlanValue::int(loss.total_lost()),
+        ));
+        pairs.push((
+            PlanKey::str_key("total_kept"),
+            PlanValue::int(loss.total_kept()),
+        ));
+    }
+    pairs
+}
+
+fn plan_text(
+    entries: &[(PlanKey, PlanValue)],
+    name: &str,
+    default: &str,
+) -> Result<String, PlannerError> {
+    match lookup(entries, name) {
+        None => Ok(default.to_owned()),
+        Some(PlanValue::Str(text)) => Ok(text.clone()),
+        Some(_) => Err(PlannerError::new(format!("Plan {name} must be a string"))),
+    }
+}
+
+fn plan_array(
+    entries: &[(PlanKey, PlanValue)],
+    name: &str,
+) -> Result<Vec<PlanValue>, PlannerError> {
+    match lookup(entries, name) {
+        None => Ok(Vec::new()),
+        Some(PlanValue::List(items) | PlanValue::Tuple(items)) => Ok(items.clone()),
+        Some(_) => Err(PlannerError::new(format!("Plan {name} must be an array"))),
+    }
+}
+
+fn plan_fingerprint(entries: &[(PlanKey, PlanValue)]) -> Result<String, PlanParseError> {
+    if let Some(PlanValue::Str(text)) = lookup(entries, "fingerprint") {
+        if !text.is_empty() {
+            return Ok(text.clone());
+        }
+    }
+    let value = codec_plan(entries);
+    Ok(compute_plan_fingerprint(&value, None)?)
+}
+
+fn codec_plan(entries: &[(PlanKey, PlanValue)]) -> Value {
+    Value::object(
+        entries
+            .iter()
+            .map(|(key, value)| (codec_key(key), codec_value(value)))
+            .collect(),
+    )
+}
+
+fn codec_key(key: &PlanKey) -> ObjectKey {
+    match key {
+        PlanKey::Str(text) => ObjectKey::string(text.clone()),
+        PlanKey::Int(number) => ObjectKey::non_string(number.to_string()),
+        PlanKey::Bool(true) => ObjectKey::non_string("True"),
+        PlanKey::Bool(false) => ObjectKey::non_string("False"),
+        PlanKey::None => ObjectKey::non_string("None"),
+        PlanKey::Float(_) => ObjectKey::non_string("<float>"),
+        PlanKey::Bytes(_) => ObjectKey::non_string("<bytes>"),
+        PlanKey::Other { type_name } => ObjectKey::non_string((*type_name).to_owned()),
+    }
+}
+
+fn codec_value(value: &PlanValue) -> Value {
+    match value {
+        PlanValue::None => Value::null(),
+        PlanValue::Bool(flag) => Value::bool(*flag),
+        PlanValue::Int(number) => Value::int_i128(*number),
+        PlanValue::Float(bits) => Value::float(f64::from_bits(*bits)),
+        PlanValue::Str(text) => Value::string(text.clone()),
+        PlanValue::Bytes(_) => Value::foreign("bytes"),
+        PlanValue::List(items) | PlanValue::Tuple(items) => {
+            Value::array(items.iter().map(codec_value).collect())
+        }
+        PlanValue::Map(entries) => codec_plan(entries),
+        PlanValue::Other { type_name } => Value::foreign(type_name),
+    }
+}
+
+fn source_hash_seam(event: &SourceHashEvent) -> SourceHashError {
+    match event {
+        SourceHashEvent::Session(session) => match session.to_canonical_bytes() {
+            Ok(_bytes) => SourceHashError::Hashlib,
+            Err(error) => SourceHashError::Canonical(error),
+        },
+        SourceHashEvent::Mapping(mapping) => match canonical_bytes(mapping) {
+            Ok(_bytes) => SourceHashError::Hashlib,
+            Err(error) => SourceHashError::Canonical(error),
+        },
+        SourceHashEvent::Rendered(_text) => SourceHashError::Hashlib,
+        SourceHashEvent::Unrenderable => SourceHashError::Unrenderable,
+    }
+}
+
+fn finding_evidence(finding: &Finding) -> Option<Vec<(String, DictValue)>> {
+    let mut found = None;
+    for (key, value) in finding.to_dict() {
+        if key == "evidence" {
+            found = Some(value);
+        }
+    }
+    match found {
+        Some(DictValue::Map(entries)) if !entries.is_empty() => Some(entries),
+        _ => None,
+    }
+}
+
+fn evidence_get<'a>(entries: &'a [(String, DictValue)], name: &str) -> Option<&'a DictValue> {
+    entries
+        .iter()
+        .rev()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value)
+}
+
+fn dict_truthy(value: &DictValue) -> bool {
+    match value {
+        DictValue::None => false,
+        DictValue::Bool(flag) => *flag,
+        DictValue::Int(number) => *number != 0,
+        DictValue::Str(text) => !text.is_empty(),
+        DictValue::Bytes(bytes) => !bytes.is_empty(),
+        DictValue::List(items)
+        | DictValue::Tuple(items)
+        | DictValue::Set(items)
+        | DictValue::FrozenSet(items) => !items.is_empty(),
+        DictValue::Map(entries) => !entries.is_empty(),
+    }
+}
+
+fn evidence_or<'a>(
+    entries: &'a [(String, DictValue)],
+    first: &str,
+    second: &str,
+) -> Option<&'a DictValue> {
+    let left = evidence_get(entries, first);
+    if left.is_some_and(dict_truthy) {
+        return left;
+    }
+    evidence_get(entries, second)
+}
+
+fn explicit_index(entries: &[(String, DictValue)]) -> Option<i64> {
+    for name in EVIDENCE_INDEX_KEYS {
+        if let Some(DictValue::Int(number)) = evidence_get(entries, name) {
+            return Some(*number);
+        }
+    }
+    for name in EVIDENCE_INDEX_LIST_KEYS {
+        let Some(value) = evidence_get(entries, name) else {
+            continue;
+        };
+        let items = match value {
+            DictValue::List(items) | DictValue::Tuple(items) => items.as_slice(),
+            _ => continue,
+        };
+        for item in items {
+            if let DictValue::Int(number) = item {
+                return Some(*number);
+            }
+        }
+    }
+    None
+}
+
+fn record_needle(
+    finding: &Finding,
+    evidence: Option<&[(String, DictValue)]>,
+) -> Result<Option<String>, EventError> {
+    if let Some(entries) = evidence {
+        if let Some(value) = evidence_or(entries, "root_id", "event_id") {
+            if !matches!(value, DictValue::None) {
+                return Ok(Some(scalar_id(value)?));
+            }
+        }
+    }
+    match finding.source().record_id() {
+        Some(record_id) if !record_id.is_empty() => Ok(Some(record_id.to_owned())),
+        _ => Ok(None),
+    }
+}
+
+fn scalar_id(value: &DictValue) -> Result<String, EventError> {
+    match value {
+        DictValue::Str(text) => Ok(text.clone()),
+        DictValue::Int(number) => Ok(number.to_string()),
+        DictValue::Bool(true) => Ok("True".to_owned()),
+        DictValue::Bool(false) => Ok("False".to_owned()),
+        DictValue::None => Ok("None".to_owned()),
+        _ => Err(EventError::PythonStr),
+    }
+}
+
 fn object_error(label: &str) -> PlannerError {
     PlannerError::new(format!("{label} must be an object"))
 }
@@ -1000,10 +1613,24 @@ fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
 mod tests {
     use std::error::Error;
 
+    use codec::canonical_codec::{ObjectKey, Value};
+    use model::canonical::{canonical_bytes, SessionEvent};
+    use model::codes::{Repairability, Severity};
+    use model::events::{
+        EventError, EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        PYTHON_STR_UNREPRESENTABLE,
+    };
+    use model::finding::{Finding, FindingInput, PyValue, SourceRef, SCHEMA_VERSION};
+
+    use crate::fingerprint::compute_plan_fingerprint;
+    use crate::preconditions::{PreconditionError, _find_torn_compaction_dropped_indices};
+
     use super::{
-        Blocked, Loss, PlanKey, PlanStep, PlanStepFields, PlanValue, PlannerError, _counts,
-        _object, _strings, ALLOWED_LOSS_CLASSES, EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, MAX_STEPS,
-        NON_EVENT_LOSS_CLASSES, PLAN_VERSION, SYNTHETIC_STEP_FP, UNDECODED_RECORD_CODES,
+        _compute_torn_compaction_loss, _counts, _object, _resolve_target_index, _strings,
+        compute_events_source_hash, Blocked, Loss, PlanKey, PlanStep, PlanStepFields, PlanValue,
+        PlannerError, RepairPlan, RepairPlanFields, SourceHashError, SourceHashEvent,
+        ALLOWED_LOSS_CLASSES, EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, HASHLIB_SHA256_UNAVAILABLE,
+        MAX_STEPS, NON_EVENT_LOSS_CLASSES, PLAN_VERSION, SYNTHETIC_STEP_FP, UNDECODED_RECORD_CODES,
     };
 
     const ALLOWED_REPR: &str = concat!(
@@ -1733,5 +2360,686 @@ mod tests {
         assert_eq!(err.message(), "Plan step must be an object");
         assert_eq!(err.to_string(), "Plan step must be an object");
         assert!(err.source().is_none());
+    }
+
+    fn plan_err(data: &PlanValue) -> String {
+        RepairPlan::from_dict(data)
+            .expect_err("rejected plan")
+            .to_string()
+    }
+
+    fn is_digest(text: &str) -> bool {
+        text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+
+    fn manual_plan(pairs: Vec<(&str, Value)>) -> Value {
+        Value::object(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (ObjectKey::string(key), value))
+                .collect(),
+        )
+    }
+
+    fn keyed<'a>(value: &'a PlanValue, name: &str) -> &'a PlanValue {
+        let PlanValue::Map(entries) = value else {
+            panic!("map");
+        };
+        entries
+            .iter()
+            .find_map(|(key, child)| match key {
+                PlanKey::Str(text) if text == name => Some(child),
+                _ => None,
+            })
+            .expect(name)
+    }
+
+    fn sample_plan(policy: &str, loss: Loss) -> RepairPlan {
+        let mut fields = PlanStepFields::new(0, "recipe-alpha", "fp-alpha", Some(0));
+        fields.params = vec![
+            ("z-param".to_owned(), PlanValue::int(1)),
+            ("a-param".to_owned(), PlanValue::bool_value(false)),
+        ];
+        let step = PlanStep::try_new(fields).expect("step");
+        RepairPlan::new(RepairPlanFields {
+            source_hash: "abc".to_owned(),
+            profile: " ".to_owned(),
+            steps: vec![step],
+            blocked: vec![Blocked::new("fp-alpha", "SL001", "cap-overflow")],
+            loss_accounting: loss,
+            fingerprint: "kept-fp".to_owned(),
+            version: "custom-version".to_owned(),
+            policy: policy.to_owned(),
+        })
+    }
+
+    fn loss_sample() -> Loss {
+        Loss::new(
+            vec![("z-class".to_owned(), 2), ("a-class".to_owned(), 0)],
+            4,
+            5,
+        )
+    }
+
+    #[test]
+    fn repair_plan_to_dict_omits_conservative_totals_and_appends_other_policy() {
+        let conservative = sample_plan("conservative", loss_sample());
+        let encoded = conservative.to_dict();
+        assert_eq!(
+            dict_keys(&encoded),
+            [
+                "blocked",
+                "fingerprint",
+                "loss_accounting",
+                "profile",
+                "source_hash",
+                "steps",
+                "version",
+            ]
+        );
+        assert_eq!(nested_keys(&encoded[2].1), ["preview"]);
+        assert_eq!(
+            nested_keys(keyed(&encoded[2].1, "preview")),
+            ["z-class", "a-class"]
+        );
+        assert_eq!(
+            dict_keys(&conservative.loss_accounting().to_dict()),
+            ["preview"]
+        );
+        assert_eq!(conservative.total_lost(), 4);
+        assert_eq!(conservative.total_kept(), 5);
+        assert_eq!(conservative.profile(), " ");
+
+        let salvage = sample_plan("salvage", loss_sample());
+        let encoded = salvage.to_dict();
+        assert_eq!(
+            dict_keys(&encoded),
+            [
+                "blocked",
+                "fingerprint",
+                "loss_accounting",
+                "profile",
+                "source_hash",
+                "steps",
+                "version",
+                "policy",
+            ]
+        );
+        assert_eq!(encoded[7].1, text("salvage"));
+        assert_eq!(
+            nested_keys(&encoded[2].1),
+            ["preview", "total_lost", "total_kept"]
+        );
+        assert_eq!(keyed(&encoded[2].1, "total_lost"), &PlanValue::int(4));
+        assert_eq!(keyed(&encoded[2].1, "total_kept"), &PlanValue::int(5));
+        assert_eq!(dict_keys(&salvage.loss_accounting().to_dict()), ["preview"]);
+
+        let other = sample_plan("other", loss_sample());
+        assert_eq!(other.to_dict()[7].1, text("other"));
+        assert_eq!(
+            keyed(&other.to_dict()[2].1, "total_lost"),
+            &PlanValue::int(4)
+        );
+    }
+
+    #[test]
+    fn repair_plan_from_dict_round_trip_preserves_space_and_drops_conservative_totals() {
+        let conservative = sample_plan("conservative", loss_sample());
+        let again = RepairPlan::from_dict(&PlanValue::string_map(conservative.to_dict()))
+            .expect("conservative");
+        assert_eq!(again.fingerprint(), "kept-fp");
+        assert_eq!(again.profile(), " ");
+        assert_eq!(again.policy(), "conservative");
+        assert_eq!(again.version(), "custom-version");
+        assert_eq!(again.source_hash(), "abc");
+        assert_eq!(again.steps(), conservative.steps());
+        assert_eq!(again.blocked(), conservative.blocked());
+        assert_eq!(again.loss_accounting().preview(), loss_sample().preview());
+        assert_eq!(again.total_lost(), 0);
+        assert_eq!(again.total_kept(), 0);
+
+        let salvage = sample_plan("salvage", loss_sample());
+        let again =
+            RepairPlan::from_dict(&PlanValue::string_map(salvage.to_dict())).expect("salvage");
+        assert_eq!(again, salvage);
+
+        let tuple_steps = RepairPlan::from_dict(&obj([
+            ("fingerprint", text("kept")),
+            ("steps", PlanValue::tuple(vec![required([])])),
+            ("blocked", PlanValue::tuple(vec![])),
+            ("profile", text(" ")),
+        ]))
+        .expect("tuple");
+        assert_eq!(tuple_steps.steps().len(), 1);
+        assert_eq!(tuple_steps.profile(), " ");
+        assert!(tuple_steps.blocked().is_empty());
+    }
+
+    #[test]
+    fn repair_plan_from_dict_first_failure_order() {
+        assert_eq!(plan_err(&PlanValue::list(vec![])), "Plan must be an object");
+        let bad_key = PlanValue::map(vec![(
+            PlanKey::bool_value(true),
+            PlanValue::bytes(b"echo-me".to_vec()),
+        )]);
+        let err = plan_err(&bad_key);
+        assert_eq!(err, "Plan must be an object");
+        assert!(!err.contains("echo-me"));
+
+        assert_eq!(
+            plan_err(&obj([
+                ("source_hash", PlanValue::bytes(b"echo-me".to_vec())),
+                ("profile", PlanValue::int(2)),
+                ("policy", text("nope")),
+            ])),
+            "Plan source_hash must be a string"
+        );
+        assert!(!plan_err(&obj([(
+            "source_hash",
+            PlanValue::bytes(b"echo-me".to_vec())
+        )]))
+        .contains("echo-me"));
+        assert_eq!(
+            plan_err(&obj([
+                ("profile", PlanValue::int(2)),
+                ("version", PlanValue::bool_value(true)),
+            ])),
+            "Plan profile must be a string"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("version", PlanValue::int(3)),
+                ("policy", PlanValue::int(4)),
+            ])),
+            "Plan version must be a string"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("policy", PlanValue::bool_value(true)),
+                ("fingerprint", PlanValue::int(5)),
+            ])),
+            "Plan policy must be a string"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", PlanValue::bool_value(false)),
+                ("policy", text("nope")),
+                ("profile", text("")),
+            ])),
+            "Plan fingerprint must be a string"
+        );
+        assert_eq!(
+            plan_err(&obj([("policy", text("")), ("profile", text("")),])),
+            "Plan policy is unsupported"
+        );
+        assert_eq!(
+            plan_err(&obj([("policy", text(" conservative"))])),
+            "Plan policy is unsupported"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("policy", text("conservative")),
+                ("profile", text("")),
+                ("steps", PlanValue::int(1)),
+            ])),
+            "Plan profile must not be empty"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", text("kept")),
+                ("steps", PlanValue::int(1)),
+                ("blocked", text("no")),
+            ])),
+            "Plan steps must be an array"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", text("kept")),
+                ("steps", PlanValue::list(vec![PlanValue::int(1)])),
+                ("blocked", PlanValue::bool_value(true)),
+            ])),
+            "Plan blocked must be an array"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", text("kept")),
+                (
+                    "steps",
+                    PlanValue::list(vec![required([("seq", PlanValue::bool_value(true))])]),
+                ),
+            ])),
+            "Plan step seq must be a nonnegative integer"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", text("kept")),
+                (
+                    "blocked",
+                    PlanValue::list(vec![obj([("code", PlanValue::int(1))])]),
+                ),
+            ])),
+            "Blocked entry code must be a string"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", text("kept")),
+                ("loss_accounting", PlanValue::int(1)),
+            ])),
+            "Loss accounting must be an object"
+        );
+        assert_eq!(
+            plan_err(&obj([
+                ("fingerprint", text("kept")),
+                (
+                    "loss_accounting",
+                    obj([("total_lost", PlanValue::bool_value(true))]),
+                ),
+            ])),
+            "Loss total_lost must be a nonnegative integer"
+        );
+    }
+
+    #[test]
+    fn repair_plan_fingerprint_uses_none_policy_or_stores_a_present_string() {
+        let spaced = RepairPlan::from_dict(&obj([
+            ("fingerprint", text(" ")),
+            ("profile", text("neutral")),
+            ("spike", PlanValue::float(f64::NAN)),
+        ]))
+        .expect("space fingerprint skips the hasher");
+        assert_eq!(spaced.fingerprint(), " ");
+        assert!(!is_digest(spaced.fingerprint()));
+
+        let data = obj([
+            ("fingerprint", text("")),
+            ("profile", text("neutral")),
+            ("source_hash", text("abc")),
+        ]);
+        let loaded = RepairPlan::from_dict(&data).expect("recompute");
+        let manual = manual_plan(vec![
+            ("source_hash", Value::string("abc")),
+            ("profile", Value::string("neutral")),
+            ("fingerprint", Value::string("")),
+        ]);
+        let omitted = compute_plan_fingerprint(&manual, None).expect("none policy");
+        let bound = compute_plan_fingerprint(&manual, Some("conservative")).expect("bound");
+        assert_eq!(loaded.fingerprint(), omitted);
+        assert_ne!(loaded.fingerprint(), bound);
+        assert!(is_digest(&omitted));
+        assert_ne!(omitted, EMPTY_EVENTS_HASH);
+
+        let missing = RepairPlan::from_dict(&obj([
+            ("profile", text("neutral")),
+            ("source_hash", text("abc")),
+        ]))
+        .expect("missing fingerprint");
+        assert_eq!(missing.fingerprint(), omitted);
+
+        let nan = obj([
+            ("profile", text("neutral")),
+            ("spike", PlanValue::float(f64::NAN)),
+        ]);
+        let err = RepairPlan::from_dict(&nan).expect_err("nan");
+        let direct = compute_plan_fingerprint(
+            &manual_plan(vec![
+                ("profile", Value::string("neutral")),
+                ("spike", Value::float(f64::NAN)),
+            ]),
+            None,
+        )
+        .expect_err("direct nan");
+        assert_eq!(err.to_string(), direct.to_string());
+        assert!(err.source().is_some());
+        assert!(!is_digest(&err.to_string()));
+        assert_ne!(err.to_string(), EMPTY_EVENTS_HASH);
+    }
+
+    #[test]
+    fn repair_plan_unwraps_one_expected_plan_mapping() {
+        let inner = obj([
+            ("profile", text("middle")),
+            ("fingerprint", text("inner-fp")),
+            ("policy", text("salvage")),
+            (
+                "expected_plan",
+                obj([("profile", text("deeper")), ("fingerprint", text("deep"))]),
+            ),
+        ]);
+        let outer = obj([
+            ("expected_plan", inner),
+            ("profile", text("outer")),
+            ("fingerprint", text("outer-fp")),
+        ]);
+        let plan = RepairPlan::from_dict(&outer).expect("unwrap");
+        assert_eq!(plan.profile(), "middle");
+        assert_eq!(plan.fingerprint(), "inner-fp");
+        assert_eq!(plan.policy(), "salvage");
+
+        let text_wrapper = obj([("expected_plan", text("nope"))]);
+        let plan = RepairPlan::from_dict(&text_wrapper).expect("not a mapping");
+        assert_eq!(plan.profile(), "neutral");
+        assert_eq!(plan.policy(), "conservative");
+        assert_eq!(plan.version(), PLAN_VERSION);
+        assert_eq!(plan.source_hash(), "");
+        let manual = manual_plan(vec![("expected_plan", Value::string("nope"))]);
+        assert_eq!(
+            plan.fingerprint(),
+            compute_plan_fingerprint(&manual, None).expect("outer hash")
+        );
+    }
+
+    #[test]
+    fn compute_events_source_hash_returns_seams_for_non_empty_input() {
+        assert_eq!(
+            compute_events_source_hash(&[]).expect("empty"),
+            EMPTY_EVENTS_HASH
+        );
+
+        let rendered = compute_events_source_hash(&[
+            SourceHashEvent::Rendered("echo-me".to_owned()),
+            SourceHashEvent::Mapping(EventMapping::new(Vec::new())),
+        ])
+        .expect_err("rendered first");
+        assert_eq!(rendered, SourceHashError::Hashlib);
+        assert_eq!(rendered.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+        assert!(!rendered.to_string().contains("echo-me"));
+        assert!(rendered.source().is_none());
+        assert!(!is_digest(&rendered.to_string()));
+
+        let unrendered = compute_events_source_hash(&[
+            SourceHashEvent::Unrenderable,
+            SourceHashEvent::Rendered("echo-me".to_owned()),
+        ])
+        .expect_err("str fails first");
+        assert_eq!(unrendered, SourceHashError::Unrenderable);
+        assert_eq!(unrendered.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert_ne!(unrendered.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+
+        let mapping =
+            EventMapping::new(vec![("id".to_owned(), EventField::Str("evt-a".to_owned()))]);
+        let mapped = compute_events_source_hash(&[
+            SourceHashEvent::Mapping(mapping.clone()),
+            SourceHashEvent::Rendered("later".to_owned()),
+        ])
+        .expect_err("mapping");
+        assert_eq!(
+            mapped,
+            SourceHashError::Canonical(canonical_bytes(&mapping).expect_err("canonical seam"))
+        );
+        assert_eq!(
+            mapped.to_string(),
+            "sesslint._canonical_codec.canonical_json_bytes is not available"
+        );
+        assert!(!mapped.to_string().contains("evt-a"));
+        assert!(mapped.source().is_some());
+        assert_ne!(mapped.to_string(), EMPTY_EVENTS_HASH);
+        assert!(!is_digest(&mapped.to_string()));
+
+        let session = SessionEvent::new(
+            "evt-synthetic",
+            None,
+            0,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            "message",
+        );
+        let bytes = session.to_canonical_bytes().expect_err("session bytes");
+        let hashed = compute_events_source_hash(&[SourceHashEvent::Session(Box::new(session))])
+            .expect_err("session");
+        assert_eq!(hashed, SourceHashError::Canonical(bytes));
+        assert_ne!(hashed.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+    }
+
+    fn target_finding(code: &str, record_id: Option<&str>, evidence: PyValue) -> Finding {
+        let source = SourceRef::try_new("<canonical>", None, record_id).expect("source");
+        Finding::try_new(FindingInput {
+            code: PyValue::string(code),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message: PyValue::string("synthetic target marker"),
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence,
+        })
+        .expect("finding")
+    }
+
+    fn ev_map(entries: Vec<(&str, PyValue)>) -> PyValue {
+        PyValue::map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (PyValue::string(key), value))
+                .collect(),
+        )
+    }
+
+    fn id_event(id: EventField) -> EventValue {
+        EventValue::Mapping(EventMapping::new(vec![("id".to_owned(), id)]))
+    }
+
+    #[test]
+    fn resolve_target_index_prefers_real_ints_then_ids() {
+        let events = [
+            id_event(EventField::Str("evt-a".to_owned())),
+            id_event(EventField::Str("evt-b".to_owned())),
+            id_event(EventField::Int(7)),
+            id_event(EventField::Bool(true)),
+        ];
+        let at = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![
+                ("at_index", PyValue::bool_value(true)),
+                ("index", PyValue::int(0)),
+                ("record_indexes", PyValue::list(vec![PyValue::int(3)])),
+            ]),
+        );
+        assert_eq!(_resolve_target_index(&at, None).expect("index"), Some(0));
+
+        let negative = target_finding("SL001", None, ev_map(vec![("at_index", PyValue::int(-2))]));
+        assert_eq!(
+            _resolve_target_index(&negative, Some(&events)).expect("negative"),
+            Some(-2)
+        );
+
+        let listed = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![
+                ("record_indexes", PyValue::string("01")),
+                (
+                    "result_indexes",
+                    PyValue::list(vec![PyValue::bool_value(true), PyValue::int(6)]),
+                ),
+            ]),
+        );
+        assert_eq!(
+            _resolve_target_index(&listed, Some(&events)).expect("list"),
+            Some(6)
+        );
+
+        let tuple_index = target_finding(
+            "SL005",
+            None,
+            ev_map(vec![(
+                "record_indexes",
+                PyValue::tuple(vec![PyValue::bool_value(false), PyValue::int(4)]),
+            )]),
+        );
+        assert_eq!(
+            _resolve_target_index(&tuple_index, None).expect("tuple"),
+            Some(4)
+        );
+
+        let set_skipped = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![(
+                "record_indexes",
+                PyValue::set(vec![PyValue::int(3)]),
+            )]),
+        );
+        assert_eq!(
+            _resolve_target_index(&set_skipped, Some(&events)).expect("set"),
+            Some(0)
+        );
+
+        let zero_root = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![("root_id", PyValue::int(0))]),
+        );
+        let zero_events = [
+            id_event(EventField::Str("0".to_owned())),
+            id_event(EventField::Str("evt-a".to_owned())),
+        ];
+        assert_eq!(
+            _resolve_target_index(&zero_root, Some(&zero_events)).expect("zero"),
+            Some(1)
+        );
+
+        let root = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![
+                ("root_id", PyValue::string("evt-b")),
+                ("event_id", PyValue::string("evt-a")),
+            ]),
+        );
+        assert_eq!(
+            _resolve_target_index(&root, Some(&events)).expect("root"),
+            Some(1)
+        );
+
+        let empty_root = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![
+                ("root_id", PyValue::string("")),
+                ("event_id", PyValue::int(7)),
+            ]),
+        );
+        assert_eq!(
+            _resolve_target_index(&empty_root, Some(&events)).expect("event id"),
+            Some(2)
+        );
+
+        let flag = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![("event_id", PyValue::bool_value(true))]),
+        );
+        assert_eq!(
+            _resolve_target_index(&flag, Some(&events)).expect("true"),
+            Some(3)
+        );
+
+        let by_record = target_finding("SL005", Some("evt-b"), PyValue::None);
+        assert_eq!(
+            _resolve_target_index(&by_record, Some(&events)).expect("record"),
+            Some(1)
+        );
+        assert_eq!(
+            _resolve_target_index(&by_record, None).expect("no events"),
+            None
+        );
+
+        let undecoded = target_finding("SL001", Some("evt-a"), PyValue::None);
+        let float_events = [id_event(EventField::Float(1.0))];
+        assert_eq!(
+            _resolve_target_index(&undecoded, Some(&float_events)).expect("sl001"),
+            None
+        );
+        let sl002 = target_finding("SL002", Some("evt-a"), PyValue::None);
+        assert_eq!(
+            _resolve_target_index(&sl002, Some(&events)).expect("sl002"),
+            None
+        );
+
+        let float_before = [
+            id_event(EventField::Float(1.0)),
+            id_event(EventField::Str("evt-a".to_owned())),
+        ];
+        let err = _resolve_target_index(&by_record, Some(&float_before)).expect_err("float id");
+        assert_eq!(err, EventError::PythonFloatStr);
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+
+        let no_needle = target_finding("SL005", None, PyValue::None);
+        assert_eq!(
+            _resolve_target_index(&no_needle, Some(&float_events)).expect("no id"),
+            None
+        );
+
+        let listed_id = target_finding(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![(
+                "root_id",
+                PyValue::list(vec![PyValue::string("evt-a")]),
+            )]),
+        );
+        let err = _resolve_target_index(&listed_id, Some(&events)).expect_err("list id");
+        assert_eq!(err, EventError::PythonStr);
+        assert_eq!(err.to_string(), PYTHON_STR_UNREPRESENTABLE);
+    }
+
+    fn kind_event(kind: &str, corr: Option<&str>) -> EventValue {
+        let mut entries = vec![("kind".to_owned(), EventField::Str(kind.to_owned()))];
+        if let Some(corr) = corr {
+            entries.push((
+                "correlation_id".to_owned(),
+                EventField::Str(corr.to_owned()),
+            ));
+        }
+        EventValue::Mapping(EventMapping::new(entries))
+    }
+
+    #[test]
+    fn torn_compaction_loss_returns_helper_length_or_one() {
+        let float_boundary = [EventValue::Mapping(EventMapping::new(vec![(
+            "kind".to_owned(),
+            EventField::Float(1.0),
+        )]))];
+        assert_eq!(
+            _compute_torn_compaction_loss(&float_boundary, -1).expect("low"),
+            1
+        );
+        assert_eq!(
+            _compute_torn_compaction_loss(&float_boundary, i64::MIN).expect("min"),
+            1
+        );
+        assert_eq!(
+            _compute_torn_compaction_loss(&float_boundary, 1).expect("high"),
+            1
+        );
+        assert_eq!(_compute_torn_compaction_loss(&[], 0).expect("empty"), 1);
+        let propagated = _compute_torn_compaction_loss(&float_boundary, 0).expect_err("event");
+        let direct = _find_torn_compaction_dropped_indices(&float_boundary, 0).expect_err("direct");
+        assert_eq!(propagated, direct);
+        assert_eq!(propagated.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(propagated, PreconditionError::Event(_)));
+
+        let message = [kind_event("message", None)];
+        assert_eq!(
+            _compute_torn_compaction_loss(&message, 0).expect("value"),
+            1
+        );
+        assert!(matches!(
+            _find_torn_compaction_dropped_indices(&message, 0).expect_err("value error"),
+            PreconditionError::Value(_)
+        ));
+
+        let split = [
+            kind_event("tool_call", Some("corr-synthetic")),
+            kind_event("compaction_boundary", None),
+            kind_event("tool_result", Some("corr-synthetic")),
+        ];
+        let dropped = _find_torn_compaction_dropped_indices(&split, 1).expect("dropped");
+        let count = _compute_torn_compaction_loss(&split, 1).expect("count");
+        assert_eq!(count, i64::try_from(dropped.len()).expect("len"));
+        assert_eq!(count, 2);
     }
 }
