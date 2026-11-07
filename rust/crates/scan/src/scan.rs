@@ -3687,3 +3687,728 @@ mod worker_seam {
         assert!(WORKER_KWARGS.is_none());
     }
 }
+
+/// `datetime.date.fromisoformat` is not available in this crate.
+pub const DATE_FROMISOFORMAT_UNAVAILABLE: &str = "datetime.date.fromisoformat is not available";
+
+/// Python `int` or `bool` for a [`scan_path`] limit.
+///
+/// [`ScanCount::Bool`] is not an int. `True` is not `1`. `False` is not `0`.
+/// The shown text of a bool is `True` or `False`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanCount {
+    /// Python `int`. Not a bool.
+    Int(i64),
+    /// Python `bool`. Not an int.
+    Bool(bool),
+}
+
+impl ScanCount {
+    fn write_shown(self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Int(number) => write!(formatter, "{number}"),
+            Self::Bool(true) => formatter.write_str("True"),
+            Self::Bool(false) => formatter.write_str("False"),
+        }
+    }
+}
+
+/// Failure from [`scan_path`].
+///
+/// The `ValueError` variants use the pin sentences. [`Self::DateFromisoformat`]
+/// and [`Self::MinimizePath`] are the two seams. No [`ScanReport`] is produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanPathError {
+    /// `max_files must be a positive integer (> 0), got {value}`.
+    MaxFiles(ScanCount),
+    /// `max_bytes must be a positive integer (> 0), got {value}`.
+    MaxBytes(ScanCount),
+    /// `jobs must be a positive integer (>= 1), got {value}`.
+    Jobs(ScanCount),
+    /// `max_file_bytes must be a positive integer`.
+    MaxFileBytes,
+    /// `max_findings_per_code must be a positive integer`.
+    MaxFindingsPerCode,
+    /// `newest must be a positive integer`.
+    Newest,
+    /// `vendor_layout must be claude or codex`.
+    VendorLayout,
+    /// [`DATE_FROMISOFORMAT_UNAVAILABLE`].
+    DateFromisoformat,
+    /// [`MINIMIZE_PATH_UNAVAILABLE`].
+    MinimizePath,
+}
+
+impl fmt::Display for ScanPathError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MaxFiles(value) => {
+                formatter.write_str("max_files must be a positive integer (> 0), got ")?;
+                value.write_shown(formatter)
+            }
+            Self::MaxBytes(value) => {
+                formatter.write_str("max_bytes must be a positive integer (> 0), got ")?;
+                value.write_shown(formatter)
+            }
+            Self::Jobs(value) => {
+                formatter.write_str("jobs must be a positive integer (>= 1), got ")?;
+                value.write_shown(formatter)
+            }
+            Self::MaxFileBytes => formatter.write_str("max_file_bytes must be a positive integer"),
+            Self::MaxFindingsPerCode => {
+                formatter.write_str("max_findings_per_code must be a positive integer")
+            }
+            Self::Newest => formatter.write_str("newest must be a positive integer"),
+            Self::VendorLayout => formatter.write_str("vendor_layout must be claude or codex"),
+            Self::DateFromisoformat => formatter.write_str(DATE_FROMISOFORMAT_UNAVAILABLE),
+            Self::MinimizePath => formatter.write_str(MINIMIZE_PATH_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for ScanPathError {}
+
+/// `value <= 0` after a bool has already been rejected.
+fn non_positive(number: i64) -> bool {
+    number <= 0
+}
+
+/// `value < 1` after a bool has already been rejected.
+fn below_one(number: i64) -> bool {
+    number < 1
+}
+
+/// `isinstance(value, bool)` then `not isinstance(value, int)` then `rejected`.
+fn require_shown(value: ScanCount, rejected: fn(i64) -> bool) -> Result<i64, ScanCount> {
+    let number = match value {
+        ScanCount::Bool(_) => return Err(value),
+        ScanCount::Int(number) => number,
+    };
+    if rejected(number) {
+        return Err(value);
+    }
+    Ok(number)
+}
+
+/// `type(value) is int`, then `rejected`. A bool is not that int.
+fn require_type_int(
+    value: ScanCount,
+    rejected: fn(i64) -> bool,
+    error: ScanPathError,
+) -> Result<i64, ScanPathError> {
+    let ScanCount::Int(number) = value else {
+        return Err(error);
+    };
+    if rejected(number) {
+        return Err(error);
+    }
+    Ok(number)
+}
+
+/// `newest is not None and (type(newest) is not int or newest < 1)`.
+fn require_newest(newest: Option<ScanCount>) -> Result<(), ScanPathError> {
+    let Some(value) = newest else {
+        return Ok(());
+    };
+    let ScanCount::Int(number) = value else {
+        return Err(ScanPathError::Newest);
+    };
+    if below_one(number) {
+        return Err(ScanPathError::Newest);
+    }
+    Ok(())
+}
+
+/// `vendor_layout not in (None, "claude", "codex")`.
+fn require_vendor_layout(vendor_layout: Option<&str>) -> Result<(), ScanPathError> {
+    match vendor_layout {
+        None | Some("claude") | Some("codex") => Ok(()),
+        Some(_) => Err(ScanPathError::VendorLayout),
+    }
+}
+
+/// Python `min(jobs, 61)` when `sys.platform == "win32"`.
+#[cfg(windows)]
+fn clamp_windows_jobs(jobs: i64) -> i64 {
+    const WINDOWS_JOB_CAP: i64 = 61;
+    jobs.min(WINDOWS_JOB_CAP)
+}
+
+/// Other platforms leave `jobs` unchanged.
+#[cfg(not(windows))]
+fn clamp_windows_jobs(jobs: i64) -> i64 {
+    jobs
+}
+
+/// Python: `scan_path`.
+///
+/// Port of `src/sesslint/scan.py` lines 810–891
+/// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+///
+/// The checks below run before `minimize_path`, in pin order. A bool is not
+/// an int. `True` is not `1`. `False` is not `0`.
+///
+/// `max_files` and `max_bytes` reject a bool, then a non-positive int. `jobs`
+/// rejects a bool, then a value below 1. Those three `ValueError` sentences
+/// include the shown value. Bool text is `True` or `False`.
+///
+/// `max_file_bytes` uses `type is int`, so a bool is rejected, then `<= 0`.
+/// `max_findings_per_code` uses `type is int` and requires `>= 1`. `newest`,
+/// when present, does the same. `vendor_layout` must be `None`, `claude`, or
+/// `codex`.
+///
+/// `since: Some` stops before a timestamp exists. Display is
+/// [`DATE_FROMISOFORMAT_UNAVAILABLE`]. This function does not read a wall
+/// clock and does not parse the string.
+///
+/// `since: None` on Windows sets `jobs` to `min(jobs, 61)`. The pin then
+/// calls `minimize_path`. That helper is not in this crate. Display is
+/// [`MINIMIZE_PATH_UNAVAILABLE`]. The path is not statted. A directory is not
+/// walked. [`scan_single_file`], [`scan_file_worker`], and [`make_finding`]
+/// are not called. sqlite is not opened. Lines 892–1505 are not executed,
+/// including `Path.exists`, `validate_detection_thresholds`, and the
+/// `timestamp_skew_ms` check. No [`ScanReport`] is returned. Success is
+/// [`Infallible`].
+///
+/// Rust has no defaults. For the arguments this function reads, pass
+/// `ScanCount::Int(DEFAULT_MAX_FILES)`, `ScanCount::Int(DEFAULT_MAX_BYTES)`,
+/// `ScanCount::Int(1)`, `ScanCount::Int(crate::io::DEFAULT_MAX_FILE_BYTES)`,
+/// `None`, `None`, `None`, and `ScanCount::Int(20)`. `recursive`,
+/// `follow_symlinks`, `format`, `profile`, `confidence_min`, `margin_min`,
+/// `progress_cb`, `cancel_token`, `skip_undetected`, `select`, `ignore`,
+/// `baseline`, `exclude`, `ext`, `incremental`, `cache_dir`, and
+/// `timestamp_skew_ms` are not read. `progress_cb` and `cancel_token` are not
+/// parameters: `sesslint.progress` is not linked from this crate.
+///
+/// # Errors
+///
+/// A pin `ValueError`, [`ScanPathError::DateFromisoformat`], or
+/// [`ScanPathError::MinimizePath`]. This function does not panic.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "pin arguments read before minimize_path, in signature order"
+)]
+pub fn scan_path(
+    path: &Path,
+    max_files: ScanCount,
+    max_bytes: ScanCount,
+    jobs: ScanCount,
+    max_file_bytes: ScanCount,
+    vendor_layout: Option<&str>,
+    newest: Option<ScanCount>,
+    since: Option<&str>,
+    max_findings_per_code: ScanCount,
+) -> Result<Infallible, ScanPathError> {
+    let max_files = require_shown(max_files, non_positive).map_err(ScanPathError::MaxFiles)?;
+    let max_bytes = require_shown(max_bytes, non_positive).map_err(ScanPathError::MaxBytes)?;
+    let jobs = require_shown(jobs, below_one).map_err(ScanPathError::Jobs)?;
+    let max_file_bytes =
+        require_type_int(max_file_bytes, non_positive, ScanPathError::MaxFileBytes)?;
+    let max_findings_per_code = require_type_int(
+        max_findings_per_code,
+        below_one,
+        ScanPathError::MaxFindingsPerCode,
+    )?;
+    require_newest(newest)?;
+    require_vendor_layout(vendor_layout)?;
+    if since.is_some() {
+        return Err(ScanPathError::DateFromisoformat);
+    }
+    // Pin: `if sys.platform == "win32": jobs = min(jobs, 61)`.
+    let jobs = clamp_windows_jobs(jobs);
+    // Pin: `root_str = minimize_path(target)`. The reference is not a stat.
+    let _bound = (
+        path,
+        max_files,
+        max_bytes,
+        jobs,
+        max_file_bytes,
+        max_findings_per_code,
+    );
+    Err(ScanPathError::MinimizePath)
+}
+
+#[cfg(test)]
+mod scan_path_seam {
+    use std::any::TypeId;
+    use std::convert::Infallible;
+    use std::error::Error;
+    use std::path::Path;
+
+    use super::{
+        scan_path, FileResult, ScanCount, ScanPathError, ScanReport,
+        DATE_FROMISOFORMAT_UNAVAILABLE, DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES,
+        DEFAULT_MAX_FINDINGS_PER_CODE, MINIMIZE_PATH_UNAVAILABLE,
+    };
+
+    fn int(number: i64) -> ScanCount {
+        ScanCount::Int(number)
+    }
+
+    fn flag(value: bool) -> ScanCount {
+        ScanCount::Bool(value)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "same pin argument list as scan_path"
+    )]
+    fn call(
+        path: &Path,
+        max_files: ScanCount,
+        max_bytes: ScanCount,
+        jobs: ScanCount,
+        max_file_bytes: ScanCount,
+        vendor_layout: Option<&str>,
+        newest: Option<ScanCount>,
+        since: Option<&str>,
+        max_findings_per_code: ScanCount,
+    ) -> ScanPathError {
+        assert_ne!(TypeId::of::<Infallible>(), TypeId::of::<ScanReport>());
+        assert_ne!(TypeId::of::<Infallible>(), TypeId::of::<FileResult>());
+        assert_ne!(
+            TypeId::of::<Result<Infallible, ScanPathError>>(),
+            TypeId::of::<ScanReport>()
+        );
+        match scan_path(
+            path,
+            max_files,
+            max_bytes,
+            jobs,
+            max_file_bytes,
+            vendor_layout,
+            newest,
+            since,
+            max_findings_per_code,
+        ) {
+            Ok(never) => match never {},
+            Err(error) => {
+                assert!(error.source().is_none());
+                let text = error.to_string();
+                assert!(!text.contains("not-opened"));
+                assert!(!text.contains("synthetic"));
+                assert!(!text.contains("child.jsonl"));
+                assert!(!text.contains("missing"));
+                error
+            }
+        }
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "same pin argument list as scan_path"
+    )]
+    fn at(
+        max_files: ScanCount,
+        max_bytes: ScanCount,
+        jobs: ScanCount,
+        max_file_bytes: ScanCount,
+        vendor_layout: Option<&str>,
+        newest: Option<ScanCount>,
+        since: Option<&str>,
+        max_findings_per_code: ScanCount,
+    ) -> ScanPathError {
+        call(
+            Path::new("synthetic/not-opened.jsonl"),
+            max_files,
+            max_bytes,
+            jobs,
+            max_file_bytes,
+            vendor_layout,
+            newest,
+            since,
+            max_findings_per_code,
+        )
+    }
+
+    fn ready(
+        jobs: ScanCount,
+        vendor_layout: Option<&str>,
+        newest: Option<ScanCount>,
+        since: Option<&str>,
+    ) -> ScanPathError {
+        at(
+            int(DEFAULT_MAX_FILES),
+            int(DEFAULT_MAX_BYTES),
+            jobs,
+            int(crate::io::DEFAULT_MAX_FILE_BYTES),
+            vendor_layout,
+            newest,
+            since,
+            int(DEFAULT_MAX_FINDINGS_PER_CODE),
+        )
+    }
+
+    fn expect(error: ScanPathError, sentence: &str) {
+        assert_eq!(error.to_string(), sentence);
+        assert!(error.source().is_none());
+    }
+
+    fn ready_findings(max_findings_per_code: ScanCount) -> ScanPathError {
+        at(
+            int(DEFAULT_MAX_FILES),
+            int(DEFAULT_MAX_BYTES),
+            int(1),
+            int(crate::io::DEFAULT_MAX_FILE_BYTES),
+            Some("codex"),
+            Some(int(1)),
+            None,
+            max_findings_per_code,
+        )
+    }
+
+    #[test]
+    fn shown_limits_reject_bool_then_non_positive_int() {
+        expect(
+            at(
+                flag(true),
+                int(0),
+                flag(true),
+                flag(true),
+                Some("nope"),
+                Some(flag(true)),
+                Some("2020-01-01"),
+                flag(true),
+            ),
+            "max_files must be a positive integer (> 0), got True",
+        );
+        assert_eq!(
+            at(flag(true), int(1), int(1), int(1), None, None, None, int(1),),
+            ScanPathError::MaxFiles(flag(true))
+        );
+        expect(
+            at(
+                flag(false),
+                flag(true),
+                int(0),
+                int(0),
+                Some("nope"),
+                None,
+                None,
+                int(0),
+            ),
+            "max_files must be a positive integer (> 0), got False",
+        );
+        expect(
+            at(
+                int(0),
+                flag(false),
+                flag(false),
+                flag(false),
+                Some("nope"),
+                Some(int(0)),
+                Some("2020-01-01"),
+                int(0),
+            ),
+            "max_files must be a positive integer (> 0), got 0",
+        );
+        expect(
+            at(
+                int(-4),
+                int(0),
+                int(-1),
+                int(-1),
+                Some("nope"),
+                Some(int(-1)),
+                None,
+                int(-1),
+            ),
+            "max_files must be a positive integer (> 0), got -4",
+        );
+        expect(
+            at(
+                int(1),
+                flag(true),
+                flag(true),
+                flag(true),
+                Some("nope"),
+                Some(flag(true)),
+                Some("2020-01-01"),
+                flag(true),
+            ),
+            "max_bytes must be a positive integer (> 0), got True",
+        );
+        expect(
+            at(
+                int(1),
+                flag(false),
+                int(0),
+                int(0),
+                None,
+                None,
+                None,
+                int(0),
+            ),
+            "max_bytes must be a positive integer (> 0), got False",
+        );
+        expect(
+            at(
+                int(1),
+                int(0),
+                flag(true),
+                flag(true),
+                Some("nope"),
+                None,
+                Some("2020-01-01"),
+                int(0),
+            ),
+            "max_bytes must be a positive integer (> 0), got 0",
+        );
+        expect(
+            at(
+                int(1),
+                int(-8),
+                int(0),
+                int(0),
+                Some("nope"),
+                None,
+                None,
+                int(0),
+            ),
+            "max_bytes must be a positive integer (> 0), got -8",
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                flag(true),
+                flag(true),
+                Some("nope"),
+                Some(flag(true)),
+                Some("2020-01-01"),
+                flag(true),
+            ),
+            "jobs must be a positive integer (>= 1), got True",
+        );
+        expect(
+            ready(
+                flag(false),
+                Some("nope"),
+                Some(flag(false)),
+                Some("2020-01-01"),
+            ),
+            "jobs must be a positive integer (>= 1), got False",
+        );
+        expect(
+            ready(int(0), Some("claude"), None, Some("2020-01-01")),
+            "jobs must be a positive integer (>= 1), got 0",
+        );
+        expect(
+            ready(int(-1), None, Some(int(0)), None),
+            "jobs must be a positive integer (>= 1), got -1",
+        );
+    }
+
+    #[test]
+    fn type_is_int_rejects_bool_without_the_shown_value() {
+        let max_file_bytes = "max_file_bytes must be a positive integer";
+        let findings = "max_findings_per_code must be a positive integer";
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                flag(true),
+                Some("nope"),
+                Some(flag(true)),
+                Some("2020-01-01"),
+                flag(true),
+            ),
+            max_file_bytes,
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                flag(false),
+                None,
+                None,
+                None,
+                int(0),
+            ),
+            max_file_bytes,
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                int(0),
+                Some("nope"),
+                None,
+                None,
+                int(0),
+            ),
+            max_file_bytes,
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                int(-3),
+                None,
+                Some(int(0)),
+                Some("2020-01-01"),
+                int(-1),
+            ),
+            max_file_bytes,
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                int(1),
+                Some("nope"),
+                Some(flag(true)),
+                Some("2020-01-01"),
+                flag(true),
+            ),
+            findings,
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                int(1),
+                Some("claude"),
+                Some(flag(false)),
+                None,
+                flag(false),
+            ),
+            findings,
+        );
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                int(1),
+                None,
+                Some(int(1)),
+                Some("2020-01-01"),
+                int(0),
+            ),
+            findings,
+        );
+        expect(ready_findings(int(-1)), findings);
+    }
+
+    #[test]
+    fn newest_vendor_since_and_the_path_seam() {
+        let newest = "newest must be a positive integer";
+        let vendor = "vendor_layout must be claude or codex";
+        expect(
+            at(
+                int(1),
+                int(1),
+                int(1),
+                int(1),
+                Some("nope"),
+                Some(flag(true)),
+                Some("2020-01-01"),
+                int(1),
+            ),
+            newest,
+        );
+        expect(
+            ready(int(1), Some("nope"), Some(flag(false)), Some("2020-01-01")),
+            newest,
+        );
+        expect(ready(int(1), Some("claude"), Some(int(0)), None), newest);
+        expect(
+            ready(int(1), Some("codex"), Some(int(-5)), Some("2020-01-01")),
+            newest,
+        );
+        expect(
+            ready(int(1), Some("nope"), Some(int(1)), Some("2020-01-01")),
+            vendor,
+        );
+        expect(
+            ready(int(1), Some("Claude"), None, Some("2020-01-01")),
+            vendor,
+        );
+        expect(ready(int(1), Some(""), None, None), vendor);
+        expect(ready(int(1), Some("codex "), Some(int(2)), None), vendor);
+        expect(ready(int(1), Some("none"), None, None), vendor);
+
+        let since_error = ready(int(1), None, None, Some("2020-01-01"));
+        assert_eq!(since_error, ScanPathError::DateFromisoformat);
+        expect(since_error, "datetime.date.fromisoformat is not available");
+        assert_eq!(since_error.to_string(), DATE_FROMISOFORMAT_UNAVAILABLE);
+        assert!(!since_error.to_string().contains("2020"));
+        assert!(!since_error
+            .to_string()
+            .chars()
+            .any(|ch| ch.is_ascii_digit()));
+        expect(
+            ready(int(62), Some("claude"), Some(int(1)), Some("")),
+            "datetime.date.fromisoformat is not available",
+        );
+        expect(
+            ready(int(100), Some("codex"), None, Some("not-a-date")),
+            "datetime.date.fromisoformat is not available",
+        );
+
+        let minimized = ready(int(1), None, None, None);
+        assert_eq!(minimized, ScanPathError::MinimizePath);
+        expect(minimized, "sesslint.report.minimize_path is not available");
+        assert_eq!(minimized.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert!(!minimized.to_string().chars().any(|ch| ch.is_ascii_digit()));
+        expect(
+            ready(int(61), Some("claude"), None, None),
+            MINIMIZE_PATH_UNAVAILABLE,
+        );
+        expect(
+            ready(int(62), Some("codex"), Some(int(1)), None),
+            MINIMIZE_PATH_UNAVAILABLE,
+        );
+        expect(
+            ready(int(100), None, Some(int(i64::MAX)), None),
+            MINIMIZE_PATH_UNAVAILABLE,
+        );
+        expect(
+            at(
+                int(i64::MAX),
+                int(i64::MAX),
+                int(i64::MAX),
+                int(i64::MAX),
+                None,
+                Some(int(i64::MAX)),
+                None,
+                int(i64::MAX),
+            ),
+            MINIMIZE_PATH_UNAVAILABLE,
+        );
+        expect(ready_findings(int(1)), MINIMIZE_PATH_UNAVAILABLE);
+
+        let dot = call(
+            Path::new("."),
+            int(1),
+            int(1),
+            int(1),
+            int(1),
+            None,
+            None,
+            None,
+            int(1),
+        );
+        assert_eq!(dot, ScanPathError::MinimizePath);
+        let missing = call(
+            Path::new("C:/synthetic/missing"),
+            int(1),
+            int(1),
+            int(1),
+            int(1),
+            None,
+            None,
+            None,
+            int(20),
+        );
+        assert_eq!(missing.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert!(!missing.to_string().contains("C:"));
+    }
+}
