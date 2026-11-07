@@ -1,8 +1,8 @@
-//! OpenAI Agents SDK run-state projection, detection, and payload assembly.
+//! OpenAI Agents SDK run-state projection, detection, payload assembly, and load gates.
 //!
 //! Port of `src/sesslint/adapters/openai_agents.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–525.
-//! Stops before `load_openai_agents` (line 528).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–670.
+//! Stops before `_load_openai_agents_json` (line 673).
 //!
 //! Lines 1–313 port [`safe_type_value`] (Python `_safe_type_value`),
 //! [`project_run_state`], and [`SourceMetadata`]. [`SourceMetadata`] is the
@@ -28,6 +28,38 @@
 //! fails before the decoder seam. Other kinds do not call it.
 //! [`detect_openai_agents`] does not call it and returns a score.
 //! This file does not invent an SL code.
+//!
+//! [`load_openai_agents`] ports lines 528–670. Bytes use an in-memory stream
+//! and the path `<bytes>`. A filesystem path checks existence, then a
+//! directory, then the size gate. The first two errors are raised before the
+//! file is opened. An `OSError` from the size-gate stat is ignored and the
+//! open still runs. A stream uses its `name`, or `<stream>`, and `\` becomes
+//! `/` in that path. Exception text keeps `str(Path(...))`. A finding path
+//! uses the slash form.
+//!
+//! The first 16 bytes refuse [`SQLITE_MAGIC`] before any later read. The next
+//! read is `max(0, max_file_bytes - 16 + 1)` bytes. A longer buffer is the
+//! same size-limit finding as the stat gate. An owned file is closed on every
+//! exit from that read, including the size-limit return. A leading UTF-8 BOM
+//! is removed, then ASCII whitespace. Empty data returns an empty
+//! [`EventList`] and no findings, and does not construct the secret tracker.
+//! A non-empty body is classified as a JSON document or JSONL, then stops.
+//!
+//! `sesslint.checks.hygiene.SecretScanTracker` is not in this crate. Building
+//! it is the first missing call. The error display is
+//! [`SECRET_SCAN_TRACKER_UNAVAILABLE`]. The JSON and JSONL loaders are not
+//! called. No events, SL301, or SL302 are invented. A non-empty document does
+//! not return a successful [`EventList`].
+//!
+//! `limits is None` uses [`DEFAULT_MAX_FILE_BYTES`] from `src/sesslint/io.py`
+//! at this pin (`100 * 1024 * 1024`). A provided integer is that cap.
+//! [`MaxFileBytes::Bool`] is not an integer and is not used as `0` or `1`.
+//!
+//! The size and SQLite gates call [`model::finding::make_finding`] with the
+//! fingerprint omitted. That stops at
+//! `sesslint.determinism.canonical_json_bytes is not available`. These gates
+//! do not return a finding and do not invent a digest. The JSON and JSONL
+//! loaders, and [`model::finding::sort_findings`], are not reached.
 //!
 //! [`detect_openai_agents`] uses the filename, then the bytes: an empty
 //! buffer, [`SQLITE_MAGIC`], a leading UTF-8 BOM, the rollout envelope on the
@@ -88,8 +120,14 @@
 
 use std::error::Error;
 use std::fmt;
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::{Component, Path, PrefixComponent};
 
 use model::canonical::SessionEvent;
+use model::codes::{Repairability, Severity, SL001};
+use model::finding::PyValue as FindingValue;
+use model::finding::{make_finding, Finding, MakeFindingInput, SourceLine, SourceRef};
 
 use crate::safe_value::safe_discriminator;
 use crate::safe_value::PyValue;
@@ -1509,17 +1547,499 @@ fn key_repr(key: &MapKey) -> Option<String> {
     }
 }
 
+/// Python `DEFAULT_MAX_FILE_BYTES` from `src/sesslint/io.py` at the pin.
+///
+/// `100 * 1024 * 1024`. This is not the scan crate's copy.
+pub const DEFAULT_MAX_FILE_BYTES: i64 = 100 * 1024 * 1024;
+
+/// `sesslint.checks.hygiene.SecretScanTracker` is not in this crate.
+pub const SECRET_SCAN_TRACKER_UNAVAILABLE: &str =
+    "sesslint.checks.hygiene.SecretScanTracker is not available";
+
+const SIZE_LIMIT_TEMPLATE: &str = "File size exceeds maximum limit [detail: LIMIT]";
+
+const SQLITE_REFUSAL_TEMPLATE: &str = "Refused live SQLite database; SessLint requires exported items or checkpoints [detail: refused_live_db]";
+
+const JSON_OBJECT_MARKERS: [&[u8]; 5] = [
+    b"\"items\"",
+    b"\"run_state\"",
+    b"\"checkpoints\"",
+    b"\"sdk_version\"",
+    b"\"export_version\"",
+];
+
+/// `max_file_bytes` passed to [`load_openai_agents`].
+///
+/// [`Self::Bool`] is not an [`Self::Int`]. `True` is not `1` and `False` is not `0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaxFileBytes {
+    /// Python `int` that is not `bool`.
+    Int(i64),
+    /// Python `bool`.
+    Bool(bool),
+}
+
+/// Input of [`load_openai_agents`].
+pub enum OpenAiAgentsSource<'a> {
+    /// `bytes`. The path is `<bytes>`.
+    Bytes(&'a [u8]),
+    /// `str`, `Path`, or `PathLike`.
+    Path(&'a Path),
+    /// A binary stream. `name` is the `name` attribute. `None` is `<stream>`.
+    Stream {
+        /// Byte source. This is not closed.
+        reader: &'a mut dyn Read,
+        /// `getattr(stream, "name", "<stream>")` when that value is text.
+        name: Option<&'a str>,
+    },
+}
+
+/// JSON document or JSONL, decided before the secret-tracker seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentsDocumentKind {
+    /// Top-level JSON document.
+    Json,
+    /// JSONL stream.
+    Jsonl,
+}
+
+/// Failure from [`load_openai_agents`].
+///
+/// [`Self::SecretScanTracker`] displays [`SECRET_SCAN_TRACKER_UNAVAILABLE`].
+/// The document kind is not part of that text.
+#[derive(Debug)]
+pub enum LoadOpenAiAgentsError {
+    /// `FileNotFoundError`: `Session file not found: {path}`.
+    NotFound(String),
+    /// `IsADirectoryError`: `Expected session file, got directory: {path}`.
+    IsADirectory(String),
+    /// A bool was supplied where `max_file_bytes` must be an int.
+    MaxFileBytes(String),
+    /// `open` or `read` failed.
+    Io(io::Error),
+    /// [`make_finding`] stopped before `canonical_json_bytes`.
+    ///
+    /// `path` is the source path passed into that call. It is not part of
+    /// [`Display`].
+    Finding {
+        /// Size-limit gate or SQLite refusal.
+        gate: FindingGate,
+        /// Source path. Slashes are already normalized.
+        path: String,
+        /// Codec seam, or an earlier `make_finding` rejection.
+        error: model::errors::FindingError,
+    },
+    /// Classified document, stopped at `SecretScanTracker()`.
+    SecretScanTracker(AgentsDocumentKind),
+}
+
+/// Which pure gate reached [`make_finding`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FindingGate {
+    /// File or buffer longer than `max_file_bytes`.
+    Size,
+    /// Leading `SQLite format 3\0`.
+    Sqlite,
+}
+
+impl LoadOpenAiAgentsError {
+    /// JSON or JSONL when the secret-tracker seam was reached.
+    #[must_use]
+    pub fn document_kind(&self) -> Option<AgentsDocumentKind> {
+        match self {
+            Self::SecretScanTracker(kind) => Some(*kind),
+            _ => None,
+        }
+    }
+
+    /// Size or SQLite gate when [`make_finding`] was called.
+    #[must_use]
+    pub fn finding_gate(&self) -> Option<FindingGate> {
+        match self {
+            Self::Finding { gate, .. } => Some(*gate),
+            _ => None,
+        }
+    }
+
+    /// Source path passed to [`make_finding`]. Not included in [`Display`].
+    #[must_use]
+    pub fn source_path(&self) -> Option<&str> {
+        match self {
+            Self::Finding { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for LoadOpenAiAgentsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound(message) | Self::IsADirectory(message) | Self::MaxFileBytes(message) => {
+                formatter.write_str(message)
+            }
+            Self::Io(err) => err.fmt(formatter),
+            Self::Finding { error, .. } => error.fmt(formatter),
+            Self::SecretScanTracker(_) => formatter.write_str(SECRET_SCAN_TRACKER_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for LoadOpenAiAgentsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            Self::Finding { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+}
+
+/// Ingest an OpenAI Agents SDK session export through the pure gates.
+///
+/// Python: `load_openai_agents` lines 528–670. `max_file_bytes` `None` uses
+/// [`DEFAULT_MAX_FILE_BYTES`]. After JSON-versus-JSONL classification this
+/// returns [`LoadOpenAiAgentsError::SecretScanTracker`].
+///
+/// # Errors
+///
+/// A missing path, a directory, a bool cap, I/O, a rejected finding, or the
+/// secret-tracker seam.
+#[must_use = "the tracker seam and the gate findings are the result"]
+pub fn load_openai_agents(
+    source: OpenAiAgentsSource<'_>,
+    max_file_bytes: Option<MaxFileBytes>,
+) -> Result<(EventList, Vec<Finding>), LoadOpenAiAgentsError> {
+    let max_bytes = resolve_max_file_bytes(max_file_bytes)?;
+    match source {
+        OpenAiAgentsSource::Bytes(bytes) => {
+            let mut cursor = io::Cursor::new(bytes);
+            ingest(&mut cursor, "<bytes>", max_bytes)
+        }
+        OpenAiAgentsSource::Stream { reader, name } => {
+            let path_str = name.unwrap_or("<stream>").replace('\\', "/");
+            ingest(reader, &path_str, max_bytes)
+        }
+        OpenAiAgentsSource::Path(path) => load_path(path, max_bytes),
+    }
+}
+
+fn resolve_max_file_bytes(limit: Option<MaxFileBytes>) -> Result<i64, LoadOpenAiAgentsError> {
+    match limit {
+        None => Ok(DEFAULT_MAX_FILE_BYTES),
+        Some(MaxFileBytes::Int(value)) => Ok(value),
+        Some(MaxFileBytes::Bool(value)) => {
+            let rendered = if value { "True" } else { "False" };
+            Err(LoadOpenAiAgentsError::MaxFileBytes(format!(
+                "max_file_bytes must be a positive integer, got {rendered}"
+            )))
+        }
+    }
+}
+
+fn load_path(
+    path: &Path,
+    max_bytes: i64,
+) -> Result<(EventList, Vec<Finding>), LoadOpenAiAgentsError> {
+    let displayed = python_path_text(path);
+    let finding_path = displayed.replace('\\', "/");
+    if path.metadata().is_err() {
+        return Err(LoadOpenAiAgentsError::NotFound(format!(
+            "Session file not found: {displayed}"
+        )));
+    }
+    match path.metadata() {
+        Ok(meta) if meta.is_dir() => {
+            return Err(LoadOpenAiAgentsError::IsADirectory(format!(
+                "Expected session file, got directory: {displayed}"
+            )));
+        }
+        Ok(_) => {}
+        Err(_) => {}
+    }
+    match path.metadata() {
+        Ok(meta) if meta.is_file() && exceeds_limit(meta.len(), max_bytes) => {
+            let finding = size_finding(&finding_path, max_bytes)?;
+            return Ok((empty_list(), vec![finding]));
+        }
+        Ok(_) => {}
+        Err(_) => {}
+    }
+    let mut file = File::open(path).map_err(LoadOpenAiAgentsError::Io)?;
+    let outcome = ingest(&mut file, &finding_path, max_bytes);
+    drop(file);
+    outcome
+}
+
+fn ingest(
+    reader: &mut dyn Read,
+    path_str: &str,
+    max_bytes: i64,
+) -> Result<(EventList, Vec<Finding>), LoadOpenAiAgentsError> {
+    let first = read_limited(reader, 16)?;
+    if first.starts_with(SQLITE_MAGIC) {
+        let finding = sqlite_finding(path_str)?;
+        return Ok((refused_list(), vec![finding]));
+    }
+    let extra = extra_to_read(max_bytes, first.len());
+    let mut full = first;
+    full.extend(read_limited(reader, extra)?);
+    if bytes_exceed(full.len(), max_bytes) {
+        let finding = size_finding(path_str, max_bytes)?;
+        return Ok((empty_list(), vec![finding]));
+    }
+    let stripped = strip_ascii_ws(strip_bom(&full));
+    if stripped.is_empty() {
+        return Ok((empty_list(), Vec::new()));
+    }
+    let kind = classify_document(stripped);
+    Err(LoadOpenAiAgentsError::SecretScanTracker(kind))
+}
+
+fn empty_list() -> EventList {
+    EventList::new(Vec::new(), Some(SourceMetadata::new()))
+}
+
+fn refused_list() -> EventList {
+    EventList::new(
+        Vec::new(),
+        Some(SourceMetadata::from_entries([(
+            "format",
+            MetaValue::Str("refused_live_db".to_owned()),
+        )])),
+    )
+}
+
+fn read_limited(reader: &mut dyn Read, max: usize) -> Result<Vec<u8>, LoadOpenAiAgentsError> {
+    let mut out = Vec::new();
+    if max == 0 {
+        return Ok(out);
+    }
+    let mut buf = [0u8; 8192];
+    while out.len() < max {
+        let want = (max - out.len()).min(buf.len());
+        match reader.read(&mut buf[..want]) {
+            Ok(0) => break,
+            Ok(count) => out.extend_from_slice(&buf[..count]),
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
+            Err(err) => return Err(LoadOpenAiAgentsError::Io(err)),
+        }
+    }
+    Ok(out)
+}
+
+fn extra_to_read(max_bytes: i64, first_len: usize) -> usize {
+    let max = i128::from(max_bytes);
+    let first = i128::from(u64::try_from(first_len).map_or(u64::MAX, |value| value));
+    let raw = max - first + 1;
+    if raw <= 0 {
+        0
+    } else {
+        usize::try_from(raw).unwrap_or(usize::MAX)
+    }
+}
+
+fn exceeds_limit(len: u64, max_bytes: i64) -> bool {
+    match u64::try_from(max_bytes) {
+        Ok(max) => len > max,
+        Err(_) => true,
+    }
+}
+
+fn bytes_exceed(len: usize, max_bytes: i64) -> bool {
+    let len = u64::try_from(len).map_or(u64::MAX, |value| value);
+    exceeds_limit(len, max_bytes)
+}
+
+fn strip_bom(data: &[u8]) -> &[u8] {
+    data.strip_prefix(UTF8_BOM).unwrap_or(data)
+}
+
+fn strip_ascii_ws(data: &[u8]) -> &[u8] {
+    let start = data
+        .iter()
+        .position(|byte| !is_python_byte_space(*byte))
+        .unwrap_or(data.len());
+    let end = data
+        .iter()
+        .rposition(|byte| !is_python_byte_space(*byte))
+        .map_or(start, |index| index + 1);
+    &data[start..end]
+}
+
+fn is_python_byte_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+}
+
+fn classify_document(data: &[u8]) -> AgentsDocumentKind {
+    match data.first().copied() {
+        Some(b'[') => AgentsDocumentKind::Json,
+        Some(b'{') if json_object_document(data) => AgentsDocumentKind::Json,
+        _ => AgentsDocumentKind::Jsonl,
+    }
+}
+
+fn json_object_document(data: &[u8]) -> bool {
+    let line_end = data
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .unwrap_or(data.len());
+    let first_line = strip_ascii_ws(&data[..line_end]);
+    first_line == b"{"
+        || JSON_OBJECT_MARKERS
+            .iter()
+            .any(|marker| contains_bytes(first_line, marker))
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return false;
+    }
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+fn size_finding(
+    path_str: &str,
+    max_bytes: i64,
+) -> Result<model::finding::Finding, LoadOpenAiAgentsError> {
+    let evidence = FindingValue::map(vec![
+        (
+            FindingValue::string("reason"),
+            FindingValue::string("size_limit_exceeded"),
+        ),
+        (FindingValue::string("limit"), FindingValue::int(max_bytes)),
+    ]);
+    gate_finding(
+        FindingGate::Size,
+        path_str,
+        Severity::Error,
+        Repairability::Manual,
+        SIZE_LIMIT_TEMPLATE,
+        evidence,
+    )
+}
+
+fn sqlite_finding(path_str: &str) -> Result<model::finding::Finding, LoadOpenAiAgentsError> {
+    let evidence = FindingValue::map(vec![(
+        FindingValue::string("reason"),
+        FindingValue::string("refused_live_db"),
+    )]);
+    gate_finding(
+        FindingGate::Sqlite,
+        path_str,
+        Severity::Fatal,
+        Repairability::Unsupported,
+        SQLITE_REFUSAL_TEMPLATE,
+        evidence,
+    )
+}
+
+fn gate_finding(
+    gate: FindingGate,
+    path_str: &str,
+    severity: Severity,
+    repairability: Repairability,
+    template: &str,
+    evidence: FindingValue,
+) -> Result<model::finding::Finding, LoadOpenAiAgentsError> {
+    let source = SourceRef::try_new(path_str, Some(SourceLine::Int(1)), None).map_err(|error| {
+        LoadOpenAiAgentsError::Finding {
+            gate,
+            path: path_str.to_owned(),
+            error,
+        }
+    })?;
+    make_finding(&MakeFindingInput {
+        code: FindingValue::string(SL001),
+        severity: FindingValue::severity(severity),
+        repairability: FindingValue::repairability(repairability),
+        message_template: FindingValue::string(template),
+        template_args: FindingValue::None,
+        source: FindingValue::source(source),
+        related_ids: FindingValue::tuple(Vec::new()),
+        evidence,
+        fingerprint: FindingValue::None,
+        adapter_id: None,
+        adapter_version: None,
+        profile_id: None,
+        profile_version: None,
+        ordinal: None,
+        context: None,
+    })
+    .map_err(|error| LoadOpenAiAgentsError::Finding {
+        gate,
+        path: path_str.to_owned(),
+        error,
+    })
+}
+
+fn python_path_text(path: &Path) -> String {
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix_component) => {
+                prefix = prefix_text(&prefix_component);
+            }
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            Component::ParentDir => parts.push("..".to_owned()),
+            Component::Normal(text) => parts.push(text.to_string_lossy().into_owned()),
+        }
+    }
+    join_python_path(&prefix, rooted, &parts)
+}
+
+fn prefix_text(component: &PrefixComponent<'_>) -> String {
+    component.as_os_str().to_string_lossy().into_owned()
+}
+
+fn join_python_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
+    let sep = std::path::MAIN_SEPARATOR;
+    if prefix.is_empty() && !rooted && parts.is_empty() {
+        return ".".to_owned();
+    }
+    let mut out = String::new();
+    if !prefix.is_empty() {
+        out.push_str(prefix);
+    }
+    if rooted && !out.ends_with(sep) {
+        out.push(sep);
+    }
+    for (index, part) in parts.iter().enumerate() {
+        let drive_relative = index == 0 && !rooted && prefix.ends_with(':');
+        if !out.is_empty() && !out.ends_with(sep) && !drive_relative {
+            out.push(sep);
+        }
+        out.push_str(part);
+    }
+    if out.is_empty() {
+        ".".to_owned()
+    } else {
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_payload, detect_openai_agents, normalize_timestamp, normalize_version,
-        project_run_state, safe_type_value, AttrObject, BuildPayloadError, EventList, MapKey,
-        MapValue, MetaValue, ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata,
-        TruncationTotals, MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS, SQLITE_MAGIC,
-        STRICT_JSON_DECODE_UNAVAILABLE, STR_UNRENDERED,
+        build_payload, detect_openai_agents, load_openai_agents, normalize_timestamp,
+        normalize_version, project_run_state, python_path_text, safe_type_value,
+        AgentsDocumentKind, AttrObject, BuildPayloadError, EventList, FindingGate,
+        LoadOpenAiAgentsError, MapKey, MapValue, MaxFileBytes, MetaValue, OpenAiAgentsSource,
+        ProjectedCheckpoint, RunSource, SeqNumber, SourceMetadata, TruncationTotals,
+        DEFAULT_MAX_FILE_BYTES, MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS,
+        SECRET_SCAN_TRACKER_UNAVAILABLE, SQLITE_MAGIC, STRICT_JSON_DECODE_UNAVAILABLE,
+        STR_UNRENDERED,
     };
     use crate::safe_value::{safe_discriminator, PyValue};
     use model::canonical::SessionEvent;
+    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
+    use std::fs;
+    use std::io::{self, Read};
+    use std::path::{Path, PathBuf};
 
     fn ix(index: usize) -> i64 {
         i64::try_from(index).expect("index fits")
@@ -2744,5 +3264,353 @@ mod tests {
             field(&passed, "role"),
             Some(&MetaValue::Str("assistant".to_owned()))
         );
+    }
+
+    struct ByteReader<'a> {
+        data: &'a [u8],
+        pos: usize,
+    }
+
+    impl Read for ByteReader<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.pos >= self.data.len() || buf.is_empty() {
+                return Ok(0);
+            }
+            buf[0] = self.data[self.pos];
+            self.pos += 1;
+            Ok(1)
+        }
+    }
+
+    struct TempTree {
+        path: PathBuf,
+    }
+
+    impl TempTree {
+        fn new(label: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("sesslint-oa03-{}-{label}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("temp dir");
+            Self { path }
+        }
+
+        fn child(&self, name: &str) -> PathBuf {
+            self.path.join(name)
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn kind_of(bytes: &[u8]) -> AgentsDocumentKind {
+        let err = load_openai_agents(OpenAiAgentsSource::Bytes(bytes), None).expect_err("seam");
+        assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        err.document_kind().expect("classified")
+    }
+
+    fn assert_empty_ok(bytes: &[u8]) {
+        let (events, findings) =
+            load_openai_agents(OpenAiAgentsSource::Bytes(bytes), None).expect("empty");
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+        assert!(events.source.entries().is_empty());
+    }
+
+    fn assert_codec_gate(bytes: &[u8], cap: i64, gate: FindingGate) -> LoadOpenAiAgentsError {
+        let err = load_openai_agents(
+            OpenAiAgentsSource::Bytes(bytes),
+            Some(MaxFileBytes::Int(cap)),
+        )
+        .expect_err("codec");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.finding_gate(), Some(gate));
+        assert_eq!(err.source_path(), Some("<bytes>"));
+        assert!(err.document_kind().is_none());
+        assert!(!err.to_string().contains("MARKER"));
+        err
+    }
+
+    #[test]
+    fn default_cap_matches_the_pin_io_constant() {
+        assert_eq!(DEFAULT_MAX_FILE_BYTES, 100 * 1024 * 1024);
+        assert_eq!(DEFAULT_MAX_FILE_BYTES, 104_857_600);
+    }
+
+    #[test]
+    fn python_path_text_matches_pathlib_samples() {
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(python_path_text(Path::new("")), ".");
+        assert_eq!(python_path_text(Path::new(".")), ".");
+        assert_eq!(python_path_text(Path::new("./dir")), "dir");
+        assert_eq!(python_path_text(Path::new("foo/")), "foo");
+        assert_eq!(
+            python_path_text(Path::new("foo/../bar")),
+            format!("foo{sep}..{sep}bar")
+        );
+        assert_eq!(python_path_text(Path::new("a//b")), format!("a{sep}b"));
+        assert_eq!(python_path_text(Path::new("a/./b")), format!("a{sep}b"));
+        assert_eq!(
+            python_path_text(Path::new("missing/file.json")),
+            format!("missing{sep}file.json")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn python_path_text_matches_windows_pathlib() {
+        assert_eq!(python_path_text(Path::new("C:/nope/x")), r"C:\nope\x");
+        assert_eq!(python_path_text(Path::new(r"/abs/file")), r"\abs\file");
+        assert_eq!(python_path_text(Path::new("C:foo")), "C:foo");
+        assert_eq!(python_path_text(Path::new("C:/")), r"C:\");
+        assert_eq!(python_path_text(Path::new("/")), r"\");
+        assert_eq!(
+            python_path_text(Path::new(r"\\server\share\f")),
+            r"\\server\share\f"
+        );
+    }
+
+    #[test]
+    fn bool_cap_is_not_an_integer() {
+        let true_err = load_openai_agents(
+            OpenAiAgentsSource::Bytes(b""),
+            Some(MaxFileBytes::Bool(true)),
+        )
+        .expect_err("true");
+        assert_eq!(
+            true_err.to_string(),
+            "max_file_bytes must be a positive integer, got True"
+        );
+        assert!(true_err.document_kind().is_none());
+        let false_err = load_openai_agents(
+            OpenAiAgentsSource::Bytes(b"["),
+            Some(MaxFileBytes::Bool(false)),
+        )
+        .expect_err("false");
+        assert_eq!(
+            false_err.to_string(),
+            "max_file_bytes must be a positive integer, got False"
+        );
+        assert!(matches!(false_err, LoadOpenAiAgentsError::MaxFileBytes(_)));
+    }
+
+    #[test]
+    fn empty_bytes_skip_the_tracker() {
+        assert_empty_ok(b"");
+        assert_empty_ok(b" \t\r\n\x0b\x0c ");
+        assert_empty_ok(b"\xef\xbb\xbf");
+        assert_empty_ok(b"\xef\xbb\xbf \n");
+        let (events, findings) =
+            load_openai_agents(OpenAiAgentsSource::Bytes(b""), Some(MaxFileBytes::Int(0)))
+                .expect("zero cap empty");
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn negative_cap_is_still_an_integer_size_gate() {
+        assert_codec_gate(b"", -1, FindingGate::Size);
+    }
+
+    #[test]
+    fn bytes_size_gate_and_sqlite_gate_keep_pin_order() {
+        let marker = b"MARKERMARKERMARKER";
+        assert_codec_gate(marker, 4, FindingGate::Size);
+        let mut magic = SQLITE_MAGIC.to_vec();
+        magic.extend_from_slice(b"MARKER");
+        assert_codec_gate(&magic, 8, FindingGate::Sqlite);
+        assert_codec_gate(SQLITE_MAGIC, 8, FindingGate::Sqlite);
+    }
+
+    #[test]
+    fn stream_names_are_slash_normalized_and_default_to_stream() {
+        let mut named = ByteReader {
+            data: SQLITE_MAGIC,
+            pos: 0,
+        };
+        let named_err = load_openai_agents(
+            OpenAiAgentsSource::Stream {
+                reader: &mut named,
+                name: Some(r"a\b"),
+            },
+            Some(MaxFileBytes::Int(8)),
+        )
+        .expect_err("named");
+        assert_eq!(named_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(named_err.finding_gate(), Some(FindingGate::Sqlite));
+        assert_eq!(named_err.source_path(), Some("a/b"));
+
+        let mut quoted = ByteReader {
+            data: SQLITE_MAGIC,
+            pos: 0,
+        };
+        let quoted_err = load_openai_agents(
+            OpenAiAgentsSource::Stream {
+                reader: &mut quoted,
+                name: Some("a\"b"),
+            },
+            None,
+        )
+        .expect_err("quoted");
+        assert_eq!(quoted_err.source_path(), Some("a\"b"));
+        assert_eq!(quoted_err.finding_gate(), Some(FindingGate::Sqlite));
+
+        let mut unnamed = ByteReader {
+            data: SQLITE_MAGIC,
+            pos: 0,
+        };
+        let unnamed_err = load_openai_agents(
+            OpenAiAgentsSource::Stream {
+                reader: &mut unnamed,
+                name: None,
+            },
+            None,
+        )
+        .expect_err("unnamed");
+        assert_eq!(unnamed_err.source_path(), Some("<stream>"));
+
+        let payload = b"MARKERMARKERMARKERMARKER";
+        let mut slow = ByteReader {
+            data: payload,
+            pos: 0,
+        };
+        let slow_err = load_openai_agents(
+            OpenAiAgentsSource::Stream {
+                reader: &mut slow,
+                name: Some(r"a\b"),
+            },
+            Some(MaxFileBytes::Int(18)),
+        )
+        .expect_err("slow size");
+        assert_eq!(slow_err.finding_gate(), Some(FindingGate::Size));
+        assert_eq!(slow_err.source_path(), Some("a/b"));
+        assert!(!slow_err.to_string().contains("MARKER"));
+        assert_eq!(slow.pos, 19);
+    }
+
+    #[test]
+    fn partial_sqlite_prefix_is_classified_not_refused() {
+        assert_eq!(kind_of(b"SQLite format 3"), AgentsDocumentKind::Jsonl);
+        assert_eq!(kind_of(b"\xff"), AgentsDocumentKind::Jsonl);
+    }
+
+    #[test]
+    fn classification_stops_at_the_tracker_seam() {
+        assert_eq!(kind_of(b"["), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"  [\n"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\n\"z\":1}"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\r\n\"z\":1}"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\"items\":[]}"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\"run_state\":{}}"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\"checkpoints\":[]}"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\"sdk_version\":1}"), AgentsDocumentKind::Json);
+        assert_eq!(kind_of(b"{\"export_version\":1}"), AgentsDocumentKind::Json);
+        assert_eq!(
+            kind_of(b"\xef\xbb\xbf{\"items\":[]}"),
+            AgentsDocumentKind::Json
+        );
+        assert_eq!(kind_of(b"{\"other\":1}"), AgentsDocumentKind::Jsonl);
+        assert_eq!(kind_of(b"{\"items_extra\":1}"), AgentsDocumentKind::Jsonl);
+        assert_eq!(kind_of(b"x\n{\"items\":1}"), AgentsDocumentKind::Jsonl);
+        let err = load_openai_agents(OpenAiAgentsSource::Bytes(b"{\"items\":[]}"), None)
+            .expect_err("doc");
+        assert!(err.to_string().contains("SecretScanTracker"));
+        assert!(!err.to_string().contains("SL301"));
+        assert!(!err.to_string().contains("SL302"));
+        assert!(matches!(
+            err,
+            LoadOpenAiAgentsError::SecretScanTracker(AgentsDocumentKind::Json)
+        ));
+    }
+
+    #[test]
+    fn path_errors_happen_before_open_and_keep_path_text() {
+        let missing = Path::new("sesslint-missing/nope.json");
+        let missing_err =
+            load_openai_agents(OpenAiAgentsSource::Path(missing), None).expect_err("missing");
+        let missing_text = python_path_text(missing);
+        assert_eq!(
+            missing_err.to_string(),
+            format!("Session file not found: {missing_text}")
+        );
+        assert!(missing_text.contains(std::path::MAIN_SEPARATOR) || !missing_text.contains('/'));
+        assert!(matches!(missing_err, LoadOpenAiAgentsError::NotFound(_)));
+
+        let tree = TempTree::new("dir");
+        let directory = tree.child("folder");
+        fs::create_dir(&directory).expect("dir");
+        let dir_err =
+            load_openai_agents(OpenAiAgentsSource::Path(&directory), None).expect_err("dir");
+        let dir_text = python_path_text(&directory);
+        assert_eq!(
+            dir_err.to_string(),
+            format!("Expected session file, got directory: {dir_text}")
+        );
+        assert!(matches!(dir_err, LoadOpenAiAgentsError::IsADirectory(_)));
+
+        let bool_err = load_openai_agents(
+            OpenAiAgentsSource::Path(missing),
+            Some(MaxFileBytes::Bool(true)),
+        )
+        .expect_err("bool before path");
+        assert!(bool_err.to_string().contains("got True"));
+        assert!(!bool_err.to_string().contains("Session file not found"));
+    }
+
+    #[test]
+    fn file_stat_gate_beats_sqlite_magic_and_closes_the_opened_file() {
+        let tree = TempTree::new("files");
+        let oversize = tree.child("oversize.bin");
+        let mut body = SQLITE_MAGIC.to_vec();
+        body.extend(std::iter::repeat_n(b'M', 32));
+        fs::write(&oversize, &body).expect("write");
+        let before = fs::read(&oversize).expect("read");
+        let oversize_err = load_openai_agents(
+            OpenAiAgentsSource::Path(&oversize),
+            Some(MaxFileBytes::Int(8)),
+        )
+        .expect_err("stat size");
+        assert_eq!(oversize_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(oversize_err.finding_gate(), Some(FindingGate::Size));
+        let oversize_path = oversize_err.source_path().expect("path");
+        assert!(!oversize_path.contains('\\'));
+        assert!(oversize_path.contains("oversize.bin"));
+        assert!(!oversize_err.to_string().contains("MARKER"));
+        assert_eq!(fs::read(&oversize).expect("unchanged"), before);
+        fs::remove_file(&oversize).expect("closed after stat return");
+
+        let exact = tree.child("exact.bin");
+        fs::write(&exact, SQLITE_MAGIC).expect("magic");
+        let db_err = load_openai_agents(
+            OpenAiAgentsSource::Path(&exact),
+            Some(MaxFileBytes::Int(16)),
+        )
+        .expect_err("sqlite file");
+        assert_eq!(db_err.finding_gate(), Some(FindingGate::Sqlite));
+        assert_eq!(db_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let db_path = db_err.source_path().expect("path");
+        assert!(!db_path.contains('\\'));
+        assert!(db_path.contains("exact.bin"));
+        fs::remove_file(&exact).expect("closed after sqlite return");
+
+        let tiny = tree.child("tiny.bin");
+        fs::write(&tiny, b"{").expect("tiny");
+        let tiny_err =
+            load_openai_agents(OpenAiAgentsSource::Path(&tiny), Some(MaxFileBytes::Int(1)))
+                .expect_err("equal cap continues");
+        assert_eq!(tiny_err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
+        assert_eq!(tiny_err.document_kind(), Some(AgentsDocumentKind::Json));
+        fs::remove_file(&tiny).expect("closed after tracker");
+
+        let wide = tree.child("wide.bin");
+        fs::write(&wide, b"{\"other\":1}").expect("wide");
+        let wide_err =
+            load_openai_agents(OpenAiAgentsSource::Path(&wide), None).expect_err("default cap");
+        assert_eq!(wide_err.document_kind(), Some(AgentsDocumentKind::Jsonl));
+        assert_eq!(wide_err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
     }
 }
