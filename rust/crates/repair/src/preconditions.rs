@@ -1,8 +1,7 @@
 //! Precondition engine for deterministic repair planning (TASK-018).
 //!
-//! Port of `src/sesslint/repair/preconditions.py` lines 1–317
+//! Port of `src/sesslint/repair/preconditions.py`
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! `sl003_identical_duplicate` starts at line 320 and is not ported.
 //!
 //! Pure functions: no I/O, no disk access, no mutation of inputs.
 //! Fail closed. This crate does not depend on `checks`, so two calls stay
@@ -14,9 +13,14 @@
 //!
 //! Event fingerprints that need canonical JSON or payload hashing propagate
 //! the event error. This module does not hash and does not iterate a `HashMap`.
+//!
+//! [`register_precondition`] updates the module registry the way
+//! `PRECONDITION_FUNCS` does. That table is not an input.
 
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
+use std::sync::{Mutex, OnceLock};
 
 use model::canonical::{MapLookup, Payload, SessionEvent};
 use model::events::{
@@ -47,6 +51,8 @@ pub enum PreconditionError {
     Event(EventError),
     /// A Python call this crate does not have. Display is `module.function is not available`.
     Unavailable(&'static str),
+    /// Python `ValueError`. Display is the message only.
+    Value(String),
 }
 
 impl fmt::Display for PreconditionError {
@@ -54,6 +60,7 @@ impl fmt::Display for PreconditionError {
         match self {
             Self::Event(error) => error.fmt(formatter),
             Self::Unavailable(message) => formatter.write_str(message),
+            Self::Value(message) => formatter.write_str(message),
         }
     }
 }
@@ -62,7 +69,7 @@ impl Error for PreconditionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Event(error) => Some(error),
-            Self::Unavailable(_) => None,
+            Self::Unavailable(_) | Self::Value(_) => None,
         }
     }
 }
@@ -899,20 +906,627 @@ fn first_sequence_int(value: &DictValue) -> Option<i64> {
     None
 }
 
+/// Precondition: SL003 evidence is the identical-duplicate class with in-range indexes.
+///
+/// A truncated list, a `count` other than the index length, a non-sequence,
+/// a bool index, or an out-of-range index is false. This does not compare
+/// event bytes.
+pub fn sl003_identical_duplicate(ctx: &PreconditionContext<'_>) -> bool {
+    let Some(finding) = ctx.finding else {
+        return false;
+    };
+    let Some(evidence) = evidence_map(finding) else {
+        return false;
+    };
+    if !matches!(
+        evidence.get("variant"),
+        Some(DictValue::Str(variant)) if variant == "identical-duplicate"
+    ) || key_truthy(&evidence, "truncated")
+    {
+        return false;
+    }
+    let Some(items) = evidence.get("record_indexes").and_then(sequence_items) else {
+        return false;
+    };
+    if items.len() < 2 {
+        return false;
+    }
+    let mut indexes = Vec::with_capacity(items.len());
+    for item in items {
+        let Some(index) = as_int(Some(item)) else {
+            return false;
+        };
+        indexes.push(index);
+    }
+    if !count_matches_len(&evidence, indexes.len()) {
+        return false;
+    }
+    let len = ctx.events.len();
+    indexes
+        .iter()
+        .all(|index| index_in_range(*index, len).is_some())
+}
+
+/// Precondition: planner policy is the string `salvage`.
+pub fn salvage_policy(ctx: &PreconditionContext<'_>) -> bool {
+    ctx.policy == "salvage"
+}
+
+/// Precondition: the operator set `acknowledge_side_effects`.
+pub fn acknowledge_side_effects(ctx: &PreconditionContext<'_>) -> bool {
+    ctx.acknowledge_side_effects
+}
+
+/// Indexes in the undirected parent component of `seed_idx`.
+///
+/// The order is breadth-first insertion order. That is the order
+/// [`branch_has_no_checkpoint`] scans. A Python `set` has that iteration
+/// order when it is only grown. An out-of-range seed is still returned after
+/// every id and parent read. Those reads run first and can fail.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Event`] from `_event_id` or `_event_parent_id`.
+/// Id reads finish before parent reads.
+pub fn _find_component_indices(
+    events: &[EventValue],
+    seed_idx: i64,
+) -> Result<Vec<i64>, PreconditionError> {
+    let mut id_to_index = BTreeMap::new();
+    for (index, event) in events.iter().enumerate() {
+        if let Some(id) = map_event(event_id(event))? {
+            id_to_index.insert(id, index);
+        }
+    }
+    let mut adjacent = vec![Vec::new(); events.len()];
+    for (index, event) in events.iter().enumerate() {
+        let Some(parent) = map_event(event_parent_id(event))? else {
+            continue;
+        };
+        let Some(&parent_index) = id_to_index.get(&parent) else {
+            continue;
+        };
+        push_unique(&mut adjacent[index], parent_index);
+        push_unique(&mut adjacent[parent_index], index);
+    }
+
+    let mut visited = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut queue = VecDeque::new();
+    queue.push_back(seed_idx);
+    seen.insert(seed_idx);
+    visited.push(seed_idx);
+    while let Some(current) = queue.pop_front() {
+        let Some(position) = usize_from_i64(current) else {
+            continue;
+        };
+        let Some(neighbors) = adjacent.get(position) else {
+            continue;
+        };
+        for &neighbor in neighbors {
+            let Some(neighbor) = i64::try_from(neighbor).ok() else {
+                continue;
+            };
+            if seen.insert(neighbor) {
+                visited.push(neighbor);
+                queue.push_back(neighbor);
+            }
+        }
+    }
+    Ok(visited)
+}
+
+/// Precondition: the target event's parent component contains no checkpoint.
+///
+/// Evidence indexes are resolved before `record_id`. A missing seed scans
+/// every event. `_event_kind` stops on the first checkpoint. Component
+/// construction still reads every id and parent before that scan.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Event`] from `_event_id`, `_event_parent_id`,
+/// or `_event_kind` when that call runs.
+pub fn branch_has_no_checkpoint(ctx: &PreconditionContext<'_>) -> Result<bool, PreconditionError> {
+    let Some(seed) = resolve_branch_seed(ctx)? else {
+        return no_checkpoint(ctx.events);
+    };
+    let component = _find_component_indices(ctx.events, seed)?;
+    for index in component {
+        let Some(position) = usize_from_i64(index) else {
+            return Ok(false);
+        };
+        let Some(event) = ctx.events.get(position) else {
+            return Ok(false);
+        };
+        if map_event(event_kind(event))?.as_deref() == Some("checkpoint") {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Indexes dropped for one torn compaction boundary.
+///
+/// The result is a set. Iteration is ascending index. Membership matches the
+/// pin. The boundary is always included. Equal orphan sides keep the trailing
+/// side. Event reads run before the "no split" error, in index order, and
+/// kind is read before the correlation id.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Value`] for an empty session, a bad index, a
+/// non-boundary, or a boundary with no split or orphan. Returns
+/// [`PreconditionError::Event`] from `_event_kind` or `_event_corr_id`.
+pub fn _find_torn_compaction_dropped_indices(
+    events: &[EventValue],
+    boundary_idx: i64,
+) -> Result<BTreeSet<usize>, PreconditionError> {
+    if events.is_empty() {
+        return Err(value_error(
+            "Cannot project across compaction in empty session",
+        ));
+    }
+    let Some(boundary) = usize_from_i64(boundary_idx).filter(|index| *index < events.len()) else {
+        return Err(value_error(format!(
+            "Invalid compaction boundary index {boundary_idx}"
+        )));
+    };
+    let Some(boundary_event) = events.get(boundary) else {
+        return Err(value_error(format!(
+            "Invalid compaction boundary index {boundary_idx}"
+        )));
+    };
+    if map_event(event_kind(boundary_event))?.as_deref() != Some("compaction_boundary") {
+        return Err(value_error(format!(
+            "Event at index {boundary_idx} is not a compaction_boundary"
+        )));
+    }
+
+    let mut calls_before = CorrLists::new();
+    let mut results_before = CorrLists::new();
+    for (index, event) in events.iter().enumerate().take(boundary) {
+        classify_tool(event, index, &mut calls_before, &mut results_before)?;
+    }
+    let mut calls_after = CorrLists::new();
+    let mut results_after = CorrLists::new();
+    for (index, event) in events.iter().enumerate().skip(boundary + 1) {
+        classify_tool(event, index, &mut calls_after, &mut results_after)?;
+    }
+
+    let mut orphans_before = BTreeSet::new();
+    let mut orphans_after = BTreeSet::new();
+    for corr in corr_keys([&calls_before, &results_before, &calls_after, &results_after]) {
+        let calls_before = calls_before.indexes(&corr);
+        let results_before = results_before.indexes(&corr);
+        let calls_after = calls_after.indexes(&corr);
+        let results_after = results_after.indexes(&corr);
+        if !calls_before.is_empty() && !results_after.is_empty() {
+            orphans_before.extend(calls_before.iter().copied());
+            orphans_after.extend(results_after.iter().copied());
+        } else if !calls_after.is_empty() && !results_before.is_empty() {
+            orphans_before.extend(results_before.iter().copied());
+            orphans_after.extend(calls_after.iter().copied());
+        } else if !calls_before.is_empty()
+            && results_before.is_empty()
+            && calls_after.is_empty()
+            && results_after.is_empty()
+        {
+            orphans_before.extend(calls_before.iter().copied());
+        } else if !results_after.is_empty()
+            && calls_after.is_empty()
+            && calls_before.is_empty()
+            && results_before.is_empty()
+        {
+            orphans_after.extend(results_after.iter().copied());
+        }
+    }
+    if orphans_before.is_empty() && orphans_after.is_empty() {
+        return Err(value_error(format!(
+            "Compaction boundary at index {boundary_idx} has no split pairs or orphaned halves"
+        )));
+    }
+    let minority = if orphans_before.len() < orphans_after.len() {
+        &orphans_before
+    } else {
+        &orphans_after
+    };
+    let mut dropped = BTreeSet::new();
+    dropped.insert(boundary);
+    dropped.extend(minority.iter().copied());
+    Ok(dropped)
+}
+
+/// Precondition: an SL108 finding exists and some boundary has a split or orphan.
+///
+/// The code check runs before any event read. `ValueError` from one boundary
+/// is skipped. Any other error from that boundary is returned.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Event`] from `_event_kind` while collecting
+/// boundaries, or from [`_find_torn_compaction_dropped_indices`] when the
+/// error is not a `ValueError`.
+pub fn sl108_present(ctx: &PreconditionContext<'_>) -> Result<bool, PreconditionError> {
+    if !ctx.findings.iter().any(|finding| finding.code() == "SL108") {
+        return Ok(false);
+    }
+    let mut boundaries = Vec::new();
+    for (index, event) in ctx.events.iter().enumerate() {
+        if map_event(event_kind(event))?.as_deref() == Some("compaction_boundary") {
+            let Some(index) = i64::try_from(index).ok() else {
+                return Ok(false);
+            };
+            boundaries.push(index);
+        }
+    }
+    if boundaries.is_empty() {
+        return Ok(false);
+    }
+    for boundary in boundaries {
+        match _find_torn_compaction_dropped_indices(ctx.events, boundary) {
+            Ok(_) => return Ok(true),
+            Err(PreconditionError::Value(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(false)
+}
+
+/// SL002 whose evidence map has `unterminated is True`.
+fn _is_unterminated_torn_append(finding: &Finding) -> bool {
+    if finding.code() != "SL002" {
+        return false;
+    }
+    let Some(evidence) = evidence_map(finding) else {
+        return false;
+    };
+    matches!(evidence.get("unterminated"), Some(DictValue::Bool(true)))
+}
+
+/// Precondition: the target SL002 finding, or any finding, is an unterminated append.
+///
+/// A set `finding` is the only record consulted. Integer `1` is not `True`.
+pub fn torn_terminal_record(ctx: &PreconditionContext<'_>) -> bool {
+    if let Some(finding) = ctx.finding {
+        return _is_unterminated_torn_append(finding);
+    }
+    ctx.findings.iter().any(_is_unterminated_torn_append)
+}
+
+/// `PRECONDITION_FUNCS` key order. The Python literal is this order.
+#[cfg(test)]
+const BUILTIN_PRECONDITION_NAMES: &[&str] = &[
+    "acknowledge_side_effects",
+    "adjacent_identical_duplicate",
+    "branch_has_no_checkpoint",
+    "duplicate_projection_identical",
+    "no_prior_safe_tool_after_cut",
+    "no_sl203",
+    "repairability_is_safe_auto",
+    "repairability_is_salvage",
+    "salvage_policy",
+    "side_effects_known",
+    "single_boundary_split",
+    "sl003_identical_duplicate",
+    "sl108_present",
+    "source_hash_pinned",
+    "torn_terminal_record",
+    "unique_parent_candidate",
+];
+
+#[derive(Clone, Copy)]
+enum Predicate {
+    Bool(fn(&PreconditionContext<'_>) -> bool),
+    Fallible(fn(&PreconditionContext<'_>) -> Result<bool, PreconditionError>),
+}
+
+impl Predicate {
+    fn call(self, ctx: &PreconditionContext<'_>) -> Result<bool, PreconditionError> {
+        match self {
+            Self::Bool(func) => Ok(func(ctx)),
+            Self::Fallible(func) => func(ctx),
+        }
+    }
+}
+
+struct Slot {
+    name: String,
+    predicate: Predicate,
+}
+
+/// Keys of `PRECONDITION_FUNCS` in insertion order.
+pub fn precondition_func_names() -> Vec<String> {
+    with_registry(|registry| registry.iter().map(|slot| slot.name.clone()).collect())
+}
+
+/// Register a precondition. An empty name is a `ValueError`.
+///
+/// An existing name is replaced in place. A new name is appended.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Value`] when `name` is empty.
+pub fn register_precondition(
+    name: &str,
+    func: fn(&PreconditionContext<'_>) -> bool,
+) -> Result<(), PreconditionError> {
+    with_registry(|registry| register_slot(registry, name, func))
+}
+
+/// Evaluate precondition names in order.
+///
+/// `(true, None)` when every name passes. `(false, name)` on the first
+/// false result. Later names are not called. An unknown name, or a
+/// predicate error, is returned and does not become true.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Value`] for an unknown name. Returns the
+/// predicate error unchanged, including [`MUST_ABSTAIN_UNAVAILABLE`] and
+/// [`FIND_QUALIFYING_PARENT_CANDIDATES_UNAVAILABLE`].
+pub fn check_preconditions<'a>(
+    names: &[&'a str],
+    ctx: &PreconditionContext<'_>,
+) -> Result<(bool, Option<&'a str>), PreconditionError> {
+    for name in names {
+        let predicate = with_registry(|registry| {
+            registry
+                .iter()
+                .find(|slot| slot.name == *name)
+                .map(|slot| slot.predicate)
+        });
+        let Some(predicate) = predicate else {
+            return Err(value_error(format!("Unknown precondition: {name}")));
+        };
+        if !predicate.call(ctx)? {
+            return Ok((false, Some(*name)));
+        }
+    }
+    Ok((true, None))
+}
+
+fn value_error(message: impl Into<String>) -> PreconditionError {
+    PreconditionError::Value(message.into())
+}
+
+fn sequence_items(value: &DictValue) -> Option<&[DictValue]> {
+    match value {
+        DictValue::List(items) | DictValue::Tuple(items) => Some(items.as_slice()),
+        _ => None,
+    }
+}
+
+fn count_matches_len(evidence: &EvidenceMap, len: usize) -> bool {
+    match evidence.get("count") {
+        None => true,
+        Some(value) => py_equals_len(value, len),
+    }
+}
+
+fn py_equals_len(value: &DictValue, len: usize) -> bool {
+    let Ok(len) = i64::try_from(len) else {
+        return false;
+    };
+    match value {
+        DictValue::Int(number) => *number == len,
+        DictValue::Bool(flag) => i64::from(*flag) == len,
+        _ => false,
+    }
+}
+
+fn push_unique(neighbors: &mut Vec<usize>, index: usize) {
+    if !neighbors.contains(&index) {
+        neighbors.push(index);
+    }
+}
+
+fn usize_from_i64(index: i64) -> Option<usize> {
+    usize::try_from(index).ok()
+}
+
+fn resolve_branch_seed(ctx: &PreconditionContext<'_>) -> Result<Option<i64>, PreconditionError> {
+    let Some(finding) = ctx.finding else {
+        return Ok(None);
+    };
+    if let Some(evidence) = evidence_map(finding).filter(EvidenceMap::is_truthy) {
+        if let Some(seed) = evidence_seed(&evidence, ctx.events.len()) {
+            return Ok(Some(seed));
+        }
+    }
+    if let Some(record_id) = finding.source().record_id().filter(|text| !text.is_empty()) {
+        return record_id_seed(ctx.events, record_id);
+    }
+    Ok(None)
+}
+
+fn evidence_seed(evidence: &EvidenceMap, len: usize) -> Option<i64> {
+    for key in ["at_index", "index", "first_index", "entry_index"] {
+        if let Some(index) = as_int(evidence.get(key)) {
+            if index_in_range(index, len).is_some() {
+                return Some(index);
+            }
+        }
+    }
+    let items = sequence_items(evidence.get("record_indexes")?)?;
+    for item in items {
+        if let Some(index) = as_int(Some(item)) {
+            if index_in_range(index, len).is_some() {
+                return Some(index);
+            }
+        }
+    }
+    None
+}
+
+fn record_id_seed(
+    events: &[EventValue],
+    record_id: &str,
+) -> Result<Option<i64>, PreconditionError> {
+    for (index, event) in events.iter().enumerate() {
+        if map_event(event_id(event))?.as_deref() == Some(record_id) {
+            return Ok(i64::try_from(index).ok());
+        }
+    }
+    Ok(None)
+}
+
+fn no_checkpoint(events: &[EventValue]) -> Result<bool, PreconditionError> {
+    for event in events {
+        if map_event(event_kind(event))?.as_deref() == Some("checkpoint") {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+struct CorrLists {
+    entries: Vec<(String, Vec<usize>)>,
+}
+
+impl CorrLists {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, key: String, index: usize) {
+        if let Some((_, indexes)) = self.entries.iter_mut().find(|(name, _)| name == &key) {
+            indexes.push(index);
+            return;
+        }
+        self.entries.push((key, vec![index]));
+    }
+
+    fn indexes(&self, key: &str) -> &[usize] {
+        self.entries
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, indexes)| indexes.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+fn classify_tool(
+    event: &EventValue,
+    index: usize,
+    calls: &mut CorrLists,
+    results: &mut CorrLists,
+) -> Result<(), PreconditionError> {
+    let kind = map_event(event_kind(event))?;
+    let Some(corr) = map_event(event_corr_id(event))?.filter(|text| !text.is_empty()) else {
+        return Ok(());
+    };
+    match kind.as_deref() {
+        Some("tool_call" | "tool_use") => calls.push(corr, index),
+        Some("tool_result") => results.push(corr, index),
+        _ => {}
+    }
+    Ok(())
+}
+
+fn corr_keys(groups: [&CorrLists; 4]) -> Vec<String> {
+    let mut seen = Vec::new();
+    for group in groups {
+        for (key, _) in &group.entries {
+            if !seen.iter().any(|seen_key: &String| seen_key == key) {
+                seen.push(key.clone());
+            }
+        }
+    }
+    seen
+}
+
+fn bool_slot(name: &str, func: fn(&PreconditionContext<'_>) -> bool) -> Slot {
+    Slot {
+        name: name.to_owned(),
+        predicate: Predicate::Bool(func),
+    }
+}
+
+fn fallible_slot(
+    name: &str,
+    func: fn(&PreconditionContext<'_>) -> Result<bool, PreconditionError>,
+) -> Slot {
+    Slot {
+        name: name.to_owned(),
+        predicate: Predicate::Fallible(func),
+    }
+}
+
+fn builtin_predicates() -> Vec<Slot> {
+    vec![
+        bool_slot("acknowledge_side_effects", acknowledge_side_effects),
+        fallible_slot("adjacent_identical_duplicate", adjacent_identical_duplicate),
+        fallible_slot("branch_has_no_checkpoint", branch_has_no_checkpoint),
+        fallible_slot(
+            "duplicate_projection_identical",
+            duplicate_projection_identical,
+        ),
+        fallible_slot("no_prior_safe_tool_after_cut", no_prior_safe_tool_after_cut),
+        bool_slot("no_sl203", no_sl203),
+        bool_slot("repairability_is_safe_auto", repairability_is_safe_auto),
+        bool_slot("repairability_is_salvage", repairability_is_salvage),
+        bool_slot("salvage_policy", salvage_policy),
+        bool_slot("side_effects_known", side_effects_known),
+        fallible_slot("single_boundary_split", single_boundary_split),
+        bool_slot("sl003_identical_duplicate", sl003_identical_duplicate),
+        fallible_slot("sl108_present", sl108_present),
+        bool_slot("source_hash_pinned", source_hash_pinned),
+        bool_slot("torn_terminal_record", torn_terminal_record),
+        fallible_slot("unique_parent_candidate", unique_parent_candidate),
+    ]
+}
+
+fn register_slot(
+    registry: &mut Vec<Slot>,
+    name: &str,
+    func: fn(&PreconditionContext<'_>) -> bool,
+) -> Result<(), PreconditionError> {
+    if name.is_empty() {
+        return Err(value_error("Precondition name must be a non-empty string"));
+    }
+    if let Some(slot) = registry.iter_mut().find(|slot| slot.name == name) {
+        slot.predicate = Predicate::Bool(func);
+    } else {
+        registry.push(bool_slot(name, func));
+    }
+    Ok(())
+}
+
+fn registry() -> &'static Mutex<Vec<Slot>> {
+    static REGISTRY: OnceLock<Mutex<Vec<Slot>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(builtin_predicates()))
+}
+
+fn with_registry<T>(body: impl FnOnce(&mut Vec<Slot>) -> T) -> T {
+    let mut guard = registry()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    body(&mut guard)
+}
+
 #[cfg(test)]
 mod tests {
     use model::canonical::{Payload, SessionEvent};
     use model::codes::{Repairability, Severity};
+    use std::collections::BTreeSet;
+
     use model::events::{
         EventError, EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        PYTHON_STR_UNREPRESENTABLE,
     };
     use model::finding::{Finding, FindingInput, PyValue, SourceRef, SCHEMA_VERSION};
 
     use super::{
-        adjacent_identical_duplicate, duplicate_projection_identical, no_prior_safe_tool_after_cut,
-        no_sl203, repairability_is_safe_auto, repairability_is_salvage, side_effects_known,
-        single_boundary_split, source_hash_pinned, unique_parent_candidate, PreconditionContext,
-        PreconditionError, FIND_QUALIFYING_PARENT_CANDIDATES_UNAVAILABLE, MUST_ABSTAIN_UNAVAILABLE,
+        _find_component_indices, _find_torn_compaction_dropped_indices,
+        _is_unterminated_torn_append, acknowledge_side_effects, adjacent_identical_duplicate,
+        branch_has_no_checkpoint, check_preconditions, duplicate_projection_identical,
+        no_prior_safe_tool_after_cut, no_sl203, precondition_func_names, register_precondition,
+        repairability_is_safe_auto, repairability_is_salvage, salvage_policy, side_effects_known,
+        single_boundary_split, sl003_identical_duplicate, sl108_present, source_hash_pinned,
+        torn_terminal_record, unique_parent_candidate, PreconditionContext, PreconditionError,
+        FIND_QUALIFYING_PARENT_CANDIDATES_UNAVAILABLE, MUST_ABSTAIN_UNAVAILABLE,
     };
 
     fn context<'a>(
@@ -1640,6 +2254,852 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "sesslint.determinism.canonical_json_bytes is not available"
+        );
+    }
+
+    fn coded(code: &str, record_id: Option<&str>, evidence: PyValue) -> Finding {
+        finding(
+            code,
+            Severity::Error,
+            Repairability::Deterministic,
+            record_id,
+            evidence,
+        )
+    }
+
+    fn node(id: &str, parent: Option<&str>, kind: &str) -> EventValue {
+        let mut entries = vec![
+            ("id", EventField::Str(id.to_owned())),
+            ("kind", EventField::Str(kind.to_owned())),
+        ];
+        if let Some(parent) = parent {
+            entries.push(("parent_id", EventField::Str(parent.to_owned())));
+        }
+        mapped(entries)
+    }
+
+    fn indexes_of(values: &[i64]) -> PyValue {
+        ints(values)
+    }
+
+    #[test]
+    fn sl003_rejects_a_list_that_would_leave_copies_behind() {
+        let events = [
+            hashed("evt-a", "message", "abc"),
+            hashed("evt-b", "message", "abd"),
+            hashed("evt-c", "message", "abc"),
+        ];
+        assert!(!sl003_identical_duplicate(&context(&[], &events, "")));
+        let absent = coded("SL003", None, PyValue::None);
+        let mut ctx = context(std::slice::from_ref(&absent), &events, "");
+        ctx.finding = Some(&absent);
+        assert!(!sl003_identical_duplicate(&ctx));
+
+        let rejected = [
+            ev_map(vec![("variant", PyValue::string("conflicting-duplicate"))]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("truncated", PyValue::bool_value(true)),
+                ("record_indexes", indexes_of(&[0, 2])),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("truncated", PyValue::string("x")),
+                ("record_indexes", indexes_of(&[0, 2])),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", PyValue::string("01")),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", PyValue::bytes(b"01")),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                (
+                    "record_indexes",
+                    PyValue::set(vec![PyValue::int(0), PyValue::int(2)]),
+                ),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0])),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                (
+                    "record_indexes",
+                    PyValue::list(vec![PyValue::int(0), PyValue::bool_value(true)]),
+                ),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0, 2])),
+                ("count", PyValue::int(3)),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0, 2])),
+                ("count", PyValue::None),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0, 2])),
+                ("count", PyValue::bool_value(true)),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0, 3])),
+            ]),
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[-1, 0])),
+            ]),
+        ];
+        for evidence in &rejected {
+            let finding = coded("SL003", None, evidence.clone());
+            let mut ctx = context(std::slice::from_ref(&finding), &events, "");
+            ctx.finding = Some(&finding);
+            assert!(!sl003_identical_duplicate(&ctx));
+        }
+    }
+
+    #[test]
+    fn sl003_accepts_in_range_indexes_without_comparing_events() {
+        let events = [
+            hashed("evt-a", "message", "abc"),
+            hashed("evt-b", "message", "abd"),
+            hashed("evt-c", "checkpoint", "abe"),
+        ];
+        let listed = coded(
+            "SL003",
+            None,
+            ev_map(vec![
+                ("variant", PyValue::string("other")),
+                ("variant", PyValue::string("identical-duplicate")),
+                ("truncated", PyValue::bool_value(false)),
+                ("truncated", PyValue::list(Vec::new())),
+                ("record_indexes", indexes_of(&[0, 0])),
+            ]),
+        );
+        let mut ctx = context(std::slice::from_ref(&listed), &events, "");
+        ctx.finding = Some(&listed);
+        assert!(sl003_identical_duplicate(&ctx));
+
+        let tuple = coded(
+            "SL003",
+            None,
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("truncated", PyValue::int(0)),
+                ("truncated", PyValue::string("")),
+                (
+                    "record_indexes",
+                    PyValue::tuple(vec![PyValue::int(0), PyValue::int(2)]),
+                ),
+            ]),
+        );
+        let mut ctx = context(std::slice::from_ref(&tuple), &events, "");
+        ctx.finding = Some(&tuple);
+        assert!(sl003_identical_duplicate(&ctx));
+
+        let counted = coded(
+            "SL003",
+            None,
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0, 2])),
+                ("count", PyValue::int(2)),
+            ]),
+        );
+        let mut ctx = context(std::slice::from_ref(&counted), &[], "");
+        ctx.finding = Some(&counted);
+        assert!(!sl003_identical_duplicate(&ctx));
+    }
+
+    #[test]
+    fn salvage_and_acknowledge_match_the_operator_flags() {
+        let mut ctx = context(&[], &[], "");
+        assert!(!salvage_policy(&ctx));
+        assert!(!acknowledge_side_effects(&ctx));
+        ctx.policy = "Salvage";
+        assert!(!salvage_policy(&ctx));
+        ctx.policy = "salvage";
+        assert!(salvage_policy(&ctx));
+        ctx.acknowledge_side_effects = true;
+        assert!(acknowledge_side_effects(&ctx));
+    }
+
+    #[test]
+    fn component_order_is_breadth_first_and_last_id_wins() {
+        let events = [
+            node("evt-a", None, "message"),
+            node("evt-b", Some("evt-a"), "message"),
+            node("evt-c", Some("evt-b"), "message"),
+        ];
+        assert_eq!(_find_component_indices(&events, 2).unwrap(), vec![2, 1, 0]);
+        assert_eq!(_find_component_indices(&events, 0).unwrap(), vec![0, 1, 2]);
+
+        let duplicated = [
+            node("evt-a", None, "message"),
+            node("evt-b", Some("evt-a"), "message"),
+            node("evt-a", None, "message"),
+        ];
+        assert_eq!(_find_component_indices(&duplicated, 1).unwrap(), vec![1, 2]);
+        assert_eq!(_find_component_indices(&duplicated, 0).unwrap(), vec![0]);
+
+        let numeric = [
+            mapped(vec![
+                ("id", EventField::Int(7)),
+                ("kind", EventField::Str("message".to_owned())),
+            ]),
+            node("evt-b", Some("7"), "message"),
+        ];
+        assert_eq!(_find_component_indices(&numeric, 1).unwrap(), vec![1, 0]);
+        let unmatched = [node("evt-b", Some("07"), "message")];
+        assert_eq!(_find_component_indices(&unmatched, 0).unwrap(), vec![0]);
+
+        let cycle = [
+            node("evt-a", Some("evt-b"), "message"),
+            node("evt-b", Some("evt-a"), "checkpoint"),
+        ];
+        assert_eq!(_find_component_indices(&cycle, 0).unwrap(), vec![0, 1]);
+        assert_eq!(_find_component_indices(&[], 5).unwrap(), vec![5]);
+        assert_eq!(_find_component_indices(&events, -1).unwrap(), vec![-1]);
+    }
+
+    #[test]
+    fn component_reads_every_id_before_an_out_of_range_seed_returns() {
+        let broken = [mapped(vec![(
+            "id",
+            EventField::List(vec![EventField::Str("evt-a".to_owned())]),
+        )])];
+        let error = _find_component_indices(&broken, 5).unwrap_err();
+        assert_eq!(error.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert!(std::error::Error::source(&error).is_some());
+
+        let parent_float = [mapped(vec![
+            ("id", EventField::Str("evt-a".to_owned())),
+            ("parent_id", EventField::Float(1.0)),
+        ])];
+        assert_eq!(
+            _find_component_indices(&parent_float, 0)
+                .unwrap_err()
+                .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+    }
+
+    #[test]
+    fn branch_seed_prefers_an_in_range_index_over_record_id() {
+        let events = [
+            node("evt-a", None, "message"),
+            node("evt-b", None, "checkpoint"),
+        ];
+        let at_zero = coded(
+            "SL005",
+            Some("evt-b"),
+            ev_map(vec![
+                ("at_index", PyValue::bool_value(true)),
+                ("at_index", PyValue::int(0)),
+                ("entry_index", PyValue::int(1)),
+            ]),
+        );
+        let mut ctx = context(std::slice::from_ref(&at_zero), &events, "");
+        ctx.finding = Some(&at_zero);
+        assert!(branch_has_no_checkpoint(&ctx).unwrap());
+
+        let by_record = coded("SL005", Some("evt-b"), PyValue::None);
+        let mut ctx = context(std::slice::from_ref(&by_record), &events, "");
+        ctx.finding = Some(&by_record);
+        assert!(!branch_has_no_checkpoint(&ctx).unwrap());
+
+        let from_list = coded(
+            "SL005",
+            Some("evt-a"),
+            ev_map(vec![(
+                "record_indexes",
+                PyValue::list(vec![
+                    PyValue::int(9),
+                    PyValue::bool_value(true),
+                    PyValue::int(1),
+                ]),
+            )]),
+        );
+        let mut ctx = context(std::slice::from_ref(&from_list), &events, "");
+        ctx.finding = Some(&from_list);
+        assert!(!branch_has_no_checkpoint(&ctx).unwrap());
+
+        assert!(branch_has_no_checkpoint(&context(&[], &[], "")).unwrap());
+        assert!(!branch_has_no_checkpoint(&context(&[], &events, "")).unwrap());
+        let child = [
+            node("evt-a", None, "checkpoint"),
+            node("evt-b", Some("evt-a"), "message"),
+        ];
+        let seed = coded("SL005", None, ev_map(vec![("index", PyValue::int(1))]));
+        let mut ctx = context(std::slice::from_ref(&seed), &child, "");
+        ctx.finding = Some(&seed);
+        assert!(!branch_has_no_checkpoint(&ctx).unwrap());
+        let isolated = coded(
+            "SL005",
+            None,
+            ev_map(vec![("first_index", PyValue::int(1))]),
+        );
+        let apart = [
+            node("evt-a", None, "checkpoint"),
+            node("evt-b", None, "message"),
+        ];
+        let mut ctx = context(std::slice::from_ref(&isolated), &apart, "");
+        ctx.finding = Some(&isolated);
+        assert!(branch_has_no_checkpoint(&ctx).unwrap());
+    }
+
+    #[test]
+    fn branch_short_circuits_in_visit_order_and_propagates_field_errors() {
+        let checkpoint_first = [
+            node("evt-a", None, "checkpoint"),
+            mapped(vec![("kind", EventField::Float(1.0))]),
+        ];
+        assert!(!branch_has_no_checkpoint(&context(&[], &checkpoint_first, "")).unwrap());
+
+        let float_first = [
+            mapped(vec![("kind", EventField::Float(1.0))]),
+            node("evt-b", None, "checkpoint"),
+        ];
+        assert_eq!(
+            branch_has_no_checkpoint(&context(&[], &float_first, ""))
+                .unwrap_err()
+                .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+
+        let events = [
+            node("evt-a", None, "checkpoint"),
+            node("evt-b", Some("evt-a"), "message"),
+            mapped(vec![
+                ("id", EventField::Str("evt-c".to_owned())),
+                ("kind", EventField::Float(1.0)),
+                ("parent_id", EventField::Str("evt-b".to_owned())),
+            ]),
+        ];
+        let seed = coded("SL005", None, ev_map(vec![("at_index", PyValue::int(1))]));
+        let mut ctx = context(std::slice::from_ref(&seed), &events, "");
+        ctx.finding = Some(&seed);
+        assert!(!branch_has_no_checkpoint(&ctx).unwrap());
+
+        let error_first = [
+            node("evt-a", None, "checkpoint"),
+            node("evt-b", Some("evt-a"), "message"),
+            mapped(vec![
+                ("id", EventField::Str("evt-c".to_owned())),
+                ("kind", EventField::Float(1.0)),
+                ("parent_id", EventField::Str("evt-b".to_owned())),
+            ]),
+        ];
+        let seed = coded("SL005", None, ev_map(vec![("at_index", PyValue::int(2))]));
+        let mut ctx = context(std::slice::from_ref(&seed), &error_first, "");
+        ctx.finding = Some(&seed);
+        assert_eq!(
+            branch_has_no_checkpoint(&ctx).unwrap_err().to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+
+        let early_bad_id = [
+            mapped(vec![("id", EventField::Float(1.0))]),
+            node("evt-b", None, "checkpoint"),
+        ];
+        let by_record = coded("SL005", Some("evt-b"), PyValue::None);
+        let mut ctx = context(std::slice::from_ref(&by_record), &early_bad_id, "");
+        ctx.finding = Some(&by_record);
+        assert_eq!(
+            branch_has_no_checkpoint(&ctx).unwrap_err().to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+
+        let bad_id = [mapped(vec![(
+            "id",
+            EventField::List(vec![EventField::Str("evt-a".to_owned())]),
+        )])];
+        let seed = coded("SL005", None, ev_map(vec![("index", PyValue::int(0))]));
+        let mut ctx = context(std::slice::from_ref(&seed), &bad_id, "");
+        ctx.finding = Some(&seed);
+        assert_eq!(
+            branch_has_no_checkpoint(&ctx).unwrap_err().to_string(),
+            PYTHON_STR_UNREPRESENTABLE
+        );
+    }
+
+    fn expect_dropped(events: &[EventValue], boundary: i64, indexes: &[usize]) {
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(events, boundary).unwrap(),
+            indexes.iter().copied().collect::<BTreeSet<_>>()
+        );
+    }
+
+    #[test]
+    fn torn_projection_keeps_the_smaller_side_and_breaks_ties_toward_the_suffix() {
+        let split = [
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+        ];
+        expect_dropped(&split, 1, &[1, 2]);
+
+        let minority_calls = [
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+        ];
+        expect_dropped(&minority_calls, 1, &[1, 0]);
+
+        let minority_results = [
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            tool("tool_use", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+        ];
+        expect_dropped(&minority_results, 2, &[2, 3]);
+
+        let reversed = [
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_use", Some("none"), Some("corr-synthetic")),
+        ];
+        expect_dropped(&reversed, 1, &[1, 2]);
+
+        let only_call = [
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            hashed("evt-c", "message", "abc"),
+        ];
+        expect_dropped(&only_call, 1, &[1]);
+        let only_result = [
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+        ];
+        expect_dropped(&only_result, 0, &[0]);
+
+        let complete_before = [
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+        ];
+        let error = _find_torn_compaction_dropped_indices(&complete_before, 2).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Compaction boundary at index 2 has no split pairs or orphaned halves"
+        );
+        assert!(std::error::Error::source(&error).is_none());
+
+        let both_sides = [
+            tool("tool_call", Some("none"), Some("corr-a")),
+            tool("tool_result", Some("none"), Some("corr-a")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_call", Some("none"), Some("corr-a")),
+            tool("tool_result", Some("none"), Some("corr-a")),
+        ];
+        expect_dropped(&both_sides, 2, &[2, 4]);
+    }
+
+    #[test]
+    fn torn_projection_errors_follow_the_pin_order() {
+        let error = _find_torn_compaction_dropped_indices(&[], 0).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Cannot project across compaction in empty session"
+        );
+        assert_eq!(error, PreconditionError::Value(error.to_string()));
+
+        let events = [hashed("evt-a", "message", "abc")];
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&events, -1)
+                .unwrap_err()
+                .to_string(),
+            "Invalid compaction boundary index -1"
+        );
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&events, 1)
+                .unwrap_err()
+                .to_string(),
+            "Invalid compaction boundary index 1"
+        );
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&events, 0)
+                .unwrap_err()
+                .to_string(),
+            "Event at index 0 is not a compaction_boundary"
+        );
+
+        let float_kind = [mapped(vec![("kind", EventField::Float(1.0))])];
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&float_kind, 0)
+                .unwrap_err()
+                .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+
+        let kind_before_corr = [
+            mapped(vec![
+                (
+                    "kind",
+                    EventField::List(vec![EventField::Str("message".to_owned())]),
+                ),
+                ("correlation_id", EventField::Float(1.0)),
+            ]),
+            hashed("evt-b", "compaction_boundary", "abc"),
+        ];
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&kind_before_corr, 1)
+                .unwrap_err()
+                .to_string(),
+            PYTHON_STR_UNREPRESENTABLE
+        );
+
+        let corr_on_message = [
+            hashed("evt-b", "compaction_boundary", "abc"),
+            mapped(vec![
+                ("kind", EventField::Str("message".to_owned())),
+                ("correlation_id", EventField::Float(1.0)),
+            ]),
+        ];
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&corr_on_message, 0)
+                .unwrap_err()
+                .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+
+        let empty_corr = [
+            tool("tool_call", Some("none"), Some("")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_result", Some("none"), Some("")),
+        ];
+        assert_eq!(
+            _find_torn_compaction_dropped_indices(&empty_corr, 1)
+                .unwrap_err()
+                .to_string(),
+            "Compaction boundary at index 1 has no split pairs or orphaned halves"
+        );
+    }
+
+    #[test]
+    fn sl108_scans_only_after_the_code_and_skips_value_errors() {
+        let split = [
+            hashed("evt-a", "compaction_boundary", "abc"),
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+        ];
+        assert!(!sl108_present(&context(&[], &split, "")).unwrap());
+        let float_kind = [mapped(vec![("kind", EventField::Float(1.0))])];
+        assert!(!sl108_present(&context(&[], &float_kind, "")).unwrap());
+
+        let sl108 = coded("SL108", None, PyValue::None);
+        assert!(!sl108_present(&context(std::slice::from_ref(&sl108), &[], "")).unwrap());
+        let message = [hashed("evt-a", "message", "abc")];
+        assert!(!sl108_present(&context(std::slice::from_ref(&sl108), &message, "")).unwrap());
+        assert!(sl108_present(&context(std::slice::from_ref(&sl108), &split, "")).unwrap());
+
+        let bare = [hashed("evt-a", "compaction_boundary", "abc")];
+        assert!(!sl108_present(&context(std::slice::from_ref(&sl108), &bare, "")).unwrap());
+
+        let float_after_code = [mapped(vec![("kind", EventField::Float(1.0))])];
+        assert_eq!(
+            sl108_present(&context(
+                std::slice::from_ref(&sl108),
+                &float_after_code,
+                ""
+            ))
+            .unwrap_err()
+            .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+
+        let corr_error = [
+            hashed("evt-a", "compaction_boundary", "abc"),
+            mapped(vec![
+                ("kind", EventField::Str("message".to_owned())),
+                ("correlation_id", EventField::Float(1.0)),
+            ]),
+            hashed("evt-b", "compaction_boundary", "abc"),
+            tool("tool_call", Some("none"), Some("corr-synthetic")),
+            tool("tool_result", Some("none"), Some("corr-synthetic")),
+        ];
+        assert_eq!(
+            sl108_present(&context(std::slice::from_ref(&sl108), &corr_error, ""))
+                .unwrap_err()
+                .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
+        );
+    }
+
+    #[test]
+    fn torn_terminal_record_requires_boolean_true_on_sl002() {
+        let matched = coded(
+            "SL002",
+            None,
+            ev_map(vec![("unterminated", PyValue::bool_value(true))]),
+        );
+        assert!(_is_unterminated_torn_append(&matched));
+        assert!(torn_terminal_record(&context(
+            std::slice::from_ref(&matched),
+            &[],
+            ""
+        )));
+
+        let rejected = [
+            coded(
+                "SL002",
+                None,
+                ev_map(vec![("unterminated", PyValue::bool_value(false))]),
+            ),
+            coded(
+                "SL002",
+                None,
+                ev_map(vec![("unterminated", PyValue::int(1))]),
+            ),
+            coded("SL002", None, ev_map(vec![("count", PyValue::int(1))])),
+            coded(
+                "SL003",
+                None,
+                ev_map(vec![("unterminated", PyValue::bool_value(true))]),
+            ),
+            coded("SL002", None, PyValue::None),
+        ];
+        for finding in &rejected {
+            assert!(!_is_unterminated_torn_append(finding));
+            let mut ctx = context(std::slice::from_ref(&matched), &[], "");
+            ctx.finding = Some(finding);
+            assert!(!torn_terminal_record(&ctx));
+        }
+        assert!(!torn_terminal_record(&context(&[], &[], "")));
+        let mut ctx = context(std::slice::from_ref(&matched), &[], "");
+        ctx.finding = Some(&matched);
+        assert!(torn_terminal_record(&ctx));
+    }
+
+    fn profile_is_strict(ctx: &PreconditionContext<'_>) -> bool {
+        ctx.profile == "strict"
+    }
+
+    fn always_true(_ctx: &PreconditionContext<'_>) -> bool {
+        true
+    }
+
+    fn always_false(_ctx: &PreconditionContext<'_>) -> bool {
+        false
+    }
+
+    #[test]
+    fn registry_keeps_dict_order_and_stops_on_the_first_false_name() {
+        let fresh: Vec<_> = super::builtin_predicates()
+            .into_iter()
+            .map(|slot| slot.name)
+            .collect();
+        assert_eq!(
+            fresh.iter().map(String::as_str).collect::<Vec<_>>(),
+            super::BUILTIN_PRECONDITION_NAMES
+        );
+        let names = precondition_func_names();
+        assert!(names.len() >= super::BUILTIN_PRECONDITION_NAMES.len());
+        assert_eq!(
+            names
+                .iter()
+                .take(super::BUILTIN_PRECONDITION_NAMES.len())
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            super::BUILTIN_PRECONDITION_NAMES
+        );
+
+        let mut local = super::builtin_predicates();
+        assert!(super::register_slot(&mut local, "", always_true).is_err());
+        assert_eq!(local.len(), super::BUILTIN_PRECONDITION_NAMES.len());
+        super::register_slot(&mut local, " ", always_true).unwrap();
+        super::register_slot(&mut local, "zz_local_flag", always_true).unwrap();
+        super::register_slot(&mut local, "zz_local_flag", always_false).unwrap();
+        let local_names: Vec<_> = local.iter().map(|slot| slot.name.clone()).collect();
+        assert_eq!(
+            local_names
+                .iter()
+                .filter(|name| name.as_str() == "zz_local_flag")
+                .count(),
+            1
+        );
+        assert_eq!(
+            local_names.last().map(String::as_str),
+            Some("zz_local_flag")
+        );
+        let ctx = context(&[], &[], "");
+        let predicate = local
+            .iter()
+            .find(|slot| slot.name == "zz_local_flag")
+            .expect("slot")
+            .predicate;
+        assert!(!predicate.call(&ctx).unwrap());
+
+        let error = register_precondition("", always_true).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Precondition name must be a non-empty string"
+        );
+        assert!(std::error::Error::source(&error).is_none());
+
+        let pinned = "a".repeat(64);
+        let mut ctx = context(&[], &[], &pinned);
+        ctx.policy = "salvage";
+        ctx.acknowledge_side_effects = true;
+        let names = [
+            "no_sl203",
+            "salvage_policy",
+            "acknowledge_side_effects",
+            "source_hash_pinned",
+        ];
+        assert_eq!(check_preconditions(&names, &ctx).unwrap(), (true, None));
+        assert_eq!(check_preconditions(&[], &ctx).unwrap(), (true, None));
+
+        ctx.acknowledge_side_effects = false;
+        let names = ["acknowledge_side_effects", "missing_precondition"];
+        assert_eq!(
+            check_preconditions(&names, &ctx).unwrap(),
+            (false, Some("acknowledge_side_effects"))
+        );
+        let names = ["missing_precondition"];
+        let error = check_preconditions(&names, &ctx).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Unknown precondition: missing_precondition"
+        );
+        assert_eq!(
+            error,
+            PreconditionError::Value("Unknown precondition: missing_precondition".to_owned())
+        );
+
+        register_precondition("zz_card_preconditions_02_strict", profile_is_strict).unwrap();
+        let names = ["zz_card_preconditions_02_strict"];
+        assert_eq!(
+            check_preconditions(&names, &ctx).unwrap(),
+            (false, Some("zz_card_preconditions_02_strict"))
+        );
+        ctx.profile = "strict";
+        assert_eq!(check_preconditions(&names, &ctx).unwrap(), (true, None));
+        register_precondition("zz_card_preconditions_02_strict", always_false).unwrap();
+        assert_eq!(
+            check_preconditions(&names, &ctx).unwrap(),
+            (false, Some("zz_card_preconditions_02_strict"))
+        );
+        assert_eq!(
+            precondition_func_names()
+                .iter()
+                .filter(|name| name.as_str() == "zz_card_preconditions_02_strict")
+                .count(),
+            1
+        );
+
+        let listed = coded(
+            "SL003",
+            None,
+            ev_map(vec![
+                ("variant", PyValue::string("identical-duplicate")),
+                ("record_indexes", indexes_of(&[0, 1])),
+            ]),
+        );
+        let events = [
+            hashed("evt-a", "message", "abc"),
+            hashed("evt-b", "message", "abd"),
+        ];
+        let mut ctx = context(std::slice::from_ref(&listed), &events, "");
+        ctx.finding = Some(&listed);
+        assert_eq!(
+            check_preconditions(&["sl003_identical_duplicate"], &ctx).unwrap(),
+            (true, None)
+        );
+        let rejected = coded("SL003", None, PyValue::None);
+        ctx.finding = Some(&rejected);
+        assert_eq!(
+            check_preconditions(&["sl003_identical_duplicate"], &ctx).unwrap(),
+            (false, Some("sl003_identical_duplicate"))
+        );
+    }
+
+    #[test]
+    fn check_preconditions_propagates_seams_without_turning_them_true() {
+        let events = [
+            hashed("evt-a", "message", "abc"),
+            hashed("evt-b", "message", "abc"),
+        ];
+        let trigger = sl203(ev_map(vec![("index", PyValue::int(1))]));
+        let error = check_preconditions(
+            &["no_prior_safe_tool_after_cut"],
+            &context(std::slice::from_ref(&trigger), &events, "hash"),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), MUST_ABSTAIN_UNAVAILABLE);
+        assert_eq!(
+            error.to_string(),
+            "sesslint.policy.abstention.must_abstain is not available"
+        );
+
+        let warning = finding(
+            "SL005",
+            Severity::Warning,
+            Repairability::Deterministic,
+            None,
+            ev_map(vec![("index", PyValue::int(1))]),
+        );
+        assert_eq!(
+            check_preconditions(
+                &["no_prior_safe_tool_after_cut", "missing_precondition"],
+                &context(std::slice::from_ref(&warning), &events, "hash"),
+            )
+            .unwrap(),
+            (false, Some("no_prior_safe_tool_after_cut"))
+        );
+
+        let child = coded("SL203", None, ev_map(vec![("index", PyValue::int(0))]));
+        let with_parent = [mapped(vec![
+            ("id", EventField::Str("evt-a".to_owned())),
+            ("kind", EventField::Str("message".to_owned())),
+            ("parent_id", EventField::Str("parent-synthetic".to_owned())),
+        ])];
+        let mut ctx = context(std::slice::from_ref(&child), &with_parent, "");
+        ctx.finding = Some(&child);
+        let error = check_preconditions(&["unique_parent_candidate"], &ctx).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            FIND_QUALIFYING_PARENT_CANDIDATES_UNAVAILABLE
+        );
+        assert_eq!(
+            error.to_string(),
+            "sesslint.checks.graph.find_qualifying_parent_candidates is not available"
+        );
+
+        let orphan = [hashed("evt-a", "message", "abc")];
+        let mut ctx = context(std::slice::from_ref(&child), &orphan, "");
+        ctx.finding = Some(&child);
+        assert_eq!(
+            check_preconditions(&["unique_parent_candidate"], &ctx).unwrap(),
+            (false, Some("unique_parent_candidate"))
+        );
+
+        let fatal = sl203(PyValue::None);
+        let mut ctx = context(std::slice::from_ref(&fatal), &with_parent, "");
+        ctx.finding = Some(&child);
+        assert_eq!(
+            check_preconditions(&["no_sl203", "unique_parent_candidate"], &ctx).unwrap(),
+            (false, Some("no_sl203"))
+        );
+
+        let float_kind = [mapped(vec![("kind", EventField::Float(1.0))])];
+        assert_eq!(
+            check_preconditions(
+                &["branch_has_no_checkpoint"],
+                &context(&[], &float_kind, "")
+            )
+            .unwrap_err()
+            .to_string(),
+            PYTHON_FLOAT_STR_UNREPRESENTABLE
         );
     }
 }
