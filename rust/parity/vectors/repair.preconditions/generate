@@ -35,6 +35,9 @@ KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
     "GAP-preconditions-payload-content-hash: fingerprint comparison may call "
     "sesslint._canonical_codec.payload_content_hash; Rust returns Unavailable where "
     "Python returns a bool.",
+    "GAP-preconditions-dunder-all: Python __all__ has 22 names, including types "
+    "and helpers. precondition_func_names is the 16-name registry. The module_all "
+    "vector keeps the pin list and does not treat that list as the registry.",
 )
 
 PIN_CLOSURE = [

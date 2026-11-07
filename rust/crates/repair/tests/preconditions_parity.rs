@@ -22,7 +22,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/repair.preconditions/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 37;
 const EXPECTED_VECTORS_SHA256: &str =
-    "b21cc48aad68a7cc28527fb753f98c6ca0a6e805ba209f896860f10694d35b04";
+    "e3cdbfb9fe434955c54c798b753275bd8b36622e2675564cc9b265b4cf273943";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -42,6 +42,10 @@ fn preconditions_module_parity_vectors() {
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
     let digest = sha256_hex(normalized.as_bytes());
+    assert!(
+        normalized.contains("GAP-preconditions-dunder-all"),
+        "vectors must record the __all__ gap"
+    );
     assert_eq!(
         digest, EXPECTED_VECTORS_SHA256,
         "vectors.json sha256 must match generator"
@@ -161,20 +165,30 @@ fn assert_case(case: &VectorCase) {
     match kind.as_str() {
         "module_all" => {
             let names = string_array(&case.expected, "names").expect("names");
-            let got = precondition_func_names();
-            let from_all: Vec<String> = names
-                .iter()
-                .filter(|name| got.iter().any(|reg| reg == *name))
-                .cloned()
-                .collect();
-            assert_eq!(got, from_all, "registry names for {}", case.id);
             assert_eq!(names.len(), 22, "{}", case.id);
-            assert!(names.iter().any(|n| n == "check_preconditions"), "{}", case.id);
-            assert!(
-                names.iter().any(|n| n == "_find_component_indices"),
-                "{}",
-                case.id
-            );
+            let registry = precondition_func_names();
+            assert_eq!(registry.len(), 16, "{}", case.id);
+            for name in &registry {
+                assert!(
+                    names.iter().any(|pin| pin == name),
+                    "{}: registry name {name} missing from pin __all__",
+                    case.id
+                );
+            }
+            for extra in [
+                "PRECONDITION_FUNCS",
+                "PreconditionContext",
+                "check_preconditions",
+                "register_precondition",
+                "_find_component_indices",
+                "_find_torn_compaction_dropped_indices",
+            ] {
+                assert!(
+                    names.iter().any(|pin| pin == extra),
+                    "{extra} stays on the pin __all__ list"
+                );
+            }
+            assert_ne!(registry, names, "registry is not __all__");
         }
         "precondition_func_names" => {
             let want = string_array(&case.expected, "names").expect("names");
