@@ -1341,3 +1341,1050 @@ mod tests {
         assert_eq!(ok.margin_min, Some(0.2));
     }
 }
+
+#[allow(
+    clippy::items_after_test_module,
+    reason = "resolve_format is appended after the detection tests"
+)]
+mod resolve_port {
+    //! `resolve_format`, `resolve_format_bytes`, and `_resolve_failure_finding`.
+    //!
+    //! Port of `src/sesslint/adapters/detect.py`
+    //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 277–431.
+    //! Stops at the fingerprint refusal inside `_resolve_failure_finding`.
+
+    use std::convert::Infallible;
+    use std::error::Error;
+    use std::fmt;
+    use std::path::Path;
+
+    use model::codes::{Repairability, Severity, SL001, SL302};
+    use model::errors::FindingError;
+    use model::finding::{
+        make_finding, Finding, MakeFindingInput, PyValue, SourceLine, SourceRef,
+        FINGERPRINT_CODEC_UNAVAILABLE,
+    };
+
+    use super::{
+        detect_format, detect_format_bytes, displayed_path, python_strip, DetectError,
+        DetectionResult, ThresholdInput, FORMAT_AUTO, REASON_EMPTY, REASON_EXPLICIT_OVERRIDE,
+        REASON_REFUSED_LIVE_DB, SUPPORTED_FORMATS, VALID_FORMAT_OPTIONS,
+    };
+
+    const REFUSED_LIVE_DB_TEMPLATE: &str = concat!(
+        "Refused live SQLite database; SessLint requires exported items or ",
+        "checkpoints [detail: refused_live_db]"
+    );
+    const EMPTY_INPUT_TEMPLATE: &str = "Session input is empty [detail: EMPTY]";
+    const AMBIGUOUS_FORMAT_TEMPLATE: &str = concat!(
+        "Unable to determine session format with sufficient confidence ",
+        "[detail: ambiguous_format]"
+    );
+
+    /// Successful resolution.
+    ///
+    /// Python's success tuple is `(format_name, result, [])`. `findings` is
+    /// empty. An unresolved sniff is [`ResolveFormatError`], not a finding.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct FormatResolution {
+        /// Normalized format name.
+        pub format: String,
+        /// Explicit override, or the sniff [`DetectionResult`].
+        pub result: DetectionResult,
+        /// Always empty. The failure finding is not returned.
+        pub findings: Vec<Finding>,
+    }
+
+    /// Pin `ValueError`, filesystem and comparison errors, or the fingerprint refusal.
+    #[derive(Debug)]
+    pub enum ResolveFormatError {
+        /// Threshold, path, I/O, or `None` comparison error.
+        Detect(DetectError),
+        /// Unknown explicit name. Display is the pin `ValueError`.
+        UnknownFormat(String),
+        /// [`make_finding`] or [`SourceRef`] refused. Display is that error.
+        Finding(FindingError),
+    }
+
+    impl fmt::Display for ResolveFormatError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Detect(error) => error.fmt(formatter),
+                Self::UnknownFormat(message) => formatter.write_str(message),
+                Self::Finding(error) => error.fmt(formatter),
+            }
+        }
+    }
+
+    impl Error for ResolveFormatError {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            match self {
+                Self::Detect(error) => Some(error),
+                Self::Finding(error) => Some(error),
+                Self::UnknownFormat(_) => None,
+            }
+        }
+    }
+
+    impl From<DetectError> for ResolveFormatError {
+        fn from(error: DetectError) -> Self {
+            Self::Detect(error)
+        }
+    }
+
+    impl From<FindingError> for ResolveFormatError {
+        fn from(error: FindingError) -> Self {
+            Self::Finding(error)
+        }
+    }
+
+    /// Resolve an explicit format or auto-detect, failing closed.
+    ///
+    /// Python: `resolve_format` lines 277–331. Thresholds are validated before
+    /// the name is read and before `path` is opened. A bool is not an int:
+    /// `True` stays `True` in the `ValueError`. A known non-auto name does
+    /// not open `path`. It returns that normalized name,
+    /// [`REASON_EXPLICIT_OVERRIDE`], and no findings. `auto` and `None` call
+    /// [`detect_format`]. A resolved format returns empty findings. An
+    /// unresolved result calls [`_resolve_failure_finding`] and propagates
+    /// that error.
+    ///
+    /// Strip uses the Python whitespace set already in this file, then Rust
+    /// Unicode lowercase. `path` text is `displayed_path` with `\` replaced
+    /// by `/`, matching `str(Path).replace("\\", "/")`.
+    ///
+    /// # Errors
+    ///
+    /// Unknown names are the pin `ValueError` (`repr` of the original name,
+    /// then `sorted(VALID_FORMAT_OPTIONS)`). Threshold, path, and comparison
+    /// errors come from the existing validators and [`detect_format`]. An
+    /// unresolved sniff propagates the fingerprint error.
+    #[must_use = "an unresolved format propagates the fingerprint error"]
+    pub fn resolve_format(
+        explicit: Option<&str>,
+        path: &Path,
+        confidence_min: ThresholdInput<'_>,
+        margin_min: ThresholdInput<'_>,
+    ) -> Result<FormatResolution, ResolveFormatError> {
+        validate_first(confidence_min, margin_min)?;
+        let path_str = forward_slash_path(path);
+        if let Some(resolved) = explicit_resolution(explicit)? {
+            return Ok(resolved);
+        }
+        let result = detect_format(path, confidence_min, margin_min)?;
+        resolved_or_failure(result, &path_str, confidence_min, margin_min)
+    }
+
+    /// Resolve an explicit format or sniff a buffer, failing closed.
+    ///
+    /// Python: `resolve_format_bytes` lines 334–379. `filename` is passed
+    /// through to [`detect_format_bytes`] and is not stripped. `display_path`
+    /// is the failure [`SourceRef`] path and is not rewritten here.
+    /// Thresholds, the explicit arm, and the unresolved arm match
+    /// [`resolve_format`].
+    ///
+    /// # Errors
+    ///
+    /// Same as [`resolve_format`], except path errors come from the byte
+    /// sniff's threshold checks and from [`SourceRef`] on the failure arm.
+    #[must_use = "an unresolved format propagates the fingerprint error"]
+    pub fn resolve_format_bytes(
+        explicit: Option<&str>,
+        data: &[u8],
+        filename: &str,
+        display_path: &str,
+        confidence_min: ThresholdInput<'_>,
+        margin_min: ThresholdInput<'_>,
+    ) -> Result<FormatResolution, ResolveFormatError> {
+        validate_first(confidence_min, margin_min)?;
+        if let Some(resolved) = explicit_resolution(explicit)? {
+            return Ok(resolved);
+        }
+        let result = detect_format_bytes(data, filename, confidence_min, margin_min)?;
+        resolved_or_failure(result, display_path, confidence_min, margin_min)
+    }
+
+    /// Build the failure inputs and stop at the fingerprint.
+    ///
+    /// Python: `_resolve_failure_finding` lines 382–431. [`SourceRef`] is
+    /// built first (`line` 1, `record_id` `None`). `refused-live-db` is
+    /// SL001 fatal unsupported. `empty` is SL001 error manual. Every other
+    /// reason is SL302 error manual. No other code is selected.
+    ///
+    /// [`make_finding`] is called with the fingerprint omitted. It validates,
+    /// then its [`Display`](fmt::Display) is
+    /// [`FINGERPRINT_CODEC_UNAVAILABLE`]. A [`Finding`] is not returned.
+    /// Success is [`Infallible`].
+    ///
+    /// # Errors
+    ///
+    /// [`SourceRef`] rejection, or the omitted-fingerprint error.
+    #[must_use = "the fingerprint error is the result"]
+    pub fn _resolve_failure_finding(
+        result: &DetectionResult,
+        path_str: &str,
+        confidence_min: ThresholdInput<'_>,
+        margin_min: ThresholdInput<'_>,
+    ) -> Result<Infallible, FindingError> {
+        let source = SourceRef::try_new(path_str, Some(SourceLine::Int(1)), None)?;
+        let kind = failure_kind(&result.reason);
+        let labels = failure_labels(kind);
+        let evidence = failure_evidence(result, kind, confidence_min, margin_min);
+        match make_finding(&MakeFindingInput {
+            code: PyValue::string(labels.code),
+            severity: PyValue::severity(labels.severity),
+            repairability: PyValue::repairability(labels.repairability),
+            message_template: PyValue::string(labels.template),
+            template_args: PyValue::None,
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            evidence,
+            fingerprint: PyValue::None,
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            context: None,
+        }) {
+            Err(error) => Err(error),
+            Ok(_finding) => Err(FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE)),
+        }
+    }
+
+    fn validate_first(
+        confidence_min: ThresholdInput<'_>,
+        margin_min: ThresholdInput<'_>,
+    ) -> Result<(), ResolveFormatError> {
+        super::validate_detection_thresholds(confidence_min, margin_min)?;
+        Ok(())
+    }
+
+    fn explicit_resolution(
+        explicit: Option<&str>,
+    ) -> Result<Option<FormatResolution>, ResolveFormatError> {
+        let Some(explicit) = explicit else {
+            return Ok(None);
+        };
+        let normalized = python_strip(explicit).to_lowercase();
+        if normalized == FORMAT_AUTO {
+            return Ok(None);
+        }
+        if !SUPPORTED_FORMATS.iter().any(|name| *name == normalized) {
+            return Err(ResolveFormatError::UnknownFormat(unknown_format_message(
+                explicit,
+            )));
+        }
+        Ok(Some(explicit_success(normalized)))
+    }
+
+    fn explicit_success(normalized: String) -> FormatResolution {
+        FormatResolution {
+            format: normalized.clone(),
+            result: DetectionResult {
+                format: Some(normalized),
+                confidences: Vec::new(),
+                reason: REASON_EXPLICIT_OVERRIDE.to_owned(),
+            },
+            findings: Vec::new(),
+        }
+    }
+
+    fn resolved_or_failure(
+        result: DetectionResult,
+        path_str: &str,
+        confidence_min: ThresholdInput<'_>,
+        margin_min: ThresholdInput<'_>,
+    ) -> Result<FormatResolution, ResolveFormatError> {
+        match result.format.clone() {
+            Some(format) => Ok(FormatResolution {
+                format,
+                result,
+                findings: Vec::new(),
+            }),
+            None => {
+                let never =
+                    _resolve_failure_finding(&result, path_str, confidence_min, margin_min)?;
+                match never {}
+            }
+        }
+    }
+
+    fn forward_slash_path(path: &Path) -> String {
+        displayed_path(path).text.replace('\\', "/")
+    }
+
+    fn unknown_format_message(explicit: &str) -> String {
+        format!(
+            "Unknown format {}. Must be one of {}",
+            python_str_repr(explicit),
+            sorted_valid_formats_repr()
+        )
+    }
+
+    fn sorted_valid_formats_repr() -> String {
+        let mut names = VALID_FORMAT_OPTIONS;
+        names.sort_unstable();
+        let mut out = String::from("[");
+        for (index, name) in names.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&python_str_repr(name));
+        }
+        out.push(']');
+        out
+    }
+
+    /// Python `repr` for `str`, preferring single quotes.
+    fn python_str_repr(value: &str) -> String {
+        let quote = if value.contains('\'') && !value.contains('"') {
+            '"'
+        } else {
+            '\''
+        };
+        let mut out = String::with_capacity(value.len().saturating_add(2));
+        out.push(quote);
+        for ch in value.chars() {
+            match ch {
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                found if found == quote => {
+                    out.push('\\');
+                    out.push(quote);
+                }
+                found if python_repr_literal(found) => out.push(found),
+                found if u32::from(found) < 0x100 => push_hex(&mut out, "\\x", u32::from(found), 2),
+                found if u32::from(found) < 0x10000 => {
+                    push_hex(&mut out, "\\u", u32::from(found), 4);
+                }
+                found => push_hex(&mut out, "\\U", u32::from(found), 8),
+            }
+        }
+        out.push(quote);
+        out
+    }
+
+    fn python_repr_literal(ch: char) -> bool {
+        if ch.is_ascii() {
+            return ch == ' ' || ch.is_ascii_graphic();
+        }
+        !ch.is_control() && !matches!(ch, '\u{2028}' | '\u{2029}')
+    }
+
+    fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
+        const HEX: [char; 16] = [
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+        ];
+        out.push_str(prefix);
+        for shift in (0..width).rev() {
+            let Ok(shift_bits) = u32::try_from(shift) else {
+                return;
+            };
+            let nibble = (value >> shift_bits.saturating_mul(4)) & 0x0f;
+            let Ok(index) = usize::try_from(nibble) else {
+                return;
+            };
+            let Some(ch) = HEX.get(index).copied() else {
+                return;
+            };
+            out.push(ch);
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum FailureKind {
+        Refused,
+        Empty,
+        Ambiguous,
+    }
+
+    struct FailureLabels {
+        code: &'static str,
+        severity: Severity,
+        repairability: Repairability,
+        template: &'static str,
+    }
+
+    fn failure_kind(reason: &str) -> FailureKind {
+        if reason == REASON_REFUSED_LIVE_DB {
+            FailureKind::Refused
+        } else if reason == REASON_EMPTY {
+            FailureKind::Empty
+        } else {
+            FailureKind::Ambiguous
+        }
+    }
+
+    fn failure_labels(kind: FailureKind) -> FailureLabels {
+        match kind {
+            FailureKind::Refused => FailureLabels {
+                code: SL001,
+                severity: Severity::Fatal,
+                repairability: Repairability::Unsupported,
+                template: REFUSED_LIVE_DB_TEMPLATE,
+            },
+            FailureKind::Empty => FailureLabels {
+                code: SL001,
+                severity: Severity::Error,
+                repairability: Repairability::Manual,
+                template: EMPTY_INPUT_TEMPLATE,
+            },
+            FailureKind::Ambiguous => FailureLabels {
+                code: SL302,
+                severity: Severity::Error,
+                repairability: Repairability::Manual,
+                template: AMBIGUOUS_FORMAT_TEMPLATE,
+            },
+        }
+    }
+
+    fn failure_evidence(
+        result: &DetectionResult,
+        kind: FailureKind,
+        confidence_min: ThresholdInput<'_>,
+        margin_min: ThresholdInput<'_>,
+    ) -> PyValue {
+        match kind {
+            FailureKind::Refused => reason_only("refused_live_db"),
+            FailureKind::Empty => reason_only("empty_input"),
+            FailureKind::Ambiguous => PyValue::map(vec![
+                (PyValue::string("reason"), PyValue::string(&result.reason)),
+                (
+                    PyValue::string("confidences"),
+                    confidences_evidence(&result.confidences),
+                ),
+                (
+                    PyValue::string("confidence_min"),
+                    threshold_evidence(confidence_min),
+                ),
+                (
+                    PyValue::string("margin_min"),
+                    threshold_evidence(margin_min),
+                ),
+            ]),
+        }
+    }
+
+    fn reason_only(reason: &str) -> PyValue {
+        PyValue::map(vec![(PyValue::string("reason"), PyValue::string(reason))])
+    }
+
+    fn confidences_evidence(pairs: &[(String, f64)]) -> PyValue {
+        PyValue::map(
+            pairs
+                .iter()
+                .map(|(name, _score)| (PyValue::string(name.clone()), unrepresentable_float()))
+                .collect(),
+        )
+    }
+
+    /// Python `float` has no [`PyValue`] variant.
+    ///
+    /// The leaf is not an int, not a bool, and not a decimal string. `True`
+    /// is not `1`. [`ThresholdInput::None`] is a different match arm.
+    /// [`PyValue`] cannot store the IEEE value, so the key's leaf is
+    /// [`PyValue::None`], the same stand-in `checks::size` uses when a float
+    /// cannot be passed to [`make_finding`].
+    fn unrepresentable_float() -> PyValue {
+        PyValue::None
+    }
+
+    fn threshold_evidence(value: ThresholdInput<'_>) -> PyValue {
+        match value {
+            ThresholdInput::None => PyValue::None,
+            ThresholdInput::Bool(flag) => PyValue::bool_value(flag),
+            ThresholdInput::Int(number) => PyValue::int(number),
+            ThresholdInput::Text(text) => PyValue::string(text),
+            ThresholdInput::Float(_number) => unrepresentable_float(),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::fs;
+        use std::path::{Path, PathBuf};
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
+
+        use super::super::{
+            DetectError, ThresholdInput, CONFIDENCE_MIN, FORMAT_AUTO, FORMAT_CANONICAL,
+            FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT, FORMAT_OPENAI_AGENTS, MARGIN_MIN,
+            REASON_CLEAR_WINNER, REASON_EMPTY, REASON_EXPLICIT_OVERRIDE, REASON_LOW_CONFIDENCE,
+            REASON_REFUSED_LIVE_DB, REASON_TIE,
+        };
+        use super::{
+            _resolve_failure_finding, failure_evidence, failure_kind, failure_labels,
+            forward_slash_path, python_str_repr, resolve_format, resolve_format_bytes,
+            threshold_evidence, DetectionResult, FailureKind, FormatResolution, PyValue,
+            ResolveFormatError, AMBIGUOUS_FORMAT_TEMPLATE, EMPTY_INPUT_TEMPLATE,
+            REFUSED_LIVE_DB_TEMPLATE,
+        };
+        use crate::openai_agents::SQLITE_MAGIC;
+
+        const SORTED_OPTIONS: &str =
+            "['auto', 'canonical', 'claude-code-jsonl', 'codex-rollout', 'openai-agents']";
+        const FINGERPRINT_SENTENCE: &str =
+            "sesslint.determinism.canonical_json_bytes is not available";
+
+        fn defaults() -> (ThresholdInput<'static>, ThresholdInput<'static>) {
+            (
+                ThresholdInput::Float(CONFIDENCE_MIN),
+                ThresholdInput::Float(MARGIN_MIN),
+            )
+        }
+
+        fn unknown_message(explicit: &str) -> String {
+            format!(
+                "Unknown format {}. Must be one of {SORTED_OPTIONS}",
+                python_str_repr(explicit)
+            )
+        }
+
+        struct TempPath {
+            path: PathBuf,
+            directory: bool,
+        }
+
+        impl Drop for TempPath {
+            fn drop(&mut self) {
+                if self.directory {
+                    let _ = fs::remove_dir_all(&self.path);
+                } else {
+                    let _ = fs::remove_file(&self.path);
+                }
+            }
+        }
+
+        fn temp_path(label: &str, directory: bool) -> TempPath {
+            static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+            let n = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+            TempPath {
+                path: std::env::temp_dir().join(format!("sesslint-detect-02-{label}-{n}")),
+                directory,
+            }
+        }
+
+        fn assert_fingerprint(err: &ResolveFormatError) {
+            assert!(matches!(err, ResolveFormatError::Finding(_)));
+            assert_eq!(err.to_string(), FINGERPRINT_SENTENCE);
+            assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        }
+
+        fn assert_explicit(resolved: &FormatResolution, format: &str) {
+            assert_eq!(resolved.format, format);
+            assert_eq!(resolved.result.format.as_deref(), Some(format));
+            assert_eq!(resolved.result.reason, REASON_EXPLICIT_OVERRIDE);
+            assert!(resolved.result.confidences.is_empty());
+            assert!(resolved.findings.is_empty());
+        }
+
+        #[test]
+        fn python_repr_matches_cpython_samples() {
+            assert_eq!(python_str_repr("bogus"), "'bogus'");
+            assert_eq!(python_str_repr("it's"), "\"it's\"");
+            assert_eq!(python_str_repr("a\\b"), "'a\\\\b'");
+            assert_eq!(python_str_repr("a\nb"), "'a\\nb'");
+            assert_eq!(python_str_repr(""), "''");
+            assert_eq!(python_str_repr("\u{001c}"), "'\\x1c'");
+            assert_eq!(python_str_repr("  Bogus  "), "'  Bogus  '");
+        }
+
+        #[test]
+        fn unknown_format_uses_repr_and_sorted_options() {
+            let missing = Path::new("sesslint-detect-02-missing.json");
+            let (confidence_min, margin_min) = defaults();
+            for explicit in ["bogus", "yaml", "it's", "", "a\\b", "  Bogus  "] {
+                let err = resolve_format(Some(explicit), missing, confidence_min, margin_min)
+                    .expect_err("unknown");
+                assert!(matches!(err, ResolveFormatError::UnknownFormat(_)));
+                assert_eq!(err.to_string(), unknown_message(explicit));
+            }
+            let bytes_err = resolve_format_bytes(
+                Some("bogus"),
+                b"",
+                "ignored.json",
+                "",
+                confidence_min,
+                margin_min,
+            )
+            .expect_err("bytes unknown before empty");
+            assert_eq!(
+                bytes_err.to_string(),
+                format!("Unknown format 'bogus'. Must be one of {SORTED_OPTIONS}")
+            );
+        }
+
+        #[test]
+        fn explicit_override_is_pure_and_returns_empty_findings() {
+            let directory = temp_path("explicit-dir", true);
+            fs::create_dir(&directory.path).expect("dir");
+            let (confidence_min, margin_min) = defaults();
+            let resolved = resolve_format(
+                Some("Canonical"),
+                &directory.path,
+                confidence_min,
+                margin_min,
+            )
+            .expect("explicit skips the directory");
+            assert_explicit(&resolved, FORMAT_CANONICAL);
+
+            let mixed = resolve_format_bytes(
+                Some("  Claude-Code-JSONL \t"),
+                b"",
+                "ignored.json",
+                "",
+                ThresholdInput::Float(0.99),
+                ThresholdInput::Float(0.99),
+            )
+            .expect("explicit skips bytes");
+            assert_explicit(&mixed, FORMAT_CLAUDE_CODE);
+
+            let spaced = resolve_format(
+                Some("\u{001c}openai-agents"),
+                Path::new("sesslint-detect-02-missing.json"),
+                confidence_min,
+                margin_min,
+            )
+            .expect("python strip");
+            assert_explicit(&spaced, FORMAT_OPENAI_AGENTS);
+
+            let codex = resolve_format_bytes(
+                Some(FORMAT_CODEX_ROLLOUT),
+                SQLITE_MAGIC,
+                "session.sqlite",
+                "virtual/session.sqlite",
+                confidence_min,
+                margin_min,
+            )
+            .expect("explicit skips sqlite");
+            assert_explicit(&codex, FORMAT_CODEX_ROLLOUT);
+        }
+
+        #[test]
+        fn thresholds_are_checked_before_the_name_and_the_file() {
+            let missing = Path::new("sesslint-detect-02-missing.json");
+            let high = resolve_format(
+                Some(FORMAT_CANONICAL),
+                missing,
+                ThresholdInput::Float(2.0),
+                ThresholdInput::Float(MARGIN_MIN),
+            )
+            .expect_err("high");
+            assert_eq!(
+                high.to_string(),
+                "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 2.0"
+            );
+            assert!(matches!(high, ResolveFormatError::Detect(DetectError::Value(_))));
+
+            let margin = resolve_format(
+                Some("bogus"),
+                missing,
+                ThresholdInput::Float(0.5),
+                ThresholdInput::Float(0.9),
+            )
+            .expect_err("margin");
+            assert_eq!(
+                margin.to_string(),
+                "margin_min (0.9) cannot exceed confidence_min (0.5)"
+            );
+
+            let bool_before_name = resolve_format_bytes(
+                Some("bogus"),
+                b"",
+                "x.json",
+                "stdin",
+                ThresholdInput::Bool(true),
+                ThresholdInput::Bool(false),
+            )
+            .expect_err("bool before name");
+            assert_eq!(
+                bool_before_name.to_string(),
+                "confidence_min must be strictly between 0.0 and 1.0 exclusive, got True"
+            );
+        }
+
+        #[test]
+        fn bool_is_not_an_int() {
+            let missing = Path::new("sesslint-detect-02-missing.json");
+            let truth = resolve_format(
+                Some(FORMAT_CANONICAL),
+                missing,
+                ThresholdInput::Bool(true),
+                ThresholdInput::Int(1),
+            )
+            .expect_err("true");
+            assert_eq!(
+                truth.to_string(),
+                "confidence_min must be strictly between 0.0 and 1.0 exclusive, got True"
+            );
+            let one = resolve_format(
+                Some(FORMAT_CANONICAL),
+                missing,
+                ThresholdInput::Int(1),
+                ThresholdInput::Float(MARGIN_MIN),
+            )
+            .expect_err("one");
+            assert_eq!(
+                one.to_string(),
+                "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1"
+            );
+            let false_bit = resolve_format(
+                Some(FORMAT_CANONICAL),
+                missing,
+                ThresholdInput::Float(CONFIDENCE_MIN),
+                ThresholdInput::Bool(false),
+            )
+            .expect_err("false");
+            assert_eq!(
+                false_bit.to_string(),
+                "margin_min must be strictly between 0.0 and 1.0 exclusive, got False"
+            );
+            let zero = resolve_format(
+                Some(FORMAT_CANONICAL),
+                missing,
+                ThresholdInput::Float(CONFIDENCE_MIN),
+                ThresholdInput::Int(0),
+            )
+            .expect_err("zero");
+            assert_eq!(
+                zero.to_string(),
+                "margin_min must be strictly between 0.0 and 1.0 exclusive, got 0"
+            );
+            assert_ne!(truth.to_string(), one.to_string());
+            assert_ne!(false_bit.to_string(), zero.to_string());
+        }
+
+        #[test]
+        fn auto_and_none_return_a_clear_winner_with_empty_findings() {
+            let file = temp_path("canonical", false);
+            fs::write(&file.path, br#"{"schema": "sesslint.session/v1"}"#).expect("write");
+            let (confidence_min, margin_min) = defaults();
+            let from_none =
+                resolve_format(None, &file.path, confidence_min, margin_min).expect("none");
+            let from_auto = resolve_format(Some(FORMAT_AUTO), &file.path, confidence_min, margin_min)
+                .expect("auto");
+            assert_eq!(from_none, from_auto);
+            assert_eq!(from_none.format, FORMAT_CANONICAL);
+            assert_eq!(from_none.result.reason, REASON_CLEAR_WINNER);
+            assert!(from_none.findings.is_empty());
+
+            let spaced_auto = resolve_format(
+                Some(" AUTO\t"),
+                &file.path,
+                confidence_min,
+                margin_min,
+            )
+            .expect("spaced auto");
+            assert_eq!(spaced_auto, from_none);
+
+            let from_bytes = resolve_format_bytes(
+                None,
+                br#"{"schema": "sesslint.session/v1"}"#,
+                "notes.txt",
+                "virtual/session.json",
+                confidence_min,
+                margin_min,
+            )
+            .expect("bytes");
+            assert_eq!(from_bytes.format, FORMAT_CANONICAL);
+            assert_eq!(from_bytes.result.reason, REASON_CLEAR_WINNER);
+            assert!(from_bytes.findings.is_empty());
+        }
+
+        #[test]
+        fn unresolved_detection_propagates_the_fingerprint_error() {
+            let (confidence_min, margin_min) = defaults();
+            let empty = resolve_format_bytes(
+                None,
+                b"",
+                "empty.jsonl",
+                "virtual/empty.jsonl",
+                confidence_min,
+                margin_min,
+            )
+            .expect_err("empty");
+            assert_fingerprint(&empty);
+
+            let whitespace = resolve_format_bytes(
+                Some("auto"),
+                b"   \n\t  \r\n   ",
+                "whitespace.json",
+                "virtual/whitespace.json",
+                confidence_min,
+                margin_min,
+            )
+            .expect_err("whitespace");
+            assert_fingerprint(&whitespace);
+
+            let sqlite = resolve_format_bytes(
+                None,
+                SQLITE_MAGIC,
+                "session.sqlite",
+                "virtual/session.sqlite",
+                confidence_min,
+                margin_min,
+            )
+            .expect_err("sqlite");
+            assert_fingerprint(&sqlite);
+
+            let low = resolve_format_bytes(
+                Some(FORMAT_AUTO),
+                b"random unstructured log",
+                "random.txt",
+                "virtual/random.txt",
+                confidence_min,
+                margin_min,
+            )
+            .expect_err("low");
+            assert_fingerprint(&low);
+
+            let file = temp_path("empty-file", false);
+            fs::write(&file.path, b"").expect("write");
+            let from_file =
+                resolve_format(None, &file.path, confidence_min, margin_min).expect_err("file");
+            assert_fingerprint(&from_file);
+        }
+
+        #[test]
+        fn none_threshold_reaches_comparison_only_after_the_early_gates() {
+            let empty = resolve_format_bytes(
+                None,
+                b" \t",
+                "blank.txt",
+                "virtual/blank.txt",
+                ThresholdInput::None,
+                ThresholdInput::None,
+            )
+            .expect_err("empty before compare");
+            assert_fingerprint(&empty);
+
+            let compared = resolve_format_bytes(
+                Some(FORMAT_AUTO),
+                b"x",
+                "random.txt",
+                "virtual/random.txt",
+                ThresholdInput::None,
+                ThresholdInput::Float(MARGIN_MIN),
+            )
+            .expect_err("none confidence");
+            assert_eq!(
+                compared.to_string(),
+                "'<' not supported between instances of 'float' and 'NoneType'"
+            );
+            assert!(matches!(
+                compared,
+                ResolveFormatError::Detect(DetectError::Type(_))
+            ));
+
+            let explicit = resolve_format(
+                Some(FORMAT_CANONICAL),
+                Path::new("sesslint-detect-02-missing.json"),
+                ThresholdInput::None,
+                ThresholdInput::None,
+            )
+            .expect("none is skipped before the explicit return");
+            assert_explicit(&explicit, FORMAT_CANONICAL);
+        }
+
+        #[test]
+        fn missing_path_and_directory_propagate_detect_errors() {
+            let missing = Path::new("sesslint-detect-02-missing.json");
+            let (confidence_min, margin_min) = defaults();
+            let err = resolve_format(Some(" auto "), missing, confidence_min, margin_min)
+                .expect_err("missing");
+            assert_eq!(err.to_string(), "Session file not found: sesslint-detect-02-missing.json");
+            assert!(matches!(err, ResolveFormatError::Detect(DetectError::NotFound(_))));
+
+            let directory = temp_path("dir", true);
+            fs::create_dir(&directory.path).expect("dir");
+            let dir_err = resolve_format(None, &directory.path, confidence_min, margin_min)
+                .expect_err("dir");
+            assert!(dir_err
+                .to_string()
+                .starts_with("Expected session file, got directory: "));
+            assert!(matches!(
+                dir_err,
+                ResolveFormatError::Detect(DetectError::IsADirectory(_))
+            ));
+        }
+
+        #[test]
+        fn failure_branches_select_only_sl001_and_sl302() {
+            let refused = failure_labels(failure_kind(REASON_REFUSED_LIVE_DB));
+            assert_eq!(refused.code, "SL001");
+            assert_eq!(refused.severity, model::codes::Severity::Fatal);
+            assert_eq!(
+                refused.repairability,
+                model::codes::Repairability::Unsupported
+            );
+            assert_eq!(
+                refused.template,
+                "Refused live SQLite database; SessLint requires exported items or checkpoints [detail: refused_live_db]"
+            );
+            assert_eq!(REFUSED_LIVE_DB_TEMPLATE, refused.template);
+
+            let empty = failure_labels(failure_kind(REASON_EMPTY));
+            assert_eq!(empty.code, "SL001");
+            assert_eq!(empty.severity, model::codes::Severity::Error);
+            assert_eq!(empty.repairability, model::codes::Repairability::Manual);
+            assert_eq!(empty.template, "Session input is empty [detail: EMPTY]");
+            assert_eq!(EMPTY_INPUT_TEMPLATE, empty.template);
+
+            for reason in [REASON_TIE, REASON_LOW_CONFIDENCE, REASON_CLEAR_WINNER, "other"] {
+                let ambiguous = failure_labels(failure_kind(reason));
+                assert_eq!(ambiguous.code, "SL302");
+                assert_eq!(ambiguous.severity, model::codes::Severity::Error);
+                assert_eq!(
+                    ambiguous.repairability,
+                    model::codes::Repairability::Manual
+                );
+                assert_eq!(
+                    ambiguous.template,
+                    "Unable to determine session format with sufficient confidence [detail: ambiguous_format]"
+                );
+                assert_eq!(AMBIGUOUS_FORMAT_TEMPLATE, ambiguous.template);
+            }
+
+            let tie = DetectionResult {
+                format: None,
+                confidences: vec![
+                    (FORMAT_CLAUDE_CODE.to_owned(), 0.70),
+                    (FORMAT_OPENAI_AGENTS.to_owned(), 0.60),
+                    (FORMAT_CODEX_ROLLOUT.to_owned(), 0.0),
+                    (FORMAT_CANONICAL.to_owned(), 0.0),
+                ],
+                reason: REASON_TIE.to_owned(),
+            };
+            let err = _resolve_failure_finding(
+                &tie,
+                "session.jsonl",
+                ThresholdInput::Float(CONFIDENCE_MIN),
+                ThresholdInput::None,
+            )
+            .expect_err("tie");
+            assert_eq!(err.to_string(), FINGERPRINT_SENTENCE);
+
+            let blank = _resolve_failure_finding(
+                &tie,
+                "  ",
+                ThresholdInput::Float(CONFIDENCE_MIN),
+                ThresholdInput::Float(MARGIN_MIN),
+            )
+            .expect_err("blank path");
+            assert_eq!(
+                blank.to_string(),
+                "SourceRef.path must be a non-empty string, got '  '"
+            );
+            assert_ne!(blank.to_string(), FINGERPRINT_SENTENCE);
+        }
+
+        #[test]
+        fn evidence_keeps_bool_distinct_and_does_not_store_a_float_as_an_int() {
+            assert_eq!(
+                threshold_evidence(ThresholdInput::Bool(true)),
+                PyValue::bool_value(true)
+            );
+            assert_ne!(
+                threshold_evidence(ThresholdInput::Bool(true)),
+                PyValue::int(1)
+            );
+            assert_eq!(threshold_evidence(ThresholdInput::Int(1)), PyValue::int(1));
+            assert_ne!(
+                threshold_evidence(ThresholdInput::Int(1)),
+                PyValue::bool_value(true)
+            );
+            assert_eq!(
+                threshold_evidence(ThresholdInput::Bool(false)),
+                PyValue::bool_value(false)
+            );
+            assert_ne!(
+                threshold_evidence(ThresholdInput::Bool(false)),
+                PyValue::int(0)
+            );
+            assert_eq!(threshold_evidence(ThresholdInput::Int(0)), PyValue::int(0));
+            assert_eq!(threshold_evidence(ThresholdInput::None), PyValue::None);
+            assert_eq!(
+                threshold_evidence(ThresholdInput::Text("True")),
+                PyValue::string("True")
+            );
+            let float_leaf = threshold_evidence(ThresholdInput::Float(CONFIDENCE_MIN));
+            assert!(!matches!(
+                float_leaf,
+                PyValue::Int(_) | PyValue::Bool(_) | PyValue::Str(_)
+            ));
+
+            let refused = DetectionResult {
+                format: None,
+                confidences: vec![(FORMAT_CANONICAL.to_owned(), 0.0)],
+                reason: REASON_REFUSED_LIVE_DB.to_owned(),
+            };
+            assert_eq!(
+                failure_evidence(
+                    &refused,
+                    FailureKind::Refused,
+                    ThresholdInput::Bool(true),
+                    ThresholdInput::Int(1),
+                ),
+                PyValue::map(vec![(
+                    PyValue::string("reason"),
+                    PyValue::string("refused_live_db")
+                )])
+            );
+
+            let tie = DetectionResult {
+                format: None,
+                confidences: vec![
+                    (FORMAT_CLAUDE_CODE.to_owned(), 0.70),
+                    (FORMAT_CANONICAL.to_owned(), 0.60),
+                ],
+                reason: REASON_TIE.to_owned(),
+            };
+            let evidence = failure_evidence(
+                &tie,
+                failure_kind(REASON_TIE),
+                ThresholdInput::Float(0.70),
+                ThresholdInput::None,
+            );
+            let PyValue::Map(entries) = evidence else {
+                panic!("evidence map");
+            };
+            assert_eq!(entries.len(), 4);
+            assert_eq!(entries[0].0, PyValue::string("reason"));
+            assert_eq!(entries[0].1, PyValue::string(REASON_TIE));
+            assert_eq!(entries[1].0, PyValue::string("confidences"));
+            let PyValue::Map(scores) = &entries[1].1 else {
+                panic!("confidences map");
+            };
+            assert_eq!(scores[0].0, PyValue::string(FORMAT_CLAUDE_CODE));
+            assert_eq!(scores[1].0, PyValue::string(FORMAT_CANONICAL));
+            assert!(scores.iter().all(|(_, score)| !matches!(
+                score,
+                PyValue::Int(_) | PyValue::Bool(_) | PyValue::Str(_)
+            )));
+            assert_eq!(entries[2].0, PyValue::string("confidence_min"));
+            assert!(!matches!(
+                entries[2].1,
+                PyValue::Int(_) | PyValue::Bool(_) | PyValue::Str(_)
+            ));
+            assert_eq!(entries[3].0, PyValue::string("margin_min"));
+            assert_eq!(entries[3].1, PyValue::None);
+        }
+
+        #[test]
+        fn finding_path_uses_forward_slashes() {
+            assert_eq!(forward_slash_path(Path::new("")), ".");
+            assert_eq!(forward_slash_path(Path::new("foo/bar")), "foo/bar");
+            assert_eq!(forward_slash_path(Path::new("foo\\bar")), "foo/bar");
+            assert_eq!(forward_slash_path(Path::new("foo/../bar")), "foo/../bar");
+        }
+    }
+}
+
+pub use resolve_port::{
+    _resolve_failure_finding, resolve_format, resolve_format_bytes, FormatResolution,
+    ResolveFormatError,
+};
