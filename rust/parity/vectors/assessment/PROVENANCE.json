@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.assessment parity: cap validation, regular-file check_impl seam, and SourceAssessment.unchanged SHA-256 probes.",
+  "generator": "rust/parity/vectors/assessment/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-assessment-check-impl: assess_source on a regular file runs sesslint.api._check_impl in Python and returns SourceAssessment. Rust stops at CheckImpl and does not build Report or events.",
+    "GAP-assessment-missing-path-message: a missing path raises OSError text from CPython; Rust returns std::io::Error display.",
+    "GAP-assessment-identity-dev-ino: st_dev and st_ino are 0 on non-Unix Rust ports without unstable metadata APIs.",
+    "GAP-assessment-io-default: DEFAULT_MAX_FILE_BYTES is duplicated in Rust from the pin io.py blob; this crate does not depend on an io crate."
+  ]
+}
