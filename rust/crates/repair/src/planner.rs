@@ -1,9 +1,11 @@
-//! Deterministic repair-plan values through torn compaction loss (TASK-018).
+//! Deterministic repair-plan values through the conservative recipe import.
 //!
-//! Port of `src/sesslint/repair/planner.py` lines 1–420
+//! Port of `src/sesslint/repair/planner.py` lines 1–457
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! Stops before `plan`. No I/O. Invalid input returns an error and does not
-//! panic. Type errors do not echo the rejected value.
+//! [`plan`] stops at `sesslint.repair.recipes_conservative.register_all`.
+//! That function is not available. No I/O. Invalid input returns an error and
+//! does not panic. Parser type errors do not echo the rejected value. An
+//! invalid `policy` includes Python `repr`.
 //!
 //! [`PlanStep::try_new`] checks loss-class names in insertion order.
 //! [`PlanStep::from_dict`], [`Blocked::from_dict`], and [`Loss::from_dict`]
@@ -13,7 +15,12 @@
 //! [`RepairPlan::from_dict`] recomputes a missing or empty fingerprint through
 //! [`compute_plan_fingerprint`] with `policy` `None`.
 //! [`compute_events_source_hash`] does not hash a non-empty sequence.
+//! [`plan`] checks `policy`, then `source_hash`, then `profile`, then the
+//! conservative `register_all` import. Findings are not read. Events are read
+//! only when `source_hash` is `None`. `acknowledge_side_effects` and
+//! `input_format` are not validated.
 
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 
@@ -1071,6 +1078,252 @@ pub fn _compute_torn_compaction_loss(
     }
 }
 
+/// `from sesslint.repair.recipes_conservative import register_all` cannot run.
+pub const RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE: &str =
+    "sesslint.repair.recipes_conservative.register_all is not available";
+
+/// Python `policy` argument of [`plan`].
+///
+/// [`Self::Str`] is a `str`. [`Self::Bool`] is `True` or `False` and is not
+/// the string `"True"`. [`Self::None`] is `None`. [`Self::Int`] is an `int`
+/// and is not a bool. A list, tuple, dict, bytes, or float is not a variant.
+/// This crate does not invent a container repr for `{policy!r}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlanPolicy {
+    /// Python `str`.
+    Str(String),
+    /// Python `bool`. Not an int.
+    Bool(bool),
+    /// Python `None`.
+    None,
+    /// Python `int`. Not a bool.
+    Int(i128),
+}
+
+impl PlanPolicy {
+    pub fn str_value(value: impl Into<String>) -> Self {
+        Self::Str(value.into())
+    }
+
+    pub fn bool_value(value: bool) -> Self {
+        Self::Bool(value)
+    }
+
+    pub fn none() -> Self {
+        Self::None
+    }
+
+    pub fn int(value: i128) -> Self {
+        Self::Int(value)
+    }
+}
+
+/// Python `profile` argument of [`plan`].
+///
+/// Resolution is `getattr(profile, "name", str(profile))`.
+/// [`Self::Str`] has no `name` attribute, so the string is kept.
+/// [`Self::Named`] carries `name`, and that text is kept. `str(profile)` is
+/// not called. [`Self::Bool`], [`Self::None`], and [`Self::Int`] have no
+/// `name`. Their `str()` is `True`, `False`, `None`, or the decimal integer.
+/// [`Self::Unrenderable`] has no `name` and `str()` cannot be rendered.
+/// A list, tuple, dict, bytes, or float uses that variant. No container
+/// repr is invented.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlanProfile {
+    /// Python `str`. No `name` attribute.
+    Str(String),
+    /// Object whose `name` attribute is a `str`.
+    Named(String),
+    /// No `name`. `str(True)` / `str(False)`.
+    Bool(bool),
+    /// No `name`. `str(None)` is `None`.
+    None,
+    /// No `name`. `str(int)` is decimal text. Not a bool.
+    Int(i128),
+    /// No `name`. `str()` cannot be rendered.
+    Unrenderable,
+}
+
+impl PlanProfile {
+    pub fn str_value(value: impl Into<String>) -> Self {
+        Self::Str(value.into())
+    }
+
+    pub fn named(name: impl Into<String>) -> Self {
+        Self::Named(name.into())
+    }
+
+    pub fn bool_value(value: bool) -> Self {
+        Self::Bool(value)
+    }
+
+    pub fn none() -> Self {
+        Self::None
+    }
+
+    pub fn int(value: i128) -> Self {
+        Self::Int(value)
+    }
+
+    pub fn unrenderable() -> Self {
+        Self::Unrenderable
+    }
+}
+
+/// Failure from [`plan`].
+///
+/// [`Display`](fmt::Display) is the message only. [`Self::SourceHash`]
+/// displays the [`SourceHashError`] message. [`Self::ProfileStr`] displays
+/// [`PYTHON_STR_UNREPRESENTABLE`]. This file keeps that single unrenderable
+/// string and does not invent a container repr. [`Self::RegisterAll`]
+/// displays [`RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlanError {
+    /// Python `ValueError` for a policy other than `conservative` or `salvage`.
+    Policy(String),
+    /// [`compute_events_source_hash`] failed. The error is unchanged.
+    SourceHash(SourceHashError),
+    /// `str(profile)` cannot be rendered.
+    ProfileStr,
+    /// `sesslint.repair.recipes_conservative.register_all` is not available.
+    RegisterAll,
+}
+
+impl PlanError {
+    fn invalid_policy(policy: &PlanPolicy) -> Self {
+        let shown = policy_repr(policy);
+        Self::Policy(format!(
+            "Invalid repair policy: {shown}. Must be 'conservative' or 'salvage'"
+        ))
+    }
+}
+
+impl fmt::Display for PlanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Policy(message) => formatter.write_str(message),
+            Self::SourceHash(error) => error.fmt(formatter),
+            Self::ProfileStr => formatter.write_str(PYTHON_STR_UNREPRESENTABLE),
+            Self::RegisterAll => formatter.write_str(RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for PlanError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::SourceHash(error) => Some(error),
+            Self::Policy(_) | Self::ProfileStr | Self::RegisterAll => None,
+        }
+    }
+}
+
+/// Python: `plan`, through the conservative recipe import.
+///
+/// `policy` is checked first. The strings `conservative` and `salvage` are
+/// the only accepted values. Any other value returns the Python `ValueError`
+/// text and does not hash, resolve `profile`, or import.
+/// `source_hash` of `None` calls [`compute_events_source_hash`]. An empty
+/// sequence stores [`EMPTY_EVENTS_HASH`] and continues. A non-empty sequence
+/// returns that function's error and does not import or build a
+/// [`RepairPlan`]. A present `source_hash`, including `""`, is stored and
+/// `events` are not read.
+/// `profile` is `getattr(profile, "name", str(profile))`. A string keeps its
+/// text. A value that carries `name` keeps that name. A value whose `str()`
+/// cannot be rendered returns [`PYTHON_STR_UNREPRESENTABLE`].
+///
+/// The next statement is `from sesslint.repair.recipes_conservative import
+/// register_all`. This crate returns
+/// [`RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE`]. Salvage registration,
+/// SL002 registration, SL203 blocking, recipe matching, and the plan
+/// fingerprint are not run.
+///
+/// `findings` are not read. `acknowledge_side_effects` and `input_format`
+/// are not validated. Python keyword defaults are supplied by the caller:
+/// `profile` `"neutral"`, `source_hash` `None`, `policy` `"conservative"`,
+/// `acknowledge_side_effects` `False`, `input_format` `None`.
+///
+/// # Errors
+///
+/// Returns [`PlanError`]. This function does not panic. Success is
+/// [`Infallible`], so no [`RepairPlan`] is returned.
+pub fn plan(
+    findings: &[Finding],
+    events: &[SourceHashEvent],
+    profile: &PlanProfile,
+    source_hash: Option<&str>,
+    policy: &PlanPolicy,
+    acknowledge_side_effects: bool,
+    input_format: Option<&str>,
+) -> Result<Infallible, PlanError> {
+    let policy = require_policy(policy)?;
+    let resolved_source_hash = match source_hash {
+        Some(hash) => hash.to_owned(),
+        None => compute_events_source_hash(events).map_err(PlanError::SourceHash)?,
+    };
+    let profile_name = resolve_profile_name(profile)?;
+    Err(conservative_register_all_unavailable(
+        findings,
+        &resolved_source_hash,
+        &profile_name,
+        policy,
+        acknowledge_side_effects,
+        input_format,
+    ))
+}
+
+fn require_policy(policy: &PlanPolicy) -> Result<&str, PlanError> {
+    match policy {
+        PlanPolicy::Str(text) if text == "conservative" || text == "salvage" => Ok(text.as_str()),
+        other => Err(PlanError::invalid_policy(other)),
+    }
+}
+
+fn resolve_profile_name(profile: &PlanProfile) -> Result<String, PlanError> {
+    match profile {
+        PlanProfile::Str(text) => Ok(text.clone()),
+        PlanProfile::Named(name) => Ok(name.clone()),
+        PlanProfile::Bool(true) => Ok("True".to_owned()),
+        PlanProfile::Bool(false) => Ok("False".to_owned()),
+        PlanProfile::None => Ok("None".to_owned()),
+        PlanProfile::Int(number) => Ok(number.to_string()),
+        PlanProfile::Unrenderable => Err(PlanError::ProfileStr),
+    }
+}
+
+fn policy_repr(policy: &PlanPolicy) -> String {
+    match policy {
+        PlanPolicy::Str(text) => python_str_repr(text),
+        PlanPolicy::Bool(true) => "True".to_owned(),
+        PlanPolicy::Bool(false) => "False".to_owned(),
+        PlanPolicy::None => "None".to_owned(),
+        PlanPolicy::Int(number) => number.to_string(),
+    }
+}
+
+/// The conservative `register_all` import is not available.
+///
+/// The arguments are the values `plan` has already stored or accepted.
+/// They are not read. No [`RepairPlan`] is built.
+fn conservative_register_all_unavailable(
+    findings: &[Finding],
+    resolved_source_hash: &str,
+    profile_name: &str,
+    policy: &str,
+    acknowledge_side_effects: bool,
+    input_format: Option<&str>,
+) -> PlanError {
+    let _ = (
+        findings,
+        resolved_source_hash,
+        profile_name,
+        policy,
+        acknowledge_side_effects,
+        input_format,
+    );
+    PlanError::RegisterAll
+}
+
 fn dicts_as_list(items: impl IntoIterator<Item = Vec<(String, PlanValue)>>) -> PlanValue {
     PlanValue::list(items.into_iter().map(PlanValue::string_map).collect())
 }
@@ -1627,10 +1880,12 @@ mod tests {
 
     use super::{
         _compute_torn_compaction_loss, _counts, _object, _resolve_target_index, _strings,
-        compute_events_source_hash, Blocked, Loss, PlanKey, PlanStep, PlanStepFields, PlanValue,
-        PlannerError, RepairPlan, RepairPlanFields, SourceHashError, SourceHashEvent,
-        ALLOWED_LOSS_CLASSES, EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, HASHLIB_SHA256_UNAVAILABLE,
-        MAX_STEPS, NON_EVENT_LOSS_CLASSES, PLAN_VERSION, SYNTHETIC_STEP_FP, UNDECODED_RECORD_CODES,
+        compute_events_source_hash, plan, Blocked, Loss, PlanError, PlanKey, PlanPolicy,
+        PlanProfile, PlanStep, PlanStepFields, PlanValue, PlannerError, RepairPlan,
+        RepairPlanFields, SourceHashError, SourceHashEvent, ALLOWED_LOSS_CLASSES,
+        EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, HASHLIB_SHA256_UNAVAILABLE, MAX_STEPS,
+        NON_EVENT_LOSS_CLASSES, PLAN_VERSION, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
+        SYNTHETIC_STEP_FP, UNDECODED_RECORD_CODES,
     };
 
     const ALLOWED_REPR: &str = concat!(
@@ -3041,5 +3296,286 @@ mod tests {
         let count = _compute_torn_compaction_loss(&split, 1).expect("count");
         assert_eq!(count, i64::try_from(dropped.len()).expect("len"));
         assert_eq!(count, 2);
+    }
+
+    fn plan_error(
+        findings: &[Finding],
+        events: &[SourceHashEvent],
+        profile: &PlanProfile,
+        source_hash: Option<&str>,
+        policy: &PlanPolicy,
+        acknowledge_side_effects: bool,
+        input_format: Option<&str>,
+    ) -> PlanError {
+        plan(
+            findings,
+            events,
+            profile,
+            source_hash,
+            policy,
+            acknowledge_side_effects,
+            input_format,
+        )
+        .expect_err("plan stops")
+    }
+
+    fn policy_text(policy: &PlanPolicy) -> String {
+        let err = plan_error(
+            &[],
+            &[SourceHashEvent::Unrenderable],
+            &PlanProfile::unrenderable(),
+            None,
+            policy,
+            true,
+            Some("not-a-format"),
+        );
+        assert!(err.source().is_none());
+        assert!(!matches!(
+            err,
+            PlanError::SourceHash(_) | PlanError::ProfileStr | PlanError::RegisterAll
+        ));
+        err.to_string()
+    }
+
+    #[test]
+    fn plan_rejects_policy_before_hash_profile_or_import() {
+        assert_eq!(
+            policy_text(&PlanPolicy::str_value("Aggressive")),
+            "Invalid repair policy: 'Aggressive'. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::str_value("")),
+            "Invalid repair policy: ''. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::str_value("it's")),
+            "Invalid repair policy: \"it's\". Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::str_value("a\nb")),
+            "Invalid repair policy: 'a\\nb'. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::str_value("True")),
+            "Invalid repair policy: 'True'. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::str_value("conservative ")),
+            "Invalid repair policy: 'conservative '. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::bool_value(true)),
+            "Invalid repair policy: True. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::bool_value(false)),
+            "Invalid repair policy: False. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::none()),
+            "Invalid repair policy: None. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::int(1)),
+            "Invalid repair policy: 1. Must be 'conservative' or 'salvage'"
+        );
+        assert_eq!(
+            policy_text(&PlanPolicy::int(-2)),
+            "Invalid repair policy: -2. Must be 'conservative' or 'salvage'"
+        );
+    }
+
+    #[test]
+    fn plan_propagates_source_hash_without_a_recipe_import() {
+        let rendered = [SourceHashEvent::Rendered("echo-me".to_owned())];
+        let direct = compute_events_source_hash(&rendered).expect_err("rendered");
+        let via = plan_error(
+            &[],
+            &rendered,
+            &PlanProfile::unrenderable(),
+            None,
+            &PlanPolicy::str_value("conservative"),
+            false,
+            None,
+        );
+        assert_eq!(via, PlanError::SourceHash(direct));
+        assert_eq!(via.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+        assert_eq!(via.to_string(), direct.to_string());
+        assert!(via.source().is_some());
+        assert!(!via.to_string().contains("echo-me"));
+
+        let unrendered = [SourceHashEvent::Unrenderable];
+        let direct = compute_events_source_hash(&unrendered).expect_err("str");
+        let via = plan_error(
+            &[],
+            &unrendered,
+            &PlanProfile::str_value("neutral"),
+            None,
+            &PlanPolicy::str_value("salvage"),
+            false,
+            None,
+        );
+        assert_eq!(via, PlanError::SourceHash(direct));
+        assert_eq!(via.to_string(), PYTHON_STR_UNREPRESENTABLE);
+        assert_ne!(
+            via.to_string(),
+            RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE
+        );
+
+        let mapping =
+            EventMapping::new(vec![("id".to_owned(), EventField::Str("evt-a".to_owned()))]);
+        let mapped = [SourceHashEvent::Mapping(mapping.clone())];
+        let direct = compute_events_source_hash(&mapped).expect_err("mapping");
+        let via = plan_error(
+            &[],
+            &mapped,
+            &PlanProfile::unrenderable(),
+            None,
+            &PlanPolicy::str_value("conservative"),
+            true,
+            Some("canonical"),
+        );
+        assert_eq!(via, PlanError::SourceHash(direct));
+        assert_eq!(
+            via.to_string(),
+            "sesslint._canonical_codec.canonical_json_bytes is not available"
+        );
+        assert_eq!(
+            direct,
+            SourceHashError::Canonical(canonical_bytes(&mapping).expect_err("canonical seam"))
+        );
+        assert!(!via.to_string().contains("evt-a"));
+        assert!(via.source().is_some());
+
+        let session = SessionEvent::new(
+            "evt-synthetic",
+            None,
+            0,
+            "2024-02-29T00:00:00Z",
+            "assistant",
+            "message",
+        );
+        let bytes = session.to_canonical_bytes().expect_err("session bytes");
+        let session_events = [SourceHashEvent::Session(Box::new(session))];
+        let direct = compute_events_source_hash(&session_events).expect_err("session");
+        let via = plan_error(
+            &[],
+            &session_events,
+            &PlanProfile::named("strict"),
+            None,
+            &PlanPolicy::str_value("conservative"),
+            false,
+            None,
+        );
+        assert_eq!(via, PlanError::SourceHash(direct));
+        assert_eq!(direct, SourceHashError::Canonical(bytes));
+        assert_ne!(via.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+
+        let stored = plan_error(
+            &[],
+            &unrendered,
+            &PlanProfile::str_value("neutral"),
+            Some(""),
+            &PlanPolicy::str_value("conservative"),
+            false,
+            None,
+        );
+        assert_eq!(stored, PlanError::RegisterAll);
+        assert_eq!(
+            compute_events_source_hash(&[]).expect("empty"),
+            EMPTY_EVENTS_HASH
+        );
+        let continued = plan_error(
+            &[],
+            &[],
+            &PlanProfile::str_value("neutral"),
+            None,
+            &PlanPolicy::str_value("conservative"),
+            false,
+            None,
+        );
+        assert_eq!(continued, PlanError::RegisterAll);
+    }
+
+    #[test]
+    fn plan_resolves_profile_then_stops_at_conservative_register_all() {
+        assert_eq!(
+            RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
+            "sesslint.repair.recipes_conservative.register_all is not available"
+        );
+        assert_eq!(
+            PlanError::RegisterAll.to_string(),
+            RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE
+        );
+        assert_eq!(
+            PlanError::ProfileStr.to_string(),
+            PYTHON_STR_UNREPRESENTABLE
+        );
+        assert!(PlanError::RegisterAll.source().is_none());
+        assert!(PlanError::ProfileStr.source().is_none());
+
+        let blocked = plan_error(
+            &[],
+            &[],
+            &PlanProfile::unrenderable(),
+            None,
+            &PlanPolicy::str_value("conservative"),
+            false,
+            None,
+        );
+        assert_eq!(blocked, PlanError::ProfileStr);
+        let blocked_salvage = plan_error(
+            &[],
+            &[SourceHashEvent::Unrenderable],
+            &PlanProfile::unrenderable(),
+            Some("abc"),
+            &PlanPolicy::str_value("salvage"),
+            true,
+            Some("not-a-format"),
+        );
+        assert_eq!(blocked_salvage, PlanError::ProfileStr);
+
+        let sl203 = target_finding("SL203", Some("rec-sl203"), PyValue::None);
+        let bad_events = [SourceHashEvent::Unrenderable];
+        let profiles = [
+            PlanProfile::str_value("neutral"),
+            PlanProfile::str_value(""),
+            PlanProfile::named("strict"),
+            PlanProfile::named(""),
+            PlanProfile::bool_value(true),
+            PlanProfile::bool_value(false),
+            PlanProfile::none(),
+            PlanProfile::int(0),
+            PlanProfile::int(-2),
+        ];
+        for profile in &profiles {
+            let err = plan_error(
+                std::slice::from_ref(&sl203),
+                &bad_events,
+                profile,
+                Some(""),
+                &PlanPolicy::str_value("conservative"),
+                true,
+                Some("not-a-format"),
+            );
+            assert_eq!(err, PlanError::RegisterAll, "{profile:?}");
+            assert_eq!(
+                err.to_string(),
+                RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE
+            );
+            assert!(!err.to_string().contains("SL203"));
+            assert!(!err.to_string().contains("salvage"));
+            assert!(!err.to_string().contains("SL002"));
+        }
+        let present = plan_error(
+            &[],
+            &bad_events,
+            &PlanProfile::str_value("neutral"),
+            Some("deadbeef"),
+            &PlanPolicy::str_value("salvage"),
+            false,
+            None,
+        );
+        assert_eq!(present, PlanError::RegisterAll);
     }
 }
