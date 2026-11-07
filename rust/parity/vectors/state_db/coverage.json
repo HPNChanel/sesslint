@@ -1,0 +1,66 @@
+{
+  "rows": [
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_consistent_clean",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_unregistered_rollout_flagged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_threads_row_missing_rollout_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_named_id_resolved_by_registry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_named_id_nowhere_flagged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_cross_check_when_jsonl_out_of_scope",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_spawn_edge_orphan",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_migration_skip_recorded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_malformed_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_foreign_sqlite_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_no_sessions_subtree",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_reader_absent",
+      "vector_ids": [
+        "read_codex_state_absent"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_reader_symlink",
+      "vector_ids": [
+        "read_codex_state_symlink"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_reader_content_columns_never_selected",
+      "status": "not_applicable"
+    }
+  ]
+}

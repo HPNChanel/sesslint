@@ -1,0 +1,548 @@
+#!/usr/bin/env python3
+"""Generate sesslint.state_db parity vectors (stdlib only; pinned git show of state_db.py)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+STATE_DB_PY_SHA256 = (
+    "0edb4bad2e50b82471e21c6230dbf83e95bfddc1e4aa4694b84281be1756f7b9"
+)
+STATE_DB_RS_SHA256 = (
+    "8ee155f0907507ebb512a78efafbfeef62530a926b6ca0e90f14d1dd9d729e27"
+)
+MODULE = "sesslint.state_db"
+
+UA = "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-state-db-sqlite-read: read_codex_state after symlink, absent, and size "
+    "checks calls sqlite3.connect and returns a populated CodexStateSnapshot. Rust "
+    "stops with sqlite3.connect is not available and does not open a database. "
+    "Vectors store pin snapshots under expected.pin and assert the sqlite seam.",
+    "GAP-state-db-short-hash: migration_skip_reason_hashes in read_codex_state and "
+    "short_hash cells call sesslint.report.short_hash. Rust migration_skip_reason_hash "
+    "stops with sesslint.report.short_hash is not available. Vectors assert that seam.",
+    "GAP-state-db-table-columns: _table_columns executes PRAGMA table_info on an open "
+    "connection. Rust table_columns stops at the sqlite seam without opening a database.",
+    "GAP-state-db-scan-integration: tests/scan/test_state_db.py integration cases that "
+    "call scan_path or expect full registry reconciliation are not pinned as vectors.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/scan/test_state_db.py",)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/scan/test_state_db.py::test_reader_absent": ("read_codex_state_absent",),
+    "tests/scan/test_state_db.py::test_reader_symlink": ("read_codex_state_symlink",),
+}
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/state_db.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != STATE_DB_PY_SHA256:
+        raise SystemExit(
+            f"state_db.py pin sha256 mismatch: expected {STATE_DB_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "scan" / "src" / "state_db.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != STATE_DB_RS_SHA256:
+        raise SystemExit(
+            "state_db.rs sha256 mismatch: "
+            f"expected {STATE_DB_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+
+
+def install_packages() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    report = types.ModuleType("sesslint.report")
+
+    def short_hash(identifier: str, length: int = 8) -> str:
+        return hashlib.sha256(identifier.encode("utf-8")).hexdigest()[:length]
+
+    report.short_hash = short_hash
+    sys.modules["sesslint.report"] = report
+    pkg.report = report
+
+
+def load_state_db() -> Any:
+    verify_pin_hashes()
+    install_packages()
+    source = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/state_db.py").decode("utf-8")
+    code = compile(source, f"<{PYTHON_COMMIT}:src/sesslint/state_db.py>", "exec")
+    mod = types.ModuleType(MODULE)
+    mod.__file__ = f"<{PYTHON_COMMIT}:src/sesslint/state_db.py>"
+    sys.modules[MODULE] = mod
+    exec(code, mod.__dict__)  # noqa: S102
+    sys.modules["sesslint"].state_db = mod
+    return mod
+
+
+def snapshot_payload(snap: Any) -> dict[str, Any]:
+    return {
+        "parse_ok": snap.parse_ok,
+        "schema_note": snap.schema_note,
+        "thread_ids": sorted(snap.thread_ids),
+        "rollout_uuids": sorted(snap.rollout_uuids),
+        "thread_rows": snap.thread_rows,
+        "spawn_edge_orphans": snap.spawn_edge_orphans,
+        "migration_skips": snap.migration_skips,
+        "migration_skip_reason_hashes": list(snap.migration_skip_reason_hashes),
+        "thread_rollout_pairs": [
+            [a, b] for a, b in sorted(snap.thread_rollout_pairs)
+        ],
+        "membership_complete": snap.membership_complete,
+    }
+
+
+def mk_db(path: Path, threads: list[tuple[str, str | None]]) -> None:
+    con = sqlite3.connect(path)
+    try:
+        con.execute(
+            "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, "
+            "thread_source TEXT, archived INTEGER, title TEXT)"
+        )
+        con.execute(
+            "CREATE TABLE thread_spawn_edges ("
+            "parent_thread_id TEXT, child_thread_id TEXT, status TEXT)"
+        )
+        con.execute(
+            "CREATE TABLE rollout_migration_skipped_rollouts "
+            "(rollout_path TEXT, skip_reason TEXT)"
+        )
+        for tid, rp in threads:
+            con.execute(
+                "INSERT INTO threads (id, rollout_path, thread_source, archived, title) "
+                "VALUES (?,?,?,?,?)",
+                (tid, rp, "user", 0, "synthetic-title-never-read"),
+            )
+    finally:
+        con.close()
+
+
+def rollout_cases() -> list[tuple[str, str | None]]:
+    uid = "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+    uid_lower = uid.lower()
+    return [
+        ("", None),
+        (uid, uid_lower),
+        (uid.upper(), uid_lower),
+        (
+            f"rollout-2026-09-20T00-00-00-{uid}.jsonl",
+            uid_lower,
+        ),
+        (
+            f"rollout-2026-09-20T00-00-00-{uid.upper()}.jsonl",
+            uid_lower,
+        ),
+        (
+            "prefix-01234567-89ab-cdef-0123-456789abcdef-suffix",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        (
+            "01234567-89AB-CDEF-0123-456789ABCDEF",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        ("01234567-89ab-cdef-0123-456789abcdeg", None),
+        (
+            "012345678-9abc-def0-1234-567890abcdef",
+            "12345678-9abc-def0-1234-567890abcdef",
+        ),
+        (
+            "01234567-89ab-cdef-0123-456789abcdefEXTRA",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        (
+            "{01234567-89ab-cdef-0123-456789abcdef}",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        (
+            "01234567-89ab-cdef-0123-456789abcdef-"
+            "01234567-89ab-cdef-0123-456789abcdee",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        ("not-a-uuid", None),
+        ("01234567-89ab-cdef-0123-456789abcde", None),
+        ("g1234567-89ab-cdef-0123-456789abcdef", None),
+        (
+            "01234567-89ab-cdef-0123-456789abcdef\n",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+    ]
+
+
+def is_state_db_cases() -> list[tuple[str, bool]]:
+    return [
+        ("", False),
+        ("state_1.sqlite", True),
+        ("state_.sqlite", True),
+        ("state_1.SQLITE", False),
+        ("State_1.sqlite", False),
+        ("state_1.sqlite.bak", False),
+        ("xstate_1.sqlite", False),
+        ("state_1.sqlite ", False),
+        ("state_", False),
+        (".sqlite", False),
+        ("state_1.sqlite.sqlite", True),
+        ("state_*.sqlite", True),
+        ("state_\uff10.sqlite", True),
+        ("state_1.sqlite\n", False),
+        ("state_sqlite", False),
+        ("state_.sqliteextra", False),
+        ("STATE_1.sqlite", False),
+        ("state_1.Sqlite", False),
+    ]
+
+
+def slug(name: str) -> str:
+    if not name:
+        return "empty"
+    out: list[str] = []
+    for ch in name[:48]:
+        if ch.isalnum():
+            out.append(ch.lower())
+        else:
+            out.append("x")
+    return "".join(out) or "empty"
+
+
+def vector_specs(mod: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    specs.append(
+        {
+            "id": "module_exports",
+            "construct": {"type": "module_exports"},
+            "expected": {"python_all": list(mod.__all__)},
+        }
+    )
+    specs.append(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "MAX_STATE_DB_BYTES": mod.MAX_STATE_DB_BYTES,
+                "MAX_STATE_ROWS": mod.MAX_STATE_ROWS,
+                "MAX_STATE_QUERY_STEPS": mod.MAX_STATE_QUERY_STEPS,
+                "STATE_DB_GLOB": mod.STATE_DB_GLOB,
+                "THREADS_COLS": list(mod._THREADS_COLS),
+                "SPAWN_COLS": list(mod._SPAWN_COLS),
+                "SKIP_COLS": list(mod._SKIP_COLS),
+            },
+        }
+    )
+
+    for index, (name, _) in enumerate(rollout_cases()):
+        pin = mod.rollout_uuid_from_name(name)
+        specs.append(
+            {
+                "id": f"rollout_uuid_{index:02d}_{slug(name)}",
+                "construct": {"type": "rollout_uuid_from_name", "name": name},
+                "expected": {"value": pin},
+            }
+        )
+
+    for index, (name, _) in enumerate(is_state_db_cases()):
+        pin = mod.is_state_db_name(name)
+        specs.append(
+            {
+                "id": f"is_state_db_{index:02d}_{slug(name)}",
+                "construct": {"type": "is_state_db_name", "name": name},
+                "expected": {"value": pin},
+            }
+        )
+
+    complete = mod.CodexStateSnapshot(
+        parse_ok=True,
+        schema_note=None,
+        thread_ids=frozenset(),
+        rollout_uuids=frozenset(),
+        thread_rows=0,
+        spawn_edge_orphans=0,
+        migration_skips=0,
+        migration_skip_reason_hashes=(),
+    )
+    specs.append(
+        {
+            "id": "membership_complete_true",
+            "construct": {"type": "membership_complete", "variant": "ok"},
+            "expected": {"value": complete.membership_complete},
+        }
+    )
+    incomplete = mod.CodexStateSnapshot(
+        parse_ok=True,
+        schema_note="",
+        thread_ids=frozenset(),
+        rollout_uuids=frozenset(),
+        thread_rows=0,
+        spawn_edge_orphans=0,
+        migration_skips=0,
+        migration_skip_reason_hashes=(),
+    )
+    specs.append(
+        {
+            "id": "membership_complete_empty_note",
+            "construct": {"type": "membership_complete", "variant": "empty_note"},
+            "expected": {"value": incomplete.membership_complete},
+        }
+    )
+
+    with tempfile.TemporaryDirectory(prefix="sesslint-state-db-par-") as tmp:
+        root = Path(tmp)
+        absent = root / "state_missing.sqlite"
+        pin_absent = mod.read_codex_state(absent)
+        specs.append(
+            {
+                "id": "read_codex_state_absent",
+                "construct": {
+                    "type": "read_codex_state",
+                    "setup": "absent",
+                    "immutable": False,
+                },
+                "expected": {"snapshot": snapshot_payload(pin_absent)},
+            }
+        )
+
+        target = root / "real.sqlite"
+        mk_db(target, [])
+        link = root / "state_link.sqlite"
+        try:
+            link.symlink_to(target)
+        except OSError as err:
+            raise SystemExit(f"symlink required for deterministic vectors: {err}") from err
+        pin_symlink = mod.read_codex_state(link)
+        specs.append(
+            {
+                "id": "read_codex_state_symlink",
+                "construct": {
+                    "type": "read_codex_state",
+                    "setup": "symlink",
+                    "immutable": False,
+                },
+                "expected": {"snapshot": snapshot_payload(pin_symlink)},
+            }
+        )
+
+        big = root / "state_big.sqlite"
+        with big.open("wb") as handle:
+            handle.seek(mod.MAX_STATE_DB_BYTES)
+            handle.write(b"\0")
+        pin_big = mod.read_codex_state(big)
+        specs.append(
+            {
+                "id": "read_codex_state_oversized",
+                "construct": {
+                    "type": "read_codex_state",
+                    "setup": "oversized",
+                    "immutable": True,
+                },
+                "expected": {"snapshot": snapshot_payload(pin_big)},
+            }
+        )
+
+        empty = root / "state_empty.sqlite"
+        empty.write_bytes(b"")
+        pin_empty = mod.read_codex_state(empty)
+        specs.append(
+            {
+                "id": "read_codex_state_empty_file_gap",
+                "construct": {
+                    "type": "read_codex_state",
+                    "setup": "empty_file",
+                    "immutable": False,
+                },
+                "expected": {
+                    "pin": {"snapshot": snapshot_payload(pin_empty)},
+                    "rust_assertion": {"mode": "gap_sqlite_connect"},
+                },
+            }
+        )
+
+        minimal = root / "state_minimal.sqlite"
+        mk_db(
+            minimal,
+            [
+                (
+                    UA,
+                    f"rollout-2026-09-20T00-00-00-{UA}.jsonl",
+                )
+            ],
+        )
+        pin_db = mod.read_codex_state(minimal, immutable=True)
+        specs.append(
+            {
+                "id": "read_codex_state_minimal_db_gap",
+                "construct": {
+                    "type": "read_codex_state",
+                    "setup": "minimal_db",
+                    "immutable": True,
+                },
+                "expected": {
+                    "pin": {"snapshot": snapshot_payload(pin_db)},
+                    "rust_assertion": {"mode": "gap_sqlite_connect"},
+                },
+            }
+        )
+
+    for vid, reason in (
+        ("migration_skip_reason_schema", "schema-too-new"),
+        ("migration_skip_reason_empty", ""),
+    ):
+        from sesslint.report import short_hash  # noqa: WPS433
+
+        pin_hash = short_hash(reason if isinstance(reason, str) else "")
+        specs.append(
+            {
+                "id": vid,
+                "construct": {
+                    "type": "migration_skip_reason_hash",
+                    "reason": reason,
+                },
+                "expected": {
+                    "pin": {"hash": pin_hash},
+                    "rust_assertion": {"mode": "gap_short_hash"},
+                },
+            }
+        )
+    specs.append(
+        {
+            "id": "migration_skip_reason_none",
+            "construct": {
+                "type": "migration_skip_reason_hash",
+                "reason": None,
+            },
+            "expected": {
+                "pin": {"hash": short_hash("")},
+                "rust_assertion": {"mode": "gap_short_hash"},
+            },
+        }
+    )
+
+    for table in ("threads", "thread_spawn_edges", "other", ""):
+        specs.append(
+            {
+                "id": f"table_columns_{slug(table) or 'empty'}",
+                "construct": {"type": "table_columns", "table": table},
+                "expected": {"rust_assertion": {"mode": "gap_sqlite_connect"}},
+            }
+        )
+
+    return specs
+
+
+def list_tests_in_file(rel: str) -> list[tuple[str, bool]]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[tuple[str, bool]] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            name = line.split("(")[0].replace("def ", "")
+            out.append((name, True))
+        elif not has_column0 and line.startswith("    def test_"):
+            name = line.split("(")[0].replace("def ", "").strip()
+            out.append((name, False))
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        try:
+            tests = list_tests_in_file(rel)
+        except subprocess.CalledProcessError:
+            continue
+        for name, _ in tests:
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                status = "covered"
+                covered += 1
+                row["vector_ids"] = list(needed)
+            else:
+                status = "not_applicable"
+                not_applicable += 1
+            row["status"] = status
+            rows.append(row)
+    payload = {"rows": rows}
+    (out_dir / "coverage.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def main() -> int:
+    mod = load_state_db()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(mod)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "state_db_py_sha256": STATE_DB_PY_SHA256,
+        "state_db_rs_sha256": STATE_DB_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic sesslint.state_db parity (pure name helpers and sqlite/report seams).",
+        "generator": "rust/parity/vectors/state_db/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_path = out_dir / "PROVENANCE.json"
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    prov_path.write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"vectors.json sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    print(f"vector_count={len(vectors)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
