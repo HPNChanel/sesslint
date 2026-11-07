@@ -1,8 +1,10 @@
 //! Content-free triage envelope and the pure helpers in front of it (TRIAGE-001).
 //!
-//! Port of `src/sesslint/triage.py` lines 1–270
+//! Port of `src/sesslint/triage.py` lines 1–443
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
-//! `def triage` at line 273 is not ported.
+//! [`triage`] stops because `sesslint.profiles.get_profile` is not in this
+//! crate. That is the first call. Display is [`GET_PROFILE_UNAVAILABLE`].
+//! No [`TriageReport`] is returned.
 //!
 //! [`impact`] reads the event and finding fields `_impact` actually uses.
 //! It does not construct a `Report` or session events. [`preview`] cannot
@@ -28,6 +30,8 @@
 //!   count does not pass the hard-link guard and is not treated as `1`.
 //! * `json.dumps(..., ensure_ascii=True, indent=2, sort_keys=True)` is
 //!   hand-written. `serde_json` is not a dependency.
+//! * [`triage`] stops because `sesslint.profiles.get_profile` is absent.
+//!   The rest of the pin is not executed. No [`TriageReport`] is returned.
 //! * No wall clock and no SQLite.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -48,7 +52,7 @@ pub const TRIAGE_SCHEMA_VERSION: &str = "sesslint.triage/v1";
 /// Python: `LIMITATION`.
 pub const LIMITATION: &str = "Structural evidence only. Application resume, semantic correctness and external side effects are unverified. No repair or agent command was executed.";
 
-/// Python: `MAX_FINDINGS`. `triage()` is not ported; the cap is the pin value.
+/// Python: `MAX_FINDINGS`. The cap is the pin value. [`triage`] does not apply it.
 pub const MAX_FINDINGS: usize = 100;
 
 /// Python: `MAX_IMPACT_LINES`.
@@ -66,6 +70,9 @@ pub const SOURCE_ASSESSMENT_UNAVAILABLE: &str =
 /// `sesslint.state_db.read_codex_state` is not in this crate.
 pub const READ_CODEX_STATE_UNAVAILABLE: &str =
     "sesslint.state_db.read_codex_state is not available";
+
+/// `sesslint.profiles.get_profile` is not in this crate.
+pub const GET_PROFILE_UNAVAILABLE: &str = "sesslint.profiles.get_profile is not available";
 
 /// Python `ValueError` from `_file_digest` when the snapshot exceeds `limit`.
 pub const SNAPSHOT_LIMIT_EXCEEDED: &str = "Snapshot limit exceeded";
@@ -1539,6 +1546,47 @@ fn is_eloop_code(code: i32) -> bool {
     }
 }
 
+/// `sesslint.profiles.get_profile` is not available in this crate.
+///
+/// Python `triage` imports that function and calls it before `policy`,
+/// `max_file_bytes`, `assess_source`, [`preview`], [`impact`],
+/// [`native_state`], `refusal_rationale_for`, or a [`TriageReport`].
+/// This is not a [`TriageReport`] and not a membership status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GetProfileUnavailable;
+
+impl fmt::Display for GetProfileUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(GET_PROFILE_UNAVAILABLE)
+    }
+}
+
+impl Error for GetProfileUnavailable {}
+
+/// Python `triage`.
+///
+/// The first call is `get_profile(profile)`. That function is absent, so
+/// the arguments are not read and the rest of the pin is not executed.
+/// `policy` and `max_file_bytes` are not checked. `assess_source` is not
+/// called. [`preview`], [`impact`], and [`native_state`] are not called.
+/// `refusal_rationale_for` is not called. No [`TriageReport`] is constructed.
+/// Membership statuses are not returned. SQLite is not opened.
+///
+/// # Errors
+///
+/// [`GetProfileUnavailable`]. Success is [`std::convert::Infallible`].
+pub fn triage(
+    path: &Path,
+    format: Option<&str>,
+    profile: &str,
+    policy: &str,
+    state_copy: Option<&Path>,
+    max_file_bytes: PyInt,
+) -> Result<std::convert::Infallible, GetProfileUnavailable> {
+    let _ = (path, format, profile, policy, state_copy, max_file_bytes);
+    Err(GetProfileUnavailable)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1548,13 +1596,13 @@ mod tests {
     use super::{
         codex_root_from_value, conclude_file_guard, dumps_indent2, file_blocked, file_digest,
         impact, native_state, native_state_prepared, native_state_with_roots, preview, python_repr,
-        resolve_loose, sidecar_path, sidecar_present, BoolNotInt, CodexRoot, DigestError, EnvValue,
-        EvidenceNote, Impact, ImpactFinding, ImpactRecord, ImpactSource, JsonValue,
-        NativeStateError, NativeStatus, NextAction, PyInt, TriageReport, TriageReportParts,
-        ADAPTER_DETAIL, BOOL_NOT_INT, BOUNDED_DETAIL, CLI_VERSION, CLOSED_COPY_DETAIL,
-        HOME_UNAVAILABLE, IMPACT_LIMITATION, INSPECTED_DETAIL, LIMITATION, MAX_STATE_DB_BYTES,
-        NOT_PROVIDED_DETAIL, READ_CODEX_STATE_UNAVAILABLE, SNAPSHOT_LIMIT_EXCEEDED,
-        SOURCE_ASSESSMENT_UNAVAILABLE,
+        resolve_loose, sidecar_path, sidecar_present, triage, BoolNotInt, CodexRoot, DigestError,
+        EnvValue, EvidenceNote, GetProfileUnavailable, Impact, ImpactFinding, ImpactRecord,
+        ImpactSource, JsonValue, NativeStateError, NativeStatus, NextAction, PyInt, TriageReport,
+        TriageReportParts, ADAPTER_DETAIL, BOOL_NOT_INT, BOUNDED_DETAIL, CLI_VERSION,
+        CLOSED_COPY_DETAIL, GET_PROFILE_UNAVAILABLE, HOME_UNAVAILABLE, IMPACT_LIMITATION,
+        INSPECTED_DETAIL, LIMITATION, MAX_STATE_DB_BYTES, NOT_PROVIDED_DETAIL,
+        READ_CODEX_STATE_UNAVAILABLE, SNAPSHOT_LIMIT_EXCEEDED, SOURCE_ASSESSMENT_UNAVAILABLE,
     };
     use model::codes::Severity;
 
@@ -2520,5 +2568,50 @@ mod tests {
         assert!(!mapped.source_lines_truncated());
         assert!(mapped.unmapped_by_code().is_empty());
         let _: Impact = mapped;
+    }
+
+    #[test]
+    fn triage_stops_before_a_report_or_membership_status() {
+        let path = Path::new("synthetic-ledger.jsonl");
+        let copy = Path::new("closed-copy.sqlite");
+        let invalid = take(triage(
+            path,
+            None,
+            "neutral",
+            "not-a-policy",
+            Some(copy),
+            PyInt::Bool(true),
+        ));
+        let salvage = take(triage(
+            path,
+            Some("codex-rollout"),
+            "other",
+            "salvage",
+            None,
+            PyInt::Int(0),
+        ));
+        assert_eq!(invalid, salvage);
+        assert_eq!(invalid, GetProfileUnavailable);
+        assert_eq!(
+            invalid.to_string(),
+            "sesslint.profiles.get_profile is not available"
+        );
+        assert_eq!(invalid.to_string(), GET_PROFILE_UNAVAILABLE);
+        assert_ne!(invalid.to_string(), "membership-matches");
+        assert_ne!(invalid.to_string(), "membership-mismatch");
+        assert!(!invalid.to_string().contains("membership-matches"));
+        assert!(!invalid.to_string().contains("membership-mismatch"));
+        assert!(!invalid.to_string().contains("sesslint.triage"));
+        assert!(std::error::Error::source(&invalid).is_none());
+    }
+
+    fn take(
+        result: Result<std::convert::Infallible, GetProfileUnavailable>,
+    ) -> GetProfileUnavailable {
+        match result {
+            // Uninhabited. `triage` does not return a `TriageReport`.
+            Ok(report) => match report {},
+            Err(err) => err,
+        }
     }
 }
