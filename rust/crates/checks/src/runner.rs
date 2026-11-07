@@ -1148,3 +1148,7 @@ mod tests {
         assert!(!writer_markers_present(&absent));
     }
 }
+
+#[allow(clippy::items_after_test_module)]
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 1] = ["run_all_checks"];
