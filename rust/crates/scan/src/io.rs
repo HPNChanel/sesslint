@@ -12,7 +12,8 @@
 //!
 //! The record-id pattern and the strict JSON decoder are defined here.
 //! Duplicate-key decoding from lines 347–667 of the same pin is appended
-//! below. The recovery parser after line 667, and the streaming reader, are
+//! below. Torn-append detection from lines 670–878 of the same pin is
+//! appended after [`skip_string`]. The streaming reader after line 878 is
 //! not part of this file. OS errors propagate as `std::io::Error` and are
 //! not turned into findings here.
 
@@ -22,11 +23,11 @@ use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::Path;
 
-use model::codes::{Repairability, Severity, SL303};
+use model::codes::{Repairability, Severity, SL001, SL002, SL303};
 use model::errors::FindingError;
 use model::finding::{
-    enforce_content_free_text, make_finding, Finding, MakeFindingInput, PyValue, SourceLine,
-    SourceRef,
+    enforce_content_free_text, make_finding, Evidence, EvidenceKey, EvidenceLookup, Finding,
+    MakeFindingInput, PyValue, SourceLine, SourceRef,
 };
 use sha2::{Digest, Sha256};
 
@@ -1758,8 +1759,8 @@ impl RawLine {
 /// (backslash, optional `u`, at most three hex digits, then end) returns -1.
 /// Anything else returns -2.
 ///
-/// The pin's number, literal, and cut-number patterns belong to the recovery
-/// parser after line 667. They are not ported and do not scan a file.
+/// Number and literal scans live in [`skip_scalar`]. This function does not
+/// scan a file.
 pub fn skip_string(text: &str, pos: i64) -> i64 {
     if pos < 0 {
         return SKIP_BAD;
@@ -1848,6 +1849,558 @@ fn is_partial_trailing_escape(rest: &[u8]) -> bool {
     }
     let hex = &rest[2..];
     hex.len() <= 3 && hex.iter().all(u8::is_ascii_hexdigit)
+}
+
+/// Index just past the number or literal at `pos`, or [`SKIP_CUT`] / [`SKIP_BAD`].
+///
+/// `pos` is a byte offset. The scan is hand-written: one or more of `-`, `+`,
+/// `.`, `e`, `E`, and ASCII digits form a number run. A run that reaches the
+/// end of `text` returns -1 when it is a viable JSON number prefix, including
+/// a finished number (`0` can continue, and so can `1e+1`), and -2 otherwise.
+/// A run that stops early returns the byte index after it when the run is one
+/// complete JSON number, and -2 when it is not. `.` and `01` are not prefixes.
+/// With no number run, the literals `true`, `false`, and `null` are tried in
+/// that order. A full literal returns the byte index after it, so `trueth`
+/// stops after `true`. A strict prefix of a literal at the end of `text`
+/// returns -1. `truth` does not start with `true` and returns -2. Anything
+/// else returns -2. `pos < 0` returns -2. This function does not scan a file.
+pub fn skip_scalar(text: &str, pos: i64) -> i64 {
+    if pos < 0 {
+        return SKIP_BAD;
+    }
+    let Some(start) = usize::try_from(pos).ok() else {
+        return SKIP_CUT;
+    };
+    let bytes = text.as_bytes();
+    if start >= bytes.len() {
+        return SKIP_CUT;
+    }
+    if is_number_run_byte(bytes[start]) {
+        return skip_number_run(bytes, start);
+    }
+    skip_literal(bytes, start)
+}
+
+fn is_number_run_byte(byte: u8) -> bool {
+    matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+}
+
+fn is_ascii_digit(byte: u8) -> bool {
+    byte.is_ascii_digit()
+}
+
+fn skip_number_run(bytes: &[u8], start: usize) -> i64 {
+    let mut end = start;
+    while end < bytes.len() && is_number_run_byte(bytes[end]) {
+        end += 1;
+    }
+    let run = &bytes[start..end];
+    if end == bytes.len() {
+        if is_viable_number_prefix(run) {
+            SKIP_CUT
+        } else {
+            SKIP_BAD
+        }
+    } else if is_complete_json_number(run) {
+        i64::try_from(end).unwrap_or(SKIP_BAD)
+    } else {
+        SKIP_BAD
+    }
+}
+
+fn skip_literal(bytes: &[u8], start: usize) -> i64 {
+    let rest = &bytes[start..];
+    for literal in [b"true".as_slice(), b"false".as_slice(), b"null".as_slice()] {
+        if rest.starts_with(literal) {
+            return i64::try_from(start + literal.len()).unwrap_or(SKIP_BAD);
+        }
+        if rest.len() < literal.len() && literal.starts_with(rest) {
+            return SKIP_CUT;
+        }
+    }
+    SKIP_BAD
+}
+
+/// `_CUT_NUMBER`: optional minus and an optional number that may stop early.
+fn is_viable_number_prefix(run: &[u8]) -> bool {
+    let mut index = 0;
+    if run.first() == Some(&b'-') {
+        index = 1;
+    }
+    if index == run.len() {
+        return true;
+    }
+    consume_cut_number_body(run, &mut index) && index == run.len()
+}
+
+fn consume_cut_number_body(run: &[u8], index: &mut usize) -> bool {
+    if !consume_json_integer(run, index) {
+        return false;
+    }
+    if *index == run.len() {
+        return true;
+    }
+    match run[*index] {
+        b'.' => consume_cut_fraction(run, index),
+        b'e' | b'E' => consume_cut_exponent(run, index),
+        _ => false,
+    }
+}
+
+fn consume_cut_fraction(run: &[u8], index: &mut usize) -> bool {
+    *index += 1;
+    if *index == run.len() {
+        return true;
+    }
+    if !is_ascii_digit(run[*index]) {
+        return false;
+    }
+    while *index < run.len() && is_ascii_digit(run[*index]) {
+        *index += 1;
+    }
+    if *index == run.len() {
+        return true;
+    }
+    consume_cut_exponent(run, index)
+}
+
+fn consume_cut_exponent(run: &[u8], index: &mut usize) -> bool {
+    if *index >= run.len() || !matches!(run[*index], b'e' | b'E') {
+        return false;
+    }
+    *index += 1;
+    if *index < run.len() && matches!(run[*index], b'+' | b'-') {
+        *index += 1;
+    }
+    while *index < run.len() && is_ascii_digit(run[*index]) {
+        *index += 1;
+    }
+    *index == run.len()
+}
+
+fn consume_json_integer(run: &[u8], index: &mut usize) -> bool {
+    if *index >= run.len() || !is_ascii_digit(run[*index]) {
+        return false;
+    }
+    if run[*index] == b'0' {
+        *index += 1;
+        return true;
+    }
+    *index += 1;
+    while *index < run.len() && is_ascii_digit(run[*index]) {
+        *index += 1;
+    }
+    true
+}
+
+/// `_NUMBER`: optional minus, `0` or a non-zero digit run, optional fraction,
+/// optional exponent with at least one digit.
+fn is_complete_json_number(run: &[u8]) -> bool {
+    let mut index = 0;
+    if run.first() == Some(&b'-') {
+        index = 1;
+    }
+    if !consume_json_integer(run, &mut index) {
+        return false;
+    }
+    if index < run.len() && run[index] == b'.' {
+        let next = index + 1;
+        if next >= run.len() || !is_ascii_digit(run[next]) {
+            return false;
+        }
+        index = next + 1;
+        while index < run.len() && is_ascii_digit(run[index]) {
+            index += 1;
+        }
+    }
+    if index < run.len() && matches!(run[index], b'e' | b'E') {
+        index += 1;
+        if index < run.len() && matches!(run[index], b'+' | b'-') {
+            index += 1;
+        }
+        if index >= run.len() || !is_ascii_digit(run[index]) {
+            return false;
+        }
+        index += 1;
+        while index < run.len() && is_ascii_digit(run[index]) {
+            index += 1;
+        }
+    }
+    index == run.len()
+}
+
+/// True when `text` is a proper prefix of some JSON object (B17).
+///
+/// Whitespace is space, tab, LF, and CR. `{` pushes `}`, `[` pushes `]`, a
+/// string uses [`skip_string`], and a scalar uses [`skip_scalar`]. A negative
+/// scan returns true only for -1. End of text returns true only while a
+/// closer is still open. A finished object, including `{}`, returns false, as
+/// does any byte after that object. The walk is a loop.
+pub fn is_cut_json_object(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut closers: Vec<u8> = Vec::new();
+    let mut expect = CutExpect::Object;
+    let mut pos = 0_usize;
+    loop {
+        pos = skip_cut_ws(bytes, pos);
+        if pos == bytes.len() {
+            return !closers.is_empty();
+        }
+        match step_cut(text, pos, expect, &mut closers) {
+            CutControl::Continue {
+                pos: next,
+                expect: next_expect,
+            } => {
+                pos = next;
+                expect = next_expect;
+            }
+            CutControl::Stop(torn) => return torn,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CutExpect {
+    Object,
+    KeyOrClose,
+    Key,
+    Colon,
+    Value,
+    ValueOrClose,
+    After,
+}
+
+enum CutControl {
+    Continue { pos: usize, expect: CutExpect },
+    Stop(bool),
+}
+
+fn cut_continue(pos: usize, expect: CutExpect) -> CutControl {
+    CutControl::Continue { pos, expect }
+}
+
+fn byte_is_json_ws(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+fn skip_cut_ws(bytes: &[u8], mut pos: usize) -> usize {
+    while pos < bytes.len() && byte_is_json_ws(bytes[pos]) {
+        pos += 1;
+    }
+    pos
+}
+
+fn step_cut(text: &str, pos: usize, expect: CutExpect, closers: &mut Vec<u8>) -> CutControl {
+    let bytes = text.as_bytes();
+    match expect {
+        CutExpect::Object => step_object(bytes, pos, closers),
+        CutExpect::KeyOrClose => step_key(text, pos, true, closers),
+        CutExpect::Key => step_key(text, pos, false, closers),
+        CutExpect::Colon => step_colon(bytes, pos),
+        CutExpect::Value => step_value(text, pos, false, closers),
+        CutExpect::ValueOrClose => step_value(text, pos, true, closers),
+        CutExpect::After => step_after(bytes, pos, closers),
+    }
+}
+
+fn step_object(bytes: &[u8], pos: usize, closers: &mut Vec<u8>) -> CutControl {
+    if bytes[pos] != b'{' {
+        return CutControl::Stop(false);
+    }
+    closers.push(b'}');
+    cut_continue(pos + 1, CutExpect::KeyOrClose)
+}
+
+fn step_key(text: &str, pos: usize, allow_close: bool, closers: &mut Vec<u8>) -> CutControl {
+    let ch = text.as_bytes()[pos];
+    if allow_close && ch == b'}' {
+        if closers.pop().is_none() {
+            return CutControl::Stop(false);
+        }
+        return cut_continue(pos + 1, CutExpect::After);
+    }
+    if ch == b'"' {
+        return advance_token(text, pos, CutExpect::Colon, true);
+    }
+    CutControl::Stop(false)
+}
+
+fn step_colon(bytes: &[u8], pos: usize) -> CutControl {
+    if bytes[pos] != b':' {
+        return CutControl::Stop(false);
+    }
+    cut_continue(pos + 1, CutExpect::Value)
+}
+
+fn step_value(text: &str, pos: usize, allow_close: bool, closers: &mut Vec<u8>) -> CutControl {
+    let ch = text.as_bytes()[pos];
+    if allow_close && ch == b']' {
+        if closers.pop().is_none() {
+            return CutControl::Stop(false);
+        }
+        return cut_continue(pos + 1, CutExpect::After);
+    }
+    if ch == b'{' || ch == b'[' {
+        closers.push(if ch == b'{' { b'}' } else { b']' });
+        let expect = if ch == b'{' {
+            CutExpect::KeyOrClose
+        } else {
+            CutExpect::ValueOrClose
+        };
+        return cut_continue(pos + 1, expect);
+    }
+    if ch == b'"' {
+        return advance_token(text, pos, CutExpect::After, true);
+    }
+    advance_token(text, pos, CutExpect::After, false)
+}
+
+fn step_after(bytes: &[u8], pos: usize, closers: &mut Vec<u8>) -> CutControl {
+    let Some(closer) = closers.last().copied() else {
+        return CutControl::Stop(false);
+    };
+    let ch = bytes[pos];
+    if ch == b',' {
+        let expect = if closer == b'}' {
+            CutExpect::Key
+        } else {
+            CutExpect::Value
+        };
+        return cut_continue(pos + 1, expect);
+    }
+    if ch == closer {
+        closers.pop();
+        return cut_continue(pos + 1, CutExpect::After);
+    }
+    CutControl::Stop(false)
+}
+
+fn advance_token(text: &str, pos: usize, expect: CutExpect, string: bool) -> CutControl {
+    let Some(index) = i64::try_from(pos).ok() else {
+        return CutControl::Stop(false);
+    };
+    let next = if string {
+        skip_string(text, index)
+    } else {
+        skip_scalar(text, index)
+    };
+    if next < 0 {
+        return CutControl::Stop(next == SKIP_CUT);
+    }
+    match usize::try_from(next) {
+        Ok(advanced) if advanced <= text.len() => cut_continue(advanced, expect),
+        _ => CutControl::Stop(false),
+    }
+}
+
+const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+
+/// True when a fully buffered final line is an incomplete append (SL002, B17).
+///
+/// A line that ends in `\n` is false. When `strip_bom` is true, one leading
+/// `EF BB BF` is dropped. Trailing NUL bytes are dropped, and an interior NUL
+/// is false. Strict UTF-8 follows. Only an incomplete sequence whose error
+/// reaches the last byte is a tear: the valid prefix is decoded and the walk
+/// continues. Any other UTF-8 error is false. Text that is empty after
+/// stripping space, tab, LF, and CR is true. Otherwise the result is
+/// [`is_cut_json_object`].
+pub fn is_torn_append(line: &[u8], strip_bom: bool) -> bool {
+    if line.ends_with(b"\n") {
+        return false;
+    }
+    let mut body = line;
+    if strip_bom && body.starts_with(&UTF8_BOM) {
+        body = &body[UTF8_BOM.len()..];
+    }
+    body = strip_trailing_nuls(body);
+    if body.contains(&0) {
+        return false;
+    }
+    let Some(text) = decode_torn_text(body) else {
+        return false;
+    };
+    if text.bytes().all(byte_is_json_ws) {
+        return true;
+    }
+    is_cut_json_object(text)
+}
+
+fn strip_trailing_nuls(body: &[u8]) -> &[u8] {
+    let end = body
+        .iter()
+        .rposition(|byte| *byte != 0)
+        .map_or(0, |index| index + 1);
+    &body[..end]
+}
+
+fn decode_torn_text(body: &[u8]) -> Option<&str> {
+    match std::str::from_utf8(body) {
+        Ok(text) => Some(text),
+        Err(err) if err.error_len().is_none() && err.valid_up_to() < body.len() => {
+            let prefix = body.get(..err.valid_up_to())?;
+            std::str::from_utf8(prefix).ok()
+        }
+        Err(_) => None,
+    }
+}
+
+/// SL002 only for a provable torn append on a fully buffered final line.
+///
+/// `strip_bom` is true only when [`RawLine::line_number`] is 1. A line cut
+/// off by the size cap, a non-terminal line, and every line that is not a
+/// torn append return [`SL001`].
+pub fn decode_defect_code(raw: &RawLine, is_terminal: bool) -> &'static str {
+    if is_terminal
+        && !raw.truncated_limit()
+        && is_torn_append(raw.raw_bytes(), raw.line_number() == 1)
+    {
+        SL002
+    } else {
+        SL001
+    }
+}
+
+/// Coordinate evidence for a line defect.
+///
+/// [`SL002`] returns a new map with the same keys in the same order plus
+/// `unterminated: true`. Any other code returns a map of the same entries
+/// and does not add that key.
+pub fn defect_evidence(code: &str, mut entries: Vec<(EvidenceKey, Evidence)>) -> Evidence {
+    if code == SL002 {
+        entries.push((
+            EvidenceKey::text("unterminated"),
+            Evidence::bool_value(true),
+        ));
+    }
+    Evidence::map(entries)
+}
+
+/// One produced record.
+///
+/// `SessionEvent` is not constructed. The value counts a non-finding
+/// observation after the first captured SL001.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservedRecord;
+
+/// One stream observation for [`MalformedTailTracker`].
+///
+/// `None` passed to [`MalformedTailTracker::note_item`] is empty and ignored.
+/// [`TailObservation::Event`] counts a record. `SessionEvent` is not built.
+#[derive(Debug, Clone, Copy)]
+pub enum TailObservation<'a> {
+    Finding(&'a Finding),
+    Event,
+}
+
+/// Counts the vendor-invisible tail after the first malformed record (T-01).
+///
+/// The first SL001 whose evidence is a map and whose `byte_end` is an int
+/// keeps that map. A bool is not an int. Later findings do not increase the
+/// record count. A non-finding observation after the capture does.
+/// [`MalformedTailTracker::finalize`] writes `following_complete_records` and
+/// `following_bytes` onto that same map when either count is positive.
+/// Neither key is written when both are zero. This type does not call
+/// [`make_finding`] and does not compute a fingerprint.
+#[derive(Debug)]
+pub struct MalformedTailTracker {
+    evidence: Option<Evidence>,
+    end_offset: i64,
+    following_records: i64,
+}
+
+impl Default for MalformedTailTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MalformedTailTracker {
+    pub fn new() -> Self {
+        Self {
+            evidence: None,
+            end_offset: 0,
+            following_records: 0,
+        }
+    }
+
+    pub fn following_records(&self) -> i64 {
+        self.following_records
+    }
+
+    /// Observe one item. `None` is an empty observation and is ignored.
+    pub fn note_item(&mut self, item: Option<TailObservation<'_>>) {
+        let Some(item) = item else {
+            return;
+        };
+        match item {
+            TailObservation::Finding(finding) => self.note_finding(finding),
+            TailObservation::Event => self.note_record(),
+        }
+    }
+
+    /// Observe list-style output. Findings are walked first, then records.
+    pub fn note_produced<'a, F, E>(&mut self, findings: F, events: E)
+    where
+        F: IntoIterator<Item = &'a Finding>,
+        E: IntoIterator<Item = ObservedRecord>,
+    {
+        for finding in findings {
+            self.note_item(Some(TailObservation::Finding(finding)));
+        }
+        for _record in events {
+            self.note_item(Some(TailObservation::Event));
+        }
+    }
+
+    /// Attach tail counts to the captured SL001 map.
+    ///
+    /// `torn_tail_offset` is the end of the tail when it is present.
+    /// Otherwise `total_bytes` is the end. `following_bytes` is
+    /// `max(0, end - offset)`.
+    pub fn finalize(&self, total_bytes: i64, torn_tail_offset: Option<i64>) {
+        let Some(evidence) = &self.evidence else {
+            return;
+        };
+        let end = torn_tail_offset.unwrap_or(total_bytes);
+        let following_bytes = end.saturating_sub(self.end_offset).max(0);
+        if self.following_records > 0 || following_bytes > 0 {
+            let _ = evidence.push_map_entry(
+                EvidenceKey::text("following_complete_records"),
+                Evidence::int(self.following_records),
+            );
+            let _ = evidence.push_map_entry(
+                EvidenceKey::text("following_bytes"),
+                Evidence::int(following_bytes),
+            );
+        }
+    }
+
+    fn note_finding(&mut self, finding: &Finding) {
+        if self.evidence.is_some() || finding.code() != SL001 {
+            return;
+        }
+        let Some(evidence) = finding.evidence() else {
+            return;
+        };
+        let Some(offset) = map_byte_end(evidence) else {
+            return;
+        };
+        self.evidence = Some(evidence.clone());
+        self.end_offset = offset;
+    }
+
+    fn note_record(&mut self) {
+        if self.evidence.is_some() {
+            self.following_records = self.following_records.saturating_add(1);
+        }
+    }
+}
+
+fn map_byte_end(evidence: &Evidence) -> Option<i64> {
+    match evidence.map_string("byte_end") {
+        EvidenceLookup::Present(value) => value.as_int(),
+        EvidenceLookup::NotAMap | EvidenceLookup::Borrowed | EvidenceLookup::Absent => None,
+    }
 }
 
 #[derive(Debug)]
@@ -3951,5 +4504,416 @@ mod duplicate_key_tests {
         for text in samples {
             let _ = decode_json_dupaware(&text, None, MAX_DUP_KEYS_PER_RECORD);
         }
+    }
+}
+
+#[cfg(test)]
+mod torn_append_tests {
+    use super::{
+        decode_defect_code, defect_evidence, is_cut_json_object, is_torn_append, skip_scalar,
+        MalformedTailTracker, ObservedRecord, RawLine, TailObservation, SKIP_BAD, SKIP_CUT,
+    };
+    use model::codes::{Repairability, Severity, SL001, SL002, SL303};
+    use model::finding::{
+        Evidence, EvidenceKey, EvidenceLookup, Finding, FindingInput, PyValue, SourceLine,
+        SourceRef, SCHEMA_VERSION,
+    };
+
+    /// Shape fixture so [`Finding::try_new`] accepts a fingerprint.
+    /// This is not a Python fingerprint and these tests do not claim a match.
+    const SHAPE_FINGERPRINT: &str = "aaaaaaaaaaaaaaaa";
+
+    fn shape_finding(code: &str, evidence: PyValue) -> Finding {
+        let source = SourceRef::try_new("a.jsonl", Some(SourceLine::Int(1)), None).expect("source");
+        Finding::try_new(FindingInput {
+            code: PyValue::string(code),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message: PyValue::string("synthetic marker"),
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            fingerprint: PyValue::string(SHAPE_FINGERPRINT),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence,
+        })
+        .expect("shape finding")
+    }
+
+    fn coords(offset: i64, end: i64, ordinal: i64) -> PyValue {
+        PyValue::map(vec![
+            (PyValue::string("byte_offset"), PyValue::int(offset)),
+            (PyValue::string("byte_end"), PyValue::int(end)),
+            (PyValue::string("record_ordinal"), PyValue::int(ordinal)),
+        ])
+    }
+
+    fn raw_line(line_number: i64, bytes: &[u8], truncated: bool) -> RawLine {
+        RawLine::from_parts(line_number, bytes.to_vec(), truncated).expect("line")
+    }
+
+    fn assert_absent(evidence: &Evidence, key: &str) {
+        assert!(
+            matches!(evidence.map_string(key), EvidenceLookup::Absent),
+            "{key} present"
+        );
+    }
+
+    #[test]
+    fn skip_scalar_locks_prefixes_literals_and_finished_numbers() {
+        assert_eq!(skip_scalar("0", 0), SKIP_CUT);
+        assert_eq!(skip_scalar("1e", 0), SKIP_CUT);
+        assert_eq!(skip_scalar("01", 0), SKIP_BAD);
+        assert_eq!(skip_scalar(".", 0), SKIP_BAD);
+        assert_eq!(skip_scalar("1,", 0), 1);
+        assert_eq!(skip_scalar("tru", 0), SKIP_CUT);
+        assert_eq!(skip_scalar("n", 0), SKIP_CUT);
+        assert_eq!(skip_scalar("none", 0), SKIP_BAD);
+        let cases = [
+            ("1", 0, SKIP_CUT),
+            ("-", 0, SKIP_CUT),
+            ("1.", 0, SKIP_CUT),
+            ("1e+", 0, SKIP_CUT),
+            ("1e+1", 0, SKIP_CUT),
+            ("1e+1,", 0, 4),
+            ("1.,", 0, SKIP_BAD),
+            ("+1", 0, SKIP_BAD),
+            ("1 ", 0, 1),
+            ("true", 0, 4),
+            ("false", 0, 5),
+            ("null", 0, 4),
+            ("trueth", 0, 4),
+            ("trueX", 0, 4),
+            ("truth", 0, SKIP_BAD),
+            ("nul", 0, SKIP_CUT),
+            ("nulle", 0, 4),
+            ("falsehood", 0, 5),
+            ("", 0, SKIP_CUT),
+            ("x", 0, SKIP_BAD),
+            ("1e++", 0, SKIP_BAD),
+            ("1.e", 0, SKIP_BAD),
+            ("00", 0, SKIP_BAD),
+            ("-0", 0, SKIP_CUT),
+            ("1.2e+3", 0, SKIP_CUT),
+            ("1E-2,", 0, 4),
+            ("xx1,", 2, 3),
+        ];
+        for (text, pos, expected) in cases {
+            assert_eq!(skip_scalar(text, pos), expected, "{text:?} @ {pos}");
+        }
+        assert_eq!(skip_scalar("é1,", 2), 3);
+        assert_eq!(skip_scalar("1", -1), SKIP_BAD);
+        assert_eq!(skip_scalar("1", i64::MAX), SKIP_CUT);
+        assert_eq!(skip_scalar(&"+".repeat(8_000), 0), SKIP_BAD);
+        assert_eq!(skip_scalar(&"1".repeat(8_000), 0), SKIP_CUT);
+    }
+
+    #[test]
+    fn is_cut_json_object_follows_the_pin_state_machine() {
+        let cases = [
+            ("{}", false),
+            ("{", true),
+            ("{ }", false),
+            ("{ ", true),
+            (r#"{"a":1}"#, false),
+            (r#"{"a":1}{}"#, false),
+            (r#"{"a":1} "#, false),
+            ("[1]", false),
+            (r#"{"a":[1,]}"#, false),
+            (r#"{"a":[1,]"#, false),
+            (r#"{"a":[1,"#, true),
+            (r#"{"a":1,}"#, false),
+            (r#"{"a":1,"#, true),
+            (r#"{"a":tru"#, true),
+            (r#"{"a":tx"#, false),
+            (r#"{"a":12."#, true),
+            (r#"{"a":01"#, false),
+            (r#"{"a":-"#, true),
+            ("\"x", false),
+            ("  ", false),
+            (r#"{"a""#, true),
+            (r#"{"a":"#, true),
+            (r#"{"a":1"#, true),
+            (r#"{"a":true}"#, false),
+            (r#"{"a":null}"#, false),
+            (r#"{"a":false}"#, false),
+            (r#"{"a":[}"#, false),
+            (r#"{"a":]}"#, false),
+            (r#"{"b":{"c":"#, true),
+            (r#"{"a":[1,{"k":["#, true),
+            (r#"{"a":"b"}x"#, false),
+            ("{\r\n}", false),
+            (r#"{"a": "b"}"#, false),
+            ("{\n", true),
+            ("[]", false),
+            (r#"{"a":[]}"#, false),
+            (r#"{"a":["#, true),
+            (r#"{"a":["x","#, true),
+            (r#"{"a":["unterminated"#, true),
+            ("{\"a\":\"\\u00", true),
+            ("{\"a\":\"\\x", false),
+            (r#"{"a":"ok"}"#, false),
+            (" {\"a\":1}", false),
+            (r#"{"a":true"#, true),
+            (r#"{"a":n"#, true),
+            (r#"{"a":none}"#, false),
+            (r#"{"a":truth}"#, false),
+            (r#"{"a":trueth}"#, false),
+            (r#"{,}"#, false),
+        ];
+        for (text, torn) in cases {
+            assert_eq!(is_cut_json_object(text), torn, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn is_cut_json_object_stays_iterative_when_deeply_nested() {
+        let mut open = String::new();
+        for _ in 0..8_000 {
+            open.push_str(r#"{"k":"#);
+        }
+        assert!(is_cut_json_object(&open));
+        let mut closed = open;
+        closed.push('0');
+        closed.push_str(&"}".repeat(8_000));
+        assert!(!is_cut_json_object(&closed));
+    }
+
+    #[test]
+    fn is_torn_append_matches_the_pinned_shapes() {
+        let cases: &[(&[u8], bool)] = &[
+            (b"{\"id\": \"e2\", \"payl", true),
+            (b"{\"id\": \"e2\", \"text\": \"caf\xc3", true),
+            (b"\x00\x00\x00\x00", true),
+            (b"{\"id\": \"e2\", \"n\": 12.", true),
+            (b"{\"id\": \"e2\", \"n\": -", true),
+            (b"{\"id\": \"e2\", \"ok\": tr", true),
+            (b"{\"id\": \"e2\", \"s\": \"a\\u00", true),
+            (b"{\"id\": \"e2\", \"list\": [1, {\"k\": [", true),
+            (b"{", true),
+            (b"\"unterminated string", false),
+            (b"GARBAGE_NO_ID_HERE", false),
+            (b"{\"id\": \"e2\", GARBAGE", false),
+            (b"{\"id\": \"e2\" \"kind\"", false),
+            (b"{\"id\": \"e2\", \"n\": 01", false),
+            (b"{\"id\": \"e2\", \"s\": \"a\\x", false),
+            (b"{\"id\": \"e2\", \"ok\": tx", false),
+            (b"{\"id\": \"e2\", \"list\": [1,]", false),
+            (b"{\"id\": \"e2\"}", false),
+            (b"{\"id\": \"e2\"}{\"id\": \"e3\", \"pay", false),
+            (b"{\"id\": \"e2\", \"pay\x00load\": 1", false),
+            (b"{\"id\": \"e2\", \xff \"text\": \"x\"", false),
+            (b"{\"id\": \"e2\", \"payl\n", false),
+            (b"{\"id\": \"e2\", \"payl\r\n", false),
+            (b"[1, 2, 3]", false),
+            (b"\n", false),
+            (b"", true),
+            (b" \t\r", true),
+            (b"x\xc3", false),
+            (b"\xc3", true),
+            (b"{\xc3", true),
+            (b"\xff", false),
+            (b"\x80", false),
+            (b"{\xe2\x82", true),
+            (b"\xe2\x82\x28", false),
+        ];
+        for (line, torn) in cases {
+            assert_eq!(is_torn_append(line, false), *torn, "{line:?}");
+        }
+        let mut padded = b"{\"id\": \"e2\", \"pay".to_vec();
+        padded.extend(std::iter::repeat_n(0_u8, 16));
+        assert!(is_torn_append(&padded, false));
+        let mut finished = b"{\"id\": \"e2\"}".to_vec();
+        finished.extend(std::iter::repeat_n(0_u8, 4));
+        assert!(!is_torn_append(&finished, false));
+        assert!(!is_torn_append(b"{\"a\":1}\n\x00", false));
+    }
+
+    #[test]
+    fn is_torn_append_drops_one_bom_and_trailing_nuls() {
+        assert!(is_torn_append(b"\xef\xbb\xbf{\"id\": \"e2\"", true));
+        assert!(!is_torn_append(b"\xef\xbb\xbf{\"id\": \"e2\"}", true));
+        assert!(!is_torn_append(b"\xef\xbb\xbf{\"id\": \"e2\"", false));
+        assert!(is_torn_append(b"\xef\xbb\xbf", true));
+        assert!(!is_torn_append(b"\xef\xbb\xbf", false));
+        assert!(is_torn_append(b"{\"a\"\x00\x00\x00", false));
+        assert!(!is_torn_append(b"{\"a\":1}\x00\x00", false));
+        assert!(is_torn_append(b"\x00\x00", false));
+    }
+
+    #[test]
+    fn decode_defect_code_returns_sl002_only_for_a_proven_tear() {
+        assert_eq!(decode_defect_code(&raw_line(1, b"{", false), true), SL002);
+        assert_eq!(
+            decode_defect_code(&raw_line(1, b"\xef\xbb\xbf{", false), true),
+            SL002
+        );
+        assert_eq!(
+            decode_defect_code(&raw_line(2, b"\xef\xbb\xbf{", false), true),
+            SL001
+        );
+        assert_eq!(decode_defect_code(&raw_line(1, b"{", true), true), SL001);
+        assert_eq!(decode_defect_code(&raw_line(1, b"{", false), false), SL001);
+        assert_eq!(decode_defect_code(&raw_line(1, b"{}", false), true), SL001);
+        assert_eq!(decode_defect_code(&raw_line(1, b"{\n", false), true), SL001);
+        assert_eq!(
+            decode_defect_code(&raw_line(3, b"{\"a\":1}", false), true),
+            SL001
+        );
+    }
+
+    #[test]
+    fn defect_evidence_keeps_order_and_marks_sl002() {
+        let entries = vec![
+            (EvidenceKey::text("byte_offset"), Evidence::int(1)),
+            (EvidenceKey::text("byte_end"), Evidence::int(4)),
+            (EvidenceKey::text("record_ordinal"), Evidence::int(2)),
+        ];
+        let same = defect_evidence(SL001, entries.clone());
+        assert_eq!(same, Evidence::map(entries.clone()));
+        assert_absent(&same, "unterminated");
+        let other = defect_evidence(SL303, entries.clone());
+        assert_eq!(other, Evidence::map(entries.clone()));
+        assert_absent(&other, "unterminated");
+        let torn = defect_evidence(SL002, entries.clone());
+        let mut expected = entries;
+        expected.push((
+            EvidenceKey::text("unterminated"),
+            Evidence::bool_value(true),
+        ));
+        assert_eq!(torn, Evidence::map(expected));
+        match torn.map_string("unterminated") {
+            EvidenceLookup::Present(value) => {
+                assert_eq!(value.as_bool(), Some(true));
+                assert_eq!(value.as_int(), None);
+            }
+            other => panic!("unterminated missing: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_tail_ignores_empty_observations_and_non_integers() {
+        let mut tracker = MalformedTailTracker::new();
+        tracker.note_item(None::<TailObservation<'_>>);
+        tracker.note_item(Some(TailObservation::Event));
+        tracker.finalize(100, Some(10));
+        assert_eq!(tracker.following_records(), 0);
+
+        let flag = shape_finding(
+            SL001,
+            PyValue::map(vec![(
+                PyValue::string("byte_end"),
+                PyValue::bool_value(true),
+            )]),
+        );
+        let missing = shape_finding(SL001, PyValue::None);
+        let text_end = shape_finding(
+            SL001,
+            PyValue::map(vec![(PyValue::string("byte_end"), PyValue::string("end"))]),
+        );
+        let other = shape_finding(SL002, coords(0, 4, 1));
+        let mut tracker = MalformedTailTracker::new();
+        tracker.note_produced(
+            [&flag, &missing, &text_end, &other],
+            [ObservedRecord, ObservedRecord],
+        );
+        tracker.note_item(None::<TailObservation<'_>>);
+        assert_eq!(tracker.following_records(), 0);
+        tracker.finalize(40, None);
+        for finding in [&flag, &missing, &text_end, &other] {
+            if let Some(evidence) = finding.evidence() {
+                assert_absent(evidence, "following_bytes");
+                assert_absent(evidence, "following_complete_records");
+            }
+        }
+        assert_eq!(flag.fingerprint(), SHAPE_FINGERPRINT);
+    }
+
+    #[test]
+    fn malformed_tail_pushes_tail_counts_onto_the_first_sl001() {
+        let anchor = shape_finding(SL001, coords(0, 10, 1));
+        let later = shape_finding(SL001, coords(10, 20, 2));
+        let mut tracker = MalformedTailTracker::new();
+        tracker.note_item(None::<TailObservation<'_>>);
+        tracker.note_item(Some(TailObservation::Event));
+        tracker.note_produced([&anchor, &later], [ObservedRecord, ObservedRecord]);
+        assert_eq!(tracker.following_records(), 2);
+        tracker.finalize(50, None);
+        let expected = Evidence::map(vec![
+            (EvidenceKey::text("byte_offset"), Evidence::int(0)),
+            (EvidenceKey::text("byte_end"), Evidence::int(10)),
+            (EvidenceKey::text("record_ordinal"), Evidence::int(1)),
+            (
+                EvidenceKey::text("following_complete_records"),
+                Evidence::int(2),
+            ),
+            (EvidenceKey::text("following_bytes"), Evidence::int(40)),
+        ]);
+        assert_eq!(anchor.evidence().expect("anchor"), &expected);
+        assert_absent(later.evidence().expect("later"), "following_bytes");
+        assert_absent(
+            later.evidence().expect("later"),
+            "following_complete_records",
+        );
+        let rendered = format!("{:?}", anchor.evidence());
+        assert!(!rendered.contains("payload-alpha"));
+        assert_eq!(anchor.fingerprint(), SHAPE_FINGERPRINT);
+        assert_eq!(later.fingerprint(), SHAPE_FINGERPRINT);
+
+        let exact = shape_finding(SL001, coords(0, 8, 1));
+        let mut quiet = MalformedTailTracker::new();
+        quiet.note_item(Some(TailObservation::Finding(&exact)));
+        quiet.finalize(80, Some(8));
+        assert_absent(exact.evidence().expect("exact"), "following_bytes");
+        assert_absent(
+            exact.evidence().expect("exact"),
+            "following_complete_records",
+        );
+
+        let counted = shape_finding(SL001, coords(0, 8, 1));
+        let mut records_only = MalformedTailTracker::new();
+        records_only.note_produced([&counted], [ObservedRecord]);
+        records_only.finalize(100, Some(8));
+        assert_eq!(
+            counted.evidence().expect("counted"),
+            &Evidence::map(vec![
+                (EvidenceKey::text("byte_offset"), Evidence::int(0)),
+                (EvidenceKey::text("byte_end"), Evidence::int(8)),
+                (EvidenceKey::text("record_ordinal"), Evidence::int(1)),
+                (
+                    EvidenceKey::text("following_complete_records"),
+                    Evidence::int(1),
+                ),
+                (EvidenceKey::text("following_bytes"), Evidence::int(0)),
+            ])
+        );
+
+        let shrunk = shape_finding(SL001, coords(0, 10, 1));
+        let mut negative = MalformedTailTracker::new();
+        negative.note_item(Some(TailObservation::Finding(&shrunk)));
+        negative.finalize(100, Some(3));
+        assert_absent(shrunk.evidence().expect("shrunk"), "following_bytes");
+    }
+
+    #[test]
+    fn malformed_tail_note_produced_counts_records_after_findings() {
+        let ignored = shape_finding(SL002, coords(0, 4, 1));
+        let anchor = shape_finding(SL001, coords(0, 8, 2));
+        let mut tracker = MalformedTailTracker::new();
+        tracker.note_item(Some(TailObservation::Event));
+        tracker.note_produced([&ignored, &anchor], [ObservedRecord]);
+        assert_eq!(tracker.following_records(), 1);
+        tracker.finalize(20, None);
+        match anchor
+            .evidence()
+            .expect("anchor")
+            .map_string("following_bytes")
+        {
+            EvidenceLookup::Present(value) => assert_eq!(value.as_int(), Some(12)),
+            other => panic!("missing following_bytes: {other:?}"),
+        }
+        assert_absent(ignored.evidence().expect("ignored"), "following_bytes");
+        let rendered = format!("{:?}", anchor.evidence());
+        assert!(!rendered.contains("payload-alpha"));
     }
 }
