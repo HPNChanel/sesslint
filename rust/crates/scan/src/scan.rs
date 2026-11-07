@@ -1,31 +1,46 @@
 //! Scan summary types for one file and for aggregated rows (TASK-024, T-08).
 //!
-//! Port of `src/sesslint/scan.py` lines 1–280
+//! Port of `src/sesslint/scan.py` lines 1–436
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
-//! Stops before `ScanReport`. This module does not walk a directory, does not
-//! open sqlite, and does not link the report crate. `aggregate_scan` is past
-//! the pin slice and is not implemented here.
+//! Stops before `_scan_single_source`. This module does not walk a directory,
+//! does not open sqlite, and does not link the report crate.
 //!
 //! # Recorded gaps
 //!
 //! * A bool is not an int. `SessionLink.line`, `error_count`, `warning_count`,
 //!   and `max_findings_per_code` reject `True` and `False`. They are not `1`
-//!   and `0`.
+//!   and `0`. [`aggregate_scan`] takes `top` as `i64`. `true` is not `1` and
+//!   `false` is not `0`.
 //! * `cache_hit` rejects an int. `1` is not `True`. `0` is not `False`.
 //!   A missing value and `None` follow `bool(...)` and are false.
 //! * [`FileResult::to_dict`] and [`WorstFileRow::to_dict`] call
 //!   `sesslint.report.minimize_path` before any later report helper. Display
 //!   is [`MINIMIZE_PATH_UNAVAILABLE`]. The path is not rewritten and findings
-//!   are not formatted.
+//!   are not formatted. [`ScanReport::to_dict`] calls those methods. A
+//!   non-empty `files` list, or a summary whose `worst_files` is non-empty,
+//!   returns that same display and does not return a partial dictionary.
+//! * [`ScanReport::to_json`] calls [`ScanReport::to_dict`] first. When that
+//!   succeeds, display is `json.dumps is not available`. No JSON string is
+//!   emitted.
+//! * [`load_scan_schema`] uses [`get_scan_schema_path`]. A missing file uses
+//!   the pin `FileNotFoundError` sentence. A file that exists stops with
+//!   `json.loads is not available` and is not parsed.
+//! * [`scan_single_file`] stops at [`MINIMIZE_PATH_UNAVAILABLE`] before
+//!   `_scan_single_source`. It does not return a [`FileResult`].
 //! * Bucket counts are `i64`. [`ScanTotals::total`] uses the mathematical sum.
-//!   A sum outside `i64` is [`TotalOverflow`] and is not wrapped.
+//!   A sum outside `i64` is [`TotalOverflow`] and is not wrapped. Finding and
+//!   skipped-reason counts that do not fit in `i64` are refused and are not
+//!   wrapped.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 use model::errors::FindingError;
-use model::finding::{DictValue, Finding};
+use model::finding::{DictValue, Finding, Severity, SEVERITY_ORDER};
 
 /// Python: `DEFAULT_MAX_FILES = 10000`.
 pub const DEFAULT_MAX_FILES: i64 = 10_000;
@@ -518,6 +533,498 @@ impl ScanSummary {
     }
 }
 
+/// Python: `SCAN_SCHEMA_VERSION`.
+pub const SCAN_SCHEMA_VERSION: &str = "sesslint.scan-report/v1";
+
+/// `json.dumps` is not linked from this crate.
+pub const JSON_DUMPS_UNAVAILABLE: &str = "json.dumps is not available";
+
+/// `json.loads` is not linked from this crate.
+pub const JSON_LOADS_UNAVAILABLE: &str = "json.loads is not available";
+
+/// Schema file name passed to [`model::resources::schema_path`].
+const SCAN_REPORT_SCHEMA_FILE: &str = "sesslint.scan-report.v1.json";
+
+/// Top-level report containing per-file results and aggregate 5-bucket totals.
+///
+/// Construction stores the fields the caller already has. It does not scan
+/// `root_path` and it does not read a schema file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanReport {
+    pub schema_version: String,
+    pub root_path: String,
+    pub totals: ScanTotals,
+    pub files: Vec<FileResult>,
+    pub summary: Option<ScanSummary>,
+}
+
+impl Default for ScanReport {
+    /// Dataclass defaults: schema [`SCAN_SCHEMA_VERSION`], empty root, zero
+    /// totals, no files, and no summary.
+    fn default() -> Self {
+        Self {
+            schema_version: SCAN_SCHEMA_VERSION.to_owned(),
+            root_path: String::new(),
+            totals: ScanTotals::default(),
+            files: Vec::new(),
+            summary: None,
+        }
+    }
+}
+
+/// A skipped-reason count does not fit in `i64`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReasonCountOverflow;
+
+impl fmt::Display for ReasonCountOverflow {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("skipped reason count exceeds i64")
+    }
+}
+
+impl Error for ReasonCountOverflow {}
+
+/// [`ScanReport::to_dict`] stopped before a dictionary was complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanReportDictError {
+    /// [`ScanTotals::to_dict`] refused the bucket sum.
+    Total(TotalOverflow),
+    /// `sesslint.report.minimize_path` is not available.
+    Minimize(MinimizePathUnavailable),
+    /// A skipped-reason total does not fit in `i64`.
+    Reason(ReasonCountOverflow),
+}
+
+impl fmt::Display for ScanReportDictError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Total(err) => write!(formatter, "{err}"),
+            Self::Minimize(err) => write!(formatter, "{err}"),
+            Self::Reason(err) => write!(formatter, "{err}"),
+        }
+    }
+}
+
+impl Error for ScanReportDictError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Total(err) => Some(err),
+            Self::Minimize(err) => Some(err),
+            Self::Reason(err) => Some(err),
+        }
+    }
+}
+
+/// [`ScanReport::to_json`] stopped. No JSON text was emitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanReportJsonError {
+    /// [`ScanReport::to_dict`] failed. The display is that error.
+    Dict(ScanReportDictError),
+    /// `to_dict` succeeded and `json.dumps` is not available.
+    Dumps,
+}
+
+impl fmt::Display for ScanReportJsonError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dict(err) => write!(formatter, "{err}"),
+            Self::Dumps => formatter.write_str(JSON_DUMPS_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for ScanReportJsonError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Dict(err) => Some(err),
+            Self::Dumps => None,
+        }
+    }
+}
+
+/// Python `FileNotFoundError` or the `json.loads` stop for the scan schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadScanSchemaError {
+    /// The pin sentence `Scan report schema not found at {path}`.
+    NotFound(PathBuf),
+    /// The schema file exists. Its bytes are not parsed.
+    Loads,
+}
+
+impl fmt::Display for LoadScanSchemaError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound(path) => {
+                write!(
+                    formatter,
+                    "Scan report schema not found at {}",
+                    path.display()
+                )
+            }
+            Self::Loads => formatter.write_str(JSON_LOADS_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for LoadScanSchemaError {}
+
+/// Python `ValueError` from [`aggregate_scan`], or a count that does not fit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AggregateScanError {
+    /// `top must be >= 0, got {top}`.
+    Top(i64),
+    /// `group_by must be 'code' or 'none', got {group_by!r}`.
+    GroupBy(String),
+    /// A per-code finding count does not fit in `i64`.
+    Count,
+    /// [`SEVERITY_ORDER`] has no rank for this severity. No rank is invented.
+    SeverityRank,
+    /// The number of distinct paths for one code does not fit in `i64`.
+    FileCount,
+}
+
+impl fmt::Display for AggregateScanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Top(top) => write!(formatter, "top must be >= 0, got {top}"),
+            Self::GroupBy(group_by) => write!(
+                formatter,
+                "group_by must be 'code' or 'none', got {}",
+                python_str_repr(group_by)
+            ),
+            Self::Count => formatter.write_str("finding count exceeds i64"),
+            Self::SeverityRank => formatter.write_str("severity is not in SEVERITY_ORDER"),
+            Self::FileCount => formatter.write_str("code file count exceeds i64"),
+        }
+    }
+}
+
+impl Error for AggregateScanError {}
+
+impl ScanReport {
+    /// Aggregate per-file `skipped_reason` counts into a sorted list.
+    ///
+    /// Only `skipped` files with a truthy reason are counted. An empty string
+    /// is not counted. The pairs are sorted by reason, matching
+    /// `dict(sorted(counts.items()))`.
+    pub fn skipped_reason_totals(&self) -> Result<Vec<(String, i64)>, ReasonCountOverflow> {
+        let mut counts: BTreeMap<String, i64> = BTreeMap::new();
+        for file in &self.files {
+            if file.verdict != Verdict::Skipped {
+                continue;
+            }
+            let Some(reason) = file.skipped_reason.as_deref() else {
+                continue;
+            };
+            if reason.is_empty() {
+                continue;
+            }
+            match counts.get_mut(reason) {
+                Some(count) => {
+                    *count = count.checked_add(1).ok_or(ReasonCountOverflow)?;
+                }
+                None => {
+                    counts.insert(reason.to_owned(), 1);
+                }
+            }
+        }
+        Ok(counts.into_iter().collect())
+    }
+
+    /// Python: `ScanReport.to_dict`.
+    ///
+    /// Totals are built first. Each file then calls [`FileResult::to_dict`].
+    /// A non-empty `files` list stops at [`MINIMIZE_PATH_UNAVAILABLE`] and
+    /// does not return a partial dictionary. Findings are not formatted.
+    /// An empty `files` list can finish the totals dictionary. A summary is
+    /// appended only after the files list. [`ScanSummary::to_dict`] then
+    /// stops the same way when `worst_files` is non-empty.
+    pub fn to_dict(&self) -> Result<ScanDict, ScanReportDictError> {
+        let mut totals = self.totals.to_dict().map_err(ScanReportDictError::Total)?;
+        let reasons = self
+            .skipped_reason_totals()
+            .map_err(ScanReportDictError::Reason)?;
+        if !reasons.is_empty() {
+            let skipped_reasons = DictValue::Map(
+                reasons
+                    .into_iter()
+                    .map(|(reason, count)| (reason, DictValue::Int(count)))
+                    .collect(),
+            );
+            totals.push(("skipped_reasons", skipped_reasons));
+        }
+        let mut files = Vec::with_capacity(self.files.len());
+        for file in &self.files {
+            let dict = file.to_dict().map_err(ScanReportDictError::Minimize)?;
+            files.push(as_map(dict));
+        }
+        let mut report = vec![
+            ("files", DictValue::List(files)),
+            ("root_path", DictValue::Str(self.root_path.clone())),
+            (
+                "schema_version",
+                DictValue::Str(self.schema_version.clone()),
+            ),
+            ("totals", as_map(totals)),
+        ];
+        if let Some(summary) = &self.summary {
+            let dict = summary.to_dict().map_err(ScanReportDictError::Minimize)?;
+            report.push(("summary", as_map(dict)));
+        }
+        Ok(report)
+    }
+
+    /// Python: `ScanReport.to_json`.
+    ///
+    /// [`Self::to_dict`] runs first. Its error is propagated. When `to_dict`
+    /// succeeds, this still returns [`JSON_DUMPS_UNAVAILABLE`] and does not
+    /// emit a JSON string.
+    pub fn to_json(&self) -> Result<String, ScanReportJsonError> {
+        match self.to_dict() {
+            Err(err) => Err(ScanReportJsonError::Dict(err)),
+            Ok(_dict) => Err(ScanReportJsonError::Dumps),
+        }
+    }
+}
+
+/// Python: `get_scan_schema_path`.
+///
+/// Calls [`model::resources::schema_path`] with
+/// [`SCAN_REPORT_SCHEMA_FILE`] and the repository file
+/// `schemas/sesslint.scan-report.v1.json` derived from this crate's location.
+/// The process current directory is not read. `sys._MEIPASS` and `sys.prefix`
+/// are not invented.
+#[must_use]
+pub fn get_scan_schema_path() -> PathBuf {
+    let development_path = scan_report_schema_development_path();
+    model::resources::schema_path(SCAN_REPORT_SCHEMA_FILE, &development_path)
+}
+
+/// Python: `load_scan_schema`.
+///
+/// A missing file returns the pin `FileNotFoundError` sentence. A file that
+/// exists stops with [`JSON_LOADS_UNAVAILABLE`]. The schema is not parsed and
+/// a dictionary of schema contents is not returned.
+pub fn load_scan_schema() -> Result<Infallible, LoadScanSchemaError> {
+    refuse_scan_schema(&get_scan_schema_path())
+}
+
+/// Python: `aggregate_scan` (T-08).
+///
+/// Pure: no clock, no path rewrite, and no detector code or severity other
+/// than those already stored on the findings. `top` is an `i64`. A bool is
+/// not an int. Paths are stored verbatim. Rank comes from
+/// [`SEVERITY_ORDER`].
+///
+/// `by_code` rows sort by severity rank, then count descending, then code.
+/// `worst_files` sort by error count descending, then warning count
+/// descending, then path. `top == 0` leaves `worst_files` empty.
+/// `group_by == "none"` leaves `by_code` empty.
+pub fn aggregate_scan(
+    files: &[FileResult],
+    top: i64,
+    group_by: &str,
+) -> Result<ScanSummary, AggregateScanError> {
+    if top < 0 {
+        return Err(AggregateScanError::Top(top));
+    }
+    if group_by != "code" && group_by != "none" {
+        return Err(AggregateScanError::GroupBy(group_by.to_owned()));
+    }
+
+    let by_code = if group_by == "code" {
+        aggregate_by_code(files)?
+    } else {
+        Vec::new()
+    };
+    let worst_files = if top > 0 {
+        aggregate_worst_files(files, top)
+    } else {
+        Vec::new()
+    };
+    Ok(ScanSummary {
+        by_code,
+        worst_files,
+    })
+}
+
+/// Python: `_scan_single_file`.
+///
+/// The pin calls `minimize_path` before `_scan_single_source`. That helper
+/// lives in the report crate, which this crate does not depend on. Display is
+/// [`MINIMIZE_PATH_UNAVAILABLE`]. No [`FileResult`] is returned.
+/// `_scan_single_source` is not called and is not defined. The pin default
+/// for `max_file_bytes` is [`crate::io::DEFAULT_MAX_FILE_BYTES`]. A bool is
+/// not that int.
+pub fn scan_single_file(
+    file_path: &Path,
+    format: Option<&str>,
+    effective_cfg: &checks::EffectiveConfig,
+    skip_undetected: bool,
+    resolved_profile: Option<&checks::Profile>,
+    baseline: Option<&[String]>,
+    max_file_bytes: i64,
+) -> Result<FileResult, MinimizePathUnavailable> {
+    let _bound = (
+        file_path,
+        format,
+        effective_cfg,
+        skip_undetected,
+        resolved_profile,
+        baseline,
+        max_file_bytes,
+    );
+    Err(MinimizePathUnavailable)
+}
+
+fn scan_report_schema_development_path() -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    match manifest
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+    {
+        Some(root) => root.join("schemas").join(SCAN_REPORT_SCHEMA_FILE),
+        None => manifest.join("schemas").join(SCAN_REPORT_SCHEMA_FILE),
+    }
+}
+
+fn refuse_scan_schema(path: &Path) -> Result<Infallible, LoadScanSchemaError> {
+    if !path.is_file() {
+        return Err(LoadScanSchemaError::NotFound(path.to_path_buf()));
+    }
+    Err(LoadScanSchemaError::Loads)
+}
+
+struct CodeBucket {
+    code: String,
+    severity: Severity,
+    count: i64,
+    paths: BTreeSet<String>,
+}
+
+fn aggregate_by_code(files: &[FileResult]) -> Result<Vec<ByCodeRow>, AggregateScanError> {
+    let mut buckets: Vec<CodeBucket> = Vec::new();
+    for file in files {
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for finding in &file.findings {
+            let code = finding.code();
+            let severity = finding.severity();
+            let rank = severity_rank(severity)?;
+            let position = buckets.iter().position(|bucket| bucket.code == code);
+            if let Some(index) = position {
+                let bucket = &mut buckets[index];
+                bucket.count = bucket
+                    .count
+                    .checked_add(1)
+                    .ok_or(AggregateScanError::Count)?;
+                let current = severity_rank(bucket.severity)?;
+                if rank < current {
+                    bucket.severity = severity;
+                }
+                if seen.insert(code.to_owned()) {
+                    bucket.paths.insert(file.path.clone());
+                }
+            } else {
+                let mut paths = BTreeSet::new();
+                paths.insert(file.path.clone());
+                buckets.push(CodeBucket {
+                    code: code.to_owned(),
+                    severity,
+                    count: 1,
+                    paths,
+                });
+                seen.insert(code.to_owned());
+            }
+        }
+    }
+
+    let mut ranked = Vec::with_capacity(buckets.len());
+    for bucket in buckets {
+        let rank = severity_rank(bucket.severity)?;
+        let file_count =
+            i64::try_from(bucket.paths.len()).map_err(|_| AggregateScanError::FileCount)?;
+        ranked.push((rank, file_count, bucket));
+    }
+    ranked.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then(right.2.count.cmp(&left.2.count))
+            .then_with(|| left.2.code.cmp(&right.2.code))
+    });
+    Ok(ranked
+        .into_iter()
+        .map(|(_rank, file_count, bucket)| ByCodeRow {
+            code: bucket.code,
+            severity: bucket.severity.as_str().to_owned(),
+            count: bucket.count,
+            files: file_count,
+        })
+        .collect())
+}
+
+fn aggregate_worst_files(files: &[FileResult], top: i64) -> Vec<WorstFileRow> {
+    let mut ranked: Vec<&FileResult> = files
+        .iter()
+        .filter(|file| file.error_count > 0 || file.warning_count > 0)
+        .collect();
+    ranked.sort_by(|left, right| {
+        right
+            .error_count
+            .cmp(&left.error_count)
+            .then(right.warning_count.cmp(&left.warning_count))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    let limit = usize::try_from(top).unwrap_or(usize::MAX);
+    ranked
+        .into_iter()
+        .take(limit)
+        .map(|file| WorstFileRow {
+            path: file.path.clone(),
+            error_count: file.error_count,
+            warning_count: file.warning_count,
+        })
+        .collect()
+}
+
+fn severity_rank(severity: Severity) -> Result<i64, AggregateScanError> {
+    for (kind, rank) in SEVERITY_ORDER {
+        if kind == severity {
+            return Ok(rank);
+        }
+    }
+    Err(AggregateScanError::SeverityRank)
+}
+
+/// Python `repr` for a `str`, preferring single quotes.
+fn python_str_repr(text: &str) -> String {
+    let use_double = text.contains('\'') && !text.contains('"');
+    let quote = if use_double { '"' } else { '\'' };
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push(quote);
+    for ch in text.chars() {
+        let code = u32::from(ch);
+        if ch == '\\' {
+            out.push_str("\\\\");
+        } else if ch == quote {
+            out.push('\\');
+            out.push(quote);
+        } else if ch == '\t' {
+            out.push_str("\\t");
+        } else if ch == '\n' {
+            out.push_str("\\n");
+        } else if ch == '\r' {
+            out.push_str("\\r");
+        } else if code < 32 || code == 0x7F {
+            out.push_str(&format!("\\x{code:02x}"));
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push(quote);
+    out
+}
+
 fn as_map(entries: ScanDict) -> DictValue {
     DictValue::Map(
         entries
@@ -721,15 +1228,18 @@ fn expect_map<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        ByCodeRow, FileResult, MinimizePathUnavailable, ScanDictError, ScanSummary, ScanTotals,
+        aggregate_scan, get_scan_schema_path, load_scan_schema, scan_single_file, ByCodeRow,
+        FileResult, MinimizePathUnavailable, ScanDictError, ScanReport, ScanSummary, ScanTotals,
         SessionLink, TotalOverflow, UnknownVerdict, Verdict, WorstFileRow, DEFAULT_MAX_BYTES,
-        DEFAULT_MAX_FILES, MINIMIZE_PATH_UNAVAILABLE,
+        DEFAULT_MAX_FILES, JSON_DUMPS_UNAVAILABLE, JSON_LOADS_UNAVAILABLE,
+        MINIMIZE_PATH_UNAVAILABLE, SCAN_SCHEMA_VERSION,
     };
-    use model::codes::{Repairability, Severity, SL001};
+    use model::codes::{Repairability, Severity, SL001, SL006, SL007, SL101, SL203, SL302};
     use model::finding::{
         DictValue, Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION,
     };
     use std::error::Error;
+    use std::path::Path;
 
     fn keys(dict: &super::ScanDict) -> Vec<&str> {
         dict.iter().map(|(key, _)| *key).collect()
@@ -1236,5 +1746,533 @@ mod tests {
         assert_eq!(file.links, vec![link]);
         assert!(file.findings.is_empty());
         assert_eq!(file.max_findings_per_code, 20);
+    }
+
+    fn finding(code: &str, severity: Severity) -> Finding {
+        let source = SourceRef::try_new("a.jsonl", Some(SourceLine::Int(1)), None)
+            .expect("synthetic source");
+        Finding::try_new(FindingInput {
+            code: PyValue::string(code),
+            severity: PyValue::severity(severity),
+            repairability: PyValue::repairability(Repairability::Manual),
+            message: PyValue::string("synthetic marker"),
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence: PyValue::None,
+        })
+        .expect("synthetic finding")
+    }
+
+    fn file_with(
+        path: &str,
+        verdict: Verdict,
+        findings: Vec<Finding>,
+        error_count: i64,
+        warning_count: i64,
+    ) -> FileResult {
+        let mut file = FileResult::new(path, verdict);
+        file.findings = findings;
+        file.error_count = error_count;
+        file.warning_count = warning_count;
+        file
+    }
+
+    fn sample_files() -> Vec<FileResult> {
+        vec![
+            file_with(
+                "a.jsonl",
+                Verdict::Invalid,
+                vec![
+                    finding(SL203, Severity::Error),
+                    finding(SL203, Severity::Error),
+                    finding(SL101, Severity::Warning),
+                ],
+                2,
+                1,
+            ),
+            file_with(
+                "b.jsonl",
+                Verdict::Invalid,
+                vec![
+                    finding(SL302, Severity::Error),
+                    finding(SL203, Severity::Error),
+                ],
+                3,
+                0,
+            ),
+            FileResult::new("ok.jsonl", Verdict::Healthy),
+        ]
+    }
+
+    fn effective_config() -> checks::EffectiveConfig {
+        checks::EffectiveConfig {
+            profile: "neutral".to_owned(),
+            description: String::new(),
+            allowed_adapters: Vec::new(),
+            enabled_rules: Vec::new(),
+            confidence_min: 0.5,
+            margin_min: 0.1,
+            checkpoint_sensitivity: "standard".to_owned(),
+            format_override: None,
+            thresholds_source: "profile".to_owned(),
+            version: "1.0.0".to_owned(),
+        }
+    }
+
+    #[test]
+    fn scan_report_defaults_and_skipped_reason_totals_are_sorted() {
+        let report = ScanReport::default();
+        assert_eq!(report.schema_version, SCAN_SCHEMA_VERSION);
+        assert_eq!(SCAN_SCHEMA_VERSION, "sesslint.scan-report/v1");
+        assert_eq!(report.root_path, "");
+        assert!(report.files.is_empty());
+        assert!(report.summary.is_none());
+        assert!(report.skipped_reason_totals().expect("reasons").is_empty());
+
+        let mut skipped_empty = FileResult::new("empty.jsonl", Verdict::Skipped);
+        skipped_empty.skipped_reason = Some(String::new());
+        let mut healthy_with_reason = FileResult::new("healthy.jsonl", Verdict::Healthy);
+        healthy_with_reason.skipped_reason = Some("nope".to_owned());
+        let mut zero_reason = FileResult::new("zero.jsonl", Verdict::Skipped);
+        zero_reason.skipped_reason = Some("0".to_owned());
+        let mut a_reason = FileResult::new("c.jsonl", Verdict::Skipped);
+        a_reason.skipped_reason = Some("a-reason".to_owned());
+        let mut z_one = FileResult::new("b.jsonl", Verdict::Skipped);
+        z_one.skipped_reason = Some("z-reason".to_owned());
+        let mut z_two = FileResult::new("d.jsonl", Verdict::Skipped);
+        z_two.skipped_reason = Some("z-reason".to_owned());
+        let bare = FileResult::new("e.jsonl", Verdict::Skipped);
+        let report = ScanReport {
+            root_path: "/x".to_owned(),
+            totals: ScanTotals {
+                healthy: 1,
+                skipped: 6,
+                ..ScanTotals::default()
+            },
+            files: vec![
+                FileResult::new("a.jsonl", Verdict::Healthy),
+                z_one,
+                a_reason,
+                z_two,
+                bare,
+                skipped_empty,
+                healthy_with_reason,
+                zero_reason,
+            ],
+            ..ScanReport::default()
+        };
+        assert_eq!(
+            report.skipped_reason_totals().expect("reasons"),
+            vec![
+                ("0".to_owned(), 1),
+                ("a-reason".to_owned(), 1),
+                ("z-reason".to_owned(), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_report_to_dict_builds_totals_only_when_files_are_empty() {
+        let report = ScanReport {
+            root_path: "C:/synthetic/root".to_owned(),
+            totals: ScanTotals {
+                healthy: 2,
+                invalid: 0,
+                unsupported: 0,
+                unreadable: 0,
+                skipped: 0,
+            },
+            ..ScanReport::default()
+        };
+        let dict = report.to_dict().expect("empty files");
+        assert_eq!(
+            keys(&dict),
+            ["files", "root_path", "schema_version", "totals"]
+        );
+        assert_eq!(entry(&dict, "files"), &DictValue::List(Vec::new()));
+        assert_eq!(
+            entry(&dict, "root_path"),
+            &DictValue::Str("C:/synthetic/root".to_owned())
+        );
+        assert_eq!(
+            entry(&dict, "schema_version"),
+            &DictValue::Str(SCAN_SCHEMA_VERSION.to_owned())
+        );
+        let DictValue::Map(totals) = entry(&dict, "totals") else {
+            panic!("totals map");
+        };
+        assert_eq!(
+            totals
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "healthy",
+                "invalid",
+                "skipped",
+                "total",
+                "unreadable",
+                "unsupported"
+            ]
+        );
+        assert_eq!(totals[3].1, DictValue::Int(2));
+        assert!(totals.iter().all(|(key, _)| key != "skipped_reasons"));
+
+        let summary = ScanSummary {
+            by_code: vec![ByCodeRow {
+                code: SL001.to_owned(),
+                severity: "error".to_owned(),
+                count: 1,
+                files: 1,
+            }],
+            worst_files: Vec::new(),
+        };
+        let with_summary = ScanReport {
+            summary: Some(summary),
+            ..report
+        };
+        let dict = with_summary.to_dict().expect("summary without worst files");
+        assert_eq!(
+            keys(&dict),
+            ["files", "root_path", "schema_version", "totals", "summary"]
+        );
+        let DictValue::Map(summary_dict) = entry(&dict, "summary") else {
+            panic!("summary map");
+        };
+        assert_eq!(summary_dict[0].0, "by_code");
+        assert_eq!(summary_dict[1].0, "worst_files");
+        assert_eq!(summary_dict[1].1, DictValue::List(Vec::new()));
+    }
+
+    #[test]
+    fn scan_report_to_dict_propagates_minimize_path_without_a_partial_dict() {
+        let mut file = FileResult::new("C:/synthetic/session.jsonl", Verdict::Invalid);
+        file.findings.push(synthetic_finding());
+        file.error_count = 1;
+        let report = ScanReport {
+            files: vec![file],
+            summary: Some(ScanSummary {
+                worst_files: vec![WorstFileRow {
+                    path: "C:/synthetic/session.jsonl".to_owned(),
+                    error_count: 1,
+                    warning_count: 0,
+                }],
+                ..ScanSummary::default()
+            }),
+            ..ScanReport::default()
+        };
+        let err = report.to_dict().expect_err("files");
+        assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert!(!err.to_string().contains("synthetic"));
+        assert!(!err.to_string().contains(SL001));
+        assert!(err.source().is_some());
+
+        let summary_only = ScanReport {
+            files: Vec::new(),
+            summary: Some(ScanSummary {
+                by_code: vec![ByCodeRow {
+                    code: SL001.to_owned(),
+                    severity: "warning".to_owned(),
+                    count: 1,
+                    files: 1,
+                }],
+                worst_files: vec![WorstFileRow {
+                    path: "C:/synthetic/worst.jsonl".to_owned(),
+                    error_count: 2,
+                    warning_count: 0,
+                }],
+            }),
+            ..ScanReport::default()
+        };
+        let err = summary_only.to_dict().expect_err("worst file");
+        assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert!(!err.to_string().contains("worst"));
+        assert!(!err.to_string().contains(SL001));
+    }
+
+    #[test]
+    fn scan_report_to_json_propagates_to_dict_then_stops_before_dumps() {
+        let empty = ScanReport::default();
+        assert!(empty.to_dict().is_ok());
+        let err = empty.to_json().expect_err("dumps");
+        assert_eq!(err.to_string(), JSON_DUMPS_UNAVAILABLE);
+        assert_eq!(err.to_string(), "json.dumps is not available");
+        assert!(err.source().is_none());
+
+        let blocked = ScanReport {
+            files: vec![FileResult::new(
+                "C:/synthetic/session.jsonl",
+                Verdict::Healthy,
+            )],
+            ..ScanReport::default()
+        };
+        let err = blocked.to_json().expect_err("minimize first");
+        assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert_ne!(err.to_string(), JSON_DUMPS_UNAVAILABLE);
+        assert!(!err.to_string().contains("synthetic"));
+
+        let overflow = ScanReport {
+            totals: ScanTotals {
+                healthy: i64::MAX,
+                invalid: 1,
+                ..ScanTotals::default()
+            },
+            files: vec![FileResult::new(
+                "C:/synthetic/session.jsonl",
+                Verdict::Healthy,
+            )],
+            ..ScanReport::default()
+        };
+        let err = overflow.to_json().expect_err("totals first");
+        assert_eq!(err.to_string(), "scan total exceeds i64");
+        assert_ne!(err.to_string(), JSON_DUMPS_UNAVAILABLE);
+    }
+
+    #[test]
+    fn schema_path_comes_from_the_crate_and_load_stops() {
+        let path = get_scan_schema_path();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let expected = manifest
+            .parent()
+            .expect("crates")
+            .parent()
+            .expect("rust")
+            .parent()
+            .expect("repo")
+            .join("schemas")
+            .join("sesslint.scan-report.v1.json");
+        assert_eq!(path, expected);
+        assert!(path.is_absolute());
+        assert!(path.is_file());
+        let err = load_scan_schema().expect_err("loads");
+        assert_eq!(err.to_string(), JSON_LOADS_UNAVAILABLE);
+        assert_eq!(err.to_string(), "json.loads is not available");
+        assert!(!err.to_string().contains("$schema"));
+        assert!(!err.to_string().contains("sesslint.scan-report"));
+
+        let missing = manifest
+            .join("schemas")
+            .join("sesslint.scan-report.missing.json");
+        let err = super::refuse_scan_schema(&missing).expect_err("missing");
+        assert_eq!(
+            err.to_string(),
+            format!("Scan report schema not found at {}", missing.display())
+        );
+        assert!(!missing.exists());
+
+        let directory = expected.parent().expect("schemas dir");
+        let err = super::refuse_scan_schema(directory).expect_err("directory");
+        assert_eq!(
+            err.to_string(),
+            format!("Scan report schema not found at {}", directory.display())
+        );
+    }
+
+    #[test]
+    fn aggregate_scan_matches_the_pin_ranks_and_keeps_paths() {
+        let files = sample_files();
+        let summary = aggregate_scan(&files, 10, "code").expect("summary");
+        let rows: Vec<_> = summary
+            .by_code
+            .iter()
+            .map(|row| {
+                (
+                    row.code.as_str(),
+                    row.severity.as_str(),
+                    row.count,
+                    row.files,
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (SL203, "error", 3, 2),
+                (SL302, "error", 1, 1),
+                (SL101, "warning", 1, 1),
+            ]
+        );
+        assert_eq!(
+            summary
+                .worst_files
+                .iter()
+                .map(|row| (row.path.as_str(), row.error_count, row.warning_count))
+                .collect::<Vec<_>>(),
+            vec![("b.jsonl", 3, 0), ("a.jsonl", 2, 1)]
+        );
+        assert_eq!(aggregate_scan(&files, 10, "code").expect("again"), summary);
+
+        let sorted = vec![file_with(
+            "x.jsonl",
+            Verdict::Invalid,
+            vec![
+                finding(SL007, Severity::Warning),
+                finding(SL006, Severity::Warning),
+                finding(SL006, Severity::Warning),
+                finding(SL001, Severity::Error),
+            ],
+            1,
+            3,
+        )];
+        let summary = aggregate_scan(&sorted, 10, "code").expect("sort");
+        assert_eq!(
+            summary
+                .by_code
+                .iter()
+                .map(|row| row.code.as_str())
+                .collect::<Vec<_>>(),
+            vec![SL001, SL006, SL007]
+        );
+
+        let tied = vec![file_with(
+            "x.jsonl",
+            Verdict::Invalid,
+            vec![
+                finding(SL007, Severity::Warning),
+                finding(SL006, Severity::Warning),
+            ],
+            0,
+            2,
+        )];
+        let summary = aggregate_scan(&tied, 10, "code").expect("tie");
+        assert_eq!(
+            summary
+                .by_code
+                .iter()
+                .map(|row| row.code.as_str())
+                .collect::<Vec<_>>(),
+            vec![SL006, SL007]
+        );
+    }
+
+    #[test]
+    fn aggregate_scan_keeps_the_stored_severity_and_verbatim_path() {
+        let mut warning_then_error = file_with(
+            "C:/synthetic/../kept.jsonl",
+            Verdict::Invalid,
+            vec![
+                finding(SL001, Severity::Warning),
+                finding(SL001, Severity::Error),
+            ],
+            1,
+            1,
+        );
+        warning_then_error
+            .findings
+            .push(finding(SL001, Severity::Fatal));
+        let duplicate = file_with(
+            "C:/synthetic/../kept.jsonl",
+            Verdict::Invalid,
+            vec![finding(SL001, Severity::Info)],
+            0,
+            0,
+        );
+        let summary = aggregate_scan(&[warning_then_error, duplicate], 10, "code").expect("rank");
+        assert_eq!(summary.by_code.len(), 1);
+        assert_eq!(summary.by_code[0].code, SL001);
+        assert_eq!(summary.by_code[0].severity, "fatal");
+        assert_eq!(summary.by_code[0].count, 4);
+        assert_eq!(summary.by_code[0].files, 1);
+        assert_eq!(summary.worst_files.len(), 1);
+        assert_eq!(summary.worst_files[0].path, "C:/synthetic/../kept.jsonl");
+        assert_eq!(summary.worst_files[0].error_count, 1);
+        assert_eq!(summary.worst_files[0].warning_count, 1);
+
+        let info_heavy = file_with(
+            "info.jsonl",
+            Verdict::Invalid,
+            vec![
+                finding(SL001, Severity::Info),
+                finding(SL001, Severity::Info),
+                finding(SL006, Severity::Warning),
+            ],
+            0,
+            1,
+        );
+        let summary = aggregate_scan(&[info_heavy], 10, "code").expect("order");
+        assert_eq!(summary.by_code[0].code, SL006);
+        assert_eq!(summary.by_code[0].severity, "warning");
+        assert_eq!(summary.by_code[1].code, SL001);
+        assert_eq!(summary.by_code[1].severity, "info");
+        assert_eq!(summary.by_code[1].count, 2);
+    }
+
+    #[test]
+    fn aggregate_scan_honors_top_and_group_by_and_rejects_the_pin_errors() {
+        let files = sample_files();
+        assert_eq!(
+            aggregate_scan(&files, 1, "code")
+                .expect("top 1")
+                .worst_files
+                .len(),
+            1
+        );
+        assert!(aggregate_scan(&files, 0, "code")
+            .expect("top 0")
+            .worst_files
+            .is_empty());
+        let none = aggregate_scan(&files, 10, "none").expect("none");
+        assert!(none.by_code.is_empty());
+        assert_eq!(none.worst_files.len(), 2);
+
+        let healthy = vec![
+            FileResult::new("ok.jsonl", Verdict::Healthy),
+            FileResult::new("also_ok.jsonl", Verdict::Healthy),
+        ];
+        let summary = aggregate_scan(&healthy, 10, "code").expect("healthy");
+        assert!(summary.by_code.is_empty());
+        assert!(summary.worst_files.is_empty());
+
+        let err = aggregate_scan(&files, -1, "file").expect_err("top");
+        assert_eq!(err.to_string(), "top must be >= 0, got -1");
+        assert!(err.source().is_none());
+        let err = aggregate_scan(&files, -1, "code").expect_err("negative");
+        assert_eq!(err.to_string(), "top must be >= 0, got -1");
+
+        let err = aggregate_scan(&files, 10, "file").expect_err("group");
+        assert_eq!(
+            err.to_string(),
+            "group_by must be 'code' or 'none', got 'file'"
+        );
+        let err = aggregate_scan(&files, 10, "it's").expect_err("repr");
+        assert_eq!(
+            err.to_string(),
+            "group_by must be 'code' or 'none', got \"it's\""
+        );
+        let err = aggregate_scan(&files, 0, "").expect_err("empty");
+        assert_eq!(err.to_string(), "group_by must be 'code' or 'none', got ''");
+    }
+
+    #[test]
+    fn scan_single_file_stops_before_minimize_path_without_a_file_result() {
+        let path = Path::new("C:/synthetic/not-opened.jsonl");
+        let config = effective_config();
+        let baseline = vec!["SL001".to_owned()];
+        let err = scan_single_file(
+            path,
+            Some("canonical"),
+            &config,
+            true,
+            None,
+            Some(baseline.as_slice()),
+            crate::io::DEFAULT_MAX_FILE_BYTES,
+        )
+        .expect_err("seam");
+        assert_eq!(err, MinimizePathUnavailable);
+        assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert_eq!(
+            err.to_string(),
+            "sesslint.report.minimize_path is not available"
+        );
+        assert!(!err.to_string().contains("not-opened"));
+        assert!(!err.to_string().contains(SL001));
+        assert!(err.source().is_none());
+        assert!(!path.exists());
+
+        let err = scan_single_file(path, None, &config, false, None, None, -1).expect_err("still");
+        assert_eq!(err.to_string(), MINIMIZE_PATH_UNAVAILABLE);
     }
 }
