@@ -15,7 +15,9 @@
 //! below. Torn-append detection from lines 670–878 of the same pin is
 //! appended after [`skip_string`]. Physical line processing from lines
 //! 881–1067 of the same pin is appended after [`MalformedTailTracker`].
-//! The streaming reader after line 1067 is not part of this file. OS errors
+//! Session header probing from lines 1070–1202 of the same pin is appended
+//! after [`process_line`]. [`read_header`] does not call [`process_line`].
+//! The streaming reader after line 1202 is not part of this file. OS errors
 //! propagate as `std::io::Error` and are not turned into findings here.
 
 use std::collections::BTreeSet;
@@ -24,9 +26,11 @@ use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::Path;
 
-use model::canonical::{parse_session_event, parse_session_header, Payload, SessionEvent};
+use model::canonical::{
+    parse_session_event, parse_session_header, Payload, SessionEvent, SessionHeader,
+};
 use model::codes::{get_code_info, Repairability, Severity, SL001, SL002, SL303};
-use model::errors::FindingError;
+use model::errors::{FileTooLargeError, FindingError, HeaderMissingError, SchemaError};
 use model::finding::{
     enforce_content_free_text, make_finding, Evidence, EvidenceKey, EvidenceLookup, Finding,
     MakeFindingInput, PyValue, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
@@ -6103,5 +6107,969 @@ mod process_line_tests {
         let surrogate = json_to_payload(&JsonValue::String(vec![0xD800])).expect_err("surrogate");
         assert!(matches!(surrogate, ProcessLineError::NonScalar));
         assert!(!surrogate.to_string().contains('\u{FFFD}'));
+    }
+}
+
+/// Failure from [`read_header`].
+///
+/// Check order follows `read_header` at
+/// `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1070–1202.
+/// [`ReadHeaderError::FileTooLarge`], [`ReadHeaderError::HeaderMissing`], and
+/// [`ReadHeaderError::Schema`] carry the pin sentences. A missing path and a
+/// directory are [`std::io::Error`], not [`HeaderMissingError`].
+#[derive(Debug)]
+pub enum ReadHeaderError {
+    /// Opening or reading the source failed, or the path was missing or a directory.
+    Io(io::Error),
+    /// File or stream byte total is above `max_file_bytes`.
+    FileTooLarge(FileTooLargeError),
+    /// The source has no header record.
+    HeaderMissing(HeaderMissingError),
+    /// A header line broke a schema rule.
+    ///
+    /// A non-object names the [`JsonValue`] kind (`array`, `string`, `number`,
+    /// `bool`, `null`), not Python `list`, `str`, `int`, `float`, or `NoneType`.
+    Schema(SchemaError),
+    /// [`dup_key_findings`] failed. The fingerprint codec error is propagated.
+    Finding(FindingError),
+    /// [`ProcessLineError::IntegerRange`]. The integer is not truncated.
+    IntegerRange,
+    /// [`json_to_payload`] failed before a header could be built.
+    Convert(ProcessLineError),
+}
+
+impl std::fmt::Display for ReadHeaderError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(err) => err.fmt(formatter),
+            Self::FileTooLarge(err) => err.fmt(formatter),
+            Self::HeaderMissing(err) => err.fmt(formatter),
+            Self::Schema(err) => err.fmt(formatter),
+            Self::Finding(err) => err.fmt(formatter),
+            Self::IntegerRange => ProcessLineError::IntegerRange.fmt(formatter),
+            Self::Convert(err) => err.fmt(formatter),
+        }
+    }
+}
+
+impl Error for ReadHeaderError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            Self::FileTooLarge(err) => Some(err),
+            Self::HeaderMissing(err) => Some(err),
+            Self::Schema(err) => Some(err),
+            Self::Finding(err) => Some(err),
+            Self::Convert(err) => Some(err),
+            Self::IntegerRange => None,
+        }
+    }
+}
+
+impl From<io::Error> for ReadHeaderError {
+    fn from(err: io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<FindingError> for ReadHeaderError {
+    fn from(err: FindingError) -> Self {
+        Self::Finding(err)
+    }
+}
+
+impl From<SchemaError> for ReadHeaderError {
+    fn from(err: SchemaError) -> Self {
+        Self::Schema(err)
+    }
+}
+
+/// `readline` source used by [`read_header`].
+///
+/// `size` follows [`SliceLineCursor::readline`].
+pub trait HeaderLineSource {
+    /// Read one physical line, capped at `size` when `size` is positive.
+    fn readline(&mut self, size: i64) -> io::Result<Vec<u8>>;
+}
+
+impl HeaderLineSource for BufferedByteSource {
+    fn readline(&mut self, size: i64) -> io::Result<Vec<u8>> {
+        BufferedByteSource::readline(self, size)
+    }
+}
+
+impl HeaderLineSource for SliceLineCursor<'_> {
+    fn readline(&mut self, size: i64) -> io::Result<Vec<u8>> {
+        SliceLineCursor::readline(self, size)
+    }
+}
+
+/// Path or byte stream for [`read_header`].
+///
+/// A stream has no path. Its reported name is `<stream>` unless the caller
+/// supplies one. Backslashes in a reported path or name become slashes.
+pub enum HeaderInput<'a> {
+    /// Filesystem path opened with [`open_byte_source`].
+    Path(&'a Path),
+    /// Caller-owned byte stream. This probe does not close it.
+    Stream {
+        /// Line reader. `readline(max_line_bytes + 1)` is the read size.
+        source: &'a mut dyn HeaderLineSource,
+        /// Reported name. `None` is `<stream>`.
+        name: Option<&'a str>,
+    },
+}
+
+/// Read and validate the session header from the first non-empty record.
+///
+/// Check order follows `read_header` at
+/// `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1070–1202.
+/// This probe raises schema and limit errors. It does not call
+/// [`process_line`] and it does not emit line findings.
+///
+/// A path is opened with [`open_byte_source`]. That owned source is closed
+/// on every exit. An OS error from metadata is ignored and open is still
+/// attempted. A missing path and a directory are [`std::io::Error`].
+///
+/// Duplicate keys call [`dup_key_findings`] only when a sink is present and
+/// the list is non-empty. `record_ordinal` is omitted. The fingerprint codec
+/// error is propagated. This function does not invent a fingerprint, a
+/// digest, or a [`Finding`]. When the sink is absent, duplicates are ignored
+/// and parsing continues.
+///
+/// [`parse_session_header`] returns [`SchemaError`]. That error is propagated.
+/// A header is not invented. A JSON integer outside `i64` is
+/// [`ProcessLineError::IntegerRange`], not a truncated number.
+pub fn read_header(
+    input: HeaderInput<'_>,
+    limits: &ReaderLimits,
+    dup_sink: Option<&mut Vec<Finding>>,
+    critical_keys: Option<&BTreeSet<String>>,
+) -> Result<SessionHeader, ReadHeaderError> {
+    match input {
+        HeaderInput::Path(path) => read_header_path(path, limits, dup_sink, critical_keys),
+        HeaderInput::Stream { source, name } => {
+            let path_str = reported_stream_name(name);
+            probe_header(source, &path_str, limits, dup_sink, critical_keys)
+        }
+    }
+}
+
+fn read_header_path(
+    path: &Path,
+    limits: &ReaderLimits,
+    dup_sink: Option<&mut Vec<Finding>>,
+    critical_keys: Option<&BTreeSet<String>>,
+) -> Result<SessionHeader, ReadHeaderError> {
+    let path_str = reported_path(path);
+    if !path.exists() {
+        return Err(ReadHeaderError::Io(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Session file not found: {path_str}"),
+        )));
+    }
+    if path.is_dir() {
+        return Err(ReadHeaderError::Io(io::Error::new(
+            io::ErrorKind::IsADirectory,
+            format!("Expected session file, got directory: {path_str}"),
+        )));
+    }
+    if let Ok(meta) = path.metadata() {
+        if meta.is_file() && exceeds_byte_limit(meta.len(), limits.max_file_bytes()) {
+            return Err(file_too_large(meta.len(), limits.max_file_bytes()));
+        }
+    }
+    let mut owned = OwnedHeaderFile {
+        source: open_byte_source(path)?,
+    };
+    probe_header(&mut owned, &path_str, limits, dup_sink, critical_keys)
+}
+
+struct OwnedHeaderFile {
+    source: BufferedByteSource,
+}
+
+impl HeaderLineSource for OwnedHeaderFile {
+    fn readline(&mut self, size: i64) -> io::Result<Vec<u8>> {
+        self.source.readline(size)
+    }
+}
+
+impl Drop for OwnedHeaderFile {
+    fn drop(&mut self) {
+        self.source.close();
+    }
+}
+
+fn probe_header(
+    source: &mut dyn HeaderLineSource,
+    path_str: &str,
+    limits: &ReaderLimits,
+    mut dup_sink: Option<&mut Vec<Finding>>,
+    critical_keys: Option<&BTreeSet<String>>,
+) -> Result<SessionHeader, ReadHeaderError> {
+    let mut line_number = 0_i64;
+    let mut total_bytes_read = 0_u64;
+    let read_size = header_readline_size(limits.max_line_bytes());
+    loop {
+        line_number += 1;
+        let chunk = source.readline(read_size)?;
+        if chunk.is_empty() {
+            break;
+        }
+        total_bytes_read = total_bytes_read.saturating_add(counted_len(&chunk));
+        note_stream_bytes(total_bytes_read, limits.max_file_bytes())?;
+        let ready = match prepare_header_chunk(chunk, line_number, limits.max_line_bytes())? {
+            PreparedHeaderChunk::Blank => continue,
+            PreparedHeaderChunk::Ready(chunk) => chunk,
+        };
+        let decoded = decode_header_text(&ready, line_number)?;
+        let (obj, dups, truncated) = decode_header_json(&decoded, line_number, critical_keys)?;
+        if !dups.is_empty() {
+            if let Some(sink) = dup_sink.as_mut() {
+                // `record_ordinal` is omitted. A fingerprint is not invented.
+                let record_id = extract_record_id(Some(&decoded), Some(&obj));
+                let findings = dup_key_findings(
+                    &dups,
+                    truncated,
+                    path_str,
+                    Some(line_number),
+                    record_id.as_deref(),
+                    None,
+                )?;
+                sink.extend(findings);
+            }
+        }
+        return accept_header_value(&obj, path_str, line_number, limits.max_depth());
+    }
+    Err(ReadHeaderError::HeaderMissing(HeaderMissingError::new(
+        format!("Session file is empty or contains no header: {path_str}"),
+    )))
+}
+
+enum PreparedHeaderChunk {
+    Blank,
+    Ready(Vec<u8>),
+}
+
+fn prepare_header_chunk(
+    mut chunk: Vec<u8>,
+    line_number: i64,
+    max_line_bytes: i64,
+) -> Result<PreparedHeaderChunk, ReadHeaderError> {
+    if line_number == 1 && chunk.starts_with(&UTF8_BOM) {
+        chunk.drain(..UTF8_BOM.len());
+    }
+    if exceeds_line(chunk.len(), max_line_bytes) {
+        return Err(header_schema(format!(
+            "Header line {line_number} exceeds maximum line byte limit ({max_line_bytes} bytes)"
+        )));
+    }
+    if header_ascii_blank(&chunk) {
+        return Ok(PreparedHeaderChunk::Blank);
+    }
+    Ok(PreparedHeaderChunk::Ready(chunk))
+}
+
+fn decode_header_text(chunk: &[u8], line_number: i64) -> Result<String, ReadHeaderError> {
+    if chunk.contains(&0) {
+        return Err(header_schema(format!(
+            "Forbidden NUL byte in header line {line_number}"
+        )));
+    }
+    let text = std::str::from_utf8(chunk).map_err(|_| {
+        header_schema(format!(
+            "Invalid UTF-8 encoding in header line {line_number}"
+        ))
+    })?;
+    Ok(python_strip_line(text).to_owned())
+}
+
+fn decode_header_json(
+    text: &str,
+    line_number: i64,
+    critical_keys: Option<&BTreeSet<String>>,
+) -> Result<(JsonValue, Vec<DuplicateKey>, bool), ReadHeaderError> {
+    match decode_json_dupaware(text, critical_keys, MAX_DUP_KEYS_PER_RECORD) {
+        Ok(parsed) => Ok(parsed),
+        Err(JsonDecodeError::Nesting(_)) => Err(header_schema(format!(
+            "Header nesting depth exceeds recursion limit on line {line_number}"
+        ))),
+        Err(err) => Err(header_schema(format!(
+            "Malformed JSON on header line (line {line_number}): {err}"
+        ))),
+    }
+}
+
+/// Accept one decoded header value.
+///
+/// [`check_nesting_depth`] always runs for an object that has
+/// `schema_version` or `session_id`. A brace count does not gate it.
+fn accept_header_value(
+    obj: &JsonValue,
+    path_str: &str,
+    line_number: i64,
+    max_depth: i64,
+) -> Result<SessionHeader, ReadHeaderError> {
+    if !matches!(obj, JsonValue::Object(_)) {
+        return Err(header_schema(format!(
+            "Session header must be a mapping, got {} on line {line_number}",
+            json_value_kind(obj)
+        )));
+    }
+    if !header_object(obj) {
+        return Err(ReadHeaderError::HeaderMissing(HeaderMissingError::new(
+            format!(
+                "First record is not a session header (missing schema_version/session_id): {path_str}"
+            ),
+        )));
+    }
+    if !check_nesting_depth(obj, max_depth) {
+        return Err(header_schema(format!(
+            "Header nesting depth exceeds limit of {max_depth} on line {line_number}"
+        )));
+    }
+    Ok(parse_session_header(&header_payload(obj)?)?)
+}
+
+fn header_payload(value: &JsonValue) -> Result<Payload, ReadHeaderError> {
+    match json_to_payload(value) {
+        Ok(payload) => Ok(payload),
+        Err(ProcessLineError::IntegerRange) => Err(ReadHeaderError::IntegerRange),
+        Err(err) => Err(ReadHeaderError::Convert(err)),
+    }
+}
+
+/// Kind word for a header value.
+///
+/// Python `type(obj).__name__` says `dict`, `list`, `str`, `int`, `float`,
+/// `bool`, or `NoneType`. This port says the [`JsonValue`] kind. `int` and
+/// `float` are both `number`. `NoneType` is `null`.
+fn json_value_kind(value: &JsonValue) -> &'static str {
+    match value {
+        JsonValue::Object(_) => "object",
+        JsonValue::Array(_) => "array",
+        JsonValue::String(_) => "string",
+        JsonValue::Number(_) => "number",
+        JsonValue::Bool(_) => "bool",
+        JsonValue::Null => "null",
+    }
+}
+
+fn header_schema(message: String) -> ReadHeaderError {
+    ReadHeaderError::Schema(SchemaError::new(message))
+}
+
+fn file_too_large(size: u64, max_file_bytes: i64) -> ReadHeaderError {
+    ReadHeaderError::FileTooLarge(FileTooLargeError::new(format!(
+        "File size {size} bytes exceeds maximum limit ({max_file_bytes} bytes); \
+         split file into smaller sessions"
+    )))
+}
+
+fn note_stream_bytes(total: u64, max_file_bytes: i64) -> Result<(), ReadHeaderError> {
+    if !exceeds_byte_limit(total, max_file_bytes) {
+        return Ok(());
+    }
+    Err(ReadHeaderError::FileTooLarge(FileTooLargeError::new(
+        format!(
+            "Stream exceeded maximum file size limit ({max_file_bytes} bytes); \
+             split file into smaller sessions"
+        ),
+    )))
+}
+
+fn reported_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn reported_stream_name(name: Option<&str>) -> String {
+    match name {
+        Some(name) => name.replace('\\', "/"),
+        None => String::from("<stream>"),
+    }
+}
+
+fn header_readline_size(max_line_bytes: i64) -> i64 {
+    max_line_bytes.saturating_add(1)
+}
+
+fn counted_len(chunk: &[u8]) -> u64 {
+    u64::try_from(chunk.len()).unwrap_or(u64::MAX)
+}
+
+fn exceeds_byte_limit(size: u64, max_bytes: i64) -> bool {
+    match u64::try_from(max_bytes) {
+        Ok(limit) => size > limit,
+        Err(_) => true,
+    }
+}
+
+fn exceeds_line(len: usize, max_line_bytes: i64) -> bool {
+    match i64::try_from(len) {
+        Ok(len) => len > max_line_bytes,
+        Err(_) => true,
+    }
+}
+
+/// Python `bytes.strip()` emptiness: space, tab, LF, CR, VT, and FF only.
+fn header_ascii_blank(chunk: &[u8]) -> bool {
+    chunk
+        .iter()
+        .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0B | 0x0C))
+}
+
+#[cfg(test)]
+mod read_header_tests {
+    use std::collections::BTreeSet;
+    use std::io::ErrorKind;
+    use std::path::{Path, PathBuf};
+
+    use model::canonical::SessionHeader;
+    use model::errors::{FileTooLargeError, HeaderMissingError, SchemaError};
+    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
+
+    use super::{
+        decode_json_dupaware, read_header, HeaderInput, ProcessLineError, ReadHeaderError,
+        ReaderLimits, SliceLineCursor, DEFAULT_MAX_DEPTH, DEFAULT_MAX_FILE_BYTES,
+        DEFAULT_MAX_LINE_BYTES, MAX_DUP_KEYS_PER_RECORD, UTF8_BOM,
+    };
+
+    const HEADER: &str = concat!(
+        r#"{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","#,
+        r#""created_at":"2024-02-29T00:00:00Z"}"#
+    );
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("sesslint-rx-header-{label}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("scratch");
+            Self(dir)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
+            let path = self.0.join(name);
+            std::fs::write(&path, bytes).expect("write");
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn limits_of(max_line: i64, max_depth: i64, max_file: i64) -> ReaderLimits {
+        ReaderLimits::try_new(max_line, max_depth, max_file, None).expect("limits")
+    }
+
+    fn wide_limits() -> ReaderLimits {
+        limits_of(
+            DEFAULT_MAX_LINE_BYTES,
+            DEFAULT_MAX_DEPTH,
+            DEFAULT_MAX_FILE_BYTES,
+        )
+    }
+
+    fn slash_path(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn probe_bytes(
+        bytes: &[u8],
+        name: Option<&str>,
+        limits: &ReaderLimits,
+    ) -> Result<SessionHeader, ReadHeaderError> {
+        let mut cursor = SliceLineCursor::new(bytes);
+        read_header(
+            HeaderInput::Stream {
+                source: &mut cursor,
+                name,
+            },
+            limits,
+            None,
+            None,
+        )
+    }
+
+    fn probe_err(bytes: &[u8], limits: &ReaderLimits) -> ReadHeaderError {
+        probe_bytes(bytes, None, limits).expect_err("header error")
+    }
+
+    fn assert_header(header: &SessionHeader, session_id: &str) {
+        assert_eq!(header.schema_version, "sesslint.session/v1");
+        assert_eq!(header.session_id, session_id);
+        assert_eq!(header.created_at, "2024-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn path_header_releases_the_file_and_reports_slashes() {
+        let scratch = Scratch::new("path");
+        let bytes = format!("{HEADER}\n");
+        let path = scratch.write("session.jsonl", bytes.as_bytes());
+        let limits = wide_limits();
+        let header = read_header(HeaderInput::Path(&path), &limits, None, None).expect("header");
+        assert_header(&header, "sess-synthetic");
+        assert_eq!(header.version, None);
+        std::fs::remove_file(&path).expect("closed");
+
+        let empty = scratch.write("empty.jsonl", b"");
+        let err = read_header(HeaderInput::Path(&empty), &limits, None, None).expect_err("empty");
+        let shown = slash_path(&empty);
+        assert_eq!(
+            err.to_string(),
+            format!("Session file is empty or contains no header: {shown}")
+        );
+        assert!(!err.to_string().contains('\\'));
+        match err {
+            ReadHeaderError::HeaderMissing(inner) => {
+                assert_eq!(inner.code(), HeaderMissingError::DEFAULT_CODE);
+            }
+            other => panic!("expected header missing, got {other:?}"),
+        }
+        std::fs::remove_file(&empty).expect("closed after header missing");
+    }
+
+    #[test]
+    fn missing_path_and_directory_are_not_header_missing() {
+        let limits = wide_limits();
+        let missing = Path::new("synthetic\\missing-session.jsonl");
+        let missing_err =
+            read_header(HeaderInput::Path(missing), &limits, None, None).expect_err("missing");
+        assert_eq!(
+            missing_err.to_string(),
+            "Session file not found: synthetic/missing-session.jsonl"
+        );
+        assert!(matches!(
+            missing_err,
+            ReadHeaderError::Io(ref err) if err.kind() == ErrorKind::NotFound
+        ));
+        assert!(!matches!(missing_err, ReadHeaderError::HeaderMissing(_)));
+
+        let scratch = Scratch::new("dir");
+        let dir_err =
+            read_header(HeaderInput::Path(scratch.path()), &limits, None, None).expect_err("dir");
+        assert_eq!(
+            dir_err.to_string(),
+            format!(
+                "Expected session file, got directory: {}",
+                slash_path(scratch.path())
+            )
+        );
+        assert!(matches!(
+            dir_err,
+            ReadHeaderError::Io(ref err) if err.kind() == ErrorKind::IsADirectory
+        ));
+        assert!(!matches!(dir_err, ReadHeaderError::HeaderMissing(_)));
+    }
+
+    #[test]
+    fn stat_size_uses_the_file_sentence() {
+        let scratch = Scratch::new("stat");
+        let big = scratch.write("big.jsonl", b"hello");
+        let limits = limits_of(100, 10, 4);
+        let err = read_header(HeaderInput::Path(&big), &limits, None, None).expect_err("big");
+        assert_eq!(
+            err.to_string(),
+            "File size 5 bytes exceeds maximum limit (4 bytes); split file into smaller sessions"
+        );
+        assert!(!err.to_string().contains("Stream exceeded"));
+        match err {
+            ReadHeaderError::FileTooLarge(inner) => {
+                assert_eq!(inner.code(), FileTooLargeError::DEFAULT_CODE);
+            }
+            other => panic!("expected file limit, got {other:?}"),
+        }
+
+        let exact_bytes = format!("{HEADER}\n");
+        let exact = scratch.write("exact.jsonl", exact_bytes.as_bytes());
+        let max = i64::try_from(exact_bytes.len()).expect("len");
+        let exact_limits = limits_of(DEFAULT_MAX_LINE_BYTES, DEFAULT_MAX_DEPTH, max);
+        let header =
+            read_header(HeaderInput::Path(&exact), &exact_limits, None, None).expect("exact");
+        assert_header(&header, "sess-synthetic");
+        let small = limits_of(DEFAULT_MAX_LINE_BYTES, DEFAULT_MAX_DEPTH, max - 1);
+        let too_small =
+            read_header(HeaderInput::Path(&exact), &small, None, None).expect_err("one under");
+        assert_eq!(
+            too_small.to_string(),
+            format!(
+                "File size {max} bytes exceeds maximum limit ({} bytes); \
+                 split file into smaller sessions",
+                max - 1
+            )
+        );
+    }
+
+    #[test]
+    fn stream_name_and_running_total_use_the_stream_sentence() {
+        let limits = wide_limits();
+        let default_name = probe_bytes(b"", None, &limits).expect_err("default");
+        assert_eq!(
+            default_name.to_string(),
+            "Session file is empty or contains no header: <stream>"
+        );
+        let slashed = probe_bytes(b"", Some("dir\\file.jsonl"), &limits).expect_err("name");
+        assert_eq!(
+            slashed.to_string(),
+            "Session file is empty or contains no header: dir/file.jsonl"
+        );
+        let empty_name = probe_bytes(b"", Some(""), &limits).expect_err("empty name");
+        assert_eq!(
+            empty_name.to_string(),
+            "Session file is empty or contains no header: "
+        );
+
+        let header_bytes = HEADER.as_bytes();
+        let max = i64::try_from(header_bytes.len()).expect("len");
+        let exact = limits_of(DEFAULT_MAX_LINE_BYTES, DEFAULT_MAX_DEPTH, max);
+        let header = probe_bytes(header_bytes, None, &exact).expect("exact stream");
+        assert_header(&header, "sess-synthetic");
+        let small = limits_of(DEFAULT_MAX_LINE_BYTES, DEFAULT_MAX_DEPTH, max - 1);
+        let err = probe_err(header_bytes, &small);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Stream exceeded maximum file size limit ({} bytes); \
+                 split file into smaller sessions",
+                max - 1
+            )
+        );
+        assert!(matches!(err, ReadHeaderError::FileTooLarge(_)));
+
+        let crossed = limits_of(100, 10, 4);
+        let blank_total = probe_err(b" \n \n\n", &crossed);
+        assert_eq!(
+            blank_total.to_string(),
+            "Stream exceeded maximum file size limit (4 bytes); split file into smaller sessions"
+        );
+        let allowed = limits_of(100, 10, 5);
+        assert_eq!(
+            probe_err(b" \n \n\n", &allowed).to_string(),
+            "Session file is empty or contains no header: <stream>"
+        );
+    }
+
+    #[test]
+    fn bom_is_counted_then_stripped_only_on_line_one() {
+        let mut counted = UTF8_BOM.to_vec();
+        counted.extend(b" \n");
+        let err = probe_err(&counted, &limits_of(100, 10, 4));
+        assert_eq!(
+            err.to_string(),
+            "Stream exceeded maximum file size limit (4 bytes); split file into smaller sessions"
+        );
+
+        let mut stripped = UTF8_BOM.to_vec();
+        stripped.extend(b"{}");
+        let err = probe_err(&stripped, &limits_of(4, 10, 100));
+        assert_eq!(
+            err.to_string(),
+            "First record is not a session header (missing schema_version/session_id): <stream>"
+        );
+
+        let mut header = UTF8_BOM.to_vec();
+        header.extend(HEADER.as_bytes());
+        let parsed = probe_bytes(&header, None, &wide_limits()).expect("bom header");
+        assert_header(&parsed, "sess-synthetic");
+
+        let mut later = b"\n".to_vec();
+        later.extend(UTF8_BOM);
+        later.extend(HEADER.as_bytes());
+        let raw = format!("\u{feff}{HEADER}");
+        let decode =
+            decode_json_dupaware(&raw, None, MAX_DUP_KEYS_PER_RECORD).expect_err("later bom");
+        let err = probe_err(&later, &wide_limits());
+        assert_eq!(
+            err.to_string(),
+            format!("Malformed JSON on header line (line 2): {decode}")
+        );
+    }
+
+    #[test]
+    fn line_limit_is_after_bom_strip_and_before_the_blank_skip() {
+        let scratch = Scratch::new("line");
+        let path = scratch.write("long.jsonl", b"0123456789\n");
+        let limits = limits_of(8, 10, 1000);
+        let err = read_header(HeaderInput::Path(&path), &limits, None, None).expect_err("long");
+        assert_eq!(
+            err.to_string(),
+            "Header line 1 exceeds maximum line byte limit (8 bytes)"
+        );
+        assert!(matches!(err, ReadHeaderError::Schema(_)));
+        std::fs::remove_file(&path).expect("closed after schema error");
+
+        let second = probe_err(b"\n0123456789", &limits);
+        assert_eq!(
+            second.to_string(),
+            "Header line 2 exceeds maximum line byte limit (8 bytes)"
+        );
+        let exact = probe_err(b"        ", &limits);
+        assert_eq!(
+            exact.to_string(),
+            "Session file is empty or contains no header: <stream>"
+        );
+        let over = probe_err(b"         ", &limits);
+        assert_eq!(
+            over.to_string(),
+            "Header line 1 exceeds maximum line byte limit (8 bytes)"
+        );
+    }
+
+    #[test]
+    fn ascii_blank_lines_skip_and_unicode_spaces_are_stripped_for_json() {
+        let limits = wide_limits();
+        let blanks = b" \n\t\n\r\n\x0b\n\x0c";
+        assert_eq!(
+            probe_err(blanks, &limits).to_string(),
+            "Session file is empty or contains no header: <stream>"
+        );
+        let mut numbered = blanks.to_vec();
+        numbered.extend(b"\n[1]\n");
+        assert_eq!(
+            probe_err(&numbered, &limits).to_string(),
+            "Session header must be a mapping, got array on line 6"
+        );
+
+        let file_sep = probe_err(&[0x1C], &limits);
+        assert_eq!(
+            file_sep.to_string(),
+            "Malformed JSON on header line (line 1): Expecting value"
+        );
+        assert!(!file_sep.to_string().contains("no header"));
+
+        let mut lead = vec![0x1C];
+        lead.extend(HEADER.as_bytes());
+        lead.extend([0xC2, 0xA0]);
+        let header = probe_bytes(&lead, None, &limits).expect("unicode strip");
+        assert_header(&header, "sess-synthetic");
+
+        let padded = format!(" \t{HEADER}\r\n");
+        let padded_header = probe_bytes(padded.as_bytes(), None, &limits).expect("ascii pad");
+        assert_header(&padded_header, "sess-synthetic");
+    }
+
+    #[test]
+    fn nul_utf8_recursion_and_malformed_json_use_pin_sentences() {
+        let limits = wide_limits();
+        assert_eq!(
+            probe_err(b"\n\xff\x00", &limits).to_string(),
+            "Forbidden NUL byte in header line 2"
+        );
+        assert_eq!(
+            probe_err(b"\xff", &limits).to_string(),
+            "Invalid UTF-8 encoding in header line 1"
+        );
+
+        let too_deep = format!("{}{}", "[".repeat(1001), "]".repeat(1001));
+        assert_eq!(
+            probe_err(too_deep.as_bytes(), &limits).to_string(),
+            "Header nesting depth exceeds recursion limit on line 1"
+        );
+
+        let raw = "{marker-synthetic";
+        let decode = decode_json_dupaware(raw, None, MAX_DUP_KEYS_PER_RECORD).expect_err("decode");
+        let err = probe_err(raw.as_bytes(), &limits);
+        assert_eq!(
+            err.to_string(),
+            format!("Malformed JSON on header line (line 1): {decode}")
+        );
+        assert!(!err.to_string().contains("marker-synthetic"));
+    }
+
+    #[test]
+    fn non_objects_name_the_rust_kind() {
+        let limits = wide_limits();
+        let cases: &[(&[u8], &str)] = &[
+            (b"[]", "array"),
+            (br#""sess-synthetic""#, "string"),
+            (b"0", "number"),
+            (b"true", "bool"),
+            (b"null", "null"),
+        ];
+        for (bytes, kind) in cases {
+            let err = probe_err(bytes, &limits);
+            let text = err.to_string();
+            assert_eq!(
+                text,
+                format!("Session header must be a mapping, got {kind} on line 1")
+            );
+            assert!(!text.contains("got list"));
+            assert!(!text.contains("got dict"));
+            assert!(!text.contains("got str "));
+            assert!(!text.contains("got NoneType"));
+            assert!(!text.contains("got int"));
+            assert!(!text.contains("got float"));
+            match err {
+                ReadHeaderError::Schema(inner) => {
+                    assert_eq!(inner.code(), SchemaError::DEFAULT_CODE);
+                }
+                other => panic!("expected schema, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn identity_depth_and_parser_errors_stay_distinct() {
+        let limits = wide_limits();
+        let neither = r#"{"created_at":"2024-02-29T00:00:00Z"}"#;
+        let missing = probe_err(neither.as_bytes(), &limits);
+        assert_eq!(
+            missing.to_string(),
+            "First record is not a session header (missing schema_version/session_id): <stream>"
+        );
+        assert!(matches!(missing, ReadHeaderError::HeaderMissing(_)));
+
+        let only_version = r#"{"schema_version":"sesslint.session/v1"}"#;
+        let schema = probe_err(only_version.as_bytes(), &limits);
+        assert_eq!(
+            schema.to_string(),
+            "Missing required header field 'session_id'"
+        );
+        assert!(matches!(schema, ReadHeaderError::Schema(_)));
+
+        let only_id = r#"{"session_id":"sess-synthetic"}"#;
+        assert_eq!(
+            probe_err(only_id.as_bytes(), &limits).to_string(),
+            "Missing required field 'schema_version' in session header"
+        );
+
+        let bad_version = concat!(
+            r#"{"schema_version":"sesslint.session/v0","session_id":"sess-synthetic","#,
+            r#""created_at":"2024-02-29T00:00:00Z"}"#
+        );
+        assert_eq!(
+            probe_err(bad_version.as_bytes(), &limits).to_string(),
+            "Unsupported schema version 'sesslint.session/v0', expected 'sesslint.session/v1' (code: VERSION / SL301)"
+        );
+        let unknown = concat!(
+            r#"{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","#,
+            r#""created_at":"2024-02-29T00:00:00Z","extra":1}"#
+        );
+        assert_eq!(
+            probe_err(unknown.as_bytes(), &limits).to_string(),
+            "Unknown field 'extra' in session header (code: UNKNOWN_FIELD / SL302)"
+        );
+
+        let nested = concat!(
+            r#"{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","#,
+            r#""created_at":"2024-02-29T00:00:00Z","metadata":{}}"#
+        );
+        let shallow = limits_of(DEFAULT_MAX_LINE_BYTES, 1, DEFAULT_MAX_FILE_BYTES);
+        assert_eq!(
+            probe_err(nested.as_bytes(), &shallow).to_string(),
+            "Header nesting depth exceeds limit of 1 on line 1"
+        );
+        let deep_enough = limits_of(DEFAULT_MAX_LINE_BYTES, 2, DEFAULT_MAX_FILE_BYTES);
+        let nested_header = probe_bytes(nested.as_bytes(), None, &deep_enough).expect("depth 2");
+        assert_header(&nested_header, "sess-synthetic");
+
+        let titled = concat!(
+            r#"{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","#,
+            r#""created_at":"2024-02-29T00:00:00Z","title":"{{{{"}"#
+        );
+        let titled_header = probe_bytes(titled.as_bytes(), None, &shallow).expect("braces");
+        assert_eq!(titled_header.title.as_deref(), Some("{{{{"));
+    }
+
+    #[test]
+    fn duplicate_keys_without_a_sink_continue() {
+        let limits = wide_limits();
+        let json = concat!(
+            r#"{"schema_version":"sesslint.session/v1","session_id":"sess-first","#,
+            r#""session_id":"sess-synthetic","created_at":"2024-02-29T00:00:00Z"}"#
+        );
+        let header = probe_bytes(json.as_bytes(), None, &limits).expect("last id");
+        assert_header(&header, "sess-synthetic");
+        assert_eq!(
+            probe_err(br#"[{"a":1,"a":2}]"#, &limits).to_string(),
+            "Session header must be a mapping, got array on line 1"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_sink_is_the_fingerprint_gap() {
+        let json = concat!(
+            r#"{"schema_version":"sesslint.session/v1","session_id":"sess-first","#,
+            r#""session_id":"sess-synthetic","created_at":"2024-02-29T00:00:00Z"}"#
+        );
+        let limits = wide_limits();
+        let mut sink = Vec::new();
+        let mut keys = BTreeSet::new();
+        keys.insert(String::from("session_id"));
+        let mut cursor = SliceLineCursor::new(json.as_bytes());
+        let err = read_header(
+            HeaderInput::Stream {
+                source: &mut cursor,
+                name: None,
+            },
+            &limits,
+            Some(&mut sink),
+            Some(&keys),
+        )
+        .expect_err("fingerprint");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(matches!(err, ReadHeaderError::Finding(_)));
+        assert!(sink.is_empty());
+        assert!(!err.to_string().contains("Duplicate JSON key"));
+        assert_ne!(err.to_string().len(), 16);
+    }
+
+    #[test]
+    fn integers_outside_i64_stay_integer_range() {
+        let limits = wide_limits();
+        let max_text = with_version("9223372036854775807");
+        let max_header = probe_bytes(max_text.as_bytes(), None, &limits).expect("max");
+        assert_eq!(max_header.version, Some(i64::MAX));
+        let min_text = with_version("-9223372036854775808");
+        let min_header = probe_bytes(min_text.as_bytes(), None, &limits).expect("min");
+        assert_eq!(min_header.version, Some(i64::MIN));
+        for token in ["9223372036854775808", "-9223372036854775809"] {
+            let err = probe_err(with_version(token).as_bytes(), &limits);
+            assert!(matches!(err, ReadHeaderError::IntegerRange));
+            assert_eq!(err.to_string(), ProcessLineError::IntegerRange.to_string());
+            assert_eq!(err.to_string(), "JSON integer is outside i64");
+            assert!(!err.to_string().contains(token));
+        }
+    }
+
+    #[test]
+    fn the_probe_stops_at_the_first_header_record() {
+        let limits = wide_limits();
+        let data = format!("{HEADER}\n{{\"nope\":1}}\n");
+        let mut cursor = SliceLineCursor::new(data.as_bytes());
+        let header = read_header(
+            HeaderInput::Stream {
+                source: &mut cursor,
+                name: Some("kept"),
+            },
+            &limits,
+            None,
+            None,
+        )
+        .expect("stop");
+        assert_header(&header, "sess-synthetic");
+        let rest = cursor.readline(1024).expect("rest");
+        assert_eq!(rest, b"{\"nope\":1}\n");
+
+        let skipped = format!("[1]\n{HEADER}\n");
+        assert_eq!(
+            probe_err(skipped.as_bytes(), &limits).to_string(),
+            "Session header must be a mapping, got array on line 1"
+        );
+    }
+
+    fn with_version(token: &str) -> String {
+        format!(
+            r#"{{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic","created_at":"2024-02-29T00:00:00Z","version":{token}}}"#
+        )
     }
 }
