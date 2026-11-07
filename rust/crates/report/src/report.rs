@@ -12728,3 +12728,1701 @@ mod port_1610 {
         );
     }
 }
+
+// Lines 1924–2134 of `src/sesslint/report.py`
+// @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//
+// [`get_finding_remediation`] stops at `refusal_rationale_for`.
+// [`format_finding_content_free`] calls [`minimize_path`] and then that
+// import, and does not return the finding dict. [`render_json`] stops at
+// `json.dumps` after the allowlist. This crate does not link `sesslint.repair`
+// and does not parse or emit JSON.
+
+/// Python: `REPORT_ROOT_KEYS = KNOWN_REPORT_FIELDS`.
+pub const REPORT_ROOT_KEYS: [&str; 12] = KNOWN_REPORT_FIELDS;
+
+/// Python: `REPORT_FINDING_KEYS`, source literal order.
+pub const REPORT_FINDING_KEYS: [&str; 7] = [
+    "code",
+    "severity",
+    "repairability",
+    "fingerprint",
+    "span",
+    "evidence",
+    "remediation",
+];
+
+/// Python: `REPORT_FORBIDDEN_FINDING_KEYS`.
+pub const REPORT_FORBIDDEN_FINDING_KEYS: [&str; 4] = ["text", "content", "message", "payload"];
+
+/// Qualified name of the late import inside [`get_finding_remediation`].
+pub const REFUSAL_RATIONALE_FOR: &str = "sesslint.repair.refusals.refusal_rationale_for";
+
+/// Qualified name of the late call inside [`render_json`].
+pub const JSON_DUMPS: &str = "json.dumps";
+
+const REPORT_CONTENT_FINDING_KEYS: [&str; 5] = [
+    "record_id",
+    "raw_content",
+    "related_ids",
+    "schema_version",
+    "source",
+];
+
+/// Failure from [`get_finding_remediation`].
+///
+/// [`Display`](fmt::Display) is
+/// `sesslint.repair.refusals.refusal_rationale_for is not available`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefusalRationaleUnavailable;
+
+impl fmt::Display for RefusalRationaleUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{REFUSAL_RATIONALE_FOR} is not available")
+    }
+}
+
+impl Error for RefusalRationaleUnavailable {}
+
+/// `json.dumps` is not available in this crate.
+///
+/// [`Display`](fmt::Display) is exactly `json.dumps is not available`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsonDumpsUnavailable;
+
+impl fmt::Display for JsonDumpsUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{JSON_DUMPS} is not available")
+    }
+}
+
+impl Error for JsonDumpsUnavailable {}
+
+/// Failure from [`format_finding_content_free`].
+///
+/// [`Self::Minimize`] is [`MinimizePathError`]. [`Self::Refusal`] is
+/// [`RefusalRationaleUnavailable`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatFindingError {
+    Minimize(MinimizePathError),
+    Refusal(RefusalRationaleUnavailable),
+}
+
+impl fmt::Display for FormatFindingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Minimize(error) => write!(formatter, "{error}"),
+            Self::Refusal(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for FormatFindingError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Minimize(error) => Some(error),
+            Self::Refusal(error) => Some(error),
+        }
+    }
+}
+
+impl From<MinimizePathError> for FormatFindingError {
+    fn from(value: MinimizePathError) -> Self {
+        Self::Minimize(value)
+    }
+}
+
+impl From<RefusalRationaleUnavailable> for FormatFindingError {
+    fn from(value: RefusalRationaleUnavailable) -> Self {
+        Self::Refusal(value)
+    }
+}
+
+/// Success value of [`format_finding_content_free`].
+///
+/// Python returns a dict. This crate does not build that dict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormattedFinding;
+
+/// Python `Report`, `Mapping`, or another object.
+///
+/// [`RenderJsonInput::Other`] carries `type(obj).__name__`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderJsonInput<'a> {
+    Report(&'a Report),
+    Mapping(&'a [(&'a str, &'a InputValue)]),
+    Other { type_name: &'a str },
+}
+
+/// Python `repro` argument of [`render_json`]: metadata or a mapping.
+///
+/// A mapping keeps insertion order. [`ReproMetadata::to_dict`] supplies the
+/// metadata key order.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RenderRepro<'a> {
+    Metadata(&'a ReproMetadata),
+    Mapping(&'a [(&'a str, &'a InputValue)]),
+}
+
+/// Failure from [`render_json`].
+///
+/// [`Display`](fmt::Display) is the Python exception text.
+/// [`Self::Dumps`] displays [`JsonDumpsUnavailable`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderJsonError {
+    /// Python `TypeError`. The string is `str(exc)`.
+    Type(String),
+    Format(FormatFindingError),
+    Operational(model::errors::OperationalError),
+    Dumps(JsonDumpsUnavailable),
+}
+
+impl fmt::Display for RenderJsonError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type(message) => formatter.write_str(message),
+            Self::Format(error) => write!(formatter, "{error}"),
+            Self::Operational(error) => write!(formatter, "{error}"),
+            Self::Dumps(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl Error for RenderJsonError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Type(_) => None,
+            Self::Format(error) => Some(error),
+            Self::Operational(error) => Some(error),
+            Self::Dumps(error) => Some(error),
+        }
+    }
+}
+
+impl From<FormatFindingError> for RenderJsonError {
+    fn from(value: FormatFindingError) -> Self {
+        Self::Format(value)
+    }
+}
+
+impl From<model::errors::OperationalError> for RenderJsonError {
+    fn from(value: model::errors::OperationalError) -> Self {
+        Self::Operational(value)
+    }
+}
+
+/// Python: `get_finding_remediation`.
+///
+/// Imports [`model::codes::Repairability`], then
+/// `sesslint.repair.refusals.refusal_rationale_for`. That module is not a
+/// dependency of this crate. Every repairability stops here. This does not
+/// call [`minimize_path`] or [`hint_path`] and does not return a recipe sentence.
+pub fn get_finding_remediation(
+    finding: &Finding,
+    home: Option<&str>,
+    for_operator: bool,
+) -> Result<String, RefusalRationaleUnavailable> {
+    let _bound = (home, for_operator);
+    match finding.repairability() {
+        model::codes::Repairability::Deterministic
+        | model::codes::Repairability::LossyExplicit
+        | model::codes::Repairability::Manual
+        | model::codes::Repairability::Unsupported => Err(RefusalRationaleUnavailable),
+    }
+}
+
+/// Python: `finding_report_sort_key = finding_sort_key`.
+///
+/// Reports use [`model::finding::finding_sort_key`] (FR-094). This is not a
+/// second ordering.
+#[must_use]
+pub fn finding_report_sort_key(finding: &Finding) -> model::finding::FindingSortKey {
+    model::finding::finding_sort_key(finding)
+}
+
+/// Python: `format_finding_content_free`.
+///
+/// Calls [`minimize_path`] first and propagates its error. A minimized string
+/// is not turned into a path or a digest. The evidence walk and `byte_offset`
+/// read run next; a bool is not an int. [`get_finding_remediation`] then stops
+/// at `refusal_rationale_for`. The dict is not returned.
+pub fn format_finding_content_free(
+    finding: &Finding,
+    include_content: bool,
+    home: Option<&str>,
+    ordinal: Option<i64>,
+) -> Result<FormattedFinding, FormatFindingError> {
+    let minimized = minimize_path(PathInput::Text(finding.source().path()), home)?;
+    let pairs = finding_evidence_pairs(finding);
+    let byte = evidence_byte_offset(&pairs);
+    let ordinal_value = ordinal.map(InputValue::int);
+    let walked = walk_evidence(&pairs, include_content, ordinal_value.as_ref());
+    let _bound = (minimized, byte, walked);
+    get_finding_remediation(finding, home, false)?;
+    Err(FormatFindingError::Refusal(RefusalRationaleUnavailable))
+}
+
+/// Python: `render_json`.
+///
+/// A value that is neither a [`Report`] nor a mapping is
+/// `Expected Report or Mapping, got {type}`. A report with findings is sorted
+/// with [`finding_report_sort_key`] and passed to [`format_finding_content_free`],
+/// which stops at [`minimize_path`] or the refusal import. A report with no
+/// findings builds the pin key order, then the allowlist. A mapping copies
+/// keys in insertion order, sets the content flags when requested, then the
+/// same allowlist. [`model::errors::OperationalError`] carries the allowlist
+/// message and nothing else in [`Display`](fmt::Display). A passing document
+/// stops at `json.dumps is not available` and does not invent JSON text.
+pub fn render_json(
+    report: RenderJsonInput<'_>,
+    include_content: bool,
+    repro: Option<RenderRepro<'_>>,
+    home: Option<&str>,
+) -> Result<String, RenderJsonError> {
+    prepare_render_json(report, include_content, repro, home)?;
+    Err(RenderJsonError::Dumps(JsonDumpsUnavailable))
+}
+
+fn prepare_render_json(
+    report: RenderJsonInput<'_>,
+    include_content: bool,
+    repro: Option<RenderRepro<'_>>,
+    home: Option<&str>,
+) -> Result<Vec<(String, RenderNode)>, RenderJsonError> {
+    let entries = match report {
+        RenderJsonInput::Report(report) => report_entries(report, include_content, repro, home)?,
+        RenderJsonInput::Mapping(pairs) => render_mapping(pairs, include_content),
+        RenderJsonInput::Other { type_name } => {
+            return Err(RenderJsonError::Type(format!(
+                "Expected Report or Mapping, got {type_name}"
+            )));
+        }
+    };
+    check_root(&entries)?;
+    check_findings(&entries, include_content)?;
+    Ok(entries)
+}
+
+fn report_entries(
+    report: &Report,
+    include_content: bool,
+    repro: Option<RenderRepro<'_>>,
+    home: Option<&str>,
+) -> Result<Vec<(String, RenderNode)>, RenderJsonError> {
+    let mut sorted = report.findings().to_vec();
+    sorted.sort_by_key(finding_report_sort_key);
+    let mut formatted = Vec::new();
+    for (index, finding) in sorted.iter().enumerate() {
+        formatted.push(format_finding_content_free(
+            finding,
+            include_content,
+            home,
+            ordinal_from_index(index),
+        )?);
+    }
+    if !formatted.is_empty() {
+        return Err(RenderJsonError::Format(FormatFindingError::Refusal(
+            RefusalRationaleUnavailable,
+        )));
+    }
+    let mut entries = vec![
+        (
+            "assurance".to_owned(),
+            RenderNode::Str(report.assurance().to_owned()),
+        ),
+        (
+            "counts".to_owned(),
+            RenderNode::Counts(report.counts().to_dict()),
+        ),
+        (
+            "coverage".to_owned(),
+            RenderNode::Coverage(report.coverage().to_dict()),
+        ),
+        ("findings".to_owned(), RenderNode::List(Vec::new())),
+        (
+            "limitation".to_owned(),
+            RenderNode::Str(report.limitation().to_owned()),
+        ),
+        (
+            "schema_version".to_owned(),
+            RenderNode::Str(report.schema_version().to_owned()),
+        ),
+        (
+            "session_id".to_owned(),
+            RenderNode::Str(report.session_id().to_owned()),
+        ),
+        (
+            "source_fingerprint".to_owned(),
+            RenderNode::Str(report.source_fingerprint().to_owned()),
+        ),
+        (
+            "tool_version".to_owned(),
+            RenderNode::Str(report.tool_version().to_owned()),
+        ),
+    ];
+    if let Some(repro) = repro {
+        entries.push(("repro".to_owned(), repro_node(repro)));
+    }
+    if include_content {
+        entries.push(("content_warning".to_owned(), RenderNode::Bool(true)));
+        entries.push(("included_content".to_owned(), RenderNode::Bool(true)));
+    }
+    Ok(entries)
+}
+
+fn render_mapping(
+    pairs: &[(&str, &InputValue)],
+    include_content: bool,
+) -> Vec<(String, RenderNode)> {
+    let mut entries = Vec::new();
+    for (key, value) in pairs {
+        upsert_root(&mut entries, (*key).to_owned(), input_to_node(value));
+    }
+    if include_content {
+        upsert_root(
+            &mut entries,
+            "content_warning".to_owned(),
+            RenderNode::Bool(true),
+        );
+        upsert_root(
+            &mut entries,
+            "included_content".to_owned(),
+            RenderNode::Bool(true),
+        );
+    }
+    entries
+}
+
+fn repro_node(repro: RenderRepro<'_>) -> RenderNode {
+    match repro {
+        RenderRepro::Metadata(metadata) => repro_metadata_node(metadata),
+        RenderRepro::Mapping(pairs) => repro_mapping_node(pairs),
+    }
+}
+
+fn repro_metadata_node(metadata: &ReproMetadata) -> RenderNode {
+    let mut map = Vec::new();
+    for (key, entry) in metadata.to_dict().entries() {
+        map.push((RenderKey::Text(key.to_owned()), repro_entry_node(entry)));
+    }
+    RenderNode::Map(map)
+}
+
+fn repro_mapping_node(pairs: &[(&str, &InputValue)]) -> RenderNode {
+    let mut map = Vec::new();
+    for (key, value) in pairs {
+        upsert(
+            &mut map,
+            RenderKey::Text((*key).to_owned()),
+            input_to_node(value),
+        );
+    }
+    RenderNode::Map(map)
+}
+
+fn repro_entry_node(entry: ReproEntry) -> RenderNode {
+    match entry {
+        ReproEntry::Text(text) => RenderNode::Str(text),
+        ReproEntry::Map(entries) => RenderNode::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (RenderKey::Text(key), RenderNode::Str(value)))
+                .collect(),
+        ),
+        ReproEntry::Any(entries) => RenderNode::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (RenderKey::Text(key), repro_value_node(value)))
+                .collect(),
+        ),
+    }
+}
+
+fn repro_value_node(value: ReproValue) -> RenderNode {
+    match value {
+        ReproValue::Null => RenderNode::None,
+        ReproValue::Float(number) => RenderNode::Float(number),
+        ReproValue::Text(text) => RenderNode::Str(text),
+    }
+}
+
+fn check_root(entries: &[(String, RenderNode)]) -> Result<(), model::errors::OperationalError> {
+    let mut extra = Vec::new();
+    for (key, _) in entries {
+        if REPORT_ROOT_KEYS.contains(&key.as_str()) || extra.iter().any(|item| item == key) {
+            continue;
+        }
+        extra.push(key.clone());
+    }
+    if extra.is_empty() {
+        return Ok(());
+    }
+    extra.sort();
+    let refs = str_refs(&extra);
+    Err(model::errors::OperationalError::new(format!(
+        "Renderer root key allowlist violation: unauthorized fields {}",
+        python_str_list(&refs)
+    )))
+}
+
+fn check_findings(
+    entries: &[(String, RenderNode)],
+    include_content: bool,
+) -> Result<(), model::errors::OperationalError> {
+    let Some(findings) = last_root(entries, "findings") else {
+        return Ok(());
+    };
+    let RenderNode::List(items) = findings else {
+        return Ok(());
+    };
+    for (index, item) in items.iter().enumerate() {
+        let RenderNode::Map(map) = item else {
+            continue;
+        };
+        check_one_finding(index, map, include_content)?;
+    }
+    Ok(())
+}
+
+fn check_one_finding(
+    index: usize,
+    map: &[(RenderKey, RenderNode)],
+    include_content: bool,
+) -> Result<(), model::errors::OperationalError> {
+    if !include_content {
+        let forbidden = sorted_text_keys(map, |key| REPORT_FORBIDDEN_FINDING_KEYS.contains(&key));
+        if !forbidden.is_empty() {
+            let refs = str_refs(&forbidden);
+            return Err(model::errors::OperationalError::new(format!(
+                "Renderer finding[{index}] forbidden content key violation: {}",
+                python_str_list(&refs)
+            )));
+        }
+    }
+    if let Some(extra) = unauthorized_finding_fields(map, include_content) {
+        return Err(model::errors::OperationalError::new(format!(
+            "Renderer finding[{index}] key allowlist violation: unauthorized fields {extra}"
+        )));
+    }
+    Ok(())
+}
+
+fn unauthorized_finding_fields(
+    map: &[(RenderKey, RenderNode)],
+    include_content: bool,
+) -> Option<String> {
+    let mut texts = Vec::new();
+    let mut saw_non_string = false;
+    for (key, _) in map {
+        match key {
+            RenderKey::Text(text) => {
+                if !finding_key_allowed(text, include_content) && !texts.contains(text) {
+                    texts.push(text.clone());
+                }
+            }
+            RenderKey::None | RenderKey::Bool(_) | RenderKey::Int(_) => {
+                saw_non_string = true;
+            }
+        }
+    }
+    if texts.is_empty() && !saw_non_string {
+        return None;
+    }
+    if !texts.is_empty() {
+        texts.sort();
+        let refs = str_refs(&texts);
+        return Some(python_str_list(&refs));
+    }
+    Some(non_string_key_list(map))
+}
+
+fn non_string_key_list(map: &[(RenderKey, RenderNode)]) -> String {
+    let mut rendered = Vec::new();
+    for (key, _) in map {
+        if matches!(key, RenderKey::Text(_)) {
+            continue;
+        }
+        let token = render_key_repr(key);
+        if !rendered.contains(&token) {
+            rendered.push(token);
+        }
+    }
+    rendered.sort();
+    bracket_list(&rendered)
+}
+
+fn sorted_text_keys(map: &[(RenderKey, RenderNode)], keep: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut names = Vec::new();
+    for (key, _) in map {
+        if let RenderKey::Text(text) = key {
+            if keep(text) && !names.iter().any(|item| item == text) {
+                names.push(text.clone());
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
+fn finding_key_allowed(key: &str, include_content: bool) -> bool {
+    if REPORT_FINDING_KEYS.contains(&key) {
+        return true;
+    }
+    include_content
+        && (REPORT_FORBIDDEN_FINDING_KEYS.contains(&key)
+            || REPORT_CONTENT_FINDING_KEYS.contains(&key))
+}
+
+fn str_refs(names: &[String]) -> Vec<&str> {
+    names.iter().map(String::as_str).collect()
+}
+
+fn bracket_list(items: &[String]) -> String {
+    let mut out = String::from("[");
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(item);
+    }
+    out.push(']');
+    out
+}
+
+fn render_key_repr(key: &RenderKey) -> String {
+    match key {
+        RenderKey::None => "None".to_owned(),
+        RenderKey::Bool(true) => "True".to_owned(),
+        RenderKey::Bool(false) => "False".to_owned(),
+        RenderKey::Int(number) => number.to_string(),
+        RenderKey::Text(text) => python_str_repr(text),
+    }
+}
+
+fn last_root<'a>(entries: &'a [(String, RenderNode)], name: &str) -> Option<&'a RenderNode> {
+    entries
+        .iter()
+        .rev()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value)
+}
+
+fn ordinal_from_index(index: usize) -> Option<i64> {
+    i64::try_from(index.checked_add(1)?).ok()
+}
+
+fn upsert_root(entries: &mut Vec<(String, RenderNode)>, key: String, value: RenderNode) {
+    if let Some(slot) = entries.iter_mut().find(|(existing, _)| existing == &key) {
+        slot.1 = value;
+    } else {
+        entries.push((key, value));
+    }
+}
+
+fn upsert(map: &mut Vec<(RenderKey, RenderNode)>, key: RenderKey, value: RenderNode) {
+    if let Some(slot) = map.iter_mut().find(|(existing, _)| existing == &key) {
+        slot.1 = value;
+    } else {
+        map.push((key, value));
+    }
+}
+
+fn input_to_node(value: &InputValue) -> RenderNode {
+    match value {
+        InputValue::None => RenderNode::None,
+        InputValue::Bool(flag) => RenderNode::Bool(*flag),
+        InputValue::Int(number) => RenderNode::Int(*number),
+        InputValue::Str(text) => RenderNode::Str(text.clone()),
+        InputValue::List(items) => RenderNode::List(items.iter().map(input_to_node).collect()),
+        InputValue::Tuple(items) => RenderNode::Tuple(items.iter().map(input_to_node).collect()),
+        InputValue::Set(_) => RenderNode::Other {
+            type_name: "set".to_owned(),
+        },
+        InputValue::FrozenSet(_) => RenderNode::Other {
+            type_name: "frozenset".to_owned(),
+        },
+        InputValue::Dict(entries) => dict_node(entries),
+        InputValue::Other { type_name, .. } => RenderNode::Other {
+            type_name: type_name.clone(),
+        },
+    }
+}
+
+fn dict_node(entries: &[(InputKey, InputValue)]) -> RenderNode {
+    let mut map = Vec::new();
+    for (key, value) in entries {
+        upsert(&mut map, render_key(key), input_to_node(value));
+    }
+    RenderNode::Map(map)
+}
+
+fn render_key(key: &InputKey) -> RenderKey {
+    match key {
+        InputKey::None => RenderKey::None,
+        InputKey::Bool(flag) => RenderKey::Bool(*flag),
+        InputKey::Int(number) => RenderKey::Int(*number),
+        InputKey::Str(text) => RenderKey::Text(text.clone()),
+    }
+}
+
+/// One evidence value the content-free walk understands.
+///
+/// A bool stays distinct from an int.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EvidenceWalkValue {
+    Str(String),
+    Int(i64),
+    Bool(bool),
+    Other,
+}
+
+/// Python evidence loop inside `format_finding_content_free`.
+///
+/// When `include_content` is false, `content`, `text`, `payload`, `message`,
+/// and `prompt` are dropped. A string longer than 16 characters whose key
+/// contains `id` or `uuid` becomes [`short_hash`] of length 8. Input order is
+/// kept. `ordinal` is appended only when it is an int and the key is absent.
+fn walk_evidence(
+    entries: &[(String, EvidenceWalkValue)],
+    include_content: bool,
+    ordinal: Option<&InputValue>,
+) -> Vec<(String, EvidenceWalkValue)> {
+    let mut walked = Vec::new();
+    for (key, value) in entries {
+        if !include_content && dropped_evidence_key(key) {
+            continue;
+        }
+        walked.push((key.clone(), stored_evidence(key, value, include_content)));
+    }
+    if let Some(InputValue::Int(number)) = ordinal {
+        if !walked.iter().any(|(key, _)| key == "ordinal") {
+            walked.push(("ordinal".to_owned(), EvidenceWalkValue::Int(*number)));
+        }
+    }
+    walked
+}
+
+fn stored_evidence(key: &str, value: &EvidenceWalkValue, include_content: bool) -> EvidenceWalkValue {
+    match value {
+        EvidenceWalkValue::Str(text) if !include_content && hashes_identifier(key, text) => {
+            EvidenceWalkValue::Str(short_hash(text, 8))
+        }
+        other => other.clone(),
+    }
+}
+
+fn dropped_evidence_key(key: &str) -> bool {
+    matches!(key, "content" | "text" | "payload" | "message" | "prompt")
+}
+
+fn hashes_identifier(key: &str, text: &str) -> bool {
+    if text.chars().count() <= 16 {
+        return false;
+    }
+    let lower = key.to_lowercase();
+    lower.contains("id") || lower.contains("uuid")
+}
+
+/// Python `byte_offset` / `byte` read. A bool is not an int. Empty evidence is absent.
+fn evidence_byte_offset(entries: &[(String, EvidenceWalkValue)]) -> Option<i64> {
+    if entries.is_empty() {
+        return None;
+    }
+    let value = lookup_last(entries, "byte_offset").or_else(|| lookup_last(entries, "byte"))?;
+    match value {
+        EvidenceWalkValue::Int(number) if *number >= 0 => Some(*number),
+        _ => None,
+    }
+}
+
+fn lookup_last<'a>(
+    entries: &'a [(String, EvidenceWalkValue)],
+    key: &str,
+) -> Option<&'a EvidenceWalkValue> {
+    entries
+        .iter()
+        .rev()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value)
+}
+
+fn finding_evidence_pairs(finding: &Finding) -> Vec<(String, EvidenceWalkValue)> {
+    let Some(evidence) = finding.evidence() else {
+        return Vec::new();
+    };
+    if !evidence.is_map() {
+        return Vec::new();
+    }
+    for (key, value) in finding.to_dict() {
+        if key != "evidence" {
+            continue;
+        }
+        let DictValue::Map(entries) = value else {
+            return Vec::new();
+        };
+        if entries.is_empty() {
+            return Vec::new();
+        }
+        return entries
+            .into_iter()
+            .map(|(name, child)| (name, dict_value_to_walk(child)))
+            .collect();
+    }
+    Vec::new()
+}
+
+fn dict_value_to_walk(value: DictValue) -> EvidenceWalkValue {
+    match value {
+        DictValue::Str(text) => EvidenceWalkValue::Str(text),
+        DictValue::Int(number) => EvidenceWalkValue::Int(number),
+        DictValue::Bool(flag) => EvidenceWalkValue::Bool(flag),
+        DictValue::None
+        | DictValue::Bytes(_)
+        | DictValue::List(_)
+        | DictValue::Tuple(_)
+        | DictValue::Set(_)
+        | DictValue::FrozenSet(_)
+        | DictValue::Map(_) => EvidenceWalkValue::Other,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RenderKey {
+    None,
+    Bool(bool),
+    Int(i64),
+    Text(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum RenderNode {
+    None,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    List(Vec<RenderNode>),
+    Tuple(Vec<RenderNode>),
+    Map(Vec<(RenderKey, RenderNode)>),
+    Counts(CountsDict),
+    Coverage(CoverageDict),
+    Other { type_name: String },
+}
+
+#[cfg(test)]
+mod port_1924 {
+    use super::{
+        evidence_byte_offset, finding_evidence_pairs, finding_report_sort_key,
+        format_finding_content_free, get_finding_remediation, ordinal_from_index,
+        prepare_render_json, render_json, walk_evidence, CountKey, CountValue, Counts, CountsInput,
+        Coverage, CoverageInput, EvidenceWalkValue, FindingElem, FindingsInput, FormatFindingError,
+        HomeDirectoryError, InputKey, InputValue, JsonDumpsUnavailable, KNOWN_REPORT_FIELDS,
+        MinimizePathError, RefusalRationaleUnavailable, RenderJsonError, RenderJsonInput, RenderKey,
+        RenderNode, RenderRepro, Report, ReportParts, ReproMetadata, ReproValue, SkipSeq, JSON_DUMPS,
+        REFUSAL_RATIONALE_FOR, REPORT_FINDING_KEYS, REPORT_FORBIDDEN_FINDING_KEYS, REPORT_ROOT_KEYS,
+        REPORT_SCHEMA_VERSION,
+    };
+    use model::codes::{Repairability, Severity, SL001};
+    use model::finding::{
+        sort_findings, Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION,
+    };
+
+    const HOME: &str = "C:/SyntheticHome";
+    const REFUSAL: &str = "sesslint.repair.refusals.refusal_rationale_for is not available";
+    const DUMPS: &str = "json.dumps is not available";
+    const SHA1: &str = "hashlib.sha1 is not available";
+    const PIN: [&str; 9] = [
+        "assurance",
+        "counts",
+        "coverage",
+        "findings",
+        "limitation",
+        "schema_version",
+        "session_id",
+        "source_fingerprint",
+        "tool_version",
+    ];
+
+    fn make_finding(path: &str, repairability: Repairability, evidence: PyValue) -> Finding {
+        let source = match SourceRef::try_new(path, Some(SourceLine::Int(1)), None) {
+            Ok(source) => source,
+            Err(error) => panic!("source rejected: {error}"),
+        };
+        match Finding::try_new(FindingInput {
+            code: PyValue::string(SL001),
+            severity: PyValue::severity(Severity::Error),
+            repairability: PyValue::repairability(repairability),
+            message: PyValue::string("synthetic marker"),
+            source: PyValue::source(source),
+            related_ids: PyValue::tuple(Vec::new()),
+            fingerprint: PyValue::string("0123456789abcdef"),
+            schema_version: PyValue::string(SCHEMA_VERSION),
+            message_template: PyValue::None,
+            evidence,
+        }) {
+            Ok(finding) => finding,
+            Err(error) => panic!("finding rejected: {error}"),
+        }
+    }
+
+    fn plain_finding(path: &str) -> Finding {
+        make_finding(path, Repairability::Manual, PyValue::None)
+    }
+
+    fn counts_for(findings: &[Finding]) -> Counts {
+        let mut severity = [0_i64; 4];
+        let mut code_pairs: Vec<(String, i64)> = Vec::new();
+        for finding in findings {
+            let slot = match finding.severity() {
+                Severity::Fatal => 0,
+                Severity::Error => 1,
+                Severity::Warning => 2,
+                Severity::Info => 3,
+            };
+            severity[slot] += 1;
+            let mut found = false;
+            for pair in &mut code_pairs {
+                if pair.0 == finding.code() {
+                    pair.1 += 1;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                code_pairs.push((finding.code().to_owned(), 1));
+            }
+        }
+        let by_severity = CountValue::dict(
+            ["fatal", "error", "warning", "info"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, name)| (CountKey::str_key(name), CountValue::int(severity[index])))
+                .collect(),
+        );
+        let by_code = CountValue::dict(
+            code_pairs
+                .iter()
+                .map(|(code, count)| (CountKey::str_key(code.as_str()), CountValue::int(*count)))
+                .collect(),
+        );
+        let total = match i64::try_from(findings.len()) {
+            Ok(total) => total,
+            Err(_) => panic!("synthetic finding list does not fit i64"),
+        };
+        match Counts::try_new(&by_severity, &by_code, &CountValue::int(total)) {
+            Ok(counts) => counts,
+            Err(error) => panic!("counts rejected: {error}"),
+        }
+    }
+
+    fn make_coverage() -> Coverage {
+        let adapter = InputValue::dict(vec![
+            (InputKey::str_key("id"), InputValue::str_value("canonical")),
+            (InputKey::str_key("version"), InputValue::str_value("1")),
+        ]);
+        let profile = InputValue::dict(vec![
+            (InputKey::str_key("id"), InputValue::str_value("neutral")),
+            (InputKey::str_key("version"), InputValue::str_value("1")),
+        ]);
+        match Coverage::try_new(
+            &InputValue::tuple(Vec::new()),
+            &SkipSeq::Tuple(Vec::new()),
+            &adapter,
+            &profile,
+        ) {
+            Ok(coverage) => coverage,
+            Err(error) => panic!("coverage rejected: {error}"),
+        }
+    }
+
+    fn make_report(findings: &[Finding]) -> Report {
+        let coverage = make_coverage();
+        let schema = InputValue::str_value(REPORT_SCHEMA_VERSION);
+        let session = InputValue::str_value("sess-marker");
+        let fingerprint = InputValue::str_value("fp-marker");
+        let tool = InputValue::str_value("tool-marker");
+        let assurance = InputValue::str_value("A1");
+        let limitation = InputValue::str_value("lim-marker");
+        let findings_input =
+            FindingsInput::Tuple(findings.iter().cloned().map(FindingElem::Finding).collect());
+        let counts = counts_for(findings);
+        let counts_input = CountsInput::Value(counts);
+        match Report::try_new(ReportParts {
+            schema_version: &schema,
+            session_id: &session,
+            source_fingerprint: &fingerprint,
+            tool_version: &tool,
+            findings: &findings_input,
+            counts: &counts_input,
+            assurance: &assurance,
+            limitation: &limitation,
+            coverage: CoverageInput::Value(&coverage),
+        }) {
+            Ok(report) => report,
+            Err(error) => panic!("report rejected: {error}"),
+        }
+    }
+
+    fn render_message(
+        report: RenderJsonInput<'_>,
+        include_content: bool,
+        repro: Option<RenderRepro<'_>>,
+    ) -> String {
+        match render_json(report, include_content, repro, Some(HOME)) {
+            Ok(json) => panic!("invented JSON: {json}"),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    fn root_keys(entries: &[(String, RenderNode)]) -> Vec<&str> {
+        entries.iter().map(|(key, _)| key.as_str()).collect()
+    }
+
+    fn text_at<'a>(entries: &'a [(String, RenderNode)], key: &str) -> &'a str {
+        match entries.iter().find(|(name, _)| name == key) {
+            Some((_, RenderNode::Str(text))) => text.as_str(),
+            other => panic!("{key} missing: {other:?}"),
+        }
+    }
+
+    fn map_keys(node: &RenderNode) -> Vec<String> {
+        let RenderNode::Map(entries) = node else {
+            panic!("expected map, got {node:?}");
+        };
+        entries
+            .iter()
+            .map(|(key, _)| match key {
+                RenderKey::Text(text) => text.clone(),
+                other => panic!("non-text key {other:?}"),
+            })
+            .collect()
+    }
+
+    fn walk_keys(entries: &[(String, EvidenceWalkValue)]) -> Vec<&str> {
+        entries.iter().map(|(key, _)| key.as_str()).collect()
+    }
+
+    fn pair(key: &str, value: EvidenceWalkValue) -> (String, EvidenceWalkValue) {
+        (key.to_owned(), value)
+    }
+
+    #[test]
+    fn report_keys_alias_the_known_fields_and_the_sort() {
+        assert_eq!(REPORT_ROOT_KEYS, KNOWN_REPORT_FIELDS);
+        assert_eq!(
+            REPORT_FINDING_KEYS,
+            [
+                "code",
+                "severity",
+                "repairability",
+                "fingerprint",
+                "span",
+                "evidence",
+                "remediation",
+            ]
+        );
+        assert_eq!(
+            REPORT_FORBIDDEN_FINDING_KEYS,
+            ["text", "content", "message", "payload"]
+        );
+        assert!(REPORT_ROOT_KEYS.contains(&"content_warning"));
+        assert!(REPORT_ROOT_KEYS.contains(&"included_content"));
+        let later = plain_finding("z.jsonl");
+        let earlier = plain_finding("a.jsonl");
+        let input = [later, earlier];
+        assert_eq!(
+            finding_report_sort_key(&input[0]),
+            model::finding::finding_sort_key(&input[0])
+        );
+        let mut sorted = input.clone();
+        sorted.sort_by_key(finding_report_sort_key);
+        let sorted_vec = sort_findings(&input);
+        assert_eq!(sorted.as_slice(), sorted_vec.as_slice());
+        assert_eq!(sorted[0].source().path(), "a.jsonl");
+        assert_eq!(ordinal_from_index(0), Some(1));
+        assert_eq!(ordinal_from_index(4), Some(5));
+    }
+
+    #[test]
+    fn remediation_stops_at_the_refusal_import() {
+        assert_eq!(RefusalRationaleUnavailable.to_string(), REFUSAL);
+        assert_eq!(
+            format!("{REFUSAL_RATIONALE_FOR} is not available"),
+            REFUSAL
+        );
+        for repairability in Repairability::ALL {
+            let finding = make_finding("file.jsonl", repairability, PyValue::None);
+            for for_operator in [false, true] {
+                match get_finding_remediation(&finding, Some(HOME), for_operator) {
+                    Ok(text) => panic!("recipe returned: {text}"),
+                    Err(error) => {
+                        assert_eq!(error.to_string(), REFUSAL);
+                        assert!(!error.to_string().contains("recipe"));
+                        assert!(!error.to_string().contains("sesslint repair"));
+                        assert!(!error.to_string().contains("file.jsonl"));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn format_propagates_minimize_and_then_stops() {
+        let nested = plain_finding("sub/a-early.jsonl");
+        match format_finding_content_free(&nested, false, Some(HOME), Some(1)) {
+            Ok(formatted) => panic!("returned a finding dict: {formatted:?}"),
+            Err(FormatFindingError::Minimize(error)) => {
+                assert_eq!(error.to_string(), SHA1);
+                assert!(!error.to_string().contains(".._"));
+            }
+            Err(FormatFindingError::Refusal(error)) => {
+                panic!("skipped minimize_path: {error}");
+            }
+        }
+        let simple = plain_finding("file.jsonl");
+        match format_finding_content_free(&simple, true, Some(HOME), None) {
+            Ok(formatted) => panic!("returned a finding dict: {formatted:?}"),
+            Err(error) => {
+                assert_eq!(error.to_string(), REFUSAL);
+                assert!(!error.to_string().contains("file.jsonl"));
+            }
+        }
+        let outside = plain_finding("C:/Other/dir/file.jsonl");
+        match format_finding_content_free(&outside, false, Some(HOME), None) {
+            Err(FormatFindingError::Minimize(error)) => assert_eq!(error.to_string(), SHA1),
+            other => panic!("expected sha1, got {other:?}"),
+        }
+        let home_error = FormatFindingError::Minimize(MinimizePathError::Home(HomeDirectoryError));
+        assert_eq!(home_error.to_string(), "Could not determine home directory.");
+        let evidence = PyValue::map(vec![
+            (
+                PyValue::string("byte_offset"),
+                PyValue::bool_value(true),
+            ),
+            (PyValue::string("byte"), PyValue::int(4)),
+            (
+                PyValue::string("session_id"),
+                PyValue::string("abcdefghijklmnopq"),
+            ),
+        ]);
+        let flagged = make_finding("file.jsonl", Repairability::Deterministic, evidence);
+        assert_eq!(
+            evidence_byte_offset(&finding_evidence_pairs(&flagged)),
+            None
+        );
+        match format_finding_content_free(&flagged, false, Some(HOME), Some(2)) {
+            Err(error) => assert_eq!(error.to_string(), REFUSAL),
+            Ok(formatted) => panic!("returned a finding dict: {formatted:?}"),
+        }
+    }
+
+    #[test]
+    fn evidence_walk_drops_hashes_and_appends_a_real_ordinal() {
+        let entries = vec![
+            pair("content", EvidenceWalkValue::Str("secret".to_owned())),
+            pair("keep", EvidenceWalkValue::Str("visible".to_owned())),
+            pair("text", EvidenceWalkValue::Int(1)),
+            pair("payload", EvidenceWalkValue::Bool(true)),
+            pair("message", EvidenceWalkValue::Other),
+            pair("prompt", EvidenceWalkValue::Str("ask".to_owned())),
+            pair("Content", EvidenceWalkValue::Str("kept-case".to_owned())),
+            pair("b", EvidenceWalkValue::Int(2)),
+            pair("a", EvidenceWalkValue::Int(3)),
+        ];
+        let walked = walk_evidence(&entries, false, Some(&InputValue::int(7)));
+        assert_eq!(
+            walk_keys(&walked),
+            ["keep", "Content", "b", "a", "ordinal"]
+        );
+        assert_eq!(walked[0].1, EvidenceWalkValue::Str("visible".to_owned()));
+        assert_eq!(walked[4].1, EvidenceWalkValue::Int(7));
+        let kept = walk_evidence(&entries, true, Some(&InputValue::int(7)));
+        assert_eq!(walk_keys(&kept)[0], "content");
+        assert!(walk_keys(&kept).contains(&"prompt"));
+        let present = vec![pair(
+            "ordinal",
+            EvidenceWalkValue::Str("stay".to_owned()),
+        )];
+        let unchanged = walk_evidence(&present, false, Some(&InputValue::int(4)));
+        assert_eq!(unchanged, present);
+        for skipped in [
+            InputValue::bool_value(true),
+            InputValue::bool_value(false),
+            InputValue::str_value("4"),
+            InputValue::None,
+        ] {
+            let without = walk_evidence(&[], false, Some(&skipped));
+            assert!(without.is_empty(), "{skipped:?}");
+        }
+        assert!(walk_evidence(&[], false, None).is_empty());
+        let zero = walk_evidence(&[], false, Some(&InputValue::int(0)));
+        assert_eq!(zero, vec![pair("ordinal", EvidenceWalkValue::Int(0))]);
+        let negative = walk_evidence(&[], false, Some(&InputValue::int(-3)));
+        assert_eq!(negative, vec![pair("ordinal", EvidenceWalkValue::Int(-3))]);
+        let short = "0123456789abcdef";
+        let long = "0123456789abcdefX";
+        let ident = vec![
+            pair("session_id", EvidenceWalkValue::Str(short.to_owned())),
+            pair("session_id", EvidenceWalkValue::Str(long.to_owned())),
+            pair("note", EvidenceWalkValue::Str(long.to_owned())),
+            pair("Session_ID", EvidenceWalkValue::Str(long.to_owned())),
+            pair("uuid", EvidenceWalkValue::Str(long.to_owned())),
+        ];
+        let hashed = walk_evidence(&ident, false, None);
+        assert_eq!(hashed[0].1, EvidenceWalkValue::Str(short.to_owned()));
+        assert_eq!(
+            hashed[1].1,
+            EvidenceWalkValue::Str(super::short_hash(long, 8))
+        );
+        assert_eq!(hashed[2].1, EvidenceWalkValue::Str(long.to_owned()));
+        assert_eq!(
+            hashed[3].1,
+            EvidenceWalkValue::Str(super::short_hash(long, 8))
+        );
+        assert_eq!(
+            hashed[4].1,
+            EvidenceWalkValue::Str(super::short_hash(long, 8))
+        );
+        assert_ne!(hashed[1].1, EvidenceWalkValue::Str(long.to_owned()));
+        let raw = walk_evidence(&ident, true, None);
+        assert_eq!(raw[1].1, EvidenceWalkValue::Str(long.to_owned()));
+        let sixteen = "é".repeat(16);
+        let seventeen = "é".repeat(17);
+        let marks = vec![
+            pair("session_id", EvidenceWalkValue::Str(sixteen.clone())),
+            pair("session_id", EvidenceWalkValue::Str(seventeen.clone())),
+        ];
+        let marked = walk_evidence(&marks, false, None);
+        assert_eq!(marked[0].1, EvidenceWalkValue::Str(sixteen));
+        assert_eq!(
+            marked[1].1,
+            EvidenceWalkValue::Str(super::short_hash(&seventeen, 8))
+        );
+    }
+
+    #[test]
+    fn byte_offset_rejects_bools_and_reads_the_fallback() {
+        assert_eq!(evidence_byte_offset(&[]), None);
+        assert_eq!(
+            evidence_byte_offset(&[pair("other", EvidenceWalkValue::Int(3))]),
+            None
+        );
+        let blocked = vec![
+            pair("byte_offset", EvidenceWalkValue::Bool(true)),
+            pair("byte", EvidenceWalkValue::Int(4)),
+        ];
+        assert_eq!(evidence_byte_offset(&blocked), None);
+        let blocked_false = vec![
+            pair("byte_offset", EvidenceWalkValue::Bool(false)),
+            pair("byte", EvidenceWalkValue::Int(4)),
+        ];
+        assert_eq!(evidence_byte_offset(&blocked_false), None);
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte", EvidenceWalkValue::Bool(true))]),
+            None
+        );
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte", EvidenceWalkValue::Bool(false))]),
+            None
+        );
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte", EvidenceWalkValue::Int(4))]),
+            Some(4)
+        );
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte_offset", EvidenceWalkValue::Int(0))]),
+            Some(0)
+        );
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte_offset", EvidenceWalkValue::Int(-1))]),
+            None
+        );
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte", EvidenceWalkValue::Int(-1))]),
+            None
+        );
+        assert_eq!(
+            evidence_byte_offset(&[pair("byte", EvidenceWalkValue::Int(0))]),
+            Some(0)
+        );
+        let last = vec![
+            pair("byte_offset", EvidenceWalkValue::Int(1)),
+            pair("byte_offset", EvidenceWalkValue::Int(5)),
+        ];
+        assert_eq!(evidence_byte_offset(&last), Some(5));
+        let last_bool = vec![
+            pair("byte_offset", EvidenceWalkValue::Int(5)),
+            pair("byte_offset", EvidenceWalkValue::Bool(true)),
+        ];
+        assert_eq!(evidence_byte_offset(&last_bool), None);
+        let from_finding = make_finding(
+            "file.jsonl",
+            Repairability::Manual,
+            PyValue::map(vec![
+                (PyValue::string("byte"), PyValue::int(4)),
+                (PyValue::string("zeta"), PyValue::int(1)),
+                (PyValue::string("alpha"), PyValue::int(2)),
+            ]),
+        );
+        let pairs = finding_evidence_pairs(&from_finding);
+        assert_eq!(evidence_byte_offset(&pairs), Some(4));
+        assert_eq!(walk_keys(&pairs), ["byte", "zeta", "alpha"]);
+        let empty = make_finding(
+            "file.jsonl",
+            Repairability::Manual,
+            PyValue::map(Vec::new()),
+        );
+        assert!(finding_evidence_pairs(&empty).is_empty());
+        assert_eq!(
+            evidence_byte_offset(&finding_evidence_pairs(&plain_finding("file.jsonl"))),
+            None
+        );
+    }
+
+    #[test]
+    fn render_sorts_findings_and_stops_before_json() {
+        assert_eq!(JsonDumpsUnavailable.to_string(), DUMPS);
+        assert_eq!(format!("{JSON_DUMPS} is not available"), DUMPS);
+        let later = plain_finding("z-later.jsonl");
+        let earlier = plain_finding("sub/a-early.jsonl");
+        let report = make_report(&[later, earlier]);
+        let message = render_message(RenderJsonInput::Report(&report), false, None);
+        assert_eq!(message, SHA1);
+        assert!(!message.contains('{'));
+        assert!(!message.contains("sess-marker"));
+        let first_ok = plain_finding("a-ok.jsonl");
+        let second_bad = plain_finding("sub/b.jsonl");
+        let reversed = make_report(&[second_bad, first_ok]);
+        assert_eq!(
+            render_message(RenderJsonInput::Report(&reversed), true, None),
+            REFUSAL
+        );
+        let only = make_report(&[plain_finding("file.jsonl")]);
+        let refusal = render_message(RenderJsonInput::Report(&only), false, None);
+        assert_eq!(refusal, REFUSAL);
+        assert_ne!(refusal, DUMPS);
+        match render_json(
+            RenderJsonInput::Other { type_name: "int" },
+            false,
+            None,
+            Some(HOME),
+        ) {
+            Err(RenderJsonError::Type(message)) => {
+                assert_eq!(message, "Expected Report or Mapping, got int");
+            }
+            other => panic!("expected TypeError, got {other:?}"),
+        }
+        assert_eq!(
+            render_message(RenderJsonInput::Other { type_name: "list" }, false, None),
+            "Expected Report or Mapping, got list"
+        );
+    }
+
+    #[test]
+    fn empty_report_uses_pin_order_then_stops_at_dumps() {
+        let report = make_report(&[]);
+        let prepared = match prepare_render_json(
+            RenderJsonInput::Report(&report),
+            false,
+            None,
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("empty report rejected: {error}"),
+        };
+        assert_eq!(root_keys(&prepared), PIN);
+        assert_eq!(text_at(&prepared, "assurance"), "A1");
+        assert_eq!(text_at(&prepared, "limitation"), "lim-marker");
+        assert_eq!(text_at(&prepared, "schema_version"), REPORT_SCHEMA_VERSION);
+        assert_eq!(text_at(&prepared, "session_id"), "sess-marker");
+        assert_eq!(text_at(&prepared, "source_fingerprint"), "fp-marker");
+        assert_eq!(text_at(&prepared, "tool_version"), "tool-marker");
+        match &prepared[1].1 {
+            RenderNode::Counts(counts) => assert_eq!(counts, &report.counts().to_dict()),
+            other => panic!("counts missing: {other:?}"),
+        }
+        match &prepared[2].1 {
+            RenderNode::Coverage(coverage) => {
+                assert_eq!(coverage, &report.coverage().to_dict());
+            }
+            other => panic!("coverage missing: {other:?}"),
+        }
+        match &prepared[3].1 {
+            RenderNode::List(items) => assert!(items.is_empty()),
+            other => panic!("findings missing: {other:?}"),
+        }
+        assert!(prepared.iter().all(|(key, _)| {
+            key != "content_warning" && key != "included_content" && key != "repro"
+        }));
+        let message = render_message(RenderJsonInput::Report(&report), false, None);
+        assert_eq!(message, DUMPS);
+        assert!(!message.contains("sess-marker"));
+        assert!(!message.contains('{'));
+        let flagged = match prepare_render_json(
+            RenderJsonInput::Report(&report),
+            true,
+            None,
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("content flags rejected: {error}"),
+        };
+        let mut expected = PIN.to_vec();
+        expected.extend(["content_warning", "included_content"]);
+        assert_eq!(root_keys(&flagged), expected);
+        assert_eq!(flagged[9].1, RenderNode::Bool(true));
+        assert_eq!(flagged[10].1, RenderNode::Bool(true));
+        assert_eq!(
+            render_message(RenderJsonInput::Report(&report), true, None),
+            DUMPS
+        );
+    }
+
+    #[test]
+    fn repro_keeps_metadata_order_or_mapping_insertion_order() {
+        let report = make_report(&[]);
+        let metadata = ReproMetadata {
+            cli_version: "test-cli".to_owned(),
+            schema_versions: vec![
+                ("z".to_owned(), "later".to_owned()),
+                ("a".to_owned(), "earlier".to_owned()),
+            ],
+            adapter: vec![
+                ("name".to_owned(), "canonical".to_owned()),
+                ("version".to_owned(), "1.0.0".to_owned()),
+            ],
+            profile: vec![
+                ("name".to_owned(), "neutral".to_owned()),
+                ("version".to_owned(), "unknown".to_owned()),
+            ],
+            detection: vec![
+                ("confidence".to_owned(), ReproValue::Null),
+                ("method".to_owned(), ReproValue::Text("unknown".to_owned())),
+            ],
+            platform: vec![
+                ("architecture".to_owned(), "synthetic".to_owned()),
+                ("os".to_owned(), "synthetic".to_owned()),
+                ("python".to_owned(), "synthetic".to_owned()),
+            ],
+        };
+        let prepared = match prepare_render_json(
+            RenderJsonInput::Report(&report),
+            true,
+            Some(RenderRepro::Metadata(&metadata)),
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("repro metadata rejected: {error}"),
+        };
+        let mut expected = PIN.to_vec();
+        expected.extend(["repro", "content_warning", "included_content"]);
+        assert_eq!(root_keys(&prepared), expected);
+        let repro = prepared
+            .iter()
+            .find(|(key, _)| key == "repro")
+            .map(|(_, node)| node)
+            .expect("repro");
+        let keys = map_keys(repro);
+        let dict_keys: Vec<&str> = metadata
+            .to_dict()
+            .entries()
+            .iter()
+            .map(|(key, _)| *key)
+            .collect();
+        assert_eq!(keys, dict_keys);
+        assert_eq!(
+            keys,
+            [
+                "adapter",
+                "cli_version",
+                "detection",
+                "platform",
+                "profile",
+                "schema_versions",
+            ]
+        );
+        match repro {
+            RenderNode::Map(entries) => match entries.iter().find(|(key, _)| {
+                matches!(key, RenderKey::Text(text) if text == "detection")
+            }) {
+                Some((_, node)) => {
+                    assert_eq!(map_keys(node), ["confidence", "method"]);
+                    match node {
+                        RenderNode::Map(children) => {
+                            assert_eq!(children[0].1, RenderNode::None);
+                        }
+                        other => panic!("detection map missing: {other:?}"),
+                    }
+                }
+                None => panic!("detection missing"),
+            },
+            other => panic!("repro map missing: {other:?}"),
+        }
+        let profile = InputValue::str_value("neutral");
+        let adapter = InputValue::str_value("canonical");
+        let pairs = [("profile", &profile), ("adapter", &adapter)];
+        let mapped = match prepare_render_json(
+            RenderJsonInput::Report(&report),
+            false,
+            Some(RenderRepro::Mapping(&pairs)),
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("repro mapping rejected: {error}"),
+        };
+        let mut mapping_keys = PIN.to_vec();
+        mapping_keys.push("repro");
+        assert_eq!(root_keys(&mapped), mapping_keys);
+        let node = mapped
+            .iter()
+            .find(|(key, _)| key == "repro")
+            .map(|(_, value)| value)
+            .expect("mapping repro");
+        assert_eq!(map_keys(node), ["profile", "adapter"]);
+        assert_eq!(
+            render_message(
+                RenderJsonInput::Report(&report),
+                false,
+                Some(RenderRepro::Mapping(&pairs)),
+            ),
+            DUMPS
+        );
+    }
+
+    #[test]
+    fn mapping_allowlist_uses_sorted_python_lists() {
+        let tool = InputValue::str_value("tool-marker");
+        let assurance = InputValue::str_value("A1");
+        let findings = InputValue::list(Vec::new());
+        let pairs = [
+            ("tool_version", &tool),
+            ("assurance", &assurance),
+            ("findings", &findings),
+        ];
+        let prepared = match prepare_render_json(
+            RenderJsonInput::Mapping(&pairs),
+            false,
+            None,
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("mapping rejected: {error}"),
+        };
+        assert_eq!(
+            root_keys(&prepared),
+            ["tool_version", "assurance", "findings"]
+        );
+        assert_eq!(text_at(&prepared, "tool_version"), "tool-marker");
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&pairs), false, None),
+            DUMPS
+        );
+        let flagged = match prepare_render_json(
+            RenderJsonInput::Mapping(&pairs),
+            true,
+            None,
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("flags rejected: {error}"),
+        };
+        assert_eq!(
+            root_keys(&flagged),
+            [
+                "tool_version",
+                "assurance",
+                "findings",
+                "content_warning",
+                "included_content",
+            ]
+        );
+        assert_eq!(flagged[3].1, RenderNode::Bool(true));
+        assert_eq!(flagged[4].1, RenderNode::Bool(true));
+        let warning = InputValue::bool_value(false);
+        let existing = [("content_warning", &warning), ("tool_version", &tool)];
+        let overwritten = match prepare_render_json(
+            RenderJsonInput::Mapping(&existing),
+            true,
+            None,
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("overwrite rejected: {error}"),
+        };
+        assert_eq!(
+            root_keys(&overwritten),
+            ["content_warning", "tool_version", "included_content"]
+        );
+        assert_eq!(overwritten[0].1, RenderNode::Bool(true));
+        let first = InputValue::str_value("one");
+        let second = InputValue::str_value("two");
+        let duplicate = [
+            ("schema_version", &first),
+            ("tool_version", &tool),
+            ("schema_version", &second),
+        ];
+        let collapsed = match prepare_render_json(
+            RenderJsonInput::Mapping(&duplicate),
+            false,
+            None,
+            Some(HOME),
+        ) {
+            Ok(entries) => entries,
+            Err(error) => panic!("duplicate key rejected: {error}"),
+        };
+        assert_eq!(root_keys(&collapsed), ["schema_version", "tool_version"]);
+        assert_eq!(text_at(&collapsed, "schema_version"), "two");
+        let zebra = InputValue::int(1);
+        let ant = InputValue::int(2);
+        let bogus = InputValue::str_value("x");
+        let extras = [("Zebra", &zebra), ("ant", &ant), ("bogus", &bogus), ("bogus", &bogus)];
+        let extra_message = render_message(RenderJsonInput::Mapping(&extras), true, None);
+        assert_eq!(
+            extra_message,
+            "Renderer root key allowlist violation: unauthorized fields ['Zebra', 'ant', 'bogus']"
+        );
+        assert!(!extra_message.contains("OPERATIONAL_ERROR"));
+        let quoted = InputValue::int(1);
+        let quote_pairs = [("a'b", &quoted)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&quote_pairs), false, None),
+            "Renderer root key allowlist violation: unauthorized fields [\"a'b\"]"
+        );
+        match render_json(RenderJsonInput::Mapping(&extras), false, None, Some(HOME)) {
+            Err(RenderJsonError::Operational(error)) => {
+                assert_eq!(error.to_string(), error.message());
+                assert_eq!(error.code(), model::errors::OperationalError::DEFAULT_CODE);
+            }
+            other => panic!("expected OperationalError, got {other:?}"),
+        }
+        let empty = match prepare_render_json(RenderJsonInput::Mapping(&[]), true, None, None) {
+            Ok(entries) => entries,
+            Err(error) => panic!("empty mapping rejected: {error}"),
+        };
+        assert_eq!(root_keys(&empty), ["content_warning", "included_content"]);
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&[]), false, None),
+            DUMPS
+        );
+    }
+
+    #[test]
+    fn finding_allowlist_checks_forbidden_keys_before_extras() {
+        let message = InputValue::str_value("x");
+        let bogus = InputValue::int(1);
+        let row = InputValue::dict(vec![
+            (InputKey::str_key("message"), message),
+            (InputKey::str_key("bogus"), bogus),
+        ]);
+        let findings = InputValue::list(vec![row]);
+        let schema = InputValue::str_value(REPORT_SCHEMA_VERSION);
+        let pairs = [("schema_version", &schema), ("findings", &findings)];
+        let forbidden = render_message(RenderJsonInput::Mapping(&pairs), false, None);
+        assert_eq!(
+            forbidden,
+            "Renderer finding[0] forbidden content key violation: ['message']"
+        );
+        assert!(!forbidden.contains("bogus"));
+        assert!(!forbidden.contains("unauthorized"));
+        let content = InputValue::str_value("c");
+        let text = InputValue::str_value("t");
+        let both = InputValue::dict(vec![
+            (InputKey::str_key("message"), InputValue::str_value("m")),
+            (InputKey::str_key("content"), content),
+            (InputKey::str_key("text"), text),
+        ]);
+        let both_findings = InputValue::list(vec![both]);
+        let both_pairs = [("findings", &both_findings)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&both_pairs), false, None),
+            "Renderer finding[0] forbidden content key violation: ['content', 'message', 'text']"
+        );
+        let record = InputValue::dict(vec![(
+            InputKey::str_key("record_id"),
+            InputValue::str_value("r"),
+        )]);
+        let record_findings = InputValue::list(vec![record]);
+        let record_pairs = [("findings", &record_findings)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&record_pairs), false, None),
+            "Renderer finding[0] key allowlist violation: unauthorized fields ['record_id']"
+        );
+        let allowed = InputValue::dict(vec![
+            (InputKey::str_key("code"), InputValue::str_value(SL001)),
+            (InputKey::str_key("message"), InputValue::str_value("m")),
+            (InputKey::str_key("record_id"), InputValue::str_value("r")),
+            (
+                InputKey::str_key("raw_content"),
+                InputValue::str_value("raw"),
+            ),
+            (
+                InputKey::str_key("related_ids"),
+                InputValue::list(Vec::new()),
+            ),
+            (
+                InputKey::str_key("schema_version"),
+                InputValue::str_value("v"),
+            ),
+            (InputKey::str_key("source"), InputValue::str_value("s")),
+            (InputKey::str_key("text"), InputValue::str_value("t")),
+            (InputKey::str_key("content"), InputValue::str_value("c")),
+            (InputKey::str_key("payload"), InputValue::str_value("p")),
+        ]);
+        let allowed_findings = InputValue::list(vec![allowed]);
+        let allowed_pairs = [("findings", &allowed_findings)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&allowed_pairs), true, None),
+            DUMPS
+        );
+        let notes = InputValue::dict(vec![(InputKey::str_key("notes"), InputValue::int(1))]);
+        let notes_findings = InputValue::list(vec![notes]);
+        let notes_pairs = [("findings", &notes_findings)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&notes_pairs), true, None),
+            "Renderer finding[0] key allowlist violation: unauthorized fields ['notes']"
+        );
+        let ok = InputValue::dict(Vec::new());
+        let bad = InputValue::dict(vec![(InputKey::str_key("bogus"), InputValue::int(1))]);
+        let indexed = InputValue::list(vec![
+            InputValue::str_value("skip"),
+            ok,
+            bad,
+        ]);
+        let indexed_pairs = [("findings", &indexed)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&indexed_pairs), false, None),
+            "Renderer finding[2] key allowlist violation: unauthorized fields ['bogus']"
+        );
+        let tuple_row = InputValue::dict(vec![(
+            InputKey::str_key("message"),
+            InputValue::str_value("hidden"),
+        )]);
+        let tuple_findings = InputValue::tuple(vec![tuple_row]);
+        let tuple_pairs = [("findings", &tuple_findings)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&tuple_pairs), false, None),
+            DUMPS
+        );
+        let flag = InputValue::int(1);
+        let bool_row = InputValue::dict(vec![(InputKey::bool_value(true), flag)]);
+        let bool_findings = InputValue::list(vec![bool_row]);
+        let bool_pairs = [("findings", &bool_findings)];
+        assert_eq!(
+            render_message(RenderJsonInput::Mapping(&bool_pairs), false, None),
+            "Renderer finding[0] key allowlist violation: unauthorized fields [True]"
+        );
+        let root_bad = InputValue::int(1);
+        let finding_bad = InputValue::dict(vec![(
+            InputKey::str_key("message"),
+            InputValue::str_value("m"),
+        )]);
+        let finding_list = InputValue::list(vec![finding_bad]);
+        let both = [("zebra", &root_bad), ("findings", &finding_list)];
+        let root_first = render_message(RenderJsonInput::Mapping(&both), false, None);
+        assert_eq!(
+            root_first,
+            "Renderer root key allowlist violation: unauthorized fields ['zebra']"
+        );
+        assert!(!root_first.contains("finding"));
+    }
+}
