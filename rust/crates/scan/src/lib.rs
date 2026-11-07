@@ -10,6 +10,6 @@ pub mod atomic;
 pub mod cache {}
 pub mod discovery;
 pub mod io;
-pub mod state_db {}
+pub mod state_db;
 pub mod scan {}
 pub mod batch {}
