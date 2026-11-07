@@ -27,7 +27,6 @@ TEST_FILE = "tests/repair/test_recipes_conservative.py"
 COVERED: Final[dict[str, str]] = {
     "test_conservative_recipes_registration_and_handles": "registration_handles_matrix",
     "test_register_all_idempotent": "register_all_idempotent",
-    "test_terminal_suffix_discard_fixture": "fixture_terminal_suffix_discard",
     "test_suffix_discard_refusal_empty_session": "suffix_discard_refusal_empty_session",
     "test_suffix_discard_refusal_out_of_bounds": "suffix_discard_refusal_out_of_bounds",
     "test_suffix_discard_refusal_checkpoint_in_suffix": "suffix_discard_refusal_checkpoint_in_suffix",

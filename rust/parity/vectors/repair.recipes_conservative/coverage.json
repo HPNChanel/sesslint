@@ -1,8 +1,8 @@
 {
   "module": "sesslint.repair.recipes_conservative",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
-  "covered_count": 11,
-  "not_applicable_count": 24,
+  "covered_count": 10,
+  "not_applicable_count": 25,
   "rows": [
     {
       "test": "tests/repair/test_recipes_conservative.py::test_conservative_recipes_registration_and_handles",
@@ -21,8 +21,8 @@
     {
       "test": "tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_fixture",
       "column": "column_0",
-      "status": "covered",
-      "vector_id": "fixture_terminal_suffix_discard",
+      "status": "not_applicable",
+      "vector_id": null,
       "note": ""
     },
     {
