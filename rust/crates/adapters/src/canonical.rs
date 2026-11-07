@@ -1,8 +1,8 @@
 //! Canonical session adapter prefix (`sesslint.session/v1`).
 //!
 //! Port of `src/sesslint/adapters/canonical.py`
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–514.
-//! Stops before `_parse_canonical_event_record` (line 517).
+//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` lines 1–928.
+//! Stops before `_canonical_source_label` (line 931).
 //!
 //! This slice declares the key sets, [`SourceMetadata`], [`EventList`],
 //! [`normalize_version`], [`detect_canonical`], [`event_to_dict`],
@@ -40,8 +40,9 @@
 //!   string key. This slice does not hold a map borrow across the call.
 //! - [`EventList`] stores [`SessionEvent`] values from `model`. It does not
 //!   port the rest of `list`.
-//! - `_NON_WS_BYTES` and the finding templates are not read here.
-//!   [`dump_canonical`] drops `_INTERNAL_SOURCE_KEYS`. [`common_event`]
+//! - `_NON_WS_BYTES` is not read here. [`parse_canonical_event_record`]
+//!   reads the finding templates. [`dump_canonical`] drops
+//!   `_INTERNAL_SOURCE_KEYS`. [`common_event`]
 //!   stores an empty `extra_fields` map. Python shares one
 //!   `MappingProxyType`.
 //! - [`Payload`] map walks expose string keys only. A non-string key is
@@ -61,6 +62,23 @@
 //!   JSONL writes the header first. The `json` document calls
 //!   [`event_to_dict`] while building `events`, before `json.dumps`.
 //!   This slice does not invent event bytes or a hash.
+//! - [`parse_canonical_event_record`] calls [`model::finding::make_finding`]
+//!   with the fingerprint omitted. The late import inside that call displays
+//!   `sesslint.determinism.canonical_json_bytes is not available`. A record
+//!   that needs the call does not become a [`SessionEvent`]. Checks that
+//!   sit before it still run, in pin order, including
+//!   [`crate::safe_value::safe_discriminator`], [`safe_type_value`], and the
+//!   stream-coordinate comparisons. [`crate::drift::DriftTracker::observe_signature`]
+//!   records a signature and does not emit SL304.
+//! - Stream coordinates are `i64`. Python `bool` is not an `i64`, so a
+//!   boolean coordinate cannot be passed. The comparisons are the pin's
+//!   `_validate_stream_coordinates` checks.
+//! - A tuple cannot be tested for set membership or rendered with `str`.
+//!   The result is `tuple items are not visible`.
+//! - `branch_id` and the other raw `str | None` fields stay strings or
+//!   `None`. Another type is not stored as a substitute string.
+//! - [`Payload`] walks still skip non-string keys, so a non-string key is
+//!   absent from `extra_fields` and from the SL302 scan.
 
 use std::error::Error;
 use std::fmt;
@@ -69,7 +87,7 @@ use model::canonical::{
     normalize_for_canonical_json, CanonicalUnavailable, MapLookup, Payload, SessionEvent,
 };
 
-use crate::safe_value::PyValue;
+use crate::safe_value::{safe_discriminator, PyValue};
 
 /// Python: `SUPPORTED_CANONICAL_VERSIONS`, source literal order.
 ///
@@ -704,9 +722,17 @@ fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
 }
 
 use model::canonical::{
-    validate_depth, validate_rfc3339_utc, ListWalk, MapWalk, Session, VALID_ACTORS,
+    validate_depth, validate_rfc3339_utc, ListWalk, MapWalk, Session, MUTATING_TOOL_NAMES,
+    READ_ONLY_TOOL_NAMES, VALID_ACTORS, VALID_KINDS, VALID_SIDE_EFFECTS,
 };
-use model::finding::enforce_content_free_text;
+use model::codes::{Repairability, Severity, SL001, SL302};
+use model::errors::FindingError;
+use model::finding::{
+    enforce_content_free_text, make_finding, Finding, MakeFindingInput, PyValue as EvidenceValue,
+    SourceLine, SourceRef,
+};
+
+use crate::drift::DriftTracker;
 
 /// Python: `_INTERNAL_SOURCE_KEYS`. Both names are removed. Order does not
 /// change the result.
@@ -1813,19 +1839,942 @@ fn timestamp_ok(ts: &str, validated_timestamps: &mut Option<&mut Vec<String>>) -
     true
 }
 
+const MSG_MISSING_REQ_EVENT: &str =
+    "Missing required event field on line {line} for record {record_id}";
+const MSG_INVALID_TS: &str = "Invalid timestamp on line {line} for record {record_id}";
+const MSG_INVALID_PARENT_ID: &str = "Invalid parent_id on line {line} for record {record_id}";
+const MSG_INVALID_PAYLOAD: &str = "Invalid payload type on line {line} for record {record_id}";
+const MSG_INVALID_SEQ: &str = "Invalid sequence number on line {line} for record {record_id}";
+const MSG_INVALID_ID: &str = "Invalid event id on line {line} for record {record_id}";
+const MSG_INVALID_KIND: &str = "Invalid kind on line {line} for record {record_id}";
+const MSG_INVALID_ACTOR: &str = "Invalid actor on line {line} for record {record_id}";
+const MSG_UNKNOWN_CRITICAL: &str =
+    "Unknown critical record on line {line} for record {record_id}";
+const EPOCH_TS: &str = "1970-01-01T00:00:00Z";
+
+/// Failure from [`parse_canonical_event_record`].
+///
+/// [`Display`](std::fmt::Display) is the message only. [`Self::Finding`] is a
+/// [`FindingError`] from [`SourceRef`] or [`make_finding`]. The omitted
+/// fingerprint displays `sesslint.determinism.canonical_json_bytes is not available`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseCanonicalEventError {
+    /// A Python `TypeError` / `ValueError` / `AttributeError`, or a value
+    /// this crate cannot render or store without substituting one.
+    Failed(String),
+    /// [`SourceRef`] or [`make_finding`] failed.
+    Finding(FindingError),
+}
+
+impl ParseCanonicalEventError {
+    fn failed(message: impl Into<String>) -> Self {
+        Self::Failed(message.into())
+    }
+
+    /// The Python exception text, or the missing-call seam.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Failed(message) => message,
+            Self::Finding(error) => error.message(),
+        }
+    }
+}
+
+impl fmt::Display for ParseCanonicalEventError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl Error for ParseCanonicalEventError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Finding(error) => Some(error),
+            Self::Failed(_) => None,
+        }
+    }
+}
+
+impl From<FindingError> for ParseCanonicalEventError {
+    fn from(error: FindingError) -> Self {
+        Self::Finding(error)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct StreamCoords {
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+}
+
+struct Emit<'a> {
+    path: &'a str,
+    line: i64,
+    coords: StreamCoords,
+    add_finding: &'a mut dyn FnMut(Finding),
+}
+
+struct IdState {
+    present: bool,
+    raw: Payload,
+    safe: Option<String>,
+}
+
+enum FieldLookup {
+    Absent,
+    Present(Payload),
+}
+
+/// Parse and validate one canonical event record.
+///
+/// Python: `_parse_canonical_event_record`. [`common_event`] returns first.
+/// A miss runs the diagnostic checks in pin order. [`DriftTracker::observe_signature`]
+/// records `type` and does not build an SL304 finding.
+///
+/// A finding builds [`SourceRef`], then evidence, then the coordinate check
+/// when `byte_offset`, `byte_end`, and `record_ordinal` are all present, then
+/// [`make_finding`]. The fingerprint is omitted, so that call's [`Display`]
+/// is `sesslint.determinism.canonical_json_bytes is not available`. The
+/// [`SessionEvent`] is not returned. [`add_finding`] runs only when
+/// [`make_finding`] returns a finding.
+///
+/// `validated_timestamps` is the cache [`common_event`] already uses. The
+/// diagnostic timestamp check does not insert into it. `idx` and `line` are
+/// `i64`. Python `int` is unbounded, and `bool` is not an `i64`.
+///
+/// # Errors
+///
+/// [`ParseCanonicalEventError::Finding`] from [`SourceRef`] or [`make_finding`].
+/// [`ParseCanonicalEventError::Failed`] for a pin `TypeError`, `ValueError`,
+/// or `AttributeError`, a hidden tuple, or a raw field that is not `str` or
+/// `None`.
+#[allow(clippy::too_many_arguments)] // pin parameter list, in that order
+pub fn parse_canonical_event_record(
+    ev_raw: &Payload,
+    idx: i64,
+    line_num: i64,
+    path_str: &str,
+    add_finding: &mut dyn FnMut(Finding),
+    byte_offset: Option<i64>,
+    byte_end: Option<i64>,
+    record_ordinal: Option<i64>,
+    drift: Option<&mut DriftTracker>,
+    validated_timestamps: Option<&mut Vec<String>>,
+) -> Result<SessionEvent, ParseCanonicalEventError> {
+    if let Some(event) = common_event(ev_raw, validated_timestamps) {
+        return Ok(event);
+    }
+    require_mapping(ev_raw)?;
+    let id = read_id(ev_raw)?;
+    let coords = StreamCoords {
+        byte_offset,
+        byte_end,
+        record_ordinal,
+    };
+    if let Some(tracker) = drift {
+        observe_record_type(tracker, ev_raw, line_num, id.safe.as_deref(), coords)?;
+    }
+    let mut emit = Emit {
+        path: path_str,
+        line: line_num,
+        coords,
+        add_finding,
+    };
+    check_id(&mut emit, &id)?;
+    check_parent(&mut emit, ev_raw, id.safe.as_deref())?;
+    check_kind(&mut emit, ev_raw, id.safe.as_deref())?;
+    check_ts(&mut emit, ev_raw, id.safe.as_deref())?;
+    let actor = resolve_actor(&mut emit, ev_raw, id.safe.as_deref())?;
+    let kind = resolve_kind(ev_raw)?;
+    let ts = resolve_ts(ev_raw)?;
+    let extra_fields = unknown_fields(&mut emit, ev_raw, id.safe.as_deref())?;
+    check_payload(&mut emit, ev_raw, id.safe.as_deref())?;
+    let payload = owned_payload(ev_raw)?;
+    let content_hash = stringified_field(ev_raw, "content_hash")?;
+    let parent_id = chosen_parent(ev_raw)?;
+    let correlation_id = stringified_field(ev_raw, "correlation_id")?;
+    let seq = resolve_seq(&mut emit, ev_raw, idx, id.safe.as_deref())?;
+    let source_line = resolve_source_line(ev_raw)?;
+    let side_effects = resolve_side_effects(ev_raw, &payload, &kind)?;
+    let rec_id = match id.safe {
+        Some(text) => text,
+        None => format!("<missing:{idx}>"),
+    };
+    let mut event = SessionEvent::new(rec_id, parent_id, seq, ts, actor, kind);
+    event.payload = payload;
+    event.content_hash = content_hash;
+    event.correlation_id = correlation_id;
+    event.branch_id = stored_text(ev_raw, "branch_id")?;
+    event.interaction_id = stored_text(ev_raw, "interaction_id")?;
+    event.agent_id = stored_text(ev_raw, "agent_id")?;
+    event.execution_state = stored_text(ev_raw, "execution_state")?;
+    event.source_line = source_line;
+    event.source_record_hash = stored_text(ev_raw, "source_record_hash")?;
+    event.original_id = stored_text(ev_raw, "original_id")?;
+    event.source_adapter = stored_text(ev_raw, "source_adapter")?;
+    event.source_location = stored_text(ev_raw, "source_location")?;
+    event.side_effects = side_effects;
+    event.extra_fields = extra_fields;
+    Ok(event)
+}
+
+impl Emit<'_> {
+    fn finding(
+        &mut self,
+        code: &str,
+        template: &str,
+        record_id: Option<&str>,
+        related: &[&str],
+        evidence: impl FnOnce() -> Result<Vec<(EvidenceValue, EvidenceValue)>, ParseCanonicalEventError>,
+    ) -> Result<(), ParseCanonicalEventError> {
+        let source = SourceRef::try_new(self.path, Some(SourceLine::Int(self.line)), record_id)?;
+        let base = evidence()?;
+        let evidence = with_coordinates(base, self.coords)?;
+        let related_ids = EvidenceValue::tuple(
+            related
+                .iter()
+                .copied()
+                .map(EvidenceValue::string)
+                .collect(),
+        );
+        let finding = make_finding(&MakeFindingInput {
+            code: EvidenceValue::string(code),
+            severity: EvidenceValue::severity(Severity::Error),
+            repairability: EvidenceValue::repairability(Repairability::Manual),
+            message_template: EvidenceValue::string(template),
+            template_args: EvidenceValue::None,
+            source: EvidenceValue::source(source),
+            related_ids,
+            evidence,
+            fingerprint: EvidenceValue::None,
+            adapter_id: None,
+            adapter_version: None,
+            profile_id: None,
+            profile_version: None,
+            ordinal: None,
+            context: None,
+        })?;
+        (self.add_finding)(finding);
+        Ok(())
+    }
+}
+
+fn require_mapping(raw: &Payload) -> Result<(), ParseCanonicalEventError> {
+    if raw.is_map() {
+        Ok(())
+    } else {
+        Err(ParseCanonicalEventError::failed(format!(
+            "'{}' object has no attribute 'get'",
+            payload_class_name(raw)
+        )))
+    }
+}
+
+fn lookup(raw: &Payload, key: &str) -> Result<FieldLookup, ParseCanonicalEventError> {
+    match raw.map_string(key) {
+        MapLookup::Present(value) => Ok(FieldLookup::Present(value)),
+        MapLookup::Absent => Ok(FieldLookup::Absent),
+        MapLookup::Borrowed => Err(ParseCanonicalEventError::failed(
+            "map entries are borrowed",
+        )),
+        MapLookup::NotAMap => Err(ParseCanonicalEventError::failed(format!(
+            "'{}' object has no attribute 'get'",
+            payload_class_name(raw)
+        ))),
+    }
+}
+
+fn key_present(raw: &Payload, key: &str) -> Result<bool, ParseCanonicalEventError> {
+    Ok(matches!(lookup(raw, key)?, FieldLookup::Present(_)))
+}
+
+fn read_id(raw: &Payload) -> Result<IdState, ParseCanonicalEventError> {
+    match lookup(raw, "id")? {
+        FieldLookup::Absent => Ok(IdState {
+            present: false,
+            raw: Payload::null(),
+            safe: None,
+        }),
+        FieldLookup::Present(value) => {
+            let safe = safe_rec_id(&value);
+            Ok(IdState {
+                present: true,
+                raw: value,
+                safe,
+            })
+        }
+    }
+}
+
+fn id_is_valid(id: &IdState) -> bool {
+    match (id.raw.as_str(), id.safe.as_deref()) {
+        (Some(raw), Some(safe)) => raw == safe,
+        _ => false,
+    }
+}
+
+fn observe_record_type(
+    tracker: &mut DriftTracker,
+    raw: &Payload,
+    line: i64,
+    record_id: Option<&str>,
+    coords: StreamCoords,
+) -> Result<(), ParseCanonicalEventError> {
+    let value = match lookup(raw, "type")? {
+        FieldLookup::Present(value) => value,
+        FieldLookup::Absent => Payload::null(),
+    };
+    tracker.observe_signature(
+        observe_safe(&value),
+        Some(line),
+        record_id,
+        coords.record_ordinal,
+        coords.byte_offset,
+        coords.byte_end,
+    );
+    Ok(())
+}
+
+/// Non-strings never fire. Container lengths are not read.
+fn observe_safe(value: &Payload) -> PyValue<'_> {
+    if let Some(text) = value.as_str() {
+        return PyValue::Str(text);
+    }
+    if value.is_null() {
+        return PyValue::None;
+    }
+    if value.as_bool().is_some() {
+        return PyValue::Bool;
+    }
+    if value.as_int().is_some() {
+        return PyValue::Int;
+    }
+    if value.as_float().is_some() {
+        return PyValue::Float;
+    }
+    if value.is_list() {
+        return PyValue::List(0);
+    }
+    if value.is_map() {
+        return PyValue::Dict(0);
+    }
+    if value.is_tuple() {
+        return PyValue::Tuple(0);
+    }
+    PyValue::Other("object")
+}
+
+fn check_id(emit: &mut Emit<'_>, id: &IdState) -> Result<(), ParseCanonicalEventError> {
+    if !id.present {
+        return missing_field(emit, "id", None);
+    }
+    if id_is_valid(id) {
+        return Ok(());
+    }
+    let raw = id.raw.clone();
+    emit.finding(
+        SL001,
+        MSG_INVALID_ID,
+        id.safe.as_deref(),
+        &["id"],
+        move || {
+            let shown = safe_evidence_val(&raw)
+                .map_err(|error| ParseCanonicalEventError::failed(error.message()))?;
+            Ok(vec![
+                evidence_pair("reason", EvidenceValue::string("invalid_id")),
+                evidence_pair("field", EvidenceValue::string("id")),
+                evidence_pair("record_id", py_optional(shown)),
+            ])
+        },
+    )
+}
+
+fn check_parent(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    record_id: Option<&str>,
+) -> Result<(), ParseCanonicalEventError> {
+    match lookup(raw, "parent_id")? {
+        FieldLookup::Absent => missing_field(emit, "parent_id", record_id),
+        FieldLookup::Present(value) => {
+            let invalid = match value.as_str() {
+                Some(text) => python_strip(text).is_empty(),
+                None => !value.is_null(),
+            };
+            if invalid {
+                let record = py_record(record_id);
+                emit.finding(
+                    SL001,
+                    MSG_INVALID_PARENT_ID,
+                    record_id,
+                    &["parent_id"],
+                    move || {
+                        Ok(vec![
+                            evidence_pair("reason", EvidenceValue::string("invalid_parent_id")),
+                            evidence_pair("field", EvidenceValue::string("parent_id")),
+                            evidence_pair("record_id", record),
+                        ])
+                    },
+                )?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn check_kind(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    record_id: Option<&str>,
+) -> Result<(), ParseCanonicalEventError> {
+    match lookup(raw, "kind")? {
+        FieldLookup::Absent => missing_field(emit, "kind", record_id),
+        FieldLookup::Present(value) => {
+            if is_allowed_text(&value, VALID_KINDS)? {
+                return Ok(());
+            }
+            let (safe_kind, _) = safe_discriminator(payload_as_safe(&value)?);
+            let record = py_record(record_id);
+            emit.finding(SL001, MSG_INVALID_KIND, record_id, &["kind"], move || {
+                Ok(vec![
+                    evidence_pair("reason", EvidenceValue::string("invalid_kind")),
+                    evidence_pair("kind", EvidenceValue::string(safe_kind)),
+                    evidence_pair("record_id", record),
+                ])
+            })
+        }
+    }
+}
+
+fn check_ts(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    record_id: Option<&str>,
+) -> Result<(), ParseCanonicalEventError> {
+    match lookup(raw, "ts")? {
+        FieldLookup::Absent => missing_field(emit, "ts", record_id),
+        FieldLookup::Present(value) => {
+            let invalid = match value.as_str() {
+                Some(text) => validate_rfc3339_utc(text, "ts").is_err(),
+                None => true,
+            };
+            if invalid {
+                let owned = value.clone();
+                let record = py_record(record_id);
+                emit.finding(SL001, MSG_INVALID_TS, record_id, &["ts"], move || {
+                    Ok(vec![
+                        evidence_pair("reason", EvidenceValue::string("invalid_timestamp")),
+                        evidence_pair("ts", EvidenceValue::string(payload_text(&owned)?)),
+                        evidence_pair("record_id", record),
+                    ])
+                })?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn resolve_actor(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    record_id: Option<&str>,
+) -> Result<String, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "actor")? else {
+        return Ok("user".to_owned());
+    };
+    if let Some(text) = value.as_str() {
+        if VALID_ACTORS.contains(&text) {
+            return Ok(text.to_owned());
+        }
+    } else {
+        reject_unhashable(&value)?;
+    }
+    emit.finding(
+        SL001,
+        MSG_INVALID_ACTOR,
+        record_id,
+        &[],
+        move || {
+            Ok(vec![
+                evidence_pair("reason", EvidenceValue::string("invalid_actor")),
+                evidence_pair("actor", EvidenceValue::string(payload_text(&value)?)),
+            ])
+        },
+    )?;
+    Ok("system".to_owned())
+}
+
+fn resolve_kind(raw: &Payload) -> Result<String, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "kind")? else {
+        return Ok("unknown".to_owned());
+    };
+    if is_allowed_text(&value, VALID_KINDS)? {
+        if let Some(text) = value.as_str() {
+            return Ok(text.to_owned());
+        }
+    }
+    Ok("unknown".to_owned())
+}
+
+fn resolve_ts(raw: &Payload) -> Result<String, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "ts")? else {
+        return Ok(EPOCH_TS.to_owned());
+    };
+    Ok(value
+        .as_str()
+        .map_or_else(|| EPOCH_TS.to_owned(), str::to_owned))
+}
+
+fn unknown_fields(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    record_id: Option<&str>,
+) -> Result<Payload, ParseCanonicalEventError> {
+    let mut extra = Vec::new();
+    let mut emitted = false;
+    for (key, value) in string_entries(raw)? {
+        if is_known_event_key(&key) {
+            continue;
+        }
+        if !emitted && is_critical_unknown(&key) {
+            let (type_value, truncated) = if key == "type" {
+                safe_discriminator(payload_as_safe(&value)?)
+            } else {
+                (safe_type_value(payload_as_safe(&value)?), false)
+            };
+            let (safe_key, _) = safe_discriminator(PyValue::Str(&key));
+            let record = py_record(record_id);
+            emit.finding(
+                SL302,
+                MSG_UNKNOWN_CRITICAL,
+                record_id,
+                &[],
+                move || {
+                    let mut pairs = vec![
+                        evidence_pair("field_path", EvidenceValue::string(safe_key)),
+                        evidence_pair("type_value", EvidenceValue::string(type_value)),
+                        evidence_pair("record_id", record),
+                    ];
+                    if truncated {
+                        pairs.push(evidence_pair(
+                            "type_truncated",
+                            EvidenceValue::bool_value(true),
+                        ));
+                    }
+                    Ok(pairs)
+                },
+            )?;
+            emitted = true;
+        }
+        extra.push((Payload::string(key), value));
+    }
+    Ok(Payload::map(extra))
+}
+
+fn check_payload(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    record_id: Option<&str>,
+) -> Result<(), ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "payload")? else {
+        return Ok(());
+    };
+    if value.is_map() {
+        return Ok(());
+    }
+    let type_name = payload_class_name(&value);
+    let record = py_record(record_id);
+    emit.finding(
+        SL001,
+        MSG_INVALID_PAYLOAD,
+        record_id,
+        &["payload"],
+        move || {
+            Ok(vec![
+                evidence_pair("reason", EvidenceValue::string("invalid_payload_type")),
+                evidence_pair("type", EvidenceValue::string(type_name)),
+                evidence_pair("record_id", record),
+            ])
+        },
+    )
+}
+
+fn owned_payload(raw: &Payload) -> Result<Payload, ParseCanonicalEventError> {
+    match lookup(raw, "payload")? {
+        FieldLookup::Present(value) if value.is_map() => Ok(value),
+        FieldLookup::Present(_) | FieldLookup::Absent => Ok(Payload::map(Vec::new())),
+    }
+}
+
+fn resolve_seq(
+    emit: &mut Emit<'_>,
+    raw: &Payload,
+    idx: i64,
+    record_id: Option<&str>,
+) -> Result<i64, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "seq")? else {
+        return Ok(idx);
+    };
+    if let Some(number) = value.as_int() {
+        if number >= 0 {
+            return Ok(number);
+        }
+    }
+    let record = py_record(record_id);
+    emit.finding(SL001, MSG_INVALID_SEQ, record_id, &["seq"], move || {
+        Ok(vec![
+            evidence_pair("reason", EvidenceValue::string("invalid_seq")),
+            evidence_pair("seq", EvidenceValue::string(payload_text(&value)?)),
+            evidence_pair("record_id", record),
+        ])
+    })?;
+    Ok(idx)
+}
+
+fn resolve_source_line(raw: &Payload) -> Result<Option<i64>, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "source_line")? else {
+        return Ok(None);
+    };
+    Ok(value.as_int())
+}
+
+fn resolve_side_effects(
+    raw: &Payload,
+    payload: &Payload,
+    kind: &str,
+) -> Result<Option<String>, ParseCanonicalEventError> {
+    if let FieldLookup::Present(value) = lookup(raw, "side_effects")? {
+        if let Some(text) = value.as_str() {
+            if VALID_SIDE_EFFECTS.contains(&text) {
+                return Ok(Some(text.to_owned()));
+            }
+        }
+    }
+    if payload.is_map() {
+        if let FieldLookup::Present(value) = lookup(payload, "side_effects")? {
+            reject_unhashable(&value)?;
+            if let Some(text) = value.as_str() {
+                if VALID_SIDE_EFFECTS.contains(&text) {
+                    return Ok(Some(text.to_owned()));
+                }
+            }
+        }
+    }
+    if kind == "tool_result" {
+        return Ok(Some("none".to_owned()));
+    }
+    if kind == "tool_call" || kind == "tool_use" {
+        let tool_name = lowered_tool_name(raw, payload)?;
+        if READ_ONLY_TOOL_NAMES.contains(&tool_name.as_str()) {
+            return Ok(Some("none".to_owned()));
+        }
+        if MUTATING_TOOL_NAMES.contains(&tool_name.as_str()) {
+            return Ok(Some("possible".to_owned()));
+        }
+        return Ok(Some("unknown".to_owned()));
+    }
+    Ok(None)
+}
+
+fn lowered_tool_name(
+    raw: &Payload,
+    payload: &Payload,
+) -> Result<String, ParseCanonicalEventError> {
+    let from_payload = first_truthy(payload, &["name", "tool_name"])?;
+    let mut tool_name = payload_text(&from_payload)?.to_lowercase();
+    if tool_name.is_empty() && key_present(raw, "name")? {
+        let from_event = match lookup(raw, "name")? {
+            FieldLookup::Present(value) if payload_truthy(&value)? => value,
+            FieldLookup::Present(_) | FieldLookup::Absent => Payload::string(""),
+        };
+        tool_name = payload_text(&from_event)?.to_lowercase();
+    }
+    Ok(tool_name)
+}
+
+fn first_truthy(map: &Payload, keys: &[&str]) -> Result<Payload, ParseCanonicalEventError> {
+    for key in keys {
+        if let FieldLookup::Present(value) = lookup(map, key)? {
+            if payload_truthy(&value)? {
+                return Ok(value);
+            }
+        }
+    }
+    Ok(Payload::string(""))
+}
+
+fn payload_truthy(value: &Payload) -> Result<bool, ParseCanonicalEventError> {
+    py_truthy(value).map_err(|error| ParseCanonicalEventError::failed(error.message()))
+}
+
+fn chosen_parent(raw: &Payload) -> Result<Option<String>, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, "parent_id")? else {
+        return Ok(None);
+    };
+    match value.as_str() {
+        Some(text) if !python_strip(text).is_empty() => Ok(Some(text.to_owned())),
+        Some(_) | None => Ok(None),
+    }
+}
+
+fn stringified_field(
+    raw: &Payload,
+    key: &str,
+) -> Result<Option<String>, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, key)? else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    Ok(Some(payload_text(&value)?))
+}
+
+fn stored_text(raw: &Payload, key: &str) -> Result<Option<String>, ParseCanonicalEventError> {
+    let FieldLookup::Present(value) = lookup(raw, key)? else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    match value.as_str() {
+        Some(text) => Ok(Some(text.to_owned())),
+        None => Err(ParseCanonicalEventError::failed(format!(
+            "{key} is not a str or None"
+        ))),
+    }
+}
+
+fn missing_field(
+    emit: &mut Emit<'_>,
+    field: &str,
+    record_id: Option<&str>,
+) -> Result<(), ParseCanonicalEventError> {
+    let reason = format!("missing_{field}_key");
+    let field_name = field.to_owned();
+    let record = py_record(record_id);
+    emit.finding(
+        SL001,
+        MSG_MISSING_REQ_EVENT,
+        record_id,
+        &[field],
+        move || {
+            Ok(vec![
+                evidence_pair("reason", EvidenceValue::string(reason)),
+                evidence_pair("field", EvidenceValue::string(field_name)),
+                evidence_pair("record_id", record),
+            ])
+        },
+    )
+}
+
+fn with_coordinates(
+    base: Vec<(EvidenceValue, EvidenceValue)>,
+    coords: StreamCoords,
+) -> Result<EvidenceValue, ParseCanonicalEventError> {
+    let (Some(byte_offset), Some(byte_end), Some(record_ordinal)) =
+        (coords.byte_offset, coords.byte_end, coords.record_ordinal)
+    else {
+        return Ok(EvidenceValue::map(base));
+    };
+    validate_stream_coordinates(byte_offset, byte_end, record_ordinal)?;
+    let mut entries = vec![
+        evidence_pair("byte_offset", EvidenceValue::int(byte_offset)),
+        evidence_pair("byte_end", EvidenceValue::int(byte_end)),
+        evidence_pair("record_ordinal", EvidenceValue::int(record_ordinal)),
+    ];
+    entries.extend(base);
+    Ok(EvidenceValue::map(entries))
+}
+
+/// Python `_validate_stream_coordinates` for `i64` inputs.
+///
+/// `bool` is not an `i64` here, so this does not invent a boolean input.
+fn validate_stream_coordinates(
+    byte_offset: i64,
+    byte_end: i64,
+    record_ordinal: i64,
+) -> Result<(), ParseCanonicalEventError> {
+    if byte_offset < 0 {
+        return Err(ParseCanonicalEventError::failed(format!(
+            "Invalid byte_offset: {byte_offset} (must be integer >= 0)"
+        )));
+    }
+    if byte_end < byte_offset {
+        return Err(ParseCanonicalEventError::failed(format!(
+            "Invalid byte_end: {byte_end} (must be integer >= byte_offset={byte_offset})"
+        )));
+    }
+    if record_ordinal < 1 {
+        return Err(ParseCanonicalEventError::failed(format!(
+            "Invalid record_ordinal: {record_ordinal} (must be integer >= 1)"
+        )));
+    }
+    Ok(())
+}
+
+fn evidence_pair(key: &str, value: EvidenceValue) -> (EvidenceValue, EvidenceValue) {
+    (EvidenceValue::string(key), value)
+}
+
+fn py_record(record_id: Option<&str>) -> EvidenceValue {
+    match record_id {
+        Some(text) => EvidenceValue::string(text),
+        None => EvidenceValue::None,
+    }
+}
+
+fn py_optional(value: Option<String>) -> EvidenceValue {
+    match value {
+        Some(text) => EvidenceValue::string(text),
+        None => EvidenceValue::None,
+    }
+}
+
+fn payload_text(value: &Payload) -> Result<String, ParseCanonicalEventError> {
+    payload_py_str(value).map_err(ParseCanonicalEventError::failed)
+}
+
+fn payload_as_safe(value: &Payload) -> Result<PyValue<'_>, ParseCanonicalEventError> {
+    if value.is_null() {
+        return Ok(PyValue::None);
+    }
+    if value.as_bool().is_some() {
+        return Ok(PyValue::Bool);
+    }
+    if value.as_int().is_some() {
+        return Ok(PyValue::Int);
+    }
+    if value.as_float().is_some() {
+        return Ok(PyValue::Float);
+    }
+    if let Some(text) = value.as_str() {
+        return Ok(PyValue::Str(text));
+    }
+    if value.is_list() {
+        return Ok(PyValue::List(container_len(value)?));
+    }
+    if value.is_map() {
+        return Ok(PyValue::Dict(container_len(value)?));
+    }
+    if value.is_tuple() {
+        return Err(ParseCanonicalEventError::failed(TUPLE_ITEMS_HIDDEN));
+    }
+    Err(ParseCanonicalEventError::failed("value is not visible"))
+}
+
+fn container_len(value: &Payload) -> Result<usize, ParseCanonicalEventError> {
+    if value.is_list() {
+        let mut len = 0usize;
+        let walk = value.walk_list_items(|_, _| len += 1);
+        return match walk {
+            ListWalk::Done => Ok(len),
+            ListWalk::Borrowed | ListWalk::NotAList => {
+                Err(ParseCanonicalEventError::failed("list items are not visible"))
+            }
+        };
+    }
+    let mut len = 0usize;
+    let walk = value.walk_string_entries(|_, _| len += 1);
+    match walk {
+        MapWalk::Done => Ok(len),
+        MapWalk::Borrowed => Err(ParseCanonicalEventError::failed(
+            "map entries are borrowed",
+        )),
+        MapWalk::NotAMap => Err(ParseCanonicalEventError::failed(
+            "map entries are not visible",
+        )),
+    }
+}
+
+fn string_entries(raw: &Payload) -> Result<Vec<(String, Payload)>, ParseCanonicalEventError> {
+    let mut entries = Vec::new();
+    let walk = raw.walk_string_entries(|key, value| {
+        entries.push((key.to_owned(), value.clone()));
+    });
+    match walk {
+        MapWalk::Done => Ok(entries),
+        MapWalk::Borrowed => Err(ParseCanonicalEventError::failed(
+            "map entries are borrowed",
+        )),
+        MapWalk::NotAMap => Err(ParseCanonicalEventError::failed(format!(
+            "'{}' object has no attribute 'get'",
+            payload_class_name(raw)
+        ))),
+    }
+}
+
+fn is_known_event_key(key: &str) -> bool {
+    KNOWN_EVENT_KEYS.contains(&key)
+}
+
+fn is_critical_unknown(key: &str) -> bool {
+    CRITICAL_KEYS.contains(&key)
+        || key.starts_with("critical_")
+        || key.starts_with("unknown_critical")
+}
+
+fn is_allowed_text(value: &Payload, allowed: &[&str]) -> Result<bool, ParseCanonicalEventError> {
+    reject_unhashable(value)?;
+    Ok(value
+        .as_str()
+        .is_some_and(|text| allowed.contains(&text)))
+}
+
+fn reject_unhashable(value: &Payload) -> Result<(), ParseCanonicalEventError> {
+    if value.is_list() {
+        return Err(ParseCanonicalEventError::failed("unhashable type: 'list'"));
+    }
+    if value.is_map() {
+        return Err(ParseCanonicalEventError::failed("unhashable type: 'dict'"));
+    }
+    if value.is_tuple() {
+        return Err(ParseCanonicalEventError::failed(TUPLE_ITEMS_HIDDEN));
+    }
+    Ok(())
+}
+
+fn payload_class_name(value: &Payload) -> &'static str {
+    if value.is_null() {
+        "NoneType"
+    } else if value.as_bool().is_some() {
+        "bool"
+    } else if value.as_int().is_some() {
+        "int"
+    } else if value.as_float().is_some() {
+        "float"
+    } else if value.as_str().is_some() {
+        "str"
+    } else if value.is_list() {
+        "list"
+    } else if value.is_tuple() {
+        "tuple"
+    } else if value.is_map() {
+        "dict"
+    } else {
+        "object"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use model::canonical::{
         MapLookup, Payload, Session, SessionEvent, SessionHeader, NORMALIZE_CANONICAL_UNAVAILABLE,
     };
 
+    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
+
     use super::{
         classify_session_doc, common_event, detect_canonical, dump_canonical, event_to_dict,
-        normalize_version, safe_evidence_val, safe_rec_id, safe_type_value, AttrSource, Attribute,
-        DumpInput, EventList, EventObject, EventSequence, MetaValue, ProvidedSource,
-        SourceMetadata, CRITICAL_KEYS, CRITICAL_TOP_KEYS, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS,
-        KNOWN_TOP_KEYS, REQUIRED_EVENT_KEYS, SUPPORTED_CANONICAL_VERSIONS,
+        normalize_version, parse_canonical_event_record, safe_evidence_val, safe_rec_id,
+        safe_type_value, AttrSource, Attribute, DumpInput, EventList, EventObject, EventSequence,
+        MetaValue, ParseCanonicalEventError, ProvidedSource, SourceMetadata, CRITICAL_KEYS,
+        CRITICAL_TOP_KEYS, DETECT_PREFIX_BYTES, KNOWN_EVENT_KEYS, KNOWN_TOP_KEYS,
+        REQUIRED_EVENT_KEYS, SUPPORTED_CANONICAL_VERSIONS,
     };
+    use crate::drift::DriftTracker;
     use crate::safe_value::PyValue;
 
     #[test]
@@ -2640,5 +3589,404 @@ mod tests {
         assert!(kind.push_map_entry(Payload::string("kind"), Payload::string("tool_call")));
         assert!(common_event(&kind, None).is_none());
         assert!(common_event(&Payload::list(Vec::new()), None).is_none());
+    }
+
+    fn fields(items: Vec<(&str, Payload)>) -> Payload {
+        Payload::map(
+            items
+                .into_iter()
+                .map(|(key, value)| (Payload::string(key), value))
+                .collect(),
+        )
+    }
+
+    fn base(kind: &str, payload: Payload) -> Vec<(&str, Payload)> {
+        vec![
+            ("id", Payload::string("evt-9")),
+            ("parent_id", Payload::null()),
+            ("seq", Payload::int(3)),
+            ("ts", Payload::string("2024-02-29T00:00:00Z")),
+            ("actor", Payload::string("assistant")),
+            ("kind", Payload::string(kind)),
+            ("payload", payload),
+        ]
+    }
+
+    fn parse_at(
+        raw: &Payload,
+        line: i64,
+        path: &str,
+        coords: (Option<i64>, Option<i64>, Option<i64>),
+        drift: Option<&mut DriftTracker>,
+        seen: &mut usize,
+    ) -> Result<SessionEvent, ParseCanonicalEventError> {
+        parse_canonical_event_record(
+            raw,
+            4,
+            line,
+            path,
+            &mut |_finding| *seen += 1,
+            coords.0,
+            coords.1,
+            coords.2,
+            drift,
+            None,
+        )
+    }
+
+    #[test]
+    fn parse_returns_the_common_event_without_a_finding() {
+        let raw = message_record(
+            "evt-1",
+            Payload::null(),
+            Payload::int(0),
+            "2024-02-29T00:00:00Z",
+            "user",
+            Payload::map(Vec::new()),
+        );
+        let mut cache = Vec::new();
+        let mut seen = 0usize;
+        let event = parse_canonical_event_record(
+            &raw,
+            0,
+            1,
+            "session.jsonl",
+            &mut |_finding| seen += 1,
+            None,
+            None,
+            None,
+            None,
+            Some(&mut cache),
+        )
+        .expect("event");
+        assert_eq!(seen, 0);
+        assert_eq!(event.id, "evt-1");
+        assert_eq!(event.kind, "message");
+        assert_eq!(event.actor, "user");
+        assert_eq!(cache, vec!["2024-02-29T00:00:00Z".to_owned()]);
+    }
+
+    #[test]
+    fn parse_builds_a_diagnostic_event_when_no_finding_is_required() {
+        let mut items = base(
+            "tool_call",
+            Payload::map(vec![(Payload::string("name"), Payload::string("read"))]),
+        );
+        items.push(("note", Payload::string("kept")));
+        items.push(("branch_id", Payload::string("main")));
+        items.push(("content_hash", Payload::int(7)));
+        items.push(("correlation_id", Payload::bool_value(true)));
+        items.push(("source_line", Payload::int(12)));
+        items.push(("parent_id", Payload::string(" x ")));
+        let mut seen = 0usize;
+        let event = parse_at(
+            &fields(items),
+            1,
+            "session.jsonl",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect("event");
+        assert_eq!(seen, 0);
+        assert_eq!(event.kind, "tool_call");
+        assert_eq!(event.seq, 3);
+        assert_eq!(event.parent_id.as_deref(), Some(" x "));
+        assert_eq!(event.side_effects.as_deref(), Some("none"));
+        assert_eq!(event.branch_id.as_deref(), Some("main"));
+        assert_eq!(event.content_hash.as_deref(), Some("7"));
+        assert_eq!(event.correlation_id.as_deref(), Some("True"));
+        assert_eq!(event.source_line, Some(12));
+        assert!(matches!(
+            event.extra_fields.map_string("note"),
+            MapLookup::Present(value) if value.as_str() == Some("kept")
+        ));
+    }
+
+    #[test]
+    fn parse_defaults_actor_and_uses_idx_when_seq_is_absent() {
+        let items = vec![
+            ("id", Payload::string("evt-9")),
+            ("parent_id", Payload::null()),
+            ("ts", Payload::string("2024-02-29T00:00:00Z")),
+            ("kind", Payload::string("error")),
+            ("payload", Payload::map(Vec::new())),
+        ];
+        let mut seen = 0usize;
+        let event = parse_at(
+            &fields(items),
+            2,
+            "session.jsonl",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect("event");
+        assert_eq!(seen, 0);
+        assert_eq!(event.actor, "user");
+        assert_eq!(event.seq, 4);
+        assert_eq!(event.side_effects, None);
+        assert!(event.content_hash.is_none());
+    }
+
+    #[test]
+    fn parse_assigns_side_effects_from_the_pin_order() {
+        let mut seen = 0usize;
+        let bash = base(
+            "tool_call",
+            Payload::map(vec![(Payload::string("name"), Payload::string("Bash"))]),
+        );
+        let bash_event = parse_at(
+            &fields(bash),
+            1,
+            "session.jsonl",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect("bash");
+        assert_eq!(bash_event.side_effects.as_deref(), Some("possible"));
+
+        let mut named = base("tool_call", Payload::map(Vec::new()));
+        named.push(("name", Payload::string("grep")));
+        let named_event = parse_at(
+            &fields(named),
+            1,
+            "session.jsonl",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect("grep");
+        assert_eq!(named_event.side_effects.as_deref(), Some("none"));
+
+        let result = base("tool_result", Payload::map(Vec::new()));
+        let result_event = parse_at(
+            &fields(result),
+            1,
+            "session.jsonl",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect("result");
+        assert_eq!(result_event.side_effects.as_deref(), Some("none"));
+
+        let mut explicit = base(
+            "tool_call",
+            Payload::map(vec![(Payload::string("name"), Payload::string("bash"))]),
+        );
+        explicit.push(("side_effects", Payload::string("possible")));
+        let explicit_event = parse_at(
+            &fields(explicit),
+            1,
+            "session.jsonl",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect("explicit");
+        assert_eq!(explicit_event.side_effects.as_deref(), Some("possible"));
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_refuses_a_required_finding_with_the_fingerprint_seam() {
+        let raw = fields(vec![
+            ("parent_id", Payload::null()),
+            ("kind", Payload::string("error")),
+            ("ts", Payload::string("2024-02-29T00:00:00Z")),
+            ("actor", Payload::string("user")),
+            ("payload", Payload::map(Vec::new())),
+        ]);
+        let mut seen = 0usize;
+        let err =
+            parse_at(&raw, 1, "a.json", (None, None, None), None, &mut seen).expect_err("seam");
+        assert_eq!(seen, 0);
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("SL001"));
+        assert!(!err.to_string().contains("Missing required"));
+    }
+
+    #[test]
+    fn parse_checks_coordinates_before_make_finding() {
+        let raw = fields(vec![
+            ("parent_id", Payload::null()),
+            ("kind", Payload::string("error")),
+            ("ts", Payload::string("2024-02-29T00:00:00Z")),
+            ("actor", Payload::string("user")),
+            ("payload", Payload::map(Vec::new())),
+        ]);
+        let mut seen = 0usize;
+        let invalid = parse_at(
+            &raw,
+            1,
+            "a.json",
+            (Some(-1), Some(0), Some(1)),
+            None,
+            &mut seen,
+        )
+        .expect_err("offset");
+        assert_eq!(
+            invalid.to_string(),
+            "Invalid byte_offset: -1 (must be integer >= 0)"
+        );
+        assert!(!invalid.to_string().contains("canonical_json_bytes"));
+
+        let partial = parse_at(
+            &raw,
+            1,
+            "a.json",
+            (Some(-1), Some(0), None),
+            None,
+            &mut seen,
+        )
+        .expect_err("partial");
+        assert_eq!(partial.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+
+        let passed =
+            parse_at(&raw, 1, "a.json", (Some(0), Some(0), Some(1)), None, &mut seen)
+            .expect_err("passed");
+        assert_eq!(passed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_runs_source_ref_before_coordinates_and_the_seam() {
+        let raw = fields(vec![
+            ("parent_id", Payload::null()),
+            ("kind", Payload::string("error")),
+            ("ts", Payload::string("2024-02-29T00:00:00Z")),
+            ("actor", Payload::string("user")),
+            ("payload", Payload::map(Vec::new())),
+        ]);
+        let mut seen = 0usize;
+        let line = parse_at(
+            &raw,
+            0,
+            "a.json",
+            (Some(-1), Some(0), Some(1)),
+            None,
+            &mut seen,
+        )
+        .expect_err("line");
+        assert!(line.to_string().contains("SourceRef.line"));
+        assert!(!line.to_string().contains("byte_offset"));
+        assert!(!line.to_string().contains("canonical_json_bytes"));
+
+        let mut bad_kind = base("error", Payload::map(Vec::new()));
+        bad_kind.retain(|(key, _)| *key != "kind");
+        bad_kind.push(("kind", Payload::string("nope")));
+        let path = parse_at(
+            &fields(bad_kind),
+            1,
+            "",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect_err("path");
+        assert!(path.to_string().contains("SourceRef.path"));
+        assert!(!path.to_string().contains("canonical_json_bytes"));
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_observes_a_foreign_type_before_the_coordinate_check() {
+        let mut items = base("error", Payload::map(Vec::new()));
+        items.push(("type", Payload::string("session_meta")));
+        let mut drift = DriftTracker::new("canonical");
+        let mut seen = 0usize;
+        let err = parse_at(
+            &fields(items),
+            1,
+            "a.json",
+            (Some(-1), Some(4), Some(2)),
+            Some(&mut drift),
+            &mut seen,
+        )
+        .expect_err("offset");
+        assert_eq!(
+            err.to_string(),
+            "Invalid byte_offset: -1 (must be integer >= 0)"
+        );
+        let flushed = drift.into_findings("a.json").expect_err("recorded");
+        assert_eq!(flushed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_rejects_an_unhashable_kind_before_source_ref() {
+        let mut items = base("error", Payload::map(Vec::new()));
+        items.retain(|(key, _)| *key != "kind");
+        items.push(("kind", Payload::list(vec![Payload::string("message")])));
+        let mut seen = 0usize;
+        let err = parse_at(&fields(items), 1, "", (None, None, None), None, &mut seen)
+            .expect_err("kind");
+        assert_eq!(err.to_string(), "unhashable type: 'list'");
+        assert!(!err.to_string().contains("SourceRef"));
+        assert!(!err.to_string().contains("SL001"));
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_refuses_a_non_string_branch_id() {
+        let mut items = base("error", Payload::map(Vec::new()));
+        items.push(("branch_id", Payload::int(1)));
+        let mut seen = 0usize;
+        let err = parse_at(
+            &fields(items),
+            1,
+            "a.json",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect_err("branch");
+        assert_eq!(err.to_string(), "branch_id is not a str or None");
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_reports_a_non_mapping_before_a_finding() {
+        let mut seen = 0usize;
+        let err = parse_at(
+            &Payload::list(Vec::new()),
+            1,
+            "a.json",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect_err("list");
+        assert_eq!(err.to_string(), "'list' object has no attribute 'get'");
+        assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn parse_stops_at_an_invalid_sequence_before_a_later_type_error() {
+        let mut items = base(
+            "tool_call",
+            Payload::map(vec![(
+                Payload::string("side_effects"),
+                Payload::list(Vec::new()),
+            )]),
+        );
+        items.retain(|(key, _)| *key != "seq");
+        items.push(("seq", Payload::bool_value(true)));
+        let mut seen = 0usize;
+        let err = parse_at(
+            &fields(items),
+            1,
+            "a.json",
+            (None, None, None),
+            None,
+            &mut seen,
+        )
+        .expect_err("seq");
+        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(!err.to_string().contains("unhashable"));
+        assert_eq!(seen, 0);
     }
 }
