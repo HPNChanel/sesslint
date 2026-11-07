@@ -272,11 +272,31 @@ def pin_load_summary_bytes(mod: Any, data: bytes) -> dict[str, Any]:
     }
 
 
+def relativize_message(message: str) -> str:
+    """Drop the checkout prefix, including Windows doubled backslashes."""
+    out_dir = Path(__file__).resolve().parent
+    prefix = str(out_dir)
+    needles: list[str] = []
+    for item in (prefix, prefix.replace("\\", "\\\\")):
+        for sep in ("\\", "/", "\\\\"):
+            needles.append(item + sep)
+        needles.append(item)
+    needles.sort(key=len, reverse=True)
+    text = message
+    for needle in needles:
+        if needle:
+            text = text.replace(needle, "")
+    return text.replace("\\\\", "/").replace("\\", "/")
+
+
 def pin_load_summary_path(mod: Any, path: Path) -> dict[str, Any]:
     try:
         events, findings = mod.load_claude_code(path)
     except Exception as exc:  # noqa: BLE001
-        return {"error_type": type(exc).__name__, "message": str(exc)}
+        return {
+            "error_type": type(exc).__name__,
+            "message": relativize_message(str(exc)),
+        }
     return {
         "event_count": len(events),
         "finding_count": len(findings),
@@ -331,6 +351,8 @@ def scan_committed_text(text: str) -> None:
         raise SystemExit("committed output matches banned live/test secret shape")
     if _BANNED_SUPABASE_PAT.search(raw):
         raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
 
 
 def vector_specs(mod: Any, out_dir: Path) -> list[dict[str, Any]]:

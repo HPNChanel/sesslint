@@ -19,7 +19,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.claude_code/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 27;
 const EXPECTED_VECTORS_SHA256: &str =
-    "6ed5a7e59c2718ecaad853edb84de1024a178386b18833e52d40d6e0ff7aa65c";
+    "db1bc6c3aa7c29e86bf65c26a41a7b5fe72f7ca1de5ea115387bb29d3b5ca77d";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.claude_code";

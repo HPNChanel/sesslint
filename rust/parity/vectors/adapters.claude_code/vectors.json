@@ -434,7 +434,7 @@
       "expected": {
         "pin": {
           "error_type": "FileNotFoundError",
-          "message": "Session file not found: D:\\FOR_WORK\\WORK_PROJECT\\sesslint-wt-claude-par\\rust\\parity\\vectors\\adapters.claude_code\\fixtures\\syn-missing-session.jsonl"
+          "message": "Session file not found: fixtures/syn-missing-session.jsonl"
         },
         "message": "Session file not found: fixtures/syn-missing-session.jsonl"
       }
@@ -451,7 +451,7 @@
       "expected": {
         "pin": {
           "error_type": "IsADirectoryError",
-          "message": "Expected session file, got directory: D:\\FOR_WORK\\WORK_PROJECT\\sesslint-wt-claude-par\\rust\\parity\\vectors\\adapters.claude_code\\fixtures\\syn-dir-not-file"
+          "message": "Expected session file, got directory: fixtures/syn-dir-not-file"
         },
         "message": "Expected session file, got directory: fixtures/syn-dir-not-file"
       }
