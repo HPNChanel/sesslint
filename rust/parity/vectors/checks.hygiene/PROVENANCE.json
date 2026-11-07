@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.hygiene parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.hygiene/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "When SecretScanTracker has hits, into_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Vectors compare evidence_rows (or empty into_findings) only \u2014 not Python Finding objects.",
+    "Empty tracker into_findings returns an empty list on both sides without calling make_finding on the Rust hit path."
+  ]
+}

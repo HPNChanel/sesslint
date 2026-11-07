@@ -1,0 +1,3933 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.hygiene",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_hygiene_rs_sha256": "e353fd94ef34279648afa57ba9b699a74d47053b9d699064528ee58a6257387c",
+  "python_all": [
+    "MAX_DIGESTS_PER_FINDING",
+    "MAX_SECRET_FINDINGS_PER_FILE",
+    "SECRET_FAMILY_IDS",
+    "SECRET_FAMILY_SET_VERSION",
+    "SecretScanTracker"
+  ],
+  "known_parity_gaps": [
+    "When SecretScanTracker has hits, into_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Vectors compare evidence_rows (or empty into_findings) only — not Python Finding objects.",
+    "Empty tracker into_findings returns an empty list on both sides without calling make_finding on the Rust hit path."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports_and_constants",
+      "construct": {
+        "type": "hygiene_module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "MAX_DIGESTS_PER_FINDING",
+          "MAX_SECRET_FINDINGS_PER_FILE",
+          "SECRET_FAMILY_IDS",
+          "SECRET_FAMILY_SET_VERSION",
+          "SecretScanTracker"
+        ],
+        "SECRET_FAMILY_SET_VERSION": 4,
+        "MAX_SECRET_FINDINGS_PER_FILE": 64,
+        "MAX_DIGESTS_PER_FINDING": 16,
+        "GATE_WINDOW_BYTES": 65536,
+        "SECRET_FAMILY_IDS_len": 20
+      }
+    },
+    {
+      "id": "short_prefix_00",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6e706d5f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_01",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "616e706d5f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_02",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "206e706d5f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_03",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "3168665f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_04",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "2e68665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_05",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "68665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_06",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "4e504d5f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_07",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "48665f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_08",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "786f78622d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_09",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "786f78422d"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_10",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "786f7862"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_11",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "584f58422d"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_12",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "7a786f78622d"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_13",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "20786f78622d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_14",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6e6e706d5f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_15",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c786e706d5f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_16",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6e706d5f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_17",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6e786f78622d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_18",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "0a6e706d5f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_19",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5f6e706d5f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_20",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "2d6e706d5f"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_21",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "786f7821786f78622d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_22",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "786f786f78622d"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_23",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "short_prefix_24",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "68665f68665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_25",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "616e706d5f2068665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_escape_n",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6e68665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_escape_r",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c7268665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_escape_t",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c7468665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_escape_b",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6268665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "short_prefix_escape_f",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "short_prefix_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6668665f"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_00",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "70617373776f72643a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_01",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "7061737377643d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_02",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b65793a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_03",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "7365637265743d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_04",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "746f6b656e3a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_05",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "4b45593a"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "kw_assignment_06",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "546f6b656e3a"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "kw_assignment_07",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b6579"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "kw_assignment_08",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b65792020203a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_09",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b6579093d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_10",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b65790d0a3a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_11",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b657922273a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_12",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b65792e2d3a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_13",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b65795c3a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_14",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b6579626f6172643a"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "kw_assignment_15",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6d796b65793a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_16",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b6579783a"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "kw_assignment_17",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "78786b65793d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_18",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "70617373776f72647820746f6b656e3a"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_19",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "7365637265740a3d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "kw_assignment_20",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "kw_assignment_21",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "kw_assignment_present",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b6579203a203d"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "gate_00",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "736b2d"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_01",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b5f6c6976655f"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_02",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b5f746573745f"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_03",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "414b4941"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_04",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "65794a"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_05",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "2d2d2d2d2d424547494e"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_06",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "ff736b2dff"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_07",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "534b2d"
+        }
+      },
+      "expected": {
+        "gate": false,
+        "line_gate": false
+      }
+    },
+    {
+      "id": "gate_08",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "65796a"
+        }
+      },
+      "expected": {
+        "gate": false,
+        "line_gate": false
+      }
+    },
+    {
+      "id": "gate_09",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6b5f6c697665"
+        }
+      },
+      "expected": {
+        "gate": false,
+        "line_gate": false
+      }
+    },
+    {
+      "id": "gate_10",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "gate": false,
+        "line_gate": false
+      }
+    },
+    {
+      "id": "gate_11",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "3a6161616161616161616161616161616161616161616161616161616161616161616161"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_12",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "3a61616161616161616161616161616161616161616161616161616161616161616161"
+        }
+      },
+      "expected": {
+        "gate": false,
+        "line_gate": false
+      }
+    },
+    {
+      "id": "gate_13",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "626561726572"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_14",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "424541524552"
+        }
+      },
+      "expected": {
+        "gate": true,
+        "line_gate": true
+      }
+    },
+    {
+      "id": "gate_15",
+      "construct": {
+        "type": "hygiene_gate",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "62656172"
+        }
+      },
+      "expected": {
+        "gate": false,
+        "line_gate": false
+      }
+    },
+    {
+      "id": "json_escape_shadow_00",
+      "construct": {
+        "type": "hygiene_json_shadow",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "616263"
+        }
+      },
+      "expected": {
+        "shadow": {
+          "kind": "bytes_hex",
+          "hex": "616263"
+        },
+        "borrowed": true
+      }
+    },
+    {
+      "id": "json_escape_shadow_01",
+      "construct": {
+        "type": "hygiene_json_shadow",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "shadow": {
+          "kind": "bytes_hex",
+          "hex": ""
+        },
+        "borrowed": true
+      }
+    },
+    {
+      "id": "json_escape_shadow_02",
+      "construct": {
+        "type": "hygiene_json_shadow",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c6e"
+        }
+      },
+      "expected": {
+        "shadow": {
+          "kind": "bytes_hex",
+          "hex": "2020"
+        },
+        "borrowed": false
+      }
+    },
+    {
+      "id": "json_escape_shadow_03",
+      "construct": {
+        "type": "hygiene_json_shadow",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "615c6e62"
+        }
+      },
+      "expected": {
+        "shadow": {
+          "kind": "bytes_hex",
+          "hex": "61202062"
+        },
+        "borrowed": false
+      }
+    },
+    {
+      "id": "json_escape_shadow_04",
+      "construct": {
+        "type": "hygiene_json_shadow",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "5c5c5c6e"
+        }
+      },
+      "expected": {
+        "shadow": {
+          "kind": "bytes_hex",
+          "hex": "5c5c2020"
+        },
+        "borrowed": false
+      }
+    },
+    {
+      "id": "placeholder_00",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "placeholder_01",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "736563726574"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "placeholder_02",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "73686f7274"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "placeholder_03",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "3132333435363738"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "placeholder_04",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6162616261626162"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "placeholder_05",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6162636162636162"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "placeholder_06",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "3c52454441435445443e"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "placeholder_07",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "6368616e67656d65"
+        }
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "placeholder_08",
+      "construct": {
+        "type": "hygiene_bool_fn",
+        "fn": "looks_like_placeholder",
+        "input": {
+          "kind": "bytes_hex",
+          "hex": "63726564656e7469616c2d76616c7565"
+        }
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "tracker_empty_and_quiet",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": ""
+            },
+            "line": 1,
+            "ordinal": 0,
+            "byte_offset": 0,
+            "byte_end": 0
+          },
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "6e6f7468696e672068657265"
+            },
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows_len": 0,
+        "into_findings_len": 0
+      }
+    },
+    {
+      "id": "tracker_window_flush_then_hit",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "padding_length": 65512,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": "20736b2d7171717171717171717171717171717171717171"
+              }
+            },
+            "line": 4,
+            "ordinal": 7,
+            "byte_offset": 0,
+            "byte_end": 65536
+          },
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "6c61746572"
+            },
+            "line": 5,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "54a425e198ebace84c623d7d18aef49c3f8ae6ffa148453977f67cafac09fb90"
+            ],
+            "match_len": 23,
+            "line": 4,
+            "ordinal": 7,
+            "byte_offset": 0,
+            "byte_end": 65536,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_line_gate_skips_clean_record",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "636c65616e206c696e65"
+            },
+            "line": 1,
+            "ordinal": 0,
+            "byte_offset": 0,
+            "byte_end": 10
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 109,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 2,
+            "ordinal": 1,
+            "byte_offset": 11,
+            "byte_end": 40
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "7b2ee5ca7e289c594654478c9462ddf5a167d3460520ebd2fd47e7d04fd30e44"
+            ],
+            "match_len": 23,
+            "line": 2,
+            "ordinal": 1,
+            "byte_offset": 11,
+            "byte_end": 40,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_json_escape_enables_match",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": "785c6e"
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 97,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "aaf47d2ad540d88b82e9872c780d0a43366681f217854f9e6936819541ba228a"
+            ],
+            "match_len": 23,
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_placeholder_assignments_silent",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": "746f6b656e3a20"
+              },
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": "70617373776f7264"
+              }
+            },
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": "746f6b656e3a20"
+              },
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": "7878787878787878"
+              }
+            },
+            "line": 2,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "746f6b656e3a20796f75722d7365637265742d76616c7565"
+            },
+            "line": 3,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows_len": 0,
+        "into_findings_len": 0
+      }
+    },
+    {
+      "id": "tracker_generic_preserves_case_digest",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "544f4b454e3a204162636445666768"
+            },
+            "line": 8,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "generic-credential-assignment",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "cee90593c005001bb7503b06ccee3f787779bdabbd4994fcc46cb61490f5c758"
+            ],
+            "match_len": 8,
+            "line": 8,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_aggregates_per_family",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "736b2d616161616161616161616161616161616161616120736b2d6262626262626262626262626262626262626262626262626220746f6b656e3a207265616c2d76616c756520746f6b656e3a206f746865722d76616c7565"
+            },
+            "line": 3,
+            "ordinal": 4,
+            "byte_offset": 1,
+            "byte_end": 2
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "generic-credential-assignment",
+            "occurrence_count": 2,
+            "match_sha256": [
+              "51d54510a4a2ec2ed33dd4fdba98d3ad0d1b76fb7be348309979bfb384909473",
+              "decb3cf18a4129605ec3466977f657d45576098cbdbcce6f3bb19056ee05cf2d"
+            ],
+            "match_len": 11,
+            "line": 3,
+            "ordinal": 4,
+            "byte_offset": 1,
+            "byte_end": 2,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 2,
+            "match_sha256": [
+              "aaf47d2ad540d88b82e9872c780d0a43366681f217854f9e6936819541ba228a",
+              "e0869aaa72103733c6aabc20dac54168cd0857bcc73191d05f6a85b3124da030"
+            ],
+            "match_len": 28,
+            "line": 3,
+            "ordinal": 4,
+            "byte_offset": 1,
+            "byte_end": 2,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_sort_line_ordinal_family",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 99,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 2,
+            "ordinal": null,
+            "byte_offset": 9,
+            "byte_end": 10
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": "42656172657220"
+              },
+              "body_length": 16,
+              "fill_byte": 100,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": null,
+            "ordinal": 9,
+            "byte_offset": 1,
+            "byte_end": 2
+          },
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "746f6b656e3a207265616c2d76616c7565"
+            },
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": "31323334353637383a"
+              },
+              "body_length": 35,
+              "fill_byte": 97,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 1,
+            "ordinal": 2,
+            "byte_offset": 3,
+            "byte_end": 4
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": "2d2d2d2d2d424547494e2050524956415445204b45592d2d2d2d2d"
+              },
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 1,
+            "ordinal": 0,
+            "byte_offset": 5,
+            "byte_end": 6
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "bearer-token",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "1aa14118fec08c9eee7e4a18292d94c37a97b2d25538f5dd95d268d0124a21c1"
+            ],
+            "match_len": 23,
+            "line": null,
+            "ordinal": 9,
+            "byte_offset": 1,
+            "byte_end": 2,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "generic-credential-assignment",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "51d54510a4a2ec2ed33dd4fdba98d3ad0d1b76fb7be348309979bfb384909473"
+            ],
+            "match_len": 10,
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "private-key-block",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d"
+            ],
+            "match_len": 27,
+            "line": 1,
+            "ordinal": 0,
+            "byte_offset": 5,
+            "byte_end": 6,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "telegram-bot-token",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "ec65b2dea6887267ab9f0d31684ecc8f35468591fc23f7048290c536576c46a7"
+            ],
+            "match_len": 44,
+            "line": 1,
+            "ordinal": 2,
+            "byte_offset": 3,
+            "byte_end": 4,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "41a2b6d54e7f7f2a219ec1659b1365685fe581c29e46f4628a99c2c72f7a42cf"
+            ],
+            "match_len": 23,
+            "line": 2,
+            "ordinal": null,
+            "byte_offset": 9,
+            "byte_end": 10,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_finding_cap_overflow",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 2,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 3,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 4,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 5,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 6,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 7,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 8,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 9,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 10,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 11,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 12,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 13,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 14,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 15,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 16,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 17,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 18,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 19,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 20,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 21,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 22,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 23,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 24,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 25,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 26,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 27,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 28,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 29,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 30,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 31,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 32,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 33,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 34,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 35,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 36,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 37,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 38,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 39,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 40,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 41,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 42,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 43,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 44,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 45,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 46,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 47,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 48,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 49,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 50,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 51,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 52,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 53,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 54,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 55,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 56,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 57,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 58,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 59,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 60,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 61,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 62,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 63,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 64,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          },
+          {
+            "recipe": {
+              "lead": {
+                "kind": "bytes_hex",
+                "hex": ""
+              },
+              "gate_literal_hex": "736b2d",
+              "body_length": 20,
+              "fill_byte": 122,
+              "tail": {
+                "kind": "bytes_hex",
+                "hex": ""
+              }
+            },
+            "line": 65,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 2,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 3,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 4,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 5,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 6,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 7,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 8,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 9,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 10,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 11,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 12,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 13,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 14,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 15,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 16,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 17,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 18,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 19,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 20,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 21,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 22,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 23,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 24,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 25,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 26,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 27,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 28,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 29,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 30,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 31,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 32,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 33,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 34,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 35,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 36,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 37,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 38,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 39,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 40,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 41,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 42,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 43,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 44,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 45,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 46,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 47,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 48,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 49,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 50,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 51,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 52,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 53,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 54,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 55,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 56,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 57,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 58,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 59,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 60,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 61,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 62,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 63,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": false,
+            "overflow": null
+          },
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "e47125ad1e8bcd2c4bab01b6b43619d71de75c06ee48f03022ec2fa7f6b8a21a"
+            ],
+            "match_len": 23,
+            "line": 64,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null,
+            "truncated": true,
+            "overflow": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_feed_blob_line_offsets",
+      "construct": {
+        "type": "hygiene_tracker_blob",
+        "blob_recipe": {
+          "segments": [
+            {
+              "raw": {
+                "kind": "bytes_hex",
+                "hex": "686561640a"
+              }
+            },
+            {
+              "recipe": {
+                "lead": {
+                  "kind": "bytes_hex",
+                  "hex": ""
+                },
+                "gate_literal_hex": "736b2d",
+                "body_length": 20,
+                "fill_byte": 99,
+                "tail": {
+                  "kind": "bytes_hex",
+                  "hex": ""
+                }
+              }
+            },
+            {
+              "raw": {
+                "kind": "bytes_hex",
+                "hex": "0a"
+              }
+            },
+            {
+              "raw": {
+                "kind": "bytes_hex",
+                "hex": "7461696c"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "rows": [
+          {
+            "family": "openai-api-key",
+            "occurrence_count": 1,
+            "match_sha256": [
+              "41a2b6d54e7f7f2a219ec1659b1365685fe581c29e46f4628a99c2c72f7a42cf"
+            ],
+            "match_len": 23,
+            "line": 2,
+            "ordinal": null,
+            "byte_offset": 5,
+            "byte_end": 29,
+            "truncated": false,
+            "overflow": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "tracker_colon_tail_no_telegram_body",
+      "construct": {
+        "type": "hygiene_tracker",
+        "feeds": [
+          {
+            "raw": {
+              "kind": "bytes_hex",
+              "hex": "3a6161616161616161616161616161616161616161616161616161616161616161616161"
+            },
+            "line": 1,
+            "ordinal": null,
+            "byte_offset": null,
+            "byte_end": null
+          }
+        ]
+      },
+      "expected": {
+        "rows_len": 0,
+        "into_findings_len": 0
+      }
+    }
+  ]
+}
