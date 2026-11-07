@@ -19,6 +19,13 @@
 //! conservative `register_all` import. Findings are not read. Events are read
 //! only when `source_hash` is `None`. `acknowledge_side_effects` and
 //! `input_format` are not validated.
+//!
+//! [`get_plan_schema_path`] and [`load_plan_schema`] are `planner.py`
+//! lines 993–1024. The first statement of [`get_plan_schema_path`] is
+//! `from sesslint._resources import schema_path`. That function is not in
+//! this crate. Both helpers display [`SCHEMA_PATH_UNAVAILABLE`].
+//! [`load_plan_schema`] calls [`get_plan_schema_path`] first.
+//! [`ALL`] is the pin `__all__`.
 
 use std::convert::Infallible;
 use std::error::Error;
@@ -1862,6 +1869,58 @@ fn push_hex(out: &mut String, prefix: &str, value: u32, width: usize) {
     }
 }
 
+/// `from sesslint._resources import schema_path` cannot run in this crate.
+pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
+/// Failure from [`get_plan_schema_path`] and [`load_plan_schema`].
+///
+/// [`Display`](fmt::Display) is [`SCHEMA_PATH_UNAVAILABLE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub struct PlanSchemaError;
+
+impl fmt::Display for PlanSchemaError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(SCHEMA_PATH_UNAVAILABLE)
+    }
+}
+
+impl Error for PlanSchemaError {}
+
+/// Python: `get_plan_schema_path`.
+///
+/// The first statement is `from sesslint._resources import schema_path`.
+/// That function is not in this crate. This does not build `Path(__file__)`,
+/// does not return a filesystem path, and does not read
+/// `schemas/sesslint.plan.v1.json`.
+pub const fn get_plan_schema_path() -> PlanSchemaError {
+    PlanSchemaError
+}
+
+/// Python: `load_plan_schema`.
+///
+/// Calls [`get_plan_schema_path`] first and stops on that same display.
+/// This does not check `is_file`, call `json.loads`, or invent a mapping.
+pub const fn load_plan_schema() -> PlanSchemaError {
+    get_plan_schema_path()
+}
+
+/// Python `__all__` (`planner.py` lines 1011–1024), in that order.
+pub const ALL: [&str; 12] = [
+    "ALLOWED_LOSS_CLASSES",
+    "EMPTY_EVENTS_HASH",
+    "MAX_STEPS",
+    "PLAN_VERSION",
+    "Blocked",
+    "Loss",
+    "PlanStep",
+    "RepairPlan",
+    "compute_events_source_hash",
+    "get_plan_schema_path",
+    "load_plan_schema",
+    "plan",
+];
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -1880,12 +1939,13 @@ mod tests {
 
     use super::{
         _compute_torn_compaction_loss, _counts, _object, _resolve_target_index, _strings,
-        compute_events_source_hash, plan, Blocked, Loss, PlanError, PlanKey, PlanPolicy,
-        PlanProfile, PlanStep, PlanStepFields, PlanValue, PlannerError, RepairPlan,
-        RepairPlanFields, SourceHashError, SourceHashEvent, ALLOWED_LOSS_CLASSES,
-        EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, HASHLIB_SHA256_UNAVAILABLE, MAX_STEPS,
-        NON_EVENT_LOSS_CLASSES, PLAN_VERSION, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
-        SYNTHETIC_STEP_FP, UNDECODED_RECORD_CODES,
+        compute_events_source_hash, get_plan_schema_path, load_plan_schema, plan, Blocked, Loss,
+        PlanError, PlanKey, PlanPolicy, PlanProfile, PlanSchemaError, PlanStep, PlanStepFields,
+        PlanValue, PlannerError, RepairPlan, RepairPlanFields, SourceHashError, SourceHashEvent,
+        ALL, ALLOWED_LOSS_CLASSES, EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES,
+        HASHLIB_SHA256_UNAVAILABLE, MAX_STEPS, NON_EVENT_LOSS_CLASSES, PLAN_VERSION,
+        RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE, SYNTHETIC_STEP_FP,
+        UNDECODED_RECORD_CODES,
     };
 
     const ALLOWED_REPR: &str = concat!(
@@ -3577,5 +3637,43 @@ mod tests {
             None,
         );
         assert_eq!(present, PlanError::RegisterAll);
+    }
+
+    #[test]
+    fn schema_helpers_stop_at_the_resource_seam() {
+        assert_eq!(
+            SCHEMA_PATH_UNAVAILABLE,
+            "sesslint._resources.schema_path is not available"
+        );
+        let path_error = get_plan_schema_path();
+        assert_eq!(path_error, PlanSchemaError);
+        assert_eq!(path_error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert!(path_error.source().is_none());
+        assert!(!path_error.to_string().contains("schemas"));
+        assert!(!path_error.to_string().contains("sesslint.plan.v1.json"));
+
+        let loaded = load_plan_schema();
+        assert_eq!(loaded, path_error);
+        assert_eq!(loaded.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert!(!loaded.to_string().contains("Repair plan schema not found"));
+        assert!(loaded.source().is_none());
+
+        assert_eq!(
+            ALL,
+            [
+                "ALLOWED_LOSS_CLASSES",
+                "EMPTY_EVENTS_HASH",
+                "MAX_STEPS",
+                "PLAN_VERSION",
+                "Blocked",
+                "Loss",
+                "PlanStep",
+                "RepairPlan",
+                "compute_events_source_hash",
+                "get_plan_schema_path",
+                "load_plan_schema",
+                "plan",
+            ]
+        );
     }
 }
